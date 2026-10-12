@@ -214,17 +214,20 @@ enum MailboxDoorbellSequence {
         var draftWatch: DraftWatch?
     }
 
-    /// One draft-skip series. `exhausted` stays set for the epoch so a
-    /// long-lived draft does not start another 10 minutes of reads.
+    /// One draft-skip series, started for a set of unread ids.
+    /// `exhausted` means the 10 minute schedule is over. The same ids keep a
+    /// 60 second look. A new id, or a new epoch, starts again at 5 seconds.
     struct DraftWatch: Equatable {
         var startedAt: Date
         var steps: Int
         var epoch: String
+        /// Unread ids this series started for. A later id is a new series.
+        var ids: Set<String>
         var exhausted: Bool
     }
 
-    /// First looks after a draft skip, then `draftRecheckInterval` until
-    /// `draftRecheckBound` from the start of the series.
+    /// First looks after a draft skip, then `draftRecheckInterval`. Past
+    /// `draftRecheckBound` the same mail stays on that interval.
     static let draftRecheckDelays: [TimeInterval] = [5, 15, 30]
     static let draftRecheckInterval: TimeInterval = 60
     static let draftRecheckBound: TimeInterval = 600
@@ -252,26 +255,73 @@ enum MailboxDoorbellSequence {
         unreadIds
     }
 
-    /// The next look after a plain draft skip. A turn change starts a new
-    /// series. The same epoch stops for good once the bound is passed.
+    /// Ids named from the queued envelopes. An empty queue names nothing.
+    static func unreadIds(in entries: [MailboxStdinBuffer.Entry]) -> Set<String> {
+        Set(entries.map(\.id))
+    }
+
+    /// The coverage fields the idle path decides on.
+    static func namingUnread(
+        _ input: MailboxDoorbell.Input,
+        entries: [MailboxStdinBuffer.Entry],
+        coveredIds: Set<String>
+    ) -> MailboxDoorbell.Input {
+        var named = input
+        named.unreadIds = unreadIds(in: entries)
+        named.coveredIds = coveredIds
+        return named
+    }
+
+    /// Record a submitted ring. The queue it saw is covered, and the draft
+    /// series ends. A failed paste does not call this.
+    static func coverAfterSubmit(ledger: inout MailboxDoorbell.Ledger, unread: Set<String>) {
+        ledger.coveredIds = coveredIds(for: unread)
+        ledger.draftWatch = nil
+    }
+
+    /// Nothing still unread ends the series. The next envelope must not
+    /// inherit a watch whose mail is already gone.
+    static func draftWatchAfterPrune(watch: DraftWatch?, liveIds: Set<String>) -> DraftWatch? {
+        liveIds.isEmpty ? nil : watch
+    }
+
+    /// True when this series is still about the same turn and the same mail.
+    /// An id the watch did not start with is a new series, even past the bound.
+    static func draftSeriesContinues(_ watch: DraftWatch, epoch: String, unreadIds: Set<String>) -> Bool {
+        watch.epoch == epoch && unreadIds.isSubset(of: watch.ids)
+    }
+
+    /// The next look after a plain draft skip. A turn change, or an unread id
+    /// this series did not start with, starts again at 5 seconds. The same
+    /// mail keeps a 60 second look after the 10 minute schedule.
     static func nextDraftRecheck(
         watch: DraftWatch?,
         epoch: String,
+        unreadIds: Set<String> = [],
         now: Date
     ) -> (rearm: Rearm, watch: DraftWatch?) {
+        let continues = watch.map { draftSeriesContinues($0, epoch: epoch, unreadIds: unreadIds) } ?? false
+        if continues, let watch, watch.exhausted {
+            return (.after(draftRecheckInterval), watch)
+        }
         var current: DraftWatch
-        if let watch, watch.epoch == epoch {
-            if watch.exhausted { return (.none, watch) }
+        if continues, let watch {
             current = watch
         } else {
-            current = DraftWatch(startedAt: now, steps: 0, epoch: epoch, exhausted: false)
+            current = DraftWatch(
+                startedAt: now,
+                steps: 0,
+                epoch: epoch,
+                ids: unreadIds,
+                exhausted: false
+            )
         }
         let gap = current.steps < draftRecheckDelays.count
             ? draftRecheckDelays[current.steps]
             : draftRecheckInterval
         if now.addingTimeInterval(gap).timeIntervalSince(current.startedAt) > draftRecheckBound {
             current.exhausted = true
-            return (.none, current)
+            return (.after(draftRecheckInterval), current)
         }
         current.steps += 1
         return (.after(gap), current)
@@ -290,7 +340,8 @@ enum MailboxDoorbellSequence {
         busyExhausted: Bool,
         strandedDoorbell: Bool,
         draftWatch: DraftWatch? = nil,
-        epoch: String = ""
+        epoch: String = "",
+        unreadIds: Set<String> = []
     ) -> Plan {
         let arrival = MailboxDoorbell.arrival(for: decision)
         let rearm: Rearm
@@ -314,7 +365,12 @@ enum MailboxDoorbellSequence {
             rearm = .after(shortRecheck)
             watch = nil
         case .skip(let reason) where reason == "draft":
-            let step = nextDraftRecheck(watch: draftWatch, epoch: epoch, now: now)
+            let step = nextDraftRecheck(
+                watch: draftWatch,
+                epoch: epoch,
+                unreadIds: unreadIds,
+                now: now
+            )
             rearm = step.rearm
             watch = step.watch
         default:

@@ -577,6 +577,7 @@ final class MailboxDoorbellTests: XCTestCase {
 
     func testPersistentDraftStopsRecheckingAfterTheBound() {
         let start = Date(timeIntervalSince1970: 0)
+        let ids: Set<String> = ["a"]
         var watch: MailboxDoorbellSequence.DraftWatch?
         var now = start
         var scheduled: [TimeInterval] = []
@@ -584,37 +585,45 @@ final class MailboxDoorbellTests: XCTestCase {
             let step = MailboxDoorbellSequence.nextDraftRecheck(
                 watch: watch,
                 epoch: "1|prompt",
+                unreadIds: ids,
                 now: now
             )
             watch = step.watch
-            guard case .after(let delay) = step.rearm else { break }
+            guard case .after(let delay) = step.rearm else {
+                XCTFail("the same unread mail keeps a look")
+                return
+            }
             scheduled.append(delay)
             now = now.addingTimeInterval(delay)
+            if now.timeIntervalSince(start) > MailboxDoorbellSequence.draftRecheckBound {
+                break
+            }
         }
         XCTAssertEqual(Array(scheduled.prefix(3)), MailboxDoorbellSequence.draftRecheckDelays)
         XCTAssertFalse(scheduled.dropFirst(3).contains { $0 != MailboxDoorbellSequence.draftRecheckInterval })
-        XCTAssertLessThanOrEqual(now.timeIntervalSince(start), MailboxDoorbellSequence.draftRecheckBound)
-        XCTAssertGreaterThan(scheduled.count, 3)
+        XCTAssertGreaterThan(now.timeIntervalSince(start), MailboxDoorbellSequence.draftRecheckBound)
+        XCTAssertEqual(watch?.exhausted, true)
+        XCTAssertEqual(watch?.ids, ids)
+        XCTAssertEqual(scheduled.last, MailboxDoorbellSequence.draftRecheckInterval)
 
-        let stopped = MailboxDoorbellSequence.nextDraftRecheck(
+        let kept = MailboxDoorbellSequence.nextDraftRecheck(
             watch: watch,
             epoch: "1|prompt",
-            now: now
-        )
-        XCTAssertEqual(stopped.rearm, .none)
-        let still = MailboxDoorbellSequence.nextDraftRecheck(
-            watch: stopped.watch,
-            epoch: "1|prompt",
+            unreadIds: ids,
             now: now.addingTimeInterval(60)
         )
-        XCTAssertEqual(still.rearm, .none)
+        XCTAssertEqual(kept.rearm, .after(MailboxDoorbellSequence.draftRecheckInterval))
+        XCTAssertEqual(kept.watch?.exhausted, true)
 
         let turned = MailboxDoorbellSequence.nextDraftRecheck(
-            watch: still.watch,
+            watch: kept.watch,
             epoch: "2|prompt",
+            unreadIds: ids,
             now: now
         )
         XCTAssertEqual(turned.rearm, .after(MailboxDoorbellSequence.draftRecheckDelays[0]))
+        XCTAssertEqual(turned.watch?.exhausted, false)
+        XCTAssertEqual(turned.watch?.startedAt, now)
     }
 
     func testPrePasteFailureLeavesTheIdlePeriodUnconsumed() {
@@ -725,5 +734,201 @@ final class MailboxDoorbellTests: XCTestCase {
         MailboxDoorbellSequence.apply(start: .type, ledger: &ledger, now: now, epoch: "9|prompt")
         XCTAssertEqual(ledger.rings(at: now), 1)
         XCTAssertTrue(ledger.rung(in: "9|prompt"))
+    }
+
+    /// A new unread id starts at 5 seconds, including after the old series
+    /// has passed its 10 minutes. The same ids stay on the 60 second look.
+    func testNewMailRestartsADraftSeries() {
+        let start = Date(timeIntervalSince1970: 0)
+        let first = MailboxDoorbellSequence.nextDraftRecheck(
+            watch: nil,
+            epoch: "1|prompt",
+            unreadIds: ["a"],
+            now: start
+        )
+        let during = MailboxDoorbellSequence.nextDraftRecheck(
+            watch: first.watch,
+            epoch: "1|prompt",
+            unreadIds: ["a", "b"],
+            now: start.addingTimeInterval(5)
+        )
+        XCTAssertEqual(during.rearm, .after(MailboxDoorbellSequence.draftRecheckDelays[0]))
+        XCTAssertEqual(during.watch?.startedAt, start.addingTimeInterval(5))
+        XCTAssertEqual(during.watch?.ids, ["a", "b"])
+
+        let (watch, end) = exhaustedDraftWatch(epoch: "1|prompt", unreadIds: ["a"], start: start)
+        XCTAssertEqual(watch?.exhausted, true)
+        let later = end.addingTimeInterval(1_800)
+        let fresh = MailboxDoorbellSequence.plan(
+            decision: .skip(reason: "draft"),
+            attempts: [],
+            now: later,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            draftWatch: watch,
+            epoch: "1|prompt",
+            unreadIds: ["b"]
+        )
+        XCTAssertEqual(fresh.rearm, .after(MailboxDoorbellSequence.draftRecheckDelays[0]))
+        XCTAssertEqual(fresh.draftWatch?.ids, ["b"])
+        XCTAssertEqual(fresh.draftWatch?.startedAt, later)
+        XCTAssertEqual(fresh.draftWatch?.exhausted, false)
+
+        let same = MailboxDoorbellSequence.plan(
+            decision: .skip(reason: "draft"),
+            attempts: [],
+            now: later,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            draftWatch: watch,
+            epoch: "1|prompt",
+            unreadIds: ["a"]
+        )
+        XCTAssertEqual(same.rearm, .after(MailboxDoorbellSequence.draftRecheckInterval))
+        XCTAssertEqual(same.draftWatch?.ids, ["a"])
+    }
+
+    /// Mail that was read leaves its watch behind. The next envelope, held
+    /// by a draft in the same idle period, gets its own 5 second look.
+    func testStaleWatchDoesNotShortenTheNextEnvelope() {
+        let start = Date(timeIntervalSince1970: 0)
+        let first = MailboxDoorbellSequence.nextDraftRecheck(
+            watch: nil,
+            epoch: "1|prompt",
+            unreadIds: ["a"],
+            now: start
+        )
+        XCTAssertEqual(first.rearm, .after(5))
+        let later = start.addingTimeInterval(660)
+        let plan = MailboxDoorbellSequence.plan(
+            decision: .skip(reason: "draft"),
+            attempts: [],
+            now: later,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            draftWatch: first.watch,
+            epoch: "1|prompt",
+            unreadIds: ["b"]
+        )
+        XCTAssertEqual(plan.rearm, .after(MailboxDoorbellSequence.draftRecheckDelays[0]))
+        XCTAssertEqual(plan.draftWatch?.startedAt, later)
+        XCTAssertEqual(plan.draftWatch?.ids, ["b"])
+        XCTAssertEqual(plan.draftWatch?.steps, 1)
+    }
+
+    /// Past the bound, the same draft keeps a 60 second look. Clearing the
+    /// composer rings on that look and drops the watch.
+    func testLongDraftRingsOnceTheComposerClears() {
+        let start = Date(timeIntervalSince1970: 0)
+        let (watch, end) = exhaustedDraftWatch(epoch: "1|prompt", unreadIds: ["a"], start: start)
+        var held = MailboxDoorbell.Input()
+        held.unreadIds = ["a"]
+        held.prompt = .draft
+        held.epoch = "1|prompt"
+        let still = MailboxDoorbellSequence.plan(
+            decision: MailboxDoorbell.decide(held),
+            attempts: [],
+            now: end,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            draftWatch: watch,
+            epoch: held.epoch,
+            unreadIds: ["a"]
+        )
+        XCTAssertEqual(still.rearm, .after(MailboxDoorbellSequence.draftRecheckInterval))
+
+        var cleared = held
+        cleared.prompt = .empty
+        let decision = MailboxDoorbell.decide(cleared)
+        XCTAssertEqual(decision, .ring)
+        let plan = MailboxDoorbellSequence.plan(
+            decision: decision,
+            attempts: [],
+            now: end,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            draftWatch: still.draftWatch,
+            epoch: cleared.epoch,
+            unreadIds: ["a"]
+        )
+        XCTAssertEqual(plan.arrival, .ring)
+        XCTAssertEqual(plan.rearm, .none)
+        XCTAssertNil(plan.draftWatch)
+    }
+
+    /// An empty live set drops the watch. Mail that is still unread keeps it.
+    func testPruneDropsAWatchWhenNoMailRemains() {
+        let watch = MailboxDoorbellSequence.DraftWatch(
+            startedAt: Date(timeIntervalSince1970: 0),
+            steps: 1,
+            epoch: "1|prompt",
+            ids: ["a"],
+            exhausted: false
+        )
+        XCTAssertNil(MailboxDoorbellSequence.draftWatchAfterPrune(watch: watch, liveIds: []))
+        XCTAssertEqual(
+            MailboxDoorbellSequence.draftWatchAfterPrune(watch: watch, liveIds: ["a"]),
+            watch
+        )
+    }
+
+    /// Submit coverage and the unread ids the idle path names. Breaking
+    /// either seam rings a covered envelope again.
+    func testSubmitRecordsTheQueuedIdsTheIdlePathNames() {
+        let entries = [entry(id: "a"), entry(id: "b")]
+        let ids = MailboxDoorbellSequence.unreadIds(in: entries)
+        XCTAssertEqual(ids, ["a", "b"])
+
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.draftWatch = MailboxDoorbellSequence.DraftWatch(
+            startedAt: Date(timeIntervalSince1970: 0),
+            steps: 2,
+            epoch: "1|prompt",
+            ids: ["a"],
+            exhausted: false
+        )
+        MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: ids)
+        XCTAssertEqual(ledger.coveredIds, ["a", "b"])
+        XCTAssertNil(ledger.draftWatch)
+
+        var base = MailboxDoorbell.Input()
+        base.prompt = .empty
+        base.rungThisEpoch = false
+        base.epoch = "2|prompt"
+        let named = MailboxDoorbellSequence.namingUnread(
+            base,
+            entries: entries,
+            coveredIds: ledger.coveredIds
+        )
+        XCTAssertEqual(named.unreadIds, ["a", "b"])
+        XCTAssertEqual(named.coveredIds, ["a", "b"])
+        XCTAssertEqual(MailboxDoorbell.decide(named), .skip(reason: "already_covered"))
+        XCTAssertFalse(MailboxDoorbell.needsPrompt(named))
+
+        var unnamed = base
+        unnamed.coveredIds = ledger.coveredIds
+        XCTAssertEqual(MailboxDoorbell.decide(unnamed), .ring)
+    }
+
+    private func exhaustedDraftWatch(
+        epoch: String,
+        unreadIds: Set<String>,
+        start: Date
+    ) -> (MailboxDoorbellSequence.DraftWatch?, Date) {
+        var watch: MailboxDoorbellSequence.DraftWatch?
+        var now = start
+        for _ in 0..<40 {
+            let step = MailboxDoorbellSequence.nextDraftRecheck(
+                watch: watch,
+                epoch: epoch,
+                unreadIds: unreadIds,
+                now: now
+            )
+            watch = step.watch
+            guard case .after(let delay) = step.rearm else { break }
+            now = now.addingTimeInterval(delay)
+            if watch?.exhausted == true { break }
+        }
+        return (watch, now)
     }
 }

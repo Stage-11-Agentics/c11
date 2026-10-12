@@ -474,6 +474,49 @@ final class PanelLivenessDeriverTests: XCTestCase {
         }
     }
 
+    /// C11-398: the shell's running command is the agent TUI, not a turn. A
+    /// resumed session that never reports an edge read as working for 37
+    /// hours. With nothing newer for the window, that working decays to
+    /// unknown. Working an agent edge wrote is never decayed.
+    @MainActor
+    func testShellWorkingOnAnAgentDecaysToUnknownAndAgentWorkingDoesNot() {
+        let ws = UUID(); let shellOnly = UUID(); let reported = UUID()
+        let workspace = Workspace()
+        defer {
+            store.removeSurface(workspaceId: ws, surfaceId: shellOnly)
+            store.removeSurface(workspaceId: ws, surfaceId: reported)
+        }
+        XCTAssertEqual(PanelLivenessDeriver.agentShellWorkingDecay, 120)
+
+        PanelLivenessDeriver.onShellActivityChanged(
+            surfaceId: shellOnly, workspaceId: ws, state: .commandRunning, workspace: workspace
+        )
+        XCTAssertTrue(poll { self.activityValue(ws, shellOnly) == SidebarActivityState.working.rawValue })
+
+        PanelLivenessDeriver.onShellActivityChanged(
+            surfaceId: reported, workspaceId: ws, state: .commandRunning, workspace: workspace
+        )
+        PanelLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: reported, workspaceId: ws, activity: .working, source: .reported
+        )
+        XCTAssertTrue(poll { self.activityValue(ws, reported) == SidebarActivityState.working.rawValue })
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+
+        let now = Date()
+        PanelLivenessDeriver.reconcile(surfaceId: shellOnly, workspaceId: ws,
+                                       detectedTerminalType: "claude-code", now: now.addingTimeInterval(60))
+        XCTAssertEqual(activityValue(ws, shellOnly), SidebarActivityState.working.rawValue, "inside the window")
+
+        PanelLivenessDeriver.reconcile(surfaceId: shellOnly, workspaceId: ws,
+                                       detectedTerminalType: "claude-code", now: now.addingTimeInterval(121))
+        XCTAssertNil(activityValue(ws, shellOnly), "past the window the shell's working is unknown")
+
+        PanelLivenessDeriver.reconcile(surfaceId: reported, workspaceId: ws,
+                                       detectedTerminalType: "claude-code", now: now.addingTimeInterval(10_000))
+        XCTAssertEqual(activityValue(ws, reported), SidebarActivityState.working.rawValue,
+                       "an agent edge owns its working")
+    }
+
     func testReconcileLeavesFreshWorkingAlone() {
         let ws = UUID(); let surface = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }

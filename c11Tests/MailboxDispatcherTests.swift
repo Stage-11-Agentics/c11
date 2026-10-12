@@ -752,12 +752,14 @@ final class MailboxDispatcherTests: XCTestCase {
             }
             let live = state.buffer.queuedEntries(surfaceId: surfaceId)
             guard !live.isEmpty else { return }
-            guard state.buffer.promptIsOpen(
+            let now = Date()
+            guard state.buffer.promptGate(
                 surfaceId: surfaceId,
                 isAgentKind: true,
-                agentOwnsTerminal: ownsTerminal
-            ) else { return }
-            let now = Date()
+                agentOwnsTerminal: ownsTerminal,
+                journalTurnOpen: false,
+                now: now
+            ) != .closed else { return }
             let turn = state.buffer.agentTurn(surfaceId: surfaceId)
             let epoch = turn.map {
                 MailboxDoorbell.promptEpoch(since: $0.since, atPrompt: $0.atPrompt)

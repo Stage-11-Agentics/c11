@@ -29,19 +29,25 @@ final class MailboxStdinBufferTests: XCTestCase {
         buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: at)
     }
 
+    private func gate(
+        _ buffer: MailboxStdinBuffer,
+        _ panel: UUID,
+        agent: Bool = true,
+        owns: Bool = true,
+        journalTurnOpen: Bool = false,
+        at now: Date
+    ) -> MailboxStdinBuffer.PromptGate {
+        buffer.promptGate(surfaceId: panel, isAgentKind: agent, agentOwnsTerminal: owns,
+                          journalTurnOpen: journalTurnOpen, now: now)
+    }
+
     func testShellsAreNeverOpen() {
         var buffer = MailboxStdinBuffer()
-        XCTAssertFalse(buffer.promptIsOpen(
-            surfaceId: UUID(), isAgentKind: false, agentOwnsTerminal: true
-        ))
+        XCTAssertEqual(gate(buffer, UUID(), agent: false, at: t(0)), .closed)
         let panel = UUID()
         open(&buffer, panel, at: t(0))
-        XCTAssertFalse(buffer.promptIsOpen(
-            surfaceId: panel, isAgentKind: true, agentOwnsTerminal: false
-        ))
-        XCTAssertTrue(buffer.promptIsOpen(
-            surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true
-        ))
+        XCTAssertEqual(gate(buffer, panel, owns: false, at: t(0)), .closed)
+        XCTAssertEqual(gate(buffer, panel, at: t(0)), .open)
     }
 
     func testOperatorKeyDoesNotCloseThePrompt() {
@@ -49,21 +55,104 @@ final class MailboxStdinBufferTests: XCTestCase {
         let panel = UUID()
         open(&buffer, panel, at: t(0))
         buffer.noteSubmit(surfaceId: panel, at: t(-1))
-        XCTAssertTrue(buffer.promptIsOpen(
-            surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true
-        ))
+        XCTAssertEqual(gate(buffer, panel, at: t(0)), .open)
     }
 
-    func testMidTurnAndMissingEdgeStayClosed() {
+    func testMidTurnStaysClosed() {
         var buffer = MailboxStdinBuffer()
         let panel = UUID()
         buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
-        XCTAssertFalse(buffer.promptIsOpen(
-            surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true
-        ))
-        XCTAssertFalse(buffer.promptIsOpen(
-            surfaceId: UUID(), isAgentKind: true, agentOwnsTerminal: true
-        ))
+        XCTAssertEqual(gate(buffer, panel, at: t(1)), .closed)
+    }
+
+    // MARK: - C11-398: unknown, and working that nothing supports
+
+    /// A restored or freshly attached agent has no turn edge. That is
+    /// unknown, not closed: the ring may read the screen.
+    func testNoEdgeSinceAttachIsUnknown() {
+        let buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        XCTAssertEqual(gate(buffer, panel, at: t(0)), .unknown)
+        XCTAssertNil(buffer.workingDecayDeadline(surfaceId: panel))
+        // Still only for an agent that owns its terminal.
+        XCTAssertEqual(gate(buffer, panel, owns: false, at: t(0)), .closed)
+        XCTAssertEqual(gate(buffer, panel, agent: false, at: t(0)), .closed)
+    }
+
+    /// A working edge holds the gate for the decay window, then reads as
+    /// unknown. Exactly at the deadline it has decayed.
+    func testUnsupportedWorkingDecaysToUnknown() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        XCTAssertEqual(MailboxStdinBuffer.unsupportedWorkingDecay, 120)
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
+        XCTAssertEqual(buffer.workingDecayDeadline(surfaceId: panel), t(120))
+        XCTAssertEqual(gate(buffer, panel, at: t(119.9)), .closed)
+        XCTAssertEqual(gate(buffer, panel, at: t(120)), .unknown)
+        // A later submit restarts the window.
+        buffer.noteSubmit(surfaceId: panel, at: t(100))
+        XCTAssertEqual(buffer.workingDecayDeadline(surfaceId: panel), t(220))
+        XCTAssertEqual(gate(buffer, panel, at: t(150)), .closed)
+        XCTAssertEqual(gate(buffer, panel, at: t(220)), .unknown)
+    }
+
+    /// A Return into an agent with no turn edge (an empty submit, a slash
+    /// command) holds the gate only for the window.
+    func testSubmitIntoAnUnknownAgentHoldsOnlyForTheWindow() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteSubmit(surfaceId: panel, at: t(0))
+        XCTAssertNil(buffer.agentTurn(surfaceId: panel))
+        XCTAssertEqual(gate(buffer, panel, at: t(60)), .closed)
+        XCTAssertEqual(gate(buffer, panel, at: t(120)), .unknown)
+    }
+
+    /// The journal says a turn is in progress: a long tool call that prints
+    /// nothing never decays, and neither does an agent with no edge yet.
+    func testLiveJournalTurnHoldsTheGateForAnyLength() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
+        XCTAssertEqual(gate(buffer, panel, journalTurnOpen: true, at: t(3_600)), .closed)
+        XCTAssertEqual(gate(buffer, UUID(), journalTurnOpen: true, at: t(0)), .closed)
+        // A reported prompt edge still opens it.
+        open(&buffer, panel, at: t(3_601))
+        XCTAssertEqual(gate(buffer, panel, journalTurnOpen: true, at: t(3_602)), .open)
+    }
+
+    /// The live journal phase is the turn signal. A restored row, an ended
+    /// session, and an idle or unknown phase are not.
+    func testJournalTurnOpenNeedsALiveWorkingOrBlockedPhase() {
+        let owner = JournalOwner(panelID: UUID(), agentKind: "claude-code", sessionID: "fixture")
+        var live = JournalSnapshot(owner: owner, workspaceID: nil, appInstanceID: UUID())
+        live.connection = .live
+        live.confirmation = .confirmed
+        for (phase, open) in [(JournalPhase.working, true), (.blocked, true), (.idle, false), (.unknown, false), (.error, false)] {
+            live.phase = phase
+            XCTAssertEqual(MailboxStdinDelivery.journalTurnOpen(live), open, "\(phase)")
+        }
+        live.phase = .working
+        XCTAssertFalse(MailboxStdinDelivery.journalTurnOpen(JournalReplayPolicy.restored(live)))
+        XCTAssertFalse(MailboxStdinDelivery.journalTurnOpen(nil))
+    }
+
+    /// An attach forgets the turn edges and submits from before it (the
+    /// earlier process, and the Return that launched this one). A newer
+    /// edge stays.
+    func testAttachForgetsOlderEdgesOnly() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
+        buffer.noteSubmit(surfaceId: panel, at: t(1))
+        buffer.noteAgentAttached(surfaceId: panel, at: t(2))
+        XCTAssertNil(buffer.agentTurn(surfaceId: panel))
+        XCTAssertNil(buffer.workingDecayDeadline(surfaceId: panel))
+        XCTAssertEqual(gate(buffer, panel, at: t(2)), .unknown)
+
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(5))
+        buffer.noteAgentAttached(surfaceId: panel, at: t(4))
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel)?.since, t(5))
+        XCTAssertEqual(gate(buffer, panel, at: t(6)), .closed)
     }
 
     func testQueueKeepsFifoAndIsolatesPanels() {
@@ -130,9 +219,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         let shell = UUID()
         buffer.noteSubmit(surfaceId: shell, at: t(1))
         XCTAssertNil(buffer.agentTurn(surfaceId: shell))
-        XCTAssertFalse(buffer.promptIsOpen(
-            surfaceId: shell, isAgentKind: false, agentOwnsTerminal: true
-        ))
+        XCTAssertEqual(gate(buffer, shell, agent: false, at: t(2)), .closed)
     }
 
     func testHeadlessAgentStaysClosedAndTheShellDropsTheQueue() {
@@ -140,9 +227,7 @@ final class MailboxStdinBufferTests: XCTestCase {
         let panel = UUID()
         buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
         XCTAssertTrue(buffer.isAgent(surfaceId: panel, isAgentKind: false))
-        XCTAssertFalse(buffer.promptIsOpen(
-            surfaceId: panel, isAgentKind: false, agentOwnsTerminal: true
-        ))
+        XCTAssertEqual(gate(buffer, panel, agent: false, at: t(1)), .closed)
         buffer.enqueue(surfaceId: panel, entry: entry(id: "m"))
         buffer.forgetAgent(surfaceId: panel)
         XCTAssertEqual(buffer.takeQueue(surfaceId: panel).map(\.id), ["m"])

@@ -14,8 +14,13 @@ import Foundation
 ///
 ///   - at its prompt, and the prompt edge is newer than the last submit →
 ///     the prompt is open and the doorbell may ring;
-///   - mid-turn, or no turn edge yet → the envelope stays queued until the
-///     next prompt edge;
+///   - mid-turn → the envelope stays queued until the next prompt edge. A
+///     turn holds while the journal says it is in progress (a long tool call
+///     with no output included), or while its working edge or submit is
+///     younger than `unsupportedWorkingDecay`;
+///   - no turn edge since the agent attached, or a working state nothing
+///     supports any more → unknown. Unknown may ring, and the ring still
+///     needs the screen to show an empty composer (C11-398);
 ///   - an operator key does not close the prompt. The doorbell waits out a
 ///     short quiet window, then rings if the composer is still empty.
 ///
@@ -53,10 +58,23 @@ struct MailboxStdinBuffer {
         case shellPrompt
     }
 
+    /// What the turn clock allows. `unknown` may ring only through the same
+    /// screen read as `open`.
+    enum PromptGate: Equatable {
+        case open
+        case unknown
+        case closed
+    }
+
     /// Max queued entries per panel. A broadcast storm into a busy panel
     /// can't grow the queue without bound; the oldest is evicted and the
     /// inbox still holds it.
     static let perSurfaceCap = 64
+
+    /// A working edge or submit with no journal turn behind it holds the gate
+    /// this long, then reads as unknown. A real turn start reaches the journal
+    /// within seconds (a hook at once, a transcript poll within 10 s).
+    static let unsupportedWorkingDecay: TimeInterval = 120
 
     private var queues: [UUID: [Entry]] = [:]
     private var turns: [UUID: AgentTurn] = [:]
@@ -74,19 +92,38 @@ struct MailboxStdinBuffer {
         let startTime: UInt64?
     }
 
-    /// The agent is at its prompt and could be typed into. An operator key
-    /// newer than the last submit does not close this: the doorbell waits
-    /// out that key, then rings.
-    func promptIsOpen(
+    /// Whether the doorbell may look at the screen. `open`: the agent
+    /// reported its prompt. `closed`: not an agent that owns its terminal, or
+    /// a turn some signal still supports. `unknown`: nothing says the agent is
+    /// mid-turn. An operator key newer than the last submit does not close
+    /// the prompt: the doorbell waits out that key, then rings.
+    ///
+    /// `journalTurnOpen` is the journal's live working or blocked phase. It
+    /// is what holds a long tool call that prints nothing.
+    func promptGate(
         surfaceId: UUID,
         isAgentKind: Bool,
-        agentOwnsTerminal: Bool
-    ) -> Bool {
+        agentOwnsTerminal: Bool,
+        journalTurnOpen: Bool,
+        now: Date
+    ) -> PromptGate {
         guard agentOwnsTerminal, isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
-            return false
+            return .closed
         }
-        guard let turn = turns[surfaceId], turn.atPrompt else { return false }
-        return true
+        if let turn = turns[surfaceId], turn.atPrompt { return .open }
+        if journalTurnOpen { return .closed }
+        if let deadline = workingDecayDeadline(surfaceId: surfaceId), now < deadline { return .closed }
+        return .unknown
+    }
+
+    /// When an unsupported working edge or submit stops holding the gate.
+    /// Nil when there is none. The caller looks again at this time.
+    func workingDecayDeadline(surfaceId: UUID) -> Date? {
+        var newest = lastSubmitAt[surfaceId]
+        if let turn = turns[surfaceId], !turn.atPrompt {
+            newest = max(newest ?? turn.since, turn.since)
+        }
+        return newest?.addingTimeInterval(Self.unsupportedWorkingDecay)
     }
 
     func isAgent(surfaceId: UUID, isAgentKind: Bool) -> Bool {
@@ -115,6 +152,19 @@ struct MailboxStdinBuffer {
         lastSubmitAt[surfaceId] = max(lastSubmitAt[surfaceId] ?? .distantPast, eventAt)
         if let turn = turns[surfaceId], eventAt >= turn.since {
             noteAgentTurn(surfaceId: surfaceId, atPrompt: false, at: eventAt)
+        }
+    }
+
+    /// A session started or re-attached at `at` (`JournalMailboxBoundary`
+    /// `attached`). Turn edges and submits from before it describe an earlier
+    /// process, or the Return that launched this one, so the turn is unknown
+    /// again. A newer edge stays.
+    mutating func noteAgentAttached(surfaceId: UUID, at: Date) {
+        if let turn = turns[surfaceId], turn.since <= at {
+            turns.removeValue(forKey: surfaceId)
+        }
+        if let submit = lastSubmitAt[surfaceId], submit <= at {
+            lastSubmitAt.removeValue(forKey: surfaceId)
         }
     }
 
@@ -234,6 +284,9 @@ enum MailboxStdinDelivery {
         var inputTransactionActive: Bool = false
         var inputTransactionEpoch: UInt64 = 0
         var surfaceAttached: Bool = true
+        /// The journal is live and its phase is working or blocked.
+        var journalTurnOpen: Bool = false
+        var now: Date = Date()
     }
 
     struct LogLine {
@@ -273,11 +326,13 @@ enum MailboxStdinDelivery {
     }
 
     /// Admit one envelope: enqueue it, and ring when the agent is at its
-    /// prompt. Nothing is pasted. The inbox copy is not claimed here.
+    /// prompt or its turn is unknown. Nothing is pasted. The inbox copy is not
+    /// claimed here.
     ///
-    /// A live agent TUI keeps the shell `.commandRunning` for life. Without
-    /// a prompt edge this gate only enqueues. The Bool asks for a
-    /// prompt-screen read; callers pass false first.
+    /// A live agent TUI keeps the shell `.commandRunning` for life, so that is
+    /// never turn evidence. Mid-turn this gate only enqueues; a turn held only
+    /// by its decay window reports the deadline through `noteHeldUntil`. The
+    /// Bool asks for a prompt-screen read; callers pass false first.
     static func deliver(
         state: MailboxStdinBufferStore,
         surfaceId: UUID,
@@ -285,18 +340,24 @@ enum MailboxStdinDelivery {
         gate: Gate,
         logEvicted: (MailboxStdinBuffer.Entry) -> Void,
         ringInput: ((Bool) -> MailboxDoorbell.Input)? = nil,
-        noteRing: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil
+        noteRing: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil,
+        noteHeldUntil: ((Date) -> Void)? = nil
     ) -> AdmitResult {
         if let evicted = state.buffer.enqueue(surfaceId: surfaceId, entry: entry) {
             logEvicted(evicted)
         }
         let bytes = entry.block.utf8.count
-        let promptOpen = !gate.inputTransactionActive && state.buffer.promptIsOpen(
+        let promptGate = state.buffer.promptGate(
             surfaceId: surfaceId,
             isAgentKind: gate.isAgentKind,
-            agentOwnsTerminal: gate.ownsTerminal
+            agentOwnsTerminal: gate.ownsTerminal,
+            journalTurnOpen: gate.journalTurnOpen,
+            now: gate.now
         )
-        guard promptOpen, let ringInput else {
+        if promptGate == .closed, let deadline = heldUntil(state: state, surfaceId: surfaceId, gate: gate) {
+            noteHeldUntil?(deadline)
+        }
+        guard !gate.inputTransactionActive, promptGate != .closed, let ringInput else {
             return .buffered(bytes: bytes)
         }
         var input = ringInput(false)
@@ -312,6 +373,27 @@ enum MailboxStdinDelivery {
         case .ring, .deferRing:
             return .doorbell(bytes: bytes, effect: effect)
         }
+    }
+
+    /// A live journal in a working or blocked phase: the harness says a turn
+    /// is in progress, however long it has been quiet. A restored or ended
+    /// row says nothing about the process running now.
+    static func journalTurnOpen(_ snapshot: JournalSnapshot?) -> Bool {
+        guard let snapshot, !snapshot.isHistorical else { return false }
+        return snapshot.phase == .working || snapshot.phase == .blocked
+    }
+
+    /// The decay deadline when only an unsupported working edge or submit
+    /// closes the gate. Nil when the gate is closed for any other reason (a
+    /// live journal turn, a panel that is not an agent's) and the next edge
+    /// reopens it.
+    static func heldUntil(state: MailboxStdinBufferStore, surfaceId: UUID, gate: Gate) -> Date? {
+        guard gate.ownsTerminal, !gate.journalTurnOpen,
+              state.buffer.isAgent(surfaceId: surfaceId, isAgentKind: gate.isAgentKind),
+              state.buffer.agentTurn(surfaceId: surfaceId)?.atPrompt != true,
+              let deadline = state.buffer.workingDecayDeadline(surfaceId: surfaceId),
+              gate.now < deadline else { return nil }
+        return deadline
     }
 }
 

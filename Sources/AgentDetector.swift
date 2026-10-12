@@ -113,7 +113,7 @@ final class AgentDetector: @unchecked Sendable {
                 )
             }
             let livePanels = Set(self.ttyNames.keys.map(\.panelId))
-            PanelLivenessDeriver.retainPromptCacheState(forLiveSurfaces: livePanels)
+            PanelLivenessDeriver.retainSurfaceState(forLiveSurfaces: livePanels)
             PromptCacheReportStore.shared.retain(livePanels: livePanels)
             // Live model detection rides the same sweep: tail each agent's own
             // session file off-main; surfaces with no agent in front clear any

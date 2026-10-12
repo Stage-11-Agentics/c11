@@ -6044,6 +6044,9 @@ final class Workspace: Identifiable, ObservableObject {
                     strandedDoorbell: reason == "draft" && captureNote.stranded
                 )
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
+            },
+            noteHeldUntil: { [weak self] deadline in
+                self?.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: deadline)
             }
         )
         switch admitted {
@@ -6254,11 +6257,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0,
               let terminalPanel = panels[surfaceId] as? TerminalPanel else { return }
         let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
-        let promptOpen = mailboxStdinState.buffer.promptIsOpen(
-            surfaceId: surfaceId,
-            isAgentKind: gate.isAgentKind,
-            agentOwnsTerminal: gate.ownsTerminal
-        )
+        let promptOpen = mailboxPromptGate(surfaceId: surfaceId, gate: gate) != .closed
         if gate.inputTransactionActive {
             let retry = promptOpen
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { [weak self] live in
@@ -6274,8 +6273,13 @@ final class Workspace: Identifiable, ObservableObject {
             return
         }
         guard promptOpen else {
+            let heldUntil = MailboxStdinDelivery.heldUntil(state: mailboxStdinState, surfaceId: surfaceId, gate: gate)
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { [weak self] live in
-                self?.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "gate_closed")
+                guard let self else { return }
+                self.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "gate_closed")
+                if let heldUntil, !live.isEmpty {
+                    self.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: heldUntil)
+                }
             }
             return
         }
@@ -6567,12 +6571,7 @@ final class Workspace: Identifiable, ObservableObject {
             if began { FeedAnswerInFlight.end(panelID: surfaceId) }
             logMailboxDoorbellEntries(queued, outcome: .doorbellFailed, reason: "unavailable")
             let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
-            let promptOpen = mailboxStdinState.buffer.promptIsOpen(
-                surfaceId: surfaceId,
-                isAgentKind: gate.isAgentKind,
-                agentOwnsTerminal: gate.ownsTerminal
-            )
-            if promptOpen {
+            if mailboxPromptGate(surfaceId: surfaceId, gate: gate) != .closed {
                 scheduleMailboxDoorbellRecheck(
                     surfaceId: surfaceId,
                     after: MailboxDoorbellSequence.shortRecheck
@@ -6777,8 +6776,32 @@ final class Workspace: Identifiable, ObservableObject {
             lastOperatorKeyAt: terminalPanel.surface.lastOperatorKeyAt,
             inputTransactionActive: terminalPanel.surface.isInputTransactionActive,
             inputTransactionEpoch: terminalPanel.surface.inputTransactionEpoch,
-            surfaceAttached: terminalPanel.surface.surface != nil
+            surfaceAttached: terminalPanel.surface.surface != nil,
+            journalTurnOpen: MailboxStdinDelivery.journalTurnOpen(
+                JournalCoordinator.shared.snapshot(panelID: surfaceId)
+            ),
+            now: Date()
         )
+    }
+
+    /// The turn clock's answer for this gate read.
+    private func mailboxPromptGate(
+        surfaceId: UUID,
+        gate: MailboxStdinDelivery.Gate
+    ) -> MailboxStdinBuffer.PromptGate {
+        mailboxStdinState.buffer.promptGate(
+            surfaceId: surfaceId,
+            isAgentKind: gate.isAgentKind,
+            agentOwnsTerminal: gate.ownsTerminal,
+            journalTurnOpen: gate.journalTurnOpen,
+            now: gate.now
+        )
+    }
+
+    /// A gate held only by an unsupported working edge looks again when that
+    /// edge decays, so queued mail does not wait for a turn that never ends.
+    private func scheduleMailboxDoorbellDecayRecheck(surfaceId: UUID, deadline: Date) {
+        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: deadline.timeIntervalSinceNow)
     }
 
     /// The kernel's answer to "is this tab's interactive agent the process
@@ -6797,6 +6820,10 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// A journal turn edge for the mailbox gate (`JournalMailboxBoundary`).
     func noteMailboxBoundary(_ boundary: JournalMailboxBoundary, panelID: UUID) {
+        if boundary.attached {
+            noteMailboxAgentAttached(surfaceId: panelID, at: boundary.at, agentPid: boundary.pid)
+            return
+        }
         noteMailboxAgentLifecycle(
             surfaceId: panelID,
             source: boundary.headless ? .headless : .reported,
@@ -6804,6 +6831,23 @@ final class Workspace: Identifiable, ObservableObject {
             at: boundary.at,
             agentPid: boundary.pid
         )
+    }
+
+    /// A session started or re-attached in this panel (C11-398). The turn is
+    /// unknown until the harness reports an edge, and the ring decision runs
+    /// for mail already queued. Without the interactive PID the start came
+    /// from a headless run, which never unseats the panel's agent.
+    func noteMailboxAgentAttached(surfaceId: UUID, at eventAt: Date, agentPid: pid_t?) {
+        guard panels[surfaceId] != nil, let agentPid else { return }
+        mailboxStdinState.buffer.noteAgentProcess(
+            surfaceId: surfaceId,
+            process: .init(
+                pid: agentPid,
+                startTime: MailboxAgentForeground.processTerminalInfo(pid: agentPid)?.startTime
+            )
+        )
+        mailboxStdinState.buffer.noteAgentAttached(surfaceId: surfaceId, at: eventAt)
+        flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
     }
 
     /// An agent lifecycle edge for the mailbox gate. `reported` edges come

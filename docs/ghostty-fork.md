@@ -288,3 +288,18 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
 - On rebase, preserve the C struct layout and limits with the matching Swift
   importer, plus the one-shot mutex try-lock. Do not turn incomplete captures
   into an empty prompt.
+
+### 13) C11-406 italic cells in the prompt-region capture
+
+- Commits: `d05a1fa7b` (keep SGR-3 italic per cell), `066c8bf2f` (run the
+  prompt-region tests with the terminal suite)
+- Files: `include/ghostty.h`, `src/terminal/prompt_region.zig`,
+  `src/terminal/main.zig`
+- `ghostty_prompt_region_cell_s` gains `bool italic` after `faint`. Grok
+  draws its next-prompt suggestion SGR 3 italic in a truecolor grey, never
+  SGR 2, so c11's reader needs italic to tell the suggestion from typed text.
+  The capture still copies no colors and stays within the same bounds.
+- `src/terminal/main.zig` imports `prompt_region.zig` in its test block. The
+  file was only imported from the embedded apprt, so its tests never ran.
+- On rebase, keep the field order (`text_offset`, `text_len`, `faint`,
+  `italic`) in step with the Swift importer in `TerminalController.swift`.

@@ -492,6 +492,131 @@ final class MailboxDoorbellTests: XCTestCase {
         XCTAssertEqual(unreadSurface.rearm, .none)
     }
 
+    func testRungEnvelopeDoesNotRingOnALaterIdle() {
+        var later = MailboxDoorbell.Input()
+        later.unreadIds = ["a"]
+        later.coveredIds = MailboxDoorbellSequence.coveredIds(for: ["a"])
+        later.rungThisEpoch = false
+        later.epoch = "2|prompt"
+        later.prompt = .empty
+        let decision = MailboxDoorbell.decide(later)
+        XCTAssertEqual(decision, .skip(reason: "already_covered"))
+        let plan = MailboxDoorbellSequence.plan(
+            decision: decision,
+            attempts: [],
+            now: Date(timeIntervalSince1970: 20),
+            busyExhausted: false,
+            strandedDoorbell: false,
+            epoch: later.epoch
+        )
+        XCTAssertEqual(plan.arrival, .keep(reason: "already_covered"))
+        XCTAssertEqual(plan.rearm, .none)
+
+        var unreadPrompt = later
+        unreadPrompt.prompt = nil
+        XCTAssertEqual(MailboxDoorbell.decide(unreadPrompt), .skip(reason: "already_covered"))
+        XCTAssertFalse(MailboxDoorbell.needsPrompt(unreadPrompt))
+    }
+
+    func testNewEnvelopeRingsOnceAndCoversTheOld() {
+        var arrived = MailboxDoorbell.Input()
+        arrived.unreadIds = ["a", "b"]
+        arrived.coveredIds = MailboxDoorbellSequence.coveredIds(for: ["a"])
+        arrived.rungThisEpoch = false
+        arrived.epoch = "2|prompt"
+        arrived.prompt = .empty
+        XCTAssertEqual(MailboxDoorbell.decide(arrived), .ring)
+        var beforeRead = arrived
+        beforeRead.prompt = nil
+        XCTAssertTrue(MailboxDoorbell.needsPrompt(beforeRead))
+        let covered = MailboxDoorbellSequence.coveredIds(for: arrived.unreadIds)
+        XCTAssertEqual(covered, ["a", "b"])
+
+        var later = arrived
+        later.coveredIds = covered
+        later.epoch = "3|prompt"
+        XCTAssertEqual(MailboxDoorbell.decide(later), .skip(reason: "already_covered"))
+    }
+
+    func testDraftSkipRechecksAndRingsOnceTheDraftIsGone() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        var held = MailboxDoorbell.Input()
+        held.unreadIds = ["env"]
+        held.prompt = .draft
+        held.epoch = "1|prompt"
+        let skipped = MailboxDoorbell.decide(held)
+        XCTAssertEqual(skipped, .skip(reason: "draft"))
+        let waiting = MailboxDoorbellSequence.plan(
+            decision: skipped,
+            attempts: [],
+            now: start,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            epoch: held.epoch
+        )
+        XCTAssertEqual(waiting.rearm, .after(MailboxDoorbellSequence.draftRecheckDelays[0]))
+
+        var cleared = held
+        cleared.prompt = .empty
+        cleared.now = start.addingTimeInterval(5)
+        let decision = MailboxDoorbell.decide(cleared)
+        XCTAssertEqual(decision, .ring)
+        let plan = MailboxDoorbellSequence.plan(
+            decision: decision,
+            attempts: [],
+            now: cleared.now,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            draftWatch: waiting.draftWatch,
+            epoch: cleared.epoch
+        )
+        XCTAssertEqual(plan.arrival, .ring)
+        XCTAssertEqual(plan.rearm, .none)
+        XCTAssertNil(plan.draftWatch)
+    }
+
+    func testPersistentDraftStopsRecheckingAfterTheBound() {
+        let start = Date(timeIntervalSince1970: 0)
+        var watch: MailboxDoorbellSequence.DraftWatch?
+        var now = start
+        var scheduled: [TimeInterval] = []
+        for _ in 0..<40 {
+            let step = MailboxDoorbellSequence.nextDraftRecheck(
+                watch: watch,
+                epoch: "1|prompt",
+                now: now
+            )
+            watch = step.watch
+            guard case .after(let delay) = step.rearm else { break }
+            scheduled.append(delay)
+            now = now.addingTimeInterval(delay)
+        }
+        XCTAssertEqual(Array(scheduled.prefix(3)), MailboxDoorbellSequence.draftRecheckDelays)
+        XCTAssertFalse(scheduled.dropFirst(3).contains { $0 != MailboxDoorbellSequence.draftRecheckInterval })
+        XCTAssertLessThanOrEqual(now.timeIntervalSince(start), MailboxDoorbellSequence.draftRecheckBound)
+        XCTAssertGreaterThan(scheduled.count, 3)
+
+        let stopped = MailboxDoorbellSequence.nextDraftRecheck(
+            watch: watch,
+            epoch: "1|prompt",
+            now: now
+        )
+        XCTAssertEqual(stopped.rearm, .none)
+        let still = MailboxDoorbellSequence.nextDraftRecheck(
+            watch: stopped.watch,
+            epoch: "1|prompt",
+            now: now.addingTimeInterval(60)
+        )
+        XCTAssertEqual(still.rearm, .none)
+
+        let turned = MailboxDoorbellSequence.nextDraftRecheck(
+            watch: still.watch,
+            epoch: "2|prompt",
+            now: now
+        )
+        XCTAssertEqual(turned.rearm, .after(MailboxDoorbellSequence.draftRecheckDelays[0]))
+    }
+
     func testPrePasteFailureLeavesTheIdlePeriodUnconsumed() {
         let now = Date(timeIntervalSince1970: 30)
         var ledger = MailboxDoorbell.Ledger()

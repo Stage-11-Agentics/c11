@@ -5992,6 +5992,7 @@ final class Workspace: Identifiable, ObservableObject {
             bufferedAt: Date()
         )
         let captureNote = MailboxDoorbellCaptureNote()
+        var ringEpoch = "none"
         let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
         let admitted = MailboxStdinDelivery.deliver(
             state: mailboxStdinState,
@@ -6012,6 +6013,7 @@ final class Workspace: Identifiable, ObservableObject {
                     terminalPanel: terminalPanel,
                     capturePrompt: capturePrompt
                 )
+                ringEpoch = input.epoch
                 if capturePrompt {
                     captureNote.failed = input.prompt == nil
                     captureNote.stranded = input.prompt == .draft
@@ -6034,11 +6036,10 @@ final class Workspace: Identifiable, ObservableObject {
                     )
                     return
                 }
-                let ledger = self.mailboxStdinState.doorbell.ledger(for: surfaceId)
-                let plan = MailboxDoorbellSequence.plan(
+                let plan = self.mailboxDoorbellPlan(
                     decision: decision,
-                    attempts: ledger.attempts,
-                    now: Date(),
+                    surfaceId: surfaceId,
+                    epoch: ringEpoch,
                     busyExhausted: false,
                     strandedDoorbell: reason == "draft" && captureNote.stranded
                 )
@@ -6109,7 +6110,9 @@ final class Workspace: Identifiable, ObservableObject {
             textBoxUnsent: MailboxDoorbellSequence.textBoxHoldsUnsent(terminalPanel.textBoxContent),
             prompt: prompt,
             epoch: epoch,
-            now: now
+            now: now,
+            unreadIds: Set(mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).map(\.id)),
+            coveredIds: ledger.coveredIds
         )
     }
 
@@ -6305,11 +6308,10 @@ final class Workspace: Identifiable, ObservableObject {
             }
         }
         let decision = MailboxDoorbell.decide(input)
-        let ledger = mailboxStdinState.doorbell.ledger(for: surfaceId)
-        let plan = MailboxDoorbellSequence.plan(
+        let plan = mailboxDoorbellPlan(
             decision: decision,
-            attempts: ledger.attempts,
-            now: Date(),
+            surfaceId: surfaceId,
+            epoch: input.epoch,
             busyExhausted: busyExhausted,
             strandedDoorbell: stranded
         )
@@ -6372,6 +6374,31 @@ final class Workspace: Identifiable, ObservableObject {
                 }
             }
         }
+    }
+
+    /// Run the sequence and keep its draft backoff on the ledger. The timer
+    /// is the effect; the watch is what makes the next look the next step.
+    private func mailboxDoorbellPlan(
+        decision: MailboxDoorbell.Decision,
+        surfaceId: UUID,
+        epoch: String,
+        busyExhausted: Bool,
+        strandedDoorbell: Bool
+    ) -> MailboxDoorbellSequence.Plan {
+        let ledger = mailboxStdinState.doorbell.ledger(for: surfaceId)
+        let plan = MailboxDoorbellSequence.plan(
+            decision: decision,
+            attempts: ledger.attempts,
+            now: Date(),
+            busyExhausted: busyExhausted,
+            strandedDoorbell: strandedDoorbell,
+            draftWatch: ledger.draftWatch,
+            epoch: epoch
+        )
+        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+            ledger.draftWatch = plan.draftWatch
+        }
+        return plan
     }
 
     private func scheduleMailboxDoorbellRearm(
@@ -6653,8 +6680,14 @@ final class Workspace: Identifiable, ObservableObject {
             startKind: .turnEnd
         ) { .unavailable }
         guard case .submitted = outcome else { return finish(outcome, inputState, composer) }
-        // The queue stays. The inbox stays. The next idle period rings again
-        // while the file is still unread. This period will not ring twice.
+        // The queue stays. The inbox stays. This submit covers every envelope
+        // unread now, so a later idle edge does not ring them again. A new
+        // envelope rings, and that ring covers the whole unread set.
+        let unreadNow = Set(self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).map(\.id))
+        self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+            ledger.coveredIds = MailboxDoorbellSequence.coveredIds(for: unreadNow)
+            ledger.draftWatch = nil
+        }
         logMailboxDoorbellEntries(
             attempted,
             outcome: .doorbell,

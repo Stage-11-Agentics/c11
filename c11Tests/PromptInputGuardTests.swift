@@ -24,6 +24,31 @@ final class PromptInputClassifierTests: XCTestCase {
 
     private let rule = String(repeating: "─", count: 40)
 
+    func testGrokEmptyBoxIsAnEmptyPrompt() {
+        let top = "╭" + String(repeating: "─", count: 20) + "╮"
+        let prompt = "│ ❯" + String(repeating: " ", count: 16) + "│"
+        let bottom = "╰──────── Grok 4.7 · always-approve ─╯"
+        let input = region([
+            Row(y: 0, spans: [Span(text: top)]),
+            Row(y: 1, spans: [Span(text: prompt)]),
+            Row(y: 2, spans: [Span(text: bottom)]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(input), .init(state: .empty, draftLength: nil))
+    }
+
+    func testGrokDraftStopsAtTheBoxFooter() {
+        let top = "╭" + String(repeating: "─", count: 20) + "╮"
+        let prompt = "│ ❯ hello │"
+        let bottom = "╰──────── Grok 4.7 · always-approve ─╯"
+        let input = region([
+            Row(y: 0, spans: [Span(text: top)]),
+            Row(y: 1, spans: [Span(text: prompt)]),
+            Row(y: 2, spans: [Span(text: bottom)]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(input).state, .draft)
+        XCTAssertEqual(PromptInputClassifier.composerText(input), "hello")
+    }
+
     func testEmptyAndFaintSuggestionAreDistinct() {
         let empty = region([
             Row(y: 0, spans: [Span(text: rule)]),
@@ -669,6 +694,13 @@ final class FeedAnswerSafetyTests: XCTestCase {
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .suggestion, composer: nil, expected: body), .notVisible)
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "FEED-ANSWER", expected: body), .notVisible)
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "operator text", expected: body), .changed)
+        let wrapped = "You have mail: run c11 mailbox recv --ack when you\n  want to receive it."
+        let doorbell = "You have mail: run c11 mailbox recv --ack when you want to receive it."
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: wrapped, expected: doorbell), .matches)
+        XCTAssertEqual(
+            FeedAnswerComposerCheck.compare(state: .draft, composer: wrapped + " extra", expected: doorbell),
+            .changed
+        )
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .dialog, composer: nil, expected: body), .changed)
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .unknown, composer: nil, expected: body), .changed)
     }

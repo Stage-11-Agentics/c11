@@ -171,7 +171,7 @@ enum PromptInputClassifier {
                 if line.y != previous.y + 1 || previous.softWrap != line.wrapContinuation {
                     return Analysis(classification: .unknown, composerText: nil)
                 }
-                if isRule(line) {
+                if isRule(line) || (line.y > region.cursorY && isClosingBoxEdge(line)) {
                     // The composer's closing rule sits below the cursor row. A rule
                     // above it means the typed row was never reached: not empty.
                     if line.y <= region.cursorY {
@@ -292,9 +292,13 @@ enum PromptInputClassifier {
         }
         guard index + 1 < line.scalars.count,
               line.scalars[index].value.value == 0x276F,
-              line.scalars[index + 1].value.value == 0x00A0,
               !line.scalars[index].faint,
               !line.scalars[index + 1].faint else { return nil }
+        let gap = line.scalars[index + 1].value
+        // Claude's live composer uses a non-breaking space. A historical
+        // `❯ ` row and a dialog option use a normal space and stay unknown
+        // unless they sit inside a box, which is Grok's composer.
+        guard gap.value == 0x00A0 || (boxed && gap == " ") else { return nil }
         return PromptPrefix(endIndex: index + 2, isBoxed: boxed, isCodex: false)
     }
 
@@ -395,6 +399,16 @@ enum PromptInputClassifier {
         while end > 0, isWhitespace(scalars[end - 1].value) { end -= 1 }
         guard end > 0, scalars[end - 1].value.value == 0x2502 else { return scalars }
         return Array(scalars[..<(end - 1)])
+    }
+
+    /// Grok closes its composer with `╰── Grok 4.7 … ─╯`. That footer is the
+    /// bottom of the box, not text the operator typed. A pure horizontal rule
+    /// is handled by `isRule`.
+    private static func isClosingBoxEdge(_ line: Line) -> Bool {
+        let values = line.scalars.map(\.value.value)
+        guard let first = values.first(where: { !isWhitespaceValue($0) }) else { return false }
+        guard first == 0x2570 || first == 0x2514 else { return false }
+        return values.contains(where: { (0x2500...0x257F).contains($0) })
     }
 
     private static func isRule(_ line: Line) -> Bool {

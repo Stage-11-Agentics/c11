@@ -155,6 +155,25 @@ struct MailboxStdinBuffer {
         )
     }
 
+    /// The agent is at its prompt and could be typed into. An operator key
+    /// newer than the last submit does not close this: the doorbell waits
+    /// out that key, then rings. `decide` itself stays `.buffer` until the
+    /// next submit, which is why the ring does not wait for `.injectNow`.
+    func promptIsOpen(
+        surfaceId: UUID,
+        isAgentKind: Bool,
+        agentOwnsTerminal: Bool,
+        ignoringInFlight: Bool = false
+    ) -> Bool {
+        if !ignoringInFlight, pushesInFlight.contains(surfaceId) { return false }
+        guard agentOwnsTerminal, isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
+            return false
+        }
+        guard let turn = turns[surfaceId], turn.atPrompt else { return false }
+        if let lastPushAt = lastPushAt[surfaceId], lastPushAt >= turn.since { return false }
+        return true
+    }
+
     /// What a push does once its claims come back to main. The recipient
     /// must still be the kind it was admitted as: mail admitted at an agent's
     /// prompt is never typed into the shell that agent exited to.
@@ -452,8 +471,8 @@ enum MailboxStdinDelivery {
     enum AdmitResult: Equatable {
         case ok(bytes: Int)
         case buffered(bytes: Int)
-        /// The block stayed out of the ordinary push. `effect` says ring,
-        /// wait, or drop this entry. `.push` and `.keep` stay `.buffered`.
+        /// The doorbell line, or a wait. A `.keep` stays `.buffered`.
+        /// The block is never pasted.
         case doorbell(bytes: Int, effect: MailboxDoorbell.Arrival)
     }
 
@@ -498,13 +517,12 @@ enum MailboxStdinDelivery {
         }
     }
 
-    /// Admit one block: enqueue, and push immediately when the gate is open.
+    /// Admit one envelope: enqueue it, and ring when the agent is at its
+    /// prompt. `push` is never called. The inbox copy is not claimed here.
     ///
-    /// The doorbell is the other branch. A live agent TUI keeps the shell
-    /// `.commandRunning` for life, and without a prompt edge this gate
-    /// buffers. `ringInput` is called only on that buffer branch, so an
-    /// open prompt edge still pastes today's `<c11-msg>`. The Bool asks for
-    /// a prompt-screen read; callers pass false first.
+    /// A live agent TUI keeps the shell `.commandRunning` for life. Without
+    /// a prompt edge this gate only enqueues. The Bool asks for a
+    /// prompt-screen read; callers pass false first.
     static func deliver(
         state: MailboxStdinBufferStore,
         surfaceId: UUID,
@@ -515,42 +533,34 @@ enum MailboxStdinDelivery {
         ringInput: ((Bool) -> MailboxDoorbell.Input)? = nil,
         noteRing: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil
     ) -> AdmitResult {
-        var decision = state.buffer.decide(
-            surfaceId: surfaceId,
-            isAgentKind: gate.isAgentKind,
-            agentOwnsTerminal: gate.ownsTerminal,
-            lastOperatorKeyAt: gate.lastOperatorKeyAt
-        )
-        if gate.inputTransactionActive { decision = .buffer }
-        let immediate = decision == .injectNow
-            && state.buffer.pendingCount(surfaceId: surfaceId) == 0
         if let evicted = state.buffer.enqueue(surfaceId: surfaceId, entry: entry) {
             logEvicted(evicted)
         }
         let bytes = entry.block.utf8.count
-        if decision == .injectNow {
-            push(immediate ? entry.id : nil)
-            return immediate ? .ok(bytes: bytes) : .buffered(bytes: bytes)
+        let promptOpen = !gate.inputTransactionActive && state.buffer.promptIsOpen(
+            surfaceId: surfaceId,
+            isAgentKind: gate.isAgentKind,
+            agentOwnsTerminal: gate.ownsTerminal
+        )
+        // `push` stays in the signature so a regression that pastes a block
+        // is visible to tests. Delivery does not call it.
+        _ = push
+        guard promptOpen, let ringInput else {
+            return .buffered(bytes: bytes)
         }
-        if let ringInput {
-            var input = ringInput(false)
-            if MailboxDoorbell.needsPrompt(input) {
-                input = ringInput(true)
-            }
-            let ring = MailboxDoorbell.decide(input)
-            let effect = MailboxDoorbell.arrival(for: ring)
-            noteRing?(ring, effect)
-            switch effect {
-            case .push, .keep(_):
-                break
-            case .drop(_, _):
-                _ = state.buffer.removeQueued(surfaceId: surfaceId, id: entry.id)
-                return .doorbell(bytes: bytes, effect: effect)
-            case .ring, .deferRing(_):
-                return .doorbell(bytes: bytes, effect: effect)
-            }
+        var input = ringInput(false)
+        if MailboxDoorbell.needsPrompt(input) {
+            input = ringInput(true)
         }
-        return .buffered(bytes: bytes)
+        let ring = MailboxDoorbell.decide(input)
+        let effect = MailboxDoorbell.arrival(for: ring)
+        noteRing?(ring, effect)
+        switch effect {
+        case .keep:
+            return .buffered(bytes: bytes)
+        case .ring, .deferRing:
+            return .doorbell(bytes: bytes, effect: effect)
+        }
     }
 
     /// Gate check, drain, and `beginPush`. Nil means the push did not start

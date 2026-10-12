@@ -5961,18 +5961,12 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxDispatcher = dispatcher
     }
 
-    /// Decide whether to push a framed `<c11-msg>` block into the recipient
-    /// PTY now or buffer it (gate rules: `MailboxStdinBuffer`). Runs on the
-    /// main actor (the handler's writer hop) and does no file I/O: a push
-    /// claims its envelopes off-main (`startMailboxPush`). The dispatcher has
-    /// already copied the envelope into the recipient's filesystem inbox, so
-    /// a buffered (or even dropped) block is still reachable via
-    /// `c11 mailbox recv --drain`.
-    ///
-    /// `.ok` means the push has started; if it cannot finish, a later
-    /// `skipped`, `claim_failed` or `closed` line in the dispatch log says
-    /// why, and `mailbox.delivered` `via: "push"` fires only once the submit
-    /// Return is dispatched.
+    /// Ring or buffer. The typed text is the one doorbell line, never a
+    /// `<c11-msg>` block. Runs on the main actor (the handler's writer hop)
+    /// and does no file I/O: the ring checks the inbox off-main and does not
+    /// claim it. The dispatcher has already copied the envelope into the
+    /// recipient's filesystem inbox, so `c11 mailbox recv` and the hook drain
+    /// still find it.
     func deliverOrBufferMailboxStdin(
         surfaceId: UUID,
         envelopeId: String,
@@ -6001,13 +5995,7 @@ final class Workspace: Identifiable, ObservableObject {
                     outcome: .evicted
                 )
             },
-            push: { [weak self] immediateId in
-                self?.startMailboxPush(
-                    surfaceId: surfaceId,
-                    trigger: .agentPrompt,
-                    immediateId: immediateId
-                )
-            },
+            push: { _ in },
             ringInput: { [weak self] capturePrompt in
                 guard let self else { return .absent }
                 return self.mailboxDoorbellInput(
@@ -6042,19 +6030,16 @@ final class Workspace: Identifiable, ObservableObject {
         terminalPanel: TerminalPanel,
         capturePrompt: Bool
     ) -> MailboxDoorbell.Input {
-        let snapshot = JournalCoordinator.shared.snapshot(panelID: surfaceId)
         let attention = PanelMetadataStore.shared.attentionSnapshot(
             workspaceId: id,
             surfaceId: surfaceId
         )
         let ledger = mailboxStdinState.doorbell.ledger(for: surfaceId)
         let now = Date()
-        let phase = snapshot?.phase
-        let epoch = MailboxDoorbell.epoch(
-            sinceMs: snapshot?.sinceMs ?? 0,
-            phase: phase?.rawValue ?? "",
-            turnOutcome: snapshot?.turnOutcome
-        )
+        let turn = mailboxStdinState.buffer.agentTurn(surfaceId: surfaceId)
+        let epoch = turn.map {
+            MailboxDoorbell.promptEpoch(since: $0.since, atPrompt: $0.atPrompt)
+        } ?? "none"
         let prompt: PromptInputState?
         if capturePrompt {
             prompt = mailboxDoorbellPrompt(terminalPanel: terminalPanel)
@@ -6068,12 +6053,6 @@ final class Workspace: Identifiable, ObservableObject {
             inFlight: ledger.inFlight,
             flagged: attention.isFlagged,
             suppressed: attention.suppressed,
-            working: phase == .working,
-            waiting: phase == .blocked,
-            confirmedLive: snapshot.map { !$0.isHistorical } ?? false,
-            phaseIdle: phase == .idle,
-            turnOutcomeCompleted: snapshot?.turnOutcome == "completed",
-            reportsBlocked: snapshot?.adapter.capabilities.contains("blocked") ?? false,
             rungThisEpoch: ledger.rung(in: epoch),
             recentAttempts: ledger.rings(at: now),
             focused: focusedPanelId == surfaceId,
@@ -6112,29 +6091,32 @@ final class Workspace: Identifiable, ObservableObject {
         return raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "off"
     }
 
-    /// A ring refusal worth a dispatch line. Working mail and today's paste
-    /// path stay quiet: a working seat shows no doorbell line.
+    /// A ring refusal worth a dispatch line. An in-flight check and an empty
+    /// queue stay quiet. A rate cap is its own outcome.
     private func logMailboxDoorbell(
         entry: MailboxStdinBuffer.Entry,
         effect: MailboxDoorbell.Arrival
     ) {
+        logMailboxDoorbellEffect([entry], effect: effect)
+    }
+
+    private func logMailboxDoorbellEffect(
+        _ entries: [MailboxStdinBuffer.Entry],
+        effect: MailboxDoorbell.Arrival
+    ) {
         switch effect {
-        case .ring, .push:
+        case .ring:
             return
         case .deferRing(_):
-            logMailboxDoorbellEntries([entry], outcome: .doorbellSkipped, reason: "operator_active")
-        case .drop(let reason, let capped):
-            logMailboxDoorbellEntries(
-                [entry],
-                outcome: capped ? .doorbellCapped : .doorbellSkipped,
-                reason: reason
-            )
+            logMailboxDoorbellEntries(entries, outcome: .doorbellSkipped, reason: "operator_active")
         case .keep(let reason):
             switch reason {
-            case "working", "no_mail", "in_flight":
+            case "no_mail", "in_flight":
                 return
+            case "rate_capped":
+                logMailboxDoorbellEntries(entries, outcome: .doorbellCapped, reason: reason)
             default:
-                logMailboxDoorbellEntries([entry], outcome: .doorbellSkipped, reason: reason)
+                logMailboxDoorbellEntries(entries, outcome: .doorbellSkipped, reason: reason)
             }
         }
     }
@@ -6157,7 +6139,8 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    /// Deliver-path effect. A drop already removed only the new entry.
+    /// Deliver-path effect. A keep leaves the queue so the next idle period
+    /// can ring. Nothing here types a block.
     private func performMailboxDoorbell(
         surfaceId: UUID,
         terminalPanel: TerminalPanel,
@@ -6169,20 +6152,23 @@ final class Workspace: Identifiable, ObservableObject {
             startMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel)
         case .deferRing(let after):
             scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: after)
-        case .drop(_, _):
-            mailboxDoorbellDeferTokens.removeValue(forKey: surfaceId)
-        case .push, .keep(_):
+        case .keep:
             break
         }
     }
 
-    /// After the stop-hook flush. A flush that already delivered the queue is
-    /// not also a ring. Mail still queued was buffered while the agent was
-    /// working; ring once now if that seat is an idle Claude Code or OpenCode.
-    /// The stop hook does not always paste first.
+    /// Prompt-edge flush and quiet-window recheck. The agent is at its
+    /// prompt; type the doorbell line if the safety checks allow it.
     private func ringMailboxDoorbellIfStillBuffered(surfaceId: UUID) {
         guard mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0,
               let terminalPanel = panels[surfaceId] as? TerminalPanel else { return }
+        let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
+        guard !gate.inputTransactionActive,
+              mailboxStdinState.buffer.promptIsOpen(
+                  surfaceId: surfaceId,
+                  isAgentKind: gate.isAgentKind,
+                  agentOwnsTerminal: gate.ownsTerminal
+              ) else { return }
         var input = mailboxDoorbellInput(
             surfaceId: surfaceId,
             terminalPanel: terminalPanel,
@@ -6195,17 +6181,12 @@ final class Workspace: Identifiable, ObservableObject {
                 capturePrompt: true
             )
         }
-        guard let effect = MailboxDoorbell.arrivalAfterIdleFlush(
-            delivered: false,
-            stillPending: true,
-            input: input
-        ) else { return }
+        let effect = MailboxDoorbell.arrival(for: MailboxDoorbell.decide(input))
         applyBufferedDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, effect: effect)
     }
 
-    /// Idle-edge and quiet-window recheck. A drop here does not take the
-    /// queue: a failed ring, or a cap that never rang, still flushes
-    /// `<c11-msg>` at the next prompt edge. Only a submitted ring takes it.
+    /// Idle-edge and quiet-window recheck. A keep does not take the queue:
+    /// unread mail rings again on the next idle period.
     private func applyBufferedDoorbell(
         surfaceId: UUID,
         terminalPanel: TerminalPanel,
@@ -6222,15 +6203,11 @@ final class Workspace: Identifiable, ObservableObject {
                 reason: "operator_active"
             )
             scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: after)
-        case .drop(let reason, let capped):
-            mailboxDoorbellDeferTokens.removeValue(forKey: surfaceId)
-            logMailboxDoorbellEntries(
+        case .keep:
+            logMailboxDoorbellEffect(
                 mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
-                outcome: capped ? .doorbellCapped : .doorbellSkipped,
-                reason: reason
+                effect: effect
             )
-        case .push, .keep(_):
-            break
         }
     }
 
@@ -6243,49 +6220,75 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    /// One quiet-window recheck. If the prompt edge opened while we waited,
-    /// paste today's block and do not also ring.
+    /// One quiet-window recheck. Ring if the prompt is still open. Never paste.
     private func recheckMailboxDoorbell(surfaceId: UUID, token: UUID) {
         guard mailboxDoorbellDeferTokens[surfaceId] == token else { return }
         mailboxDoorbellDeferTokens.removeValue(forKey: surfaceId)
-        guard mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0,
-              let terminalPanel = panels[surfaceId] as? TerminalPanel else { return }
-        let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
-        if !gate.inputTransactionActive,
-           mailboxStdinState.buffer.decide(
-               surfaceId: surfaceId,
-               isAgentKind: gate.isAgentKind,
-               agentOwnsTerminal: gate.ownsTerminal,
-               lastOperatorKeyAt: gate.lastOperatorKeyAt
-           ) == .injectNow {
-            startMailboxPush(surfaceId: surfaceId, trigger: .agentPrompt, immediateId: nil)
-            return
+        ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+    }
+
+    /// Confirm the inbox still holds the queued mail, then type the line.
+    /// The check is off the main actor. It does not claim. Marks the idle
+    /// period only once typing starts, so a drain that already took the file
+    /// does not consume the period.
+    private func startMailboxDoorbell(surfaceId: UUID, terminalPanel _: TerminalPanel) {
+        let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
+        guard !queued.isEmpty, let dispatcher = mailboxDispatcher else { return }
+        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+            ledger.reserve()
         }
-        var input = mailboxDoorbellInput(
-            surfaceId: surfaceId,
-            terminalPanel: terminalPanel,
-            capturePrompt: false
-        )
-        if MailboxDoorbell.needsPrompt(input) {
-            input = mailboxDoorbellInput(
-                surfaceId: surfaceId,
-                terminalPanel: terminalPanel,
-                capturePrompt: true
+        let ids = queued.map(\.id)
+        let inbox = MailboxLayout.inboxURL(state: dispatcher.stateURL, workspaceId: id, panelId: surfaceId)
+        Self.mailboxPushIOQueue.async { [weak self] in
+            let live = Set(ids.filter { MailboxIO.isPending(id: $0, inbox: inbox) })
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.finishMailboxDoorbellStat(
+                        surfaceId: surfaceId,
+                        queued: queued,
+                        liveIds: live,
+                        dispatcher: dispatcher
+                    )
+                }
+            }
+        }
+    }
+
+    private func finishMailboxDoorbellStat(
+        surfaceId: UUID,
+        queued: [MailboxStdinBuffer.Entry],
+        liveIds: Set<String>,
+        dispatcher: MailboxDispatcher
+    ) {
+        let gone = queued.filter { !liveIds.contains($0.id) }
+        for entry in gone {
+            _ = mailboxStdinState.buffer.removeQueued(surfaceId: surfaceId, id: entry.id)
+            dispatcher.logStdinLifecycle(
+                id: entry.id,
+                recipient: entry.recipientName,
+                outcome: .skipped
             )
         }
-        guard let effect = MailboxDoorbell.arrivalAfterIdleFlush(
-            delivered: false,
-            stillPending: true,
-            input: input
-        ) else { return }
-        applyBufferedDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, effect: effect)
+        let live = queued.filter { liveIds.contains($0.id) }
+        guard !live.isEmpty, let terminalPanel = panels[surfaceId] as? TerminalPanel else {
+            mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+            return
+        }
+        typeMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live)
     }
 
     /// Type the invitation. Marks the epoch even when the paste cannot start,
     /// so this idle period is not retried. Does not activate the app or change focus.
-    private func startMailboxDoorbell(surfaceId: UUID, terminalPanel: TerminalPanel) {
-        let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
-        guard !queued.isEmpty else { return }
+    private func typeMailboxDoorbell(
+        surfaceId: UUID,
+        terminalPanel: TerminalPanel,
+        queued: [MailboxStdinBuffer.Entry]
+    ) {
+        guard !queued.isEmpty else {
+            mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+            return
+        }
         let input = mailboxDoorbellInput(
             surfaceId: surfaceId,
             terminalPanel: terminalPanel,
@@ -6399,6 +6402,9 @@ final class Workspace: Identifiable, ObservableObject {
         ) {
             return fail(outcome)
         }
+        guard mailboxAgentOwnsTerminal(surfaceId: surfaceId) else {
+            return fail(.targetLost)
+        }
         panel.surface.armFeedAnswerFlagLowerSuppression()
         let handedOff = panel.surface.sendKeyNow(.returnKey, captureNativeHandoff: true)
         panel.surface.clearFeedAnswerFlagLowerSuppression()
@@ -6407,13 +6413,10 @@ final class Workspace: Identifiable, ObservableObject {
             startKind: .turnEnd
         ) { .unavailable }
         guard case .submitted = outcome else { return fail(outcome) }
-        let taken = MailboxDoorbell.commitFlushSuppression(
-            buffer: &mailboxStdinState.buffer,
-            surfaceId: surfaceId,
-            submitted: true
-        )
+        // The queue stays. The inbox stays. The next idle period rings again
+        // while the file is still unread. This period will not ring twice.
         logMailboxDoorbellEntries(
-            taken.isEmpty ? attempted : taken,
+            attempted,
             outcome: .doorbell,
             reason: "submitted",
             bytes: MailboxDoorbell.text.utf8.count
@@ -6436,240 +6439,35 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxDoorbellDeferTokens = mailboxDoorbellDeferTokens.filter { validSurfaceIds.contains($0.key) }
     }
 
-    /// Flush buffered `<c11-msg>` blocks for a tab that just reached a safe
-    /// moment: an agent's prompt edge or a shell's return to `.promptIdle`.
+    /// An agent's prompt edge rings. A shell prompt types nothing and drops
+    /// the queue; the inbox still holds the envelopes.
     private func flushBufferedMailboxStdin(
         surfaceId: UUID,
         trigger: MailboxStdinBuffer.FlushTrigger
     ) {
-        startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
+        switch trigger {
+        case .agentPrompt:
+            ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+        case .shellPrompt:
+            let dropped = mailboxStdinState.buffer.takeQueue(surfaceId: surfaceId)
+            guard let dispatcher = mailboxDispatcher else { return }
+            for entry in dropped {
+                dispatcher.logStdinLifecycle(
+                    id: entry.id,
+                    recipient: entry.recipientName,
+                    outcome: .expired
+                )
+            }
+        }
     }
 
-    /// Serial queue for the push's inbox claims and claim rollbacks. Serial,
-    /// so a rollback always lands before the next push's claim of the same
-    /// envelope.
+    /// Off-main inbox existence checks for the doorbell. Serial so a check
+    /// observes a claim that a drain started before it.
     private static let mailboxPushIOQueue = DispatchQueue(
         label: "com.stage11.c11.mailbox.push-io",
         qos: .utility
     )
 
-    /// One push, in C3 order: (main) re-check the gate and take the queued
-    /// entries → (off-main) claim each envelope from the inbox → (main) paste
-    /// the claimed blocks as one paste and one submit → (after the Return is
-    /// dispatched) emit `mailbox.delivered`; if it never is, undo the claims.
-    /// Only one push per tab is in flight; anything arriving meanwhile
-    /// buffers behind it.
-    private func startMailboxPush(
-        surfaceId: UUID,
-        trigger: MailboxStdinBuffer.FlushTrigger,
-        immediateId: String?
-    ) {
-        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
-              let dispatcher = mailboxDispatcher else { return }
-        let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
-        guard let prepared = MailboxStdinDelivery.prepare(
-            state: mailboxStdinState,
-            surfaceId: surfaceId,
-            trigger: trigger,
-            now: Date(),
-            gate: gate
-        ) else { return }
-        for entry in prepared.expired {
-            dispatcher.logStdinLifecycle(id: entry.id, recipient: entry.recipientName, outcome: .expired)
-        }
-        guard prepared.started else { return }
-
-        let entries = prepared.fresh
-        let admittedTurn = prepared.admittedTurn
-        let admittedInputEpoch = terminalPanel.surface.inputTransactionEpoch
-        let inbox = MailboxLayout.inboxURL(state: dispatcher.stateURL, workspaceId: id, panelId: surfaceId)
-        Self.mailboxPushIOQueue.async { [weak self] in
-            let claimed = MailboxStdinDelivery.claim(
-                entries: entries,
-                inbox: inbox,
-                logSkipped: { entry in
-                    dispatcher.logStdinLifecycle(
-                        id: entry.id,
-                        recipient: entry.recipientName,
-                        outcome: .skipped
-                    )
-                },
-                logFailed: { entry, code in
-                    dispatcher.logStdinClaimFailed(
-                        id: entry.id,
-                        recipient: entry.recipientName,
-                        errno: code
-                    )
-                }
-            )
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else {
-                        Self.undoMailboxClaims(claimed, inbox: inbox)
-                        return
-                    }
-                    self.finishMailboxPush(
-                        surfaceId: surfaceId,
-                        claimed: claimed,
-                        trigger: trigger,
-                        admittedTurn: admittedTurn,
-                        admittedInputEpoch: admittedInputEpoch,
-                        immediateId: immediateId,
-                        inbox: inbox,
-                        dispatcher: dispatcher
-                    )
-                }
-            }
-        }
-    }
-
-    private func finishMailboxPush(
-        surfaceId: UUID,
-        claimed: [MailboxStdinBuffer.Entry],
-        trigger: MailboxStdinBuffer.FlushTrigger,
-        admittedTurn: MailboxStdinBuffer.AgentTurn?,
-        admittedInputEpoch: UInt64,
-        immediateId: String?,
-        inbox: URL,
-        dispatcher: MailboxDispatcher
-    ) {
-        let terminalPanel = panels[surfaceId] as? TerminalPanel
-        let gate = terminalPanel.map {
-            mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: $0)
-        } ?? MailboxStdinDelivery.Gate(panelPresent: false)
-        switch MailboxStdinDelivery.complete(
-            state: mailboxStdinState,
-            surfaceId: surfaceId,
-            claimed: claimed,
-            trigger: trigger,
-            admittedTurn: admittedTurn,
-            admittedInputEpoch: admittedInputEpoch,
-            gate: gate
-        ) {
-        case .finished(let retry):
-            if retry { retryMailboxPush(surfaceId: surfaceId) }
-            return
-        case .undo(let entries, let lines, let retry):
-            Self.undoMailboxClaims(entries, inbox: inbox)
-            logMailboxLines(lines, dispatcher: dispatcher)
-            if retry { retryMailboxPush(surfaceId: surfaceId) }
-            return
-        case .paste(let entries, let block):
-            guard let terminalPanel else { return }
-            pasteMailboxPush(
-                surfaceId: surfaceId,
-                terminalPanel: terminalPanel,
-                entries: entries,
-                block: block,
-                trigger: trigger,
-                admittedTurn: admittedTurn,
-                immediateId: immediateId,
-                inbox: inbox,
-                dispatcher: dispatcher
-            )
-        }
-    }
-
-    /// Paste the claimed blocks and submit one Return, then record the result
-    /// through `MailboxStdinDelivery.notePasteResult`.
-    private func pasteMailboxPush(
-        surfaceId: UUID,
-        terminalPanel: TerminalPanel,
-        entries: [MailboxStdinBuffer.Entry],
-        block: String,
-        trigger: MailboxStdinBuffer.FlushTrigger,
-        admittedTurn: MailboxStdinBuffer.AgentTurn?,
-        immediateId: String?,
-        inbox: URL,
-        dispatcher: MailboxDispatcher
-    ) {
-        let pastedAt = Date()
-        // The full verdict runs again just before the Return: the agent may
-        // have exited, lost the terminal, started a turn, or the operator may
-        // have typed inside the paste-settle window. A bracketed paste alone
-        // never executes, so withholding the Return keeps it inert.
-        var preReturnVerdict: MailboxStdinBuffer.PushVerdict = .requeue
-        let stillTheRecipient: () -> Bool = { [weak self, weak terminalPanel] in
-            guard let self, let terminalPanel else {
-                preReturnVerdict = .drop
-                return false
-            }
-            preReturnVerdict = self.mailboxPushVerdict(
-                surfaceId: surfaceId,
-                terminalPanel: terminalPanel,
-                trigger: trigger,
-                admittedTurn: admittedTurn
-            )
-            return preReturnVerdict == .paste
-        }
-        terminalPanel.surface.sendSubmitFormText(
-            block,
-            shouldSubmit: stillTheRecipient
-        ) { [weak self] dispatched in
-            if dispatched {
-                for entry in entries {
-                    EventEmitter.shared.emitMailboxDelivered(
-                        workspace: self?.id ?? dispatcher.workspaceId,
-                        id: entry.id,
-                        recipient: entry.recipientName,
-                        surface: surfaceId,
-                        via: "push"
-                    )
-                }
-            } else {
-                Self.undoMailboxClaims(entries, inbox: inbox)
-            }
-            guard let self else {
-                let outcome: MailboxDispatchLog.HandlerOutcome = dispatched ? .flushed : .closed
-                for entry in entries where dispatched ? entry.id != immediateId : true {
-                    dispatcher.logStdinLifecycle(
-                        id: entry.id,
-                        recipient: entry.recipientName,
-                        outcome: outcome,
-                        bytes: dispatched ? entry.block.utf8.count : nil
-                    )
-                }
-                return
-            }
-            let recorded = MailboxStdinDelivery.notePasteResult(
-                state: self.mailboxStdinState,
-                surfaceId: surfaceId,
-                entries: entries,
-                immediateId: immediateId,
-                dispatched: dispatched,
-                typedAt: pastedAt,
-                preReturnVerdict: preReturnVerdict,
-                panelPresent: (self.panels[surfaceId] as? TerminalPanel) != nil
-            )
-            self.logMailboxLines(recorded.lines, dispatcher: dispatcher)
-            if recorded.retry {
-                self.retryMailboxPush(surfaceId: surfaceId)
-            }
-        }
-    }
-
-    private func logMailboxLines(
-        _ lines: [MailboxStdinDelivery.LogLine],
-        dispatcher: MailboxDispatcher
-    ) {
-        for line in lines {
-            dispatcher.logStdinLifecycle(
-                id: line.entry.id,
-                recipient: line.entry.recipientName,
-                outcome: line.outcome,
-                bytes: line.bytes
-            )
-        }
-    }
-
-    /// After a push ends without typing, retry whatever is still queued: an
-    /// agent that still owns its terminal re-checks its gate; otherwise the
-    /// queue drops (the inbox keeps it).
-    private func retryMailboxPush(surfaceId: UUID) {
-        let trigger: MailboxStdinBuffer.FlushTrigger =
-            mailboxAgentOwnsTerminal(surfaceId: surfaceId) ? .agentPrompt : .shellPrompt
-        startMailboxPush(surfaceId: surfaceId, trigger: trigger, immediateId: nil)
-    }
 
     /// Live gate inputs for one terminal panel. The delivery sequence reads
     /// this instead of reaching into the panel itself.
@@ -6700,39 +6498,6 @@ final class Workspace: Identifiable, ObservableObject {
     func hasLiveAttributedAgentWriter(surfaceId: UUID) -> Bool {
         guard panels[surfaceId] is TerminalPanel else { return false }
         return mailboxAgentOwnsTerminal(surfaceId: surfaceId)
-    }
-
-    /// The push re-check, against live state, for the recipient kind the
-    /// push was admitted as. Used after the claim hop and before the Return.
-    private func mailboxPushVerdict(
-        surfaceId: UUID,
-        terminalPanel: TerminalPanel,
-        trigger: MailboxStdinBuffer.FlushTrigger,
-        admittedTurn: MailboxStdinBuffer.AgentTurn?
-    ) -> MailboxStdinBuffer.PushVerdict {
-        mailboxStdinState.buffer.pushVerdict(
-            surfaceId: surfaceId,
-            admittedAs: trigger,
-            admittedTurn: admittedTurn,
-            lastOperatorKeyAt: terminalPanel.surface.lastOperatorKeyAt,
-            surfaceAttached: terminalPanel.surface.surface != nil,
-            agentOwnsTerminal: trigger == .agentPrompt ? mailboxAgentOwnsTerminal(surfaceId: surfaceId) : true
-        )
-    }
-
-    private static func undoMailboxClaims(_ entries: [MailboxStdinBuffer.Entry], inbox: URL) {
-        guard !entries.isEmpty else { return }
-        mailboxPushIOQueue.async {
-            for entry in entries {
-                MailboxIO.unclaim(id: entry.id, inbox: inbox)
-            }
-            // The unclaimed mail is unread again; the inbox directory is the
-            // recipient panel's UUID.
-            if let panelId = UUID(uuidString: inbox.lastPathComponent),
-               let workspaceId = UUID(uuidString: inbox.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent) {
-                MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: panelId)
-            }
-        }
     }
 
     /// A journal turn edge for the mailbox gate (`JournalMailboxBoundary`).
@@ -6775,9 +6540,6 @@ final class Workspace: Identifiable, ObservableObject {
                 processStartTime: startTime,
                 flush: {
                 self.flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
-                // The stop-hook flush pastes when the prompt edge opened the
-                // gate. Mail still queued was not delivered; ring once.
-                self.ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
             }
             )
         case .submit:

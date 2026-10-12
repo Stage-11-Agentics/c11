@@ -1,9 +1,11 @@
 import Foundation
 
-/// Whether to type the mailbox invitation into an already-idle agent.
+/// Whether to type the one-line mailbox invitation.
 ///
-/// State in, decision and arrival out. The AppKit side only fills `Input`
-/// and performs the effect. It does not activate the app or change focus.
+/// The stdin gate decides the moment (an open agent prompt, including the
+/// quiet-window recheck). This type decides whether that moment may type.
+/// It never asks for a `<c11-msg>` paste. The AppKit side fills `Input` and
+/// performs the effect. It does not activate the app or change focus.
 enum MailboxDoorbell {
     /// Focused panel: an operator key newer than this waits out the rest of
     /// the window. A key exactly this old does not defer.
@@ -13,7 +15,7 @@ enum MailboxDoorbell {
     static let rateWindow: TimeInterval = 600
     static let rateCap = 3
     /// Typed into the agent. Not chrome, so it is not localized.
-    static let text = "You have mail: run c11 mailbox recv when you want to receive it."
+    static let text = "You have mail: run c11 mailbox recv --ack when you want to receive it."
 
     enum Decision: Equatable {
         case ring
@@ -22,16 +24,12 @@ enum MailboxDoorbell {
         case skip(reason: String)
     }
 
-    /// What to do with the entry that was just enqueued.
+    /// What to do with the entry that was just enqueued. There is no paste.
     enum Arrival: Equatable {
-        /// Today's `<c11-msg>` paste.
-        case push
         case ring
         case deferRing(TimeInterval)
-        /// Leave the entry queued for a later prompt-edge flush.
+        /// Leave the entry queued. Nothing is typed.
         case keep(reason: String)
-        /// Remove this entry from the flush queue. The inbox still holds it.
-        case drop(reason: String, capped: Bool)
     }
 
     struct Input: Equatable {
@@ -42,12 +40,6 @@ enum MailboxDoorbell {
         var flagged: Bool = false
         /// Read by callers. Suppression is never a skip: a parent is waiting.
         var suppressed: Bool = false
-        var working: Bool = false
-        var waiting: Bool = false
-        var confirmedLive: Bool = true
-        var phaseIdle: Bool = true
-        var turnOutcomeCompleted: Bool = true
-        var reportsBlocked: Bool = true
         var rungThisEpoch: Bool = false
         var recentAttempts: Int = 0
         var focused: Bool = false
@@ -56,14 +48,7 @@ enum MailboxDoorbell {
         var epoch: String = ""
         var now: Date = Date(timeIntervalSince1970: 0)
 
-        static let absent = Input(
-            hasUnread: false,
-            confirmedLive: false,
-            phaseIdle: false,
-            turnOutcomeCompleted: false,
-            reportsBlocked: false,
-            prompt: nil
-        )
+        static let absent = Input(hasUnread: false, prompt: nil)
     }
 
     /// Per-panel ring memory. Mark the epoch when an attempt starts, including
@@ -82,6 +67,12 @@ enum MailboxDoorbell {
                     count += 1
                 }
             }
+        }
+
+        /// Hold a second ring off while this one's inbox check is in flight.
+        /// Does not consume the idle period.
+        mutating func reserve() {
+            inFlight = true
         }
 
         mutating func beginAttempt(at now: Date, epoch: String) {
@@ -133,18 +124,20 @@ enum MailboxDoorbell {
         "\(sinceMs)|\(phase)|\(turnOutcome ?? "")"
     }
 
+    /// One idle period is one agent prompt edge. The gate's turn clock, not
+    /// the journal phase: a harness that never reports `blocked` still moves
+    /// this when its turn does.
+    static func promptEpoch(since: Date, atPrompt: Bool) -> String {
+        let ms = Int64((since.timeIntervalSince1970 * 1000).rounded())
+        return "\(ms)|\(atPrompt ? "prompt" : "turn")"
+    }
+
     static func decide(_ input: Input) -> Decision {
         if !input.hasUnread { return .skip(reason: "no_mail") }
         if !input.stdinDelivery { return .skip(reason: "not_stdin") }
         if input.optedOut { return .skip(reason: "opted_out") }
         if input.inFlight { return .skip(reason: "in_flight") }
         if input.flagged { return .skip(reason: "flagged") }
-        if input.working { return .skip(reason: "working") }
-        if input.waiting { return .skip(reason: "waiting") }
-        if !input.confirmedLive || !input.phaseIdle || !input.turnOutcomeCompleted {
-            return .skip(reason: "not_idle")
-        }
-        if !input.reportsBlocked { return .skip(reason: "harness_ambiguous") }
         if input.rungThisEpoch { return .skip(reason: "once_per_idle") }
         if input.recentAttempts >= rateCap { return .skip(reason: "rate_capped") }
         if input.focused, let age = input.operatorKeyAge, age < quietWindow {
@@ -158,6 +151,8 @@ enum MailboxDoorbell {
         return .ring
     }
 
+    /// A skip leaves the queue. The next idle period can ring. Nothing maps
+    /// to a block paste.
     static func arrival(for decision: Decision) -> Arrival {
         switch decision {
         case .ring:
@@ -165,16 +160,7 @@ enum MailboxDoorbell {
         case .deferRing(let after):
             return .deferRing(after)
         case .skip(let reason):
-            switch reason {
-            case "harness_ambiguous", "opted_out", "not_idle", "not_stdin":
-                return .push
-            case "once_per_idle":
-                return .drop(reason: reason, capped: false)
-            case "rate_capped":
-                return .drop(reason: reason, capped: true)
-            default:
-                return .keep(reason: reason)
-            }
+            return .keep(reason: reason)
         }
     }
 
@@ -188,10 +174,9 @@ enum MailboxDoorbell {
         return false
     }
 
-    /// Mail that was buffered while the agent was working, observed again
-    /// at the idle edge. A flush that already delivered it is not also a
-    /// ring. Mail still sitting in the queue is rung once when the panel
-    /// is an idle Claude Code or OpenCode seat.
+    /// Mail still queued at an idle edge. A keep (already rung this period,
+    /// capped, opted out, a draft) is not a ring. The queue stays either way,
+    /// so unread mail can ring on the next idle period.
     static func arrivalAfterIdleFlush(
         delivered: Bool,
         stillPending: Bool,
@@ -199,22 +184,7 @@ enum MailboxDoorbell {
     ) -> Arrival? {
         guard !delivered, stillPending else { return nil }
         let effect = arrival(for: decide(input))
-        switch effect {
-        case .push, .keep(_):
-            return nil
-        case .ring, .deferRing(_), .drop(_, _):
-            return effect
-        }
-    }
-
-    /// On a submitted invitation, drop the flush queue so those blocks are
-    /// not pasted later as `<c11-msg>`. A failed submit leaves the queue.
-    static func commitFlushSuppression(
-        buffer: inout MailboxStdinBuffer,
-        surfaceId: UUID,
-        submitted: Bool
-    ) -> [MailboxStdinBuffer.Entry] {
-        guard submitted else { return [] }
-        return buffer.takeQueue(surfaceId: surfaceId)
+        if case .keep = effect { return nil }
+        return effect
     }
 }

@@ -52,7 +52,7 @@ If the panel is an interactive agent and should receive pushed mail, opt in duri
 c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery --value stdin --type string
 ```
 
-c11 pushes only to an interactive agent that owns its terminal: the panel must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's c11 wrapper and Codex's per-launch hooks drain at turn boundaries; Grok relies on the waiting-edge push. `c11 mailbox recv --drain` is the explicit inbox floor.
+c11 pushes only to an interactive agent that owns its terminal: the panel must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's Stop hook (`Resources/bin/claude`) drains at turn end. Codex's wrapper does not: `Resources/bin/codex` passes a notify callback only and installs no hooks. Grok has no per-launch drain hook. Those seats read mail with `c11 mailbox recv --ack` after the doorbell line. `c11 mailbox recv --drain` is the explicit inbox floor.
 
 A direct `c11 send` is refused (nonzero exit, nothing typed) when the target shows a recognized operator draft or question/plan dialog. A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --panel <t> "…" && c11 send-key --panel <t> enter` so a refusal stops the chain. Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
 
@@ -308,58 +308,56 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 
 A turn end read from a transcript counts at the time the agent wrote it, not when c11 read it, and is ignored if a Return was submitted after it: the agent has had input since.
 
-| Recipient agent state | Push behavior |
-|-----------------------|---------------|
-| at its prompt, nothing typed since the last submit | paste and submit now: the mail arrives as a new turn within about a second |
-| mid-turn | **buffer**; at the next real idle, paste everything buffered and submit it as one turn, once. This is the same edge for every harness. Grok's idle is its wrapper `turn_ended` report or a verified transcript turn end. A drain that claimed the file first logs `skipped`, and the push types nothing |
-| the operator typed into its composer since the last submit, or text was placed there with `c11 send --no-submit` | **buffer** until the next turn ends after a submit; no timeout, because a later paste would still splice onto the draft and submit it |
-| no turn edge known yet (an agent c11 has no lifecycle signal for) | **buffer** |
+| Recipient agent state | What gets typed |
+|-----------------------|----------------|
+| at its prompt, composer empty or a suggestion | one doorbell line, submitted as a new turn. The envelope stays in the inbox until `c11 mailbox recv` or the hook drain |
+| mid-turn | nothing now. At the next real idle, one doorbell line. Same edge for every harness. Grok's idle is its wrapper `turn_ended` report or a verified transcript turn end |
+| the operator just typed into the focused panel | nothing for a few seconds. Once quiet, if the composer is still empty and the mail is unread, one doorbell line |
+| a draft, a dialog, or an unreadable prompt | nothing. The mail stays queued |
+| no turn edge known yet | nothing. The inbox holds the mail |
 
 A permission prompt, an `AskUserQuestion` prompt or any other notification never opens the gate; only the lifecycle edges above do. (Claude's Notification and AskUserQuestion hooks report idle with `report_agent_activity idle --source=notification`, which drives the sidebar but is not a turn edge.)
 
 **Only an interactive agent that owns its terminal is ever typed into.** Two guards hold for every harness:
 
 - *Interactive marker.* Each c11 agent wrapper (Claude, Codex, Grok, OpenCode, Pi) exports `C11_AGENT_INTERACTIVE_PID`, its own PID, only when stdin and stdout are terminals and no print, one-shot or background mode is requested (`claude -p`/`--print`/`--bg`/`--background`, `opencode run`; `codex exec`, `grok -p`, `pi -p` bypass the wrapper's agent path entirely). Lifecycle reports carry that PID. A report without it is headless: the panel counts as an agent that is never at its prompt, so its mail is never pasted.
-- *Terminal ownership.* Before it claims, after the claim, and again just before the Return, the push asks the kernel four things, and every one must hold:
+- *Terminal ownership.* Before it types the doorbell line, and again just before the Return, c11 asks the kernel four things, and every one must hold:
   1. That PID is still the process that registered: its start time matches, so a later process reusing the PID never qualifies.
   2. Its process group is the foreground process group of its terminal.
   3. That terminal is the panel's own tty, as reported by shell integration. An agent under `tmux`, `screen` or an editor's terminal inside the panel fails this. A panel whose tty c11 was never told (no shell integration) never receives a push.
   4. The tty is in non-canonical (raw) mode. An interactive TUI waiting for input holds raw mode. A print or one-shot run (`claude -cp`, `codex e`, `grok --single=…`, any form a wrapper does not recognize) leaves the tty canonical, and anything typed there would run in the shell after it exits.
 
-  If any check fails, nothing is typed: the claim is undone and the mail stays in the inbox for a drain.
+  If any check fails, nothing is typed. The mail stays in the inbox for a drain.
 
-**Plain shells are never typed into.** A pasted block plus Return at a shell prompt runs as shell commands, and a busy shell's foreground program (`vim`, a REPL, a build) would take it as input. So a panel with no interactive agent never receives a push, and an agent that exits returns its panel to the shell prompt, which drops anything buffered for it (logged `expired`). All of it stays in the inbox for `recv --drain`.
+**Plain shells are never typed into.** A line plus Return at a shell prompt runs as a shell command, and a busy shell's foreground program (`vim`, a REPL, a build) would take it as input. So a panel with no interactive agent never receives a ring, and an agent that exits returns its panel to the shell prompt, which drops anything buffered for it (logged `expired`). All of it stays in the inbox for `recv --drain`.
 
-**The recipient is re-checked after the claim and again just before the Return.** Each check runs the whole gate: the same agent turn, no operator draft, the agent still owning its terminal. If the agent has exited or lost the terminal, the push is dropped (logged `expired`, claims undone, mail stays in the inbox). If the gate merely closed (a draft, a new turn), the mail is requeued (logged `buffered`). The paste is bracketed, so text that reaches a program without its Return is never submitted.
+**The ring does not claim.** Just before it types, c11 checks that `<inbox>/<ULID>.msg` is still in the inbox root. The check runs off the main thread. Only the line and its submit run on the main thread. The file stays put.
 
-**Claim before typing.** Just before it types, the push claims each envelope by renaming `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg`. Claims run off the main thread; only the paste and its submit run on it.
+- If the file is already gone, a `recv` or a hook drain took it first, and nothing is typed for it (logged `skipped`).
+- The envelope stays unread until `c11 mailbox recv --ack` or the Claude Stop hook claims it. Prompt-submit does not drain. Codex's wrapper does not install a drain hook.
+- A failed submit leaves the queue. The same idle period is not retried. The next idle period rings again while the file is still there.
 
-- If the file is already gone, a `recv --drain` took it first, and the push types nothing for it (logged `skipped`).
-- If the rename fails, the envelope stays in the inbox root and nothing is typed (logged `claim_failed` with its `errno`).
-- If the gate closed while the claim ran (an operator draft, a new turn), the claims are undone and the mail waits for the next edge.
-- `mailbox.delivered` with `via: "push"` fires only once the submit Return has been dispatched. If the panel closes or detaches before that, the claims are undone so a drain still finds the mail (logged `closed`).
+`_read/` is history, never re-delivered. `recv` and the hook drain are what move a file there.
 
-`_read/` is history, never re-delivered.
+Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows the path: rung, held, capped, skipped, or failed with the FeedAnswer code.
 
-Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mailbox trace <id>` shows the full path.
+**Bounds.** Each panel buffers up to 64 envelopes (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, however long that takes, and drops from the queue when the panel returns to a shell prompt. Evicted and expired envelopes remain in the filesystem inbox; `recv --drain` is their floor.
 
-**Bounds.** Each panel buffers up to 64 blocks (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, however long that takes, and drops when the panel returns to a shell prompt. Evicted and expired blocks remain in the filesystem inbox; `recv --drain` is their floor.
-
-**Why you still pull.** The inbox copy is written before any push is attempted. Mail to an agent with no turn signal, mail behind an operator draft, and evicted mail are all still in the inbox, so `c11 mailbox recv --drain` at turn boundaries remains the floor that always works.
+**Why you still pull.** The inbox copy is written before the ring. The ring is only the invitation. `c11 mailbox recv` (or the hook drain) is how the body arrives.
 
 ### Doorbell
 
-An idle Claude Code or OpenCode panel whose mail is sitting in that buffer gets one invitation instead of waiting for a prompt edge that may not open. A live agent TUI keeps the shell command-running for the whole session, and without a prompt edge today's gate holds the block. c11 types:
+Every `mailbox.delivery=stdin` panel gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi all get the same line. c11 types:
 
-`You have mail: run c11 mailbox recv when you want to receive it.`
+`You have mail: run c11 mailbox recv --ack when you want to receive it.`
 
-The panel has to be a confirmed live journal snapshot, phase idle, turn outcome `completed`, with `mailbox.delivery` including `stdin`. Claude Code (`claude_hook`) and OpenCode (`opencode_plugin`) report `blocked`, so idle-after-a-finished-turn is distinct from a permission prompt. Grok (`grok_transcript`), Codex (`codex_notify` and `codex_transcript`), and Pi (`pi_plugin`) do not report `blocked`. They are not rung. Their mail stays on today's prompt-edge paste.
+The moment is the stdin gate: the agent is at its prompt, or it just returned there at the end of a turn. A working agent is not rung. Mail that arrived during the turn rings once at that next prompt edge. The line uses the same empty-or-suggestion prompt check as `c11 feed answer`. A draft, a dialog, or an unreadable prompt is not typed into.
 
-The invitation uses the same empty-or-suggestion prompt check as `c11 feed answer`. A draft, a dialog, or an unreadable prompt is not typed into. A working agent is not rung. Its mail still flushes as `<c11-msg>` at the next prompt edge. Mail buffered during the turn is rung once when the agent goes idle if that flush left it queued. The stop hook does not always deliver first.
+The focused panel waits 3 seconds after an operator key, then rings if it is still idle and the mail is unread. An unfocused panel does not wait. One ring per idle period. More mail before the next turn does not add a second ring. Three attempts per 10 minutes per panel. Reaching the paste counts even when the submit fails, and that idle period is not retried. Waiting out the operator does not count. Unread mail rings again on the next idle period, within the cap.
 
-The focused panel waits 3 seconds after an operator key, then rings if it is still idle and the mail is unread. An unfocused panel does not wait. One ring per idle period. Three attempts per 10 minutes per panel. Reaching the paste counts even when the submit fails, and that idle period is not retried. Waiting out the operator does not count. `mailbox.doorbell=off` (trimmed, any case) keeps today's paste. A flagged panel is not rung. Suppression is not a skip.
+`mailbox.doorbell=off` (trimmed, any case) types nothing. The inbox still holds the mail. A flagged panel is not rung. A suppressed panel is. Nothing here changes focus or activates c11.
 
-A submitted invitation drops those blocks from the flush queue so they are not pasted again. The inbox still holds them, and `c11 mailbox recv` reads it. A failed invitation leaves the queue for the next prompt edge. Nothing here changes focus or activates c11.
+The Claude Stop hook still drains into hook context. That is not typed input. Prompt-submit does not drain (`MailboxDrain.shouldDrain`). Codex's wrapper does not install that hook, and Grok has no per-launch Stop hook, so after the line those seats run `c11 mailbox recv --ack`. Without `--ack`, a tool call's recv refuses and leaves the envelope unread.
 
 ### Explicit inbox drain
 
@@ -376,21 +374,21 @@ Files are sorted lexicographically by ULID, which gives you near-chronological o
 
 `recv --drain` writes each message before it claims the next; if stdout fails (a closed pipe), that message goes back to the inbox and nothing after it is taken. Draining another panel with `--panel <name>` records the delivery under that panel's UUID when the name resolves to one live panel, and without a panel id otherwise, never under the caller's.
 
-**Consuming is a claim, not a delete.** Every consumer (`recv --drain`, a turn-boundary hook, the stdin push) renames `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg` *before* it prints or types the message. The rename is the lock: when two consumers race, exactly one wins and the other finds the file gone and skips it, so each envelope reaches the agent once. A consumer whose injection fails renames the file back. `recv` reads only the inbox root; `_read/` is history (the messages page reads it), never a source for re-delivery.
+**Consuming is a claim, not a delete.** `recv --drain` and a turn-boundary hook rename `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg` *before* printing the message. The doorbell does not. The rename is the lock: when two consumers race, exactly one wins and the other finds the file gone and skips it, so each envelope is printed once. A consumer whose print fails renames the file back. `recv` reads only the inbox root; `_read/` is history (the messages page reads it), never a source for re-delivery.
 
 **Recording drain deliveries.** A drain (`recv --drain` or a hook) never tells c11 over the socket what it delivered. It writes receipts atomically into `mailboxes/_receipts/<ULID>.receipt` of the workspace whose inbox held the mail, splitting a large batch so each receipt stays within 512 deliveries and 64 KB. The app watches every live workspace's spool, turns each delivery into a `mailbox.delivered` event with `via: "drain"` (panel = the recipient panel), and deletes the receipt; at launch it also sweeps every workspace's spool. So a paused, quit or crashed c11 records the delivery when it next runs, exactly once: duplicates are skipped, and a receipt left by a run that died after recording it is checked against the event logs first. Every delivery is recorded under a globally unique ULID: the envelope's own, or for a file dropped into an inbox by hand (`0note.msg`) a fresh ULID it is claimed under, so its body is at `_read/<ULID>.msg`. A file that is not a receipt goes to `_receipts/_rejected/`; inside a receipt, an invalid entry is dropped and listed in `_rejected/<receipt>.dropped` while the valid ones are recorded.
 
 ### Turn-boundary drain (harness hooks)
 
-An agent that is busy when mail arrives sees it when its turn ends, through its harness's Stop hook: the stop is blocked with the messages as the reason, and the agent takes them as its own next turn. Nothing to call by hand; c11's launch wrappers wire this up inside c11 panels.
+Claude Code, when busy, sees waiting mail at its next Stop hook: the stop is blocked with the messages as the reason, and Claude takes one more turn. `Resources/bin/claude` is the only wrapper that runs that hook. Prompt-submit does not drain. Codex and Grok are not wired to it.
 
 Mail is never drained at prompt submit. Added to a turn the operator just started, an agent treats it as non-operator input and does not act on it. So when the operator submits a draft while mail is waiting, the draft's turn runs first and the mail follows as its own turn right after.
 
 | Harness | Stop | How c11 wires it |
 |---|---|---|
 | Claude Code | stop blocked, messages as the reason; Claude takes one more turn | folded into the `c11 claude-hook stop` hook `Resources/bin/claude` already injects via `--settings` |
-| Codex | same (Codex turns the block into a continuation prompt) | `Resources/bin/codex` passes the Stop hook and its trust hash as `-c` session flags, per launch; nothing is written under `~/.codex` |
-| Grok Build | same, on `reason: "end_turn"` only | no per-launch hook path in the Grok TUI; Grok mail relies on stdin push |
+| Codex | does not drain | `Resources/bin/codex` passes `notify` only. It does not pass a Stop hook, a hooks config, or `--enable hooks`. Codex reads the doorbell with `c11 mailbox recv --ack` |
+| Grok Build | does not drain | no per-launch Stop hook; Grok reads the doorbell with `c11 mailbox recv --ack` |
 
 The hook command is:
 
@@ -533,16 +531,16 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin delivery-safe
 | stdin outcome | Meaning |
 |---------------|---------|
 | `buffered`    | recipient not ready (agent mid-turn, operator draft, or no interactive agent reading the terminal); block queued |
-| `flushed`     | a previously-buffered block was injected at the agent's next prompt edge |
+| `flushed`     | a previously-buffered block was injected. Agent stdin rings instead, so this is not the doorbell path |
 | `expired`     | dropped because no agent was left to read it (shell prompt, agent exited or lost the terminal); inbox floor holds it |
 | `evicted`     | a buffered block dropped because the per-panel cap was exceeded (inbox floor holds it) |
-| `skipped`     | the push found the envelope already claimed by a drain; nothing typed |
+| `skipped`     | the ring found the envelope already claimed by a drain; nothing typed |
 | `claim_failed` | the push could not claim the envelope (`errno` on the line); it stays in the inbox, nothing typed |
 | `closed`      | after `ok`/`buffered`: the panel closed or detached before the submit Return; the claim was undone |
 | `doorbell`    | the invitation was `started` or `submitted`. `bytes` is the invitation, not the envelope |
-| `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `draft`, `dialog`, `unknown_prompt`, `unavailable`, or `waiting` |
-| `doorbell_capped` | this panel already used 3 attempts in the last 10 minutes. `reason` is `rate_capped` |
-| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `pasted_not_submitted`, or `submit_unconfirmed`. The blocks stay queued |
+| `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `opted_out`, `not_stdin`, `draft`, `dialog`, `unknown_prompt`, or `unavailable` |
+| `doorbell_capped` | this panel already used 3 attempts in the last 10 minutes. `reason` is `rate_capped`. The mail stays queued |
+| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `pasted_not_submitted`, or `submit_unconfirmed`. The mail stays queued |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows
@@ -587,7 +585,7 @@ Inline `body` is capped at 4096 bytes. For bigger content, write the bytes elsew
 c11 mailbox send --to reviewer --body-ref /tmp/diff.patch --body ""
 ```
 
-The dispatcher stores `body_ref` on the envelope and routes normally. Reading the external body is the recipient's responsibility in Stage 2; nothing dereferences it for you.
+The dispatcher stores `body_ref` on the envelope and leaves `body` empty. `c11 mailbox recv` and the hook drain inline the file, up to 4096 UTF-8 bytes, and name the path when the rest does not fit or the file cannot be read. The bytes on disk stay as sent.
 
 ---
 
@@ -595,7 +593,7 @@ The dispatcher stores `body_ref` on the envelope and routes normally. Reading th
 
 - **Tight loops over the mailbox.** It is at-least-once with fsevent latency and a 2 s outer handler timeout. Use it for coordination, not for hot RPC.
 - **Assuming order across senders.** `ts` is sender-attested, not an ordering field. Lexicographic ULID order roughly tracks per-sender wall clock, but two senders racing the outbox can interleave arbitrarily.
-- **Putting huge payloads inline.** Anything past 4096 UTF-8 bytes is rejected at the CLI (and would be rejected by the validator). Use `body_ref` and let the recipient open the file.
+- **Putting huge payloads inline.** Anything past 4096 UTF-8 bytes is rejected at the CLI (and would be rejected by the validator). Use `body_ref`. Recv and the hook drain show the first 4096 bytes and name the path for the rest.
 - **Sending topic-only envelopes via raw file.** They will be accepted by the validator and silently resolve to zero recipients. The CLI rejects this for you; the raw path does not.
 - **Editing files in `_processing/` or `_rejected/`.** The dispatcher owns those directories. `_processing/` is mid-flight scratch; `_rejected/` is forensic state plus a `.err` sidecar.
 - **Treating absent `mailbox.delivery` as "no message".** If the recipient never set `mailbox.delivery`, envelopes still land in their inbox. They just do not get pushed into the PTY. Drain explicitly or set `mailbox.delivery=stdin`.
@@ -629,7 +627,7 @@ What does not work yet (and how the system fails when you try):
 | `c11 mailbox watch` handler             | CLI throws "watch not implemented in Stage 2; use tail."                 |
 | `_processing/` crash recovery           | Envelopes stranded mid-dispatch by a c11 crash stay in `_processing/`.   |
 | Per-panel inbox caps                  | None. A slow drainer can accumulate envelopes without limit.             |
-| `body_ref` read-through                 | Schema accepts it, dispatcher stores it; recipient must read the file.   |
+| `body_ref` read-through                 | Recv and the hook drain inline up to 4096 bytes and name the path.       |
 | Real PTY write-error propagation        | `stdin` handler returns `ok` whenever `sendText` returns. EIO not surfaced.|
 | `c11 mailbox configure` convenience     | Use `c11 set-metadata --key mailbox.delivery --value stdin --type string` directly. |
 

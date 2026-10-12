@@ -65,6 +65,18 @@ enum MailboxIO {
         case failed(errno: Int32)
     }
 
+    /// True when `<inbox>/<id>.msg` is still in the inbox root. A ring checks
+    /// this and does not claim. A drain that already renamed the file into
+    /// `_read/` makes this false.
+    static func isPending(
+        id: String,
+        inbox: URL,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        let source = inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        return fileManager.fileExists(atPath: source.path)
+    }
+
     /// C3 claim: rename `<inbox>/<id>.msg` to `<inbox>/_read/<id>.msg`. The
     /// rename is the lock between the stdin push and `recv --drain`: whoever
     /// renames first owns the message.

@@ -158,11 +158,21 @@ enum FeedAnswerComposerCheck: Equatable {
             return .notVisible
         case .draft:
             guard let composer else { return .changed }
-            if composer == expected { return .matches }
+            if composer == expected || unwrapped(composer) == expected { return .matches }
             return expected.hasPrefix(composer) ? .notVisible : .changed
         case .dialog, .unknown, .unavailable:
             return .changed
         }
+    }
+
+    /// A TUI wraps a long composer onto the next row. That row is the same
+    /// text, not an edit. Newlines and the indent on the continuation are
+    /// presentation. Any other change stays a mismatch.
+    private static func unwrapped(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 

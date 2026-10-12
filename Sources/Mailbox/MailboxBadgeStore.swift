@@ -4,12 +4,14 @@ import Combine
 /// C11-397: live per-panel mail counts for the subtitle bar's mailbox cell.
 ///
 /// No file watchers. The app already performs or records every change to a
-/// panel's inbox: the dispatcher writes deliveries, the stdin push claims in
-/// process, and turn-boundary drains leave receipts the app records. Each of
-/// those reports `inboxChanged`, which recounts that panel with two directory
-/// listings on a utility queue. A reconcile recounts the panels whose cell is
-/// on screen every minute, and every panel the store knows every five
-/// minutes, which catches hand-dropped files.
+/// panel's inbox: the dispatcher writes a delivery and turn-boundary drains
+/// leave receipts. Each of those reports `inboxChanged`, which recounts that
+/// panel with two directory listings on a utility queue. A doorbell ring does
+/// not claim and does not report a change; the envelope is already unread
+/// from the delivery. `recv --ack` claims it and the receipt recounts.
+/// A reconcile recounts the panels whose cell is on screen every minute, and
+/// every panel the store knows every five minutes, which catches hand-dropped
+/// files.
 ///
 /// Main-thread only, except `inboxChanged`, which any thread may call.
 final class MailboxBadgeStore {

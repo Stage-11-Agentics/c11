@@ -2538,7 +2538,8 @@ struct CMUXCLI {
         // Claude hooks have one aggregate budget. Keep it armed through
         // authentication, owner resolution, journal append, and the neutral
         // fallback path; resetting it after connect lets a silent peer or a
-        // credential lookup consume the hook's entire timeout.
+        // credential lookup consume the hook's entire timeout. The one reset
+        // is Stop's, after its filesystem-only mailbox drain (`runClaudeHook`).
         let priorProcessDeadline = SocketClient.processDeadline
         if command == "claude-hook" {
             // Hook auth and compatibility commands each return one line. Do
@@ -2546,7 +2547,7 @@ struct CMUXCLI {
             client.usesSingleLineResponses = true
             SocketClient.processDeadline = min(
                 priorProcessDeadline ?? .distantFuture,
-                Date().addingTimeInterval(0.250)
+                Date().addingTimeInterval(Self.claudeHookSocketWindowSeconds)
             )
         }
         defer {
@@ -4164,7 +4165,7 @@ struct CMUXCLI {
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
-                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft)
+                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft, socketCeiling: priorProcessDeadline)
                 cliTelemetry.breadcrumb("claude-hook.completed")
             } catch let error as CLIError where isAdvisoryHookConnectivityError(error)
                 || error.message == SocketClient.commandTimedOutMessage {
@@ -19069,7 +19070,8 @@ struct CMUXCLI {
         client: SocketClient,
         telemetry: CLISocketSentryTelemetry,
         rawInput: String,
-        journalDraft: JournalDraft?
+        journalDraft: JournalDraft?,
+        socketCeiling: Date?
     ) throws {
         let subcommand = commandArgs.first?.lowercased() ?? "help"
         let hookArgs = Array(commandArgs.dropFirst())
@@ -19291,6 +19293,16 @@ struct CMUXCLI {
                 telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
                 return
             }
+            // C11-401: the drain is filesystem work whose inbox scan can stat
+            // every workspace directory, and it ran inside the window armed
+            // before connect. If the lifecycle report shared that window, a
+            // slow scan would cost the turn's idle edge: the panel would read
+            // as working and mail pushed to it would stay held. The report gets
+            // a fresh window; the claim cutoff still caps the hook.
+            SocketClient.processDeadline = min(
+                socketCeiling ?? .distantFuture,
+                Date().addingTimeInterval(Self.claudeHookSocketWindowSeconds)
+            )
             // Turn ended. Don't consume session or clear PID — Claude is still alive.
             // Notification hook handles user-facing notifications; SessionEnd handles cleanup.
             var workspaceId = fallbackWorkspaceId
@@ -21922,6 +21934,10 @@ extension CMUXCLI {
             return false
         }
     }
+
+    /// One Claude hook socket window: the time its socket requests share
+    /// before the hook gives up on c11 and exits neutral.
+    static let claudeHookSocketWindowSeconds: TimeInterval = 0.250
 
     /// Caps every socket request this hook process makes at the claim
     /// cutoff (`MailboxHookOutput.claimDeadlineSeconds` of process age), write

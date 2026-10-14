@@ -250,3 +250,34 @@ jobs:
             -f context="$GREEN_STATUS_CONTEXT" \
             -f description="Native build, logic and host tests passed" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+  # Issues permission lives only on this job. It does not run on push:
+  # ci-hourly's push to main stays a commit check, and a fork PR cannot
+  # reach this workflow. A failed lane job still fails the run; this job
+  # only files the owner issue.
+  report-lane-owner:
+    needs: [target, build]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.target.result != 'cancelled' && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Tell the lane owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT_TARGET: ${{ needs.target.result }}
+          RESULT_BUILD: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          result=success
+          for one in "$RESULT_TARGET" "$RESULT_BUILD"; do
+            if [ "$one" = "failure" ]; then
+              result=failure
+            fi
+          done
+          ./scripts/ci-scheduled-lane-owner.sh ci-hourly "$result"

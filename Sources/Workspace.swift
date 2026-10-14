@@ -5652,9 +5652,21 @@ final class Workspace: Identifiable, ObservableObject {
         // appearance uses the theme's default context (workspaceColor=nil). The first
         // `applyGhosttyChrome` call — triggered on workspace mount — re-applies with the
         // actual custom color once the Workspace is installed in the sidebar.
+        // Model-only logic tests have no NSApplication. Avoid initializing
+        // GhosttyApp just to seed Bonsplit's initial appearance in that hostless
+        // context; the launched app keeps using Ghostty's real theme values.
+        let initialBackgroundColor: NSColor
+        let initialBackgroundOpacity: Double
+        if NSApp == nil {
+            initialBackgroundColor = .windowBackgroundColor
+            initialBackgroundOpacity = 1.0
+        } else {
+            initialBackgroundColor = GhosttyApp.shared.defaultBackgroundColor
+            initialBackgroundOpacity = GhosttyApp.shared.defaultBackgroundOpacity
+        }
         var appearance = Self.bonsplitAppearance(
-            from: GhosttyApp.shared.defaultBackgroundColor,
-            backgroundOpacity: GhosttyApp.shared.defaultBackgroundOpacity,
+            from: initialBackgroundColor,
+            backgroundOpacity: initialBackgroundOpacity,
             context: nil,
             tokens: ChromeScaleTokens.resolved(from: .standard)
         )

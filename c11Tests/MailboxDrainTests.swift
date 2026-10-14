@@ -11,6 +11,21 @@ import XCTest
 /// that `c11 mailbox recv --hook-format` prints at a turn boundary.
 final class MailboxDrainTests: XCTestCase {
 
+    private final class WorkspaceScanCountingFileManager: FileManager {
+        private let workspacesRootPath: String
+        private(set) var workspacesRootEnumerations = 0
+
+        init(workspacesRoot: URL) {
+            workspacesRootPath = workspacesRoot.path
+            super.init()
+        }
+
+        override func contentsOfDirectory(atPath path: String) throws -> [String] {
+            if path == workspacesRootPath { workspacesRootEnumerations += 1 }
+            return try super.contentsOfDirectory(atPath: path)
+        }
+    }
+
     private var inbox: URL!
 
     override func setUpWithError() throws {
@@ -195,36 +210,214 @@ final class MailboxDrainTests: XCTestCase {
     func testPanelInboxURLsFindsAMovedPanelsInboxInAnotherWorkspace() throws {
         let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
         let panel = UUID(), stale = UUID(), current = UUID(), unrelated = UUID()
-        try FileManager.default.createDirectory(at: workspaceInbox(root, current, panel), withIntermediateDirectories: true)
+        let currentInbox = workspaceInbox(root, current, panel)
+        try FileManager.default.createDirectory(at: currentInbox, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: workspaceInbox(root, unrelated, UUID()), withIntermediateDirectories: true)
+        let envelope = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "moved mail", id: idA, ts: "2026-10-01T12:00:00Z"
+        )
+        try envelope.encode().write(to: currentInbox.appendingPathComponent("\(idA).msg"))
 
-        let found = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel, scanCache: nil)
-        XCTAssertEqual(found.map(\.path), [workspaceInbox(root, current, panel).path])
+        let found = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel)
+        XCTAssertEqual(found.map(\.path), [currentInbox.path])
         XCTAssertEqual(MailboxDrain.workspaceId(ofInbox: found[0]), current)
+        XCTAssertEqual(MailboxDrain.claimPending(inboxes: found).claimed.map(\.id), [idA])
 
-        // The environment's workspace, when it holds an inbox, comes first.
-        try FileManager.default.createDirectory(at: workspaceInbox(root, stale, panel), withIntermediateDirectories: true)
-        let both = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel, scanCache: nil)
-        XCTAssertEqual(both.map(\.path), [workspaceInbox(root, stale, panel).path, workspaceInbox(root, current, panel).path])
+        // An old, now-empty inbox must still trigger the fallback after a move.
+        let staleInbox = workspaceInbox(root, stale, panel)
+        try FileManager.default.createDirectory(at: staleInbox, withIntermediateDirectories: true)
+        let movedAgain = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "second message", id: idB, ts: "2026-10-01T12:01:00Z"
+        )
+        try movedAgain.encode().write(to: currentInbox.appendingPathComponent("\(idB).msg"))
+        let both = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel)
+        XCTAssertEqual(both.map(\.path), [staleInbox.path, currentInbox.path])
+        XCTAssertEqual(MailboxDrain.claimPending(inboxes: both).claimed.map(\.id), [idB])
     }
 
-    func testPanelInboxScanIsReusedWithinItsInterval() throws {
+    func testPanelInboxUsesPendingPreferredPathWithoutWorkspaceScan() throws {
         let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
-        let cache = inbox.deletingLastPathComponent().appendingPathComponent("scan-cache")
-        let panel = UUID(), first = UUID(), later = UUID()
-        try FileManager.default.createDirectory(at: workspaceInbox(root, first, panel), withIntermediateDirectories: true)
+        let panel = UUID(), current = UUID()
+        let directInbox = workspaceInbox(root, current, panel)
+        try FileManager.default.createDirectory(at: directInbox, withIntermediateDirectories: true)
+        for _ in 0..<32 {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(UUID().uuidString, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+        }
+        let envelope = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "direct mail", id: idA, ts: "2026-10-01T12:00:00Z"
+        )
+        try envelope.encode().write(to: directInbox.appendingPathComponent("\(idA).msg"))
+        let fileManager = WorkspaceScanCountingFileManager(workspacesRoot: root)
+
+        let inboxes = MailboxDrain.panelInboxURLs(
+            workspacesRoot: root,
+            preferredWorkspaceId: current,
+            currentWorkspaceId: current,
+            panelId: panel,
+            fileManager: fileManager
+        )
+        let claimed = MailboxDrain.claimPending(inboxes: inboxes, fileManager: fileManager).claimed
+
+        XCTAssertEqual(inboxes.map(\.path), [directInbox.path])
+        XCTAssertEqual(claimed.map(\.id), [idA])
+        XCTAssertEqual(fileManager.workspacesRootEnumerations, 0)
+    }
+
+    func testNoMailStopUsesFreshScanCacheWithoutWorkspaceScan() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let panel = UUID(), preferred = UUID(), retained = UUID()
+        let preferredInbox = workspaceInbox(root, preferred, panel)
+        let retainedInbox = workspaceInbox(root, retained, panel)
+        try FileManager.default.createDirectory(at: preferredInbox, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: retainedInbox, withIntermediateDirectories: true)
+
+        let cache = inbox.deletingLastPathComponent()
+            .appendingPathComponent("mailbox-tab-scan", isDirectory: true)
+            .appendingPathComponent(panel.uuidString.lowercased())
+        try FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try retainedInbox.path.write(to: cache, atomically: true, encoding: .utf8)
         let now = Date()
-        XCTAssertEqual(
-            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, panelId: panel, scanCache: cache, now: now).count, 1
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: cache.path)
+        let fileManager = WorkspaceScanCountingFileManager(workspacesRoot: root)
+
+        let inboxes = MailboxDrain.panelInboxURLs(
+            workspacesRoot: root,
+            preferredWorkspaceId: preferred,
+            panelId: panel,
+            scanCache: cache,
+            scanInterval: 300,
+            now: now,
+            fileManager: fileManager
         )
-        // A move after the scan is not seen until the interval has passed.
-        try FileManager.default.createDirectory(at: workspaceInbox(root, later, panel), withIntermediateDirectories: true)
-        XCTAssertEqual(
-            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, panelId: panel, scanCache: cache, now: now.addingTimeInterval(5)).count, 1
+
+        XCTAssertEqual(inboxes.map(\.path), [preferredInbox.path, retainedInbox.path])
+        XCTAssertEqual(fileManager.workspacesRootEnumerations, 0)
+    }
+
+    func testNoMailStopRefreshesStaleScanCache() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let panel = UUID(), preferred = UUID(), current = UUID()
+        let preferredInbox = workspaceInbox(root, preferred, panel)
+        let currentInbox = workspaceInbox(root, current, panel)
+        try FileManager.default.createDirectory(at: preferredInbox, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: currentInbox, withIntermediateDirectories: true)
+
+        let cache = inbox.deletingLastPathComponent()
+            .appendingPathComponent("mailbox-tab-scan", isDirectory: true)
+            .appendingPathComponent(panel.uuidString.lowercased())
+        try FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try preferredInbox.path.write(to: cache, atomically: true, encoding: .utf8)
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-301)],
+            ofItemAtPath: cache.path
         )
-        XCTAssertEqual(
-            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: nil, panelId: panel, scanCache: cache, now: now.addingTimeInterval(301)).count, 2
+        let fileManager = WorkspaceScanCountingFileManager(workspacesRoot: root)
+
+        let inboxes = MailboxDrain.panelInboxURLs(
+            workspacesRoot: root,
+            preferredWorkspaceId: preferred,
+            panelId: panel,
+            scanCache: cache,
+            scanInterval: 300,
+            now: now,
+            fileManager: fileManager
         )
+
+        XCTAssertEqual(inboxes.map(\.path), [preferredInbox.path, currentInbox.path])
+        XCTAssertEqual(fileManager.workspacesRootEnumerations, 1)
+    }
+
+    func testPanelInboxScansWhenGenericReceiveCannotResolveLiveOwner() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let panel = UUID(), stale = UUID(), current = UUID()
+        let staleInbox = workspaceInbox(root, stale, panel)
+        let currentInbox = workspaceInbox(root, current, panel)
+        try FileManager.default.createDirectory(at: staleInbox, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: currentInbox, withIntermediateDirectories: true)
+        try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "old workspace mail", id: idA, ts: "2026-10-01T12:00:00Z"
+        ).encode().write(to: staleInbox.appendingPathComponent("\(idA).msg"))
+        try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "current workspace mail", id: idB, ts: "2026-10-01T12:01:00Z"
+        ).encode().write(to: currentInbox.appendingPathComponent("\(idB).msg"))
+        let fileManager = WorkspaceScanCountingFileManager(workspacesRoot: root)
+
+        let inboxes = MailboxDrain.panelInboxURLs(
+            workspacesRoot: root,
+            preferredWorkspaceId: stale,
+            scanWhenOwnerUnknown: true,
+            panelId: panel,
+            fileManager: fileManager
+        )
+        let claimed = MailboxDrain.claimPending(inboxes: inboxes, fileManager: fileManager).claimed
+
+        XCTAssertEqual(Set(inboxes.compactMap(MailboxDrain.workspaceId(ofInbox:))), Set([stale, current]))
+        XCTAssertEqual(claimed.map(\.id), [idA, idB])
+        XCTAssertEqual(fileManager.workspacesRootEnumerations, 1)
+    }
+
+    func testPanelInboxIncludesIntermediateWorkspacesAfterMultipleMoves() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let panel = UUID(), stale = UUID(), intermediate = UUID(), current = UUID()
+        let staleInbox = workspaceInbox(root, stale, panel)
+        let intermediateInbox = workspaceInbox(root, intermediate, panel)
+        let currentInbox = workspaceInbox(root, current, panel)
+        try FileManager.default.createDirectory(at: staleInbox, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: intermediateInbox, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: currentInbox, withIntermediateDirectories: true)
+        let staleMail = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "old workspace mail", id: idA, ts: "2026-10-01T12:00:00Z"
+        )
+        let intermediateMail = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "intermediate workspace mail", id: idB, ts: "2026-10-01T12:01:00Z"
+        )
+        let currentMail = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "current workspace mail", id: idC, ts: "2026-10-01T12:02:00Z"
+        )
+        try staleMail.encode().write(to: staleInbox.appendingPathComponent("\(idA).msg"))
+        try intermediateMail.encode().write(to: intermediateInbox.appendingPathComponent("\(idB).msg"))
+        try currentMail.encode().write(to: currentInbox.appendingPathComponent("\(idC).msg"))
+        let fileManager = WorkspaceScanCountingFileManager(workspacesRoot: root)
+
+        let inboxes = MailboxDrain.panelInboxURLs(
+            workspacesRoot: root,
+            preferredWorkspaceId: stale,
+            currentWorkspaceId: current,
+            panelId: panel,
+            fileManager: fileManager
+        )
+        let claimed = MailboxDrain.claimPending(inboxes: inboxes, fileManager: fileManager).claimed
+
+        XCTAssertEqual(Set(inboxes.compactMap(MailboxDrain.workspaceId(ofInbox:))), Set([stale, intermediate, current]))
+        XCTAssertEqual(claimed.map(\.id), [idA, idB, idC])
+        XCTAssertEqual(Set(claimed.compactMap { MailboxDrain.workspaceId(ofInbox: $0.inbox) }), Set([stale, intermediate, current]))
+        XCTAssertEqual(fileManager.workspacesRootEnumerations, 1)
+    }
+
+    func testPanelInboxFallbackRescansAfterPreferredWorkspaceMisses() throws {
+        let root = inbox.deletingLastPathComponent().appendingPathComponent("workspaces", isDirectory: true)
+        let panel = UUID(), stale = UUID(), current = UUID()
+        let staleInbox = workspaceInbox(root, stale, panel)
+        try FileManager.default.createDirectory(at: staleInbox, withIntermediateDirectories: true)
+        XCTAssertEqual(
+            MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel).map(\.path),
+            [staleInbox.path]
+        )
+
+        let currentInbox = workspaceInbox(root, current, panel)
+        try FileManager.default.createDirectory(at: currentInbox, withIntermediateDirectories: true)
+        let envelope = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "after move", id: idA, ts: "2026-10-01T12:00:00Z"
+        )
+        try envelope.encode().write(to: currentInbox.appendingPathComponent("\(idA).msg"))
+
+        let resolved = MailboxDrain.panelInboxURLs(workspacesRoot: root, preferredWorkspaceId: stale, panelId: panel)
+        XCTAssertEqual(resolved.map(\.path), [staleInbox.path, currentInbox.path])
+        XCTAssertEqual(MailboxDrain.claimPending(inboxes: resolved).claimed.map(\.id), [idA])
     }
 
     func testClaimDeadline() {
@@ -461,12 +654,25 @@ final class MailboxDrainTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: Data(rendered.utf8)) as? [String: Any])
     }
 
-    func testStopPayloadBlocksWithMessagesAsReason() throws {
+    func testClaudeStopPayloadDeliversAsAdditionalContextWithoutBlockingError() throws {
         let json = try decode(MailboxHookOutput.render(
-            MailboxHookOutput.payload(context: "ctx")
+            MailboxHookOutput.payload(context: "ctx", format: .claude)
         ))
-        XCTAssertEqual(json["decision"] as? String, "block")
-        XCTAssertEqual(json["reason"] as? String, "ctx")
+        let specific = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
+        XCTAssertEqual(specific["hookEventName"] as? String, "Stop")
+        XCTAssertEqual(specific["additionalContext"] as? String, "ctx")
+        XCTAssertNil(json["decision"])
+        XCTAssertNil(json["reason"])
+    }
+
+    func testCodexAndGrokStopPayloadsBlockWithMessagesAsReason() throws {
+        for format in [MailboxHookFormat.codex, .grok] {
+            let json = try decode(MailboxHookOutput.render(
+                MailboxHookOutput.payload(context: "ctx", format: format)
+            ))
+            XCTAssertEqual(json["decision"] as? String, "block")
+            XCTAssertEqual(json["reason"] as? String, "ctx")
+        }
     }
 
     func testContextHeaderCountsMessagesAndAnnouncesTheRest() throws {

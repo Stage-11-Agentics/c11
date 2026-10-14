@@ -41,24 +41,23 @@ enum MailboxDrain {
         mailboxesRoot.appendingPathComponent(panelId.uuidString.lowercased(), isDirectory: true)
     }
 
-    /// Every existing inbox of one tab, from the filesystem alone.
+    /// Inboxes of one panel, from the filesystem alone.
     ///
-    /// The process's `C11_WORKSPACE_ID` goes stale when the tab is moved to
-    /// another workspace, while the dispatcher keeps delivering into the tab's
-    /// *current* workspace. Tab UUIDs are unique, so any
-    /// `workspaces/*/mailboxes/<tab-uuid>/` is this tab's. The preferred
-    /// (environment) workspace comes first; the others come from a scan of
-    /// every workspace directory. A machine can hold thousands of those (11k
-    /// measured: ~40 ms warm, ~450 ms cold), so with a `scanCache` file the
-    /// scan runs at most once per `scanInterval` and its result is reused in
-    /// between. A moved tab's turn-boundary drain therefore finds its new
-    /// inbox within one interval; the stdin push reaches it meanwhile, since
-    /// the app knows where the tab lives.
+    /// The process's `C11_WORKSPACE_ID` can go stale when a panel moves. If
+    /// its preferred inbox has pending mail and still matches the live owner,
+    /// use it directly without listing every workspace. On a miss, reuse the
+    /// per-panel scan cache for five minutes before refreshing it. A live
+    /// lookup that confirms the panel moved bypasses that cache so every
+    /// retained inbox is checked and intermediate-workspace mail is not
+    /// skipped. Panel UUIDs are unique, so every matching
+    /// `workspaces/*/mailboxes/<panel-uuid>/` belongs to it.
     static func panelInboxURLs(
         workspacesRoot: URL,
         preferredWorkspaceId: UUID?,
+        currentWorkspaceId: UUID? = nil,
+        scanWhenOwnerUnknown: Bool = false,
         panelId: UUID,
-        scanCache: URL?,
+        scanCache: URL? = nil,
         scanInterval: TimeInterval = 300,
         now: Date = Date(),
         fileManager: FileManager = .default
@@ -77,15 +76,52 @@ enum MailboxDrain {
         var result: [URL] = []
         if let preferredWorkspaceId {
             let preferred = inbox(workspace: preferredWorkspaceId.uuidString)
-            if isDirectory(preferred) { result.append(preferred) }
+            if isDirectory(preferred) {
+                result.append(preferred)
+            }
         }
 
-        var found: [URL]
-        if let scanCache,
+        // A hook's environment can retain the workspace where the panel was
+        // created. When the caller can identify the panel's live workspace,
+        // include that direct path too so mail left in both locations is
+        // drained in one turn. This check is constant-time and does not list
+        // the workspace root.
+        if let currentWorkspaceId,
+           currentWorkspaceId != preferredWorkspaceId {
+            let current = inbox(workspace: currentWorkspaceId.uuidString)
+            if isDirectory(current), !result.contains(where: { $0.path == current.path }) {
+                result.append(current)
+            }
+        }
+
+        var bypassScanCache = false
+        if let preferredWorkspaceId,
+           let preferred = result.first(where: { workspaceId(ofInbox: $0) == preferredWorkspaceId }),
+           !pendingEntries(inbox: preferred, fileManager: fileManager).isEmpty {
+            if currentWorkspaceId == preferredWorkspaceId || (currentWorkspaceId == nil && !scanWhenOwnerUnknown) {
+                // The ordinary path avoids enumerating thousands of unrelated
+                // workspaces. With no live answer, deliver this inbox now;
+                // the next Claude Stop boundary can find a moved inbox if
+                // needed. Generic hook-format receives may request a scan
+                // here because they have no live-owner lookup.
+                return result
+            }
+            // The live owner differs from the pinned workspace. Scan for
+            // retained inboxes from any intermediate moves (A -> B -> C), or
+            // generic receives have no live-owner answer. This is the only
+            // path that deliberately bypasses the scan cache.
+            bypassScanCache = true
+        }
+
+        let found: [URL]
+        if !bypassScanCache,
+           let scanCache,
            let modified = (try? fileManager.attributesOfItem(atPath: scanCache.path))?[.modificationDate] as? Date,
            now.timeIntervalSince(modified) < scanInterval,
            let text = try? String(contentsOf: scanCache, encoding: .utf8) {
-            found = text.split(separator: "\n").map { URL(fileURLWithPath: String($0), isDirectory: true) }
+            found = text.split(separator: "\n").map {
+                URL(fileURLWithPath: String($0), isDirectory: true)
+            }
         } else {
             let workspaces = (try? fileManager.contentsOfDirectory(atPath: workspacesRoot.path)) ?? []
             found = workspaces.map { inbox(workspace: $0) }.filter(isDirectory)
@@ -99,8 +135,9 @@ enum MailboxDrain {
                     .write(to: scanCache, atomically: true, encoding: .utf8)
             }
         }
-        for url in found where isDirectory(url) && !result.contains(where: { $0.path == url.path }) {
-            result.append(url)
+        for candidate in found
+        where isDirectory(candidate) && !result.contains(where: { $0.path == candidate.path }) {
+            result.append(candidate)
         }
         return result
     }
@@ -736,11 +773,20 @@ enum MailboxHookOutput {
         return header + "\n" + framedBlocks.joined()
     }
 
-    /// Hook stdout JSON: the Stop is blocked with the messages as the reason,
-    /// so the agent takes one more turn of its own. Claude, Codex and Grok
-    /// share this shape. (Drains happen only at Stop; see `shouldDrain`.)
-    static func payload(context: String) -> [String: Any] {
-        ["decision": "block", "reason": context]
+    /// Hook stdout JSON for a Stop that delivered mail. Claude's documented
+    /// `additionalContext` shape keeps the turn going without presenting
+    /// designed delivery as a hook error. Codex and Grok still use the
+    /// blocking reason shape their hooks consume.
+    static func payload(context: String, format: MailboxHookFormat) -> [String: Any] {
+        if format == .claude {
+            return [
+                "hookSpecificOutput": [
+                    "hookEventName": "Stop",
+                    "additionalContext": context
+                ]
+            ]
+        }
+        return ["decision": "block", "reason": context]
     }
 
     static func render(_ payload: [String: Any]) -> String {

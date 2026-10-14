@@ -378,13 +378,15 @@ Files are sorted lexicographically by ULID, which gives you near-chronological o
 
 ### Turn-boundary drain (harness hooks)
 
-Claude Code, when busy, sees waiting mail at its next Stop hook: the stop is blocked with the messages as the reason, and Claude takes one more turn. `Resources/bin/claude` is the only wrapper that runs that hook. Prompt-submit does not drain. Codex and Grok are not wired to it.
+Claude Code, when busy, sees waiting mail at its next Stop hook as additional context, without a hook error, and takes one more turn to act on it. `Resources/bin/claude` is the only wrapper that runs that hook. Prompt-submit does not drain. Codex and Grok are not wired to it.
+
+Claude Code 2.1.163 or newer is required for Stop-hook `additionalContext`.
 
 Mail is never drained at prompt submit. Added to a turn the operator just started, an agent treats it as non-operator input and does not act on it. So when the operator submits a draft while mail is waiting, the draft's turn runs first and the mail follows as its own turn right after.
 
 | Harness | Stop | How c11 wires it |
 |---|---|---|
-| Claude Code | stop blocked, messages as the reason; Claude takes one more turn | folded into the `c11 claude-hook stop` hook `Resources/bin/claude` already injects via `--settings` |
+| Claude Code | `hookSpecificOutput.additionalContext`; Claude takes one more turn without a hook error | folded into the `c11 claude-hook stop` hook `Resources/bin/claude` already injects via `--settings` |
 | Codex | does not drain | `Resources/bin/codex` passes `notify` only. It does not pass a Stop hook, a hooks config, or `--enable hooks`. Codex reads the doorbell with `c11 mailbox recv --ack` |
 | Grok Build | does not drain | no per-launch Stop hook; Grok reads the doorbell with `c11 mailbox recv --ack` |
 
@@ -398,13 +400,17 @@ c11 mailbox recv --drain --hook-format claude|codex|grok --ack [--event stop]
 
 It reads the hook's stdin JSON and takes the event from `hook_event_name` (Claude, Codex) or `hookEventName` (Grok); `--event` overrides it. It prints the harness's hook JSON only when it claimed mail at a Stop:
 
+Claude Code receives a Stop-specific context payload:
+
 ```json
-{"decision":"block","reason":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}
+{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"c11 mailbox: 1 new message …\n<c11-msg …>…</c11-msg>"}}
 ```
 
-- **Which inbox.** The hook reads the caller's own inbox, `mailboxes/<panel-uuid>/` (the lowercased `C11_PANEL_ID`), straight from the environment: no socket call happens before it claims, so an empty inbox answers in a few milliseconds however much mail sits in other panels' inboxes. A panel moved to another workspace keeps its old `C11_WORKSPACE_ID`; the hook also looks for `workspaces/*/mailboxes/<panel-uuid>/` on disk (rescanned at most every 5 minutes), so the moved panel's mail is still drained. A title-keyed inbox left by an older build is not read by the hook; drain it once with `c11 mailbox recv --drain`.
+This output keeps the conversation going and is shown as Stop-hook feedback, not an error. A `decision: "block"` with `reason` also continues the turn, but Claude Code labels it as hook feedback with an error notification. Codex and Grok formats retain their blocking-reason payload.
+
+- **Which inbox.** When the preferred `C11_WORKSPACE_ID` inbox has pending mail and still matches the live panel, Claude's Stop hook claims it directly without listing workspaces. A bounded, read-only lookup by panel UUID detects a stale workspace. When the live owner differs, the hook bypasses the cache and scans `workspaces/*/mailboxes/<panel-uuid>/` to collect mail from every retained inbox, including intermediate workspaces after multiple moves. If the preferred inbox has no mail or the workspace ID is absent, the hook uses a per-panel scan cache and rescans the workspace root only when the cache is missing or older than five minutes; a moved inbox on this miss path may wait for that refresh. If the socket lookup is unavailable, the preferred inbox is still delivered and the moved inbox is found by the next scan. A generic `mailbox recv --hook-format` has no live-owner lookup, so it scans when the preferred inbox contains mail. A title-keyed inbox left by an older build is not read by the hook; drain it once with `c11 mailbox recv --drain`.
 - **Empty inbox, c11 unreachable, or any error:** prints nothing and exits 0. It runs on every turn, so it never blocks or errors the harness. A hook process older than 6 seconds claims nothing (its mail waits for the next boundary). Every socket request a hook process makes (auth included, and `claude-hook prompt-submit`'s own status calls) stops at that 6-second cutoff. After a claim, the hook writes its JSON and one delivery receipt file, then exits: no socket I/O, so a stalled c11 can never push a claimed message past the harness's 10-second hook timeout.
-- **No loops.** Stop drains only when the stop is not already a Stop-hook continuation (`stop_hook_active` / `stopHookActive` is false), and blocks only when it actually claimed mail. A turn that received mail therefore always ends at its next Stop; mail that arrives during that extra turn waits for the next boundary or the stdin push.
+- **No loops.** Stop drains only when the stop is not already a Stop-hook continuation (`stop_hook_active` / `stopHookActive` is false), and continues only when it actually claimed mail. A turn that received mail therefore always ends at its next Stop; mail that arrives during that extra turn waits for the next boundary or the stdin push.
 - **Budget and order.** One hook delivers at most about 8,000 characters of framed messages, always whole and always oldest first: it stops at the first message that does not fit (the oldest is always taken), so newer mail never overtakes older mail. The header names how many more are waiting, and the agent can run `c11 mailbox recv` for the rest.
 - **Opt out:** `C11_MAILBOX_HOOK_DRAIN=0` in the environment disables the hook drain for that process; plain `recv` is unaffected.
 

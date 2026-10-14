@@ -16,7 +16,7 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      Receipts always fit their limits: a 600-message drain is split across
      receipts, and a hand-written inbox file (`0note.msg`) is claimed and
      recorded under a fresh ULID without costing the rest of the batch.
-  5. A tab moved to another workspace (stale CMUX_WORKSPACE_ID) still finds
+  5. A tab moved to another workspace (stale C11_WORKSPACE_ID) still finds
      its inbox there, with no socket call.
   6. Prompt-submit never drains (an agent does not act on mail added to a
      turn the operator started); the turn's Stop delivers it. Prompt-submit's
@@ -25,11 +25,11 @@ c11 socket, so the stall and broken-pipe paths can be forced.
      that reads one line and stops, or reads nothing, with 70 inboxes, in the
      Codex format and through `claude-hook stop`, it exits at once with its
      output intact and its receipts written.
- 10. C11-401: a Stop whose inbox scan outlasts the hook's socket window (a
-     panel's first Stop, or a stale scan cache, over many workspace
-     directories) still reports the turn end to c11 live, never only to the
-     journal spool, and still exits promptly against a c11 that never
-     answers. A Stop that delivers mail sends no lifecycle report.
+ 10. A Stop whose fallback inbox scan outlasts the hook's socket window over
+     many workspace directories still reports the turn end to c11 live, never
+     only to the journal spool, and still exits promptly against a c11 that
+     never answers. A direct-path Stop that delivers mail sends no lifecycle
+     report.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_mailbox_hook_drain_cli.py
 """
@@ -73,9 +73,11 @@ class FakeC11:
     reads one line per connection and then stops reading; `delay` holds every
     answer that many seconds."""
 
-    def __init__(self, path: str, stall: bool, delay: float = 0.0, one_line: bool = False, pause: float = 0.0):
+    def __init__(self, path: str, stall: bool, delay: float = 0.0, one_line: bool = False,
+                 pause: float = 0.0, panel_workspace: str | None = None):
         self.path = path
         self.pause = pause
+        self.panel_workspace = panel_workspace
         self.stall = stall or one_line
         self.one_line = one_line
         self.delay = delay
@@ -126,6 +128,8 @@ class FakeC11:
                 if req.get("method") == "system.capabilities":
                     result = {"methods": ["panel.list", "mailbox.report_delivered"],
                               "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}
+                elif req.get("method") == "panel.list" and self.panel_workspace:
+                    result = {"workspace_id": self.panel_workspace, "panels": []}
                 conn.sendall(json.dumps({"id": req.get("id"), "ok": True, "result": result}).encode() + b"\n")
 
     def close(self) -> None:
@@ -179,6 +183,8 @@ class Fixture:
             # Foundation resolves Application Support from this, not HOME.
             "CFFIXED_USER_HOME": self.home,
             "CMUX_SOCKET_PATH": sock_path,
+            "C11_WORKSPACE_ID": WORKSPACE,
+            "C11_PANEL_ID": TAB,
             "CMUX_WORKSPACE_ID": WORKSPACE,
             "C11_TAB_ID": TAB,
             "CMUX_CLI_SENTRY_DISABLED": "1",
@@ -194,39 +200,44 @@ class Fixture:
 SOCKET_WINDOW_MS = 250
 
 
-def remove_scan_cache(fx: Fixture) -> None:
-    """A panel's first Stop, or one after the 5-minute scan cache went stale."""
-    path = os.path.join(fx.home, "Library", "Application Support", "c11", "mailbox-tab-scan", TAB.lower())
-    if os.path.exists(path):
-        os.remove(path)
-
-
 def spooled_journal_drafts(fx: Fixture) -> list[str]:
     """Drafts the CLI could not hand to c11. The app reads these only at its
     next launch, and only as history, so a spooled Stop is a lost idle edge."""
     return glob.glob(os.path.join(fx.home, "Library", "Application Support", "c11", "journal", "*", "spool", "*.ready"))
 
 
+def expire_panel_scan_cache(fx: Fixture) -> None:
+    scan_cache = os.path.join(
+        fx.home, "Library", "Application Support", "c11", "mailbox-tab-scan", TAB.lower()
+    )
+    if os.path.exists(scan_cache):
+        os.utime(scan_cache, (0, 0))
+
+
 def grow_workspaces(cli: str, fx: Fixture, sock_path: str, stop_input: str,
-                    target_ms: float, limit: int = 320_000) -> tuple[int, float, float]:
-    """Adds empty workspace directories until the inbox scan alone costs
-    `target_ms`. `mailbox recv --hook-format` runs the same scan and makes no
-    socket call for an empty inbox; its time over an empty root is the process
-    overhead. Returns (directories, overhead ms, scan ms)."""
+                    target_ms: float, limit: int = 320_000,
+                    start_count: int = 0) -> tuple[int, float, float]:
+    """Adds empty workspace directories until the fallback scan alone costs
+    `target_ms`. `mailbox recv --hook-format` makes no socket call for an empty
+    inbox; its time over an empty root is the process overhead. Returns
+    (directories, overhead ms, scan ms)."""
     root = os.path.dirname(os.path.dirname(fx.mailboxes))
     os.makedirs(root, exist_ok=True)
 
     def timed() -> float:
         best = float("inf")
         for _ in range(3):
-            remove_scan_cache(fx)
+            # Exercise the miss path on each sample. A fresh cache is the
+            # ordinary no-mail Stop path; this fixture measures the bounded
+            # cost of the scan when that cache has expired.
+            expire_panel_scan_cache(fx)
             _, ms = run(cli, ["--socket", sock_path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "claude"],
                         fx.env(sock_path), stop_input)
             best = min(best, ms)
         return best
 
     base = timed()
-    count, step, cost = 0, 20_000, 0.0
+    count, step, cost = start_count, 20_000, 0.0
     while count < limit:
         for i in range(count, count + step):
             os.mkdir(os.path.join(root, f"{i:08X}-0000-4000-8000-000000000000"))
@@ -238,6 +249,13 @@ def grow_workspaces(cli: str, fx: Fixture, sock_path: str, stop_input: str,
     return count, base, cost
 
 
+def seed_workspace_directories(fx: Fixture, count: int) -> None:
+    root = os.path.dirname(os.path.dirname(fx.mailboxes))
+    os.makedirs(root, exist_ok=True)
+    for i in range(count):
+        os.mkdir(os.path.join(root, f"{i:08X}-0000-4000-8000-000000000000"))
+
+
 FAILURES: list[str] = []
 
 
@@ -245,6 +263,17 @@ def check(cond: bool, label: str, detail: str = "") -> None:
     print(("PASS: " if cond else "FAIL: ") + label + (f" ({detail})" if detail and not cond else ""))
     if not cond:
         FAILURES.append(label)
+
+
+def claude_stop_context(output: bytes, *message_ids: str) -> bool:
+    try:
+        payload = json.loads(output)
+        specific = payload["hookSpecificOutput"]
+        context = specific["additionalContext"]
+        return (specific["hookEventName"] == "Stop"
+                and all(message_id in context for message_id in message_ids))
+    except (ValueError, KeyError, TypeError):
+        return False
 
 
 def run(cli: str, args: list[str], env: dict, stdin: str = "", stdout=subprocess.PIPE, timeout: float = 15):
@@ -268,12 +297,15 @@ def main() -> int:
     fx = Fixture()
     stalled = FakeC11(os.path.join(tmp, "stall.sock"), stall=True)
     ulid = fx.deliver(TAB.lower())
+    warmup, warmup_ms = run(cli, ["--help"], fx.env(stalled.path))
+    check(warmup.returncode == 0,
+          f"stalled socket: CLI warm-up exits 0 ({warmup_ms:.0f} ms)")
     proc, ms = run(cli, ["--socket", stalled.path, "mailbox", "recv", "--drain", "--ack", "--hook-format", "codex"],
                    fx.env(stalled.path), stop_input)
     out = proc.stdout.decode()
     check(proc.returncode == 0, "stalled socket: exit 0", f"exit {proc.returncode} {proc.stderr!r}")
     check('"decision":"block"' in out and ulid in out, "stalled socket: hook JSON with the message printed", out[:200])
-    check(ms < 1000, f"stalled socket: exits at once ({ms:.0f} ms)")
+    check(ms < 1000, f"stalled socket: exits without a socket wait ({ms:.0f} ms < 1000 ms)")
     check(fx.listing(TAB.lower()) == ([], [ulid + ".msg"]), "stalled socket: envelope claimed into _read/")
     check(fx.receipt_ids() == [ulid], "stalled socket: delivery receipt written", str(fx.receipts()))
     check(stalled.requests == [], "stalled socket: no socket request at all", str(stalled.requests[:2]))
@@ -392,6 +424,26 @@ def main() -> int:
     stalled.close()
     fx.cleanup()
 
+    # A stale workspace can still contain older pending mail after the panel
+    # moves. Resolve the live panel only on this pending direct path and drain
+    # both inboxes from the stale and current workspaces.
+    fx = Fixture()
+    live = FakeC11(os.path.join(tmp, "moved-live.sock"), stall=False, panel_workspace=MOVED_TO)
+    old_id = fx.deliver(TAB.lower(), "old workspace mail")
+    current_id = fx.deliver(TAB.lower(), "current workspace mail", workspace=MOVED_TO)
+    proc, ms = run(cli, ["--socket", live.path, "claude-hook", "stop"], fx.env(live.path),
+                   json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"}))
+    check(claude_stop_context(proc.stdout, old_id, current_id),
+          "moved panel with mail in both inboxes: Stop delivers both messages", proc.stdout.decode()[:180])
+    check(fx.listing(TAB.lower()) == ([], [old_id + ".msg"])
+          and fx.listing(TAB.lower(), MOVED_TO) == ([], [current_id + ".msg"]),
+          "moved panel with mail in both inboxes: each message is claimed once")
+    methods = [request.get("method") for request in live.requests]
+    check("panel.list" in methods and "workspace.list" not in methods,
+          "moved panel lookup uses its explicit identity without a workspace.list request", str(methods))
+    live.close()
+    fx.cleanup()
+
     # 7. 70 inboxes against a socket that reads one line and stops, then one
     #    that reads nothing; Codex format and claude-hook stop.
     groups = [f"{i:08X}-0000-4000-8000-000000000000" for i in range(1, 71)]
@@ -407,8 +459,10 @@ def main() -> int:
             out = proc.stdout.decode()
             taken = [(w, u) for w, u in zip(groups, ulids) if fx.listing(TAB.lower(), w)[1]]
             receipted = all(fx.receipt_ids(w) == [u] for w, u in taken)
-            check(proc.returncode == 0 and '"decision":"block"' in out and len(taken) >= 50
-                  and all(u in out for _, u in taken) and receipted,
+            output_ok = (all(u in out for _, u in taken) and '"decision":"block"' in out
+                         if label == "codex hook format"
+                         else claude_stop_context(proc.stdout, *(u for _, u in taken)))
+            check(proc.returncode == 0 and output_ok and len(taken) >= 50 and receipted,
                   f"{label}, socket {mode}: exit 0, every claimed message printed and receipted ({len(taken)})",
                   f"exit {proc.returncode} {out[:120]}")
             check(ms < 1000, f"{label}, socket {mode}: hook exits in {ms:.0f} ms")
@@ -440,7 +494,7 @@ def main() -> int:
           f"prompt-submit with a healthy c11: prints nothing and claims nothing ({ms:.0f} ms)")
     proc, _ = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path),
                   json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"}))
-    check('"decision":"block"' in proc.stdout.decode() and ulid in proc.stdout.decode()
+    check(claude_stop_context(proc.stdout, ulid)
           and fx.listing(TAB.lower()) == ([], [ulid + ".msg"]) and fx.receipt_ids() == [ulid],
           "the turn's Stop then delivers it as the agent's own next turn, receipted")
     proc, _ = run(cli, ["--socket", fast.path, "mailbox", "recv", "--drain", "--hook-format", "codex", "--event", "prompt-submit"],
@@ -449,23 +503,46 @@ def main() -> int:
     fast.close()
     fx.cleanup()
 
-    # 10. C11-401: a Stop whose inbox scan outlasts the hook's socket window.
-    #     The fixture grows the workspaces root until the scan alone costs
-    #     twice the window on this machine, then forces the scan by removing
-    #     the scan cache before every Stop.
+    # 10. Measure both lookup paths with about 12,700 sibling workspaces, then
+    #     grow the same root until fallback scanning outlasts the socket window.
     fx = Fixture()
     stalled = FakeC11(os.path.join(tmp, "scan-stall.sock"), stall=True)
     fast = FakeC11(os.path.join(tmp, "scan-fast.sock"), stall=False)
-    count, base, cost = grow_workspaces(cli, fx, stalled.path, stop_input, target_ms=2 * SOCKET_WINDOW_MS)
+    realistic_count = 12_700
+    seed_workspace_directories(fx, realistic_count)
+    claude_stop = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"})
+
+    direct_id = fx.deliver(TAB.lower())
+    proc, direct_ms = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path), claude_stop)
+    check(claude_stop_context(proc.stdout, direct_id), "realistic direct-path Stop: delivered mail as context")
+
+    fallback_id = fx.deliver(TAB.lower())
+    fallback_env = fx.env(fast.path)
+    fallback_env.pop("C11_WORKSPACE_ID", None)
+    fallback_env.pop("CMUX_WORKSPACE_ID", None)
+    fast.requests.clear()
+    proc, fallback_ms = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fallback_env, claude_stop)
+    check(claude_stop_context(proc.stdout, fallback_id),
+          "realistic fallback Stop: stale/missing workspace id still delivers mail",
+          f"stdout={proc.stdout[:200]!r}, listing={fx.listing(TAB.lower())}, receipts={fx.receipt_ids()}")
+    check(fast.requests == [], "missing-workspace Stop delivery needs no socket lookup", str(fast.requests[:3]))
+    print(f"C11-403 PERF: {realistic_count + 1} workspace directories; fallback Stop drain {fallback_ms:.0f} ms; direct Stop drain {direct_ms:.0f} ms")
+    check(direct_ms < fallback_ms,
+          "direct Stop drain is faster than fallback scan at realistic workspace count",
+          f"direct {direct_ms:.0f} ms, fallback {fallback_ms:.0f} ms")
+
+    count, base, cost = grow_workspaces(
+        cli, fx, stalled.path, stop_input, target_ms=2 * SOCKET_WINDOW_MS,
+        start_count=realistic_count
+    )
     check(cost >= 2 * SOCKET_WINDOW_MS,
           f"slow-scan fixture: {count} workspace directories, scan {cost:.0f} ms")
-    claude_stop = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False, "session_id": "s"})
 
     def stop_reports(sock: FakeC11) -> list[dict]:
         return [r for r in sock.requests if r.get("method") == "agent.event.append"
                 and ((r.get("params") or {}).get("event") or {}).get("native_event") == "Stop"]
 
-    remove_scan_cache(fx)
+    expire_panel_scan_cache(fx)
     proc, ms = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path), claude_stop)
     check(len(stop_reports(fast)) == 1, f"slow-scan Stop: the turn end reaches c11 live ({ms:.0f} ms)",
           f"{len(stop_reports(fast))} Stop reports, requests {[r.get('method') or r.get('v1') for r in fast.requests]}")
@@ -474,18 +551,17 @@ def main() -> int:
     check(proc.returncode == 0 and "OK" in proc.stdout.decode().split(), "slow-scan Stop: exit 0 and OK",
           f"exit {proc.returncode} {proc.stdout[:120]!r} {proc.stderr[:200]!r}")
 
-    remove_scan_cache(fx)
+    expire_panel_scan_cache(fx)
     proc, ms = run(cli, ["--socket", stalled.path, "claude-hook", "stop"], fx.env(stalled.path), claude_stop)
     check(ms < base + cost + 1000,
           f"slow-scan Stop, c11 never answers: exits in {ms:.0f} ms (scan {cost:.0f} ms, process {base:.0f} ms)")
 
     fast.requests.clear()
     ulid = fx.deliver(TAB.lower())
-    remove_scan_cache(fx)
     proc, _ = run(cli, ["--socket", fast.path, "claude-hook", "stop"], fx.env(fast.path), claude_stop)
     out = proc.stdout.decode()
-    check('"decision":"block"' in out and ulid in out and stop_reports(fast) == [],
-          "slow-scan Stop with mail: delivers it and sends no lifecycle report (the agent takes another turn)",
+    check(claude_stop_context(proc.stdout, ulid) and stop_reports(fast) == [],
+          "direct-path Stop with mail: delivers it as context and sends no lifecycle report (the agent takes another turn)",
           f"{out[:120]} {len(stop_reports(fast))} Stop reports")
     stalled.close()
     fast.close()

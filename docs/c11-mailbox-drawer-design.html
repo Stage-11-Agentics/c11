@@ -174,7 +174,7 @@ Open questions for you: …</div>
 </ol>
 <h2>OUR ASSUMPTIONS (SAY IF ANY IS WRONG)</h2>
 <ul>
-<li>Bodies and <code>body_ref</code> files render as plain text in a non-editable text view. No Markdown, no links, nothing loaded. <code>body_ref</code> reads only regular files, at most 256 KB (then "truncated"), never FIFOs or devices, off the main thread. Missing, unreadable, too large and not-text each get their own plain sentence.</li>
+<li>Bodies and <code>body_ref</code> files render as plain text in a non-editable text view. No Markdown, no links, nothing loaded. <code>body_ref</code> reads only regular files, at most 64 KB (then "truncated"), never FIFOs or devices, off the main thread. Missing, unreadable, too large and not-text each get their own plain sentence.</li>
 <li>Read-only: no compose, reply, delete or mark-read. Opening the drawer never claims mail, so it cannot steal a message from the agent.</li>
 <li>The drawer reuses the panel sheet's presenter. That means making it public in our Bonsplit fork and bumping the submodule (pushed to Bonsplit <code>main</code> first, per the repo rule).</li>
 <li>Sender line resolves the <code>from</code> string to a live panel (number and address) when it can, and says "not open" when it cannot. <code>in_reply_to</code> becomes a chip that scrolls to the parent when that message is in the list.</li>

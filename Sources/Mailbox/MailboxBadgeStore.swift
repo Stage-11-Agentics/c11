@@ -65,12 +65,28 @@ final class MailboxBadgeStore {
     /// Sidebar-hot through `Workspace.panelTitleBarState`, so no I/O here.
     func summary(workspace: Workspace, panelId: UUID) -> MailboxPanelMail.Summary {
         owners[panelId] = WeakWorkspace(value: workspace)
-        if workspaceOfPanel[panelId] != workspace.id {
-            workspaceOfPanel[panelId] = workspace.id
-            schedule(Key(workspaceId: workspace.id, panelId: panelId))
-            startReconcileIfNeeded()
-        }
+        track(panelId: panelId, workspaceId: workspace.id)
         return summaries[panelId] ?? .empty
+    }
+
+    /// A live panel's bar read it: count it now if it is new here or moved
+    /// workspaces, and keep it on the reconcile from then on. Only this read
+    /// starts tracking a panel; a change report never does.
+    func track(panelId: UUID, workspaceId: UUID) {
+        guard workspaceOfPanel[panelId] != workspaceId else { return }
+        workspaceOfPanel[panelId] = workspaceId
+        schedule(Key(workspaceId: workspaceId, panelId: panelId))
+        startReconcileIfNeeded()
+    }
+
+    /// The panel is on the reconcile (a live panel the store knows).
+    func isTracking(panelId: UUID) -> Bool {
+        workspaceOfPanel[panelId] != nil
+    }
+
+    /// The last count that landed, without scheduling one.
+    func cachedSummary(panelId: UUID) -> MailboxPanelMail.Summary {
+        summaries[panelId] ?? .empty
     }
 
     /// The observable counts one mailbox cell renders.
@@ -121,18 +137,23 @@ final class MailboxBadgeStore {
     /// A panel's inbox changed. A nil panel means "some inbox in this
     /// workspace", for a drain that did not say whose mail it took.
     static func inboxChanged(workspaceId: UUID, panelId: UUID?) {
-        let report = {
-            let store = MailboxBadgeStore.shared
-            if let panelId {
-                store.workspaceOfPanel[panelId] = workspaceId
-                store.schedule(Key(workspaceId: workspaceId, panelId: panelId))
-            } else {
-                for (panel, workspace) in store.workspaceOfPanel where workspace == workspaceId {
-                    store.schedule(Key(workspaceId: workspace, panelId: panel))
-                }
+        let report = { MailboxBadgeStore.shared.inboxChanged(workspaceId: workspaceId, panelId: panelId) }
+        if Thread.isMainThread { report() } else { DispatchQueue.main.async(execute: report) }
+    }
+
+    /// Main thread. Recounts only panels the store tracks: a delivery that
+    /// lands after `forget` must not put the closed panel back on the sweep.
+    /// A tracked panel reported from another workspace has moved there.
+    func inboxChanged(workspaceId: UUID, panelId: UUID?) {
+        if let panelId {
+            guard workspaceOfPanel[panelId] != nil else { return }
+            workspaceOfPanel[panelId] = workspaceId
+            schedule(Key(workspaceId: workspaceId, panelId: panelId))
+        } else {
+            for (panel, workspace) in workspaceOfPanel where workspace == workspaceId {
+                schedule(Key(workspaceId: workspace, panelId: panel))
             }
         }
-        if Thread.isMainThread { report() } else { DispatchQueue.main.async(execute: report) }
     }
 
     // MARK: - Counting
@@ -168,7 +189,7 @@ final class MailboxBadgeStore {
                 owners[key.panelId]?.value?.objectWillChange.send()
             }
         }
-        if pending.remove(key) != nil { schedule(key) }
+        if pending.remove(key) != nil, workspaceOfPanel[key.panelId] == key.workspaceId { schedule(key) }
     }
 
     private func startReconcileIfNeeded() {

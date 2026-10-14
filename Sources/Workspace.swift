@@ -10106,6 +10106,8 @@ final class Workspace: Identifiable, ObservableObject {
             panel.close()
             // C11-243: workspace teardown; these panels are gone.
             PanelSeenTracker.shared.forget(panelId: panelId)
+            // C11-400: and off the mailbox reconcile with them.
+            MailboxBadgeStore.shared.forget(panelId: panelId)
         }
         if markPanelsClosedForGood {
             PanelLineage.shared.panelsClosedForGood(closedPanelIds)
@@ -13437,6 +13439,7 @@ extension Workspace: BonsplitDelegate {
                 // C11-243: pane closed for good; a detaching transaction keeps ids.
                 if !isDetachingCloseTransaction {
                     PanelSeenTracker.shared.forget(panelId: panelId)
+                    MailboxBadgeStore.shared.forget(panelId: panelId)
                 }
                 untrackRemoteTerminalSurface(panelId)
                 panelDirectories.removeValue(forKey: panelId)

@@ -844,6 +844,38 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertTrue(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .off, hasShown: false))
     }
 
+    @MainActor
+    func testWorkspaceCreationDoesNotRequestFirstRunWelcomeDuringQALaunch() {
+        let defaults = UserDefaults.standard
+        let previousWelcome = defaults.object(forKey: WelcomeSettings.shownKey)
+        let previousGrid = defaults.object(forKey: DefaultGridSettings.enabledKey)
+        defaults.set(true, forKey: WelcomeSettings.shownKey)
+        defaults.set(false, forKey: DefaultGridSettings.enabledKey)
+        defer {
+            if let previousWelcome {
+                defaults.set(previousWelcome, forKey: WelcomeSettings.shownKey)
+            } else {
+                defaults.removeObject(forKey: WelcomeSettings.shownKey)
+            }
+            if let previousGrid {
+                defaults.set(previousGrid, forKey: DefaultGridSettings.enabledKey)
+            } else {
+                defaults.removeObject(forKey: DefaultGridSettings.enabledKey)
+            }
+        }
+
+        let manager = WorkspaceManager()
+        manager.qaLaunchPolicyProvider = { .on(.fresh) }
+        var welcomeRequests = 0
+        manager.firstRunWelcomeRequestForTesting = { _ in welcomeRequests += 1 }
+        defaults.set(false, forKey: WelcomeSettings.shownKey)
+
+        _ = manager.addWorkspace(select: true)
+
+        XCTAssertEqual(welcomeRequests, 0, "QA workspace creation must not start the first-run welcome flow")
+        XCTAssertFalse(defaults.bool(forKey: WelcomeSettings.shownKey), "QA launch must not persist the welcome as shown")
+    }
+
     func testQALaunchPolicyDualReadsLegacyKeyButC11Wins() {
         XCTAssertEqual(
             QALaunchPolicy.current(environment: ["CMUX_QA_LAUNCH": "resume"]),

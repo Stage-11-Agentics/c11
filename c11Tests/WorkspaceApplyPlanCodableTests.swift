@@ -46,6 +46,18 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(WorkspaceSpec())
     }
 
+    @MainActor
+    func testPlanSurfaceMetadataOmitsAttentionState() {
+        let result = WorkspacePlanCapture.planSurfaceMetadata(from: [
+            MetadataKey.title: .string("Agent"),
+            MetadataKey.flag: .string("operator_attention"),
+            MetadataKey.suppressed: .bool(true),
+            MetadataKey.delegatedBy: .string("owner"),
+        ])
+
+        XCTAssertEqual(result, [MetadataKey.title: .string("Agent")])
+    }
+
     // MARK: - Area vocabulary keeps the pane wire shape
 
     func testAreaSpecAndPaneMetadataKeepTheirPaneWireKeys() throws {

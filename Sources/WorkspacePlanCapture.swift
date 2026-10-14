@@ -52,6 +52,20 @@ struct WorkspacePlanCaptureResult: Equatable, Sendable {
 /// on the main actor and returns a plan plus structured capture warnings.
 @MainActor
 enum WorkspacePlanCapture {
+    static func planSurfaceMetadata(
+        from encoded: [String: PersistedJSONValue]
+    ) -> [String: PersistedJSONValue] {
+        let attentionKeys: Set<String> = [
+            MetadataKey.flag,
+            MetadataKey.legacyFlagCallerSurfaceId,
+            MetadataKey.flagCallerTabId,
+            MetadataKey.flagCallerPanelId,
+            MetadataKey.suppressed,
+            MetadataKey.delegatedBy,
+        ]
+        return encoded.filter { !attentionKeys.contains($0.key) }
+    }
+
     static func capture(
         workspace: Workspace,
         companionBridge: WorkspacePlanCompanionCaptureBridge? = nil
@@ -287,15 +301,7 @@ enum WorkspacePlanCapture {
                 surfaceIdForLog: panelId,
                 sources: snapshot.sources
             )
-            let attentionKeys: Set<String> = [
-                MetadataKey.flag,
-                MetadataKey.legacyFlagCallerSurfaceId,
-                MetadataKey.flagCallerTabId,
-                MetadataKey.flagCallerPanelId,
-                MetadataKey.suppressed,
-                MetadataKey.delegatedBy,
-            ]
-            return encoded.filter { !attentionKeys.contains($0.key) }
+            return WorkspacePlanCapture.planSurfaceMetadata(from: encoded)
         }
 
         private func paneMetadata(for paneID: PaneID?) -> [String: PersistedJSONValue] {

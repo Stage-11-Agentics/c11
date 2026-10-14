@@ -550,7 +550,7 @@ def _process_snapshot():
         ["ps", "-axo", "pid=,ppid=,state="], capture_output=True, text=True
     )
     if listed.returncode != 0:
-        return {}
+        raise RuntimeError("cannot inspect the process table while recovering a build")
     processes = {}
     for line in listed.stdout.splitlines():
         parts = line.split()
@@ -690,13 +690,14 @@ def append_event(root, event):
         handle.write(json.dumps(event) + "\n")
 
 
-def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=TERM_GRACE_S, budget=KILL_BUDGET_S):
+def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=TERM_GRACE_S, budget=KILL_BUDGET_S, track_tree=None):
     """R2 plus the amendment. Returns 'ready' or 'stuck'.
 
     A free lock does not clear running.json while the recorded group exists.
     running.json is removed only after killpg confirms ESRCH.
     """
-    track_tree = alive is None
+    if track_tree is None:
+        track_tree = alive is None
     alive = alive or group_alive
     kill = kill or _signal_group
     sleep = sleep or time.sleep
@@ -1367,7 +1368,8 @@ class Supervisor:
         if self.disarmed:
             return "disarmed"
         if recover(self.root, alive=self.world.group_alive, kill=self.world.killpg,
-                   sleep=self.world.sleep, monotonic=self.world.monotonic) == "stuck":
+                   sleep=self.world.sleep, monotonic=self.world.monotonic,
+                   track_tree=True) == "stuck":
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
@@ -1659,7 +1661,8 @@ class Supervisor:
     def maybe_start(self):
         """Before every start, recover again. A live recorded group admits nothing."""
         if recover(self.root, alive=self.world.group_alive, kill=self.world.killpg,
-                   sleep=self.world.sleep, monotonic=self.world.monotonic) != "ready":
+                   sleep=self.world.sleep, monotonic=self.world.monotonic,
+                   track_tree=True) != "ready":
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
@@ -1957,6 +1960,7 @@ class Supervisor:
             self.world.monotonic,
             TERM_GRACE_S,
             KILL_BUDGET_S,
+            track_tree=True,
         )
 
     def _watch_reason(self, record):

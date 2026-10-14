@@ -677,7 +677,16 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             detached_pid = int(child_pid_path.read_text())
             self.assertNotEqual(os.getpgid(detached_pid), build.pid)
             poller.write_running(self.root, {"pgid": build.pid, "acquired_at": time.time()})
-            outcome = poller.recover(self.root, term_grace=1, budget=8)
+            # Match the live supervisor path, which injects its world callbacks
+            # and must still discover descendants outside the recorded group.
+            outcome = poller.recover(
+                self.root,
+                alive=poller.group_alive,
+                kill=poller._signal_group,
+                term_grace=1,
+                budget=8,
+                track_tree=True,
+            )
             self.assertEqual(outcome, "ready")
             build.wait(timeout=5)
             self.assertFalse(
@@ -685,6 +694,46 @@ class CapacityAndRecoveryTests(unittest.TestCase):
                 "recovery must kill a descendant outside the recorded group",
             )
             self.assertFalse(poller.running_path(self.root).exists())
+        finally:
+            if build.poll() is None:
+                build.kill()
+                build.wait(timeout=5)
+            if child_pid_path.exists():
+                detached_pid = int(child_pid_path.read_text())
+                if _alive(detached_pid):
+                    os.kill(detached_pid, signal.SIGKILL)
+
+    def test_mid_build_cancel_kills_descendant_that_moved_to_another_process_group(self):
+        child = self.root / "cancel-detached-child.py"
+        parent = self.root / "cancel-build-parent.py"
+        child_pid_path = self.root / "cancel-detached-child.pid"
+        child.write_text(textwrap.dedent("""
+            import os, sys, time
+            open(sys.argv[1], "w").write(str(os.getpid()))
+            while True:
+                time.sleep(30)
+        """))
+        parent.write_text(textwrap.dedent("""
+            import subprocess, sys, time
+            subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2]], start_new_session=True)
+            while True:
+                time.sleep(30)
+        """))
+        build = subprocess.Popen(
+            [sys.executable, str(parent), str(child), str(child_pid_path)],
+            start_new_session=True,
+        )
+        try:
+            _wait_for(child_pid_path)
+            detached_pid = int(child_pid_path.read_text())
+            self.assertNotEqual(os.getpgid(detached_pid), build.pid)
+            supervisor = poller.Supervisor(self.root, World())
+            self.assertTrue(supervisor._stop_group({"pgid": build.pid}))
+            build.wait(timeout=5)
+            self.assertFalse(
+                _alive(detached_pid),
+                "mid-build cancellation must kill descendants outside the recorded group",
+            )
         finally:
             if build.poll() is None:
                 build.kill()

@@ -1,1 +1,0 @@
-PR #214 (Waiting Agent + workspace nav cluster in sidebar) merged into main 2026-06-03. Closing on merge.

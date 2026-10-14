@@ -1,1 +1,0 @@
-Confirmed done by Atin at v0.11.0 prod cut — statusEntries persistence landed (#23) and verified.

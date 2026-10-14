@@ -1,0 +1,29 @@
+name: actionlint
+
+# Push tier, in its own workflow. ci.yml stays pull_request-only, so a job
+# added there later cannot start running on every branch push. The binary
+# pin and the -shellcheck= flag live in scripts/run-actionlint.sh.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint GitHub Actions workflows
+        run: ./scripts/run-actionlint.sh
+
+      - name: Validate scheduled lane owner
+        run: ./tests/test_ci_scheduled_lane_owner.sh

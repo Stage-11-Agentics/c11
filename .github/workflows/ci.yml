@@ -1,10 +1,6 @@
 name: CI
 
-# A push runs actionlint only. The other jobs stay on pull_request so a
-# branch push does not start the macOS compile. actionlint is the push tier:
-# one pinned binary, workflow syntax only, meant to finish in well under 30s.
 on:
-  push:
   pull_request:
     paths-ignore:
       - '**/*.md'
@@ -17,20 +13,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  actionlint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Lint GitHub Actions workflows
-        run: ./scripts/run-actionlint.sh
-
   workflow-guard-tests:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -99,11 +82,7 @@ jobs:
       - name: Validate Sentry recurrence checks
         run: ./scripts/telemetry/sentry-position.py --self-test
 
-      - name: Validate scheduled lane owner
-        run: ./tests/test_ci_scheduled_lane_owner.sh
-
   offline-activity-cli:
-    if: github.event_name == 'pull_request'
     runs-on: macos-15
     timeout-minutes: 25
     steps:
@@ -129,7 +108,6 @@ jobs:
             python3 tests/test_cli_activity_analysis.py
 
   remote-daemon-tests:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -148,7 +126,6 @@ jobs:
         run: ./tests/test_remote_daemon_release_assets.sh
 
   web-typecheck:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:

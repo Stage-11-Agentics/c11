@@ -549,33 +549,3 @@ jobs:
         run: |
           security delete-keychain build.keychain >/dev/null 2>&1 || true
           rm -f /tmp/cert.p12
-
-  # Issues permission lives only on this job, which replaces the workflow's
-  # contents: write for this job alone. schedule and workflow_dispatch are
-  # the only events that reach it. A failed nightly job still fails the run.
-  report-lane-owner:
-    needs: [decide, build-sign-notarize-nightly]
-    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.decide.result != 'cancelled' && needs['build-sign-notarize-nightly'].result != 'cancelled'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Tell the lane owner
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RESULT_DECIDE: ${{ needs.decide.result }}
-          RESULT_BUILD: ${{ needs['build-sign-notarize-nightly'].result }}
-        run: |
-          set -euo pipefail
-          result=success
-          for one in "$RESULT_DECIDE" "$RESULT_BUILD"; do
-            if [ "$one" = "failure" ]; then
-              result=failure
-            fi
-          done
-          ./scripts/ci-scheduled-lane-owner.sh nightly "$result"

@@ -153,30 +153,3 @@ jobs:
           C11_SMOKE_SOCKET_PATH="/tmp/c11-smoke-${GITHUB_RUN_ID}.sock" \
             C11_SMOKE_LOG_PATH="$RUNNER_TEMP/c11-smoke-${GITHUB_RUN_ID}.log" \
             scripts/smoke-test-ci.sh
-
-  # Issues permission lives only on this job. schedule and workflow_dispatch
-  # are the only events that reach it. A failed compat job still fails the
-  # run; this job only files the owner issue.
-  report-lane-owner:
-    needs: [compat-tests]
-    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs['compat-tests'].result != 'cancelled'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Tell the lane owner
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RESULT_COMPAT: ${{ needs['compat-tests'].result }}
-        run: |
-          set -euo pipefail
-          result=success
-          if [ "$RESULT_COMPAT" = "failure" ]; then
-            result=failure
-          fi
-          ./scripts/ci-scheduled-lane-owner.sh ci-macos-compat "$result"

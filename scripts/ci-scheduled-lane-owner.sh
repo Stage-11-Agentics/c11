@@ -1,43 +1,45 @@
 #!/usr/bin/env bash
-# Open, comment on, or close the one GitHub issue that owns a scheduled lane.
-# Usage: ci-scheduled-lane-owner.sh <lane> <failure|success>
+# Watch scheduled lanes from outside their workflows.
+# Usage: ci-scheduled-lane-owner.sh [--dry-run]
 #
-# A failure creates "CI scheduled lane failed: <lane>", assigned to
-# BenevolentFutures, or comments on that open issue. A success closes it
-# with a comment. A success with no open issue does nothing.
+# Reads completed runs on main. success closes that lane's issue.
+# failure, startup_failure, and timed_out open or comment on it.
+# skipped runs, and a cancelled run that a newer decisive run superseded,
+# are ignored. Three consecutive cancelled runs are a failure, so a lane
+# that hangs and is cancelled every hour is reported. A lane with a stale
+# window and no completed run inside it is a failure. ci-hourly has no
+# stale window: it runs on push to main, not on a clock.
 #
-# Callers: the report-lane-owner job in ci-hourly.yml, ci-macos-compat.yml,
-# and nightly.yml. Those jobs run only on schedule and workflow_dispatch.
-# This script refuses any other GITHUB_EVENT_NAME so a push or pull_request
-# cannot open issues. An empty event name is the local fake-gh proof.
-#
-# The lane job's own result is what fails the run. This script exits 0 after
-# a successful report, including a report that the lane failed.
+# --dry-run reads runs and issues and prints what it would do. It does not
+# create, comment, close, or edit. CI_LANE_OWNER is the assignee, default
+# BenevolentFutures. A live run refuses any GITHUB_EVENT_NAME other than
+# schedule or workflow_dispatch.
 set -euo pipefail
 
-ASSIGNEE="BenevolentFutures"
+ASSIGNEE="${CI_LANE_OWNER:-BenevolentFutures}"
+REPO="${GITHUB_REPOSITORY:-Stage-11-Agentics/c11}"
+NOW="${C11_LANE_NOW:-$(date +%s)}"
+DRY=0
 
-if [[ $# -ne 2 ]]; then
-  echo "usage: $0 <lane> <failure|success>" >&2
+# One line per lane: workflow file, then stale hours. "-" skips staleness.
+lane_table() {
+  cat <<'EOF'
+ci-hourly.yml -
+ci-macos-compat.yml 3
+nightly.yml 36
+EOF
+}
+
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY=1
+  shift
+fi
+if [[ $# -ne 0 ]]; then
+  echo "usage: $0 [--dry-run]" >&2
   exit 2
 fi
 
-LANE="$1"
-RESULT="$2"
-
-if [[ ! "$LANE" =~ ^[a-z0-9][a-z0-9-]{0,40}$ ]]; then
-  echo "error: lane must be a short slug, got ${LANE}" >&2
-  exit 2
-fi
-case "$RESULT" in
-  failure | success) ;;
-  *)
-    echo "error: result must be failure or success, got ${RESULT}" >&2
-    exit 2
-    ;;
-esac
-
-if [[ -n "${GITHUB_EVENT_NAME:-}" ]]; then
+if [[ "$DRY" -eq 0 && -n "${GITHUB_EVENT_NAME:-}" ]]; then
   case "$GITHUB_EVENT_NAME" in
     schedule | workflow_dispatch) ;;
     *)
@@ -47,61 +49,166 @@ if [[ -n "${GITHUB_EVENT_NAME:-}" ]]; then
   esac
 fi
 
-: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-: "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
-if [[ ! "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]; then
-  echo "error: GITHUB_RUN_ID must be numeric, got ${GITHUB_RUN_ID}" >&2
+if [[ ! "$NOW" =~ ^[0-9]+$ ]]; then
+  echo "error: C11_LANE_NOW must be an epoch second, got ${NOW}" >&2
   exit 2
 fi
-SERVER="${GITHUB_SERVER_URL:-https://github.com}"
-RUN_URL="${SERVER}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-TITLE="CI scheduled lane failed: ${LANE}"
 
-# The open-issue list, not search. Search is not read-your-writes, so a second
-# failure before the index updates would open a duplicate. Exact title is the
-# dedupe. The list cap is 100; this repo stays far under that.
+# decision, reason, url. Runs are newest first after the sort.
+classify_runs() {
+  local json="$1" stale_hours="$2" count newest_epoch newest_url window
+  count="$(jq 'length' <<<"$json")"
+  if [[ "$count" -eq 0 ]]; then
+    if [[ "$stale_hours" == "-" ]]; then
+      printf 'ignore none -\n'
+    else
+      printf 'fail stale -\n'
+    fi
+    return
+  fi
+
+  json="$(jq 'sort_by(.updatedAt) | reverse' <<<"$json")"
+  newest_url="$(jq -r '.[0].url // "-"' <<<"$json")"
+  newest_epoch="$(jq -r '.[0].updatedAt | sub("\\.[0-9]+"; "") | fromdateiso8601' <<<"$json")"
+  if [[ "$stale_hours" != "-" ]]; then
+    window=$((stale_hours * 3600))
+    if (( NOW - newest_epoch > window )); then
+      printf 'fail stale %s\n' "$newest_url"
+      return
+    fi
+  fi
+
+  local i conclusion url cancelled=0 first_cancel_url=""
+  for ((i = 0; i < count; i++)); do
+    conclusion="$(jq -r --argjson i "$i" '.[$i].conclusion // ""' <<<"$json")"
+    url="$(jq -r --argjson i "$i" '.[$i].url // "-"' <<<"$json")"
+    case "$conclusion" in
+      success)
+        printf 'pass success %s\n' "$url"
+        return
+        ;;
+      failure | startup_failure | timed_out)
+        printf 'fail %s %s\n' "$conclusion" "$url"
+        return
+        ;;
+      skipped) ;;
+      cancelled)
+        cancelled=$((cancelled + 1))
+        if [[ -z "$first_cancel_url" ]]; then
+          first_cancel_url="$url"
+        fi
+        if (( cancelled >= 3 )); then
+          printf 'fail cancelled %s\n' "$first_cancel_url"
+          return
+        fi
+        ;;
+      *)
+        # Unknown conclusions fail closed. A job timeout on these lanes has
+        # shown up as run conclusion "failure", not "timed_out"; timed_out
+        # is still handled above for when GitHub emits it.
+        printf 'fail %s %s\n' "${conclusion:-unknown}" "$url"
+        return
+        ;;
+    esac
+  done
+  printf 'ignore none -\n'
+}
+
 existing_issue() {
+  local title="$1"
   gh issue list \
-    --repo "$GITHUB_REPOSITORY" \
+    --repo "$REPO" \
     --state open \
     --limit 100 \
     --json number,title \
-    | jq -r --arg title "$TITLE" 'first(.[] | select(.title == $title) | .number) // empty'
+    | jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty'
 }
 
-STANDING="$(printf 'This issue tracks failures of the %s scheduled lane.\nEach failure adds a comment with the run URL.\nThe issue is closed when the lane next passes.\n' "$LANE")"
+apply_lane() {
+  local lane="$1" decision="$2" reason="$3" url="$4" stale_hours="$5"
+  local title number body
+  title="CI scheduled lane failed: ${lane}"
+  number="$(existing_issue "$title")"
 
-if [[ "$RESULT" == "failure" ]]; then
-  BODY="$(printf 'Scheduled lane %s failed.\n\nRun: %s\n' "$LANE" "$RUN_URL")"
-  number="$(existing_issue)"
+  if [[ "$decision" == "ignore" ]]; then
+    echo "lane-owner: ${lane} ignore -> nothing"
+    return
+  fi
+
+  if [[ "$decision" == "pass" ]]; then
+    if [[ -z "$number" ]]; then
+      echo "lane-owner: ${lane} pass ${reason} ${url} -> nothing"
+      return
+    fi
+    if [[ "$DRY" -eq 1 ]]; then
+      echo "lane-owner: ${lane} pass ${reason} ${url} -> would close #${number}"
+      return
+    fi
+    body="$(printf 'Scheduled lane %s passed (%s).\n\nRun: %s\n' "$lane" "$reason" "$url")"
+    gh issue close "$number" \
+      --repo "$REPO" \
+      --reason completed \
+      --comment "$body" >/dev/null
+    echo "lane-owner: ${lane} pass ${reason} ${url} -> closed #${number}"
+    return
+  fi
+
+  if [[ "$reason" == "stale" && "$url" == "-" ]]; then
+    body="$(printf 'Scheduled lane %s failed (stale).\nNo completed run on main within %sh.\n' "$lane" "$stale_hours")"
+  else
+    body="$(printf 'Scheduled lane %s failed (%s).\n\nRun: %s\n' "$lane" "$reason" "$url")"
+  fi
+
+  if [[ "$DRY" -eq 1 ]]; then
+    if [[ -z "$number" ]]; then
+      echo "lane-owner: ${lane} fail ${reason} ${url} -> would open"
+    else
+      echo "lane-owner: ${lane} fail ${reason} ${url} -> would comment #${number}"
+    fi
+    return
+  fi
+
   if [[ -z "$number" ]]; then
-    url="$(gh issue create \
-      --repo "$GITHUB_REPOSITORY" \
-      --title "$TITLE" \
+    local created
+    created="$(gh issue create \
+      --repo "$REPO" \
+      --title "$title" \
       --assignee "$ASSIGNEE" \
-      --body "$STANDING")"
-    number="${url##*/}"
+      --body "$(printf 'This issue tracks failures of the %s lane.\nEach failure adds a comment with the run URL.\nThe issue is closed when the lane next passes.\n' "$lane")")"
+    number="${created##*/}"
     if [[ ! "$number" =~ ^[0-9]+$ ]]; then
-      echo "error: issue create did not return an issue URL: ${url}" >&2
+      echo "error: issue create did not return an issue URL: ${created}" >&2
       exit 1
     fi
-    echo "lane-owner: opened #${number} for ${LANE}"
-  else
-    gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --add-assignee "$ASSIGNEE" >/dev/null
+    gh issue comment "$number" --repo "$REPO" --body "$body" >/dev/null
+    echo "lane-owner: ${lane} fail ${reason} ${url} -> opened #${number}"
+    return
   fi
-  gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$BODY" >/dev/null
-  echo "lane-owner: commented on #${number} for ${LANE}"
-  exit 0
-fi
 
-number="$(existing_issue)"
-if [[ -z "$number" ]]; then
-  echo "lane-owner: ${LANE} passed with no open issue"
-  exit 0
-fi
-BODY="$(printf 'Scheduled lane %s passed. Closing.\n\nRun: %s\n' "$LANE" "$RUN_URL")"
-gh issue close "$number" \
-  --repo "$GITHUB_REPOSITORY" \
-  --reason completed \
-  --comment "$BODY" >/dev/null
-echo "lane-owner: closed #${number} for ${LANE}"
+  gh issue edit "$number" --repo "$REPO" --add-assignee "$ASSIGNEE" >/dev/null
+  gh issue comment "$number" --repo "$REPO" --body "$body" >/dev/null
+  echo "lane-owner: ${lane} fail ${reason} ${url} -> commented #${number}"
+}
+
+while read -r workflow stale_hours; do
+  [[ -z "${workflow:-}" || "$workflow" == \#* ]] && continue
+  if [[ ! "$workflow" =~ ^[a-z0-9][a-z0-9.-]+\.yml$ ]]; then
+    echo "error: bad workflow name ${workflow}" >&2
+    exit 2
+  fi
+  if [[ "$stale_hours" != "-" && ! "$stale_hours" =~ ^[0-9]+$ ]]; then
+    echo "error: bad stale hours for ${workflow}: ${stale_hours}" >&2
+    exit 2
+  fi
+  lane="${workflow%.yml}"
+  runs="$(gh run list \
+    --repo "$REPO" \
+    --workflow "$workflow" \
+    --branch main \
+    --status completed \
+    --limit 20 \
+    --json conclusion,updatedAt,url,databaseId,headSha)"
+  classified="$(classify_runs "$runs" "$stale_hours")"
+  read -r decision reason url <<<"$classified"
+  apply_lane "$lane" "$decision" "$reason" "$url" "$stale_hours"
+done < <(lane_table)

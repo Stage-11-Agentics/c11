@@ -796,6 +796,26 @@ final class SessionPersistenceTests: XCTestCase {
         }
     }
 
+    func testQALaunchSuppressesNotificationSettingsPrompt() {
+        func decision(_ environment: [String: String], prompted: Bool = false) -> Bool {
+            TerminalNotificationStore.shouldPresentNotificationSettingsPrompt(
+                qa: QALaunchPolicy.current(environment: environment),
+                hasPromptedForSettings: prompted
+            )
+        }
+
+        XCTAssertFalse(decision(["C11_QA_LAUNCH": "fresh"]))
+        XCTAssertFalse(decision(["C11_QA_LAUNCH": "resume"]))
+        XCTAssertFalse(decision(["C11_QA_LAUNCH": "FRESH"]))
+        XCTAssertFalse(decision(["CMUX_QA_LAUNCH": "resume"]))
+        XCTAssertTrue(decision([:]))
+        XCTAssertTrue(decision(["C11_QA_LAUNCH": ""]))
+        XCTAssertTrue(decision(["C11_QA_LAUNCH": "  "]))
+        // A normal launch still presents at most once.
+        XCTAssertFalse(decision([:], prompted: true))
+        XCTAssertFalse(decision(["C11_QA_LAUNCH": "fresh"], prompted: true))
+    }
+
     func testQALaunchPolicyDualReadsLegacyKeyButC11Wins() {
         XCTAssertEqual(
             QALaunchPolicy.current(environment: ["CMUX_QA_LAUNCH": "resume"]),

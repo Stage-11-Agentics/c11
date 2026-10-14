@@ -1608,7 +1608,15 @@ final class TerminalNotificationStore: ObservableObject {
 
     private func promptToEnableNotifications() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.hasPromptedForSettings else { return }
+            guard let self else { return }
+            // Same QA gate as the Agent Skills sheet and the resume picker.
+            // Reads C11_QA_LAUNCH for this launch only; writes nothing.
+            guard Self.shouldPresentNotificationSettingsPrompt(
+                qa: QALaunchPolicy.current(),
+                hasPromptedForSettings: self.hasPromptedForSettings
+            ) else {
+                return
+            }
             self.logAuthorization("prompt settings shown")
             self.hasPromptedForSettings = true
             self.presentNotificationSettingsPrompt(attempt: 0)
@@ -1672,6 +1680,22 @@ final class TerminalNotificationStore: ObservableObject {
     ) -> Bool {
         guard isAutomaticRequest else { return true }
         return !hasRequestedAutomaticAuthorization
+    }
+
+    /// Whether to present the "Turn on notifications for c11" sheet.
+    ///
+    /// An ordinary launch presents it once, after notifications are already
+    /// off. `C11_QA_LAUNCH` / `CMUX_QA_LAUNCH` (`fresh`, `resume`, or any
+    /// other non-empty value) suppresses it. Unset or blank leaves today's
+    /// behaviour. This decision writes no UserDefaults and does not change
+    /// notification settings.
+    nonisolated static func shouldPresentNotificationSettingsPrompt(
+        qa: QALaunchPolicy,
+        hasPromptedForSettings: Bool
+    ) -> Bool {
+        guard !hasPromptedForSettings else { return false }
+        guard !qa.isActive else { return false }
+        return true
     }
 
     private static func shouldDeferAutomaticAuthorizationRequest(

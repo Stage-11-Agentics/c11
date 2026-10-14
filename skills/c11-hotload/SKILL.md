@@ -95,13 +95,13 @@ A Release/staging build launched by `reloads.sh` binds its **own** socket in aut
 
 ## QA / automation launch (suppress the startup dialogs)
 
-A normal launch can present two blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet and the **"Resume previous session?"** picker. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var suppresses **both** and makes the resume decision deterministic:
+A normal launch can present three blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet, the **"Resume previous session?"** picker, and, when notifications are already off, the **"Turn on notifications for c11"** sheet. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var suppresses **all three** and makes the resume decision deterministic:
 
-| `C11_QA_LAUNCH` | Skill sheet | Resume picker | Session |
-|---|---|---|---|
-| `fresh` (or any non-`resume` value) | suppressed | suppressed | clean slate, no restore |
-| `resume` | suppressed | suppressed | silently restores the prior session |
-| unset / empty | may show | may show | normal interactive launch |
+| `C11_QA_LAUNCH` | Skill sheet | Resume picker | Notifications-off sheet | Session |
+|---|---|---|---|---|
+| `fresh` (or any non-`resume` value) | suppressed | suppressed | suppressed | clean slate, no restore |
+| `resume` | suppressed | suppressed | suppressed | silently restores the prior session |
+| unset / empty | may show | may show | may show when notifications are off | normal interactive launch |
 
 It's read fresh each launch and never persisted, so it can't leak into a later non-QA run. Default is **fresh** — automation usually wants a known-empty start; `resume` is the deliberate opt-in.
 

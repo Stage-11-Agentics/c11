@@ -9,3 +9,5 @@ c11Tests/WindowBrowserHostViewTests/testHostViewPassesThroughDividerWhenAdjacent
 c11Tests/WindowTerminalHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed	The standalone host remaps posted pointer coordinates; guest scenario 10 covers divider reopening.
 c11Tests/ThemeResolverBenchmarks/testResolverP95PerformanceBudget	This wall-clock budget varies on the shared 3-core macos-15 runner; time it on a quiet host.
 c11Tests/AppDelegateShortcutRoutingTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel	Atlas host tests cannot reliably make the synthetic auxiliary NSWindow key, so its key-window Cmd+W route is not exercised.
+c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach	Synthetic standalone host views lack portal-bound terminal focus routing; packaged guest Find-focus proof remains required.
+c11Tests/GhosttySurfaceOverlayTests/testWorkspaceSelectionReleasesExistingEditorButPreservesEditorOpenedAfterSelection	Synthetic standalone host views lack portal-bound terminal focus routing; packaged guest workspace-selection focus proof remains required.

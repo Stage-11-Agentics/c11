@@ -773,6 +773,17 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
     }
 
     func testCloseCurrentPanelClearsNotificationsForClosedSurface() {
+        let defaults = UserDefaults.standard
+        let originalCloseSetting = defaults.object(forKey: lastSurfaceCloseShortcutDefaultsKey)
+        defaults.set(false, forKey: lastSurfaceCloseShortcutDefaultsKey)
+        defer {
+            if let originalCloseSetting {
+                defaults.set(originalCloseSetting, forKey: lastSurfaceCloseShortcutDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: lastSurfaceCloseShortcutDefaultsKey)
+            }
+        }
+
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
@@ -783,6 +794,8 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         store.configureNotificationDeliveryHandlerForTesting { _, _ in }
         appDelegate.workspaceManager = manager
         appDelegate.notificationStore = store
+        XCTAssertTrue(AppDelegate.shared === appDelegate)
+        XCTAssertTrue(appDelegate.notificationStore === store)
 
         defer {
             store.replaceNotificationsForTesting([])
@@ -810,6 +823,7 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         drainMainQueue()
         drainMainQueue()
 
+        XCTAssertNil(workspace.panels[initialPanelId], "Closing the selected panel must remove it")
         XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: initialPanelId))
     }
 }
@@ -1370,11 +1384,27 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
         XCTAssertEqual(controller.debugKnownRefSeedCount, 1)
         for _ in 0..<100 {
             for method in ["system.ping", "system.capabilities"] {
-                let response = controller.processV2Command("{\"id\":297,\"method\":\"\(method)\"}")
+                let response: String
+                if method == "system.capabilities" {
+                    let responseBox = TerminalControllerRefLifecycleResponseBox()
+                    let completed = expectation(description: "\(method) socket-worker response")
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        responseBox.store(
+                            controller.socketWorkerV2Response(
+                                TerminalController.V2SocketRequest(id: 297, method: method, params: [:])
+                            )
+                        )
+                        completed.fulfill()
+                    }
+                    wait(for: [completed], timeout: 2)
+                    response = try XCTUnwrap(responseBox.value)
+                } else {
+                    response = controller.processV2Command("{\"id\":297,\"method\":\"\(method)\"}")
+                }
                 let result = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
                 XCTAssertEqual(result["ok"] as? Bool, true)
             }
-            // Worker entry points may still invoke the idempotent fallback.
+            // Repeated fallback refreshes must not repeat the startup graph walk.
             controller.v2RefreshKnownRefs()
         }
         XCTAssertEqual(controller.debugKnownRefSeedCount, 1,
@@ -1476,6 +1506,23 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
             XCTAssertEqual(controller.v2RefByUUID[.surface]?[id], ref)
         }
         XCTAssertEqual(controller.debugKnownRefSeedCount, seedCount)
+    }
+}
+
+private final class TerminalControllerRefLifecycleResponseBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: String?
+
+    var value: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValue
+    }
+
+    func store(_ value: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedValue = value
     }
 }
 

@@ -677,11 +677,11 @@ else
     RELEASE_ID="$(jq -r .id <<<"$(find_release)")"
     [[ -n "$RELEASE_ID" && "$RELEASE_ID" != "null" ]] || die "created draft for $TAG not found"
   else
-    gh release edit "$TAG" --repo "$REPO_SLUG" --notes-file "$RELEASE_NOTES"
     if [[ "$RELEASE_DRAFT" != "true" ]]; then
       note "release $TAG is published without assets; turning it into a draft before uploading"
       gh api -X PATCH "repos/$REPO_SLUG/releases/$RELEASE_ID" -F draft=true >/dev/null
     fi
+    gh release edit "$TAG" --repo "$REPO_SLUG" --notes-file "$RELEASE_NOTES"
     gh release upload "$TAG" --repo "$REPO_SLUG" "${ASSETS[@]}"
   fi
   note "draft release id: $RELEASE_ID"

@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -113,10 +114,30 @@ def snapshot(root, payload, args, held=None):
         kind = bundle(root / path, payload / (repo + ".bundle"), held.get(repo, []))
         if kind:
             bundles[repo] = kind
+    test_scheme = selected_test_scheme(args.extra)
+    selectors = [arg.split(":", 1)[1] for arg in args.extra if arg.startswith("-only-testing:")]
+    host_tests_selected = not selectors or any(
+        selector == "c11Tests" or selector.startswith("c11Tests/") for selector in selectors
+    )
+    host_quarantine = (
+        read_host_test_quarantine(root)
+        if args.mode == "test" and host_tests_selected and not args.no_host_quarantine
+        else []
+    )
+    test_args = list(args.extra)
+    existing_skips = {
+        arg.split(":", 1)[1] for arg in test_args if arg.startswith("-skip-testing:")
+    }
+    test_args.extend(
+        "-skip-testing:" + item["test_id"] for item in host_quarantine
+        if item["test_id"] not in existing_skips
+    )
     manifest = {"invocation": uuid.uuid4().hex, "head": head, "bundles": bundles,
                 "branch": git(root, "branch", "--show-current"), "submodules": modules,
                 "overlay": overlays, "dirty": bool(overlays), "tag": args.tag,
                 "slug": slug(args.tag), "mode": args.mode, "extra": args.extra,
+                "test_args": test_args, "test_scheme": test_scheme,
+                "host_test_quarantine": host_quarantine,
                 "release_options": [f"--{k}" for k in ("clean", "wmo", "universal") if getattr(args, k)],
                 "developer_dir": os.environ.get("C11_REMOTE_DEVELOPER_DIR", "/Applications/Xcode-26.3.app/Contents/Developer"),
                 "zig_dir": os.environ.get("C11_REMOTE_ZIG_DIR", "")}
@@ -126,6 +147,24 @@ def snapshot(root, payload, args, held=None):
 
 def slug(tag):
     return re.sub(r"[^a-z0-9]+", "-", tag.lower()).strip("-")
+
+
+def read_host_test_quarantine(root):
+    """Load the shared parser from disk only when the client snapshots host tests."""
+    helper_path = Path(__file__).resolve().parent / "host_test_quarantine.py"
+    spec = importlib.util.spec_from_file_location("c11_host_test_quarantine", helper_path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"cannot load quarantine parser: {helper_path}")
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper.read_host_test_quarantine(Path(root) / "scripts" / "host-test-quarantine.tsv")
+
+
+def selected_test_scheme(extra):
+    selectors = [arg.split(":", 1)[1] for arg in extra if arg.startswith("-only-testing:")]
+    if selectors and all(selector.startswith("c11LogicTests") for selector in selectors):
+        return "c11-logic"
+    return "c11-unit"
 
 
 def bundle(repo, path, held):
@@ -302,8 +341,9 @@ def remote(payload, locked=False):
         tag = manifest["tag"]
         if mode == "test":
             env["C11_TEST_DERIVED_DATA"] = str(base / "derived-test")
+            env["C11_TEST_SCHEME"] = manifest.get("test_scheme", "c11-unit")
             # Selected tests must execute, not default to the build action.
-            command = [source / "scripts/test-unit-local.sh", "test", *manifest["extra"]]
+            command = [source / "scripts/test-unit-local.sh", "test", *manifest["test_args"]]
             app = None
         else:
             if mode == "debug":
@@ -316,6 +356,9 @@ def remote(payload, locked=False):
                            *manifest["release_options"]]
                 app = derived / "Build/Products/Release" / ("c11 STAGING " + tag + ".app")
         with (artifacts / "build.log").open("w") as log:
+            for item in manifest.get("host_test_quarantine", []):
+                log.write("[host-quarantine] %s: %s\n" % (item["test_id"], item["reason"]))
+            log.flush()
             build = subprocess.run([str(a) for a in command], cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT)
         build_log = (artifacts / "build.log").read_text()
         if mode == "test" and ("Test Suite " in build_log or "Testing started" in build_log):
@@ -367,7 +410,7 @@ def client(args):
         ssh = ["ssh", "-o", "BatchMode=yes", host]
         started = time.monotonic()
         manifest = snapshot(root, payload, args, held_heads(ssh))
-        for name in ("remote_build.py", "atlas_build_slots.py", "with-build-lock.sh"):
+        for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
             shutil.copy2(root / "scripts" / name, payload / name)
         relative = f"c11-builds/{manifest['slug']}/incoming/{manifest['invocation']}"
         run([*ssh, shlex.join(["mkdir", "-p", relative])])
@@ -392,12 +435,14 @@ def client(args):
         if retrieved.returncode:
             return retrieved.returncode
         result = json.loads((local / "result.json").read_text())
-        if not result.get("ok") or any(result.get(k) != manifest[k] for k in ("invocation", "head", "submodules", "overlay", "mode", "tag")):
+        identity_keys = ("invocation", "head", "submodules", "overlay", "mode", "tag",
+                         "test_args", "test_scheme", "host_test_quarantine")
+        if not result.get("ok") or any(result.get(k) != manifest[k] for k in identity_keys):
             raise ValueError("remote result/source identity mismatch")
         if result["compile"] != "ok" or (args.mode == "test" and result["tests"] != "ok"):
             raise ValueError("remote build/test result failed")
         if args.mode == "test":
-            print("C11_REMOTE_OK compile=ok tests=ok")
+            print("C11_REMOTE_OK compile=ok tests=ok quarantined=%d" % len(result.get("host_test_quarantine", [])))
             return 0
         app = local / result["app"]
         if digest(app / "Contents/MacOS/c11") != result["executable_sha256"]:
@@ -457,6 +502,8 @@ def main():
     parser.add_argument("--host", default=os.environ.get("C11_REMOTE_HOST", "atlas"))
     parser.add_argument("--tag", required=True)
     parser.add_argument("--mode", choices=("debug", "test", "release"), default="debug")
+    parser.add_argument("--no-host-quarantine", action="store_true",
+                        help="run c11Tests methods from the shared quarantine inventory")
     parser.add_argument("--launch", action="store_true", help="launch a returned Debug app with QA fresh")
     for option in ("clean", "wmo", "universal"):
         parser.add_argument("--" + option, action="store_true")

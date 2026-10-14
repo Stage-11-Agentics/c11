@@ -1,0 +1,11 @@
+# Exact c11Tests selectors and their one-line environment or timing reason.
+c11Tests/GhosttyBackquoteRegressionTests/testShiftBackquoteEscFallbackSendsLiteralTilde	Synthetic views lack a live Ghostty surface and responder; guest QA covers Shift+backquote.
+c11Tests/GhosttyOptionDeleteRegressionTests/testOptionDeletePreservesAltAsModifierForWordDelete	Synthetic views lack a live Ghostty surface and responder; guest QA covers Option+Delete.
+c11Tests/KoreanIMEReturnCommitRegressionTests/testReturnAfterKoreanCommitAlsoSendsReturnToSurface	Synthetic views lack the live Korean IME composition and responder; guest QA covers commit plus Return.
+c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalClickRecoversSplitActiveStateWhenFocusCallbackIsSuppressed	Standalone split panels lack a portal-bound window; guest QA covers split-focus recovery.
+c11Tests/WorkspaceTerminalFocusRecoveryTests/testTerminalFirstResponderConvergesSplitActiveStateWhenSelectionAlreadyMatches	Standalone split panels lack a portal-bound window; guest QA covers split-focus recovery.
+c11Tests/PanelLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY	Atlas stdin may name a redirected pty rather than this process's controlling tty, so PROC_TTY_ONLY finds nothing.
+c11Tests/WindowBrowserHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed	The standalone host remaps posted pointer coordinates; guest scenario 9 covers divider reopening.
+c11Tests/WindowTerminalHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed	The standalone host remaps posted pointer coordinates; guest scenario 10 covers divider reopening.
+c11Tests/ThemeResolverBenchmarks/testResolverP95PerformanceBudget	This wall-clock budget varies on the shared 3-core macos-15 runner; time it on a quiet host.
+c11Tests/AppDelegateShortcutRoutingTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel	Atlas host tests cannot reliably make the synthetic auxiliary NSWindow key, so its key-window Cmd+W route is not exercised.

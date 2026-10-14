@@ -66,6 +66,7 @@ YIELD_INTERVAL_S = 5
 TERM_GRACE_S = 10
 KILL_BUDGET_S = 60
 BUDGET_S = 120
+ARMED_TESTS = ("HealthFlagsTests", "PanelLivenessDeriverTests")
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
@@ -445,7 +446,7 @@ def xcodebuild_argv(worktree, derived, result_path):
         "-derivedDataPath", str(derived),
         "-resultBundlePath", str(result_path),
         "test",
-        "-only-testing:c11LogicTests/HealthFlagsTests",
+        *["-only-testing:c11LogicTests/%s" % name for name in ARMED_TESTS],
         "-test-timeouts-enabled", "YES",
         "-default-test-execution-time-allowance", "60",
         "-maximum-test-execution-time-allowance", "60",
@@ -469,7 +470,7 @@ def classify_result(log_text, build_seconds):
     seconds = int(build_seconds)
     matched = re.search(r"Executed ([1-9][0-9]*) tests?", log_text or "")
     passed = (
-        "HealthFlagsTests" in (log_text or "")
+        all(armed_test_ran(log_text, name) for name in ARMED_TESTS)
         and "** TEST SUCCEEDED **" in (log_text or "")
         and matched is not None
     )
@@ -478,6 +479,15 @@ def classify_result(log_text, build_seconds):
     if build_seconds > BUDGET_S:
         return "failure", "budget %ss" % seconds
     return "success", "%ss" % seconds
+
+
+def armed_test_ran(log_text, name):
+    """Require XCTest output for the armed class, not just its command-line selector."""
+    return re.search(
+        r"^Test (?:Suite|Case) '[^']*\b%s\b" % re.escape(name),
+        log_text or "",
+        re.MULTILINE,
+    ) is not None
 
 
 def link_ghosttykit(cache_root, sha, worktree):
@@ -1629,7 +1639,25 @@ class Supervisor:
             removed.append(path.name)
         if removed:
             self.log(decision="cache-pruned", removed=removed, kept=[path.name for path in keep])
+            warm = self.state() / "warmed-dependencies"
+            for name in removed:
+                if name.startswith("DerivedData-"):
+                    (warm / name.removeprefix("DerivedData-")).unlink(missing_ok=True)
         return current
+
+    def _mark_dependency_warm(self, key):
+        """Remember a completed passing build while its dependency cache is retained."""
+        directory = self.state() / "warmed-dependencies"
+        directory.mkdir(parents=True, exist_ok=True)
+        marker = directory / key
+        temporary = directory / (key + ".tmp-" + uuid.uuid4().hex)
+        temporary.write_text("warm\n")
+        os.replace(temporary, marker)
+
+    def _dependency_is_warm(self, key):
+        marker = self.state() / "warmed-dependencies" / key
+        derived = self.root / "cache" / ("DerivedData-" + key)
+        return marker.is_file() and (derived / "Build").is_dir()
 
     def _spawn(self, item):
         """One attempt: a fresh attempt id, then at most one cache retry.
@@ -1646,7 +1674,9 @@ class Supervisor:
         self._drop(item)
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
+        cold_cache = not self._dependency_is_warm(item["deps"])
         self.derived = self._derived_data(item["deps"])
+        cold_retry_queued = False
         for invocation in (1, 2):
             code = self._spawn_one(item, invocation)
             self.build_end = self.world.time()
@@ -1656,9 +1686,23 @@ class Supervisor:
             if self.stopped:
                 return "stopped"
             if self.world.last_exit == 0:
+                log = self.world.build_log or ""
+                if all(armed_test_ran(log, name) for name in ARMED_TESTS) and "** TEST SUCCEEDED **" in log:
+                    self._mark_dependency_warm(item["deps"])
+                    if invocation == 1 and cold_cache and self.build_seconds() > BUDGET_S:
+                        cold_retry_queued = True
                 break
             if STALE_MODULE in (self.world.build_log or ""):
                 return self._cache_fault(item, invocation)
+        if cold_retry_queued:
+            seconds = self.build_seconds()
+            self.log(decision="cold-cache-retry", pr=item["pr"], sha=item["sha"],
+                     deps=item["deps"], build_seconds=round(seconds, 3))
+            self.delivered = self._post(
+                item["sha"], "pending", "cold cache exceeded budget; warm retry queued",
+                pr=item["pr"], build_seconds=round(seconds, 3), deps=item["deps"],
+            )
+            return "started"
         self._finish(item, self.world.last_exit)
         return "started"
 
@@ -1817,7 +1861,7 @@ class Supervisor:
         self._stop_group(record)
         sha = record.get("sha") or ""
         if reason in ("guest", "slot"):
-            self.delivered = self._post(sha, "error", "yielded to Atlas work", pr=record.get("pr"))
+            self.delivered = self._post(sha, "pending", "yielded to Atlas work", pr=record.get("pr"))
             self.log(decision="yielded", reason=reason, pr=record.get("pr"))
         elif reason == "superseded":
             self.delivered = self._post(sha, "failure", "superseded", pr=record.get("pr"))

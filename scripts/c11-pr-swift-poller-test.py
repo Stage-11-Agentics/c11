@@ -83,7 +83,11 @@ class World:
         self.posts = []
         self.exits = [0]
         self.last_exit = 0
-        self.build_log = "HealthFlagsTests\n** TEST SUCCEEDED **\nExecuted 2 tests\n"
+        self.build_log = (
+            "Test Suite 'HealthFlagsTests' started\n"
+            "Test Suite 'PanelLivenessDeriverTests' started\n"
+            "** TEST SUCCEEDED **\nExecuted 2 tests\n"
+        )
         self.worktree = "/work"
         self.statuses = {}
         self.kill_log = []
@@ -390,7 +394,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         self.assertEqual(outcome, "no-start")
         self.assertEqual(supervisor.spawns, [])
 
-    def test_guest_or_other_slot_mid_build_kills_and_posts_error(self):
+    def test_guest_or_other_slot_mid_build_kills_and_posts_pending(self):
         held = subprocess.Popen(["sleep", "30"], start_new_session=True)
         try:
             record = {"pgid": held.pid, "slot": 1, "sha": SHA_A, "pr": 7}
@@ -400,7 +404,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             reason = supervisor.watch(record)
             self.assertEqual(reason, "guest")
             self.assertEqual(held.wait(timeout=2), -signal.SIGTERM)
-            self.assertEqual(world.posts[-1]["state"], "error")
+            self.assertEqual(world.posts[-1]["state"], "pending")
             self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
         finally:
             _kill(held.pid)
@@ -449,7 +453,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         reason = supervisor.watch_while(running, {"pgid": 4242, "slot": 1, "sha": SHA_A, "pr": 7})
         self.assertEqual(reason, "guest")
         self.assertEqual(world.sleeps[0], 5)
-        self.assertEqual(world.posts[-1]["state"], "error")
+        self.assertEqual(world.posts[-1]["state"], "pending")
         self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
         self.assertEqual(world.kill_log[0], (4242, signal.SIGTERM))
         self.assertEqual(world.kill_log[-1], (4242, signal.SIGKILL))
@@ -855,13 +859,18 @@ class PollingAndCredentialTests(unittest.TestCase):
 
     def test_status_description_and_budget(self):
         state, description = poller.classify_result(
-            "HealthFlagsTests\n** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
+            "Test Suite 'HealthFlagsTests' started\nTest Suite 'PanelLivenessDeriverTests' started\n"
+            "** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
         self.assertEqual((state, description), ("success", "15s"))
         state, description = poller.classify_result(
-            "HealthFlagsTests\n** TEST SUCCEEDED **\nExecuted 1 test\n", 121)
+            "Test Suite 'HealthFlagsTests' started\nTest Suite 'PanelLivenessDeriverTests' started\n"
+            "** TEST SUCCEEDED **\nExecuted 1 test\n", 121)
         self.assertEqual(state, "failure")
         self.assertEqual(description, "budget 121s")
-        body = poller.status_body(SHA_A, "error", "yielded to Atlas work")
+        missing_slice = poller.classify_result(
+            "Test Suite 'HealthFlagsTests' started\n** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
+        self.assertEqual(missing_slice, ("failure", "failed 15s"))
+        body = poller.status_body(SHA_A, "pending", "yielded to Atlas work")
         self.assertLessEqual(len(body["description"]), 140)
         self.assertEqual(body["context"], "c11/pr-swift")
 
@@ -1183,7 +1192,12 @@ def _git_pair(tmp):
 
 APP_ID = 99
 INSTALLATION_ID = 7
-SUCCESS_BUILD = 'print("HealthFlagsTests"); print("Executed 1 test"); print("** TEST SUCCEEDED **")'
+SUCCESS_BUILD = "print(\"Test Suite 'HealthFlagsTests' started\"); print(\"Test Suite 'PanelLivenessDeriverTests' started\"); print(\"Executed 1 test\"); print(\"** TEST SUCCEEDED **\")"
+SUCCESS_LOG = (
+    "Test Suite 'HealthFlagsTests' started\n"
+    "Test Suite 'PanelLivenessDeriverTests' started\n"
+    "Executed 1 test\n** TEST SUCCEEDED **\n"
+)
 _KEY = {}
 
 
@@ -1367,9 +1381,14 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(result["build_seconds"], 119)
         self.assertEqual(result["post_seconds"], 5)
 
-    def test_build_over_budget_fails_once(self):
+    def test_warm_build_over_budget_fails_once(self):
         world = World(body=[pr()])
         spawn = world.spawn
+        key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
+        marker = self.root / "state" / "warmed-dependencies" / key
+        marker.parent.mkdir(parents=True)
+        marker.write_text("warm\n")
+        (self.root / "cache" / ("DerivedData-" + key) / "Build").mkdir(parents=True)
 
         def run_spawn(command, log_path=None):
             poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
@@ -1379,6 +1398,42 @@ class ReviewRegressionTests(unittest.TestCase):
         world.spawn = run_spawn
         poller.Supervisor(self.root, world).poll_once()
         self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("failure", "budget 121s")])
+
+    def test_cold_success_over_budget_posts_pending_and_retries_warm(self):
+        world = World(body=[pr()])
+        spawn = world.spawn
+        durations = iter((121, 12))
+
+        def run_spawn(command, log_path=None):
+            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
+            world.now += next(durations)
+            world.build_log = SUCCESS_LOG
+            key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
+            (self.root / "cache" / ("DerivedData-" + key) / "Build").mkdir(parents=True, exist_ok=True)
+            return spawn(command, log_path)
+
+        world.spawn = run_spawn
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()
+        self.assertEqual(
+            [(item["state"], item["description"]) for item in world.posts],
+            [("pending", "cold cache exceeded budget; warm retry queued")],
+        )
+        self.assertFalse(any(item.get("state") == "failure" for item in _decisions(self.root)))
+        self.assertNotIn(7, supervisor.reported)
+        self.assertEqual(len(supervisor.spawns), 1, "the first build must run before any retry status is posted")
+
+        world.now += 26
+        supervisor.poll_once()
+        self.assertEqual(
+            [(item["state"], item["description"]) for item in world.posts],
+            [
+                ("pending", "cold cache exceeded budget; warm retry queued"),
+                ("success", "12s"),
+            ],
+        )
+        self.assertEqual(len(supervisor.spawns), 2)
+        self.assertEqual(supervisor.reported, {7: SHA_A})
 
     def test_status_post_retries_honour_retry_after(self):
         world = World(body=[pr()])
@@ -1860,6 +1915,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertEqual(bundle.parent, self.root / "state" / "results")
         self.assertIn("** TEST SUCCEEDED **", (bundle.parent / (bundle.name + ".log")).read_text())
         self.assertIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
+        self.assertIn("-only-testing:c11LogicTests/PanelLivenessDeriverTests", argv)
         key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
         self.assertEqual(Path(argv[argv.index("-derivedDataPath") + 1]), self.root / "cache" / ("DerivedData-" + key))
         self.assertEqual(decided["deps"], key)
@@ -1943,7 +1999,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertEqual(proc.returncode, 0, err)
         self.assertFalse(poller.group_alive(int(ready.read_text())))
         self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "guest" for item in _decisions(self.root)))
-        self.assertEqual(self.github.statuses()[-1], ("error", "yielded to Atlas work"))
+        self.assertEqual(self.github.statuses()[-1], ("pending", "yielded to Atlas work"))
 
     def test_other_slot_during_the_build_stops_the_group(self):
         self._enable()

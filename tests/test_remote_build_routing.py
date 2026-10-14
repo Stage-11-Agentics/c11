@@ -363,7 +363,7 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(result["tests"], "failed")
         self.assertEqual((artifacts / "tests.xcresult/failure.txt").read_text(), "diagnostic")
         # Exercise the client's failed-request retrieval with the emitted artifacts.
-        for name in ("remote_build.py", "atlas_build_slots.py", "with-build-lock.sh"):
+        for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
             (scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
         (fake / "ssh").write_text("#!/bin/sh\ncase \"$*\" in *--held-heads*) echo '{}'; exit 0;; *mkdir*) exit 0;; *) exit 65;; esac\n")
         (fake / "rsync").write_text("#!/bin/sh\nfor last do :; done\ncase \"$*\" in *atlas:c11-builds/fixture/artifacts/*) cp -R \"$TEST_ARTIFACTS/.\" \"$last\";; esac\n")
@@ -401,7 +401,7 @@ class RoutingTests(unittest.TestCase):
         # Fake transports exercise the actual client failure path, not source structure.
         fixture_scripts = self.worktree / "scripts"
         fixture_scripts.mkdir()
-        for name in ("remote_build.py", "atlas_build_slots.py", "with-build-lock.sh"):
+        for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
             (fixture_scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
         fake = self.base / "fake"
         fake.mkdir()
@@ -425,6 +425,47 @@ class RoutingTests(unittest.TestCase):
                     self.assertEqual(remote.client(self.args), status)
         self.assertEqual((app / "sentinel").read_text(), "old artifact")
         self.assertFalse(marker.exists())
+
+
+class QuarantineInventoryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "scripts").mkdir()
+        self.inventory = self.root / "scripts" / "host-test-quarantine.tsv"
+
+    def test_exact_methods_and_reasons_are_returned(self):
+        self.inventory.write_text(
+            "# exact host test methods\n"
+            "c11Tests/ExampleTests/testFirst\tReason one.\n"
+            "c11Tests/ExampleTests/testSecond\tReason two.\n"
+        )
+        self.assertEqual(
+            remote.read_host_test_quarantine(self.root),
+            [
+                {"test_id": "c11Tests/ExampleTests/testFirst", "reason": "Reason one."},
+                {"test_id": "c11Tests/ExampleTests/testSecond", "reason": "Reason two."},
+            ],
+        )
+
+    def test_class_selector_is_rejected(self):
+        self.inventory.write_text("c11Tests/ExampleTests\tA class is too broad.\n")
+        with self.assertRaisesRegex(ValueError, "exact c11Tests method"):
+            remote.read_host_test_quarantine(self.root)
+
+    def test_missing_reason_is_rejected(self):
+        self.inventory.write_text("c11Tests/ExampleTests/testFirst\t \n")
+        with self.assertRaisesRegex(ValueError, "one-line reason"):
+            remote.read_host_test_quarantine(self.root)
+
+    def test_duplicate_selector_is_rejected(self):
+        self.inventory.write_text(
+            "c11Tests/ExampleTests/testFirst\tFirst reason.\n"
+            "c11Tests/ExampleTests/testFirst\tSecond reason.\n"
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate host quarantine selector"):
+            remote.read_host_test_quarantine(self.root)
 
 
 if __name__ == "__main__":

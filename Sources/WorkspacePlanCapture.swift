@@ -282,11 +282,20 @@ enum WorkspacePlanCapture {
                 surfaceId: panelId
             )
             guard !snapshot.metadata.isEmpty else { return [:] }
-            return PersistedMetadataBridge.encodeValues(
+            let encoded = PersistedMetadataBridge.encodeValues(
                 snapshot.metadata,
                 surfaceIdForLog: panelId,
                 sources: snapshot.sources
             )
+            let attentionKeys: Set<String> = [
+                MetadataKey.flag,
+                MetadataKey.legacyFlagCallerSurfaceId,
+                MetadataKey.flagCallerTabId,
+                MetadataKey.flagCallerPanelId,
+                MetadataKey.suppressed,
+                MetadataKey.delegatedBy,
+            ]
+            return encoded.filter { !attentionKeys.contains($0.key) }
         }
 
         private func paneMetadata(for paneID: PaneID?) -> [String: PersistedJSONValue] {

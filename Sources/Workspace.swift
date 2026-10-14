@@ -6075,6 +6075,12 @@ final class Workspace: Identifiable, ObservableObject {
             },
             noteHeldUntil: { [weak self] deadline in
                 self?.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: deadline)
+            },
+            noteInputTransactionHeld: { [weak self] in
+                self?.scheduleMailboxDoorbellRecheck(
+                    surfaceId: surfaceId,
+                    after: MailboxDoorbellSequence.shortRecheck
+                )
             }
         )
         switch admitted {
@@ -6105,6 +6111,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         let ledger = mailboxStdinState.doorbell.ledger(for: surfaceId)
         let now = Date()
+        let journalSnapshot = JournalCoordinator.shared.snapshot(panelID: surfaceId)
         let epoch = mailboxStdinState.buffer.ringEpoch(surfaceId: surfaceId)
         let prompt: PromptInputState?
         if capturePrompt {
@@ -6138,6 +6145,10 @@ final class Workspace: Identifiable, ObservableObject {
                 ),
                 textBoxUnsent: MailboxDoorbellSequence.textBoxHoldsUnsent(terminalPanel.textBoxContent),
                 prompt: prompt,
+                journalInterruptionSettling: MailboxStdinDelivery.journalInterruptionSettling(
+                    journalSnapshot,
+                    now: now
+                ),
                 epoch: epoch,
                 now: now
             ),
@@ -6726,6 +6737,12 @@ final class Workspace: Identifiable, ObservableObject {
         }
         let inputState = PromptInputClassifier.classify(region, harness: harness).state
         let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
+        let journalSnapshot = JournalCoordinator.shared.snapshot(panelID: surfaceId)
+        let journalTurnOpen = MailboxStdinDelivery.journalTurnOpen(journalSnapshot)
+        let journalInterruptionSettling = MailboxStdinDelivery.journalInterruptionSettling(
+            journalSnapshot,
+            now: Date()
+        )
         let owns = mailboxAgentOwnsTerminal(surfaceId: surfaceId)
         if let outcome = MailboxDoorbellSequence.preReturn(
             rowIsCurrent: true,
@@ -6733,7 +6750,9 @@ final class Workspace: Identifiable, ObservableObject {
             agentOwnsTerminal: owns,
             captured: true,
             prompt: inputState,
-            composer: composer
+            composer: composer,
+            journalTurnOpen: journalTurnOpen,
+            journalInterruptionSettling: journalInterruptionSettling
         ) {
             return finish(outcome, inputState, composer)
         }

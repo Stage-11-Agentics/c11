@@ -136,6 +136,28 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertFalse(MailboxStdinDelivery.journalTurnOpen(nil))
     }
 
+    func testRecentCodexInterruptionSettlesBeforeDoorbell() {
+        let owner = JournalOwner(panelID: UUID(), agentKind: "codex", sessionID: "fixture")
+        var interrupted = JournalSnapshot(owner: owner, workspaceID: nil, appInstanceID: UUID())
+        interrupted.connection = .live
+        interrupted.confirmation = .confirmed
+        interrupted.adapter = .codexTranscript
+        interrupted.phase = .idle
+        interrupted.turnOutcome = "interrupted"
+        interrupted.observedAtMs = Int64(t(0).timeIntervalSince1970 * 1_000)
+
+        XCTAssertTrue(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(0.5)))
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(1)))
+        interrupted.phase = .working
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(0.5)))
+        interrupted.phase = .idle
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(
+            JournalReplayPolicy.restored(interrupted), now: t(0.5)
+        ))
+        interrupted.adapter = .grokTranscript
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(0.5)))
+    }
+
     /// An attach forgets the turn edges and submits from before it (the
     /// earlier process, and the Return that launched this one). A newer
     /// edge stays.
@@ -466,6 +488,27 @@ final class MailboxNoOpReturnTests: XCTestCase {
         for state in [PromptInputState.draft, .dialog, .unknown, .unavailable] {
             XCTAssertFalse(MailboxNoOpReturn.admits(state), state.rawValue)
         }
+    }
+
+    /// A keystroke during the socket Return's paste delay makes the fresh
+    /// read a draft, so the later idle check must not retain its old probe.
+    func testDelayedReturnDropsProbeWhenComposerChangesToDraft() {
+        let initial = MailboxNoOpReturn.Probe(
+            region: region(),
+            mark: .init(at: t(0), turn: nil, lastSubmit: nil)
+        )
+        var captures = 0
+        let shouldSubmit = MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: initial) {
+            captures += 1
+            return nil // The production reader returns nil for a draft.
+        }
+        XCTAssertFalse(shouldSubmit)
+        XCTAssertEqual(captures, 1)
+        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: initial) { initial })
+        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: nil) {
+            XCTFail("no initial probe must not recapture")
+            return nil
+        })
     }
 
     /// The submit is taken back only when the composer still reads empty or

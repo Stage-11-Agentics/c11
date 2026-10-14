@@ -7732,7 +7732,13 @@ class TerminalController {
         // lands in the paste-settle window. If one is in flight, this runs
         // after it; the live surface is re-read then.
         terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
-            guard let self, let terminalSurface, let surface = terminalSurface.surface else {
+            guard let self, let terminalSurface else { return finish() }
+            guard let surface = terminalSurface.surface else {
+                _ = terminalSurface.queueSocketSendIfDetached(
+                    text,
+                    submit: submit,
+                    preserveNewlines: preserveNewlines
+                )
                 return finish()
             }
             if !body.isEmpty {
@@ -7745,7 +7751,7 @@ class TerminalController {
             if wantsReturn {
                 // A bare Return (an empty `send` with submit) may have nothing
                 // to submit: read the composer first (C11-407).
-                let noOpProbe = body.isEmpty && feedAnswerGate == nil
+                var noOpProbe = body.isEmpty && feedAnswerGate == nil
                     ? Self.noOpReturnProbe(for: terminalSurface) : nil
                 // The Return must land *after* the target has finished
                 // ingesting the paste — a Return inside the paste-processing
@@ -7756,7 +7762,15 @@ class TerminalController {
                         finish()
                         if let terminalSurface { Self.checkNoOpReturn(noOpProbe, for: terminalSurface) }
                     },
-                    feedAnswerGate: feedAnswerGate
+                    feedAnswerGate: feedAnswerGate,
+                    beforeReturn: noOpProbe == nil ? nil : { [weak terminalSurface] in
+                        MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: noOpProbe) {
+                            guard let terminalSurface else { return nil }
+                            let refreshed = Self.noOpReturnProbe(for: terminalSurface)
+                            noOpProbe = refreshed
+                            return refreshed
+                        }
+                    }
                 )
             } else {
                 // Text left in the input line without a submit is a draft the

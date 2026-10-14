@@ -427,6 +427,28 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(events, ["received", "resolved", "copied", "handler", "cleaned"])
     }
 
+    func testUntitledPanelDeliveryUsesPanelIdInEventRecipient() throws {
+        let instance = "dispatcher-untitled-recipient"
+        let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)
+        EventEmitter.shared.startForTesting(log: eventLog, instance: instance)
+        defer { EventEmitter.shared.resetForTesting() }
+        let recipient = seedSurface(name: "")
+        let dispatcher = makeDispatcher(surfaces: [recipient])
+        let envelope = try MailboxEnvelope.build(
+            from: "sender", to: "id:\(recipient.uuidString)", body: "hello"
+        )
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        dispatcher.log.flush()
+        eventLog.flush()
+
+        let delivered = try XCTUnwrap(MessagesPageSource.load(stateURL: tempState).events.first {
+            $0.type == "mailbox.delivered" && $0.payload["id"] as? String == envelope.id
+        })
+        XCTAssertEqual(delivered.payload["recipient"] as? String, "id:\(recipient.uuidString)")
+    }
+
     /// Titles with `/` or past 64 bytes used to be inbox directory names, so
     /// every copy to them failed (`_copy eio`) and the message was lost. The
     /// inbox is keyed on the tab UUID, so such a title receives normally.

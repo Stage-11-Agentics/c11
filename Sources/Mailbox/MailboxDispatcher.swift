@@ -469,12 +469,12 @@ final class MailboxDispatcher {
                 MailboxLayout.envelopeFilename(id: envelope.id)
             )
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
-            log.append(.copied(id: envelope.id, recipient: recipient.name))
+            log.append(.copied(id: envelope.id, recipient: recipient.displayName))
             // C11-163: mailbox envelope delivered to a recipient inbox.
             EventEmitter.shared.emitMailboxDelivered(
                 workspace: workspaceId,
                 id: envelope.id,
-                recipient: recipient.name,
+                recipient: recipient.displayName,
                 surface: recipient.surfaceId,
                 via: "inbox"
             )
@@ -485,7 +485,7 @@ final class MailboxDispatcher {
             log.append(
                 .handler(
                     id: envelope.id,
-                    recipient: recipient.name,
+                    recipient: recipient.displayName,
                     handler: "_copy",
                     outcome: .eio,
                     bytes: nil,
@@ -510,7 +510,7 @@ final class MailboxDispatcher {
                     log.append(
                         .handler(
                             id: envelope.id,
-                            recipient: recipient.name,
+                            recipient: recipient.displayName,
                             handler: handlerName,
                             outcome: .eio,
                             bytes: nil,
@@ -549,7 +549,7 @@ final class MailboxDispatcher {
         let start = Date()
 
         Task {
-            let outcome = await handler(envelope, recipient.surfaceId, recipient.name)
+            let outcome = await handler(envelope, recipient.surfaceId, recipient.displayName)
             result = outcome
             semaphore.signal()
         }
@@ -563,7 +563,7 @@ final class MailboxDispatcher {
         log.append(
             .handler(
                 id: envelope.id,
-                recipient: recipient.name,
+                recipient: recipient.displayName,
                 handler: name,
                 outcome: result.outcome,
                 bytes: result.bytes,

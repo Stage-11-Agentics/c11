@@ -201,6 +201,11 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let workspace = try XCTUnwrap(resolveWorkspace(from: seed.workspaceRef))
         let browserID = try XCTUnwrap(parseUUIDSuffix(seed.surfaceRefs["browser"]))
         let agentID = try XCTUnwrap(parseUUIDSuffix(seed.surfaceRefs["agent"]))
+        _ = try PanelMetadataStore.shared.mutateAttention(
+            workspaceId: workspace.id,
+            surfaceId: agentID,
+            delegation: .delegate(ownerPanelId: UUID())
+        )
 
         let captured = WorkspacePlanCapture.capture(
             workspace: workspace,
@@ -217,6 +222,8 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         XCTAssertEqual(captured.plan.surfaces.map(\.id), ["s1", "s2"])
         XCTAssertEqual(captured.plan.surfaces[0].linkedAgentSurfacePlanId, "s2")
         XCTAssertEqual(captured.plan.surfaces[1].declaredAgentKind, "codex")
+        XCTAssertNil(captured.plan.surfaces[1].metadata?[MetadataKey.delegatedBy])
+        XCTAssertNil(captured.plan.surfaces[1].metadata?[MetadataKey.suppressed])
         XCTAssertTrue(captured.warnings.isEmpty)
 
         let missingAgentID = UUID()

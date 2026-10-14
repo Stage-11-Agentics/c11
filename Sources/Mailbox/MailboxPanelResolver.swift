@@ -106,6 +106,11 @@ struct MailboxPanelResolver {
             mailboxKeys["mailbox.retention_days"].flatMap { Int($0) }
         }
 
+        /// Stable event/log label for panels without an operator title.
+        var displayName: String {
+            name.isEmpty ? "id:\(surfaceId.uuidString)" : name
+        }
+
         /// `mailbox.address` — the stable, rename-proof handle. Empty → nil.
         var address: String? {
             MailboxIdentity.nonEmpty(mailboxKeys["mailbox.address"])

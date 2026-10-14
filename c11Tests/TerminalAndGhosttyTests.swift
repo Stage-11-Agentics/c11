@@ -3158,6 +3158,19 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
         XCTAssertNotNil(surface.lastOperatorKeyAt, "newline content is an unsubmitted draft")
     }
 
+    func testDeferredSocketSendQueuesAfterTheSurfaceDetaches() {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        XCTAssertNil(surface.surface)
+        XCTAssertTrue(surface.queueSocketSendIfDetached("\nline\n", submit: true, preserveNewlines: true))
+        XCTAssertEqual(surface.pendingInitialInputForTests, "\nline\n")
+        XCTAssertTrue(surface.pendingSubmitOnFlushForTests)
+    }
+
     func testSubmitReportsFalseForUnattachedSurfaceWithoutQueueing() {
         let surface = TerminalSurface(
             workspaceId: UUID(),
@@ -3268,6 +3281,23 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
         XCTAssertEqual(log, ["A start", "B", "C"])
         XCTAssertFalse(surface.isInputTransactionActive)
         XCTAssertEqual(surface.inputTransactionEpoch, epochA + 2)
+    }
+
+    func testLargeSynchronousTransactionQueueDrainsWithoutNesting() {
+        let surface = makeSurface()
+        let queuedCount = 20_000
+        var completed = 0
+        surface.performInputTransaction { finish in
+            for _ in 0..<queuedCount {
+                surface.performInputTransaction { nextFinish in
+                    completed += 1
+                    nextFinish()
+                }
+            }
+            finish()
+        }
+        XCTAssertEqual(completed, queuedCount)
+        XCTAssertFalse(surface.isInputTransactionActive)
     }
 
     /// The mailbox push only ever takes an idle slot.

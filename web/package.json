@@ -7,7 +7,9 @@
     "dev": "next dev --port 3777",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "check:changelog": "bun scripts/check-changelog-headline.ts"
   },
   "dependencies": {
     "@t3-oss/env-nextjs": "^0.13.11",

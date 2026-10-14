@@ -35,8 +35,8 @@ If the operator says "skip pre-flight," skip. Otherwise run all four every time.
 2. Create a release branch:
 - `git checkout -b release/vX.Y.Z`
 
-3. Gather user-facing changes and contributors since the last tag:
-- `git describe --tags --abbrev=0`
+3. Gather user-facing changes and contributors since the last versioned release tag:
+- `git describe --tags --abbrev=0 --match 'v*'` (artifact tags such as `nightly` and `xcframework-*` are not releases)
 - `git log --oneline <last-tag>..HEAD --no-merges`
 - Keep only end-user visible changes (features, bug fixes, UX/perf behavior).
 - **Collect contributors:** For each PR, get the author with `gh pr view <N> --repo Stage-11-Agentics/c11 --json author --jq '.author.login'`. Also check linked issue reporters with `gh issue view <N> --json author --jq '.author.login'`.
@@ -44,7 +44,8 @@ If the operator says "skip pre-flight," skip. Otherwise run all four every time.
 
 4. Update changelogs:
 - Update `CHANGELOG.md`.
-- Do not edit a separate docs changelog file; `web/app/docs/changelog/page.tsx` renders from `CHANGELOG.md`.
+- The `## [X.Y.Z] - YYYY-MM-DD` section is the release body; `release.yml` and `release-local.sh` refuse a tag without it.
+- Do not edit a separate docs changelog file; `web/app/[locale]/docs/changelog/page.tsx` renders from `CHANGELOG.md`.
 - Use categories `Added`, `Changed`, `Fixed`, `Removed`.
 - **Credit contributors inline** (see Contributor Credits below).
 - If no user-facing changes exist, confirm with the user before continuing.
@@ -64,7 +65,7 @@ re-read is warranted. Run this grep against the release range and read
 the threat-model doc end-to-end if any signal fires:
 
 ```bash
-git diff "$(git describe --tags --abbrev=0)..HEAD" -- \
+git diff "$(git describe --tags --abbrev=0 --match 'v*')..HEAD" -- \
   Resources/Info.plist \
   c11.entitlements \
   Resources/c11.sdef \
@@ -73,7 +74,14 @@ git diff "$(git describe --tags --abbrev=0)..HEAD" -- \
   Sources/AppDelegate.swift \
   Sources/Panels/BrowserPanel.swift \
   Sources/Panels/BrowserPanelView.swift \
-  Sources/BrowserWindowPortal.swift
+  Sources/BrowserWindowPortal.swift \
+  Sources/Panels/MarkdownWebRenderer.swift \
+  Sources/UntrustedRepositoryGit.swift \
+  Sources/MarkdownAssetPolicy.swift \
+  Sources/MarkdownCorpusIndex.swift \
+  Sources/SocketHandlers/MarkdownFeedbackHandlers.swift \
+  Resources/markdown-viewer/ \
+  Sources/Events/EventLog.swift
 ```
 
 The URL handler around `Sources/AppDelegate.swift:2301` (`application(_:open:)`)
@@ -158,9 +166,9 @@ This is a checklist trigger, not a CI gate.
 
 Credit the people who made each release happen:
 
-- **Per-entry:** Append `— thanks @user!` for community code contributions. Use `— thanks @user for the report!` for bug reporters (when different from PR author). No callout for core team (`lawrencecchen`, `austinywang`) — core work is the baseline.
-- **Summary:** Add a `### Thanks to N contributors!` section at the bottom of each release with an alphabetical list of all `[@handle](https://github.com/handle)` links (including core team).
-- **GitHub Release body:** Include the same "Thanks to N contributors!" section with linked handles.
+- **Per-entry:** Append `— thanks @user!` for code contributions, including c11 maintainers when they made the change. Use `— thanks @user for the report!` for bug reporters (when different from PR author). When a release imports an upstream commit, preserve its original authorship and credit that contributor; do not credit manaflow-ai's core team by default.
+- **Summary:** Add a `### Thanks to N contributors!` section at the bottom of each release with an alphabetical list of linked handles for people who contributed to that release, including c11 maintainers and authors of imported upstream commits.
+- **GitHub Release body:** The release workflow automatically uses the changelog section, including its "Thanks to N contributors!" section with linked handles.
 
 ## Version bumping
 
@@ -202,5 +210,5 @@ When `release.yml` cannot run (runner billing, outage), `scripts/release-local.s
 
 - **Release asset:** `c11-macos.dmg`, attached to the tag
 - **Download URL:** `https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg`
-- **Changelog file:** `CHANGELOG.md` (the docs changelog page at `web/app/docs/changelog/page.tsx` renders from it — do not maintain separately)
+- **Changelog file:** `CHANGELOG.md` (the docs changelog page at `web/app/[locale]/docs/changelog/page.tsx` renders from it — do not maintain separately)
 - **Required GitHub secrets:** `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`

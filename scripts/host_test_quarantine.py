@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Parse the shared exact-method host-test quarantine inventory."""
+"""Parse the shared exact-method host and logic-test quarantine inventory."""
 import argparse
 import re
 import sys
 from pathlib import Path
 
 
-TEST_ID = re.compile(r"c11Tests/[A-Za-z0-9_]+/test[A-Za-z0-9_]+\Z")
+TEST_ID = re.compile(r"c11(?:Logic)?Tests/[A-Za-z0-9_]+/test[A-Za-z0-9_]+\Z")
 
 
 def read_host_test_quarantine(path):
-    """Read unique exact c11Tests methods, scopes, and one-line reasons."""
+    """Read unique exact c11 test methods, scopes, and one-line reasons."""
     path = Path(path)
     rows = []
     seen = set()
@@ -27,7 +27,7 @@ def read_host_test_quarantine(path):
         if not reason.strip() or reason != reason.strip():
             raise ValueError(f"{path}:{line_number}: expected selector and one-line reason")
         if not TEST_ID.fullmatch(test_id):
-            raise ValueError(f"{path}:{line_number}: expected one exact c11Tests method selector")
+            raise ValueError(f"{path}:{line_number}: expected one exact c11Tests or c11LogicTests method selector")
         if scope not in ("all", "atlas"):
             raise ValueError(f"{path}:{line_number}: scope must be all or atlas")
         if test_id in seen:
@@ -48,7 +48,7 @@ def ci_actions(rows):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ci-actions", action="store_true",
-                        help="emit action, selector, scope, reason rows for the CI host gate")
+                        help="emit action, selector, scope, reason rows for the CI backstop")
     args = parser.parse_args()
     path = Path(__file__).with_name("host-test-quarantine.tsv")
     try:

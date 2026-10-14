@@ -1,4 +1,4 @@
-# Exact c11Tests selectors: test_id, scope (all | atlas), and one-line reason.
+# Exact c11Tests/c11LogicTests selectors: test_id, scope (all | atlas), and one-line reason.
 c11Tests/GhosttyBackquoteRegressionTests/testShiftBackquoteEscFallbackSendsLiteralTilde	all	Synthetic views lack a live Ghostty surface and responder; guest QA covers Shift+backquote.
 c11Tests/GhosttyOptionDeleteRegressionTests/testOptionDeletePreservesAltAsModifierForWordDelete	all	Synthetic views lack a live Ghostty surface and responder; guest QA covers Option+Delete.
 c11Tests/KoreanIMEReturnCommitRegressionTests/testReturnAfterKoreanCommitAlsoSendsReturnToSurface	all	Synthetic views lack the live Korean IME composition and responder; guest QA covers commit plus Return.
@@ -11,3 +11,6 @@ c11Tests/ThemeResolverBenchmarks/testResolverP95PerformanceBudget	all	This wall-
 c11Tests/AppDelegateShortcutRoutingTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel	atlas	Atlas cannot reliably make the synthetic auxiliary NSWindow key, so the key-window Cmd+W assertion is unavailable there.
 c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach	atlas	Atlas cannot make the synthetic NSWindow key or first responder for this focus assertion; macos-15 CI covers the test.
 c11Tests/GhosttySurfaceOverlayTests/testWorkspaceSelectionReleasesExistingEditorButPreservesEditorOpenedAfterSelection	atlas	Atlas cannot make the synthetic NSWindow key or first responder for this focus assertion; macos-15 CI covers the test.
+c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture	atlas	wall-clock budget, load-sensitive on the shared Atlas host
+c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture	atlas	wall-clock budget, load-sensitive on the shared Atlas host
+c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry	atlas	wall-clock budget, load-sensitive on the shared Atlas host

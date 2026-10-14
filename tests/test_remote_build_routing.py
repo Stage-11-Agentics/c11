@@ -50,7 +50,7 @@ class RoutingTests(unittest.TestCase):
         self.payload = self.base / "payload"
         self.payload.mkdir()
         self.args = argparse.Namespace(tag="fixture", mode="debug", extra=[], clean=False, wmo=False, universal=False,
-                                      launch=False, host="atlas")
+                                      launch=False, host="atlas", no_host_quarantine=False)
 
     def test_worktree_bundles_overlay_bytes_deletion_mode_and_symlink(self):
         self.assertTrue((self.worktree / ".git").read_text().startswith("gitdir:"))
@@ -331,6 +331,7 @@ class RoutingTests(unittest.TestCase):
     def test_remote_selected_test_executes_and_failure_is_separate_from_compile(self):
         scripts = self.worktree / "scripts"
         scripts.mkdir()
+        (scripts / "host-test-quarantine.tsv").write_text("")
         wrapper = scripts / "test-unit-local.sh"
         wrapper.write_text("#!/bin/sh\n[ \"$1\" = test ] || exit 88\n"
                            "while [ $# -gt 0 ]; do\n"
@@ -432,10 +433,12 @@ class RoutingTests(unittest.TestCase):
         selected = "c11Tests/ExampleTests/testSelected"
         atlas_only = "c11Tests/ExampleTests/testAtlasOnly"
         all_scope = "c11Tests/ExampleTests/testAllScope"
+        logic_atlas_only = "c11LogicTests/LogicExampleTests/testAtlasOnly"
         inventory.write_text(
             f"{selected}\tatlas\tExplicitly selected.\n"
             f"{atlas_only}\tatlas\tAtlas limitation.\n"
             f"{all_scope}\tall\tShared limitation.\n"
+            f"{logic_atlas_only}\tatlas\tLogic suite Atlas limitation.\n"
         )
         self.args.mode = "test"
         self.args.no_host_quarantine = False
@@ -449,10 +452,32 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("-skip-testing:" + atlas_only, manifest["test_args"])
         self.assertIn("-skip-testing:" + all_scope, manifest["test_args"])
         quarantine = {row["test_id"]: row for row in manifest["host_test_quarantine"]}
+        self.assertNotIn(logic_atlas_only, quarantine)
         self.assertTrue(quarantine[selected]["explicitly_selected"])
         self.assertFalse(quarantine[selected]["auto_skipped"])
         self.assertTrue(quarantine[atlas_only]["auto_skipped"])
         self.assertTrue(quarantine[all_scope]["auto_skipped"])
+
+    def test_logic_suite_applies_only_logic_quarantine_and_exact_selection_runs(self):
+        inventory = self.worktree / "scripts" / "host-test-quarantine.tsv"
+        inventory.parent.mkdir()
+        selected = "c11LogicTests/ExampleLogicTests/testSelected"
+        atlas_only = "c11LogicTests/ExampleLogicTests/testAtlasOnly"
+        host_only = "c11Tests/ExampleHostTests/testAtlasOnly"
+        inventory.write_text(
+            f"{selected}\tatlas\tExplicitly selected.\n"
+            f"{atlas_only}\tatlas\tAtlas limitation.\n"
+            f"{host_only}\tatlas\tHost limitation.\n"
+        )
+        self.args.mode = "test"
+        self.args.no_host_quarantine = False
+        self.args.extra = ["-only-testing:" + selected]
+        manifest = remote.snapshot(self.worktree, self.payload, self.args)
+
+        self.assertEqual(manifest["test_scheme"], "c11-logic")
+        self.assertNotIn("-skip-testing:" + selected, manifest["test_args"])
+        self.assertIn("-skip-testing:" + atlas_only, manifest["test_args"])
+        self.assertNotIn("-skip-testing:" + host_only, manifest["test_args"])
 
 
 class QuarantineInventoryTests(unittest.TestCase):
@@ -493,13 +518,19 @@ class QuarantineInventoryTests(unittest.TestCase):
         self.assertEqual(actions[
             "c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach"
         ], "run")
+        for test_id in (
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture",
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture",
+            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry",
+        ):
+            self.assertEqual(actions[test_id], "run")
         self.assertEqual(actions[
             "c11Tests/GhosttyBackquoteRegressionTests/testShiftBackquoteEscFallbackSendsLiteralTilde"
         ], "skip")
 
     def test_class_selector_is_rejected(self):
         self.inventory.write_text("c11Tests/ExampleTests\tall\tA class is too broad.\n")
-        with self.assertRaisesRegex(ValueError, "exact c11Tests method"):
+        with self.assertRaisesRegex(ValueError, "exact c11Tests or c11LogicTests method"):
             remote.read_host_test_quarantine(self.root)
 
     def test_missing_reason_is_rejected(self):

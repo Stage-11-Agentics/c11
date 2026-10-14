@@ -116,14 +116,13 @@ def snapshot(root, payload, args, held=None):
             bundles[repo] = kind
     test_scheme = selected_test_scheme(args.extra)
     selectors = [arg.split(":", 1)[1] for arg in args.extra if arg.startswith("-only-testing:")]
-    host_tests_selected = not selectors or any(
-        selector == "c11Tests" or selector.startswith("c11Tests/") for selector in selectors
-    )
-    host_quarantine = (
-        read_host_test_quarantine(root)
-        if args.mode == "test" and host_tests_selected and not args.no_host_quarantine
-        else []
-    )
+    selected_test_targets = {selector.split("/", 1)[0] for selector in selectors}
+    host_quarantine = []
+    if args.mode == "test" and not args.no_host_quarantine:
+        host_quarantine = [
+            item for item in read_host_test_quarantine(root)
+            if not selectors or item["test_id"].split("/", 1)[0] in selected_test_targets
+        ]
     test_args = list(args.extra)
     existing_skips = {
         arg.split(":", 1)[1] for arg in test_args if arg.startswith("-skip-testing:")

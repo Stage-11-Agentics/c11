@@ -2539,7 +2539,7 @@ struct CMUXCLI {
         // authentication, owner resolution, journal append, and the neutral
         // fallback path; resetting it after connect lets a silent peer or a
         // credential lookup consume the hook's entire timeout. The one reset
-        // is Stop's, after its filesystem-only mailbox drain (`runClaudeHook`).
+        // is Stop's, after its mailbox lookup and drain (`runClaudeHook`).
         let priorProcessDeadline = SocketClient.processDeadline
         if command == "claude-hook" {
             // Hook auth and compatibility commands each return one line. Do
@@ -19255,6 +19255,23 @@ struct CMUXCLI {
         func spoolJournalDraft() {
             if let journalDraft { _ = JournalCommand.spool(journalDraft) }
         }
+
+        // Claim Stop-hook mail before advisory lifecycle workspace resolution.
+        // The inbox miss path stays filesystem-only; a pending preferred inbox
+        // may use a bounded panel lookup to include a moved panel's live path.
+        if subcommand == "stop",
+           let drain = prepareMailboxHookDrain(
+               format: .claude,
+               input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput),
+               acknowledged: true,
+               resolveMovedPanelWorkspace: true,
+               client: client
+           ),
+           deliverMailboxHookDrain(drain, client: client) {
+            telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
+            return
+        }
+
         let fallbackWorkspaceId: String
         do {
             fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
@@ -19423,21 +19440,6 @@ struct CMUXCLI {
 
         case "stop", "idle":
             telemetry.breadcrumb("claude-hook.stop")
-            // C11-257: mail that arrived during the turn is delivered first, with
-            // no socket call inside this case before the claim. Blocking the stop
-            // hands Claude the messages and it takes one more turn, so the tab
-            // stays working and no completion is announced. Never on a stop that
-            // is already a Stop-hook continuation.
-            if subcommand == "stop",
-               let drain = prepareMailboxHookDrain(
-                   format: .claude,
-                   input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput),
-                   acknowledged: true
-               ),
-               deliverMailboxHookDrain(drain, client: client) {
-                telemetry.breadcrumb("claude-hook.stop.mailbox-delivered")
-                return
-            }
             // C11-401: the drain is filesystem work whose inbox scan can stat
             // every workspace directory, and it ran inside the window armed
             // before connect. If the lifecycle report shared that window, a
@@ -22039,7 +22041,9 @@ extension CMUXCLI {
         guard let drain = prepareMailboxHookDrain(
             format: format,
             input: input,
-            acknowledged: true
+            acknowledged: true,
+            scanWhenOwnerUnknown: true,
+            client: client
         ) else {
             return
         }
@@ -22050,17 +22054,18 @@ extension CMUXCLI {
     /// Returns nil (and claims nothing) when this event may not drain, the
     /// inbox is empty, or the hook process is too old to finish in time.
     ///
-    /// The inbox is the caller's C5 directory, `<mailboxes>/<C11_TAB_ID>/`,
-    /// found from the environment and the filesystem alone: no socket call
-    /// happens before the claim, so an empty inbox answers in a few
-    /// milliseconds however much mail sits in sibling inboxes. A tab moved to
-    /// another workspace still finds its inbox there (`tabInboxURLs`).
-    /// Title-keyed inboxes from older builds are left to an explicit
-    /// `c11 mailbox recv --drain`.
+    /// The inbox is the caller's C5 directory, `<mailboxes>/<C11_PANEL_ID>/`.
+    /// An empty direct path falls back to a filesystem scan. On Claude Stop,
+    /// if that direct path has mail, a bounded read-only panel lookup detects
+    /// a stale workspace so retained inboxes across moves are found. A generic
+    /// hook-format receive scans when its live owner is unknown.
     private func prepareMailboxHookDrain(
         format: MailboxHookFormat,
         input: MailboxHookInput,
-        acknowledged: Bool
+        acknowledged: Bool,
+        resolveMovedPanelWorkspace: Bool = false,
+        scanWhenOwnerUnknown: Bool = false,
+        client: SocketClient
     ) -> MailboxHookDrain? {
         let env = ProcessInfo.processInfo.environment
         guard env["C11_MAILBOX_HOOK_DRAIN"] != "0",
@@ -22069,9 +22074,20 @@ extension CMUXCLI {
               let stateURL = try? MailboxLayout.defaultStateURL() else {
             return nil
         }
+        let workspacesRoot = stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        let preferredWorkspaceId = (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:))
+        let preferredHasPendingMail = preferredWorkspaceId.map { workspaceId in
+            let preferredInbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: panelId)
+            return !MailboxDrain.pendingEntries(inbox: preferredInbox).isEmpty
+        } ?? false
+        let currentWorkspaceId = preferredHasPendingMail && resolveMovedPanelWorkspace
+            ? liveWorkspaceIdForMailboxPanel(panelId, client: client)
+            : nil
         let inboxes = MailboxDrain.panelInboxURLs(
-            workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true),
-            preferredWorkspaceId: (env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+            workspacesRoot: workspacesRoot,
+            preferredWorkspaceId: preferredWorkspaceId,
+            currentWorkspaceId: currentWorkspaceId,
+            scanWhenOwnerUnknown: scanWhenOwnerUnknown,
             panelId: panelId,
             scanCache: stateURL
                 .appendingPathComponent("mailbox-tab-scan", isDirectory: true)
@@ -22103,12 +22119,27 @@ extension CMUXCLI {
         }
         guard !claimed.isEmpty else { return nil }
         let context = MailboxHookOutput.context(framedBlocks: claimed.map(\.framed), remaining: remaining)
-        let json = MailboxHookOutput.render(MailboxHookOutput.payload(context: context))
+        let json = MailboxHookOutput.render(MailboxHookOutput.payload(context: context, format: format))
         guard !json.isEmpty else {
             claimed.forEach { MailboxDrain.unclaim($0.readURL) }
             return nil
         }
         return MailboxHookDrain(json: json, claimed: claimed, panelId: panelId)
+    }
+
+    /// Resolves the owning workspace of one explicit panel without consulting
+    /// the selected workspace. Stop-hook mail is already claimable from the
+    /// preferred path, so this bounded read only detects a move when that old
+    /// inbox also contains mail.
+    private func liveWorkspaceIdForMailboxPanel(_ panelId: UUID, client: SocketClient) -> UUID? {
+        guard let payload = try? client.sendV2(
+            method: "panel.list",
+            params: ["surface_id": panelId.uuidString],
+            deadline: .custom(Self.claudeHookSocketWindowSeconds)
+        ), let rawWorkspaceId = payload["workspace_id"] as? String else {
+            return nil
+        }
+        return UUID(uuidString: rawWorkspaceId)
     }
 
     /// The invocations that may claim mailbox mail inside a harness hook:

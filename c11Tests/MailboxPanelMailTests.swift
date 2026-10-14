@@ -280,4 +280,87 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(bytes, size)
         XCTAssertEqual(text.utf8.count, MailboxPanelMail.maxReferencedBytes)
     }
+
+    // MARK: - Copy text (C11-400)
+
+    func testCopyTextDropsTrailingNewlineAndKeepsInnerOnes() throws {
+        try write(["body": "echo one\necho two\n"], id: ulid(Date()))
+        let message = try XCTUnwrap(MailboxPanelMail.listing(inbox: inbox).messages.first)
+        XCTAssertEqual(message.fullText, "echo one\necho two")
+    }
+
+    func testCopyTextOfBodyRefDropsTheFilesFinalNewline() throws {
+        let file = root.appendingPathComponent("review.txt")
+        try Data("first line\n\nsecond line\n".utf8).write(to: file)
+        try write(["body": "See the file.", "body_ref": file.path], id: ulid(Date()))
+        let message = try XCTUnwrap(MailboxPanelMail.listing(inbox: inbox).messages.first)
+        XCTAssertEqual(message.fullText, "See the file.\n\nfirst line\n\nsecond line")
+    }
+}
+
+/// C11-400: which panels the subtitle bar's badge store keeps recounting.
+final class MailboxBadgeStoreTests: XCTestCase {
+
+    private var root: URL!
+    private var store: MailboxBadgeStore!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-badge-store-\(UUID().uuidString)", isDirectory: true)
+        let root = root!
+        store = MailboxBadgeStore(mailboxesRoot: { root.appendingPathComponent($0.uuidString, isDirectory: true) })
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func deliver(to panelId: UUID, in workspaceId: UUID) throws {
+        let inbox = try XCTUnwrap(store.inboxURL(workspaceId: workspaceId, panelId: panelId))
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let id = MailboxULID.encode(
+            timestampMs: UInt64(Date().timeIntervalSince1970 * 1000),
+            random: [UInt8](repeating: 7, count: MailboxULID.randomByteCount)
+        )
+        let object: [String: Any] = ["version": 1, "id": id, "from": "Sender", "ts": "2026-10-14T08:00:00Z", "body": "hi"]
+        try JSONSerialization.data(withJSONObject: object).write(to: inbox.appendingPathComponent("\(id).msg"))
+    }
+
+    private func waitForUnread(_ count: Int, panelId: UUID, file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(5)
+        while store.cachedSummary(panelId: panelId).unread != count, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertEqual(store.cachedSummary(panelId: panelId).unread, count, file: file, line: line)
+    }
+
+    func testDeliveryAfterCloseLeavesTheClosedPanelOffTheSweep() throws {
+        let workspace = UUID(), panel = UUID()
+        store.track(panelId: panel, workspaceId: workspace)
+        store.forget(panelId: panel)
+        try deliver(to: panel, in: workspace)
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        XCTAssertFalse(store.isTracking(panelId: panel))
+    }
+
+    func testDeliveryToALivePanelRecountsIt() throws {
+        let workspace = UUID(), panel = UUID()
+        store.track(panelId: panel, workspaceId: workspace)
+        waitForUnread(0, panelId: panel)
+        try deliver(to: panel, in: workspace)
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        waitForUnread(1, panelId: panel)
+        XCTAssertTrue(store.isTracking(panelId: panel))
+    }
+
+    func testDeliveryToAPanelMovedToAnotherWorkspaceRecountsItThere() throws {
+        let before = UUID(), after = UUID(), panel = UUID()
+        store.track(panelId: panel, workspaceId: before)
+        waitForUnread(0, panelId: panel)
+        // The delivery reports the new workspace before its bar has re-read.
+        try deliver(to: panel, in: after)
+        store.inboxChanged(workspaceId: after, panelId: panel)
+        waitForUnread(1, panelId: panel)
+        XCTAssertTrue(store.isTracking(panelId: panel))
+    }
 }

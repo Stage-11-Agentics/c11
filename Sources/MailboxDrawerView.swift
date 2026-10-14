@@ -139,6 +139,19 @@ struct MailboxCellView: View {
 
 // MARK: - Drawer
 
+/// The open drawer's size. The bar changes it in place when its area
+/// resizes, so the drawer keeps its scroll position, "Show all" folds and
+/// listing instead of being rebuilt.
+final class MailboxDrawerGeometry: ObservableObject {
+    @Published var width: CGFloat = 320
+    @Published var maxHeight: CGFloat = 220
+
+    func update(width: CGFloat, maxHeight: CGFloat) {
+        if self.width != width { self.width = width }
+        if self.maxHeight != maxHeight { self.maxHeight = maxHeight }
+    }
+}
+
 /// Who sent a message, resolved against the panels open right now.
 struct MailboxDrawerSender: Equatable {
     var panelNumber: Int?
@@ -152,8 +165,7 @@ struct MailboxDrawerView: View {
     let panelNumber: Int?
     let mailboxAddress: String?
     let inboxURL: URL?
-    let width: CGFloat
-    let maxHeight: CGFloat
+    @ObservedObject var geometry: MailboxDrawerGeometry
     let style: MailboxDrawerStyle
     let resolveSenders: ([String]) -> [String: MailboxDrawerSender]
 
@@ -173,7 +185,7 @@ struct MailboxDrawerView: View {
             Rectangle().fill(style.border).frame(height: 1)
             content
         }
-        .frame(width: width, alignment: .leading)
+        .frame(width: geometry.width, alignment: .leading)
         .background(Color(nsColor: style.background))
         .overlay(Rectangle().stroke(style.border, lineWidth: 1))
         .onAppear(perform: reload)
@@ -281,7 +293,7 @@ struct MailboxDrawerView: View {
                     )
                 }
             }
-            .frame(height: min(max(contentHeight, 1), maxHeight))
+            .frame(height: min(max(contentHeight, 1), geometry.maxHeight))
             .onPreferenceChange(MailboxDrawerHeightKey.self) { contentHeight = $0 }
         }
     }

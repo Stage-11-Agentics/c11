@@ -161,11 +161,16 @@ enum MailboxPanelMail {
         let problem: String?
 
         /// The inline body and any referenced text, as "Copy text" copies it.
+        /// Trailing newlines and spaces go (a `body_ref` file nearly always
+        /// ends in one), so a paste into a shell does not end in Return;
+        /// inner newlines stay.
         var fullText: String {
             var pieces: [String] = []
             if !body.isEmpty { pieces.append(body) }
             if case .text(let text, _, _)? = reference?.content { pieces.append(text) }
-            return pieces.joined(separator: "\n\n")
+            var text = pieces.joined(separator: "\n\n")
+            while let last = text.last, last.isWhitespace { text.removeLast() }
+            return text
         }
 
         /// Long enough that the drawer folds it behind "Show all". Computed once

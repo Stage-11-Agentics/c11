@@ -56,6 +56,7 @@ struct PanelTitleBarView: View {
     private var m1bSurfaceTitleBarMigrated = false
     @State private var measuredDescriptionHeight: CGFloat = 0
     @StateObject private var drawerPresenter = CollapsedSheetPresenter()
+    @StateObject private var drawerGeometry = MailboxDrawerGeometry()
     @State private var isDrawerOpen = false
     @State private var barWidth: CGFloat = 0
     /// This bar's mailbox cell is counted as on screen by the badge store.
@@ -122,6 +123,7 @@ struct PanelTitleBarView: View {
             EmptyView()
         } else {
             descriptionBar
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 12)
                 .padding(.trailing, mailboxModel == nil ? 12 : 6)
                 .padding(.vertical, 6)
@@ -146,7 +148,9 @@ struct PanelTitleBarView: View {
                     }
                 )
                 .accessibilityElement(children: .contain)
-                .onChange(of: barWidth) { _ in if isDrawerOpen { presentDrawer() } }
+                // An open drawer follows the area's width in place; the
+                // presenter re-hangs it when its size changes.
+                .onChange(of: barWidth) { _ in if isDrawerOpen { updateDrawerGeometry() } }
                 .onChange(of: isVisibleInUI) { visible in
                     if !visible { closeDrawer(animated: false) }
                     updateCellRegistration(visible && mailboxModel != nil)
@@ -202,12 +206,21 @@ struct PanelTitleBarView: View {
         }
     }
 
-    private func presentDrawer() {
-        guard let model = mailboxModel, let workspace, let panelId else { return }
+    /// The drawer is its area's width (320 pt minimum) and at most 70% of
+    /// the window's height.
+    private func updateDrawerGeometry() {
         let window = drawerPresenter.anchorView?.window
         let windowHeight = window?.contentLayoutRect.height ?? 800
         let screenWidth = window?.screen?.visibleFrame.width ?? 4000
-        let width = min(max(barWidth, 320), screenWidth)
+        drawerGeometry.update(
+            width: min(max(barWidth, 320), screenWidth),
+            maxHeight: max(220, windowHeight * 0.7)
+        )
+    }
+
+    private func presentDrawer() {
+        guard let model = mailboxModel, let workspace, let panelId else { return }
+        updateDrawerGeometry()
         let workspaceId = workspace.id
         let drawer = MailboxDrawerView(
             model: model,
@@ -215,8 +228,7 @@ struct PanelTitleBarView: View {
             panelNumber: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: panelId),
             mailboxAddress: state.mailboxAddress,
             inboxURL: MailboxBadgeStore.shared.inboxURL(workspaceId: workspaceId, panelId: panelId),
-            width: width,
-            maxHeight: max(220, windowHeight * 0.7),
+            geometry: drawerGeometry,
             style: drawerStyle,
             resolveSenders: { names in Self.resolveSenders(names, preferring: workspaceId) }
         )
@@ -310,6 +322,17 @@ struct PanelTitleBarView: View {
             .disabled(descriptionText.isEmpty)
             .accessibilityHidden(descriptionText.isEmpty)
         }
+        // One height for every collapsed bar (placeholder or description,
+        // mailbox cell or not), so the panel below never moves. Expanded,
+        // the bar only grows from there.
+        .frame(minHeight: rowHeight, maxHeight: effectiveCollapsed ? rowHeight : nil, alignment: .top)
+    }
+
+    /// The collapsed row's height: one line of the description font with its
+    /// padding, or the chevron's 18 pt slot if that is taller.
+    private var rowHeight: CGFloat {
+        let font = NSFont.systemFont(ofSize: chromeTokens.surfaceTitleBarTitle)
+        return max(ceil(font.ascender - font.descender + font.leading) + 4, 18)
     }
 
     private var collapsedDescription: some View {

@@ -830,6 +830,8 @@ class WorkspaceManager: ObservableObject {
 
     @Published var workspaces: [Workspace] = []
     private(set) var isRetiredForWindowClose = false
+    var qaLaunchPolicyProvider: () -> QALaunchPolicy = { QALaunchPolicy.current() }
+    var firstRunWelcomeRequestForTesting: ((Workspace) -> Void)?
     @Published var workspaceGroups: [WorkspaceGroup] = []
     private var workspaceRefsCancellable: AnyCancellable?
     private var knownWorkspaceRefIds: Set<UUID> = []
@@ -1623,8 +1625,13 @@ class WorkspaceManager: ObservableObject {
             "selectedTabId": select ? newWorkspace.id.uuidString : (snapshot.selectedWorkspaceId?.uuidString ?? "")
         ])
 #endif
-        if autoWelcomeIfNeeded && select && !UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey) {
-            if let appDelegate = AppDelegate.shared {
+        if autoWelcomeIfNeeded && select && WelcomeSettings.shouldAutoPresentFirstRunWelcome(
+            qa: qaLaunchPolicyProvider(),
+            hasShown: UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey)
+        ) {
+            if let firstRunWelcomeRequestForTesting {
+                firstRunWelcomeRequestForTesting(newWorkspace)
+            } else if let appDelegate = AppDelegate.shared {
                 appDelegate.sendWelcomeCommandWhenReady(to: newWorkspace, markShownOnSend: true)
             } else {
                 sendWelcomeWhenReady(to: newWorkspace)

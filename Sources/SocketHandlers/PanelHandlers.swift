@@ -1096,13 +1096,18 @@ extension TerminalController {
         // nothing has reached the target yet and the payload flushes on attach.
         nonisolated(unsafe) var queued = false
         nonisolated(unsafe) var submitted = false
-        let wantsReturn = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines).wantsReturn
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        let wantsReturn = delivery.wantsReturn
+        let waitsForBareReturnOutcome = wantsReturn && delivery.body.isEmpty
         let allowUnguarded = v2Bool(params, "allow_unguarded") ?? false
         nonisolated(unsafe) var phaseBFields: [String: Any] = [:]
         nonisolated(unsafe) var phaseBError: V2CallResult?
         let phaseBSema = DispatchSemaphore(value: 0)
         Task { @MainActor in
-            defer { phaseBSema.signal() }
+            var submissionCompletesPhaseB = false
+            defer {
+                if !submissionCompletesPhaseB { phaseBSema.signal() }
+            }
             let targetIsCurrent = SendInputGuard.targetIsCurrent(
                 expectedWorkspace: resolved.workspace,
                 currentWorkspaces: resolved.workspaceManager.workspaces,
@@ -1129,14 +1134,30 @@ extension TerminalController {
                 targetAvailable: targetIsCurrent
             ) {
                 if let liveSurface {
-                    submitted = deliverSocketSendText(
-                        text,
-                        submit: submit,
-                        preserveNewlines: preserveNewlines,
-                        terminalSurface: resolved.terminalPanel.surface,
-                        surface: liveSurface
-                    )
-                    resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
+                    if waitsForBareReturnOutcome {
+                        submissionCompletesPhaseB = true
+                        _ = deliverSocketSendText(
+                            text,
+                            submit: submit,
+                            preserveNewlines: preserveNewlines,
+                            terminalSurface: resolved.terminalPanel.surface,
+                            surface: liveSurface,
+                            onReturnDispatched: { didDispatch in
+                                submitted = didDispatch
+                                resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
+                                phaseBSema.signal()
+                            }
+                        )
+                    } else {
+                        submitted = deliverSocketSendText(
+                            text,
+                            submit: submit,
+                            preserveNewlines: preserveNewlines,
+                            terminalSurface: resolved.terminalPanel.surface,
+                            surface: liveSurface
+                        )
+                        resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
+                    }
                 } else {
                     // Use the same submit helper as attached delivery so a
                     // queued Return is dispatched after the bracketed paste.
@@ -1174,7 +1195,9 @@ extension TerminalController {
                 phaseBFields["input_guard"] = status.rawValue
             }
         }
-        phaseBSema.wait()
+        if phaseBSema.wait(timeout: .now() + 5) == .timedOut {
+            submitted = false
+        }
         if let phaseBError { return phaseBError }
 
         #if DEBUG

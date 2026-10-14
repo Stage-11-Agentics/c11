@@ -798,6 +798,7 @@ final class TerminalNotificationStore: ObservableObject {
     private var hasRequestedAutomaticAuthorization = false
     private var hasDeferredAuthorizationRequest = false
     private var hasPromptedForSettings = false
+    private var notificationSettingsQAPolicyProvider: () -> QALaunchPolicy = { QALaunchPolicy.current() }
     private let settingsPromptWindowRetryDelay: TimeInterval = 0.5
     private let settingsPromptWindowRetryLimit = 20
     private var notificationSettingsWindowProvider: () -> NSWindow? = {
@@ -1612,7 +1613,7 @@ final class TerminalNotificationStore: ObservableObject {
             // Same QA gate as the Agent Skills sheet and the resume picker.
             // Reads C11_QA_LAUNCH for this launch only; writes nothing.
             guard Self.shouldPresentNotificationSettingsPrompt(
-                qa: QALaunchPolicy.current(),
+                qa: self.notificationSettingsQAPolicyProvider(),
                 hasPromptedForSettings: self.hasPromptedForSettings
             ) else {
                 return
@@ -1768,12 +1769,14 @@ final class TerminalNotificationStore: ObservableObject {
         windowProvider: @escaping () -> NSWindow?,
         alertFactory: @escaping () -> NSAlert,
         scheduler: @escaping (_ delay: TimeInterval, _ block: @escaping () -> Void) -> Void,
-        urlOpener: @escaping (URL) -> Void
+        urlOpener: @escaping (URL) -> Void,
+        qaPolicyProvider: @escaping () -> QALaunchPolicy = { QALaunchPolicy.current() }
     ) {
         notificationSettingsWindowProvider = windowProvider
         notificationSettingsAlertFactory = alertFactory
         notificationSettingsScheduler = scheduler
         notificationSettingsURLOpener = urlOpener
+        notificationSettingsQAPolicyProvider = qaPolicyProvider
         hasPromptedForSettings = false
     }
 
@@ -1788,6 +1791,7 @@ final class TerminalNotificationStore: ObservableObject {
         notificationSettingsURLOpener = { url in
             NSWorkspace.shared.open(url)
         }
+        notificationSettingsQAPolicyProvider = { QALaunchPolicy.current() }
         hasPromptedForSettings = false
     }
 

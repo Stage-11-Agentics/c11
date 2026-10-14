@@ -13741,6 +13741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         for workspace in removed.workspaceManager.workspaces {
             for panelId in workspace.panels.keys {
                 PanelSeenTracker.shared.forget(panelId: panelId)
+                MailboxBadgeStore.shared.forget(panelId: panelId)
             }
         }
         PanelSeenTracker.shared.refresh()

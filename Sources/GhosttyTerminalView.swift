@@ -4165,6 +4165,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
+    /// Preserve a socket send that waited behind another transaction if the
+    /// native surface detached before its queued turn began.
+    @discardableResult
+    func queueSocketSendIfDetached(_ text: String, submit: Bool, preserveNewlines: Bool) -> Bool {
+        guard surface == nil else { return false }
+        sendQueuedSocketText(text, submit: submit, preserveNewlines: preserveNewlines)
+        return true
+    }
+
     /// Run an instantaneous write now, unless another writer's transaction
     /// is in flight and this is not that transaction's own work; then run it
     /// as the next transaction, in order.
@@ -4287,7 +4296,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// finish) runs once the Return has gone out.
     func scheduleSubmitReturnAfterPasteDelay(
         then finish: @escaping () -> Void = {},
-        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil
+        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil,
+        beforeReturn: (@MainActor () -> Bool)? = nil,
+        onReturnDispatched: ((Bool) -> Void)? = nil
     ) {
         let delayMs: Int
 #if DEBUG
@@ -4314,21 +4325,33 @@ final class TerminalSurface: Identifiable, ObservableObject {
             if let feedAnswerGate {
                 feedAnswerGate.enqueue { work in work() }
             } else {
-                _ = sendKeyNow(.returnKey)
+                let allowed = MainActor.assumeIsolated { beforeReturn?() ?? true }
+                let dispatched = allowed && sendKeyNow(.returnKey)
+                finish()
+                onReturnDispatched?(dispatched)
+                return
             }
             finish()
             return
         }
         let delay = TimeInterval(delayMs) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { finish(); return }
+            guard let self else {
+                finish()
+                onReturnDispatched?(false)
+                return
+            }
             if let feedAnswerGate {
                 // Run inline on the main actor inside this transaction. The
                 // worker may cancel while this is still pending; enqueue then
                 // becomes a no-op before any validation or key side effect.
                 feedAnswerGate.enqueue { work in work() }
             } else {
-                _ = self.sendKeyNow(.returnKey)
+                let allowed = MainActor.assumeIsolated { beforeReturn?() ?? true }
+                let dispatched = allowed && self.sendKeyNow(.returnKey)
+                finish()
+                onReturnDispatched?(dispatched)
+                return
             }
             finish()
         }
@@ -4345,7 +4368,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private var inputTransactionActive = false
     private var isRunningInputTransactionBody = false
+    private var isDrainingInputTransactions = false
     private var pendingInputTransactions: [(_ finish: @escaping () -> Void) -> Void] = []
+    private var nextPendingInputTransaction = 0
     /// Bumped when a transaction starts. The mailbox push compares it across
     /// its claim hop: any other writer in between means requeue.
     private(set) var inputTransactionEpoch: UInt64 = 0
@@ -4358,7 +4383,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// free, else after the transactions ahead of it. `body` must call
     /// `finish` once its last byte (or its Return) is out.
     func performInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
-        if inputTransactionActive {
+        if inputTransactionActive || isRunningInputTransactionBody {
             pendingInputTransactions.append(body)
             return
         }
@@ -4368,7 +4393,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Run `body` only if the slot is free right now. Returns whether it ran.
     @discardableResult
     func tryInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) -> Bool {
-        guard !inputTransactionActive else { return false }
+        guard !inputTransactionActive, !isRunningInputTransactionBody else { return false }
         beginInputTransaction(body)
         return true
     }
@@ -4384,16 +4409,38 @@ final class TerminalSurface: Identifiable, ObservableObject {
             self?.endInputTransaction(epoch: epoch)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputTransactionWatchdog) { finish() }
+        let wasRunning = isRunningInputTransactionBody
         isRunningInputTransactionBody = true
         body(finish)
-        isRunningInputTransactionBody = false
+        isRunningInputTransactionBody = wasRunning
+        drainPendingInputTransactions()
     }
 
     private func endInputTransaction(epoch: UInt64) {
         guard inputTransactionActive, inputTransactionEpoch == epoch else { return }
         inputTransactionActive = false
-        if !pendingInputTransactions.isEmpty {
-            beginInputTransaction(pendingInputTransactions.removeFirst())
+        drainPendingInputTransactions()
+    }
+
+    /// Drain synchronously finishing writers iteratively. A scheduled paste
+    /// leaves the slot active and resumes this loop from its finish callback.
+    private func drainPendingInputTransactions() {
+        guard !isRunningInputTransactionBody, !isDrainingInputTransactions else { return }
+        isDrainingInputTransactions = true
+        defer {
+            isDrainingInputTransactions = false
+            if nextPendingInputTransaction == pendingInputTransactions.count {
+                pendingInputTransactions.removeAll(keepingCapacity: true)
+                nextPendingInputTransaction = 0
+            } else if nextPendingInputTransaction >= 64 {
+                pendingInputTransactions.removeFirst(nextPendingInputTransaction)
+                nextPendingInputTransaction = 0
+            }
+        }
+        while !inputTransactionActive, nextPendingInputTransaction < pendingInputTransactions.count {
+            let next = pendingInputTransactions[nextPendingInputTransaction]
+            nextPendingInputTransaction += 1
+            beginInputTransaction(next)
         }
     }
 

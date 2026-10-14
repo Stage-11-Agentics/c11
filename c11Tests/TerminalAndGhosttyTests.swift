@@ -3158,6 +3158,76 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
         XCTAssertNotNil(surface.lastOperatorKeyAt, "newline content is an unsubmitted draft")
     }
 
+    func testDeferredSocketSendQueuesAfterTheSurfaceDetaches() {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        XCTAssertNil(surface.surface)
+        XCTAssertTrue(surface.queueSocketSendIfDetached("\nline\n", submit: true, preserveNewlines: true))
+        XCTAssertEqual(surface.pendingInitialInputForTests, "\nline\n")
+        XCTAssertTrue(surface.pendingSubmitOnFlushForTests)
+    }
+
+    func testDetachedFeedAnswerSendFailsClosedWithoutQueueing() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+        guard let contentView = window.contentView else {
+            return XCTFail("Expected content view")
+        }
+        let attached = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let hostedView = attached.hostedView
+        hostedView.frame = contentView.bounds
+        contentView.addSubview(hostedView)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        hostedView.reconcileGeometryNow()
+        guard let native = attached.surface else {
+            throw XCTSkip("terminal surface did not attach in this host")
+        }
+
+        let detached = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        XCTAssertNil(detached.surface)
+        var committed = false
+        let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> {
+            committed = true
+            return .submitted(flagLowered: false, flagEpoch: nil)
+        }
+        let requestedReturn = TerminalController.shared.deliverSocketSendText(
+            "<c11-msg>doorbell</c11-msg>",
+            submit: true,
+            preserveNewlines: true,
+            terminalSurface: detached,
+            surface: native,
+            feedAnswerGate: gate
+        )
+
+        XCTAssertTrue(requestedReturn)
+        XCTAssertEqual(detached.pendingInitialInputForTests, "", "a gated send must never queue for attach")
+        XCTAssertFalse(detached.pendingSubmitOnFlushForTests)
+        XCTAssertNil(gate.wait(timeout: 0.001), "the detached gated send must fail closed")
+        XCTAssertFalse(committed)
+    }
+
     func testSubmitReportsFalseForUnattachedSurfaceWithoutQueueing() {
         let surface = TerminalSurface(
             workspaceId: UUID(),
@@ -3238,6 +3308,52 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
         wait(for: [passed], timeout: 2)
         XCTAssertEqual(passReported, [true])
     }
+
+    func testDelayedReturnCompletionReportsWhenPreReturnCheckWithholdsIt() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.orderOut(nil) }
+        guard let contentView = window.contentView else {
+            return XCTFail("Expected content view")
+        }
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let hostedView = surface.hostedView
+        hostedView.frame = contentView.bounds
+        contentView.addSubview(hostedView)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        contentView.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        hostedView.reconcileGeometryNow()
+        guard surface.surface != nil else {
+            throw XCTSkip("terminal surface did not attach in this host")
+        }
+
+        let done = expectation(description: "delayed Return result")
+        var results: [Bool] = []
+        surface.performInputTransaction { finish in
+            surface.scheduleSubmitReturnAfterPasteDelay(
+                then: finish,
+                beforeReturn: { false },
+                onReturnDispatched: { dispatched in
+                    results.append(dispatched)
+                    done.fulfill()
+                }
+            )
+        }
+        wait(for: [done], timeout: 3)
+        XCTAssertEqual(results, [false], "a withheld Return must not be reported as submitted")
+        XCTAssertFalse(surface.isInputTransactionActive)
+    }
 }
 
 /// One programmatic input transaction at a time per tab. A writer between its
@@ -3268,6 +3384,32 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
         XCTAssertEqual(log, ["A start", "B", "C"])
         XCTAssertFalse(surface.isInputTransactionActive)
         XCTAssertEqual(surface.inputTransactionEpoch, epochA + 2)
+    }
+
+    func testSynchronousTransactionQueueDrainsWithoutNesting() {
+        let surface = makeSurface()
+        let queuedCount = 256
+        var completed = 0
+        var bodyDepth = 0
+        var maximumBodyDepth = 0
+        surface.performInputTransaction { finish in
+            bodyDepth += 1
+            maximumBodyDepth = max(maximumBodyDepth, bodyDepth)
+            for _ in 0..<queuedCount {
+                surface.performInputTransaction { nextFinish in
+                    bodyDepth += 1
+                    maximumBodyDepth = max(maximumBodyDepth, bodyDepth)
+                    completed += 1
+                    nextFinish()
+                    bodyDepth -= 1
+                }
+            }
+            finish()
+            bodyDepth -= 1
+        }
+        XCTAssertEqual(completed, queuedCount)
+        XCTAssertEqual(maximumBodyDepth, 1, "synchronous completions must not nest transaction bodies")
+        XCTAssertFalse(surface.isInputTransactionActive)
     }
 
     /// The mailbox push only ever takes an idle slot.

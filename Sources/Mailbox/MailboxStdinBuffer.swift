@@ -403,7 +403,8 @@ enum MailboxStdinDelivery {
         logEvicted: (MailboxStdinBuffer.Entry) -> Void,
         ringInput: ((Bool) -> MailboxDoorbell.Input)? = nil,
         noteRing: ((MailboxDoorbell.Decision, MailboxDoorbell.Arrival) -> Void)? = nil,
-        noteHeldUntil: ((Date) -> Void)? = nil
+        noteHeldUntil: ((Date) -> Void)? = nil,
+        noteInputTransactionHeld: (() -> Void)? = nil
     ) -> AdmitResult {
         if let evicted = state.buffer.enqueue(surfaceId: surfaceId, entry: entry) {
             logEvicted(evicted)
@@ -419,7 +420,11 @@ enum MailboxStdinDelivery {
         if promptGate == .closed, let deadline = heldUntil(state: state, surfaceId: surfaceId, gate: gate) {
             noteHeldUntil?(deadline)
         }
-        guard !gate.inputTransactionActive, promptGate != .closed, let ringInput else {
+        if gate.inputTransactionActive {
+            noteInputTransactionHeld?()
+            return .buffered(bytes: bytes)
+        }
+        guard promptGate != .closed, let ringInput else {
             return .buffered(bytes: bytes)
         }
         var input = ringInput(false)
@@ -443,6 +448,16 @@ enum MailboxStdinDelivery {
     static func journalTurnOpen(_ snapshot: JournalSnapshot?) -> Bool {
         guard let snapshot, !snapshot.isHistorical else { return false }
         return snapshot.phase == .working || snapshot.phase == .blocked
+    }
+
+    /// Codex can publish `turn_aborted` and the following `task_started` as
+    /// separate events. Hold a doorbell through that brief idle transition.
+    static func journalInterruptionSettling(_ snapshot: JournalSnapshot?, now: Date) -> Bool {
+        guard let snapshot, snapshot.owner.agentKind == "codex",
+              snapshot.adapter == .codexTranscript, !snapshot.isHistorical,
+              snapshot.phase == .idle, snapshot.turnOutcome == "interrupted" else { return false }
+        let ageMs = Int64(now.timeIntervalSince1970 * 1_000) - snapshot.observedAtMs
+        return ageMs >= 0 && ageMs < 1_000
     }
 
     /// The decay deadline when only an unsupported working edge or submit
@@ -571,9 +586,29 @@ enum MailboxNoOpReturn {
         let mark: MailboxStdinBuffer.NoOpReturnMark
     }
 
+    struct Read: Equatable {
+        let state: PromptInputState
+        let probe: Probe?
+    }
+
     /// A composer a Return cannot submit from.
     static func admits(_ state: PromptInputState) -> Bool {
         state == .empty || state == .suggestion
+    }
+
+    /// A bare socket Return waits for the paste-settle delay. Suppress it when
+    /// the operator typed after dispatch, or when the dispatch-time read
+    /// admitted the Return and a successful fresh read now sees a draft. Busy,
+    /// failed, and unknown reads preserve the existing Return.
+    static func shouldSubmitDelayedReturn(
+        operatorInputAtDispatch: Date?,
+        operatorInputAtReturn: Date?,
+        dispatchState: PromptInputState?,
+        freshState: PromptInputState?
+    ) -> Bool {
+        guard operatorInputAtDispatch == operatorInputAtReturn else { return false }
+        let dispatchAdmittedReturn = dispatchState.map { admits($0) } ?? false
+        return !(dispatchAdmittedReturn && freshState == .draft)
     }
 
     /// The Return changed nothing on screen: the same complete capture, cell

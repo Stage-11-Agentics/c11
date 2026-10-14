@@ -107,6 +107,12 @@ A normal launch can present three blocking dialogs before the GUI is usable: the
 
 It's read fresh each launch and never persisted, so it can't leak into a later non-QA run. Default is **fresh** — automation usually wants a known-empty start; `resume` is the deliberate opt-in.
 
+When notification permission is denied, QA mode also suppresses the Settings
+page's explicit **enable** and **send test** prompts for the duration of that
+launch; they share the notification-settings prompt gate.
+
+QA launches also skip creating the first-run welcome workspace.
+
 ```bash
 # Tagged automation launcher — dedicated flag:
 ./scripts/launch-tagged-automation.sh <tag> --qa           # fresh (clean slate)

@@ -254,8 +254,8 @@ creates="$(grep -c '^issue create ' "$TMP_DIR/gh.log" || true)"
 
 # A re-run of an older success has a newer updatedAt. The newer failure still wins.
 put_runs ci-hourly.yml "$(printf '[%s,%s]\n' \
-  "$(run_json failure "$OLDER" 104 "$RECENT")" \
-  "$(run_json success "$RECENT" 105 "$OLDEST")")"
+  "$(run_json success "$RECENT" 105 "$OLDEST")" \
+  "$(run_json failure "$OLDER" 104 "$RECENT")")"
 live="$(run_owner)"
 printf '%s\n' "$live" | grep -q 'lane-owner: ci-hourly fail failure .* -> commented #1' \
   || fail "rerun of an old success hid the new failure: $live"

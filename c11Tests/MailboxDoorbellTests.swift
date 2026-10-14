@@ -153,6 +153,17 @@ final class MailboxDoorbellTests: XCTestCase {
         XCTAssertEqual(MailboxDoorbell.decide(next), .ring)
     }
 
+    func testRecentInterruptionDefersDoorbellUntilNextLook() {
+        var transitioning = MailboxDoorbell.Input(prompt: .empty)
+        transitioning.journalInterruptionSettling = true
+        XCTAssertEqual(
+            MailboxDoorbell.decide(transitioning),
+            .deferRing(after: MailboxDoorbellSequence.shortRecheck)
+        )
+        transitioning.journalInterruptionSettling = false
+        XCTAssertEqual(MailboxDoorbell.decide(transitioning), .ring)
+    }
+
     func testAttemptAtTheCapIsCapped() {
         XCTAssertEqual(MailboxDoorbell.rateCap, 20)
         var capped = MailboxDoorbell.Input()
@@ -830,6 +841,72 @@ final class MailboxDoorbellTests: XCTestCase {
                 composer: MailboxDoorbell.text
             ),
             .targetLost
+        )
+    }
+
+    func testPreReturnRefusesWhenCodexStartsANewTurnDuringPasteDelay() {
+        XCTAssertEqual(
+            MailboxDoorbellSequence.preReturn(
+                rowIsCurrent: true,
+                operatorInputUnchanged: true,
+                agentOwnsTerminal: true,
+                captured: true,
+                prompt: .draft,
+                composer: MailboxDoorbell.text,
+                journalTurnOpen: true
+            ),
+            .pastedNotSubmitted
+        )
+    }
+
+    func testPreReturnRefusesDuringCodexInterruptionTransition() {
+        XCTAssertEqual(
+            MailboxDoorbellSequence.preReturn(
+                rowIsCurrent: true,
+                operatorInputUnchanged: true,
+                agentOwnsTerminal: true,
+                captured: true,
+                prompt: .draft,
+                composer: MailboxDoorbell.text,
+                journalInterruptionSettling: true
+            ),
+            .pastedNotSubmitted
+        )
+    }
+
+    func testBusyInputTransactionSchedulesAnotherMailboxLook() {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        var gate = gateAt(11)
+        gate.inputTransactionActive = true
+        let captures = Box<[Bool]>([])
+        var rechecks = 0
+        let admitted = MailboxStdinDelivery.deliver(
+            state: state,
+            surfaceId: surface,
+            entry: entry(id: "during-input-transaction"),
+            gate: gate,
+            logEvicted: { _ in },
+            ringInput: emptyScreen(captures),
+            noteInputTransactionHeld: { rechecks += 1 }
+        )
+        guard case .buffered = admitted else { return XCTFail("expected a buffer, got \(admitted)") }
+        XCTAssertEqual(rechecks, 1)
+        XCTAssertEqual(captures.value, [], "do not read or ring while another input owns the slot")
+        XCTAssertEqual(state.buffer.pendingCount(surfaceId: surface), 1)
+    }
+
+    func testPreReturnRefusesAnOperatorKeystrokeDuringPasteDelay() {
+        XCTAssertEqual(
+            MailboxDoorbellSequence.preReturn(
+                rowIsCurrent: true,
+                operatorInputUnchanged: false,
+                agentOwnsTerminal: true,
+                captured: true,
+                prompt: .draft,
+                composer: MailboxDoorbell.text
+            ),
+            .pastedNotSubmitted
         )
     }
 

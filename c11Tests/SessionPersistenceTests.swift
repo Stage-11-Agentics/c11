@@ -816,6 +816,66 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(decision(["C11_QA_LAUNCH": "fresh"], prompted: true))
     }
 
+    @MainActor
+    func testQALaunchSuppressesNotificationPromptAtStoreBoundary() {
+        let store = TerminalNotificationStore.makeForNotificationCommandTesting()
+        var windowLookups = 0
+        store.configureNotificationSettingsPromptHooksForTesting(
+            windowProvider: {
+                windowLookups += 1
+                return nil
+            },
+            alertFactory: { NSAlert() },
+            scheduler: { _, _ in },
+            urlOpener: { _ in },
+            qaPolicyProvider: { .on(.fresh) }
+        )
+
+        store.promptToEnableNotificationsForTesting()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(windowLookups, 0, "the QA guard must suppress the production prompt call")
+    }
+
+    func testFirstRunWelcomeDoesNotPersistInQALaunches() {
+        XCTAssertFalse(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .on(.fresh), hasShown: false))
+        XCTAssertFalse(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .on(.resume), hasShown: false))
+        XCTAssertFalse(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .off, hasShown: true))
+        XCTAssertTrue(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .off, hasShown: false))
+    }
+
+    @MainActor
+    func testWorkspaceCreationDoesNotRequestFirstRunWelcomeDuringQALaunch() {
+        let defaults = UserDefaults.standard
+        let previousWelcome = defaults.object(forKey: WelcomeSettings.shownKey)
+        let previousGrid = defaults.object(forKey: DefaultGridSettings.enabledKey)
+        defaults.set(true, forKey: WelcomeSettings.shownKey)
+        defaults.set(false, forKey: DefaultGridSettings.enabledKey)
+        defer {
+            if let previousWelcome {
+                defaults.set(previousWelcome, forKey: WelcomeSettings.shownKey)
+            } else {
+                defaults.removeObject(forKey: WelcomeSettings.shownKey)
+            }
+            if let previousGrid {
+                defaults.set(previousGrid, forKey: DefaultGridSettings.enabledKey)
+            } else {
+                defaults.removeObject(forKey: DefaultGridSettings.enabledKey)
+            }
+        }
+
+        let manager = WorkspaceManager()
+        manager.qaLaunchPolicyProvider = { .on(.fresh) }
+        var welcomeRequests = 0
+        manager.firstRunWelcomeRequestForTesting = { _ in welcomeRequests += 1 }
+        defaults.set(false, forKey: WelcomeSettings.shownKey)
+
+        _ = manager.addWorkspace(select: true)
+
+        XCTAssertEqual(welcomeRequests, 0, "QA workspace creation must not start the first-run welcome flow")
+        XCTAssertFalse(defaults.bool(forKey: WelcomeSettings.shownKey), "QA launch must not persist the welcome as shown")
+    }
+
     func testQALaunchPolicyDualReadsLegacyKeyButC11Wins() {
         XCTAssertEqual(
             QALaunchPolicy.current(environment: ["CMUX_QA_LAUNCH": "resume"]),

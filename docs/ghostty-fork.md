@@ -319,10 +319,26 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
   unfocused composer's `Build anything` placeholder and an unfocused typed
   draft with the same text and no faint or italic bit; only the grey differs.
 - Adds `ghostty_surface_try_read_prompt_region_bottom`: the same one-shot
-  try-lock and limits, but the window is the last 16 rows of the active
-  screen, and the result still reports the live cursor. Grok parks its hidden
+  try-lock and limits, scanning bottom-up from at most the last 16 rows of the
+  active screen. The cell and text budgets can leave a shorter bottom suffix;
+  if a partial row above that suffix is discarded, the retained rows remain
+  complete. The result still reports the live cursor. Grok parks its hidden
   cursor far above the composer after a hover, outside the cursor window.
 - On rebase, keep the cell field order (`text_offset`, `text_len`, `faint`,
   `italic`, `fg_rgb_set`, `bg_rgb_set`, `fg_rgb`, `bg_rgb`) the same in the
   submodule header, c11's repo-root `ghostty.h`, the Zig `extern struct`, and
   `PromptRegionNativeImport` in `TerminalController.swift`.
+
+### 15) C11-453 preserve wide Grok composer rows within the bottom-read budget
+
+- Commits: `c796bbe58` (test wide bottom prompt capture), `8c44ef421`
+  (preserve bottom prompt rows within capture budget), and `1b7bcf06b`
+  (keep a discarded partial bottom row out of completeness)
+- File: `src/terminal/prompt_region.zig`
+- The regression test covers a wide Grok panel whose lower composer rows must
+  survive the bounded read. The bottom-up scan keeps the fully captured bottom
+  suffix when the cell or text budget clips a row above it; that discarded
+  partial row does not make the retained suffix incomplete. If the first row
+  itself cannot be captured fully, the result remains incomplete.
+- On rebase, preserve the bottom-up row order, the per-row cell offsets, and
+  the saved completeness state when discarding a partial row.

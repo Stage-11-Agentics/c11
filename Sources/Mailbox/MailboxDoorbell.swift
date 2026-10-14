@@ -50,6 +50,9 @@ enum MailboxDoorbell {
         /// submit would splice the doorbell line onto it.
         var textBoxUnsent: Bool = false
         var prompt: PromptInputState? = .empty
+        /// A Codex interruption and its next task start can land on separate
+        /// main hops. Recheck after the short transition window before typing.
+        var journalInterruptionSettling: Bool = false
         var epoch: String = ""
         var now: Date = Date(timeIntervalSince1970: 0)
         /// Unread envelope ids. Empty means the caller did not name them, and
@@ -162,6 +165,9 @@ enum MailboxDoorbell {
         if input.focused, let age = input.operatorKeyAge, age < quietWindow {
             let remaining = age >= 0 ? (quietWindow - age) : quietWindow
             return .deferRing(after: remaining)
+        }
+        if input.journalInterruptionSettling {
+            return .deferRing(after: MailboxDoorbellSequence.shortRecheck)
         }
         guard let prompt = input.prompt else { return .skip(reason: "unavailable") }
         if !FeedAnswerPromptCommit.admits(prompt) {
@@ -432,8 +438,14 @@ enum MailboxDoorbellSequence {
         agentOwnsTerminal: Bool,
         captured: Bool,
         prompt: PromptInputState?,
-        composer: String?
+        composer: String?,
+        journalTurnOpen: Bool = false,
+        journalInterruptionSettling: Bool = false
     ) -> FeedAnswerSubmitOutcome? {
+        // Codex can report turn_aborted and task_started on separate main
+        // hops. A fresh working edge during the paste delay keeps the old
+        // doorbell invitation from being submitted into that new turn.
+        guard !journalTurnOpen, !journalInterruptionSettling else { return .pastedNotSubmitted }
         if let outcome = FeedAnswerPreReturnCheck.outcome(
             targetIsCurrent: true,
             rowIsCurrent: rowIsCurrent,

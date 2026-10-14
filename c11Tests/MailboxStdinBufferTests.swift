@@ -136,6 +136,28 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertFalse(MailboxStdinDelivery.journalTurnOpen(nil))
     }
 
+    func testRecentCodexInterruptionSettlesBeforeDoorbell() {
+        let owner = JournalOwner(panelID: UUID(), agentKind: "codex", sessionID: "fixture")
+        var interrupted = JournalSnapshot(owner: owner, workspaceID: nil, appInstanceID: UUID())
+        interrupted.connection = .live
+        interrupted.confirmation = .confirmed
+        interrupted.adapter = .codexTranscript
+        interrupted.phase = .idle
+        interrupted.turnOutcome = "interrupted"
+        interrupted.observedAtMs = Int64(t(0).timeIntervalSince1970 * 1_000)
+
+        XCTAssertTrue(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(0.5)))
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(1)))
+        interrupted.phase = .working
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(0.5)))
+        interrupted.phase = .idle
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(
+            JournalReplayPolicy.restored(interrupted), now: t(0.5)
+        ))
+        interrupted.adapter = .grokTranscript
+        XCTAssertFalse(MailboxStdinDelivery.journalInterruptionSettling(interrupted, now: t(0.5)))
+    }
+
     /// An attach forgets the turn edges and submits from before it (the
     /// earlier process, and the Return that launched this one). A newer
     /// edge stays.
@@ -466,6 +488,50 @@ final class MailboxNoOpReturnTests: XCTestCase {
         for state in [PromptInputState.draft, .dialog, .unknown, .unavailable] {
             XCTAssertFalse(MailboxNoOpReturn.admits(state), state.rawValue)
         }
+    }
+
+    /// A delayed bare Return is withheld only for a changed operator stamp or
+    /// a positive draft classification. A failed or unknown read still sends.
+    func testDelayedReturnSuppressesOnlyForOperatorInputOrPositiveDraftRead() {
+        let dispatchedAt = t(10)
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: t(11),
+            dispatchState: .empty,
+            freshState: .unknown
+        ))
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: nil,
+            operatorInputAtReturn: t(11),
+            dispatchState: nil,
+            freshState: nil
+        ))
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: dispatchedAt,
+            dispatchState: .empty,
+            freshState: .draft
+        ))
+        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: dispatchedAt,
+            dispatchState: .draft,
+            freshState: .draft
+        ), "a Return already admitted on a known draft must still submit")
+        for state in [PromptInputState.empty, .suggestion, .dialog, .unknown, .unavailable] {
+            XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+                operatorInputAtDispatch: dispatchedAt,
+                operatorInputAtReturn: dispatchedAt,
+                dispatchState: .empty,
+                freshState: state
+            ), "\(state.rawValue) must preserve the existing Return")
+        }
+        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: dispatchedAt,
+            dispatchState: .empty,
+            freshState: nil
+        ), "a failed/busy read must preserve the existing Return")
     }
 
     /// The submit is taken back only when the composer still reads empty or

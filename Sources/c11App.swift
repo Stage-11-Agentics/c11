@@ -4129,6 +4129,10 @@ enum WelcomeSettings {
     static let shownKey = "cmuxWelcomeShown"
     static let spikeURL = "https://stage11.ai"
 
+    static func shouldAutoPresentFirstRunWelcome(qa: QALaunchPolicy, hasShown: Bool) -> Bool {
+        !qa.isActive && !hasShown
+    }
+
     /// Turns the freshly-created welcome workspace into a 2x2 quad by performing
     /// programmatic splits on the workspace model. Called once the initial
     /// top-left terminal's Ghostty surface is ready.

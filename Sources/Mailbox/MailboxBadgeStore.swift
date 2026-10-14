@@ -63,7 +63,9 @@ final class MailboxBadgeStore {
 
     /// Cached counts; a miss schedules a count and reads empty until it lands.
     /// Sidebar-hot through `Workspace.panelTitleBarState`, so no I/O here.
+    @MainActor
     func summary(workspace: Workspace, panelId: UUID) -> MailboxPanelMail.Summary {
+        guard !workspace.isRetiredForWindowClose else { return .empty }
         owners[panelId] = WeakWorkspace(value: workspace)
         track(panelId: panelId, workspaceId: workspace.id)
         return summaries[panelId] ?? .empty
@@ -90,7 +92,13 @@ final class MailboxBadgeStore {
     }
 
     /// The observable counts one mailbox cell renders.
+    @MainActor
     func model(workspace: Workspace, panelId: UUID) -> MailboxBadgeModel {
+        guard !workspace.isRetiredForWindowClose else {
+            let model = MailboxBadgeModel(panelId: panelId)
+            model.apply(.empty, now: now())
+            return model
+        }
         _ = summary(workspace: workspace, panelId: panelId)
         if let model = models[panelId] { return model }
         let model = MailboxBadgeModel(panelId: panelId)

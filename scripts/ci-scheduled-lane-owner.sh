@@ -3,12 +3,14 @@
 # Usage: ci-scheduled-lane-owner.sh [--dry-run]
 #
 # Reads completed runs on main. success closes that lane's issue.
-# failure, startup_failure, and timed_out open or comment on it.
-# skipped runs, and a cancelled run that a newer decisive run superseded,
-# are ignored. Three consecutive cancelled runs are a failure, so a lane
-# that hangs and is cancelled every hour is reported. A lane with a stale
-# window and no completed run inside it is a failure. ci-hourly has no
-# stale window: it runs on push to main, not on a clock.
+# failure, startup_failure, and timed_out open or comment once per run.
+# The comment ends with <!-- lane-run: reason url -->. A later watch that
+# sees the same marker leaves the issue alone. skipped runs, and a
+# cancelled run that a newer decisive run superseded, are ignored. Three
+# consecutive cancelled runs are a failure, so a lane that hangs and is
+# cancelled every hour is reported. A lane with a stale window and no
+# completed run inside it is a failure. ci-hourly has no stale window:
+# it runs on push to main, not on a clock.
 #
 # --dry-run reads runs and issues and prints what it would do. It does not
 # create, comment, close, or edit. CI_LANE_OWNER is the assignee, default
@@ -67,9 +69,15 @@ classify_runs() {
     return
   fi
 
-  json="$(jq 'sort_by(.updatedAt) | reverse' <<<"$json")"
-  newest_url="$(jq -r '.[0].url // "-"' <<<"$json")"
-  newest_epoch="$(jq -r '.[0].updatedAt | sub("\\.[0-9]+"; "") | fromdateiso8601' <<<"$json")"
+  # Staleness uses the newest updatedAt, so a run that finished inside the
+  # window counts even when a newer attempt exists. Classification below
+  # walks createdAt, so re-running an older green run cannot hide a newer
+  # failure. A failing date parse inside this function does not abort it:
+  # the epoch stays empty, arithmetic treats that as 0, and the lane is stale.
+  local updated_json
+  updated_json="$(jq 'sort_by(.updatedAt) | reverse' <<<"$json")"
+  newest_url="$(jq -r '.[0].url // "-"' <<<"$updated_json")"
+  newest_epoch="$(jq -r '.[0].updatedAt | sub("\\.[0-9]+"; "") | fromdateiso8601' <<<"$updated_json")"
   if [[ "$stale_hours" != "-" ]]; then
     window=$((stale_hours * 3600))
     if (( NOW - newest_epoch > window )); then
@@ -78,6 +86,7 @@ classify_runs() {
     fi
   fi
 
+  json="$(jq 'sort_by(.createdAt // .updatedAt) | reverse' <<<"$json")"
   local i conclusion url cancelled=0 first_cancel_url=""
   for ((i = 0; i < count; i++)); do
     conclusion="$(jq -r --argjson i "$i" '.[$i].conclusion // ""' <<<"$json")"
@@ -116,17 +125,30 @@ classify_runs() {
 
 existing_issue() {
   local title="$1"
+  # app/github-actions is the GITHUB_TOKEN author. A public issue with the
+  # same title is not ours to assign, comment on, or close.
   gh issue list \
     --repo "$REPO" \
     --state open \
+    --author app/github-actions \
     --limit 100 \
     --json number,title \
     | jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty'
 }
 
+# True when this exact failure was already commented. gh failure exits.
+marker_seen() {
+  local number="$1" marker="$2" bodies
+  bodies="$(gh issue view "$number" --repo "$REPO" --json comments -q '.comments[].body')" || exit 1
+  if grep -F -x -q -e "$marker" <<<"$bodies"; then
+    return 0
+  fi
+  return 1
+}
+
 apply_lane() {
   local lane="$1" decision="$2" reason="$3" url="$4" stale_hours="$5"
-  local title number body
+  local title number body marker
   title="CI scheduled lane failed: ${lane}"
   number="$(existing_issue "$title")"
 
@@ -153,10 +175,16 @@ apply_lane() {
     return
   fi
 
+  marker="$(printf '<!-- lane-run: %s %s -->' "$reason" "$url")"
   if [[ "$reason" == "stale" && "$url" == "-" ]]; then
-    body="$(printf 'Scheduled lane %s failed (stale).\nNo completed run on main within %sh.\n' "$lane" "$stale_hours")"
+    body="$(printf 'Scheduled lane %s failed (stale).\nNo completed run on main within %sh.\n%s\n' "$lane" "$stale_hours" "$marker")"
   else
-    body="$(printf 'Scheduled lane %s failed (%s).\n\nRun: %s\n' "$lane" "$reason" "$url")"
+    body="$(printf 'Scheduled lane %s failed (%s).\n\nRun: %s\n%s\n' "$lane" "$reason" "$url" "$marker")"
+  fi
+
+  if [[ -n "$number" ]] && marker_seen "$number" "$marker"; then
+    echo "lane-owner: ${lane} fail ${reason} ${url} -> already reported #${number}"
+    return
   fi
 
   if [[ "$DRY" -eq 1 ]]; then
@@ -207,7 +235,7 @@ while read -r workflow stale_hours; do
     --branch main \
     --status completed \
     --limit 20 \
-    --json conclusion,updatedAt,url,databaseId,headSha)"
+    --json conclusion,createdAt,updatedAt,url,databaseId,headSha)"
   classified="$(classify_runs "$runs" "$stale_hours")"
   read -r decision reason url <<<"$classified"
   apply_lane "$lane" "$decision" "$reason" "$url" "$stale_hours"

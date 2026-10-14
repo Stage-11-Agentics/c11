@@ -4,6 +4,30 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [1.1.2] - 2026-10-14
+
+Headline: **c11 1.1.2. Agents keep working when c11 is covered, mail reaches Claude Code without a hook error, and the markdown reader's renderers carry current security fixes.**
+
+### Fixed
+
+- **Agent commands no longer stall when the c11 window is covered.** macOS App Nap used to throttle c11 once another window hid it, so agents' socket commands timed out after 10 seconds. c11 now holds an App Nap exemption while agents are connected or working. It still lets the Mac go to sleep when idle. ([#682](https://github.com/Stage-11-Agentics/c11/pull/682))
+- **Mail delivered at the end of a Claude Code turn no longer shows as "Stop hook error".** c11 now hands the mail to Claude Code as hook feedback, and the agent still answers it in a new turn. Needs Claude Code 2.1.163 or later. ([#683](https://github.com/Stage-11-Agentics/c11/pull/683))
+- **Finding a panel's inbox at the end of a turn is fast.** c11 reads the panel's own inbox directly and only falls back to its cached search of every workspace when the panel has moved. ([#683](https://github.com/Stage-11-Agentics/c11/pull/683))
+- **An agent's idle signal survives a busy main thread.** Turn-end reports used to wait on c11's main thread, so a stall of a few seconds dropped them and left the panel "working" with its mail held. They are now answered off the main thread. ([#681](https://github.com/Stage-11-Agentics/c11/pull/681))
+- **Mail is not held behind a no-op Return or an Esc interrupt.** A socket Return on an empty prompt, and Claude Code's Esc interrupt, no longer leave c11 thinking a turn is still running. ([#675](https://github.com/Stage-11-Agentics/c11/pull/675))
+- **Mail reaches a Grok agent whose prompt lost focus.** After a click in Grok's transcript, its dimmed "Build anything" placeholder is now recognised as an empty prompt and rung, while a real typed draft stays protected. Held mail is looked at again after 5, 15 and 30 seconds, then every minute. ([#674](https://github.com/Stage-11-Agentics/c11/pull/674))
+- **The mailbox drawer and subtitle bar hold still.** The bar keeps one height in every state, the drawer follows its area's width without rebuilding, and "Copy text" drops a trailing newline. ([#672](https://github.com/Stage-11-Agentics/c11/pull/672))
+- **c11 builds its workspace model once at launch.** Startup used to create a second, unused set of workspaces and panels that lived until the app activated. ([#632](https://github.com/Stage-11-Agentics/c11/pull/632))
+
+### Changed
+
+- **The launch editor lists Grok Build's own models first for xAI.** With an empty search, the xAI provider shows the models the `grok` CLI publishes, then the OpenRouter long tail. ([#678](https://github.com/Stage-11-Agentics/c11/pull/678))
+- **Security: the markdown reader's Mermaid renderer is updated to 11.16.1**, with its bundled dependencies, to pick up upstream security fixes. Mermaid still runs at `securityLevel: 'strict'`; the reader's security posture is unchanged. ([#684](https://github.com/Stage-11-Agentics/c11/pull/684))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.1.1] - 2026-10-12
 
 Headline: **c11 1.1.1. Mail rings an agent's doorbell instead of being typed into its prompt, every panel shows its mail, and c11 records who launched whom.**

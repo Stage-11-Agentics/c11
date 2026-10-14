@@ -329,15 +329,13 @@ extension TerminalController {
                     data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
                 ))
             }
-            guard let region = capturePromptInputRegion(surface: nativeSurface) else {
+            let harness = resolved.workspace.surfaceActivityTerminalKind(panelId: panelID)
+            guard let region = capturePromptInputRegion(surface: nativeSurface, harness: harness) else {
                 return .error(feedAnswerInputRefusal(.unavailable, data: feedAnswerStatusFields(
                     delivered: false, submitted: false, retry: "safe"
                 )))
             }
-            let observation = PromptInputObservation.activeScreen(
-                region,
-                harness: resolved.workspace.surfaceActivityTerminalKind(panelId: panelID)
-            )
+            let observation = PromptInputObservation.activeScreen(region, harness: harness)
             guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
                 return .error(feedAnswerInputRefusal(
                     observation.classification.state,
@@ -394,15 +392,13 @@ extension TerminalController {
                 data: feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe")
             ))
         }
-        guard let region = capturePromptInputRegion(surface: prepared.nativeSurface) else {
+        let harness = prepared.resolved.workspace.surfaceActivityTerminalKind(panelId: prepared.identity.panelID)
+        guard let region = capturePromptInputRegion(surface: prepared.nativeSurface, harness: harness) else {
             return .error(feedAnswerInputRefusal(.unavailable, data: feedAnswerStatusFields(
                 delivered: false, submitted: false, retry: "safe"
             )))
         }
-        let observation = PromptInputObservation.activeScreen(
-            region,
-            harness: prepared.resolved.workspace.surfaceActivityTerminalKind(panelId: prepared.identity.panelID)
-        )
+        let observation = PromptInputObservation.activeScreen(region, harness: harness)
         guard FeedAnswerPromptCommit.admits(observation.classification.state) else {
             return .error(feedAnswerInputRefusal(
                 observation.classification.state,
@@ -451,12 +447,12 @@ extension TerminalController {
         ) {
             return outcome
         }
-        guard let region = capturePromptInputRegion(surface: prepared.nativeSurface) else {
-            return .pastedNotSubmitted
-        }
         let harness = prepared.resolved.workspace.surfaceActivityTerminalKind(
             panelId: prepared.identity.panelID
         )
+        guard let region = capturePromptInputRegion(surface: prepared.nativeSurface, harness: harness) else {
+            return .pastedNotSubmitted
+        }
         let inputState = PromptInputClassifier.classify(region, harness: harness).state
         let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         if let outcome = FeedAnswerPreReturnCheck.outcome(

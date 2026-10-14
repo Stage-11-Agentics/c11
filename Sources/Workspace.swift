@@ -6054,6 +6054,7 @@ final class Workspace: Identifiable, ObservableObject {
                     busyExhausted: false,
                     strandedDoorbell: reason == "draft" && captureNote.stranded
                 )
+                self.logMailboxDoorbellRelook([entry], plan: plan)
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             },
             noteHeldUntil: { [weak self] deadline in
@@ -6136,11 +6137,11 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// One prompt read. Nil when the surface is gone or the renderer is busy.
     private func mailboxDoorbellCapture(terminalPanel: TerminalPanel) -> MailboxDoorbellScreen? {
+        let harness = surfaceActivityTerminalKind(panelId: terminalPanel.id)
         guard let native = terminalPanel.surface.surface,
-              let region = TerminalController.shared.capturePromptInputRegion(surface: native) else {
+              let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
             return nil
         }
-        let harness = surfaceActivityTerminalKind(panelId: terminalPanel.id)
         let state = PromptInputObservation.activeScreen(region, harness: harness).classification.state
         let composer = state == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         return MailboxDoorbellScreen(state: state, composer: composer)
@@ -6355,9 +6356,29 @@ final class Workspace: Identifiable, ObservableObject {
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { [weak self] live in
                 guard let self, !live.isEmpty else { return }
                 self.logMailboxDoorbellEffect(live, effect: plan.arrival)
+                self.logMailboxDoorbellRelook(live, plan: plan)
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
         }
+    }
+
+    /// One dispatch line per held-composer look, named for the oldest unread
+    /// envelope, so an agent reading the log can see the watch is alive. The
+    /// series (5, 15, 30, then 60 s) bounds how often it writes.
+    private func logMailboxDoorbellRelook(
+        _ entries: [MailboxStdinBuffer.Entry],
+        plan: MailboxDoorbellSequence.Plan
+    ) {
+        guard let reason = plan.relook,
+              case .after(let next) = plan.rearm,
+              let entry = entries.first,
+              let dispatcher = mailboxDispatcher else { return }
+        dispatcher.logStdinRecheck(
+            id: entry.id,
+            recipient: entry.recipientName,
+            reason: reason,
+            nextMs: Int((next * 1000).rounded())
+        )
     }
 
     /// Drop envelopes a drain already claimed, then run `then` with what is
@@ -6672,7 +6693,8 @@ final class Workspace: Identifiable, ObservableObject {
             return finish(.targetLost, nil, nil)
         }
         let operatorInputUnchanged = panel.surface.lastOperatorInputAt == operatorInputAt
-        guard let region = TerminalController.shared.capturePromptInputRegion(surface: live) else {
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        guard let region = TerminalController.shared.capturePromptInputRegion(surface: live, harness: harness) else {
             return finish(
                 MailboxDoorbellSequence.preReturn(
                     rowIsCurrent: true,
@@ -6686,7 +6708,6 @@ final class Workspace: Identifiable, ObservableObject {
                 nil
             )
         }
-        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
         let inputState = PromptInputClassifier.classify(region, harness: harness).state
         let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
         let owns = mailboxAgentOwnsTerminal(surfaceId: surfaceId)

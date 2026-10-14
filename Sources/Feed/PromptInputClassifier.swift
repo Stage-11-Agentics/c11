@@ -57,6 +57,11 @@ struct PromptRegionCell: Equatable, Sendable {
     /// SGR 3. Grok draws its next-prompt suggestion italic, not faint. A
     /// capture without it reads as plain, so the suggestion stays a draft.
     var italic: Bool = false
+    /// Explicit truecolor foreground and background as 0xRRGGBB. Nil for a
+    /// palette or default color. Grok's unfocused placeholder differs from
+    /// typed text only here, so a cell without both reads as typed.
+    var fg: UInt32? = nil
+    var bg: UInt32? = nil
 }
 
 struct PromptRegionRow: Equatable, Sendable {
@@ -74,6 +79,17 @@ struct PromptRegionSnapshot: Equatable, Sendable {
     let rows: [PromptRegionRow]
     let cells: [PromptRegionCell]
     let text: Data
+    /// The last rows of the screen, read only for a harness whose composer is
+    /// pinned to the bottom (Grok). Nil when not read or the read was busy.
+    var screenBottom: PromptRegionRows? = nil
+}
+
+/// A bounded window of screen rows without its own cursor.
+struct PromptRegionRows: Equatable, Sendable {
+    let complete: Bool
+    let rows: [PromptRegionRow]
+    let cells: [PromptRegionCell]
+    let text: Data
 }
 
 enum PromptInputClassifier {
@@ -85,6 +101,8 @@ enum PromptInputClassifier {
         let value: Unicode.Scalar
         let faint: Bool
         var italic: Bool = false
+        var fg: UInt32? = nil
+        var bg: UInt32? = nil
     }
 
     private struct Line {
@@ -134,6 +152,12 @@ enum PromptInputClassifier {
         case pi
     }
 
+    /// Grok keeps its composer at the bottom of the screen and, unfocused,
+    /// parks its hidden cursor anywhere. Its panels also read the bottom rows.
+    static func readsScreenBottom(harness: String?) -> Bool {
+        composerReader(for: harness) == .grok
+    }
+
     private static func composerReader(for harness: String?) -> ComposerReader? {
         switch harness?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "claude-code", "codex":
@@ -175,6 +199,13 @@ enum PromptInputClassifier {
         case .pi:
             return piComposer(lines, cursorIndex: cursorIndex) ?? unknown
         case .grok:
+            if let unfocused = grokUnfocusedComposer(
+                lines,
+                cursorY: region.cursorY,
+                screenBottom: region.screenBottom
+            ) {
+                return unfocused
+            }
             return prefixComposer(
                 lines,
                 cursorIndex: cursorIndex,
@@ -363,15 +394,168 @@ enum PromptInputClassifier {
         )
     }
 
-    private static func makeLines(_ region: PromptRegionSnapshot, bytes: [UInt8]) -> [Line]? {
-        var result: [Line] = []
-        result.reserveCapacity(region.rows.count)
+    /// Grok's composer while Grok's own focus is elsewhere, after a click in
+    /// its transcript. Grok draws the box dim, hides the cursor and parks it
+    /// outside the box: on the footer, or far above after a hover. A paste
+    /// still lands in the composer and refocuses it, so its dim `Build
+    /// anything` placeholder is a suggestion. A typed draft that lost focus
+    /// has the same text, faint and italic bits; only its brighter grey
+    /// differs, and a paste would splice onto it. So each visible character
+    /// must be low-contrast against its own background to count as ghost
+    /// text. A character without both colors counts as typed. Grok draws no
+    /// SGR 2 here, so faint is not a signal on this path.
+    ///
+    /// Nil when the cursor is inside the box or no whole composer is visible
+    /// in the cursor window or the screen's bottom rows: the focused reader
+    /// decides.
+    private static func grokUnfocusedComposer(
+        _ lines: [Line],
+        cursorY: Int,
+        screenBottom: PromptRegionRows?
+    ) -> Analysis? {
+        if let box = grokComposerBox(lines) {
+            return box.holds(cursorY) ? nil : unfocusedGrokComposer(lines, box: box)
+        }
+        guard let screenBottom, screenBottom.complete,
+              screenBottom.rows.count <= maxRows,
+              screenBottom.cells.count <= maxCells,
+              screenBottom.text.count <= maxTextBytes,
+              let bottomLines = makeLines(
+                rows: screenBottom.rows,
+                cells: screenBottom.cells,
+                bytes: Array(screenBottom.text)
+              ),
+              let box = grokComposerBox(bottomLines) else { return nil }
+        return box.holds(cursorY) ? nil : unfocusedGrokComposer(bottomLines, box: box)
+    }
 
-        for row in region.rows {
+    private struct GrokComposerBox {
+        let promptIndex: Int
+        let closingIndex: Int
+        let prefix: PromptPrefix
+        let promptY: Int
+        let closingY: Int
+
+        /// The cursor sits on the prompt row or a row of the composer below it.
+        func holds(_ cursorY: Int) -> Bool {
+            promptY <= cursorY && cursorY < closingY
+        }
+    }
+
+    /// The lowest whole composer: a rounded `╭` top edge, the `│ ❯` prompt
+    /// row, any `│` continuation rows, and a rounded `╰` closing edge, on
+    /// consecutive rows. Grok's transcript hover box uses square corners and
+    /// is not a composer.
+    private static func grokComposerBox(_ lines: [Line]) -> GrokComposerBox? {
+        for closing in lines.indices.reversed() where firstGlyph(lines[closing]) == 0x2570 {
+            var index = closing - 1
+            while index > 0, lines[index].y + 1 == lines[index + 1].y {
+                if let prefix = acceptedPrefix(in: lines[index], boxed: true) {
+                    guard lines[index - 1].y + 1 == lines[index].y,
+                          firstGlyph(lines[index - 1]) == 0x256D else { break }
+                    return GrokComposerBox(
+                        promptIndex: index,
+                        closingIndex: closing,
+                        prefix: prefix,
+                        promptY: lines[index].y,
+                        closingY: lines[closing].y
+                    )
+                }
+                guard firstGlyph(lines[index]) == 0x2502 else { break }
+                index -= 1
+            }
+        }
+        return nil
+    }
+
+    private static func unfocusedGrokComposer(_ lines: [Line], box: GrokComposerBox) -> Analysis {
+        var typedScalars: [Unicode.Scalar] = []
+        var hasTyped = false
+        var hasGhost = false
+        for index in box.promptIndex..<box.closingIndex {
+            let line = lines[index]
+            if index > box.promptIndex, !lines[index - 1].softWrap {
+                typedScalars.append("\n")
+            }
+            var content = index == box.promptIndex
+                ? Array(line.scalars.dropFirst(box.prefix.endIndex))
+                : stripLeadingBoxEdge(line.scalars)
+            content = stripTrailingBoxEdge(content)
+            var rowScalars: [Unicode.Scalar] = []
+            for item in content {
+                if !isWhitespace(item.value) {
+                    if isGhostText(item) {
+                        hasGhost = true
+                    } else {
+                        hasTyped = true
+                    }
+                }
+                rowScalars.append(item.value)
+            }
+            if !line.softWrap {
+                while let last = rowScalars.last, isWhitespace(last) { rowScalars.removeLast() }
+            }
+            typedScalars.append(contentsOf: rowScalars)
+        }
+        guard hasTyped else {
+            return Analysis(
+                classification: PromptInputClassification(
+                    state: hasGhost ? .suggestion : .empty,
+                    draftLength: nil
+                ),
+                composerText: ""
+            )
+        }
+        let trimmed = trimWhitespace(typedScalars)
+        return Analysis(
+            classification: PromptInputClassification(state: .draft, draftLength: trimmed.count),
+            composerText: String(String.UnicodeScalarView(typedScalars))
+        )
+    }
+
+    /// Below this contrast against its own background, a character is a hint,
+    /// not text: WCAG's 3:1 floor for legible UI text. Grok 1.0.52 on its
+    /// own background: placeholder 2.2:1, italic suggestion 2.6:1, an
+    /// unfocused typed draft 6.6:1, a focused one 14:1.
+    static let ghostTextContrast = 3.0
+
+    private static func isGhostText(_ item: StyledScalar) -> Bool {
+        guard let fg = item.fg, let bg = item.bg else { return false }
+        return contrastRatio(fg, bg) < ghostTextContrast
+    }
+
+    /// WCAG 2 contrast ratio of two 0xRRGGBB colors.
+    static func contrastRatio(_ first: UInt32, _ second: UInt32) -> Double {
+        let a = relativeLuminance(first)
+        let b = relativeLuminance(second)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    private static func relativeLuminance(_ rgb: UInt32) -> Double {
+        func channel(_ shift: UInt32) -> Double {
+            let value = Double((rgb >> shift) & 0xFF) / 255
+            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+    }
+
+    private static func firstGlyph(_ line: Line) -> UInt32? {
+        line.scalars.map(\.value.value).first(where: { !isWhitespaceValue($0) })
+    }
+
+    private static func makeLines(_ region: PromptRegionSnapshot, bytes: [UInt8]) -> [Line]? {
+        makeLines(rows: region.rows, cells: region.cells, bytes: bytes)
+    }
+
+    private static func makeLines(rows: [PromptRegionRow], cells: [PromptRegionCell], bytes: [UInt8]) -> [Line]? {
+        var result: [Line] = []
+        result.reserveCapacity(rows.count)
+
+        for row in rows {
             guard row.cellRange.lowerBound >= 0,
-                  row.cellRange.upperBound <= region.cells.count else { return nil }
+                  row.cellRange.upperBound <= cells.count else { return nil }
             var scalars: [StyledScalar] = []
-            for cell in region.cells[row.cellRange] {
+            for cell in cells[row.cellRange] {
                 guard cell.textOffset >= 0, cell.textLength >= 0,
                       cell.textOffset <= bytes.count,
                       cell.textLength <= bytes.count - cell.textOffset else { return nil }
@@ -380,7 +564,13 @@ enum PromptInputClassifier {
                 let end = start + cell.textLength
                 let text = String(decoding: bytes[start..<end], as: UTF8.self)
                 for scalar in text.unicodeScalars {
-                    scalars.append(StyledScalar(value: scalar, faint: cell.faint, italic: cell.italic))
+                    scalars.append(StyledScalar(
+                        value: scalar,
+                        faint: cell.faint,
+                        italic: cell.italic,
+                        fg: cell.fg,
+                        bg: cell.bg
+                    ))
                 }
             }
             result.append(Line(

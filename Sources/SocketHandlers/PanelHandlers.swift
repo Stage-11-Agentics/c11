@@ -1113,11 +1113,10 @@ extension TerminalController {
             let observation: PromptInputObservation
             if !targetIsCurrent {
                 observation = .unavailable
-            } else if let liveSurface, let region = capturePromptInputRegion(surface: liveSurface) {
-                observation = .activeScreen(
-                    region,
-                    harness: resolved.workspace.surfaceActivityTerminalKind(panelId: resolved.panelId)
-                )
+            } else if let liveSurface,
+                      case let harness = resolved.workspace.surfaceActivityTerminalKind(panelId: resolved.panelId),
+                      let region = capturePromptInputRegion(surface: liveSurface, harness: harness) {
+                observation = .activeScreen(region, harness: harness)
             } else {
                 // A cold live exact tab and a busy/unavailable capture preserve
                 // today's queue/delivery behavior, with the uncertainty exposed.
@@ -1397,10 +1396,10 @@ extension TerminalController {
                     )))
                     return
                 }
-                let snapshot = resolved.terminalPanel.surface.surface.flatMap {
-                    capturePromptInputRegion(surface: $0)
-                }
                 let harness = resolved.workspace.surfaceActivityTerminalKind(panelId: resolved.panelId)
+                let snapshot = resolved.terminalPanel.surface.surface.flatMap {
+                    capturePromptInputRegion(surface: $0, harness: harness)
+                }
                 operation.complete(.success((snapshot, harness, resolved.responseEnvelope)))
             }
         }

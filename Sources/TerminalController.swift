@@ -87,6 +87,64 @@ struct TerminalReadBytes {
     }
 }
 
+/// Copies a native prompt-region read into Swift values. Every cell field is
+/// carried: faint, italic, and explicit truecolor (nil when unset). A count
+/// past the buffers, or a row past the cells, drops the read.
+enum PromptRegionNativeImport {
+    static func snapshot(
+        native: ghostty_prompt_region_s,
+        rows nativeRows: [ghostty_prompt_region_row_s],
+        cells nativeCells: [ghostty_prompt_region_cell_s],
+        text nativeText: [CChar]
+    ) -> PromptRegionSnapshot? {
+        let rowCount = Int(native.row_count)
+        let cellCount = Int(native.cell_count)
+        let textCount = Int(native.text_len)
+        guard rowCount <= nativeRows.count,
+              cellCount <= nativeCells.count,
+              textCount <= nativeText.count else { return nil }
+
+        var rows: [PromptRegionRow] = []
+        rows.reserveCapacity(rowCount)
+        for row in nativeRows.prefix(rowCount) {
+            let cellStart = Int(row.cell_start)
+            let rowCellCount = Int(row.cell_count)
+            guard cellStart <= cellCount, rowCellCount <= cellCount - cellStart else { return nil }
+            rows.append(PromptRegionRow(
+                screenY: Int(row.screen_y),
+                cellRange: cellStart..<(cellStart + rowCellCount),
+                softWrap: row.soft_wrap,
+                wrapContinuation: row.wrap_continuation
+            ))
+        }
+
+        var cells: [PromptRegionCell] = []
+        cells.reserveCapacity(cellCount)
+        for cell in nativeCells.prefix(cellCount) {
+            cells.append(PromptRegionCell(
+                textOffset: Int(cell.text_offset),
+                textLength: Int(cell.text_len),
+                faint: cell.faint,
+                italic: cell.italic,
+                fg: cell.fg_rgb_set ? cell.fg_rgb : nil,
+                bg: cell.bg_rgb_set ? cell.bg_rgb : nil
+            ))
+        }
+        let text = nativeText.withUnsafeBufferPointer { textBuffer in
+            Data(textBuffer.prefix(textCount).map { UInt8(bitPattern: $0) })
+        }
+        return PromptRegionSnapshot(
+            cursorX: Int(native.cursor_x),
+            cursorY: Int(native.cursor_y),
+            cursorPendingWrap: native.cursor_pending_wrap,
+            complete: native.complete,
+            rows: rows,
+            cells: cells,
+            text: text
+        )
+    }
+}
+
 extension Notification.Name {
     static let socketListenerDidStart = Notification.Name("cmux.socketListenerDidStart")
     static let terminalSurfaceDidBecomeReady = Notification.Name("cmux.terminalSurfaceDidBecomeReady")
@@ -4091,9 +4149,38 @@ class TerminalController {
 
     // Call once on demand with caller-owned bounded buffers. No borrowed native
     // memory escapes; copied prompt bytes are transient classifier input and
-    // never enter a response, log, or persistent store.
+    // never enter a response, log, or persistent store. `harness` is the
+    // panel's terminal type: a Grok panel also reads the screen's bottom rows,
+    // where its composer stays while the cursor is parked elsewhere.
     @MainActor
-    func capturePromptInputRegion(surface: ghostty_surface_t) -> PromptRegionSnapshot? {
+    func capturePromptInputRegion(surface: ghostty_surface_t, harness: String?) -> PromptRegionSnapshot? {
+        guard var snapshot = readPromptRegion(surface: surface, anchor: "cursor", read: ghostty_surface_try_read_prompt_region) else {
+            return nil
+        }
+        if PromptInputClassifier.readsScreenBottom(harness: harness),
+           let bottom = readPromptRegion(surface: surface, anchor: "bottom", read: ghostty_surface_try_read_prompt_region_bottom) {
+            snapshot.screenBottom = PromptRegionRows(
+                complete: bottom.complete,
+                rows: bottom.rows,
+                cells: bottom.cells,
+                text: bottom.text
+            )
+        }
+        return snapshot
+    }
+
+    @MainActor
+    private func readPromptRegion(
+        surface: ghostty_surface_t,
+        anchor: String,
+        read: (
+            ghostty_surface_t,
+            UnsafeMutablePointer<ghostty_prompt_region_s>,
+            UnsafeMutablePointer<ghostty_prompt_region_row_s>, UInt,
+            UnsafeMutablePointer<ghostty_prompt_region_cell_s>, UInt,
+            UnsafeMutablePointer<CChar>, UInt
+        ) -> ghostty_text_read_status_e
+    ) -> PromptRegionSnapshot? {
         var native = ghostty_prompt_region_s()
         var nativeRows = [ghostty_prompt_region_row_s](
             repeating: ghostty_prompt_region_row_s(), count: PromptInputClassifier.maxRows
@@ -4107,7 +4194,7 @@ class TerminalController {
         let status = nativeRows.withUnsafeMutableBufferPointer { rowBuffer in
             nativeCells.withUnsafeMutableBufferPointer { cellBuffer in
                 nativeText.withUnsafeMutableBufferPointer { textBuffer in
-                    ghostty_surface_try_read_prompt_region(
+                    read(
                         surface,
                         &native,
                         rowBuffer.baseAddress!, UInt(rowBuffer.count),
@@ -4120,58 +4207,20 @@ class TerminalController {
         let nativeEnded = DispatchTime.now().uptimeNanoseconds
         guard status == GHOSTTY_TEXT_READ_OK else {
             #if DEBUG
-            dlog("terminal.input_state.native status=\(status.rawValue) ms=\(Double(nativeEnded - nativeStart) / 1e6)")
+            dlog("terminal.input_state.native anchor=\(anchor) status=\(status.rawValue) ms=\(Double(nativeEnded - nativeStart) / 1e6)")
             #endif
             return nil
         }
-
-        let rowCount = Int(native.row_count)
-        let cellCount = Int(native.cell_count)
-        let textCount = Int(native.text_len)
-        guard rowCount <= nativeRows.count,
-              cellCount <= nativeCells.count,
-              textCount <= nativeText.count else { return nil }
-
-        var rows: [PromptRegionRow] = []
-        rows.reserveCapacity(rowCount)
-        for row in nativeRows.prefix(rowCount) {
-            let cellStart = Int(row.cell_start)
-            let rowCellCount = Int(row.cell_count)
-            guard cellStart <= cellCount, rowCellCount <= cellCount - cellStart else { return nil }
-            rows.append(PromptRegionRow(
-                screenY: Int(row.screen_y),
-                cellRange: cellStart..<(cellStart + rowCellCount),
-                softWrap: row.soft_wrap,
-                wrapContinuation: row.wrap_continuation
-            ))
-        }
-
-        var cells: [PromptRegionCell] = []
-        cells.reserveCapacity(cellCount)
-        for cell in nativeCells.prefix(cellCount) {
-            cells.append(PromptRegionCell(
-                textOffset: Int(cell.text_offset),
-                textLength: Int(cell.text_len),
-                faint: cell.faint,
-                italic: cell.italic
-            ))
-        }
-        let copiedText = nativeText.withUnsafeBufferPointer { textBuffer in
-            Data(textBuffer.prefix(textCount).map { UInt8(bitPattern: $0) })
-        }
-
-        #if DEBUG
-        dlog("terminal.input_state.native status=ok rows=\(rowCount) cells=\(cellCount) bytes=\(textCount) ms=\(Double(nativeEnded - nativeStart) / 1e6)")
-        #endif
-        return PromptRegionSnapshot(
-            cursorX: Int(native.cursor_x),
-            cursorY: Int(native.cursor_y),
-            cursorPendingWrap: native.cursor_pending_wrap,
-            complete: native.complete,
-            rows: rows,
-            cells: cells,
-            text: copiedText
+        let snapshot = PromptRegionNativeImport.snapshot(
+            native: native,
+            rows: nativeRows,
+            cells: nativeCells,
+            text: nativeText
         )
+        #if DEBUG
+        dlog("terminal.input_state.native anchor=\(anchor) status=ok rows=\(native.row_count) cells=\(native.cell_count) bytes=\(native.text_len) ms=\(Double(nativeEnded - nativeStart) / 1e6)")
+        #endif
+        return snapshot
     }
 
     // Native text allocation/formatting and byte ownership are main-thread work.

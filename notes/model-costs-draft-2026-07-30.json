@@ -1,0 +1,645 @@
+{
+  "anthropic/claude-fable-5": {
+    "in_usd": 10.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 50.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "anthropic/claude-haiku-4.5": {
+    "in_usd": 1.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 5.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "anthropic/claude-opus-4-8": {
+    "in_usd": 5.0,
+    "out_usd": 25.0,
+    "source": "https://openrouter.ai/api/v1/models",
+    "observed_at": "2026-07-30",
+    "notes": "c11's router seed spells this with dashes; OpenRouter's actual slug is anthropic/claude-opus-4.8. Same price either way."
+  },
+  "anthropic/claude-opus-4.8": {
+    "in_usd": 5.0,
+    "out_usd": 25.0,
+    "source": "https://openrouter.ai/api/v1/models",
+    "observed_at": "2026-07-30"
+  },
+  "anthropic/claude-opus-5": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 25.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "anthropic/claude-sonnet-5": {
+    "in_usd": 2.0,
+    "notes": "OpenRouter currently quotes Anthropic's $2/$10 introductory Sonnet 5 rate (standing list price is $3/$15, from 2026-09-01).",
+    "observed_at": "2026-07-30",
+    "out_usd": 10.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "claude-fable-5": {
+    "in_usd": 10.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 50.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-haiku-4-5": {
+    "in_usd": 1.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 5.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-opus-4-1": {
+    "in_usd": 15.0,
+    "notes": "Deprecated; retires 2026-08-05.",
+    "observed_at": "2026-07-30",
+    "out_usd": 75.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-opus-4-6": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-opus-4-7": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-opus-4-8": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-opus-5": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-sonnet-4-6": {
+    "in_usd": 3.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "claude-sonnet-5": {
+    "in_usd": 3.0,
+    "notes": "Introductory pricing of $2/$10 per MTok applies through 2026-08-31; $3/$15 is the standing list price.",
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "codex-mini-latest": {
+    "in_usd": 1.5,
+    "observed_at": "2026-07-30",
+    "out_usd": 6.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "deepseek-v4-flash": {
+    "in_usd": 0.14,
+    "notes": "Cache-hit input is $0.0028/MTok.",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.28,
+    "source": "https://api-docs.deepseek.com/quick_start/pricing"
+  },
+  "deepseek-v4-pro": {
+    "in_usd": 0.435,
+    "notes": "Cache-hit input is $0.003625/MTok.",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.87,
+    "source": "https://api-docs.deepseek.com/quick_start/pricing"
+  },
+  "deepseek/deepseek-chat-v3.1": {
+    "in_usd": 0.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.95,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "deepseek/deepseek-r1": {
+    "in_usd": 0.7,
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "deepseek/deepseek-v4-flash": {
+    "in_usd": 0.14,
+    "notes": "OpenRouter #2 by weekly tokens (7.3T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.28,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "deepseek/deepseek-v4-pro": {
+    "in_usd": 0.435,
+    "notes": "OpenRouter #4 by weekly tokens (3.55T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.87,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "fable": {
+    "in_usd": 10.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 50.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "gemini-2.5-flash": {
+    "in_usd": 0.3,
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-2.5-flash-lite": {
+    "in_usd": 0.1,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.4,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-2.5-pro": {
+    "in_usd": 1.25,
+    "notes": "Prompts over 200k tokens bill at a higher long-context rate. ($2.50/$15)",
+    "observed_at": "2026-07-30",
+    "out_usd": 10.0,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-3.1-flash-lite": {
+    "in_usd": 0.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 1.5,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-3.1-pro-preview": {
+    "in_usd": 2.0,
+    "notes": "Prompts over 200k tokens bill at a higher long-context rate. ($4/$18)",
+    "observed_at": "2026-07-30",
+    "out_usd": 12.0,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-3.5-flash": {
+    "in_usd": 1.5,
+    "observed_at": "2026-07-30",
+    "out_usd": 9.0,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-3.5-flash-lite": {
+    "in_usd": 0.3,
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "gemini-3.6-flash": {
+    "in_usd": 1.5,
+    "observed_at": "2026-07-30",
+    "out_usd": 7.5,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "google/gemini-3.1-flash-lite": {
+    "in_usd": 0.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 1.5,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "google/gemini-3.1-pro-preview": {
+    "in_usd": 2.0,
+    "notes": "Long-context tier above 200k prompt tokens: $4/$18.",
+    "observed_at": "2026-07-30",
+    "out_usd": 12.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "google/gemini-3.6-flash": {
+    "in_usd": 1.5,
+    "observed_at": "2026-07-30",
+    "out_usd": 7.5,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "gpt-5": {
+    "in_usd": 1.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 10.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5-mini": {
+    "in_usd": 0.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 2.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5-nano": {
+    "in_usd": 0.05,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.4,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5-pro": {
+    "in_usd": 15.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 120.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.1": {
+    "in_usd": 1.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 10.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.1-codex": {
+    "in_usd": 1.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 10.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.1-codex-max": {
+    "in_usd": 1.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 10.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.1-codex-mini": {
+    "in_usd": 0.25,
+    "observed_at": "2026-07-30",
+    "out_usd": 2.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.2": {
+    "in_usd": 1.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 14.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.2-codex": {
+    "in_usd": 1.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 14.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.2-pro": {
+    "in_usd": 21.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 168.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.3-codex": {
+    "in_usd": 1.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 14.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.4": {
+    "in_usd": 2.5,
+    "notes": "Prompts over 272k tokens bill at a higher long-context rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.4-mini": {
+    "in_usd": 0.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 4.5,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.4-nano": {
+    "in_usd": 0.2,
+    "observed_at": "2026-07-30",
+    "out_usd": 1.25,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.4-pro": {
+    "in_usd": 30.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 180.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.5": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 30.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.5-pro": {
+    "in_usd": 30.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 180.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.6-luna": {
+    "in_usd": 0.2,
+    "notes": "OpenAI list price. GPT-5.6 Terra/Luna are running a time-limited 50% discount (OpenRouter currently quotes the discounted rate).",
+    "observed_at": "2026-07-30",
+    "out_usd": 1.2,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.6-sol": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 30.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "gpt-5.6-terra": {
+    "in_usd": 2.0,
+    "notes": "OpenAI list price. GPT-5.6 Terra/Luna are running a time-limited 50% discount (OpenRouter currently quotes the discounted rate).",
+    "observed_at": "2026-07-30",
+    "out_usd": 12.0,
+    "source": "https://developers.openai.com/api/docs/pricing"
+  },
+  "grok-4.20-0309-non-reasoning": {
+    "in_usd": 1.25,
+    "notes": "Requests at or above 200k prompt tokens bill every token at the higher long-context rate. ($2.50/$5)",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-4.20-0309-reasoning": {
+    "in_usd": 1.25,
+    "notes": "Requests at or above 200k prompt tokens bill every token at the higher long-context rate. ($2.50/$5)",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-4.3": {
+    "in_usd": 1.25,
+    "notes": "Requests at or above 200k prompt tokens bill every token at the higher long-context rate. ($2.50/$5)",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-4.5": {
+    "in_usd": 2.0,
+    "notes": "Requests at or above 200k prompt tokens bill every token at the higher long-context rate. ($4/$12)",
+    "observed_at": "2026-07-30",
+    "out_usd": 6.0,
+    "source": "https://docs.x.ai/docs/models"
+  },
+  "grok-build-0.1": {
+    "in_usd": 1.0,
+    "notes": "Requests at or above 200k prompt tokens bill every token at the higher long-context rate. ($2/$4)",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.0,
+    "source": "https://docs.x.ai/docs/models"
+  },
+  "haiku": {
+    "in_usd": 1.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 5.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "inclusionai/ling-3.0-flash:free": {
+    "in_usd": 0.0,
+    "notes": "OpenRouter #10 by weekly tokens (1.07T); free tier, $0/$0.",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "kimi-k2.5": {
+    "in_usd": 0.6,
+    "notes": "Cache-hit input is far cheaper ($0.10/MTok); the headline figure is the cache-miss rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 3.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-k25.md"
+  },
+  "kimi-k2.6": {
+    "in_usd": 0.95,
+    "notes": "Cache-hit input is far cheaper ($0.16/MTok); the headline figure is the cache-miss rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 4.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-k26.md"
+  },
+  "kimi-k2.7-code": {
+    "in_usd": 0.95,
+    "notes": "Cache-hit input is far cheaper ($0.19/MTok); the headline figure is the cache-miss rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 4.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-k27-code.md"
+  },
+  "kimi-k2.7-code-highspeed": {
+    "in_usd": 1.9,
+    "notes": "Cache-hit input is far cheaper ($0.38/MTok); the headline figure is the cache-miss rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 8.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-k27-code.md"
+  },
+  "kimi-k3": {
+    "in_usd": 3.0,
+    "notes": "Cache-hit input is far cheaper ($0.30/MTok); the headline figure is the cache-miss rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-k3.md"
+  },
+  "meta-llama/llama-3.1-8b-instruct": {
+    "in_usd": 0.05,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.08,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "meta-llama/llama-3.3-70b-instruct": {
+    "in_usd": 0.13,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.4,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "meta-llama/llama-4-maverick": {
+    "in_usd": 0.2,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.8,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "meta-llama/llama-4-scout": {
+    "in_usd": 0.1,
+    "observed_at": "2026-07-30",
+    "out_usd": 0.3,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "minimax/minimax-m3": {
+    "in_usd": 0.3,
+    "notes": "OpenRouter #7 by weekly tokens (2.03T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 1.2,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "moonshot-v1-128k": {
+    "in_usd": 2.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 5.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-v1.md"
+  },
+  "moonshot-v1-32k": {
+    "in_usd": 1.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 3.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-v1.md"
+  },
+  "moonshot-v1-8k": {
+    "in_usd": 0.2,
+    "observed_at": "2026-07-30",
+    "out_usd": 2.0,
+    "source": "https://platform.kimi.ai/docs/pricing/chat-v1.md"
+  },
+  "moonshotai/kimi-k2": {
+    "in_usd": 0.57,
+    "notes": "Superseded upstream: Moonshot's own pricing docs no longer list kimi-k2; OpenRouter still routes it.",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.3,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "moonshotai/kimi-k2.6": {
+    "in_usd": 0.95,
+    "observed_at": "2026-07-30",
+    "out_usd": 4.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "moonshotai/kimi-k2.7-code": {
+    "in_usd": 0.73,
+    "observed_at": "2026-07-30",
+    "out_usd": 3.5,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "moonshotai/kimi-k3": {
+    "in_usd": 3.0,
+    "notes": "OpenRouter #9 by weekly tokens (1.34T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "nvidia/nemotron-3-ultra-550b-a55b:free": {
+    "in_usd": 0.0,
+    "notes": "OpenRouter #6 by weekly tokens (2.7T); free tier, $0/$0.",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.2": {
+    "in_usd": 1.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 14.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.2-codex": {
+    "in_usd": 1.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 14.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.3-codex": {
+    "in_usd": 1.75,
+    "observed_at": "2026-07-30",
+    "out_usd": 14.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.4": {
+    "in_usd": 2.5,
+    "notes": "Long-context tier above 272k prompt tokens: $5/$22.50.",
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.5": {
+    "in_usd": 5.0,
+    "notes": "Tiered pricing: longer prompts bill at a higher rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 30.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.6-luna": {
+    "in_usd": 0.1,
+    "notes": "Reflects OpenAI's time-limited 50% GPT-5.6 discount; list price is $0.20/$1.20. Tiered pricing: longer prompts bill at a higher rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.6,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.6-sol": {
+    "in_usd": 5.0,
+    "notes": "Tiered pricing: longer prompts bill at a higher rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 30.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "openai/gpt-5.6-terra": {
+    "in_usd": 1.0,
+    "notes": "Reflects OpenAI's time-limited 50% GPT-5.6 discount; list price is $2/$12. Tiered pricing: longer prompts bill at a higher rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 6.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "opus": {
+    "in_usd": 5.0,
+    "observed_at": "2026-07-30",
+    "out_usd": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "qwen/qwen3-coder": {
+    "in_usd": 0.3,
+    "observed_at": "2026-07-30",
+    "out_usd": 1.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "qwen/qwen3.7-max": {
+    "in_usd": 1.475,
+    "observed_at": "2026-07-30",
+    "out_usd": 4.425,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "sonnet": {
+    "in_usd": 3.0,
+    "notes": "Introductory pricing of $2/$10 per MTok applies through 2026-08-31; $3/$15 is the standing list price.",
+    "observed_at": "2026-07-30",
+    "out_usd": 15.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/models/overview.md"
+  },
+  "stepfun/step-3.7-flash": {
+    "in_usd": 0.2,
+    "notes": "OpenRouter #8 by weekly tokens (1.85T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 1.15,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "tencent/hy3": {
+    "in_usd": 0.132,
+    "notes": "OpenRouter #3 by weekly tokens (4.9T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.528,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "x-ai/grok-4.20": {
+    "in_usd": 1.25,
+    "notes": "Tiered pricing: longer prompts bill at a higher rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "x-ai/grok-4.3": {
+    "in_usd": 1.25,
+    "notes": "Long-context tier at/above 200k prompt tokens: $2.50/$5.",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.5,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "x-ai/grok-4.5": {
+    "in_usd": 2.0,
+    "notes": "Long-context tier at/above 200k prompt tokens: $4/$12.",
+    "observed_at": "2026-07-30",
+    "out_usd": 6.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "x-ai/grok-build-0.1": {
+    "in_usd": 1.0,
+    "notes": "Tiered pricing: longer prompts bill at a higher rate.",
+    "observed_at": "2026-07-30",
+    "out_usd": 2.0,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "xiaomi/mimo-v2.5": {
+    "in_usd": 0.14,
+    "notes": "OpenRouter #1 by weekly tokens (9.77T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 0.28,
+    "source": "https://openrouter.ai/api/v1/models"
+  },
+  "z-ai/glm-5.2": {
+    "in_usd": 0.966,
+    "notes": "OpenRouter #5 by weekly tokens (3.14T).",
+    "observed_at": "2026-07-30",
+    "out_usd": 3.036,
+    "source": "https://openrouter.ai/api/v1/models"
+  }
+}

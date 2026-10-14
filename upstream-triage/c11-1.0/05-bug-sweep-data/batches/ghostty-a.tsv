@@ -1,0 +1,208 @@
+315d78b99	2026-09-29	test: a prompt after a padded partial line must stay at column 0 across resize
+2decb9c14	2026-09-25	fix(termio): honor SIGTERM grace after ignored SIGHUP
+0068ece73	2026-09-25	fix: size CJK fallback faces to the terminal span
+01e7c93ca	2026-09-25	fix(termio): promptly stop SIGHUP-ignoring launchers (#230)
+f44c09ab9	2026-09-20	fix: allow terminal punctuation after localhost ports
+b05fc200f	2026-09-20	fix: own process environment snapshots retained by embedded Ghostty
+cb794a219	2026-09-19	Revert "fix: scope copy-mode wheel ownership to active screen"
+a94ef8d97	2026-09-19	fix: scope copy-mode wheel ownership to active screen
+9038c8ef4	2026-09-04	input: encode non-ASCII alt prefixes as UTF-8
+b3d4f547b	2026-08-24	terminal: fix stale cursor style/hyperlink state after scroll clear
+ff2e810f7	2026-08-20	fix up recent Valgrind errors
+5fac44744	2026-07-30	terminal: fix string capacity check in hyperlink reflow
+e78e31a93	2026-07-27	renderer/metal: fix 2x sizeof over-allocation in Buffer.sync
+39215aba9	2026-08-05	termio: replace SegmentedPool with std.MemoryPool
+6f2701078	2026-09-16	test: cover Hangul selection bounds, copy path, and uncomposable jamo
+e5a6849dc	2026-09-16	test: cover Hangul jamo fonts and style fallback
+3a7fc9230	2026-09-16	fix: shape NFD Hangul with the resolved syllable
+452bc460c	2026-09-16	test: reproduce NFD Hangul fallback glyph mismatch
+7d6da4213	2026-09-16	fix: let copy mode own wheel scrollback
+46428d790	2026-09-14	fix: detect bare localhost port links
+abd40f6e4	2026-09-01	fix: keep repeated selection anchored for drag
+466f85867	2026-08-23	Reapply "Merge remote-tracking branch 'origin/main' into issue-10557-reload-config-stall"
+61c4d1f02	2026-08-23	Revert "Merge remote-tracking branch 'origin/main' into issue-10557-reload-config-stall"
+fd13a3fc2	2026-08-23	shell-integration: fix Fish SSH feature condition
+5045df3f2	2026-08-22	render: mark state dirty when only the pixel offset changes
+987780a13	2026-08-18	fix: emit both sides for cmux theme selections
+3da10da73	2026-08-14	fix: guarantee tokened render disposition
+a63a97868	2026-08-11	fish: install SSH wrapper for either SSH feature
+f27772d10	2026-08-09	fix: enqueue bracketed paste atomically
+7ad529298	2026-08-09	test: cover atomic bracketed paste encoding
+bfd51a21b	2026-08-09	fix: preserve duplicate Kitty image numbers
+bc7e9f746	2026-08-08	fix: avoid signaling recycled process groups
+53239618f	2026-08-08	test: reject stale process-group teardown
+47e9bd4c9	2026-08-08	fix: reap foreground job-control process groups
+babe4266c	2026-08-08	test: cover distinct foreground process-group teardown
+9ddb1ab57	2026-08-08	fix: restore cursors outside origin margins
+2bba4149b	2026-08-08	fix: derive cursor from emitted terminal state
+d6fdb42e1	2026-08-07	fix: place cursor restoration after terminal state
+9e49174be	2026-08-07	fix: restore formatted cursor after margins
+81b4de4f5	2026-08-07	fix: preserve graceful process-group teardown
+b8a643561	2026-08-07	test: cover process-group grace and leader exit
+88c3325dc	2026-08-07	fix: reap surviving process-group descendants
+3fbdd078d	2026-08-07	font: resolve NFD Hangul clusters via canonical composition
+0316a8de8	2026-08-07	test: NFC and NFD Hangul must resolve the same font face
+5b20c6229	2026-08-07	fix: bound embedded surface process teardown
+9513174f2	2026-07-31	Expose safe VT stream snapshot boundary
+11aa609d7	2026-07-31	Expose safe VT stream snapshot boundary
+45aec50de	2026-08-03	test: cover spawned open stderr reader log bound
+f0f8273b7	2026-08-02	Initialize locale before crash reporting
+ee691e86b	2026-07-31	fix: cache and gate macOS loggers
+5068b3a37	2026-07-30	fix: render cmux theme picker before input
+abcf5697d	2026-07-30	Fix sentry-init racing environ mutation during global init
+6143bac77	2026-07-29	Fix theme picker hanging on launch after vaxis 0.6 upgrade
+e7d06af34	2026-07-29	fix: generation-tag renderer retry timers
+45abb8a2d	2026-07-29	fix: reset resolved renderer retry deadlines
+78621f8ce	2026-07-28	fix: key shader retries to compile attempts
+a1e727ad2	2026-07-28	fix: tolerate matching retained shader entries
+9fff00fc4	2026-07-28	fix: back off failed custom shader restores
+2258bea96	2026-07-28	fix: bound app mailbox drain turns
+6a8cdbc7a	2026-07-28	test: reproduce app mailbox drain starvation
+074c0f7b7	2026-07-28	fix renderer cache and tab callback races
+982a723ff	2026-07-28	fix: accept backend-specific write errors
+d74e17608	2026-07-28	test: compile queued writes without WouldBlock
+2f6ee7b3d	2026-07-28	fix: preserve queued writes through backpressure
+b45f4e6ac	2026-07-28	fix: keep font name logging best effort
+5faee251a	2026-07-27	renderer: close recovery lifetime edges
+8f31fb57c	2026-07-26	os/open: stop the stderr drain from spinning and leaking zombies
+4a6c443c3	2026-07-27	Preserve plain bounded clipboard copies (#160)
+7a5d08b7c	2026-07-27	Preserve rich bounded keyboard copies (#159)
+acefff5de	2026-07-27	fix: bound copy work and expose runtime cursor style (#157)
+65505e8c3	2026-07-27	fix: make keyboard copy navigation atomic (#156)
+aeed68c44	2026-07-27	fix: expose native keyboard selection geometry (#154)
+0f2b10bad	2026-07-27	test: require renderer-owned Metal resource lifetimes
+7b24d1c5d	2026-07-27	renderer: avoid main-queue teardown deadlock
+68ffad656	2026-07-27	test: prevent main-queue renderer teardown deadlock
+90ce8e97b	2026-07-27	renderer: bound shared Metal queue depth
+fece6fbb1	2026-07-27	test: bound shared Metal queue depth
+85002fa1c	2026-07-27	renderer: bound Metal command queue capacity
+f6e1839a2	2026-07-27	test: bound Metal queue capacity to swap chain
+517a4c75a	2026-07-26	renderer: reclaim hidden macOS tab GPU memory
+af4dfb43f	2026-07-25	fix: release action lease before teardown wake
+b8efe0f45	2026-07-25	test: cover action release teardown ordering
+d9311bb99	2026-07-25	fix: pair binding release without modifiers
+22d6c589f	2026-07-25	fix: preserve menu binding key lifecycle
+28c0f9bf5	2026-07-24	test: order cross-thread teardown assertions
+ff36ae8ac	2026-07-24	fix: serialize teardown with cross-thread actions
+b47e5cac2	2026-07-24	fix: complete surface teardown before free returns
+fcafac572	2026-07-24	fix(renderer): rotate serial frame leases
+f4b337d1d	2026-07-24	test: require synchronous teardown during redraw action
+7541eb3db	2026-07-24	Revert "Merge pull request #140 from manaflow-ai/issue-8808-owned-userdata-lifetime"
+5ef5cba63	2026-07-24	fix(termio): terminate dead pty readers and reap children
+365fe1d2c	2026-07-24	fix: lease setter-installed PTY tee callbacks
+14ce6dbd3	2026-07-24	test: lease setter-installed PTY tee callbacks
+76c8b03d8	2026-07-24	fix: retain userdata across every host callback
+289097387	2026-07-24	fix: bind embedder userdata to surface lifetime
+cf1dee45d	2026-07-24	fix: retain surfaces through app action dispatch
+b1ad44d13	2026-07-24	test: reproduce redraw dispatch teardown race
+741b11662	2026-07-24	fix: bind redraw tickets to surface lifetimes
+b7feeea5c	2026-07-24	lib-vt: expose bounded Kitty graphics state (#137)
+62e1de720	2026-07-24	fix: ticket external redraw deliveries
+3c6f54836	2026-07-24	test: reproduce external redraw delivery races
+6126cfd39	2026-07-24	fix: track external redraw delivery states
+d1efafd78	2026-07-24	fix: retain rejected external redraw requests
+f2f1dfeb8	2026-07-24	fix: bound external renderer continuation turns
+727a7dc02	2026-07-24	fix: drain external renderer continuations
+2cfe9b349	2026-07-23	fix: bound renderer mailbox wake batches
+83c3e4c51	2026-07-23	test: reproduce renderer mailbox wake starvation
+188d31a97	2026-07-23	fix: bound renderer mailbox drain turns
+823641e23	2026-07-23	fix: join unindented wrapped links
+ff362c99c	2026-07-23	fix: guard null CoreText display names
+1b703a9d8	2026-07-23	fix: report C initialization errors without global state
+8779d2d7f	2026-07-23	fix: complete remaining Zig 0.16 formatter ports
+9687f7b72	2026-07-23	fix: finish Zig 0.16 utility migrations
+ca21db1bb	2026-07-23	fix: publish renderer lifecycle state without blocking
+2d99010ff	2026-07-23	test: cover nonblocking renderer lifecycle state
+24c3f0822	2026-07-23	fix: address Zig 0.16 review regressions
+79c5b032b	2026-07-23	test: cover Kitty temporary file directory boundary
+14d4d041b	2026-07-23	fix: preserve text produced by consumed Alt
+573661a03	2026-07-23	Fix temporary directory lookup build
+5c271509e	2026-07-23	Fix Zig 0.16 helper stdout
+b988efcfe	2026-07-22	fix some 0.16 translation regressions
+a77c706a1	2026-07-22	fix process and global error handling
+b211341be	2026-07-21	fix: preserve OpenGL presentation errors
+fe44a2ef4	2026-07-21	fix: deliver synchronous presentations after thread cleanup
+fb97d47a0	2026-07-21	fix: preserve presentation ownership and GL ordering
+f22ef7896	2026-07-21	fix: freeze tokened Metal presentations
+d5d3dec57	2026-07-21	fix: make stalled frame teardown lifetime-safe
+56f0479de	2026-07-21	test: cover stalled Metal teardown lifetime
+56e3fcfd5	2026-07-21	fix: make presentation registration one-shot
+cc1574d2d	2026-07-21	test: cover callback registration lifetime
+da0372405	2026-07-21	fix: harden tokened render completion
+e4851d3d7	2026-07-21	test: cover presentation teardown and deferral
+5038188f1	2026-07-21	fix: close reviewed render and link gaps
+fedd33703	2026-07-21	fix: inherit render presentation callbacks
+8eb1857c4	2026-07-21	fix: retain wrapped-path trailing spaces
+0768b05d2	2026-07-18	fix: honor copy-link whitespace trimming
+eb9004aa8	2026-07-18	fix: resolve wrapped links from exact terminal cells
+b5c39a8f7	2026-07-17	fix: align hover matcher priority with clicks
+11dd30a9b	2026-07-17	fix: join indented hard-wrapped links
+a3c1caba5	2026-07-17	terminal: resize failures are now almost fully safe
+dde3d4d6b	2026-07-17	terminal: screen resize failures are now safe
+89b103dd5	2026-07-17	terminal: more full featured resize (cell geo, sync rendering, etc.)
+90ee78676	2026-07-16	fix: reject OpenGL surfaces in Metal renderer
+516a72ac1	2026-07-13	fix: harden embedded OpenGL resize and teardown
+0d23cf558	2026-07-16	fix: compile embedded OpenGL realize hook
+68376f5ac	2026-07-16	build(deps): bump cachix/install-nix-action from 31.10.7 to 31.11.0
+30bd02565	2026-07-14	fix: preserve custom matchers across finalization
+cbf65567a	2026-07-14	fix: scope wrapped link candidates by matcher
+eee34d0f9	2026-07-14	fix: match URLs across semantic soft wraps
+d1b22bf96	2026-07-13	Bound authoritative scrollbar lock wait
+59153a988	2026-07-13	fix: import embedded termio config support
+ae76cfbfc	2026-07-12	i18n: fix untranslated Close Split string in zh_CN.po
+7e14347c1	2026-07-11	terminal: bound page map probe lengths
+9b466e9c5	2026-07-10	terminal: fix count-limited page iteration
+91f0cf67d	2026-07-09	terminal: preserve tabstops on resize failure
+b287f6d1a	2026-07-09	terminal: handle stored grapheme boundaries
+08e376f23	2026-07-09	terminal: bound selection drag geometry
+8f1c2fe95	2026-07-09	terminal: handle backwards selection timestamps
+0ff4e41b2	2026-07-09	terminal: fix pin wrapping at row boundaries
+bdf4baa80	2026-07-09	surface: wake renderer for selection changes
+627518447	2026-07-09	terminal/search: reset cached results after resize
+d0c50089e	2026-07-09	core: notify selection changes after renderer unlock
+035ae8ddb	2026-07-10	build(deps): bump cachix/install-nix-action from 31.10.6 to 31.10.7
+d34b54e9b	2026-07-09	renderer: hand off state mutex to avoid starving frames
+25e624569	2026-07-09	renderer: avoid starving scrollback compression
+6d5dda40d	2026-07-09	inspector: clarify page compression memory
+f6fd4cb08	2026-07-08	terminal: generalize page memory reclamation
+c62c15984	2026-07-08	terminal: add standalone LZ4 block codec
+dd726a9a6	2026-07-08	renderer: fix objc id vs anyopaque comparison in detach ownership guard
+66c3bc6f1	2026-07-08	renderer: external-drain mode so render_now cannot corrupt the xev loop
+60121a039	2026-07-08	Revert "termio: bound POSIX read-ahead on non-Darwin"
+896aca499	2026-07-07	terminal: return free-listed page memory to the OS
+8307349ec	2026-07-07	terminal: fix increaseCapacity growth from zero-capacity dimensions
+b953bb346	2026-07-07	terminal: fix bitmap allocator chunk region sizing
+20a1bfa5f	2026-07-08	fix: pass RGB color inputs by pointer
+751a60df6	2026-07-07	macos: route IME preedit commits through key events
+bed47168c	2026-07-07	termio: bound POSIX read-ahead on non-Darwin
+cee35cabf	2026-07-06	terminal: skip style map update when SGR leaves style unchanged
+6e267d336	2026-07-03	macOS: use the  `getOpinionatedStringContents` same as paste
+004c88e41	2026-06-29	fix: set max window clamp to current monitor size
+8fe5913f7	2026-07-03	kitty/gfx: fix build on targets without 64-bit atomics
+bdc0b6c19	2026-07-03	kitty/gfx: add generation stamps, delete transmit time
+49806fc4c	2026-07-03	macOS: read string contents per pasteboard item in order
+acd09c0a6	2026-07-03	macos: add tests for NSPasteboard.getOpinionatedStringContents
+aea63d71f	2026-07-01	libghostty: fix utf-8 grapheme length overflow
+0274e7ad8	2026-06-29	macos: fix quick terminal restoring stale size after display reconnect
+31068ca6e	2026-03-05	font/shaper: fix Arabic tashkeel glyph overlap in CoreText RTL runs
+eea8fdce5	2026-03-04	font: fix Arabic/Bengali cluster anchoring in shapers
+0a117e079	2026-06-24	gtk: fix missing dbus connection causing crash
+632aa6756	2026-06-22	macOS: fix tabs frame on macOS 27 beta 2
+301e0791b	2026-06-22	surface: remove unbounded screen text export (#85)
+e81fb65f6	2026-06-21	surface: bound screen clipboard text formatting
+8e8a8dc11	2026-06-15	added async fix in order to resolve first second tab issue
+c3ceb55f5	2026-06-15	added comment explaining fix
+749d45490	2026-06-15	fix swiftlint
+5697db813	2026-06-11	renderer: push display_realized non-blocking (.instant), never stall main
+002fd4142	2026-06-05	lib-vt: add pwd_changed callback for OSC 7/9/1337
+97777cf5a	2026-06-07	fix: fix tests, change enum fields to lowercase
+1e63834cd	2026-06-05	fix(terminal): avoid integer overflow in selectPrev with no active matches
+d6494544c	2026-06-05	terminal: add panic test for integer overflow in selectPrev with no active matches
+7837563ed	2026-06-05	fix(terminal): guard wrap count when resize pushes cursor to scrollback
+df789cd4b	2026-06-04	fix: only open a latched link click that started on a link
+9f014e98b	2026-06-04	fix: open latched link on release with press-time chord; defer-clear latch
+59fb750c0	2026-06-04	fix: clear link-click latch unconditionally on left release
+5998abddd	2026-06-04	fix: latch cmd-click link suppression for the click lifecycle
+f24195271	2026-06-04	fix: scope cmd-click link suppression to left button; clear stale hover
+76ead3eae	2026-06-04	fix: also suppress motion reports during a cmd-clicked link drag
+d1dbbec9b	2026-06-04	fix: key cmd-click link suppression on the modifier, not over_link

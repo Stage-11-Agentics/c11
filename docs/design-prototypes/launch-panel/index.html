@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>c11 — Launch Panel + Settings Prototype (C11-175 v2)</title>
+<style>
+/* ── Stage 11 palette (see docs/void-popover-aesthetic.md) ─────────── */
+:root {
+  --black:      #000000;
+  --surface:    #0a0a0a;
+  --surface2:   #1f1f22;
+  --surface3:   #2d2d32;
+  --rule:       #333333;
+  --dim:        #555555;
+  --white:      #e8e8e8;
+  --gold:       #c9a84c;
+  --gold-faint: rgba(201,168,76,0.20);
+  --gold-ghost: rgba(201,168,76,0.10);
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body {
+  background: #050505;
+  color: var(--white);
+  font-family: var(--mono);
+  font-weight: 300;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: auto; overflow-y: auto;
+}
+
+/* ── prototype shell: two stages side by side ─────────────────────── */
+.proto-bar {
+  display:flex; align-items:center; gap:14px; padding: 10px 18px;
+  border-bottom: 1px solid var(--rule); background: var(--surface);
+  position: sticky; top:0; z-index: 200;
+}
+.proto-bar .t { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--gold); }
+.proto-bar .n { font-size:10.5px; color: rgba(232,232,232,0.45); }
+.proto-bar .sp { flex:1; }
+.proto-bar a { color: rgba(232,232,232,0.65); font-size:10.5px; text-decoration:none; padding: 3px 9px; border:1px solid var(--rule); border-radius:4px; }
+.proto-bar a:hover { color: var(--white); border-color: var(--dim); }
+.proto-bar a.on { color: var(--gold); border-color: var(--gold-faint); background: var(--gold-ghost); }
+
+.stages { display:flex; gap:22px; padding: 22px; align-items:flex-start; min-width: 1980px; }
+.stage { flex-shrink:0; }
+.stage-label {
+  font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--dim);
+  margin-bottom:10px; display:flex; align-items:center; gap:10px;
+}
+.stage-label .hint { text-transform:none; letter-spacing:0; color: rgba(232,232,232,0.35); font-size:10px; }
+
+/* ── mock c11 window ──────────────────────────────────────────────── */
+.window {
+  width: 1040px; height: 780px; background: var(--black);
+  border: 1px solid var(--rule); border-radius: 10px; overflow:hidden;
+  display:flex; flex-direction:column; position:relative;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+}
+.titlebar {
+  height: 30px; background: var(--surface); flex-shrink:0;
+  display:flex; align-items:center; padding: 0 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.traffic { display:flex; gap:7px; }
+.traffic span { width:11px; height:11px; border-radius:50%; background:#3a3a3a; display:block; }
+.wtitle { flex:1; text-align:center; font-size:11px; color:var(--dim); letter-spacing:0.06em; }
+
+.tabbar {
+  height: 34px; background: var(--surface); border-bottom: 1px solid var(--rule);
+  display:flex; align-items:stretch; flex-shrink:0; user-select:none;
+}
+.tab {
+  display:flex; align-items:center; gap:7px; padding: 0 14px;
+  border-right:1px solid var(--rule); font-size:11px; color:var(--dim); white-space:nowrap;
+}
+.tab.active { background: var(--black); color: var(--white); }
+.tab .tnum { font-size:9px; color:var(--dim); }
+.tabbar .spacer { flex:1; }
+.toolbtns { display:flex; align-items:center; gap:3px; padding: 0 10px; }
+.toolbtn {
+  width:24px; height:22px; display:flex; align-items:center; justify-content:center;
+  border-radius:4px; color:var(--dim); font-size:12px; cursor:pointer; position:relative;
+  border:1px solid transparent;
+}
+.toolbtn:hover { background: var(--surface2); color: var(--white); }
+.toolbtn.a-btn { font-weight:500; font-size:12.5px; }
+.toolbtn.a-btn.panel-open { background: var(--surface2); color: var(--gold); border-color: var(--gold-faint); }
+.toolbtn.a-btn .model-accent {
+  position:absolute; bottom:2px; left:6px; right:6px; height:1.5px;
+  background: var(--gold); border-radius:1px; opacity:0.85;
+}
+.term {
+  flex:1; padding: 16px 18px; font-size:12px; line-height:1.65; color:var(--dim); overflow:hidden;
+}
+.term .gold { color: var(--gold); } .term .wh { color:var(--white); opacity:0.8; }
+
+/* ── generic chips (recipes from the aesthetic guide §8) ──────────── */
+.kbd {
+  display:inline-block; font-size:9.5px; font-weight:500;
+  color: rgba(232,232,232,0.78); background: var(--surface3);
+  border:0.5px solid var(--rule); border-radius:3px; padding: 0 4px; line-height:15px;
+  vertical-align:middle;
+}
+.hint-dim { color: rgba(232,232,232,0.45); font-size:10px; }
+.uc { font-size:9.5px; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color:var(--dim); }
+.sep-dot { color: rgba(232,232,232,0.25); }
+.chip-effort {
+  font-size:9px; font-weight:500; letter-spacing:0.05em; border-radius:3px; padding:1px 5px;
+  line-height:14px; white-space:nowrap; color: rgba(232,232,232,0.75);
+  background: var(--surface3); border:0.5px solid var(--rule);
+}
+.chip-sys {
+  font-size:9px; font-weight:500; letter-spacing:0.05em; border-radius:3px; padding:1px 5px;
+  line-height:14px; white-space:nowrap; color: var(--gold);
+  background: var(--gold-ghost); border:0.5px solid var(--gold-faint);
+}
+.default-tag {
+  font-size:8.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold);
+  border:0.5px solid var(--gold-faint); border-radius:3px; padding:0.5px 4px; font-weight:500;
+}
+.cbx {
+  width:13px; height:13px; border:1px solid var(--dim); border-radius:3px;
+  display:inline-flex; align-items:center; justify-content:center; font-size:9px;
+  color:var(--black); flex-shrink:0; cursor:pointer;
+}
+.cbx.on { background: var(--gold); border-color: var(--gold); }
+
+/* ══ THE LAUNCH PANEL ═══════════════════════════════════════════════
+   Popover → PANEL. Differences that matter:
+   - appears INSTANTLY (no entrance animation — perf is a feature)
+   - non-transient: stays open while you click around; explicit close
+     (esc, ✕, or toggling A). Header carries its own identity + close.
+   - CENTERED on the pane whose A button was clicked
+   - two columns: USER CONFIGURATIONS | HARNESSES (on machine)        */
+.panel {
+  position:absolute; left:50%; top: calc(50% + 30px); transform: translate(-50%, -50%);
+  width: 780px;
+  background: var(--surface); border:1px solid var(--rule); border-radius:9px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.75), 0 0 0 0.5px rgba(201,168,76,0.07);
+  z-index: 40; overflow:hidden;
+  /* NO entrance animation. display:block ↔ none only. */
+}
+.panel.closed { display:none; }
+
+.panel-head {
+  display:flex; align-items:center; gap:10px; padding: 9px 14px 8px;
+  background: linear-gradient(rgba(232,232,232,0.02), transparent);
+  border-bottom:1px solid var(--rule);
+}
+.panel-head .right { margin-left:auto; display:flex; align-items:center; gap:10px; font-size:10px; color:var(--dim); }
+.panel-close {
+  width:18px; height:18px; display:flex; align-items:center; justify-content:center;
+  border-radius:4px; color:var(--dim); cursor:pointer; font-size:11px;
+}
+.panel-close:hover { background: var(--surface3); color: var(--white); }
+/* circled settings button — the panel's one route to management */
+.gear-btn {
+  width:20px; height:20px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; border:1px solid var(--rule); color:var(--dim);
+  cursor:pointer; font-size:10.5px;
+}
+.gear-btn:hover { color: var(--gold); border-color: var(--gold-faint); background: var(--gold-ghost); }
+
+.panel-cols { display:flex; align-items:stretch; }
+.col-fav { flex:1; min-width:0; border-right:1px solid var(--rule); }
+.col-har { flex:1.12; min-width:0; background: rgba(10,10,10,0.45); }
+
+.col-head {
+  display:flex; align-items:center; gap:8px; padding: 7px 12px 5px;
+  background: rgba(10,10,10,0.5);
+  border-bottom: 1px solid var(--rule);
+}
+.col-head .cnt { margin-left:auto; font-size:9px; color:var(--dim); letter-spacing:0.05em; }
+
+/* favorites rows — same anatomy as v1 popover rows */
+.cfg-row {
+  display:flex; align-items:center; gap:10px; padding: 8px 12px 8px 10px;
+  cursor:pointer; position:relative; border-bottom: 0.5px solid rgba(51,51,51,0.55);
+}
+.cfg-row:hover { background: rgba(232,232,232,0.03); }
+.cfg-row.kb-focus { background: var(--gold-faint); }
+.cfg-row.kb-focus::before {
+  content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--gold);
+}
+.pin-cell { width:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.pin-dot {
+  width:16px; height:16px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:11px; color:var(--gold);
+}
+.pin-btn {
+  width:18px; height:18px; border-radius:4px; display:flex; align-items:center;
+  justify-content:center; font-size:10px; color:transparent; cursor:pointer;
+}
+.cfg-row:hover .pin-btn { color: rgba(232,232,232,0.4); }
+.pin-btn:hover { background: var(--surface3); color: var(--gold) !important; }
+.cfg-main { flex:1; min-width:0; }
+.cfg-name { font-size:12.5px; font-weight:500; color:var(--white); display:flex; align-items:center; gap:8px; }
+.cfg-sub { font-size:10px; color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cfg-sub .prov { color: rgba(232,232,232,0.55); }
+.cfg-right { display:flex; align-items:center; gap:7px; flex-shrink:0; }
+.cfg-key { width:16px; text-align:center; }
+
+/* harness rows — harness identity + model/effort dropdowns (default = base) + go */
+.har-row {
+  display:flex; align-items:center; gap:9px; padding: 7px 12px;
+  cursor:pointer; position:relative; border-bottom: 0.5px solid rgba(51,51,51,0.45);
+}
+.har-dds { display:flex; align-items:center; gap:5px; margin-top:4px; }
+.dd {
+  display:inline-flex; align-items:center; gap:5px; padding: 1.5px 7px;
+  background: var(--surface2); border:0.5px solid var(--rule); border-radius:4px;
+  font-size:9.5px; color: rgba(232,232,232,0.75); cursor:pointer; position:relative;
+  white-space:nowrap;
+}
+.dd:hover { border-color: var(--dim); color: var(--white); }
+.dd .car { font-size:6.5px; color: var(--dim); }
+.dd.changed { border-color: var(--gold-faint); color: var(--gold); background: var(--gold-ghost); }
+.dd-menu {
+  display:none; position:absolute; top: 20px; left:-1px; min-width: 118px;
+  background: var(--surface2); border:1px solid var(--rule); border-radius:6px;
+  box-shadow: 0 10px 34px rgba(0,0,0,0.7); z-index: 80; overflow:hidden; padding: 3px 0;
+}
+.dd.open .dd-menu { display:block; }
+.dd-opt { padding: 4px 10px; font-size:10px; color: rgba(232,232,232,0.75); }
+.dd-opt:hover { background: rgba(232,232,232,0.05); color: var(--white); }
+.dd-opt.sel { color: var(--gold); background: var(--gold-ghost); }
+.dd-opt .base-mark { font-size:8px; color: var(--dim); margin-left:6px; }
+.har-row:hover { background: rgba(232,232,232,0.03); }
+.har-row.kb-focus { background: var(--gold-faint); }
+.har-row.kb-focus::before {
+  content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--gold);
+}
+.har-glyph {
+  width:22px; height:22px; border-radius:5px; background: var(--surface2);
+  border: 0.5px solid var(--rule); display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:500; color: rgba(232,232,232,0.75); flex-shrink:0;
+}
+.har-row:hover .har-glyph { color: var(--white); border-color: var(--dim); }
+.har-main { flex:1; min-width:0; }
+.har-name { font-size:12px; font-weight:500; color:var(--white); }
+.har-sub { font-size:9.5px; color:var(--dim); margin-top:1.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.har-sub .prov { color: rgba(232,232,232,0.5); }
+.har-go { font-size:10px; color:transparent; flex-shrink:0; }
+.har-row:hover .har-go { color: var(--dim); }
+/* quiet save button — only exists once a dropdown moved off base. no toast. */
+.save-mini {
+  display:none; align-items:center; gap:4px; padding: 1.5px 7px; flex-shrink:0;
+  border:0.5px solid var(--gold-faint); border-radius:4px; background: var(--gold-ghost);
+  color: var(--gold); font-size:9px; font-weight:500; cursor:pointer;
+}
+.har-row.has-change .save-mini { display:inline-flex; }
+.save-mini:hover { background: var(--gold-faint); }
+.har-foot {
+  padding: 6px 12px; font-size:9.5px; color:#4a4a4a; display:flex; align-items:center; gap:6px;
+}
+.har-foot:hover { color: var(--dim); cursor:pointer; }
+
+/* recent strip spans both columns */
+.recent-strip {
+  display:flex; align-items:center; gap:10px; padding: 7px 14px;
+  border-top:1px solid var(--rule); background: rgba(10,10,10,0.5); cursor:pointer;
+}
+.recent-strip:hover { background: rgba(232,232,232,0.02); }
+.recent-glyph { color: rgba(232,232,232,0.55); font-size:12px; }
+.recent-name { font-size:12px; font-weight:400; color:var(--white); }
+.recent-meta { font-size:10px; color:var(--dim); }
+
+.panel-foot { border-top:1px solid var(--rule); background: rgba(10,10,10,0.6); }
+.foot-row {
+  display:flex; align-items:center; gap:9px; padding: 7px 14px; cursor:pointer;
+  font-size:11px; color: rgba(232,232,232,0.8);
+}
+.foot-row:hover { background: rgba(232,232,232,0.03); color: var(--white); }
+.foot-row .fr-icon { width:16px; text-align:center; color:var(--dim); font-size:11px; }
+.foot-row:hover .fr-icon { color: var(--gold); }
+.foot-row .fr-right { margin-left:auto; display:flex; align-items:center; gap:7px; }
+.foot-row .stat-inline { font-size:10px; color:var(--dim); }
+.hintbar {
+  display:flex; align-items:center; gap:6px; padding: 7px 14px;
+  border-top: 1px solid var(--rule); background: rgba(10,10,10,0.75);
+  font-size:10px; color: rgba(232,232,232,0.45); flex-wrap:wrap;
+}
+
+/* ══ SETTINGS: Agents & Launch ══════════════════════════════════════
+   The settings window that makes the panel's two columns REAL objects
+   the operator manages: favorites (left col) + harnesses (right col). */
+.settings {
+  width: 900px; height: 780px; background: var(--surface);
+  border:1px solid var(--rule); border-radius: 11px; overflow:hidden;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.85), 0 0 0 0.5px rgba(201,168,76,0.08);
+  display:flex; flex-direction:column;
+}
+.set-title {
+  height: 44px; display:flex; align-items:center; padding: 0 20px; gap:12px;
+  border-bottom: 1px solid var(--rule); background: rgba(10,10,10,0.5); flex-shrink:0;
+}
+.set-title h1 { font-size:14px; font-weight:600; color:var(--white); }
+.set-title .crumb { font-size:10.5px; color:var(--dim); }
+.set-body { display:flex; flex:1; min-height:0; }
+
+/* settings nav (mock) */
+.set-nav {
+  width: 168px; border-right:1px solid var(--rule); padding: 10px 8px; flex-shrink:0;
+  background: rgba(10,10,10,0.4); display:flex; flex-direction:column; gap:2px;
+}
+.nav-item { padding: 6px 10px; border-radius:5px; font-size:11px; color:var(--dim); cursor:pointer; position:relative; }
+.nav-item:hover { color: rgba(232,232,232,0.8); }
+.nav-item.sel { background: var(--gold-faint); color: var(--white); }
+.nav-item.sel::before { content:""; position:absolute; left:0; top:4px; bottom:4px; width:2px; background:var(--gold); border-radius:1px; }
+
+.set-main { flex:1; overflow-y:auto; padding: 18px 22px 24px; min-width:0; }
+.set-sect { margin-bottom: 26px; }
+.sect-head { display:flex; align-items:baseline; gap:10px; margin-bottom: 4px; }
+.sect-head .uc { color: rgba(232,232,232,0.65); }
+.sect-desc { font-size:10.5px; color:var(--dim); margin-bottom:11px; line-height:1.5; }
+
+/* favorites manager */
+.fav-list { border:1px solid var(--rule); border-radius:7px; overflow:hidden; background: var(--surface); }
+.fav-row {
+  display:flex; align-items:center; gap:9px; padding: 8px 12px 8px 6px;
+  border-bottom: 0.5px solid rgba(51,51,51,0.45); position:relative; cursor:pointer;
+}
+.fav-row:last-child { border-bottom:none; }
+.fav-row:hover { background: rgba(232,232,232,0.03); }
+.fav-row.sel { background: var(--gold-faint); }
+.fav-row.sel::before { content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--gold); }
+.drag-grip { color:#3d3d3d; font-size:10px; cursor:grab; width:16px; text-align:center; flex-shrink:0; }
+.fav-row:hover .drag-grip { color: var(--dim); }
+.fav-key { font-size:9px; color:var(--dim); width:14px; text-align:center; flex-shrink:0; }
+.fav-main { flex:1; min-width:0; }
+.fav-name { font-size:12px; font-weight:500; color:var(--white); display:flex; align-items:center; gap:7px; }
+.fav-sub { font-size:9.5px; color:var(--dim); margin-top:1.5px; }
+.fav-sub .prov { color: rgba(232,232,232,0.5); }
+.fav-actions { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+.icon-btn {
+  width:20px; height:20px; border-radius:4px; display:flex; align-items:center; justify-content:center;
+  color:transparent; cursor:pointer; font-size:10.5px;
+}
+.fav-row:hover .icon-btn { color: rgba(232,232,232,0.4); }
+.icon-btn:hover { background: var(--surface3); color: var(--white) !important; }
+.icon-btn.pin:hover { color: var(--gold) !important; }
+.fav-new {
+  display:flex; align-items:center; gap:8px; padding: 9px 12px; cursor:pointer;
+  font-size:11px; color: rgba(232,232,232,0.65); border-top:1px solid var(--rule);
+}
+.fav-new:hover { color: var(--gold); background: rgba(232,232,232,0.02); }
+
+/* default control strip */
+.def-strip {
+  display:flex; align-items:center; gap:10px; margin-top:10px;
+  padding: 8px 12px; border:1px solid var(--rule); border-radius:7px; background: rgba(10,10,10,0.45);
+  font-size:11px; color: rgba(232,232,232,0.7);
+}
+.def-pick {
+  display:inline-flex; align-items:center; gap:6px; padding: 3px 10px;
+  background: var(--surface3); border:0.5px solid var(--rule); border-radius:5px;
+  cursor:pointer; font-size:11px; color: var(--white);
+}
+.def-pick:hover { border-color: var(--dim); }
+.def-strip .fr { margin-left:auto; display:flex; align-items:center; gap:8px; }
+
+/* harness manager */
+.har-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+.h-card {
+  border:1px solid var(--rule); border-radius:7px; padding: 10px 12px;
+  background: var(--surface2); position:relative; cursor:pointer;
+  display:flex; align-items:center; gap:10px;
+}
+.h-card:hover { border-color: var(--dim); }
+.h-card.enabled.sel { border-color: var(--gold); background: var(--gold-ghost); }
+.h-card .har-glyph { width:26px; height:26px; font-size:11px; }
+.h-card .hc-main { flex:1; min-width:0; }
+.h-name { font-size:11.5px; font-weight:500; color:var(--white); }
+.h-sub { font-size:9px; color:var(--dim); margin-top:2px; }
+.h-sub .ok { color: rgba(201,168,76,0.75); }
+.h-card.disabled { opacity:0.45; }
+.h-card.disabled:hover { opacity:0.6; }
+.h-path { font-size:8.5px; color:#4a4a4a; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* toggle */
+.tgl {
+  width:26px; height:15px; border-radius:8px; border:1px solid var(--rule);
+  background: var(--surface3); position:relative; flex-shrink:0; cursor:pointer;
+  transition: none;
+}
+.tgl::after {
+  content:""; position:absolute; top:1.5px; left:2px; width:10px; height:10px;
+  border-radius:50%; background: var(--dim);
+}
+.tgl.on { background: var(--gold); border-color: var(--gold); }
+.tgl.on::after { left:auto; right:2px; background: var(--black); }
+
+/* inline editor (selected favorite) */
+.mini-editor {
+  margin-top:10px; border:1px solid var(--rule); border-radius:7px;
+  background: rgba(10,10,10,0.45); padding: 12px 14px;
+}
+.ed-label {
+  font-size:9.5px; font-weight:500; letter-spacing:0.12em; text-transform:uppercase;
+  color: var(--dim); margin-bottom:5px; display:flex; align-items:center; gap:8px;
+}
+.inh { font-size:8.5px; letter-spacing:0.02em; text-transform:none; font-weight:300; }
+.inh.inherited { color:#4a4a4a; } .inh.overridden { color: var(--gold); }
+.ed-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.ed-input {
+  width:100%; background: var(--surface2); border:1px solid var(--rule); border-radius:6px;
+  color: var(--white); font-family: var(--mono); font-size:11.5px; padding: 6px 9px;
+  outline:none; font-weight:300;
+}
+.ed-input:focus { border-color: rgba(201,168,76,0.5); }
+.e-chip {
+  padding: 3px 10px; border:1px solid var(--rule); border-radius:5px; cursor:pointer;
+  font-size:10.5px; color: rgba(232,232,232,0.75); background: var(--surface2); display:inline-block;
+}
+.e-chip:hover { border-color: var(--dim); color:var(--white); }
+.e-chip.sel { border-color: var(--gold); color: var(--gold); background: var(--gold-ghost); }
+.ed-foot { display:flex; align-items:center; gap:10px; margin-top:13px; }
+.btn {
+  padding: 6px 15px; border-radius:6px; font-family:var(--mono); font-size:11px;
+  cursor:pointer; border:1px solid var(--rule); background:transparent; color: rgba(232,232,232,0.8);
+}
+.btn:hover { color:var(--white); border-color:var(--dim); }
+.btn-gold {
+  background: var(--gold); color: var(--black); font-weight:600; border: 0.75px solid var(--gold);
+  padding: 7px 18px; display:inline-flex; align-items:center; gap:8px;
+}
+.btn-gold:hover { background:#d4b45c; }
+
+/* stats strip */
+.bar-row { display:flex; align-items:center; gap:11px; margin-bottom:8px; }
+.bar-label { width:88px; font-size:11px; color:var(--white); text-align:right; flex-shrink:0; }
+.bar-track { flex:1; height:13px; background: var(--surface2); border-radius:3px; overflow:hidden; }
+.bar-fill { height:100%; background: linear-gradient(90deg, rgba(201,168,76,0.55), var(--gold)); border-radius:3px; }
+.bar-fill.other { background: var(--surface3); }
+.bar-val { width:104px; font-size:10px; color:var(--dim); flex-shrink:0; }
+
+/* annotations */
+.callout {
+  margin-top:10px; border-left: 2px solid var(--gold); background: var(--surface2);
+  border-radius: 0 6px 6px 0; padding: 8px 12px; font-size:10px; line-height:1.55;
+  color: rgba(232,232,232,0.7); max-width: 1040px;
+}
+.callout b { color: var(--gold); font-weight:500; }
+
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius:4px; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <span class="t">c11 · Launch Panel v2</span>
+  <span class="n">panel (not popover) · centered on pane · user configurations | harnesses w/ agent+effort dropdowns · + the settings page that feeds it</span>
+  <span class="sp"></span>
+  <a href="#" onclick="togglePanel(); return false;" id="lnk-toggle">toggle panel (A)</a>
+  <a href="#" onclick="cycleFocus(); return false;">cycle kb-focus</a>
+</div>
+
+<div class="stages">
+
+  <!-- ═══ STAGE 1: the c11 window with the panel open ═══ -->
+  <div class="stage">
+    <div class="stage-label">Stage 1 — the launch panel <span class="hint">right-click A → instant, centered on the pane. stays open. esc / ✕ / A closes.</span></div>
+    <div class="window">
+      <div class="titlebar">
+        <div class="traffic"><span></span><span></span><span></span></div>
+        <div class="wtitle">c11 — workspace: c11 · main-review</div>
+      </div>
+      <div class="tabbar">
+        <div class="tab active"><span class="tnum">151</span> Main build review</div>
+        <div class="tab"><span class="tnum">153</span> Void aesthetic guide</div>
+        <div class="tab"><span class="tnum">160</span> Reskin prototype</div>
+        <div class="spacer"></div>
+        <div class="toolbtns">
+          <div class="toolbtn a-btn panel-open" id="abtn" onclick="togglePanel()">A<div class="model-accent"></div></div>
+          <div class="toolbtn">⌗</div>
+          <div class="toolbtn">◫</div>
+          <div class="toolbtn">≡</div>
+          <div class="toolbtn">+</div>
+        </div>
+      </div>
+      <div class="term">
+        <span class="gold">➜</span> <span class="wh">c11</span> reviewing main @ 0d6838bb0<br>
+        <span class="gold">➜</span> right-click the A button (or click it here) to toggle the panel<br>
+        &nbsp;&nbsp;&nbsp;· terminal content is Ghostty's — the panel floats on c11 chrome above it
+      </div>
+
+      <!-- THE PANEL -->
+      <div class="panel" id="panel">
+        <div class="panel-head">
+          <span class="uc" style="color:rgba(232,232,232,0.65)">Launch Agent</span>
+          <span class="hint-dim" style="font-size:9.5px">default: <span style="color:rgba(232,232,232,0.8)">Opus deep</span></span>
+          <div class="right">
+            <span>⌘⇧A</span>
+            <div class="gear-btn" title="Settings — Agent Configuration (⌘,)">⚙</div>
+            <div class="panel-close" onclick="togglePanel()">✕</div>
+          </div>
+        </div>
+
+        <div class="panel-cols">
+          <!-- LEFT: user configurations (saved recipes incl. custom system prompts) -->
+          <div class="col-fav">
+            <div class="col-head"><span class="uc">User Configurations</span><span class="cnt">last launched = default</span></div>
+
+            <div class="cfg-row kb-focus" data-kbrow>
+              <div class="pin-cell"><div class="pin-dot">●</div></div>
+              <div class="cfg-main">
+                <div class="cfg-name">Opus deep <span class="default-tag">Default</span></div>
+                <div class="cfg-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> opus</div>
+              </div>
+              <div class="cfg-right"><span class="chip-effort">xhigh</span></div>
+            </div>
+
+            <div class="cfg-row" data-kbrow>
+              <div class="pin-cell"></div>
+              <div class="cfg-main">
+                <div class="cfg-name">Sonnet quick</div>
+                <div class="cfg-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> sonnet</div>
+              </div>
+              <div class="cfg-right"></div>
+            </div>
+
+            <div class="cfg-row" data-kbrow>
+              <div class="pin-cell"></div>
+              <div class="cfg-main">
+                <div class="cfg-name">Codex yolo</div>
+                <div class="cfg-sub">codex <span class="sep-dot">·</span> <span class="prov">OpenAI</span> <span class="sep-dot">·</span> gpt-5.2-codex</div>
+              </div>
+              <div class="cfg-right"><span class="chip-effort">high</span></div>
+            </div>
+
+            <div class="cfg-row" data-kbrow>
+              <div class="pin-cell"></div>
+              <div class="cfg-main">
+                <div class="cfg-name">Gregorovich</div>
+                <div class="cfg-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> opus <span class="sep-dot">·</span> custom prompt</div>
+              </div>
+              <div class="cfg-right"><span class="chip-sys">·blank·</span></div>
+            </div>
+
+            <div class="cfg-row" data-kbrow>
+              <div class="pin-cell"></div>
+              <div class="cfg-main">
+                <div class="cfg-name">Reviewer</div>
+                <div class="cfg-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> sonnet <span class="sep-dot">·</span> custom prompt</div>
+              </div>
+              <div class="cfg-right"><span class="chip-sys">+append</span></div>
+            </div>
+          </div>
+
+          <!-- RIGHT: harnesses on this machine, with agent/effort dropdowns -->
+          <div class="col-har">
+            <div class="col-head"><span class="uc">Harnesses</span><span class="cnt">preset to base · click to tweak · ↵ launches shown</span></div>
+
+            <div class="har-row" data-kbrow>
+              <div class="har-glyph">cc</div>
+              <div class="har-main">
+                <div class="har-name">claude code <span class="hint-dim" style="font-size:9px">Anthropic</span></div>
+                <div class="har-dds">
+                  <span class="dd" data-dd><span class="lbl">opus</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt sel">opus <span class="base-mark">base</span></span>
+                      <span class="dd-opt">sonnet</span>
+                      <span class="dd-opt">haiku</span>
+                    </span>
+                  </span>
+                  <span class="dd" data-dd><span class="lbl">xhigh</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt">low</span>
+                      <span class="dd-opt">medium</span>
+                      <span class="dd-opt">high</span>
+                      <span class="dd-opt sel">xhigh <span class="base-mark">base</span></span>
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <span class="save-mini" title="save these dropdowns as a User Configuration">+ save</span><div class="har-go">launch ↵</div>
+            </div>
+
+            <div class="har-row" data-kbrow>
+              <div class="har-glyph">cx</div>
+              <div class="har-main">
+                <div class="har-name">codex <span class="hint-dim" style="font-size:9px">OpenAI</span></div>
+                <div class="har-dds">
+                  <span class="dd" data-dd><span class="lbl">gpt-5.2-codex</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt sel">gpt-5.2-codex <span class="base-mark">base</span></span>
+                      <span class="dd-opt">gpt-5.2</span>
+                      <span class="dd-opt">o5-mini</span>
+                    </span>
+                  </span>
+                  <span class="dd" data-dd><span class="lbl">high</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt">low</span>
+                      <span class="dd-opt">medium</span>
+                      <span class="dd-opt sel">high <span class="base-mark">base</span></span>
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <span class="save-mini" title="save these dropdowns as a User Configuration">+ save</span><div class="har-go">launch ↵</div>
+            </div>
+
+            <div class="har-row" data-kbrow>
+              <div class="har-glyph">gm</div>
+              <div class="har-main">
+                <div class="har-name">gemini <span class="hint-dim" style="font-size:9px">Google</span></div>
+                <div class="har-dds">
+                  <span class="dd" data-dd><span class="lbl">gemini-pro</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt sel">gemini-pro <span class="base-mark">base</span></span>
+                      <span class="dd-opt">gemini-flash</span>
+                    </span>
+                  </span>
+                  <span class="hint-dim" title="no effort axis" style="padding:1.5px 7px">—</span>
+                </div>
+              </div>
+              <span class="save-mini" title="save these dropdowns as a User Configuration">+ save</span><div class="har-go">launch ↵</div>
+            </div>
+
+            <div class="har-row" data-kbrow>
+              <div class="har-glyph">oc</div>
+              <div class="har-main">
+                <div class="har-name">opencode <span class="hint-dim" style="font-size:9px">multi</span></div>
+                <div class="har-dds">
+                  <span class="dd" data-dd><span class="lbl">inherit</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt sel">inherit <span class="base-mark">base</span></span>
+                      <span class="dd-opt">claude-sonnet</span>
+                      <span class="dd-opt">gpt-5.2</span>
+                    </span>
+                  </span>
+                  <span class="hint-dim" title="no effort axis" style="padding:1.5px 7px">—</span>
+                </div>
+              </div>
+              <span class="save-mini" title="save these dropdowns as a User Configuration">+ save</span><div class="har-go">launch ↵</div>
+            </div>
+
+            <div class="har-row" data-kbrow>
+              <div class="har-glyph">ki</div>
+              <div class="har-main">
+                <div class="har-name">kimi <span class="hint-dim" style="font-size:9px">Moonshot</span></div>
+                <div class="har-dds">
+                  <span class="dd" data-dd><span class="lbl">k3</span><span class="car">▾</span>
+                    <span class="dd-menu">
+                      <span class="dd-opt sel">k3 <span class="base-mark">base</span></span>
+                      <span class="dd-opt">k2.5</span>
+                    </span>
+                  </span>
+                  <span class="hint-dim" title="no effort axis" style="padding:1.5px 7px">—</span>
+                </div>
+              </div>
+              <span class="save-mini" title="save these dropdowns as a User Configuration">+ save</span><div class="har-go">launch ↵</div>
+            </div>
+
+            <div class="har-foot">+ 2 disabled · 1 not detected — Settings ›</div>
+          </div>
+        </div>
+
+        <!-- recent spans both columns -->
+        <div class="recent-strip">
+          <span class="recent-glyph">↻</span>
+          <span class="recent-name">Opus deep</span>
+          <span class="recent-meta">just now <span class="sep-dot">·</span> claude code · opus</span>
+          <span class="recent-meta" style="margin-left:auto">relaunch ↵</span>
+        </div>
+
+        <div class="hintbar">
+          <span class="kbd">↑↓</span> select <span class="sep-dot">·</span>
+          <span class="kbd">↵</span> launch <span class="sep-dot">·</span>
+          <span>launch sets default &amp; closes</span> <span class="sep-dot">·</span>
+          <span class="kbd">esc</span> close <span class="sep-dot">·</span>
+          <span class="kbd">⌘,</span> settings
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Panel, not popover — centered on its pane.</b> No entrance animation, no transient dismissal — it appears the frame
+      you right-click, centered over the pane whose A button you clicked, and stays until you close it (esc, ✕, A).
+      <b>Launching sets the system default and closes the panel</b> — no checkbox, no pin gesture: whatever you launched last
+      here is what a plain A-click launches next, and the ● + DEFAULT tag simply show where that landed. Persistence covers
+      everything short of launch: browsing, dropdown tweaking, focus loss. <b>Left = User Configurations</b>:
+      full saved recipes, including custom system prompts (gold chip). <b>Right = Harnesses</b>: one row per enabled harness,
+      agent + effort dropdowns preset to that harness's defaults — tweak either and ↵ for a quick one-off launch — a changed
+      dropdown goes gold and a quiet <b>+ save</b> button materializes on the row (no toast; saving is right there or nowhere). The circled ⚙ in the header is the panel's one route to management (Settings — Agents &amp; Launch, ⌘,). <b>Perf note for the impl:</b> the v1 slowness is the SwiftUI <span style="font-family:var(--mono)">.contextMenu</span>
+      trigger + NSPopover <span style="font-family:var(--mono)">animates=true</span>; v2 intercepts right-mouse-down directly
+      and shows a borderless child panel with animation off.
+    </div>
+  </div>
+
+  <!-- ═══ STAGE 2: Settings — Agents & Launch ═══ -->
+  <div class="stage">
+    <div class="stage-label">Stage 2 — Settings · Agent Configuration <span class="hint">the same two objects the panel shows, managed: user configurations + harnesses</span></div>
+    <div class="settings">
+      <div class="set-title">
+        <h1>Settings</h1>
+        <span class="crumb">Agent Configuration</span>
+        <span style="margin-left:auto" class="hint-dim">changes reflect in the panel live</span>
+      </div>
+      <div class="set-body">
+        <div class="set-nav">
+          <div class="nav-item">General</div>
+          <div class="nav-item">Appearance</div>
+          <div class="nav-item sel">Agent Configuration</div>
+          <div class="nav-item">Workspaces</div>
+          <div class="nav-item">Keyboard</div>
+          <div class="nav-item">Socket &amp; CLI</div>
+          <div class="nav-item">Advanced</div>
+        </div>
+        <div class="set-main">
+
+          <!-- USER CONFIGURATIONS -->
+          <div class="set-sect">
+            <div class="sect-head"><span class="uc">User Configurations</span><span class="hint-dim">the panel's left column</span></div>
+            <div class="sect-desc">Full launch recipes: harness + model + effort + <b style="color:rgba(201,168,76,0.85); font-weight:500">custom system prompt</b>. Drag to reorder the panel list.</div>
+            <div class="fav-list">
+              <div class="fav-row sel">
+                <span class="drag-grip">⠿</span>
+                <div class="fav-main">
+                  <div class="fav-name">Opus deep <span class="default-tag">Default</span></div>
+                  <div class="fav-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> opus · effort xhigh</div>
+                </div>
+                <div class="fav-actions">
+                  <div class="icon-btn" title="edit">✎</div>
+                  <div class="icon-btn" title="remove">✕</div>
+                </div>
+              </div>
+              <div class="fav-row">
+                <span class="drag-grip">⠿</span>
+                <div class="fav-main">
+                  <div class="fav-name">Sonnet quick</div>
+                  <div class="fav-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> sonnet</div>
+                </div>
+                <div class="fav-actions">
+                  <div class="icon-btn" title="edit">✎</div>
+                  <div class="icon-btn" title="remove">✕</div>
+                </div>
+              </div>
+              <div class="fav-row">
+                <span class="drag-grip">⠿</span>
+                <div class="fav-main">
+                  <div class="fav-name">Codex yolo</div>
+                  <div class="fav-sub">codex <span class="sep-dot">·</span> <span class="prov">OpenAI</span> <span class="sep-dot">·</span> gpt-5.2-codex · effort high</div>
+                </div>
+                <div class="fav-actions">
+                  <div class="icon-btn" title="edit">✎</div>
+                  <div class="icon-btn" title="remove">✕</div>
+                </div>
+              </div>
+              <div class="fav-row">
+                <span class="drag-grip">⠿</span>
+                <div class="fav-main">
+                  <div class="fav-name">Gregorovich <span class="chip-sys">·blank·</span></div>
+                  <div class="fav-sub">claude code <span class="sep-dot">·</span> <span class="prov">Anthropic</span> <span class="sep-dot">·</span> opus · replace prompt</div>
+                </div>
+                <div class="fav-actions">
+                  <div class="icon-btn" title="edit">✎</div>
+                  <div class="icon-btn" title="remove">✕</div>
+                </div>
+              </div>
+              <div class="fav-new">+ New configuration <span class="hint-dim" style="margin-left:auto">system prompt lives in the editor</span></div>
+            </div>
+
+            <div class="def-strip">
+              Default on plain A-click:
+              <span style="color:var(--white)">● Opus deep</span>
+              <span class="hint-dim">set by launching · 2m ago</span>
+            </div>
+
+            <!-- inline editor for the selected favorite -->
+            <div class="mini-editor">
+              <div class="ed-grid">
+                <div>
+                  <div class="ed-label">Name</div>
+                  <input class="ed-input" value="Opus deep">
+                </div>
+                <div>
+                  <div class="ed-label">Harness <span class="inh inherited">from: claude code base</span></div>
+                  <input class="ed-input" value="claude code" readonly style="color:rgba(232,232,232,0.6)">
+                </div>
+                <div>
+                  <div class="ed-label">Model <span class="inh overridden">● override</span></div>
+                  <div><span class="e-chip sel">opus</span> <span class="e-chip">sonnet</span> <span class="e-chip">haiku</span> <span class="e-chip">inherit</span></div>
+                </div>
+                <div>
+                  <div class="ed-label">Effort <span class="inh overridden">● override</span></div>
+                  <div><span class="e-chip">low</span> <span class="e-chip">med</span> <span class="e-chip">high</span> <span class="e-chip sel">xhigh</span> <span class="e-chip">inherit</span></div>
+                </div>
+              </div>
+              <div class="ed-foot">
+                <span class="hint-dim">system prompt · command · env — <span style="color:rgba(232,232,232,0.65); cursor:pointer">advanced ▸</span></span>
+                <span style="margin-left:auto"></span>
+                <button class="btn">Revert</button>
+                <button class="btn btn-gold">Save <span style="opacity:0.55">↵</span></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- HARNESSES -->
+          <div class="set-sect">
+            <div class="sect-head"><span class="uc">Harnesses</span><span class="hint-dim">the panel's right column · detected on this machine</span></div>
+            <div class="sect-desc">Enabled harnesses appear in the panel with their base recipe. Select a card to edit its base below (command · model · effort · initial prompt · env — everything the old Agents &amp; Automation pane held). Panel dropdowns preset from the base; configurations inherit it.</div>
+            <div class="har-grid">
+              <div class="h-card enabled sel">
+                <div class="har-glyph">cc</div>
+                <div class="hc-main">
+                  <div class="h-name">claude code</div>
+                  <div class="h-sub"><span class="ok">✓ installed</span> · base: opus</div>
+                  <div class="h-path">/opt/homebrew/bin/claude</div>
+                </div>
+                <div class="tgl on"></div>
+              </div>
+              <div class="h-card enabled">
+                <div class="har-glyph">cx</div>
+                <div class="hc-main">
+                  <div class="h-name">codex</div>
+                  <div class="h-sub"><span class="ok">✓ installed</span> · base: gpt-5.2-codex</div>
+                  <div class="h-path">/opt/homebrew/bin/codex</div>
+                </div>
+                <div class="tgl on"></div>
+              </div>
+              <div class="h-card enabled">
+                <div class="har-glyph">gm</div>
+                <div class="hc-main">
+                  <div class="h-name">gemini</div>
+                  <div class="h-sub"><span class="ok">✓ installed</span> · base: gemini-pro</div>
+                  <div class="h-path">/opt/homebrew/bin/gemini</div>
+                </div>
+                <div class="tgl on"></div>
+              </div>
+              <div class="h-card enabled">
+                <div class="har-glyph">oc</div>
+                <div class="hc-main">
+                  <div class="h-name">opencode</div>
+                  <div class="h-sub"><span class="ok">✓ installed</span> · base: inherit</div>
+                  <div class="h-path">~/.local/bin/opencode</div>
+                </div>
+                <div class="tgl on"></div>
+              </div>
+              <div class="h-card enabled">
+                <div class="har-glyph">ki</div>
+                <div class="hc-main">
+                  <div class="h-name">kimi</div>
+                  <div class="h-sub"><span class="ok">✓ installed</span> · base: k3</div>
+                  <div class="h-path">~/.local/bin/kimi</div>
+                </div>
+                <div class="tgl on"></div>
+              </div>
+              <div class="h-card disabled">
+                <div class="har-glyph">gr</div>
+                <div class="hc-main">
+                  <div class="h-name">grok</div>
+                  <div class="h-sub">✓ installed · disabled</div>
+                  <div class="h-path">/opt/homebrew/bin/grok</div>
+                </div>
+                <div class="tgl"></div>
+              </div>
+              <div class="h-card disabled">
+                <div class="har-glyph">pi</div>
+                <div class="hc-main">
+                  <div class="h-name">pi</div>
+                  <div class="h-sub">✓ installed · disabled</div>
+                  <div class="h-path">~/.local/bin/pi</div>
+                </div>
+                <div class="tgl"></div>
+              </div>
+              <div class="h-card disabled">
+                <div class="har-glyph">gh</div>
+                <div class="hc-main">
+                  <div class="h-name">github copilot</div>
+                  <div class="h-sub">not detected</div>
+                  <div class="h-path">—</div>
+                </div>
+                <div class="tgl"></div>
+              </div>
+            </div>
+
+            <!-- base recipe editor for the selected harness card — absorbs the old
+                 "Agents & Automation" per-harness fields (command / model / effort /
+                 initial prompt / env) so that pane can retire. -->
+            <div class="mini-editor">
+              <div class="ed-label" style="margin-bottom:10px">claude code — base recipe <span class="inh inherited">panel dropdowns preset from this · configurations inherit it</span></div>
+              <div class="ed-grid">
+                <div>
+                  <div class="ed-label">Command <span class="inh overridden">● override</span></div>
+                  <input class="ed-input" value="claude --dangerously-skip-permissions">
+                </div>
+                <div>
+                  <div class="ed-label">Initial prompt <span class="inh inherited">○ none</span></div>
+                  <input class="ed-input" placeholder="sent after boot…">
+                </div>
+                <div>
+                  <div class="ed-label">Default model</div>
+                  <div><span class="e-chip sel">opus</span> <span class="e-chip">sonnet</span> <span class="e-chip">haiku</span> <span class="e-chip">fable</span></div>
+                </div>
+                <div>
+                  <div class="ed-label">Default effort</div>
+                  <div><span class="e-chip">low</span> <span class="e-chip">med</span> <span class="e-chip">high</span> <span class="e-chip sel">xhigh</span></div>
+                </div>
+              </div>
+              <div class="ed-foot">
+                <span class="hint-dim">env vars — <span style="color:rgba(232,232,232,0.65); cursor:pointer">advanced ▸</span></span>
+                <span style="margin-left:auto"></span>
+                <button class="btn">Reset to factory</button>
+                <button class="btn btn-gold">Save</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATS -->
+          <div class="set-sect">
+            <div class="sect-head"><span class="uc">Launch stats</span><span class="hint-dim">all time · 21 launches</span></div>
+            <div style="margin-top:10px">
+              <div class="bar-row"><span class="bar-label">opus</span><div class="bar-track"><div class="bar-fill" style="width:90%"></div></div><span class="bar-val">19 · 90%</span></div>
+              <div class="bar-row"><span class="bar-label">sonnet</span><div class="bar-track"><div class="bar-fill other" style="width:5%"></div></div><span class="bar-val">1 · 5%</span></div>
+              <div class="bar-row"><span class="bar-label">gpt-5.2</span><div class="bar-track"><div class="bar-fill other" style="width:5%"></div></div><span class="bar-val">1 · 5%</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>One mental model, two views.</b> The panel's two columns are exactly these two settings objects: <b>User
+      Configurations</b> (ordered recipes with custom system prompts; one carries the ● default) and <b>Harnesses</b>
+      (machine-detected; toggle = appears in panel; base recipe = the panel dropdowns' defaults and what configurations
+      inherit from). Editing here is inline — no modal-in-modal; the panel reflects changes live. The panel's single
+      footer row (⌘,) deep-links here, keeping the panel itself focused on launching.
+    </div>
+  </div>
+
+</div>
+
+<script>
+function togglePanel() {
+  const p = document.getElementById('panel');
+  const a = document.getElementById('abtn');
+  p.classList.toggle('closed');
+  a.classList.toggle('panel-open', !p.classList.contains('closed'));
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('panel').classList.add('closed');
+    document.getElementById('abtn').classList.remove('panel-open');
+  }
+});
+/* cycle keyboard focus down the unified list (↑↓ in the real impl) */
+let kbIdx = 0;
+function cycleFocus() {
+  const rows = document.querySelectorAll('[data-kbrow]');
+  rows.forEach(r => r.classList.remove('kb-focus'));
+  kbIdx = (kbIdx + 1) % rows.length;
+  rows[kbIdx].classList.add('kb-focus');
+}
+
+/* dropdowns: preset to the harness base; picking a non-base value goes gold */
+document.querySelectorAll('[data-dd]').forEach(dd => {
+  dd.addEventListener('click', e => {
+    e.stopPropagation();
+    const wasOpen = dd.classList.contains('open');
+    document.querySelectorAll('[data-dd].open').forEach(o => o.classList.remove('open'));
+    if (!wasOpen) dd.classList.add('open');
+  });
+  dd.querySelectorAll('.dd-opt').forEach(opt => {
+    opt.addEventListener('click', e => {
+      e.stopPropagation();
+      dd.querySelectorAll('.dd-opt').forEach(o => o.classList.remove('sel'));
+      opt.classList.add('sel');
+      const label = opt.childNodes[0].textContent.trim();
+      dd.querySelector('.lbl').textContent = label;
+      dd.classList.toggle('changed', !opt.querySelector('.base-mark'));
+      dd.classList.remove('open');
+      const row = dd.closest('.har-row');
+      if (row) row.classList.toggle('has-change', !!row.querySelector('.dd.changed'));
+    });
+  });
+});
+document.addEventListener('click', () =>
+  document.querySelectorAll('[data-dd].open').forEach(o => o.classList.remove('open')));
+</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+1843	browser	Fix browser pane file drops hanging on Uploading
+1852	browser	Fix browser freeze after pane split
+1915	render	Fix #1870: prevent split crash on Intel Macs caused by stale font pointer
+1930	input	Fix workspace creation failing after long uptime
+1954	session	Fix claude-hook stop teardown races
+1959	input	Fix unbound Cmd+Shift+key combos being silently swallowed
+1985	input	Fix #1983: avoid workspace creation crash after restore
+2000	browser	Fix browser portal leaking to other tabs on Bonsplit tab switch
+2023	input	Avoid crash when creating a new workspace
+2046	sidebar	Fix sidebar badges not refreshing on workspace state change
+2127	input	Add regression coverage for Cmd+N workspace creation crash
+2133	input	Fix Cmd+N crash from stale workspace creation snapshots
+2173	input	Fix Cmd+N workspace creation snapshot crashes
+2178	input	Fix Cmd+N crash from workspace creation config snapshots
+2179	render	Fix Intel second-surface config inheritance crash
+2181	input	Fix Release-only Cmd+N workspace snapshot UAF
+2204	input	Fix Cmd+N nightly crash: avoid local Workspace refs in ARC hotpath
+2221	input	Revert liveSurfaceForGhosttyAccess: fix Cmd+N @Published nil crash
+2267	render	Revert "Fix Intel second-surface config inheritance crash"
+2283	layout	Fix ARC workspace inheritance crash and native Zig helper builds
+2305	render	Defer layout follow-up flush to avoid re-entrant displayIfNeeded crash
+2306	session	Fix stale session geometry crash after 0.63.0 upgrade
+2346	browser	Fix browser pane dark-mode leak on light pages
+2353	browser	Fix browser pane hangs from redundant portal refreshes
+2354	input	Fix #2347 terminal focus and surface recovery
+2447	input	fix: stop swallowing ABC-QWERTZ / and ? in terminal input
+2471	input	Fix session restore terminal cursor focus race
+2511	input	Fix focus reporting leak during pane creation (#2446)
+2601	socket	Fix sidebar layout loop and CLI socket deadlocks
+2833	input	Fix appIcon=automatic crash on macOS Tahoe
+2855	render	Fix macOS modifier desync causing idle terminal input corruption
+2877	input	fix: prefer UTF-8 plain text in pasteboard to avoid Mac OS Roman loss
+2893	perf	Fix PortScanner subprocess pipe fd leak
+2972	layout	Fix startup hang from repeated file drop overlay install
+2986	layout	Fix AX window polling stalls with app hierarchy caching
+3028	sidebar	Fix 100% CPU from ContentView publisher feedback loop (fixes #3020)
+3034	render	Fix DebugEventLog NSFileHandle ObjC exception crash
+3268	input	Fix #3069 non-ASCII Cmd+V paste when rich clipboard payloads are lossy
+3455	input	Fix shortcut settings dispatch_once launch crash
+3476	input	Fix settings-file launch crash paths
+3559	input	fix: prevent recursive os_unfair_lock crash on cmd-clicked .md viewer route + drop fragment/query gate
+3744	sidebar	Clear surface notifications during pane teardown
+3835	browser	Close Web Inspector before browser host teardown
+3847	socket	Fix managed defaults replay after user changes
+3874	sidebar	Fix #3803: clear sidebar freeze after color/reorder so workspace row keeps updating
+3885	render	Prevent display-link crash from terminal portal layout reentry
+3916	render	Prevent Metal renderer row rebuild crash
+3929	input	Fix garbled Chinese paste text
+3946	sidebar	Fix ripgrep resolution for Nix installs
+4077	input	Save crash diagnostics under cmux state
+4182	browser	Fix Web Inspector blank restore and close crash
+4183	browser	Fix omnibar arrow key focus races
+4296	sidebar	Open crash diagnostics from notifications
+4318	perf	Fix nightly startup crash
+4360	session	Fix CLI surface resume approval hang
+4397	browser	Fix browser back race during provisional navigation
+4442	input	Fix shortcut recorder state leak in AppDelegate tests
+4568	layout	Fix runProcess pipe teardown crash
+4661	session	Fix hidden Settings CPU during Codex output
+4784	input	Fix TextBox teardown exclusivity crash
+4800	socket	Fix NSFileHandle process pipe read crashes
+4937	session	Fix hidden right-sidebar FileExplorer mount loop on launch
+4982	session	Fix restore previous launch crash and preserve current work
+5102	input	Fix #5099: titlebar band swallows right-sidebar button clicks
+5175	input	Fix restored scrollback keeping original theme's colors (white-on-white after theme change)
+5292	input	Fix copy-mode vim keys swallowed under non-ASCII input sources (Korean, Japanese Kana, Zhuyin)
+5311	browser	Fix #5303: stop browser pane re-running one-time setup on every CoreAnimation commit
+5315	browser	Fix WebKit post-wake crash: sleep/wake-aware hidden-webview discard scheduling
+5316	session	[codex] Fix nonblocking workspace close teardown
+5317	input	Fix TextBox teardown crash when toggling sidebar background
+5397	browser	Cache omnibar suggestion candidates to fix typing beachball
+5664	socket	Fix publishV2 JSON response retention
+5669	session	Fix UI freeze when closing tabs (synchronous agent-index load on main)
+5670	session	Fix launch crash on macOS 27 from zero-size SF Symbol rasterization
+5673	session	Event-driven SharedLiveAgentIndex: kill reload churn + close-undo staleness
+5708	session	Remove sidebar row-ids preference aggregation feeding the layout livelock (#2586)
+5744	browser	perf: drop redundant disk I/O on browser-availability checks and bg logging
+5755	browser	Fix #5733: drive find-overlay key routing off slot view hierarchy, not per-keystroke Entry weak-copy scan
+5760	input	Fix updater error copy for wedged-launchd install failures, add manual-download fallback
+5855	sidebar	Cap sidebar status/metadata dictionaries to bound the sidebar view-graph livelock (#5845)
+5859	session	sidebar perf: decouple workspace sidebar from notification-store churn
+5884	sidebar	Revert "Cap sidebar status/metadata dictionaries to bound the sidebar view-graph livelock (#5845)"
+5891	browser	Guard performKeyEquivalent keyDown force-dispatches against replay loops
+5899	browser	Fix browser keyDown stack overflow reentry
+5914	session	Session restore stress: recover from corrupt snapshot via -previous backup
+5955	input	Re-assert sidebar overlay scrollers when the preferred scroller style changes (#3241 sidebar scope)
+5999	browser	Fix macOS 27 SF Symbol rasterization crash
+6070	session	Fix remote PTY restore probe reply leak
+6232	session	Avoid PostHog flush deadlock during quit
+6254	socket	Reduce Sentry CLI broken-pipe crashes and hangs
+6267	session	Harden memory diagnostics for long-session surface leaks
+6328	session	Fix fish resume: drop POSIX brace grouping from cwd-guard (#6285)
+6341	render	Fix ~100% CPU re-render loop when selecting a bundled extension sidebar (#5970)
+6460	sidebar	Fix title-churn beachball in transcript adoption and sidebar rows
+6589	render	Fix hidden popover relayout during SwiftUI updates
+6596	session	Fix crash diagnostic window restore
+6728	session	Fix macOS 27 symbol launch crash
+6890	session	Fix macOS 27 launch crash in restore-path content views (#6745)
+7076	layout	Fix minimal mode toggle relayout hang
+7174	sidebar	Fix NIGHTLY update never installing (Update Available loop)
+7182	layout	Bound background-prime workspace mounts to fix main-thread stall with many agent panes (#7136)
+7308	layout	Fit main windows after display topology changes
+7400	input	Fix workspace drag pasteboard deadlock
+7487	browser	Fix stale browser portal and stuck omnibar dropdown after closing a browser panel
+7533	browser	Fix browser panes stuck black after a failed discard-restore
+7598	input	Fix undo shortcut crash routing
+7698	input	Fix zh-Hant showing as zh-Hans: own AppleLanguages writes and apply language selection at change time
+7754	sidebar	Fix sidebar hang during sustained process-title churn
+8115	render	Fix visible popover resize crash
+8190	input	Fix unauthenticated GitHub sidebar polling
+8195	render	Fix animated update popover resize reentrancy
+8226	input	Fix sidebar GitHub polling lifecycle regressions
+8631	sidebar	Settings load writes UserDefaults when nothing changed, and pays for it twice over
+8656	render	Skip an inherited terminal surface the registry no longer owns
+8793	render	Prevent workspace switch renderer freezes
+8838	input	Keep screenshot paste preparation off the main thread
+8998	render	Reclaim hidden Ghostty renderer memory
+9031	input	Fix sticky workspace identity leaking into Cmd+N
+9063	render	Fix occasional dim terminal text after appearance changes
+9111	render	Prevent stalled remote PTY starts and bound wedged reattach loops
+9117	render	Fix main-thread livelock under saturated terminal output
+9187	perf	Fix subprocess pipe descriptor leaks
+9211	render	Fix hanging cmux theme picker
+9323	browser	fix: close browser handoff cleanup races
+9333	socket	Fix stale socket terminal surface bindings
+9483	browser	Fix infinite UA-policy restart loop on Google Sheets destinations
+9486	render	Stop blank Ghostty opener stderr log bursts
+9536	browser	Use current Safari identity for Google Sheets
+9630	sidebar	Fix beachball: bound every UNUserNotificationCenter call so a wedged usernotificationsd can't deadlock the main thread
+9773	browser	Fix reentrant browser portal layout poisoning
+9774	browser	Keep browser portal refreshes below SwiftUI
+9780	session	Fix duplicate Codex hook channels and watchdog leaks
+9796	render	Make cold PTY spawn unstarvable: reclaim bootstrap-window custody, bound the shim gate, unpin prime slots, surface queued sends (#9769)
+9808	input	Resolve NFD Hangul clusters via canonical composition for font selection
+9921	render	Prevent recursive deferred-action release chains
+10018	session	Revert portal hierarchy mutation tracker launch crash
+10117	session	Include `claude attach` in `claude_builtin_command_name`
+10133	render	fix: bound sidebar git status watching
+10351	sidebar	fix: keep spinner titles animating without waking the app on every frame
+10480	browser	Prevent browser crash on duplicate Google query parameters
+10552	render	Fix sidebar drag validation main-thread hangs
+10564	sidebar	perf: make reload-config surface fanout incremental
+10567	browser	Prevent WebKit navigation decision handler crashes
+10591	sidebar	Fix degraded SF Symbol rasterization after #10549
+10627	render	Fix NSColor darken crash for non-RGB colors
+10661	render	fix(history): stop idle History menu graph rebuild loop
+10665	browser	fix(browser): keep Copy Image JavaScript callbacks safe
+10773	session	Fix aggregate child memory pressure before compressor exhaustion
+10846	session	fix: restore session snapshot after crash (#9825)
+10959	socket	Integrate Escape passthrough fix from PR #9810
+11006	browser	fix: stage browser-heavy session restore (#10786)
+11051	socket	CLI Sentry: per-failure-class fingerprints, mute Not-connected race, throttle timeouts
+11186	session	Fix workspace drag sessions that wedge Mission Control
+11972	session	fix(computer-use): require explicit setup and skill installation
+12009	render	fix(portal): repaint the divider overlay only when it could have changed
+12053	input	Fix window frame repair and restore strict app-host CI
+12056	input	Fix SwiftUI dynamic text selection hangs
+12057	input	Fix corrupted PATH bytes in terminal panes
+12178	session	Refit native fullscreen windows after display topology changes
+12235	render	fix: isolate Ghostty numeric locale from CoreUI symbol crashes
+12237	browser	Fix DOMRect crashes in browser.eval on macOS 15
+12519	browser	Fix WebKit WebContent attach crash in browser panes
+12570	input	Fix Cmd+Z stale undo target crash (#7272)
+12623	session	Session snapshots can send binding actions to ghostty on a surface that is no longer live
+12725	render	Prevent reentrant geometry reconciliation and diagnose terminal hang phases
+12834	browser	fix: bound sidebar snapshots and remove blocking discovery
+12990	session	Fix persistent LaunchServices registration from duplicate plist keys
+13015	input	fix: resolve the terminal Copy guard through the Command-aware keyboard layout (#10872)
+13057	session	Fix Codex monitor RSS growth during transcript updates
+13229	socket	fix: close control socket recovery races
+13301	input	Fix SIGSEGV in open wrapper on multibyte arguments
+13606	session	Fix Codex monitor RSS growth on current main
+13688	sidebar	Fix workspace reorder crash for a pinned group's anchor
+13704	session	Control socket: never present resume approval UI from surface.resume.set (#13369)
+13826	session	Fix Claude subcommand dispatch with cached command discovery
+14058	render	Stop unrelated defaults writes and pane geometry changes from re-evaluating chrome-heavy views
+14116	session	Fix terminal session flicker on display changes
+14406	sidebar	test: fix the dead-key crash and sidebar AX walk failing on main
+14442	render	Only treat runs of "?" as lost plain text when pasting
+14646	browser	Keep active pane border aligned when split zoom changes pane bounds
+14704	layout	Keep closePanel's unmapped fallback from closing another panel's tab
+14786	input	Fix TextBox IME replacement range crash
+14787	session	Code session snapshots on a main-sized stack to fix deep split SIGBUS
+14812	session	fix(claude-wrapper): stop leaking injected NODE_OPTIONS through a native claude
+14888	render	test: free the remaining hosted test terminals and scope the portal leak check
+15422	sidebar	Fix split-space admission after sidebar pane changes
+15612	session	Fix Codex monitor recovery during transient owner loss

@@ -1,0 +1,550 @@
+commit 09d26f1cb2035aa85f394632a507321873292e85
+Author: Atin <atin@atin.me>
+Date:   Mon Jun 15 21:54:06 2026 -0400
+
+    Mailbox: route across all workspaces, stop silent drops (#251)
+    
+    * lattice-orchestrator: fast-test principle + 3 lessons from the Substrate wiki run
+    
+    Codify durable orchestration lessons from the 11-ticket Substrate Wiki+benchmark
+    overnight run:
+    
+    - SKILL.md "Build for fast feedback": new meta-principle — the test suite is the
+      orchestrator's clock; hard ≤60s/2-min target for a small project's default gate,
+      parallel + hermetic, slow/flaky tests quarantined into a separate suite. The run's
+      ~22-min suite (embedding-model + graph-DB spin-up), paid per-delegator per-review,
+      dominated wall-clock — the single biggest lever missed.
+    - SKILL.md Step 2: reconcile-then-ticket-the-gap — audit an existing codebase before
+      minting tickets (Track-B audit found 4 of 5 sketched items already shipped).
+    - architect.md: fast-test gate — define two test commands (fast default + slow full)
+      in the project CLAUDE.md.
+    - orchestrator.md: diagnose-before-nudge guard (frozen cost + live shell = working,
+      not stalled; pgrep/tee-log before intervening) + stacked-tree integration-branch
+      merge guidance (leaf-tips cover the set; squash-merged parent breaks child ancestry;
+      validate the assembled tree, not the individual PRs).
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+    
+    * Mailbox: route across all workspaces, stop silent drops
+    
+    The mailbox dispatcher is per-workspace and only resolves recipient names
+    within the sending workspace, so `c11 mailbox send --to <name>` where the
+    recipient lives in another workspace resolved to zero recipients and the
+    envelope was silently `cleaned`-and-discarded — the sender got a ULID and no
+    error. Two fixes:
+    
+    Cross-workspace routing. A new `MailboxGlobalResolver` (pure, injected
+    enumeration) resolves a recipient name against every live surface in the
+    instance, local-first: a match in the sender's own workspace wins (existing
+    same-workspace behavior is unchanged); otherwise the one workspace that has
+    the name receives it; a name in more than one other workspace is ambiguous;
+    no match anywhere is unresolved. Exposed over the socket as `mailbox.resolve`
+    (backed by AppDelegate.mailboxAddressableSurfaces, which reads the same
+    SurfaceMetadataStore title the local resolver uses). `c11 mailbox send` calls
+    it and writes the envelope into the *recipient's* workspace outbox, so that
+    workspace's own dispatcher delivers it locally. Name collisions disambiguate
+    with `--to-workspace <ref>`.
+    
+    No more silent drops. The dispatcher now quarantines a well-formed envelope
+    whose `to` matches no live surface (`_rejected/<id>.msg` + `.err` sidecar +
+    `rejected` event), mirroring validation failures. And `c11 mailbox send`
+    fails with a non-zero exit and a human-readable error when the recipient is
+    unresolved or ambiguous, so the sender learns delivery failed. If the socket
+    is unreachable, send falls back to the sender's own workspace and the
+    dispatcher rejection is the backstop.
+    
+    Tests (c11LogicTests, safe to run locally): rewrote the unknown-recipient
+    dispatcher test to assert non-silent rejection; added MailboxGlobalResolver
+    coverage for local-first, cross-workspace, ambiguity, and qualifier cases.
+    Docs + c11 skill updated; installed skill synced.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+    
+    ---------
+    
+    Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+ CLI/c11.swift                                      |  98 ++++++++++++++++++-
+ Sources/AppDelegate.swift                          |  33 +++++++
+ Sources/Mailbox/MailboxDispatcher.swift            |  44 +++++++++
+ Sources/Mailbox/MailboxSurfaceResolver.swift       |  81 ++++++++++++++++
+ Sources/TerminalController.swift                   | 106 +++++++++++++++++++++
+ c11Tests/MailboxDispatcherTests.swift              |  45 ++++++++-
+ c11Tests/MailboxSurfaceResolverTests.swift         |  97 +++++++++++++++++++
+ docs/c11-mailbox-guide.md                          |  33 ++++++-
+ skills/c11/SKILL.md                                |   6 +-
+ skills/lattice-orchestrator/SKILL.md               |  27 ++++++
+ .../lattice-orchestrator/references/architect.md   |   6 ++
+ .../references/orchestrator.md                     |  22 +++++
+ 12 files changed, 584 insertions(+), 14 deletions(-)
+diff --git a/CLI/c11.swift b/CLI/c11.swift
+index 0554b2085..3684c3bb9 100644
+--- a/CLI/c11.swift
++++ b/CLI/c11.swift
+@@ -16643,7 +16643,7 @@ extension CMUXCLI {
+         Per-workspace messaging primitive for coordinating between c11 surfaces.
+         Full guide: docs/c11-mailbox-guide.md (agent quick-reference: skills/c11/SKILL.md).
+ 
+-          send       write an envelope to the per-workspace outbox
++          send       deliver an envelope to a surface in any workspace
+           recv       drain or peek the caller's inbox
+           trace      pretty-print _dispatch.log lines for an envelope id
+           tail       follow _dispatch.log
+@@ -16654,7 +16654,8 @@ extension CMUXCLI {
+           new-id     print a fresh Crockford base32 ULID (26 chars)
+ 
+         Send flags:
+-          --to <surface>          recipient surface name
++          --to <surface>          recipient surface name (any workspace)
++          --to-workspace <ref>    disambiguate a name shared across workspaces
+           --topic <topic>         dotted topic token
+           --body <text>           inline body (≤ 4096 bytes UTF-8)
+           --body-ref <path>       absolute path to external body (body must be empty)
+@@ -16744,6 +16745,7 @@ extension CMUXCLI {
+         let tsOverride = optionValue(subArgs, name: "--ts")
+         let contentType = optionValue(subArgs, name: "--content-type")
+         let fromOverride = optionValue(subArgs, name: "--from")
++        let toWorkspace = optionValue(subArgs, name: "--to-workspace")
+ 
+         if to == nil && topic == nil {
+             throw CLIError(
+@@ -16798,8 +16800,22 @@ extension CMUXCLI {
+             contentType: contentType
+         )
+ 
++        // Resolve which workspace actually hosts the recipient. The dispatcher
++        // is per-workspace, so the envelope must land in the recipient's outbox
++        // — which may be a different workspace than the sender's. Resolution
++        // also lets us fail loudly (non-zero exit) when the recipient does not
++        // exist, instead of dropping the message into an outbox where no
++        // dispatcher will ever resolve it. `to` is guaranteed non-nil here
++        // (topic-only sends were rejected above).
++        let targetWorkspaceId = try resolveMailboxTargetWorkspace(
++            client: client,
++            to: to ?? "",
++            senderWorkspaceId: workspaceId,
++            qualifier: toWorkspace
++        )
++
+         let stateURL = try MailboxLayout.defaultStateURL()
+-        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: workspaceId)
++        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: targetWorkspaceId)
+         try FileManager.default.createDirectory(
+             at: outboxURL,
+             withIntermediateDirectories: true,
+@@ -16815,7 +16831,8 @@ extension CMUXCLI {
+             print(jsonString([
+                 "id": envelope.id,
+                 "outbox_path": targetURL.path,
+-                "workspace_id": workspaceId.uuidString,
++                "workspace_id": targetWorkspaceId.uuidString,
++                "sender_workspace_id": workspaceId.uuidString,
+                 "from": envelope.from
+             ]))
+         } else {
+@@ -16823,6 +16840,79 @@ extension CMUXCLI {
+         }
+     }
+ 
++    /// Resolves which workspace's outbox a `--to` envelope should be written
++    /// into by asking the app for a cross-workspace view of live surfaces
++    /// (`mailbox.resolve`). Throws a non-zero `CLIError` when the recipient is
++    /// unknown (so the sender learns the message was not delivered) or when the
++    /// name is ambiguous across workspaces. Falls back to the sender's own
++    /// workspace if the socket is unreachable, so same-workspace delivery still
++    /// works offline; the dispatcher's unresolved-recipient rejection is the
++    /// backstop against a silent drop in that case.
++    private func resolveMailboxTargetWorkspace(
++        client: SocketClient,
++        to: String,
++        senderWorkspaceId: UUID,
++        qualifier: String?
++    ) throws -> UUID {
++        var params: [String: Any] = [
++            "to": to,
++            "sender_workspace_id": senderWorkspaceId.uuidString
++        ]
++        if let qualifier, !qualifier.isEmpty {
++            params["workspace"] = qualifier
++        }
++
++        let payload: [String: Any]
++        do {
++            payload = try client.sendV2(method: "mailbox.resolve", params: params)
++        } catch {
++            // Socket unreachable (or an older app without mailbox.resolve):
++            // preserve same-workspace delivery rather than failing the send.
++            return senderWorkspaceId
++        }
++
++        switch payload["resolution"] as? String {
++        case "unique":
++            guard
++                let idStr = payload["target_workspace_id"] as? String,
++                let id = UUID(uuidString: idStr)
++            else {
++                throw CLIError(message: "mailbox.resolve returned an invalid target workspace")
++            }
++            return id
++        case "ambiguous":
++            let candidates = (payload["candidates"] as? [[String: Any]]) ?? []
++            throw CLIError(message: mailboxAmbiguityMessage(to: to, candidates: candidates))
++        default:
++            throw CLIError(
++                message: String(
++                    localized: "mailbox.cli.error.unresolved-recipient",
++                    defaultValue: "No live surface named \"%@\" in any workspace. Message not sent."
++                ).replacingOccurrences(of: "%@", with: to)
++            )
++        }
++    }
++
++    private func mailboxAmbiguityMessage(to: String, candidates: [[String: Any]]) -> String {
++        var seenRefs: Set<String> = []
++        var refLines: [String] = []
++        for candidate in candidates {
++            guard let ref = candidate["workspace_ref"] as? String else { continue }
++            if seenRefs.insert(ref).inserted {
++                refLines.append("  \(ref)")
++            }
++        }
++        let header = String(
++            localized: "mailbox.cli.error.ambiguous-header",
++            defaultValue: "Surface \"%@\" exists in more than one workspace:"
++        ).replacingOccurrences(of: "%@", with: to)
++        let hint = String(
++            localized: "mailbox.cli.error.ambiguous-hint",
++            defaultValue: "Disambiguate with --to-workspace <workspace-ref>."
++        )
++        return ([header] + refLines + [hint]).joined(separator: "\n")
++    }
++
+     // MARK: - recv
+ 
+     private func runMailboxRecvCommand(
+diff --git a/Sources/AppDelegate.swift b/Sources/AppDelegate.swift
+index 708160d79..4932da20a 100644
+--- a/Sources/AppDelegate.swift
++++ b/Sources/AppDelegate.swift
+@@ -4690,6 +4690,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
+         return nil
+     }
+ 
++    /// Every live, mailbox-addressable surface across all windows and
++    /// workspaces in this instance. A surface is addressable when it carries a
++    /// `title` metadata value (the mailbox name). Reads the same
++    /// `SurfaceMetadataStore` `title` the per-workspace `MailboxSurfaceResolver`
++    /// uses, so global resolution matches local resolution exactly.
++    ///
++    /// Main-thread only: it enumerates each workspace's `@Published panels`.
++    /// Callers on the socket queue must hop to main first.
++    func mailboxAddressableSurfaces() -> [MailboxGlobalResolver.Surface] {
++        var result: [MailboxGlobalResolver.Surface] = []
++        for context in mainWindowContexts.values {
++            for workspace in context.tabManager.tabs {
++                for surfaceId in workspace.panels.keys {
++                    let (metadata, _) = SurfaceMetadataStore.shared.getMetadata(
++                        workspaceId: workspace.id,
++                        surfaceId: surfaceId
++                    )
++                    guard let name = metadata[MetadataKey.title] as? String, !name.isEmpty else {
++                        continue
++                    }
++                    result.append(
++                        MailboxGlobalResolver.Surface(
++                            workspaceId: workspace.id,
++                            surfaceId: surfaceId,
++                            name: name
++                        )
++                    )
++                }
++            }
++        }
++        return result
++    }
++
+     @discardableResult
+     func moveSurface(
+         panelId: UUID,
+diff --git a/Sources/Mailbox/MailboxDispatcher.swift b/Sources/Mailbox/MailboxDispatcher.swift
+index ad1ac18bc..efa22eb0b 100644
+--- a/Sources/Mailbox/MailboxDispatcher.swift
++++ b/Sources/Mailbox/MailboxDispatcher.swift
+@@ -269,6 +269,24 @@ final class MailboxDispatcher {
+         let recipients = resolveRecipients(envelope: envelope)
+         log.append(.resolved(id: envelope.id, recipients: recipients.map(\.name)))
+ 
++        // Step 3a: a `to`-addressed envelope that resolves to nobody must NOT
++        // be silently cleaned-and-discarded. Quarantine it like a validation
++        // failure so the drop is observable: `_rejected/<id>.msg` + a `.err`
++        // sidecar + a `rejected` event in the dispatch log. The CLI sender
++        // resolves recipients up front and refuses to send to an unknown name,
++        // so in normal operation this fires only for raw-bash writers or a
++        // recipient that closed between send and dispatch. Topic-only
++        // envelopes (no `to`) keep the Stage-2 accept-but-empty contract and
++        // fall through to the no-op copy/handler steps below.
++        if envelope.to != nil && recipients.isEmpty {
++            rejectUnresolved(
++                id: envelope.id,
++                processingURL: processingURL,
++                to: envelope.to ?? ""
++            )
++            return
++        }
++
+         // Step 4: copy into each recipient inbox.
+         let envelopeBytes = (try? envelope.encode()) ?? Data()
+         for recipient in recipients {
+@@ -412,6 +430,32 @@ final class MailboxDispatcher {
+         )
+     }
+ 
++    // MARK: - Unresolved-recipient rejection
++
++    /// A well-formed envelope whose `to` matches no live surface in this
++    /// workspace. Mirrors `quarantine` (rejected dir + `.err` sidecar +
++    /// `rejected` event) so an undeliverable message leaves a trail instead of
++    /// vanishing. Distinct reason string so `c11 mailbox trace` can tell a
++    /// malformed envelope from an unknown recipient.
++    private func rejectUnresolved(id: String, processingURL: URL, to: String) {
++        let reason = "no live surface named '\(to)' in workspace \(workspaceId.uuidString)"
++        let rejectedDir = MailboxLayout.rejectedURL(state: stateURL, workspaceId: workspaceId)
++        let rejectedMsg = rejectedDir.appendingPathComponent(
++            MailboxLayout.envelopeFilename(id: id)
++        )
++        let rejectedErr = rejectedDir.appendingPathComponent(
++            MailboxLayout.rejectedErrorFilename(id: id)
++        )
++        try? FileManager.default.createDirectory(
++            at: rejectedDir,
++            withIntermediateDirectories: true,
++            attributes: [.posixPermissions: 0o700]
++        )
++        try? FileManager.default.moveItem(at: processingURL, to: rejectedMsg)
++        try? Data(reason.utf8).write(to: rejectedErr)
++        log.append(.rejected(id: id, reason: reason))
++    }
++
+     // MARK: - Quarantine
+ 
+     private func quarantine(id: String, processingURL: URL, reason: String) {
+diff --git a/Sources/Mailbox/MailboxSurfaceResolver.swift b/Sources/Mailbox/MailboxSurfaceResolver.swift
+index e016db3c5..dec70e4b4 100644
+--- a/Sources/Mailbox/MailboxSurfaceResolver.swift
++++ b/Sources/Mailbox/MailboxSurfaceResolver.swift
+@@ -112,3 +112,84 @@ struct MailboxSurfaceResolver {
+         }
+     }
+ }
++
++/// Cross-workspace recipient resolution for `c11 mailbox send`.
++///
++/// Each workspace runs its own `MailboxDispatcher`, and that dispatcher only
++/// resolves names against surfaces in *its* workspace. So a `--to` naming a
++/// surface in another workspace resolves to an empty recipient set and the
++/// message is dropped. This resolver closes that gap: it answers "which
++/// workspace should this envelope be delivered into?" by scanning every live,
++/// addressable surface in the running c11 instance, so the CLI can route the
++/// envelope into the recipient's workspace outbox (where that workspace's own
++/// dispatcher then delivers it locally, unchanged).
++///
++/// Precedence is deterministic (documented in `docs/c11-mailbox-guide.md`):
++///   1. **Local-first.** If `name` matches one or more surfaces in the
++///      sender's own workspace, deliver there. This preserves the
++///      pre-cross-workspace behavior exactly — a same-workspace send never
++///      reaches into another workspace, even if a same-named surface exists
++///      elsewhere.
++///   2. Otherwise, among the other workspaces:
++///        * exactly one workspace matches  → deliver there;
++///        * more than one workspace matches → `.ambiguous` (the caller must
++///          disambiguate with a workspace qualifier);
++///        * none match → `.unresolved` (the caller surfaces a non-zero error).
++///   A `workspaceQualifier` short-circuits the precedence: only surfaces in
++///   that workspace are considered, and the result is `.unique` or
++///   `.unresolved`.
++///
++/// Multiple same-named surfaces inside the chosen workspace are returned
++/// together; the dispatcher fans out to all of them, matching how
++/// same-workspace duplicate names already behave.
++struct MailboxGlobalResolver {
++
++    /// One live, addressable surface anywhere in the instance.
++    struct Surface: Equatable {
++        let workspaceId: UUID
++        let surfaceId: UUID
++        let name: String
++    }
++
++    enum Resolution: Equatable {
++        /// Deliver into `workspaceId`; `surfaceIds` are the matching surfaces.
++        case unique(workspaceId: UUID, surfaceIds: [UUID])
++        /// `name` matches surfaces in more than one workspace and no qualifier
++        /// was supplied. Carries the candidates for a helpful error message.
++        case ambiguous(candidates: [Surface])
++        /// No live surface carries `name` (within the qualifier, if given).
++        case unresolved
++    }
++
++    /// Enumerates all addressable surfaces. Injected so the resolver is pure:
++    /// tests pass a fixed list, the socket handler binds it to the live
++    /// windows' workspaces.
++    let surfaces: () -> [Surface]
++
++    func resolve(
++        name: String,
++        senderWorkspaceId: UUID,
++        workspaceQualifier: UUID? = nil
++    ) -> Resolution {
++        let matches = surfaces().filter { $0.name == name }
++
++        if let qualifier = workspaceQualifier {
++            let scoped = matches.filter { $0.workspaceId == qualifier }
++            guard !scoped.isEmpty else { return .unresolved }
++            return .unique(workspaceId: qualifier, surfaceIds: scoped.map(\.surfaceId))
++        }
++
++        // Local-first: a match in the sender's own workspace always wins.
++        let local = matches.filter { $0.workspaceId == senderWorkspaceId }
++        if !local.isEmpty {
++            return .unique(workspaceId: senderWorkspaceId, surfaceIds: local.map(\.surfaceId))
++        }
++
++        guard !matches.isEmpty else { return .unresolved }
++        let workspaceIds = Set(matches.map(\.workspaceId))
++        if workspaceIds.count == 1, let only = workspaceIds.first {
++            return .unique(workspaceId: only, surfaceIds: matches.map(\.surfaceId))
++        }
++        return .ambiguous(candidates: matches)
++    }
++}
+diff --git a/Sources/TerminalController.swift b/Sources/TerminalController.swift
+index c34625b00..5dbc1c25e 100644
+--- a/Sources/TerminalController.swift
++++ b/Sources/TerminalController.swift
+@@ -2885,6 +2885,10 @@ class TerminalController {
+         case "surface.clear_metadata":
+             return v2Result(id: id, self.v2SurfaceClearMetadata(params: params))
+ 
++        // Mailbox
++        case "mailbox.resolve":
++            return v2Result(id: id, self.v2MailboxResolve(params: params))
++
+         // Panes
+         case "pane.list":
+             return v2Result(id: id, self.v2PaneList(params: params))
+@@ -3259,6 +3263,7 @@ class TerminalController {
+             "surface.set_metadata",
+             "surface.get_metadata",
+             "surface.clear_metadata",
++            "mailbox.resolve",
+             "pane.list",
+             "pane.focus",
+             "pane.surfaces",
+@@ -8709,6 +8714,107 @@ class TerminalController {
+         }
+     }
+ 
++    // MARK: - Mailbox cross-workspace resolution
++
++    /// Resolves a mailbox recipient name to the workspace its envelope should
++    /// be delivered into, scanning every live surface across all windows.
++    /// Backs `c11 mailbox send`, which routes the envelope into the resolved
++    /// workspace's outbox so that workspace's own dispatcher delivers it.
++    ///
++    /// Params:
++    ///   * `to` (string, required) — recipient surface name.
++    ///   * `sender_workspace_id` (uuid, required) — the sender's workspace, so
++    ///     a local match takes precedence over same-named surfaces elsewhere.
++    ///   * `workspace` (string, optional) — disambiguates a name that lives in
++    ///     more than one workspace; a workspace UUID or a `workspace:*` ref.
++    ///
++    /// Returns `{ resolution: "unique"|"ambiguous"|"unresolved",
++    /// target_workspace_id?, target_workspace_ref?, surface_ids?, candidates }`.
++    private func v2MailboxResolve(params: [String: Any]) -> V2CallResult {
++        guard let to = v2String(params, "to"), !to.isEmpty else {
++            return .err(code: "invalid_to", message: "to is required", data: nil)
++        }
++        guard let senderWorkspaceId = v2UUID(params, "sender_workspace_id") else {
++            return .err(code: "invalid_sender_workspace_id", message: "sender_workspace_id must be a UUID", data: nil)
++        }
++        let qualifierStr = v2String(params, "workspace")
++
++        return v2MainSync {
++            let surfaces = AppDelegate.shared?.mailboxAddressableSurfaces() ?? []
++
++            // Translate the optional workspace qualifier (UUID or ref string)
++            // into a concrete workspace UUID. A raw UUID is honored even when
++            // that workspace currently has no addressable surface (it then
++            // resolves to `unresolved`, the honest answer). Otherwise match the
++            // qualifier against the ref strings of the live workspaces.
++            var qualifierUUID: UUID?
++            if let qualifierStr, !qualifierStr.isEmpty {
++                if let direct = UUID(uuidString: qualifierStr) {
++                    qualifierUUID = direct
++                } else {
++                    let workspaceIds = Set(surfaces.map(\.workspaceId))
++                    qualifierUUID = workspaceIds.first { wsId in
++                        if let ref = v2Ref(kind: .workspace, uuid: wsId) as? String {
++                            return ref == qualifierStr
++                        }
++                        return false
++                    }
++                    if qualifierUUID == nil {
++                        // Unknown workspace ref → nothing can match it.
++                        return .ok([
++                            "resolution": "unresolved",
++                            "candidates": self.mailboxCandidatePayload(
++                                surfaces.filter { $0.name == to }
++                            )
++                        ])
++                    }
++                }
++            }
++
++            let resolver = MailboxGlobalResolver(surfaces: { surfaces })
++            let resolution = resolver.resolve(
++                name: to,
++                senderWorkspaceId: senderWorkspaceId,
++                workspaceQualifier: qualifierUUID
++            )
++
++            let candidates = self.mailboxCandidatePayload(surfaces.filter { $0.name == to })
++            switch resolution {
++            case .unique(let workspaceId, let surfaceIds):
++                return .ok([
++                    "resolution": "unique",
++                    "target_workspace_id": workspaceId.uuidString,
++                    "target_workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
++                    "surface_ids": surfaceIds.map(\.uuidString),
++                    "candidates": candidates
++                ])
++            case .ambiguous:
++                return .ok([
++                    "resolution": "ambiguous",
++                    "candidates": candidates
++                ])
++            case .unresolved:
++                return .ok([
++                    "resolution": "unresolved",
++                    "candidates": candidates
++                ])
++            }
++        }
++    }
++
++    private func mailboxCandidatePayload(
++        _ surfaces: [MailboxGlobalResolver.Surface]
++    ) -> [[String: Any]] {
++        surfaces.map { surface in
++            [
++                "workspace_id": surface.workspaceId.uuidString,
++                "workspace_ref": v2Ref(kind: .workspace, uuid: surface.workspaceId),
++                "surface_id": surface.surfaceId.uuidString,
++                "name": surface.name
++            ]
++        }
++    }
++
+     private func buildMetadataOkPayload(
+         workspaceId: UUID,
+         surfaceId: UUID,

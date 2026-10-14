@@ -1,0 +1,90 @@
+pr	batch	merged	title
+1735	session	2026-03-20	fix(hooks): handle TabManager unavailable in SessionEnd/Start hooks
+1896	session	2026-03-21	Fix sidebar PR badge detection for workspace branches
+1933	session	2026-03-25	Fix sidebar notification persisting after being read
+1954	session	2026-03-23	Fix claude-hook stop teardown races
+1973	session	2026-03-23	Fix #1972: resync terminal portal after restore-time bind
+1992	session	2026-03-25	Add -r shorthand to SKIP_SESSION_ID check in claude wrapper
+2025	session	2026-03-25	Fix #1357: hide stale terminal portal after restore churn
+2129	session	2026-03-25	Fix window position restore on relaunch
+2306	session	2026-03-28	Fix stale session geometry crash after 0.63.0 upgrade
+2462	session	2026-04-01	Fix claude_vm_node OOM behavior and hook payload retention
+2465	session	2026-04-01	Ensure shell integrations always dispatch claude through the bundled wrapper
+2469	session	2026-04-01	Fix session restore suppression on relaunch
+2778	session	2026-04-11	Fix shell integration (report_pwd) not injected — ZDOTDIR override
+2884	session	2026-04-15	Persist app icon mode on the app bundle
+3564	session	2026-05-05	Keep Claude launch env and bypass opt-in
+3816	session	2026-05-10	Fix Claude resume cwd
+3852	session	2026-05-11	Fix stale terminal foreground after theme switch
+3871	session	2026-05-12	Fix #3863: pass Claude subcommands through the cmux wrapper
+3905	session	2026-05-12	Reject unsupported durable Claude cron requests
+3980	session	2026-05-23	Fix cmux.json split ratios
+4079	session	2026-05-13	Skip unrestorable Claude startup sessions
+4164	session	2026-05-15	Fix duplicate Codex monitor helpers
+4190	session	2026-05-15	Fix task manager attribution for launchd-parented helpers
+4269	session	2026-05-19	fix: don't auto-resume agent when it was already exited before snapshot
+4270	session	2026-05-17	Preserve Codex plugin config during hook setup
+4360	session	2026-05-19	Fix CLI surface resume approval hang
+4371	session	2026-05-20	Fix restored unread ring clearing when resuming workspace
+4418	session	2026-05-29	Fix Claude hooks-disabled env passthrough
+4550	session	2026-05-23	Fix restored panel unread sidebar badges
+4661	session	2026-05-25	Fix hidden Settings CPU during Codex output
+4859	session	2026-05-27	Fix agent resume when saved cwd is deleted
+4937	session	2026-06-12	Fix hidden right-sidebar FileExplorer mount loop on launch
+4982	session	2026-05-29	Fix restore previous launch crash and preserve current work
+5062	session	2026-06-01	Restore sidebar minimum width
+5089	session	2026-06-01	Keep titlebar stable at minimum sidebar width
+5176	session	2026-06-03	Fix macOS "access data from other apps" prompt on agent session start/quit (#5146)
+5187	session	2026-06-02	Fix Starship prompt going static in bash sessions (#5164)
+5202	session	2026-06-02	Fix Claude hook transcript scaling and Sparkle update packaging
+5300	session	2026-06-04	Fix session restore resuming agents in the wrong directory (drifted cwd)
+5306	session	2026-06-04	Fix #753: stop cmux launching under Rosetta on Apple Silicon
+5307	session	2026-06-03	Fix restored cwd bindings after reboot
+5312	session	2026-06-04	Fix agent session resume: cwd-drift + post-kill cwd, DRY resume engine, lifecycle/fork tests
+5316	session	2026-06-04	[codex] Fix nonblocking workspace close teardown
+5351	session	2026-06-04	Codex resume/restore hardening: surface jumble + CODEX_HOME (#5333, #5350)
+5388	session	2026-06-19	fix(claude-wrapper): merge user --settings into injected hook settings
+5507	session	2026-06-08	Keep Codex permission hooks non-blocking
+5669	session	2026-06-09	Fix UI freeze when closing tabs (synchronous agent-index load on main)
+5670	session	2026-06-10	Fix launch crash on macOS 27 from zero-size SF Symbol rasterization
+5673	session	2026-06-09	Event-driven SharedLiveAgentIndex: kill reload churn + close-undo staleness
+5708	session	2026-06-09	Remove sidebar row-ids preference aggregation feeding the layout livelock (#2586)
+5721	session	2026-06-10	Resolve resumed claude through the cmux wrapper shim env var (fixes #5639)
+5859	session	2026-06-11	sidebar perf: decouple workspace sidebar from notification-store churn
+5910	session	2026-06-12	Fix forked Claude sessions restoring the parent session after cmux restart
+5914	session	2026-06-12	Session restore stress: recover from corrupt snapshot via -previous backup
+5937	session	2026-06-12	Distrust cross-agent and shell-wrapper agent launch captures (fixes missing/broken Fork Conversation)
+5997	session	2026-06-13	Fix #5917: restore OSC 11 pane-local backgrounds
+6070	session	2026-06-20	Fix remote PTY restore probe reply leak
+6205	session	2026-06-19	Fix Claude restore cwd drift for session resume
+6232	session	2026-06-16	Avoid PostHog flush deadlock during quit
+6267	session	2026-06-16	Harden memory diagnostics for long-session surface leaks
+6328	session	2026-06-29	Fix fish resume: drop POSIX brace grouping from cwd-guard (#6285)
+6333	session	2026-06-17	Restore pane header title after terminal restart (#5931)
+6458	session	2026-06-19	Issue 6194 session restore resume cwd
+6461	session	2026-06-21	Avoid nested quit confirmation modal loops
+6473	session	2026-06-22	Fix stale Claude notification sidebar status
+6515	session	2026-06-20	Fix zsh aliases after agent return shell
+6581	session	2026-06-22	Fix stale surface-to-panel rebinding
+6582	session	2026-06-22	Fix stale agent resume executable paths
+6596	session	2026-06-22	Fix crash diagnostic window restore
+6609	session	2026-06-23	Fix Codex sidebar status lifecycle
+6712	session	2026-07-06	Fix Codex session restore authority after 0.64.17
+6728	session	2026-06-26	Fix macOS 27 symbol launch crash
+6886	session	2026-06-29	Fix notification-list layout thrash on launch (#5794)
+6890	session	2026-06-29	Fix macOS 27 launch crash in restore-path content views (#6745)
+7010	session	2026-06-29	Fix Claude shim mutual exec loop
+7089	session	2026-06-30	Fix oh-my-zsh agent auto-resume
+7165	session	2026-07-02	Rescue split/new-tab cwd inheritance while a resumed agent holds the pane (#7155)
+7352	session	2026-07-07	Fix Fork Conversation live agent availability
+7789	session	2026-07-10	Fix shell-integration socket sends: pin BSD nc (GNU nc silently drops the hook channel)
+7824	session	2026-07-10	Restore terminal-only tab icons
+7900	session	2026-07-11	Fix Claude bridge branch and resume failures (#7882)
+7953	session	2026-07-13	Fix #7947: keep Claude hooks authorized after socket rebinds
+7963	session	2026-07-13	fix: claude-hook success stdout renders as a visible OK block in Claude Code — emit a silent JSON ack
+8039	session	2026-07-14	Restore titlebar icon sizing
+8045	session	2026-07-15	Preserve Codex YOLO permissions across resume repair
+8070	session	2026-07-14	Preserve Claude permission mode across session restore
+8133	session	2026-07-16	Preserve Codex --yolo across session restore
+8250	session	2026-07-16	Fix capped session pane interaction paths
+8537	session	2026-09-11	Prevent prompt-submit hook timeouts with bounded queued delivery

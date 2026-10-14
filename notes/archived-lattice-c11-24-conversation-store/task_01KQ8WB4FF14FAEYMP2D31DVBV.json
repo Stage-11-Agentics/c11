@@ -1,0 +1,58 @@
+{
+  "assigned_to": "agent:claude-opus-4-7-c11-24",
+  "branch_links": [],
+  "comment_count": 21,
+  "complexity": "high",
+  "created_at": "2026-04-28T01:47:59Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Replace the per-TUI bespoke wrapper pattern with a first-class Conversation primitive owned by c11. Each surface hosts ConversationRefs persisted across c11 restarts; per-TUI strategies (push hooks, pull scrape, wrapper claim) capture and resume conversations. Plan at docs/conversation-store-architecture.md (post-Trident review). See review pack at docs/conversation-store-architecture-review-pack-2026-04-27T2025/ for the 9-agent review and synthesis-action.md for what's been baked into the plan vs. surfaced as operator decisions (all resolved as of 2026-04-27).\n\nSuccess metric: operator closes a c11 window with 15 tabs / 10 coding-agent surfaces, reopens c11, finds all 10 agent conversations preserved and resumable.\n\nMarquee feature for 0.44.0. Stays c11-only (not landing upstream in cmux). Lattice-agnostic.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01KQ950HDA5Y2QRATWWY9MS7AN",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KQ95HD1FZRGJNTERF1V2CYYN",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KQ95TKJAESXWGZ7JVNJQMTZT",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KQ965XXBE9R6DCPBXGMGBAVF",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KQ96A92WMF26TJA8N4DSGHY7",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KQ96KHMYP2A3XEVEBY0VZPWQ",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KQ8WB4FF14FAEYMP2D31DVBV",
+  "last_event_id": "ev_01KQ96KRR75N6YHWM8CV8HE8EN",
+  "last_status_changed_at": "2026-04-28T02:37:49Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-24",
+  "status": "review",
+  "tags": null,
+  "title": "c11 conversation store: TUI-agnostic session resume primitive",
+  "type": "task",
+  "updated_at": "2026-04-28T04:47:28Z",
+  "urgency": "normal"
+}

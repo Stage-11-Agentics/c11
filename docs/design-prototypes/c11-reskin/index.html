@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>c11 — Void Chrome Reskin (prototype)</title>
+<style>
+/* ── Stage 11 palette — identical tokens to the model-picker prototype ── */
+:root {
+  --black:      #000000;
+  --surface:    #0a0a0a;
+  --surface2:   #1f1f22;
+  --surface3:   #2d2d32;
+  --rule:       #333333;
+  --dim:        #555555;
+  --white:      #e8e8e8;
+  --gold:       #c9a84c;
+  --gold-faint: rgba(201,168,76,0.20);
+  --gold-ghost: rgba(201,168,76,0.10);
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+
+  /* terminal material — the USER'S Ghostty ground (default #282c34) */
+  --term-bg:   #282c34;
+  --term-fg:   #8a93a3;
+  --term-dim:  #5c6370;
+  --term-hi:   #d7dae0;
+
+  /* agent activity palette — resolvedSurfaceTabActivityColors (dark bg), main */
+  --act-run:   #79AEE8;
+  --act-idle:  #78B59E;
+  --act-cold:  #707681;
+  --act-wait:  #D0AA45;
+  --act-ink:   #08090B;
+
+  /* sidebar card material — workspacePulseCardBackground, main */
+  --card-base: #111318;                    /* srgb(0.067, 0.075, 0.09) */
+  --identity:  rgba(112,130,143,1);        /* fallback identity srgb(0.44,0.51,0.57) */
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body {
+  background: var(--surface);
+  color: var(--white);
+  font-family: var(--mono);
+  font-weight: 300;
+  font-size: 14px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+.window { display:flex; flex-direction:column; height:100vh; }
+
+/* ═══ agent pulse marks — shared tab-bar + sidebar vocabulary (main) ═══ */
+.pmark { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
+.pmark.run {
+  width:12px; height:12px; border-radius:50%;
+  border:1.5px solid rgba(121,174,232,0.38); border-top-color: var(--act-run);
+  animation: pspin 2.4s linear infinite;
+}
+@keyframes pspin { to { transform: rotate(360deg); } }
+.pmark.idle { width:9px; height:9px; border-radius:2px; background: var(--act-idle); opacity:0.85; }
+.pmark.cold { width:7px; height:7px; border-radius:50%; background: var(--act-cold); opacity:0.5; }
+.pmark.wait {
+  width:18px; height:18px; border-radius:4px; background: var(--act-wait);
+  color: var(--act-ink); font-size:9px; font-weight:800;
+}
+.pmark.wait::after { content:"W"; }
+.pmark.sm.run  { width:10px; height:10px; }
+.pmark.sm.idle { width:8px; height:8px; }
+.pmark.sm.cold { width:6px; height:6px; }
+.pmark.sm.wait { width:15px; height:15px; font-size:8px; }
+
+/* ═══ titlebar ══════════════════════════════════════════════════════ */
+.titlebar {
+  height: 40px; background: var(--surface);
+  background-image: linear-gradient(rgba(232,232,232,0.02), transparent);
+  display:flex; align-items:center; padding: 0 14px; gap:12px;
+  border-bottom: 1px solid var(--rule); flex-shrink:0; user-select:none;
+}
+.traffic { display:flex; gap:8px; }
+.traffic span { width:12px; height:12px; border-radius:50%; background:#3a3a3a; display:block; }
+.tb-folder { color: var(--dim); font-size:12px; }
+.tb-title {
+  font-size:13px; font-weight:500; color: rgba(232,232,232,0.9);
+  letter-spacing:0.04em;
+}
+.tb-path { font-size:11px; color: rgba(232,232,232,0.5); }
+.titlebar .spacer { flex:1; }
+.proto-badge {
+  font-size:10px; letter-spacing:0.14em; text-transform:uppercase;
+  color: var(--gold); border:1px solid var(--gold-faint); border-radius:4px;
+  padding: 3px 9px; font-weight:500;
+}
+
+.main { display:flex; flex:1; min-height:0; }
+
+/* ═══ workspace sidebar — pulse cards, matched to main (26a872e8c) ═══
+   Anatomy: header (title · hover-close) → agent summary rows →
+   hairline footer (counts + marks) → metrics → status/progress/log →
+   composition rail. Radius 12, base #111318 + identity radial +
+   white sheen. Selection: main uses a 2pt white outline; the RESKIN's
+   sole divergence swaps it for the 2px gold spine + goldGhost.       */
+.sidebar {
+  width: 292px; background: var(--surface); border-right:1px solid var(--rule);
+  flex-shrink:0; display:flex; flex-direction:column; user-select:none;
+}
+.sb-scroll { flex:1; overflow-y:auto; padding: 12px 8px 8px; display:flex; flex-direction:column; gap:8px; }
+.ws-card {
+  position:relative; border:1px solid rgba(112,130,143,0.32); border-radius:12px;
+  padding: 13px 13px 11px; cursor:pointer; overflow:hidden;
+  background:
+    linear-gradient(rgba(232,232,232,0.025), transparent 60%),
+    radial-gradient(circle 180px at top left, rgba(112,130,143,0.09), transparent),
+    var(--card-base);
+  display:flex; flex-direction:column;
+  transition: background 0.13s ease-out, border-color 0.13s ease-out;
+}
+.ws-card:hover { border-color: rgba(140,158,171,0.55); }
+.ws-card:hover::after {
+  content:""; position:absolute; inset:0; background: rgba(232,232,232,0.04); pointer-events:none;
+}
+.ws-card.sel {
+  border-color: rgba(112,130,143,0.4);
+  background:
+    linear-gradient(rgba(232,232,232,0.025), transparent 60%),
+    radial-gradient(circle 180px at top left, var(--gold-ghost), transparent),
+    var(--card-base);
+}
+.ws-card.sel::before {
+  content:""; position:absolute; left:0; top:0; bottom:0; width:2px; background: var(--gold); z-index:2;
+}
+.ws-card.waiting-border { border-color: rgba(208,170,69,0.38); }
+
+.ws-titlerow { display:flex; align-items:center; gap:8px; min-height:22px; }
+.ws-title { flex:1; font-size:14px; font-weight:600; color: var(--white); min-width:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ws-close {
+  width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  color: rgba(232,232,232,0.7); font-size:12px; flex-shrink:0; border-radius:5px;
+  opacity:0; transition: opacity 0.1s;
+}
+.ws-card:hover .ws-close { opacity:1; }
+.ws-close:hover { color: var(--white); background: var(--surface3); }
+
+/* agent summary rows — workspacePulseSummaries (≤2 rows) */
+.ws-pulse { display:flex; flex-direction:column; gap:6px; margin-top:9px; }
+.pl-row { display:flex; align-items:center; gap:8px; font-size:12px; line-height:1.35; min-width:0; }
+.pl-row .pl-txt { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;
+  color: rgba(232,232,232,0.86); }
+.pl-row .pl-txt b { font-weight:500; }
+.pl-row .pl-txt .pl-sub { color: rgba(232,232,232,0.6); }
+.pl-row.r2 .pl-txt { color: rgba(232,232,232,0.72); }
+.pl-empty { font-size:11px; color: rgba(232,232,232,0.65); margin-top:9px; }
+.pl-more { font-size:11px; color: rgba(232,232,232,0.62); padding-left:24px; }
+
+/* pulse footer — hairline + counts + marks row */
+.ws-foot { margin-top:10px; border-top:1px solid rgba(112,130,143,0.18); padding-top:8px;
+  display:flex; align-items:center; gap:8px; }
+.ws-counts { font-size:10.5px; color: rgba(232,232,232,0.68); display:flex; align-items:center; gap:6px; }
+.ws-counts .cdot { width:2px; height:2px; border-radius:50%; background: rgba(232,232,232,0.4); }
+.ws-foot .marks { margin-left:auto; display:flex; align-items:center; gap:5px; height:15px; }
+
+/* metrics */
+.ws-metrics { margin-top:4px; text-align:right; font-size:10px; color: rgba(232,232,232,0.55); }
+
+/* telemetry status rows (set-status) — freshness decay */
+.ws-status { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+.st-row { display:flex; align-items:baseline; gap:7px; font-size:11.5px; color: rgba(232,232,232,0.82); line-height:1.4; }
+.st-row .st-ic { font-size:10px; flex-shrink:0; width:13px; text-align:center; color: rgba(232,232,232,0.55); }
+.st-row.stale { opacity:0.6; font-style:italic; }
+.st-age { margin-left:auto; font-size:10px; color: rgba(232,232,232,0.5); font-style:italic; flex-shrink:0; }
+
+/* log line */
+.ws-log { display:flex; align-items:baseline; gap:7px; font-size:11px; color: rgba(232,232,232,0.6);
+  white-space:nowrap; overflow:hidden; margin-top:6px; }
+.ws-log .lv { font-size:9px; flex-shrink:0; width:13px; text-align:center; }
+
+/* progress — gold fill */
+.ws-prog { display:flex; flex-direction:column; gap:4px; margin-top:7px; }
+.prog-track { height:4px; background: rgba(232,232,232,0.12); border-radius:2px; overflow:hidden; }
+.prog-fill { height:100%; background: linear-gradient(90deg, rgba(201,168,76,0.55), var(--gold)); border-radius:2px; }
+.prog-label { font-size:10px; color: rgba(232,232,232,0.6); }
+.ws-card:not(.sel) .prog-fill { background: rgba(232,232,232,0.35); }
+
+/* composition rail — 4px, segments by agent-state share */
+.ws-rail { margin-top:9px; height:4px; display:flex; gap:2px; }
+.ws-rail .seg { border-radius:2px; height:100%; }
+.ws-rail .seg.track { background: rgba(51,51,51,0.55); }
+
+/* sidebar footer */
+.sb-foot {
+  border-top:1px solid var(--rule); background: rgba(10,10,10,0.6);
+  padding: 9px 14px; display:flex; align-items:center; gap:9px; flex-shrink:0;
+  font-size:11px; color: rgba(232,232,232,0.6);
+}
+.sb-foot .navs { margin-left:auto; display:flex; gap:3px; }
+.sb-navbtn {
+  width:26px; height:24px; display:flex; align-items:center; justify-content:center;
+  border-radius:5px; font-size:11px; color: rgba(232,232,232,0.6); cursor:pointer;
+}
+.sb-navbtn:hover { background: var(--surface2); color: var(--white); }
+.sb-navbtn:active { background: var(--surface3); }
+
+/* ═══ tab bar — matched to main/bonsplit@2d14dee ════════════════════
+   Tab anatomy: [activity mark] [ "N: title" one run, one color ]
+   [spacer] [close × RIGHT, always visible]. Selected = lightened
+   chrome fill + 3px TOP indicator (gold — the tab bar's one gold
+   moment); flash-new stays the transient decay.                      */
+.workarea { flex:1; display:flex; flex-direction:column; min-width:0; }
+.tabbar {
+  height: 40px; background: var(--surface); border-bottom: 1px solid var(--rule);
+  display:flex; align-items:stretch; flex-shrink:0; user-select:none;
+}
+.tab {
+  display:flex; align-items:center; gap:8px; padding: 0 6px 0 12px;
+  border-right: 1px solid rgba(51,51,51,0.55); font-size:12.5px;
+  color: rgba(232,232,232,0.72);
+  min-width:130px; max-width: 240px; white-space:nowrap; cursor:pointer; position:relative;
+  transition: background 0.1s ease-in-out;
+}
+.tab:hover { background: rgba(232,232,232,0.06); color: rgba(232,232,232,0.9); }
+.tab.active {
+  background: #232327;               /* chrome ground lightened ~0.12 */
+  color: var(--white); font-weight:600;
+}
+.tab.active::before {
+  content:""; position:absolute; left:0; right:0; top:0; height:3px; background: var(--gold);
+}
+.tab .ttl { overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; font-weight:inherit; }
+.tab .tx {
+  width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  border-radius:4px; font-size:14px; color: rgba(232,232,232,0.55); flex-shrink:0;
+}
+.tab:hover .tx { color: rgba(232,232,232,0.75); }
+.tab .tx:hover { background: rgba(232,232,232,0.12); color: var(--white) !important; }
+.tab.flash-new { animation: tabflash 1.2s ease-out; }
+@keyframes tabflash {
+  0%   { background: var(--gold-faint); box-shadow: inset 0 3px 0 var(--gold); color: var(--white); }
+  100% { background: transparent; box-shadow: none; }
+}
+.tabbar .spacer { flex:1; }
+
+/* toolbutton cluster: A ▾ | ❯ ◍ ≣ | ◫ ⊟ | + ✕  — 32×30 targets */
+.toolbtns { display:flex; align-items:center; gap:4px; padding:0 10px; }
+.toolbtn {
+  width:32px; height:30px; display:flex; align-items:center; justify-content:center;
+  border-radius:5px; color: rgba(232,232,232,0.65); font-size:13.5px; cursor:pointer; position:relative;
+  border:1px solid transparent; transition: background 0.13s ease-out;
+}
+.toolbtn:hover { background: var(--surface2); color: var(--white); border-color: var(--rule); }
+.toolbtn:active { background: var(--surface3); }
+.toolbtn.a-btn { font-weight:500; font-size:15px; }
+.toolbtn.a-btn .model-accent {
+  position:absolute; bottom:3px; left:8px; right:8px; height:2px;
+  background: var(--gold); border-radius:1px; opacity:0.85;
+}
+.a-caret {
+  width:18px; height:30px; display:flex; align-items:center; justify-content:center;
+  color: rgba(232,232,232,0.55); font-size:8px; cursor:pointer; border-radius:4px; margin-left:-2px;
+}
+.a-caret:hover { background: var(--surface2); color:var(--white); }
+.tool-sep { width:1px; height:18px; background: var(--rule); margin: 0 5px; }
+
+/* ═══ split panes ═══════════════════════════════════════════════════ */
+.splitwrap { flex:1; display:flex; min-height:0; background: var(--surface); position:relative; }
+.pane { flex:1; position:relative; min-width:0; display:flex; flex-direction:column; cursor:pointer; }
+.pane + .pane { border-left:1px solid var(--rule); }
+.pane::after {
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:5;
+  border:1px solid rgba(51,51,51,0.7); transition: border-color 0.13s ease-out;
+}
+.pane.focused::after { border:2px solid var(--gold); opacity:0.9; }
+.pane .term {
+  flex:1; padding: 16px 18px; font-size:13px; line-height:1.65;
+  color: var(--term-fg); overflow:hidden; background: var(--term-bg);
+}
+.term .p1 { color: var(--term-dim); }
+.term .gold { color: var(--gold); }
+.term .wh { color: var(--term-hi); }
+.term .ghost-note { margin-top:16px; font-size:11px; color:#4d5462; line-height:1.6; }
+
+/* surface content variants (tab switching) */
+.surfaceview { flex:1; display:none; flex-direction:column; min-height:0; animation: viewin 0.13s ease-out; }
+.surfaceview.open { display:flex; }
+@keyframes viewin { 0%{opacity:0} 100%{opacity:1} }
+
+/* browser surface */
+.browser { flex:1; display:flex; flex-direction:column; background: var(--surface); position:relative; }
+.urlbar {
+  display:flex; align-items:center; gap:9px; padding: 8px 12px;
+  background: var(--surface); border-bottom:1px solid var(--rule); flex-shrink:0;
+}
+.nav-btn {
+  width:28px; height:26px; display:flex; align-items:center; justify-content:center;
+  border-radius:5px; color: rgba(232,232,232,0.65); font-size:12px; cursor:pointer;
+}
+.nav-btn:hover { background: var(--surface2); color: var(--white); }
+.nav-btn:active { background: var(--surface3); }
+.url-field {
+  flex:1; background: var(--surface2); border:1px solid var(--rule); border-radius:6px;
+  padding: 7px 12px; font-size:12.5px; color: rgba(232,232,232,0.88); font-family:var(--mono);
+  display:flex; align-items:center; gap:8px; cursor:text;
+}
+.url-field:focus-within, .url-field.focus { border-color: rgba(201,168,76,0.5); }
+.url-field .lock { font-size:10px; color: rgba(232,232,232,0.5); }
+.webpage { flex:1; background: #16181d; display:flex; align-items:center; justify-content:center; }
+.webpage .pg { text-align:center; color:#6b7380; font-size:12px; line-height:1.8; }
+.webpage .pg .big { font-size:22px; color:#8a929f; letter-spacing:0.08em; }
+
+/* markdown surface */
+.mdview { flex:1; overflow-y:auto; background: var(--surface); padding: 28px 36px; }
+.mdview h1 { font-size:18px; font-weight:600; color:var(--white); margin-bottom:5px; }
+.mdview .mdsub { font-size:10.5px; color: rgba(232,232,232,0.55); letter-spacing:0.1em; text-transform:uppercase; font-weight:500; margin-bottom:18px; }
+.mdview p { font-size:13px; line-height:1.7; color: rgba(232,232,232,0.85); margin-bottom:13px; max-width:640px; }
+.mdview code { background: var(--surface2); border:0.5px solid var(--rule); border-radius:3px; padding:0 5px; font-size:12px; color: rgba(232,232,232,0.8); }
+.mdview .mdrule { display:flex; align-items:center; gap:9px; margin: 20px 0 15px; }
+.mdview .mdrule::before, .mdview .mdrule::after { content:""; flex:1; height:1px; background:var(--rule); }
+.mdview .mdrule span { font-size:10px; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color: rgba(232,232,232,0.55); }
+
+/* generic */
+.uc-label {
+  font-size:10px; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color: rgba(232,232,232,0.55);
+}
+.kbd {
+  display:inline-block; font-size:10.5px; font-weight:500;
+  color: rgba(232,232,232,0.78); background: var(--surface3);
+  border:0.5px solid var(--rule); border-radius:3px; padding: 0 5px; line-height:17px;
+}
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius:4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* reskin note toast */
+.note {
+  position:fixed; right:18px; bottom:18px; width: 350px; z-index:50;
+  background: var(--surface2); border:1px solid var(--rule); border-left:2px solid var(--gold);
+  border-radius:7px; padding: 12px 15px; font-size:11.5px; line-height:1.6;
+  color: rgba(232,232,232,0.85); box-shadow: 0 10px 40px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(201,168,76,0.07);
+  animation: notein 0.16s ease-out;
+}
+@keyframes notein { 0%{opacity:0; transform:translateY(8px)} 100%{opacity:1; transform:none} }
+.note .n-head { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.note .n-x { margin-left:auto; width:20px; height:20px; display:flex; align-items:center; justify-content:center;
+  color: rgba(232,232,232,0.55); cursor:pointer; font-size:11px; border-radius:4px; }
+.note .n-x:hover { color:var(--white); background: var(--surface3); }
+.note b { color: var(--gold); font-weight:500; }
+</style>
+</head>
+<body>
+
+<div class="window">
+
+  <!-- titlebar -->
+  <div class="titlebar">
+    <div class="traffic"><span></span><span></span><span></span></div>
+    <span class="tb-folder">▸</span>
+    <span class="tb-title">c11</span>
+    <span class="tb-path">~/Projects/Stage11/code/c11</span>
+    <div class="spacer"></div>
+    <div class="proto-badge">prototype · void chrome reskin</div>
+  </div>
+
+  <div class="main">
+
+    <!-- workspace sidebar — pulse cards (main anatomy) -->
+    <div class="sidebar">
+      <div class="sb-scroll" id="sbScroll">
+
+        <!-- selected workspace -->
+        <div class="ws-card sel" data-ws="0">
+          <div class="ws-titlerow">
+            <span class="ws-title">Reskin prototype</span>
+            <span class="ws-close">✕</span>
+          </div>
+          <div class="ws-pulse">
+            <div class="pl-row"><span class="pmark run"></span>
+              <span class="pl-txt"><b>claude · fable</b> <span class="pl-sub">· building void reskin mock</span></span></div>
+            <div class="pl-row r2"><span class="pmark idle"></span>
+              <span class="pl-txt"><b>codex · gpt-5.2</b> <span class="pl-sub">· validation pass queued</span></span></div>
+          </div>
+          <div class="ws-foot">
+            <span class="ws-counts">2 agents <span class="cdot"></span> 1 terminal</span>
+            <span class="marks"><span class="pmark sm run"></span><span class="pmark sm idle"></span></span>
+          </div>
+          <div class="ws-metrics">42% 318MB</div>
+          <div class="ws-status">
+            <div class="st-row"><span class="st-ic">◆</span><span>building void reskin mock</span></div>
+            <div class="st-row stale"><span class="st-ic">✓</span><span>aesthetic guide absorbed</span><span class="st-age">14m</span></div>
+          </div>
+          <div class="ws-prog">
+            <div class="prog-track"><div class="prog-fill" style="width:68%"></div></div>
+            <div class="prog-label">68% · rendering states</div>
+          </div>
+          <div class="ws-log"><span class="lv">›</span><span>wrote index.html · syncing browser surface</span></div>
+          <div class="ws-rail">
+            <span class="seg" style="flex:1; background:var(--act-run)"></span>
+            <span class="seg" style="flex:1; background:var(--act-idle)"></span>
+            <span class="seg track" style="flex:1"></span>
+          </div>
+        </div>
+
+        <!-- waiting workspace -->
+        <div class="ws-card waiting-border" data-ws="1">
+          <div class="ws-titlerow">
+            <span class="ws-title">Lattice triage</span>
+            <span class="ws-close">✕</span>
+          </div>
+          <div class="ws-pulse">
+            <div class="pl-row"><span class="pmark wait"></span>
+              <span class="pl-txt"><b>codex · gpt-5.2</b> <span class="pl-sub">· waiting — review PR #218?</span></span></div>
+          </div>
+          <div class="ws-foot">
+            <span class="ws-counts">1 agent <span class="cdot"></span> 2 terminals</span>
+            <span class="marks"><span class="pmark sm wait"></span></span>
+          </div>
+          <div class="ws-metrics">12% 204MB</div>
+          <div class="ws-rail">
+            <span class="seg" style="flex:1; background:var(--act-wait)"></span>
+            <span class="seg track" style="flex:2"></span>
+          </div>
+        </div>
+
+        <!-- terminals-only workspace -->
+        <div class="ws-card" data-ws="2">
+          <div class="ws-titlerow">
+            <span class="ws-title">Amarna</span>
+            <span class="ws-close">✕</span>
+          </div>
+          <div class="pl-empty">Terminals only · no agent surfaces</div>
+          <div class="ws-foot">
+            <span class="ws-counts">0 agents <span class="cdot"></span> 2 terminals</span>
+            <span class="marks"><span class="pmark sm cold"></span><span class="pmark sm cold"></span></span>
+          </div>
+          <div class="ws-rail">
+            <span class="seg track" style="flex:1"></span>
+          </div>
+        </div>
+
+      </div>
+      <div class="sb-foot">
+        <span>2 working · 1 waiting</span>
+        <div class="navs">
+          <span class="sb-navbtn">‹</span>
+          <span class="sb-navbtn">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- workarea -->
+    <div class="workarea">
+
+      <!-- tab bar: [mark] "N: title" [×-right] -->
+      <div class="tabbar" id="tabbar">
+        <div class="tab active" data-view="split">
+          <span class="pmark run"></span><span class="ttl">41: Reskin prototype</span><span class="tx">×</span>
+        </div>
+        <div class="tab" data-view="split">
+          <span class="pmark idle"></span><span class="ttl">42: Log tail</span><span class="tx">×</span>
+        </div>
+        <div class="tab" data-view="browser">
+          <span class="pmark cold"></span><span class="ttl">43: stage11.ai/c11</span><span class="tx">×</span>
+        </div>
+        <div class="tab" data-view="md">
+          <span class="pmark cold"></span><span class="ttl">44: PHILOSOPHY.md</span><span class="tx">×</span>
+        </div>
+        <div class="tab flash-new" data-view="split" id="freshTab">
+          <span class="pmark wait"></span><span class="ttl">45: Awaiting first task</span><span class="tx">×</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="toolbtns">
+          <div class="toolbtn a-btn" title="Launch agent — default config">A<div class="model-accent"></div></div>
+          <div class="a-caret">▾</div>
+          <div class="tool-sep"></div>
+          <div class="toolbtn" title="New terminal">❯</div>
+          <div class="toolbtn" title="New browser">◍</div>
+          <div class="toolbtn" title="New markdown">≣</div>
+          <div class="tool-sep"></div>
+          <div class="toolbtn" title="Split right">◫</div>
+          <div class="toolbtn" title="Split down">⊟</div>
+          <div class="toolbtn" id="newTabBtn" title="New tab">+</div>
+          <div class="toolbtn" title="Close pane">✕</div>
+        </div>
+      </div>
+
+      <!-- terminal split view -->
+      <div class="surfaceview open" id="view-split">
+        <div class="splitwrap">
+          <div class="pane focused" data-pane="0">
+            <div class="term">
+              <div class="p1">~/Projects/Stage11/code/c11 <span class="gold">❯</span> <span class="wh">c11 tree --no-layout</span></div>
+              <div>&nbsp;</div>
+              <div>workspace:10  Reskin prototype</div>
+              <div>&nbsp;&nbsp;pane:1</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;surface:41  terminal  ◀ here</div>
+              <div>&nbsp;&nbsp;pane:2</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;surface:46  terminal</div>
+              <div>&nbsp;</div>
+              <div class="p1">~/Projects/Stage11/code/c11 <span class="gold">❯</span> <span class="wh">▮</span></div>
+              <div class="ghost-note">— this grey is your Ghostty ground (#282c34, the config default); cells,
+              colors &amp; font stay the user's. The reskin stops at the gold ring around this pane —</div>
+            </div>
+          </div>
+          <div class="pane" data-pane="1">
+            <div class="term">
+              <div class="p1">~ ❯ tail -f build.log</div>
+              <div>&nbsp;</div>
+              <div>[14:02:11] compiling ContentView.swift</div>
+              <div>[14:02:19] linking c11 DEV.app</div>
+              <div>[14:02:20] build succeeded</div>
+              <div class="ghost-note">— unfocused pane: hairline rule frame, no gold; click to move focus —</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- browser surface view -->
+      <div class="surfaceview" id="view-browser">
+        <div class="browser">
+          <div class="urlbar">
+            <span class="nav-btn">‹</span>
+            <span class="nav-btn">›</span>
+            <span class="nav-btn">⟳</span>
+            <div class="url-field"><span class="lock">◆</span>stage11.ai/c11</div>
+          </div>
+          <div class="webpage">
+            <div class="pg">
+              <div class="big">stage11.ai</div>
+              <div>page content — rendered by WKWebView, not restyled by the reskin</div>
+              <div>chrome owns only the url bar above and the ring around this surface</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- markdown surface view -->
+      <div class="surfaceview" id="view-md">
+        <div class="mdview">
+          <h1>PHILOSOPHY.md</h1>
+          <div class="mdsub">markdown surface · live reload</div>
+          <p>c11 is a command center for the operator:agent pair. Every surface has a handle;
+          every handle is scriptable from outside the process.</p>
+          <div class="mdrule"><span>rendering</span></div>
+          <p>Markdown surfaces are chrome-owned end to end, so the reskin applies fully here:
+          <code>surface</code> ground, hairline rules, the white-opacity ladder, and mono @ 300
+          for prose.</p>
+          <p>Section rules render as centered labels flanked by hairlines — the same recipe as
+          the model-picker popover.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- reskin note -->
+<div class="note" id="note">
+  <div class="n-head"><span class="uc-label" style="color:var(--gold)">reskin notes · v3</span><span class="n-x" id="noteX">✕</span></div>
+  Tabs &amp; sidebar cards now match <b>main</b>: pulse marks, "N:" title prefix, × on the
+  right, workspace-pulse card anatomy (summaries · footer · composition rail). Text floors
+  raised — nothing below white @ 0.55. Reskin divergence: gold spine selection, gold tab
+  indicator, gold pane ring. <span class="kbd">+</span> spawns a flash-new tab.
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+/* tab switching */
+let tabNum = 46;
+function activate(tab){
+  $$(".tab").forEach(t => t.classList.remove("active"));
+  tab.classList.add("active");
+  const view = tab.dataset.view || "split";
+  $$(".surfaceview").forEach(v => v.classList.remove("open"));
+  const el = $("#view-" + view);
+  el.classList.remove("open"); void el.offsetWidth; el.classList.add("open");
+}
+function wireTab(tab){
+  tab.addEventListener("click", e => {
+    if (e.target.classList.contains("tx")) { closeTab(tab); e.stopPropagation(); return; }
+    activate(tab);
+  });
+}
+function closeTab(tab){
+  const wasActive = tab.classList.contains("active");
+  const next = tab.nextElementSibling && tab.nextElementSibling.classList.contains("tab")
+    ? tab.nextElementSibling : tab.previousElementSibling;
+  tab.remove();
+  if (wasActive && next && next.classList.contains("tab")) activate(next);
+}
+$$(".tab").forEach(wireTab);
+
+/* + spawns a flash-new tab (waiting mark — a fresh agent awaits its task) */
+$("#newTabBtn").addEventListener("click", () => {
+  const tab = document.createElement("div");
+  tab.className = "tab flash-new";
+  tab.dataset.view = "split";
+  tab.innerHTML = `<span class="pmark wait"></span><span class="ttl">${tabNum++}: Awaiting first task</span><span class="tx">×</span>`;
+  $("#tabbar").insertBefore(tab, $("#tabbar").querySelector(".spacer"));
+  wireTab(tab);
+});
+
+/* pane focus — the gold ring follows the click */
+$$(".pane").forEach(p => p.addEventListener("click", () => {
+  $$(".pane").forEach(q => q.classList.remove("focused"));
+  p.classList.add("focused");
+}));
+
+/* sidebar workspace selection — spine + goldGhost follow */
+$$(".ws-card").forEach(c => c.addEventListener("click", e => {
+  if (e.target.classList.contains("ws-close")) return;
+  $$(".ws-card").forEach(q => q.classList.remove("sel"));
+  c.classList.add("sel");
+}));
+
+/* note dismiss */
+$("#noteX").addEventListener("click", () => $("#note").remove());
+</script>
+</body>
+</html>

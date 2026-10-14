@@ -1,0 +1,898 @@
+pr	batch	merged	title
+1235	input	2026-08-30	Fix phantom terminal text selection state desync
+1308	render	2026-03-25	Fix Ghostty font-family fallback chain regression
+1621	socket	2026-03-18	Fix missing command palette open-in targets
+1649	input	2026-03-20	Fix keyboard shortcuts with CJK input sources
+1677	socket	2026-03-20	fix(shell): check git repo before running git commands to prevent TCC prompts
+1700	input	2026-03-20	fix: skip Korean from CJK font-codepoint-map auto-injection
+1709	input	2026-03-23	fix(terminal): prevent cursor movement on double-click selection
+1735	session	2026-03-20	fix(hooks): handle TabManager unavailable in SessionEnd/Start hooks
+1754	sidebar	2026-03-20	fix: align titlebar icons with traffic-light buttons
+1800	sidebar	2026-03-19	Make remote sidebar directory canonicalization preserve live paths
+1826	render	2026-03-21	fix: AppleScript count windows returns 0 + working directory returns empty
+1837	render	2026-03-20	Fix terminal pane drag/drop handoff delay
+1843	browser	2026-03-20	Fix browser pane file drops hanging on Uploading
+1850	browser	2026-03-20	Fix browser image copy pasteboard data
+1852	browser	2026-03-23	Fix browser freeze after pane split
+1855	input	2026-03-20	Fix focused notification sound playback
+1858	render	2026-03-21	fix: apply background-opacity and background-blur to terminal rendering area (#879)
+1859	sidebar	2026-03-20	fix(sidebar): avoid premature workspace title truncation
+1877	browser	2026-03-21	fix: Cloudflare/CAPTCHA verification failures in browser panel
+1891	browser	2026-03-21	Add failing regression test for browser find focus
+1896	session	2026-03-21	Fix sidebar PR badge detection for workspace branches
+1897	browser	2026-03-21	Fix browser back navigation history handoff
+1899	input	2026-03-25	Fix Ghostty resize_split keybind support
+1908	sidebar	2026-03-22	Fix Sparkle update dialog requiring two presses
+1913	input	2026-03-23	Fix keyboard shortcuts not working with Korean input mode
+1915	render	2026-03-23	Fix #1870: prevent split crash on Intel Macs caused by stale font pointer
+1921	browser	2026-03-21	Fix browser pane video fullscreen
+1930	input	2026-03-25	Fix workspace creation failing after long uptime
+1933	session	2026-03-25	Fix sidebar notification persisting after being read
+1937	render	2026-03-23	Fix terminal black screen on macOS 26.3.1 by dispatching Ghostty callbacks to main thread
+1950	input	2026-03-23	Fix splitter hitbox overlap and terminal scrollbar width resync
+1954	session	2026-03-23	Fix claude-hook stop teardown races
+1957	render	2026-03-23	Fix Escape key not working in terminal panels (e.g. lazygit)
+1959	input	2026-03-22	Fix unbound Cmd+Shift+key combos being silently swallowed
+1964	render	2026-03-23	Fix blank terminal renders after workspace switches
+1965	input	2026-03-23	Preserve explicit wheel scrollback against passive follow
+1969	browser	2026-03-25	Fix panel resize stuttering when tiled with browser panels
+1973	session	2026-03-23	Fix #1972: resync terminal portal after restore-time bind
+1981	input	2026-03-23	Fix UI test foreground activation on CI
+1985	input	2026-03-25	Fix #1983: avoid workspace creation crash after restore
+1992	session	2026-03-25	Add -r shorthand to SKIP_SESSION_ID check in claude wrapper
+2000	browser	2026-03-25	Fix browser portal leaking to other tabs on Bonsplit tab switch
+2018	render	2026-03-25	fix: increase contentSideHitWidth to prevent accidental window resize
+2023	input	2026-03-24	Avoid crash when creating a new workspace
+2025	session	2026-03-25	Fix #1357: hide stale terminal portal after restore churn
+2033	input	2026-03-25	Consume Cmd+number shortcuts when workspace index is out of bounds
+2034	input	2026-03-25	Handle Cmd+O in handleCustomShortcut to prevent Documents folder open
+2046	sidebar	2026-03-25	Fix sidebar badges not refreshing on workspace state change
+2059	browser	2026-03-25	fix(browser): use native value setter for React compatibility
+2075	input	2026-03-25	fix: prevent Japanese IME confirmation Enter from executing command
+2088	input	2026-03-25	Fix all split panes appearing focused after layout restoration
+2089	input	2026-03-26	Fix command palette focus after terminal find
+2101	render	2026-03-25	fix: guard inherited terminal config against stale surfaces
+2108	browser	2026-03-25	fix(browser): keep IME Enter on composition path
+2117	input	2026-03-25	Fix first click on detected update pill
+2127	input	2026-03-25	Add regression coverage for Cmd+N workspace creation crash
+2129	session	2026-03-25	Fix window position restore on relaunch
+2133	input	2026-03-25	Fix Cmd+N crash from stale workspace creation snapshots
+2141	browser	2026-03-25	Fix browser panes rendering blank after reopen
+2142	sidebar	2026-03-25	Fix sidebar update pill cached popover flow
+2147	layout	2026-03-26	fix: route PWD action to correct TabManager per tabId
+2150	socket	2026-03-27	fix(socket): return not_found when surface_id is provided but unresolvable
+2168	sidebar	2026-03-25	Fix update attempt refreshing pill without actually updating
+2173	input	2026-03-25	Fix Cmd+N workspace creation snapshot crashes
+2178	input	2026-03-26	Fix Cmd+N crash from workspace creation config snapshots
+2179	render	2026-03-27	Fix Intel second-surface config inheritance crash
+2181	input	2026-03-26	Fix Release-only Cmd+N workspace snapshot UAF
+2186	input	2026-03-26	fix(quit): enforce Warn Before Quit when Cmd+Q arrives via app switcher
+2202	input	2026-03-26	fix: keyboard shortcuts not working with Russian layout
+2204	input	2026-03-26	Fix Cmd+N nightly crash: avoid local Workspace refs in ARC hotpath
+2214	browser	2026-03-30	Fix #2210: coalesce portal sync to latest geometry
+2218	sidebar	2026-03-28	Fix minimal mode toggle not updating titlebar state
+2219	browser	2026-03-27	fix(sidebar): use dedicated setting for port link browser preference
+2221	input	2026-03-26	Revert liveSurfaceForGhosttyAccess: fix Cmd+N @Published nil crash
+2241	render	2026-03-28	Fix #1793: skip CJK fallback injection when font-family already covers glyphs
+2267	render	2026-03-28	Revert "Fix Intel second-surface config inheritance crash"
+2283	layout	2026-03-28	Fix ARC workspace inheritance crash and native Zig helper builds
+2305	render	2026-03-28	Defer layout follow-up flush to avoid re-entrant displayIfNeeded crash
+2306	session	2026-03-28	Fix stale session geometry crash after 0.63.0 upgrade
+2328	sidebar	2026-03-30	Fix sidebar LazyVStack layout loop
+2331	sidebar	2026-03-30	Fix sidebar live refresh for branch and PR state
+2345	layout	2026-03-30	Fix fullscreen new windows opening in current Space
+2346	browser	2026-03-30	Fix browser pane dark-mode leak on light pages
+2353	browser	2026-03-30	Fix browser pane hangs from redundant portal refreshes
+2354	input	2026-03-30	Fix #2347 terminal focus and surface recovery
+2356	browser	2026-03-30	Keep cmux browser Find shortcuts authoritative
+2359	sidebar	2026-03-30	Fix #2358 update error details dialog overflow
+2375	layout	2026-03-30	Fix minimal mode tab bar disappearing in fullscreen
+2378	sidebar	2026-03-31	Fix transparent background flash during sidebar toggle
+2393	input	2026-03-31	Keep cmd+p stable during animated workspace title updates
+2394	input	2026-03-31	Fix Ctrl+K in the command palette
+2405	sidebar	2026-03-31	Fix duplicate sidebar git metadata publishes
+2412	input	2026-03-31	Fix main CI workspace retention in cmd-p switcher
+2413	render	2026-04-01	Fix stray 'C' insertion from Speakly dictation
+2447	input	2026-04-06	fix: stop swallowing ABC-QWERTZ / and ? in terminal input
+2462	session	2026-04-01	Fix claude_vm_node OOM behavior and hook payload retention
+2464	input	2026-04-01	Fix CLI commands briefly stealing focus
+2465	session	2026-04-01	Ensure shell integrations always dispatch claude through the bundled wrapper
+2466	perf	2026-04-01	Fix shell integration review regressions
+2467	input	2026-04-01	Fix paste from Raycast and apps using alternate plain-text UTIs
+2468	layout	2026-04-01	Fix macOS 26 glass background gating (#2459)
+2469	session	2026-04-01	Fix session restore suppression on relaunch
+2471	input	2026-04-04	Fix session restore terminal cursor focus race
+2505	input	2026-04-06	Fix terminals freezing when first responder drifts
+2511	input	2026-04-06	Fix focus reporting leak during pane creation (#2446)
+2513	browser	2026-04-02	Fix browser panel resize flicker during split drag
+2518	input	2026-04-03	fix: new-split falls back to focused surface when target is stale
+2529	input	2026-04-02	Fix Korean IME jamo leak during composition
+2562	sidebar	2026-04-04	Fix missing sidebar ports for agent-run dev servers
+2563	sidebar	2026-04-04	Fix missing sidebar git branch metadata for workspaces
+2566	sidebar	2026-04-07	Fix workspace color picker context menu blinking
+2574	browser	2026-04-06	Fix browser pane flicker during multi-split resize
+2579	input	2026-04-06	Suppress cmd-hover path highlighting while terminal selection is active
+2585	sidebar	2026-04-06	Fix sidebar PR status polling rate limits
+2601	socket	2026-04-04	Fix sidebar layout loop and CLI socket deadlocks
+2613	render	2026-04-06	Keep prompt colors when switching local TERM to xterm-256color
+2615	input	2026-04-06	Fix React Grab Cmd-Shift-G terminal round-trip
+2621	browser	2026-04-06	fix: DevTools pane breaks after workspace switch round-trips
+2622	render	2026-04-06	Fix sidebar bg: add missing locale entries and portal resync
+2639	layout	2026-07-28	fix: goto_split:previous/next cycle through all panes with wrapping
+2658	render	2026-04-07	Hide stale startup workspace portals during teardown
+2678	input	2026-04-08	Auto-hide terminal scroll bar fixes 2674
+2725	input	2026-04-08	Fix terminal selection autoscroll past viewport edge
+2740	layout	2026-04-09	Fix minimal-mode traffic-light inset for new workspaces
+2767	input	2026-04-10	Fix command-hold shortcut hints and prevent sidebar truncation
+2768	input	2026-04-10	Fix Raycast paste fallback regression
+2778	session	2026-04-11	Fix shell integration (report_pwd) not injected — ZDOTDIR override
+2779	browser	2026-04-10	Fix Cmd+Shift+V paste in browser pane
+2780	browser	2026-04-10	Fix up/down arrow keys in browser surface
+2797	sidebar	2026-05-20	Fix git index.lock polling in sidebar metadata watcher
+2813	render	2026-04-12	fix: allow symlinked Ghostty config files
+2831	input	2026-04-12	Fix Cmd+click file path punctuation trimming
+2833	input	2026-04-14	Fix appIcon=automatic crash on macOS Tahoe
+2836	input	2026-04-18	Fix bilibili search popup opening detached window
+2840	render	2026-04-13	Fix blank split panes after portal reveal
+2847	input	2026-04-12	Fix paste only pasting first character (#2805)
+2855	render	2026-04-13	Fix macOS modifier desync causing idle terminal input corruption
+2877	input	2026-04-14	fix: prefer UTF-8 plain text in pasteboard to avoid Mac OS Roman loss
+2884	session	2026-04-15	Persist app icon mode on the app bundle
+2893	perf	2026-04-14	Fix PortScanner subprocess pipe fd leak
+2927	input	2026-04-16	Fix scrollback-limit byte handling
+2930	browser	2026-04-18	Fix LinkedIn external-link redirect handoff in browser pane (#2928)
+2972	layout	2026-04-18	Fix startup hang from repeated file drop overlay install
+2979	layout	2026-04-18	Fix main CI by deferring file-drop overlay retries
+2986	layout	2026-04-22	Fix AX window polling stalls with app hierarchy caching
+2989	layout	2026-04-18	Fix close confirmation bypass when spamming close
+2994	input	2026-04-19	Fix Cmd/Ctrl shortcut hint parity (#2992)
+3012	input	2026-04-19	Fix #3011 blank terminal after workspace selection
+3015	input	2026-04-20	Pin regular-weight Japanese auto-fallback face
+3028	sidebar	2026-04-20	Fix 100% CPU from ContentView publisher feedback loop (fixes #3020)
+3034	render	2026-04-20	Fix DebugEventLog NSFileHandle ObjC exception crash
+3035	input	2026-04-20	Explain shortcut recorder rejections inline (fixes #2988)
+3036	layout	2026-04-22	Fix main-thread blocking in workspace PR refresh
+3048	render	2026-04-20	Fix terminal blanking after OSC completion notifications
+3055	render	2026-04-22	Fix minimal-mode traffic-light inset and new-window Bonsplit tab bar
+3063	input	2026-04-21	Drop stale merged PR from sidebar badge selection (#3054)
+3138	sidebar	2026-04-29	Fix ecosystemd idle overlay churn
+3150	render	2026-04-29	Fix minimal mode window routing and portal hit testing
+3152	render	2026-04-25	Keep selected workspace visible in sidebar
+3153	layout	2026-04-25	Fix multi-workspace close confirmation modality
+3155	render	2026-04-25	Hide portals for unmounted workspaces
+3173	perf	2026-04-27	fix: add AppleEvents usage description
+3179	sidebar	2026-04-28	Fix transparent titlebar backdrop matching
+3182	input	2026-04-27	Fix feedback editor scrolling
+3194	render	2026-04-29	Fix minimal-mode drag pass-through for new windows
+3221	input	2026-04-28	Restore cmux themes Enter apply
+3262	browser	2026-04-29	Fix bare window.open(_blank) routing in browser pane
+3268	input	2026-05-05	Fix #3069 non-ASCII Cmd+V paste when rich clipboard payloads are lossy
+3269	sidebar	2026-04-29	Fix locale separators in sidebar identifiers
+3292	input	2026-05-05	fix: deduplicate numpad input across IME full-to-half-width transition (#3284)
+3299	browser	2026-04-30	Fix terminal portal tab drop routing
+3309	input	2026-05-04	Follow up equalize splits shortcut fixes
+3330	input	2026-04-30	fix: make find escape behavior consistent
+3331	layout	2026-04-30	Fix Bonsplit tab bar height
+3332	input	2026-05-05	Fix unbound Cmd+Shift forwarding to terminal (#1718)
+3335	browser	2026-05-05	fix: make Ctrl+P command palette navigation remappable (#1713)
+3338	browser	2026-05-01	fix: make Cmd+D new-tab shortcut rebindable via KeyboardShortcutSettings (#2524)
+3351	layout	2026-04-30	Update Bonsplit selected tab separator
+3361	socket	2026-05-01	Fix CLI socket wait telemetry
+3378	input	2026-05-01	Fix cmux theme picker Enter from search
+3381	browser	2026-05-01	Fix browser tab drag to new workspace
+3382	sidebar	2026-05-01	Fix sidebar tint transparency backdrop ownership
+3398	browser	2026-05-02	Fix shortcut recorder capture for Cmd-D remaps
+3399	render	2026-05-01	Fix minimal-mode pane tab rendering
+3422	browser	2026-05-02	Fix browser omnibar typing lag with many workspaces
+3430	browser	2026-05-02	Fix browser tab drops into sidebar workspaces
+3431	input	2026-05-02	Fix launch theme before app appearance exists
+3436	sidebar	2026-05-02	Clamp Settings window away from display edge
+3455	input	2026-05-04	Fix shortcut settings dispatch_once launch crash
+3460	browser	2026-05-04	Fix terminal focus after browser split
+3462	input	2026-05-04	Fix editable shortcuts from settings.json
+3476	input	2026-05-04	Fix settings-file launch crash paths
+3479	input	2026-05-04	Fix live theme picker application
+3489	input	2026-05-05	Preserve context-separated shortcuts through recorder swaps
+3520	browser	2026-05-05	Fix Cmd+Shift+Enter pane zoom for browser panes
+3525	render	2026-05-05	Fix config window to open active cmux Ghostty config
+3532	input	2026-05-05	Fix notification dismissal with stale app focus
+3539	input	2026-05-06	Fix file preview drop routing
+3543	socket	2026-05-18	Fix variant-aware CLI socket fallback
+3546	sidebar	2026-05-05	Fix sidebar workspace close hover state
+3558	layout	2026-05-05	fix: open links in MarkdownPanelView via explicit OpenURLAction
+3559	input	2026-05-05	fix: prevent recursive os_unfair_lock crash on cmd-clicked .md viewer route + drop fragment/query gate
+3564	session	2026-05-05	Keep Claude launch env and bypass opt-in
+3567	input	2026-05-05	Fix Finder image drops into Claude Code terminals
+3570	input	2026-05-05	Fix sidebar scroller visibility
+3574	input	2026-05-07	Restore Zhuyin IME candidate marked-text handling
+3580	input	2026-06-10	Fix OSC 8 Cmd-click hyperlinks in terminal panes
+3587	socket	2026-05-07	Count cmux app RSS in Task Manager totals
+3611	input	2026-05-07	Fix Cmd+N window size after last window closes
+3612	render	2026-05-07	Keep Settings layered above the main window
+3628	input	2026-05-10	fix: close all targeted tabs in pane right-click 'Close Other Tabs' (#3605)
+3643	socket	2026-05-06	Fix main macOS CI
+3663	browser	2026-05-06	fix: forward Left/Right arrow keys to browser surface (#3622)
+3694	browser	2026-05-08	Fix arrow key navigation in IME candidate window during composition
+3698	socket	2026-05-07	Fix command palette arrow keys and no-match flash
+3720	input	2026-05-08	Fix terminal top-row click routing
+3727	sidebar	2026-05-08	Fix Mark Workspace as Unread enablement
+3734	input	2026-05-08	Fix Cmd-W for Task Manager and auxiliary windows
+3740	input	2026-05-08	Fix tab bar empty-click behavior
+3744	sidebar	2026-05-10	Clear surface notifications during pane teardown
+3769	render	2026-05-11	Fix multi-image terminal drops
+3782	browser	2026-05-09	Fix duplicate browser pane drop zone overlay
+3788	browser	2026-05-09	Revert duplicate browser pane drop zone overlay fix
+3804	layout	2026-05-10	Fix folder proxy icon drag
+3811	socket	2026-05-13	Fix #3807: bring notification CLI to panel parity
+3816	session	2026-05-10	Fix Claude resume cwd
+3823	socket	2026-05-10	Fix Escape command palette dismissal
+3833	sidebar	2026-05-12	Keep update pill polling current after first update
+3835	browser	2026-05-11	Close Web Inspector before browser host teardown
+3836	render	2026-05-11	Fix McBopomofo Bopomofo candidate opening
+3842	browser	2026-05-11	Fix modified Backspace with omnibar inline completions
+3845	render	2026-05-11	Revert "Fix McBopomofo Bopomofo candidate opening"
+3847	socket	2026-05-11	Fix managed defaults replay after user changes
+3849	browser	2026-05-11	Revert "Fix arrow key navigation in IME candidate window during composition (#3694)"
+3852	session	2026-05-11	Fix stale terminal foreground after theme switch
+3871	session	2026-05-12	Fix #3863: pass Claude subcommands through the cmux wrapper
+3874	sidebar	2026-05-12	Fix #3803: clear sidebar freeze after color/reorder so workspace row keeps updating
+3881	input	2026-05-12	Fix #3856: honor focusPaneOnFirstClick for minimal-mode chrome and workspace sidebar
+3882	layout	2026-05-12	Fix #2791: preserve window position across sleep/wake with multiple monitors
+3885	render	2026-05-13	Prevent display-link crash from terminal portal layout reentry
+3886	layout	2026-06-01	Fix #3799: preserve per-pane OSC 11 backgrounds on inactive panes
+3905	session	2026-05-12	Reject unsupported durable Claude cron requests
+3907	input	2026-05-12	Fix cmux frontmost state without keyboard focus
+3916	render	2026-05-12	Prevent Metal renderer row rebuild crash
+3924	sidebar	2026-05-19	Fix permission notifications after auto-allow
+3929	input	2026-05-12	Fix garbled Chinese paste text
+3946	sidebar	2026-05-19	Fix ripgrep resolution for Nix installs
+3956	render	2026-05-18	Fix #3511: discover cmux user themes
+3980	session	2026-05-23	Fix cmux.json split ratios
+3981	input	2026-06-04	Fix printable Option key shortcut routing
+3986	render	2026-05-23	Fix key repeat rendering lag
+4038	browser	2026-05-16	Fix Cmd-N routing from browser omnibar
+4042	layout	2026-05-13	Fix new-workspace caller window routing
+4047	browser	2026-05-13	Fix shared WebView task manager attribution
+4070	browser	2026-05-13	Close browser panels when pages request window close
+4077	input	2026-05-13	Save crash diagnostics under cmux state
+4079	session	2026-05-13	Skip unrestorable Claude startup sessions
+4083	render	2026-05-14	Keep selected workspace visible after sidebar reorders
+4084	sidebar	2026-05-13	Fix sidebar unread badge after re-marking notifications
+4095	input	2026-05-13	Fix Korean 2-Set terminal arrows
+4102	render	2026-05-13	Fix terminal portal resize lag
+4121	render	2026-05-18	Fix surface tab bar action buttons clipping
+4122	browser	2026-05-15	Fix browser showOpenFilePicker support
+4126	browser	2026-05-14	Fix Slack composer Cmd+C in browser panes
+4132	socket	2026-05-19	Fix task manager process accounting accuracy
+4137	socket	2026-05-15	Fix background new-workspace commands
+4164	session	2026-05-15	Fix duplicate Codex monitor helpers
+4182	browser	2026-05-18	Fix Web Inspector blank restore and close crash
+4183	browser	2026-05-16	Fix omnibar arrow key focus races
+4186	browser	2026-05-18	Suppress browser editing shortcut replay
+4190	session	2026-05-15	Fix task manager attribution for launchd-parented helpers
+4193	input	2026-05-18	Fix tagged dev CLI socket selection
+4226	browser	2026-05-17	Fix browser deep-link popups (slack://, discord://, etc.)
+4233	render	2026-05-16	Fix offscreen terminal helper PTY startup
+4268	browser	2026-05-18	Fix browser omnibar IME candidate window for Japanese / Zhuyin
+4269	session	2026-05-19	fix: don't auto-resume agent when it was already exited before snapshot
+4270	session	2026-05-17	Preserve Codex plugin config during hook setup
+4278	render	2026-05-18	Fix conditional light theme foreground rendering
+4284	browser	2026-05-18	Cmd-click reload duplicates browser tab
+4290	layout	2026-05-20	Fix minimal mode pane tab drag routing
+4291	input	2026-05-18	Fix Cmd-hover bounds for spaced file paths
+4296	sidebar	2026-05-18	Open crash diagnostics from notifications
+4318	perf	2026-05-19	Fix nightly startup crash
+4334	sidebar	2026-05-21	Suppress nested agent hook notifications
+4353	sidebar	2026-05-19	Fix NIGHTLY update bundle icon metadata
+4359	render	2026-05-20	Fix repeated cmux themes set reloads
+4360	session	2026-05-19	Fix CLI surface resume approval hang
+4371	session	2026-05-20	Fix restored unread ring clearing when resuming workspace
+4381	layout	2026-05-23	Fix asymmetric equalize splits
+4382	input	2026-05-19	Fix Option dead-key accent composition
+4391	input	2026-06-14	Fix terminal top-row mouse event routing
+4397	browser	2026-05-20	Fix browser back race during provisional navigation
+4400	input	2026-05-20	Route keyboard/menu equalize_splits through v2ProportionalEqualize so 3+ panes split evenly
+4406	input	2026-05-20	Fix remapped Cmd+W close shortcuts
+4415	sidebar	2026-05-20	Fix settings appearance dispatch_once reentrancy
+4418	session	2026-05-29	Fix Claude hooks-disabled env passthrough
+4438	layout	2026-05-20	Fix pane tab width regression after #4290
+4442	input	2026-05-20	Fix shortcut recorder state leak in AppDelegate tests
+4445	input	2026-05-20	Fix main shortcut routing CI regressions
+4456	sidebar	2026-05-21	Fix notification Settings open path
+4481	sidebar	2026-05-21	Fix minimal-mode sidebar titlebar icon alignment
+4513	socket	2026-06-14	Fix stale remote connected state after proxy disconnect
+4534	sidebar	2026-05-30	Fix Reload Configuration menu action
+4550	session	2026-05-23	Fix restored panel unread sidebar badges
+4557	input	2026-05-22	Fix Git repository search root traversal
+4567	render	2026-05-22	Fix Ghostty split theme appearance resolution
+4568	layout	2026-05-23	Fix runProcess pipe teardown crash
+4594	render	2026-05-24	Fix markdown files with trailing punctuation detected as URLs
+4608	browser	2026-07-01	Fix report_pwd display labels as file roots
+4610	sidebar	2026-05-23	Fix sidebar edge fade background
+4613	input	2026-05-26	Keep Cmd-Tab app switching off session snapshot path
+4615	input	2026-05-23	Fix close shortcuts targeting original window
+4623	browser	2026-05-23	Fix browser URL bar stealing focus on tab switch
+4647	browser	2026-05-31	Fix browser omnibar per-keystroke lag (#4642)
+4652	render	2026-05-23	Fix theme picker chrome preview sync
+4661	session	2026-05-25	Fix hidden Settings CPU during Codex output
+4676	input	2026-05-26	Fix release stress socket heartbeat and stale focus-pane target
+4679	socket	2026-05-26	Forward CLI subcommands from GUI binary to bundled CLI (fixes #4678)
+4687	sidebar	2026-07-06	Fix PDF preview download and print toolbar actions
+4728	render	2026-05-25	Fix cmux terminal environment injection
+4767	input	2026-06-10	Fix sidebar scrollbar: hide when content fits, fade overlay knob when idle (#3241)
+4780	render	2026-05-27	Fix matched sidebar terminal background
+4784	input	2026-05-26	Fix TextBox teardown exclusivity crash
+4795	render	2026-05-30	Fix embedded Ghostty split theme resolution
+4800	socket	2026-05-28	Fix NSFileHandle process pipe read crashes
+4812	socket	2026-05-27	Open external path arguments without socket access
+4820	render	2026-05-31	Fix hidden sidebar PR polling
+4859	session	2026-05-27	Fix agent resume when saved cwd is deleted
+4873	layout	2026-05-27	Fix Bonsplit tab indicator drift
+4934	sidebar	2026-05-29	Fix bash job notification spam
+4937	session	2026-06-12	Fix hidden right-sidebar FileExplorer mount loop on launch
+4959	layout	2026-05-29	Fix zsh hook errors when job table is saturated
+4961	browser	2026-05-29	Stop stale closed-browser snapshots from reappearing in unrelated workspaces
+4982	session	2026-05-29	Fix restore previous launch crash and preserve current work
+5005	input	2026-05-31	Fix #5003: protect titlebar controls from resize drags
+5035	socket	2026-05-31	Fix sidebar Project Worktrees + button: workspace tab exits immediately (#5032)
+5045	input	2026-05-31	Fix clipped titlebar shortcut-hint tooltip and floor sidebar width to its extent
+5062	session	2026-06-01	Restore sidebar minimum width
+5076	layout	2026-06-01	Fix #5075: clear split zoom when closing maximized tab
+5089	session	2026-06-01	Keep titlebar stable at minimum sidebar width
+5101	input	2026-06-01	Fix #5099: keep right-sidebar titlebar buttons clickable (stop reparenting interactive controls)
+5102	input	2026-06-01	Fix #5099: titlebar band swallows right-sidebar button clicks
+5104	sidebar	2026-06-01	Follow-up to #5102: simplify titlebar inset + fix sidebar-toggle animation desync
+5106	layout	2026-06-01	Revert "Fix #3799: preserve per-pane OSC 11 backgrounds on inactive panes"
+5108	input	2026-06-02	Fix #5100: bound focus-surface broadcast re-entrancy (426s hang)
+5127	sidebar	2026-06-01	Fall back to the default sidebar when extensions is disabled
+5131	layout	2026-06-01	Stabilize git metadata FSEvents watcher
+5145	input	2026-06-01	Fix titlebar shortcut-hint pills clipped at bottom on macOS 26.5
+5175	input	2026-06-02	Fix restored scrollback keeping original theme's colors (white-on-white after theme change)
+5176	session	2026-06-03	Fix macOS "access data from other apps" prompt on agent session start/quit (#5146)
+5180	browser	2026-06-02	Fix Web Inspector reopening after manual close + navigation (#5172)
+5182	input	2026-06-02	Restore right-click sidebar-button view switcher and built-in views (#5173)
+5187	session	2026-06-02	Fix Starship prompt going static in bash sessions (#5164)
+5196	input	2026-06-10	Fix: make Select Workspace 1…9 / Surface 1…9 shortcuts actually rebindable (#5189)
+5202	session	2026-06-02	Fix Claude hook transcript scaling and Sparkle update packaging
+5247	browser	2026-06-02	Fix file-editor arrow-key navigation and add a word-wrap setting (#5227)
+5253	sidebar	2026-06-02	Fix workspace-group "Delete Group" context-menu no-op
+5270	browser	2026-06-03	Fix browser address bar: single click places caret instead of selecting all (#5268)
+5279	sidebar	2026-06-03	Fix stale sidebar git branch after cd out of a repo into a non-git dir
+5292	input	2026-06-03	Fix copy-mode vim keys swallowed under non-ASCII input sources (Korean, Japanese Kana, Zhuyin)
+5296	input	2026-06-03	Fix #5269: recover terminal focus when first responder is stranded in another window
+5300	session	2026-06-04	Fix session restore resuming agents in the wrong directory (drifted cwd)
+5306	session	2026-06-04	Fix #753: stop cmux launching under Rosetta on Apple Silicon
+5307	session	2026-06-03	Fix restored cwd bindings after reboot
+5311	browser	2026-06-04	Fix #5303: stop browser pane re-running one-time setup on every CoreAnimation commit
+5312	session	2026-06-04	Fix agent session resume: cwd-drift + post-kill cwd, DRY resume engine, lifecycle/fork tests
+5315	browser	2026-06-04	Fix WebKit post-wake crash: sleep/wake-aware hidden-webview discard scheduling
+5316	session	2026-06-04	[codex] Fix nonblocking workspace close teardown
+5317	input	2026-06-04	Fix TextBox teardown crash when toggling sidebar background
+5325	sidebar	2026-06-04	Fix sidebar workspace frame collection virtualization
+5328	browser	2026-06-04	Fix terminal copy mode cursor navigation
+5335	input	2026-06-04	Fix terminal selection mouse-up with find overlay
+5340	input	2026-06-04	Fix TextBox IME and input-source handling
+5351	session	2026-06-04	Codex resume/restore hardening: surface jumble + CODEX_HOME (#5333, #5350)
+5352	browser	2026-06-05	Fix omnibar caret preservation on click focus
+5388	session	2026-06-19	fix(claude-wrapper): merge user --settings into injected hook settings
+5394	browser	2026-06-05	Fix markdown/browser Cmd zoom on non-US keyboard layouts
+5397	browser	2026-06-05	Cache omnibar suggestion candidates to fix typing beachball
+5402	sidebar	2026-06-05	Coalesce sidebar git metadata probes
+5406	browser	2026-06-10	Fix #5128: open links on Cmd-click inside alt-screen TUIs (Claude/Codex)
+5412	browser	2026-06-05	Keep actively-playing media browser panes alive in the background (issue 5409)
+5424	browser	2026-06-05	Fix hidden browser screenshot freshness
+5474	render	2026-06-06	Fix main window minimum-width ratchet
+5480	input	2026-06-05	Fix notification sound selection playback
+5488	render	2026-06-06	Fix sidebar close button hidden under wrapped workspace titles
+5507	session	2026-06-08	Keep Codex permission hooks non-blocking
+5509	socket	2026-06-06	Fix OSC 11 sequences appearing as literal text in cmux send
+5541	layout	2026-06-08	Keep pinned workspaces inside groups
+5595	socket	2026-06-08	Fix inline VS Code command palette and WebSocket startup
+5601	input	2026-06-08	Fix sidebar Shift-click range anchor after no-op drag
+5616	input	2026-06-30	Fix workspace number shortcut rebinding
+5651	input	2026-06-12	fix: honor Focus / Do Not Disturb for the fallback notification sound
+5662	sidebar	2026-06-10	Fix sidebar status pills for newly created workspaces
+5664	socket	2026-06-09	Fix publishV2 JSON response retention
+5669	session	2026-06-09	Fix UI freeze when closing tabs (synchronous agent-index load on main)
+5670	session	2026-06-10	Fix launch crash on macOS 27 from zero-size SF Symbol rasterization
+5673	session	2026-06-09	Event-driven SharedLiveAgentIndex: kill reload churn + close-undo staleness
+5695	socket	2026-06-09	Cover shell startup matrix
+5707	sidebar	2026-06-10	Stop titlebar elements from shifting when toggling the sidebar
+5708	session	2026-06-09	Remove sidebar row-ids preference aggregation feeding the layout livelock (#2586)
+5721	session	2026-06-10	Resolve resumed claude through the cmux wrapper shim env var (fixes #5639)
+5744	browser	2026-06-10	perf: drop redundant disk I/O on browser-availability checks and bg logging
+5755	browser	2026-06-10	Fix #5733: drive find-overlay key routing off slot view hierarchy, not per-keystroke Entry weak-copy scan
+5760	input	2026-06-10	Fix updater error copy for wedged-launchd install failures, add manual-download fallback
+5773	render	2026-06-10	Don't hijack ZDOTDIR when the bundled shell-integration bootstrap is missing
+5778	browser	2026-06-11	Browser CLI reliability: socket-worker JS lane, CSP eval fallback, blank-surface fixes, fixture test suite
+5780	browser	2026-06-12	Fix browser context menu opening the wrong link
+5806	sidebar	2026-06-20	Fix #5770: recover Settings open from offscreen frames and silent no-ops
+5826	render	2026-06-10	Fix light themes rendering white-on-white terminals (#3459)
+5855	sidebar	2026-06-11	Cap sidebar status/metadata dictionaries to bound the sidebar view-graph livelock (#5845)
+5859	session	2026-06-11	sidebar perf: decouple workspace sidebar from notification-store churn
+5884	sidebar	2026-06-11	Revert "Cap sidebar status/metadata dictionaries to bound the sidebar view-graph livelock (#5845)"
+5891	browser	2026-06-11	Guard performKeyEquivalent keyDown force-dispatches against replay loops
+5899	browser	2026-06-11	Fix browser keyDown stack overflow reentry
+5910	session	2026-06-12	Fix forked Claude sessions restoring the parent session after cmux restart
+5914	session	2026-06-12	Session restore stress: recover from corrupt snapshot via -previous backup
+5915	browser	2026-06-12	Browser pane: bypass system proxy for loopback on local workspaces
+5923	browser	2026-06-14	Fix browser omnibar Return submitting stale text during fast typing
+5937	session	2026-06-12	Distrust cross-agent and shell-wrapper agent launch captures (fixes missing/broken Fork Conversation)
+5938	browser	2026-06-12	Fix browser image download filenames
+5955	input	2026-06-12	Re-assert sidebar overlay scrollers when the preferred scroller style changes (#3241 sidebar scope)
+5956	input	2026-06-12	Fix Find pane for same-directory workspaces
+5997	session	2026-06-13	Fix #5917: restore OSC 11 pane-local backgrounds
+5999	browser	2026-06-13	Fix macOS 27 SF Symbol rasterization crash
+6000	sidebar	2026-06-18	Fix macOS notification fallback identity
+6003	sidebar	2026-06-14	Fix top-right titlebar drag chrome
+6033	sidebar	2026-06-13	Sidebar perf: kill the LazyVStack layout livelock (combined: 6019 + 6021 + 6026)
+6052	input	2026-06-13	Sidebar row cleanups: branchless frame anchor, drop description .id, lazy Finder resolve (Fix 5: F9/F11/F13)
+6055	input	2026-06-13	Fix Cmd+T cwd after session restore
+6056	layout	2026-06-13	Fix OpenWrt BusyBox remote platform probe
+6057	render	2026-06-14	Fix stale Metal drawable after terminal layer realization
+6068	sidebar	2026-06-14	Fix unexpected menu-bar-only activation policy
+6070	session	2026-06-20	Fix remote PTY restore probe reply leak
+6073	input	2026-06-14	Fix minimal UI terminal top-row hit testing
+6111	sidebar	2026-06-14	Fix sidebar row-height layout feedback
+6188	sidebar	2026-06-16	Sidebar: remove rows measurement that re-livelocks layout at scale
+6200	input	2026-06-22	Fix copy-on-select Ghostty parity
+6205	session	2026-06-19	Fix Claude restore cwd drift for session resume
+6221	input	2026-06-22	Fix vim copy-mode cursor, V/Y, and pasteboard
+6232	session	2026-06-16	Avoid PostHog flush deadlock during quit
+6254	socket	2026-06-18	Reduce Sentry CLI broken-pipe crashes and hangs
+6258	browser	2026-06-16	Fix browser download trigger parity
+6267	session	2026-06-16	Harden memory diagnostics for long-session surface leaks
+6289	socket	2026-06-17	Fix self-hosted CI compatibility failures
+6328	session	2026-06-29	Fix fish resume: drop POSIX brace grouping from cwd-guard (#6285)
+6333	session	2026-06-17	Restore pane header title after terminal restart (#5931)
+6341	render	2026-06-19	Fix ~100% CPU re-render loop when selecting a bundled extension sidebar (#5970)
+6359	input	2026-06-18	Fix terminal focus retry after tiny responder handoff
+6368	layout	2026-06-18	Release closed macOS helper windows
+6386	render	2026-06-19	fix: terminal content duplication on window resize (revives #4765)
+6396	render	2026-06-18	Fix blank SF Symbol controls on macOS 27
+6416	input	2026-06-19	Fix notification jump focus for nested tabs
+6449	input	2026-06-24	Only double precise scroll deltas for gesture devices (fix high-res mouse runaway scroll)
+6458	session	2026-06-19	Issue 6194 session restore resume cwd
+6460	sidebar	2026-06-20	Fix title-churn beachball in transcript adoption and sidebar rows
+6461	session	2026-06-21	Avoid nested quit confirmation modal loops
+6473	session	2026-06-22	Fix stale Claude notification sidebar status
+6477	input	2026-06-22	Fix Cmd+grave show/hide global hotkey
+6515	session	2026-06-20	Fix zsh aliases after agent return shell
+6552	sidebar	2026-06-22	Reduce redundant panel title update work
+6558	sidebar	2026-06-22	Fix sidebar row-height layout feedback
+6559	browser	2026-06-22	Avoid DevTools teardown during redock
+6566	browser	2026-06-22	Fix audio indicator audibility signal
+6580	browser	2026-06-22	Fix main app-host shard regressions
+6581	session	2026-06-22	Fix stale surface-to-panel rebinding
+6582	session	2026-06-22	Fix stale agent resume executable paths
+6589	render	2026-06-22	Fix hidden popover relayout during SwiftUI updates
+6591	input	2026-06-22	Cache settings search index per runtime
+6592	render	2026-06-22	Fix portal hit-test CPU on pointer movement
+6596	session	2026-06-22	Fix crash diagnostic window restore
+6605	socket	2026-06-22	Fix explicit surface routing for read-screen and send
+6609	session	2026-06-23	Fix Codex sidebar status lifecycle
+6613	render	2026-06-23	Fix sidebar lag regression since v0.64.16 (#6612): cut per-row font-modifier + pin-state work
+6621	input	2026-06-23	Fix Cmd+T opening in home after agent-resume session restore (#6617)
+6627	input	2026-06-23	Fix sidebar tab selection highlight timing
+6653	render	2026-06-23	Fix oversized surface tab width — make tabs hug their content (#6652)
+6678	sidebar	2026-06-23	Bump Sparkle to 2.9.3 to fix auto-update agent kill on macOS 26
+6712	session	2026-07-06	Fix Codex session restore authority after 0.64.17
+6728	session	2026-06-26	Fix macOS 27 symbol launch crash
+6756	browser	2026-06-30	Fix browser downloads from subframes
+6757	input	2026-06-25	fix(cli): default workspace-scoped commands to the caller's workspace, not the focused one
+6786	layout	2026-06-26	Fix tab bar modifier-hold layout shift
+6801	input	2026-07-02	Decouple scroll from full-window relayout (drop NSWindow.didUpdate follow-up wake)
+6804	sidebar	2026-06-29	Fix stale sidebar agent status refresh
+6812	input	2026-07-02	Fix tab bar width shift on surface focus
+6815	perf	2026-06-29	Fix zsh shell integration printing `file exists` under noclobber (#6714)
+6818	browser	2026-06-29	Browser: don't let unfocused omnibar submit on physical Enter (#6250)
+6837	input	2026-06-29	Bound app termination with a force-exit watchdog (#6758)
+6860	socket	2026-06-29	Never park the main thread waiting on a socket callback (#5830)
+6862	browser	2026-06-26	Fix Cmd+I (Show Notifications) breaking italics in browser text editors
+6886	session	2026-06-29	Fix notification-list layout thrash on launch (#5794)
+6890	session	2026-06-29	Fix macOS 27 launch crash in restore-path content views (#6745)
+6896	render	2026-06-29	Fix light-theme white-on-white from host/surface theme divergence (#6411)
+6923	input	2026-09-26	fix: join soft-wrapped rows when copying terminal text
+6960	sidebar	2026-07-28	Fix desktop notification permission settings row
+7010	session	2026-06-29	Fix Claude shim mutual exec loop
+7038	browser	2026-06-29	Fix browser webview divider resizing
+7040	browser	2026-06-29	Fix browser mTLS client certificate challenges
+7076	layout	2026-06-30	Fix minimal mode toggle relayout hang
+7089	session	2026-06-30	Fix oh-my-zsh agent auto-resume
+7117	input	2026-06-30	Fix sidebar scroll render storm
+7165	session	2026-07-02	Rescue split/new-tab cwd inheritance while a resumed agent holds the pane (#7155)
+7174	sidebar	2026-07-05	Fix NIGHTLY update never installing (Update Available loop)
+7182	layout	2026-07-14	Bound background-prime workspace mounts to fix main-thread stall with many agent panes (#7136)
+7183	render	2026-07-04	Fix malformed LC_ALL collapsing spawned-shell locale to C (#7152)
+7228	input	2026-07-06	Fix agent hooks misrouting notifications/status/summary to the focused tab
+7278	input	2026-07-10	Reassert Ghostty focus before physical input
+7308	layout	2026-07-08	Fit main windows after display topology changes
+7352	session	2026-07-07	Fix Fork Conversation live agent availability
+7400	input	2026-07-06	Fix workspace drag pasteboard deadlock
+7437	input	2026-07-08	Fix Codex Security scan findings
+7468	browser	2026-07-08	Fix browser omnibar suggestion clicks falling through to the web view
+7487	browser	2026-07-07	Fix stale browser portal and stuck omnibar dropdown after closing a browser panel
+7497	render	2026-07-07	Fix terminal path fragments opening as HTTPS URLs
+7499	render	2026-07-07	Revert "Fix terminal path fragments opening as HTTPS URLs"
+7533	browser	2026-07-09	Fix browser panes stuck black after a failed discard-restore
+7545	sidebar	2026-07-08	Fix sidebar workspace close hover reconciliation
+7551	sidebar	2026-07-08	Fix stale delete group membership confirmation
+7598	input	2026-07-08	Fix undo shortcut crash routing
+7634	browser	2026-07-09	Route browser-pane file drops by intent so they never silently become previews
+7637	render	2026-07-08	Fix tab icon shift during pane resize
+7698	input	2026-07-09	Fix zh-Hant showing as zh-Hans: own AppleLanguages writes and apply language selection at change time
+7729	render	2026-07-09	Fix macOS 15 blank icon rendering
+7740	render	2026-07-10	Fix stale terminal agent tab icons
+7749	socket	2026-07-10	Fix typed window handles in CLI window commands
+7754	sidebar	2026-07-10	Fix sidebar hang during sustained process-title churn
+7763	render	2026-07-10	Fix shared Ghostty custom shaders rendering black terminals
+7778	render	2026-07-10	Revert "Fix shared Ghostty custom shaders rendering black terminals"
+7789	session	2026-07-10	Fix shell-integration socket sends: pin BSD nc (GNU nc silently drops the hook channel)
+7815	render	2026-07-10	Fix never-green windows-gnu CI: ghostty-vt static lib name + remove committed mux/target
+7816	input	2026-07-10	Make pane-divider resize cursors easier to hit and stop cursor bleed-through from occluded windows
+7824	session	2026-07-10	Restore terminal-only tab icons
+7900	session	2026-07-11	Fix Claude bridge branch and resume failures (#7882)
+7901	input	2026-07-14	Fix notification scroll restoration (#7897)
+7909	input	2026-07-12	Fix command palette outside-click dismissal lifecycle
+7917	browser	2026-07-12	fix: taller-than-pane webviews open un-scrollable until a real resize (#7895)
+7946	sidebar	2026-07-14	Resolve agent notification targets from live identity at delivery time
+7952	sidebar	2026-07-13	Stabilize sidebar ports across transient scan misses
+7953	session	2026-07-13	Fix #7947: keep Claude hooks authorized after socket rebinds
+7963	session	2026-07-13	fix: claude-hook success stdout renders as a visible OK block in Claude Code — emit a silent JSON ack
+7997	layout	2026-07-14	Fix #7975 tab bar relayout feedback loop
+8039	session	2026-07-14	Restore titlebar icon sizing
+8045	session	2026-07-15	Preserve Codex YOLO permissions across resume repair
+8067	sidebar	2026-07-15	Replace per-row sidebar hover reconcilers with a single pointer owner
+8070	session	2026-07-14	Preserve Claude permission mode across session restore
+8071	input	2026-07-14	Fix overflowing tab selection scroll and chrome alignment
+8077	browser	2026-07-14	Fix browser eval numeric value formatting
+8079	browser	2026-07-15	Fix browser Space key canonicalization
+8084	sidebar	2026-07-15	Fix title-churn typing latency
+8110	input	2026-07-15	Fix Cmd-click for soft-wrapped URLs
+8115	render	2026-07-15	Fix visible popover resize crash
+8123	socket	2026-07-15	Fix typing-latency instrumentation: probe redaction, probe attribution, CGEvent-backed key simulation
+8133	session	2026-07-16	Preserve Codex --yolo across session restore
+8155	input	2026-07-15	Harden title-churn lifetimes and shortcut cache refresh
+8168	render	2026-07-15	Fix automatic terminal top inset
+8190	input	2026-07-16	Fix unauthenticated GitHub sidebar polling
+8193	layout	2026-07-15	Fix inconsistent table border thickness
+8195	render	2026-07-15	Fix animated update popover resize reentrancy
+8211	input	2026-07-16	Fix sidebar scroll layout livelock
+8226	input	2026-07-19	Fix sidebar GitHub polling lifecycle regressions
+8234	render	2026-07-16	Fix CmuxTerminal package test linking
+8240	render	2026-07-16	Coalesce terminal resizes during split-divider drags
+8250	session	2026-07-16	Fix capped session pane interaction paths
+8272	socket	2026-07-16	Fix Intel macOS 14 compatibility verification
+8296	sidebar	2026-07-17	Bound overflowing confirmation dialog content
+8366	input	2026-07-17	Lawrence Sidebar: consolidated dogfood fixes (badge centering, selection coalescing, Equatable boundary, hover enforcement, highlight width)
+8437	socket	2026-07-19	Fix stable IDs in mirror workspace CLI output
+8506	browser	2026-08-04	Fix three browser bugs surfaced by repairing the Browser test suites
+8513	sidebar	2026-07-22	Fix Settings and main window zombies under AeroSpace
+8528	browser	2026-07-21	Fix sidebar status URL clicks
+8537	session	2026-09-11	Prevent prompt-submit hook timeouts with bounded queued delivery
+8540	render	2026-07-22	Fix renderer presentation for background-created surfaces
+8549	session	2026-07-21	Fix identify caller recovery for restored shells
+8567	session	2026-08-25	Fix retained closed window contexts and PTY respawn
+8601	browser	2026-07-22	Fix browser navigation for terminal-wrapped URL pastes
+8615	session	2026-07-22	Fix DispatchWorkItem chain stack overflow
+8619	session	2026-07-22	Stop firing duplicate agent resumes on relaunch
+8626	render	2026-07-24	Fix sidebar reopen cutoff render
+8631	sidebar	2026-08-26	Settings load writes UserDefaults when nothing changed, and pays for it twice over
+8656	render	2026-08-04	Skip an inherited terminal surface the registry no longer owns
+8659	perf	2026-07-22	Fix: exclude .attrib from watched filesystem events
+8675	session	2026-07-24	Fit same-display restored windows to visible bounds
+8687	session	2026-07-23	Fix restored resume workspace titles
+8688	input	2026-07-24	Fix TextBox IME composition rendering
+8693	socket	2026-07-28	Fix blocking Pi extension hook dispatch
+8695	session	2026-07-23	Preserve workspace IDs across session restore
+8699	input	2026-07-27	Fix foreground scope for Global Search shortcut
+8705	browser	2026-08-04	Open a browser at the end of the tab strip, not one slot short
+8753	session	2026-08-04	Close only the workspaces a tab manager actually owns
+8793	render	2026-07-24	Prevent workspace switch renderer freezes
+8794	layout	2026-07-24	Fix tab drops across full tab bar
+8838	input	2026-08-12	Keep screenshot paste preparation off the main thread
+8848	render	2026-07-25	fix: eliminate Ghostty terminal typing lag
+8853	input	2026-07-24	Fix focus history shortcut rebinding
+8892	sidebar	2026-07-26	Fix current main Swift CI regressions
+8927	input	2026-07-27	Focused-read indicator survives surface-scoped mark-read again
+8964	render	2026-07-27	Fix zsh prompt wrap spacer lines
+8966	layout	2026-07-27	Fix disabled workspace cwd inheritance
+8967	render	2026-07-27	Fix blank panes after skipped initial layout
+8995	input	2026-07-28	Fix Vim Mode cursor and selection rendering
+8998	render	2026-07-30	Reclaim hidden Ghostty renderer memory
+9000	render	2026-07-28	Fix leaked openThread loops burning ~90% of cmux idle CPU
+9031	input	2026-07-28	Fix sticky workspace identity leaking into Cmd+N
+9037	sidebar	2026-07-28	Fix first-open Fork Conversation tab menu availability
+9046	layout	2026-07-29	fix: complete goto_split previous/next pane cycling
+9054	browser	2026-07-28	Fix browser UA compatibility without blurring Google Sheets
+9063	render	2026-07-28	Fix occasional dim terminal text after appearance changes
+9077	perf	2026-07-28	Fix detached shell reports under cmuxOnly
+9084	input	2026-07-28	Fix TextBox selection replacement under refresh churn
+9087	browser	2026-07-29	Fix terminal Find Next navigation
+9111	render	2026-07-29	Prevent stalled remote PTY starts and bound wedged reattach loops
+9117	render	2026-07-29	Fix main-thread livelock under saturated terminal output
+9185	session	2026-07-30	Fix Codex resume notification rebinding
+9187	perf	2026-07-30	Fix subprocess pipe descriptor leaks
+9211	render	2026-07-30	Fix hanging cmux theme picker
+9233	socket	2026-07-31	fix: clear Xcode 26.3 warning gate
+9239	browser	2026-07-31	Fix BrowserPanel unused-result compile errors blocking CI
+9244	layout	2026-09-06	Fix intermittent warm workspace switch latency
+9281	browser	2026-08-01	Fix partial blank browser screenshots
+9282	session	2026-08-01	Fix sender-relative key-window routing for restored windows
+9288	layout	2026-07-31	Fix pinned workspace grouping and group reordering
+9296	browser	2026-07-31	Fix configurable browser and focus Back/Forward shortcuts
+9323	browser	2026-08-01	fix: close browser handoff cleanup races
+9324	sidebar	2026-08-05	Retire stale sidebar port badges despite vanished TTYs, privileged owners, and zombies
+9333	socket	2026-08-30	Fix stale socket terminal surface bindings
+9358	render	2026-08-10	Fix sidebar-triggered main-actor terminal teardown hang
+9370	session	2026-08-01	Fix restoring Codex sessions across relaunch generations
+9397	session	2026-08-02	Fix Kimi restore-of-restore binding kind decoding
+9398	layout	2026-08-03	Fix tab drag reorder to middle positions
+9399	session	2026-08-02	Preserve Pi resume identity across repeated restores
+9420	perf	2026-08-03	Fix noclobber 'cannot overwrite existing file' error from bash shell integration
+9422	layout	2026-08-03	Fail closed for stale destructive surface targets
+9452	session	2026-08-03	Include Pi session titles in notifications
+9477	session	2026-08-04	Reject unknown flags for surface resume set
+9483	browser	2026-08-04	Fix infinite UA-policy restart loop on Google Sheets destinations
+9486	render	2026-08-04	Stop blank Ghostty opener stderr log bursts
+9536	browser	2026-08-04	Use current Safari identity for Google Sheets
+9549	session	2026-08-04	Fix Pi fork probes without slowing Pi hooks
+9576	browser	2026-08-04	browser: integrate headless suite fixes against current main
+9613	sidebar	2026-08-11	Give SidebarRowTextView ownership of link styling so selected-row description links stay readable
+9621	session	2026-08-05	Preserve workspace titles during session restore
+9627	session	2026-09-25	Fix startup-race crash in v2RefreshKnownRefs against a half-restored session (#2751)
+9630	sidebar	2026-08-06	Fix beachball: bound every UNUserNotificationCenter call so a wedged usernotificationsd can't deadlock the main thread
+9631	session	2026-08-05	Fix restore caller surface resolution
+9734	input	2026-08-11	Fix literal tildes in terminal-inserted paths
+9744	browser	2026-08-07	Fix browser popover appearance contrast
+9749	session	2026-09-04	Preserve recoverable windows in session snapshots
+9754	input	2026-08-10	Fix drag-to-split cursor focus reconciliation
+9764	render	2026-08-10	Fix surface-scoped terminal theme reload ordering
+9765	layout	2026-08-07	Fix horizontal tab strip insertion positions
+9773	browser	2026-08-11	Fix reentrant browser portal layout poisoning
+9774	browser	2026-08-12	Keep browser portal refreshes below SwiftUI
+9776	session	2026-08-11	Keep background attention from raising Stage Manager windows
+9777	session	2026-08-08	Stop AX snapshots from retaining transient windows
+9780	session	2026-08-07	Fix duplicate Codex hook channels and watchdog leaks
+9781	input	2026-08-11	Keep cmux's bundled open shim first on PATH
+9794	browser	2026-08-08	Fix browser pane Cmd+Z/Cmd+Shift+Z: perform undo/redo on a per-web-view undo manager
+9796	render	2026-08-08	Make cold PTY spawn unstarvable: reclaim bootstrap-window custody, bound the shim gate, unpin prime slots, surface queued sends (#9769)
+9808	input	2026-08-08	Resolve NFD Hangul clusters via canonical composition for font selection
+9854	sidebar	2026-08-11	Fix sidebar workspace-switch layout reentry
+9921	render	2026-08-11	Prevent recursive deferred-action release chains
+10018	session	2026-08-12	Revert portal hierarchy mutation tracker launch crash
+10021	input	2026-08-12	Preserve focus when closing an unfocused pane
+10035	layout	2026-08-12	Fix intermittent dragging for wide tabs
+10038	layout	2026-08-12	Fix pane tab drags silently never starting (#10033)
+10058	session	2026-08-13	Fix stale control-socket rebind and restore startup race
+10074	sidebar	2026-08-13	Fix native sidebar row ownership during layout
+10089	render	2026-08-13	Fix sidebar leading-edge clipping after resize
+10100	session	2026-08-14	fix: verify Codex resume binding ownership
+10117	session	2026-08-14	Include `claude attach` in `claude_builtin_command_name`
+10133	render	2026-08-14	fix: bound sidebar git status watching
+10169	sidebar	2026-09-26	Keep a collapsed sidebar group folded when the workspace below it closes
+10175	session	2026-08-15	Make Claude SessionStart the sole owner of fork session identity
+10177	browser	2026-08-15	Fix browser omnibar absolute local file paths
+10223	render	2026-08-16	Fix double-open: deliver each terminal open event to exactly one handler
+10224	browser	2026-08-17	Fix browser chrome appearance authority across focus transitions
+10234	socket	2026-08-17	Fix nightly macOS Release compile on main
+10248	input	2026-09-25	Honor ui.newWorkspace.action for sidebar empty-area double-click
+10293	session	2026-08-22	Fix Claude wrapper settings re-entry loop
+10335	session	2026-08-19	Fix false needs-attention on Claude SubagentStop
+10343	session	2026-09-27	Stop a finished Claude subagent from flipping the pane to needs-input
+10347	session	2026-09-27	fix: record why a launch capture was rejected, not just that it was
+10351	sidebar	2026-09-25	fix: keep spinner titles animating without waking the app on every frame
+10363	input	2026-08-19	Fix terminal Copy Mode selection scope across split panes
+10440	session	2026-09-27	fix: record launch capture rejection reasons
+10452	input	2026-08-19	Fix Option-only shortcut bindings for arrows and text
+10454	browser	2026-08-19	Fix Cmd-click URL double routing to Finder
+10460	browser	2026-08-24	fix(browser): default toolbar actions to overflow menu
+10480	browser	2026-08-21	Prevent browser crash on duplicate Google query parameters
+10489	input	2026-08-22	Preserve terminal scrollback across pane resize
+10492	render	2026-08-22	Fix white-on-white chrome icons for translucent themes in light windows
+10510	render	2026-08-21	fix: bound terminal title propagation before AppKit (#10507)
+10549	layout	2026-08-22	Fix SF Symbol materialization during window layout
+10552	render	2026-08-22	Fix sidebar drag validation main-thread hangs
+10558	socket	2026-08-22	perf: move control-socket connections and reads off-main
+10564	sidebar	2026-09-08	perf: make reload-config surface fanout incremental
+10567	browser	2026-08-22	Prevent WebKit navigation decision handler crashes
+10569	render	2026-09-27	fix(spm): resolve GhosttyKit/GhosttyRuntimeTestStubs target name collisions
+10584	layout	2026-08-22	Revert "Fix SF Symbol materialization during window layout"
+10591	sidebar	2026-08-23	Fix degraded SF Symbol rasterization after #10549
+10626	browser	2026-08-24	fix(browser): scope cookie clears by URL
+10627	render	2026-08-24	Fix NSColor darken crash for non-RGB colors
+10628	browser	2026-08-27	fix(browser): preserve HttpOnly cookies set via RPC
+10633	sidebar	2026-08-27	Fix stale sidebar port badges
+10634	browser	2026-09-01	fix(browser): honor URLs that must open externally
+10661	render	2026-09-03	fix(history): stop idle History menu graph rebuild loop
+10665	browser	2026-08-25	fix(browser): keep Copy Image JavaScript callbacks safe
+10670	input	2026-09-26	fix: keep cmux shell prompts on a block cursor
+10712	socket	2026-09-24	Fix cmux events access-denied stream error
+10773	session	2026-09-03	Fix aggregate child memory pressure before compressor exhaustion
+10804	session	2026-08-27	Fix stale native drag sessions disabling pane and workspace drags
+10820	input	2026-08-26	fix: restore nightly CLI compilation after Cursor approvals
+10822	sidebar	2026-08-26	fix: disambiguate notification cleanup inference
+10823	session	2026-08-27	fix: restore Codex sessions without stale child bindings
+10835	input	2026-09-26	Preserve native resize cursors at main window edges
+10838	session	2026-08-28	Fix premature Codex completion notifications
+10846	session	2026-08-27	fix: restore session snapshot after crash (#9825)
+10856	render	2026-09-25	fix(portal): ask bonsplit which pane owns a tab instead of scanning
+10901	render	2026-08-27	Fix macOS privacy prompts for terminal child processes
+10922	render	2026-08-27	Present terminal renderers in on-screen windows that never report an occlusion .visible bit (fixes the display-liveness CI regression from #10815)
+10959	socket	2026-08-27	Integrate Escape passthrough fix from PR #9810
+10967	render	2026-09-25	fix: make window-chrome separators visible in light mode
+11006	browser	2026-08-30	fix: stage browser-heavy session restore (#10786)
+11035	layout	2026-09-24	Reap disowned shell watchers on parent PID reuse (issue 10926)
+11050	socket	2026-08-31	Escape uncreatable socket state directory to /tmp; dedupe listener-failure captures per episode
+11051	socket	2026-08-31	CLI Sentry: per-failure-class fingerprints, mute Not-connected race, throttle timeouts
+11059	input	2026-09-01	Hand keyboard focus to the opened panel after a right-sidebar file drop
+11088	browser	2026-09-01	Fix cmux-browser skill surface command sync
+11186	session	2026-09-01	Fix workspace drag sessions that wedge Mission Control
+11224	session	2026-09-01	Fail closed when notification pane identity is unproven
+11254	input	2026-09-04	fix: keep double-click word selection anchored during drag
+11316	input	2026-09-01	Fix macOS compile break from #11224 (GhosttySurfaceScrollView has no terminalSurface)
+11349	input	2026-09-04	Fix SGR mouse button routing on focus clicks
+11358	session	2026-09-08	Prevent autoresume from duplicating live agent sessions
+11442	socket	2026-09-01	fix: clear Swift warning budget regressions
+11476	sidebar	2026-09-25	Tell the user why a file upload failed
+11515	input	2026-09-03	Fix native terminal Copy honoring Ghostty clipboard flavor
+11527	session	2026-09-02	Fix Pi reload CSI query response routing
+11528	render	2026-09-02	Fix transient PTY resizes during workspace reveal
+11529	session	2026-09-02	fix: persist hook event and clear stale session summaries
+11530	render	2026-09-03	Fix terminal text bleed during live window resize
+11720	socket	2026-09-02	Fix cmux-cli compile error on main: hookEventName argument order
+11887	render	2026-09-03	Revert "Fix terminal text bleed during live window resize"
+11931	browser	2026-09-06	Fix trusted browser arrow-key input
+11954	render	2026-09-30	Fix blank terminal surface after completion notification
+11972	session	2026-09-05	fix(computer-use): require explicit setup and skill installation
+11976	session	2026-09-08	Unify semantic agent notification admission and replay protection
+11999	socket	2026-09-05	Fix nightly macOS build: repair what the #11789 squash merge broke
+12009	render	2026-09-25	fix(portal): repaint the divider overlay only when it could have changed
+12053	input	2026-09-21	Fix window frame repair and restore strict app-host CI
+12056	input	2026-09-06	Fix SwiftUI dynamic text selection hangs
+12057	input	2026-09-06	Fix corrupted PATH bytes in terminal panes
+12062	session	2026-09-08	Fix Codex native titles not reaching terminal tabs
+12066	render	2026-09-25	Honor Ghostty split-divider-color in cmux panes
+12115	session	2026-09-10	Fix Pi resume bindings so relaunch restores keep working
+12167	layout	2026-09-09	Let only a control under the pointer veto a pane tab drag; hit-test window points in the right coordinate space (#12152 follow-up)
+12178	session	2026-09-09	Refit native fullscreen windows after display topology changes
+12210	render	2026-09-11	Fix terminal colors and pane clipping
+12235	render	2026-09-10	fix: isolate Ghostty numeric locale from CoreUI symbol crashes
+12237	browser	2026-09-10	Fix DOMRect crashes in browser.eval on macOS 15
+12277	socket	2026-09-10	Fix Nightly Freestyle machine creation
+12283	sidebar	2026-09-10	Updater: finish delayed Sparkle callbacks on cancel
+12298	sidebar	2026-09-11	fix: keep main windows out of fullscreen tiling
+12310	render	2026-09-11	Prevent terminal flicker and delayed nested layout on workspace switches
+12329	render	2026-09-11	Revert "Fix terminal colors and pane clipping"
+12343	render	2026-09-13	Fix terminal link routing and Option dead-key input
+12397	layout	2026-09-26	Fix goto_split skipping adjacent column
+12401	input	2026-09-26	fix: report goto_split failure at pane edges
+12414	render	2026-09-13	Fix stale portal layers after workspace switches
+12436	session	2026-10-01	fix(session): discard persisted listening ports on restore
+12455	sidebar	2026-09-13	Fix Agent notification semantics CI reliability
+12473	sidebar	2026-09-13	Fix NIGHTLY passive update pill discovery
+12503	socket	2026-09-13	Fix CLI closed-pipe crashes and disconnect telemetry
+12519	browser	2026-09-13	Fix WebKit WebContent attach crash in browser panes
+12521	render	2026-09-13	Fix stable layout reentrant hangs during workspace and portal churn
+12570	input	2026-09-14	Fix Cmd+Z stale undo target crash (#7272)
+12594	sidebar	2026-09-14	Fix current main Swift compile errors
+12607	input	2026-09-21	Retire inactive terminal portal views while preserving sessions
+12623	session	2026-09-25	Session snapshots can send binding actions to ghostty on a surface that is no longer live
+12659	session	2026-09-15	fix: remove stale Codex resume helper call
+12697	session	2026-09-15	Fix recursive Codex autoresume after nightly regression
+12725	render	2026-09-21	Prevent reentrant geometry reconciliation and diagnose terminal hang phases
+12752	browser	2026-09-17	Preserve image attachments when dropping or pasting into terminals
+12783	render	2026-09-18	Fix checklist remove button rendering and hover
+12796	session	2026-09-17	Fix terminals garbling after restore: exec resumed agents with the default signal state
+12812	render	2026-09-17	Fix light terminal defaults with non-color Ghostty settings
+12817	input	2026-09-25	Fix Copy Mode scrollback and app-host lifecycle regressions
+12822	session	2026-09-25	Fix Codex writer ownership during quit and restore
+12834	browser	2026-09-25	fix: bound sidebar snapshots and remove blocking discovery
+12842	socket	2026-09-17	Fix dropped socket-send bytes and GHOSTTY_BIN_DIR use-after-free (ghostty bump)
+12853	layout	2026-09-25	fix: keep split zoom when the zoomed pane outlives a tab close
+12929	sidebar	2026-09-20	Fix non-glass overlay hosting that disrupts Minimal Mode chrome
+12990	session	2026-09-24	Fix persistent LaunchServices registration from duplicate plist keys
+12997	input	2026-09-25	Fix Option dead-key composition in terminal
+13003	browser	2026-09-19	Fix browser refresh losing failed navigation requests
+13009	session	2026-09-20	Bound automatic terminal titles before session persistence
+13015	input	2026-09-25	fix: resolve the terminal Copy guard through the Command-aware keyboard layout (#10872)
+13018	input	2026-09-25	fix: defer Cmd+Q termination so terminateLater cleanup can run (#10788)
+13057	session	2026-09-24	Fix Codex monitor RSS growth during transcript updates
+13191	render	2026-09-20	fix: update Ghostty environment lifetime fix
+13214	socket	2026-09-22	fix: fail closed on aliased RPC target selectors
+13228	sidebar	2026-09-21	Fix sidebar workspace creation window routing
+13229	socket	2026-09-22	fix: close control socket recovery races
+13292	socket	2026-09-21	fix: wait for control socket dispatch sources before close
+13301	input	2026-09-25	Fix SIGSEGV in open wrapper on multibyte arguments
+13376	browser	2026-09-21	Fix native browser click routing through portal overlays
+13404	socket	2026-09-24	Move split terminals in the same transaction as the bonsplit tree update (#13387)
+13574	render	2026-09-22	Retire stale zoom intent after external resize
+13581	input	2026-09-22	Fix Japanese IME Backspace during conversion
+13583	input	2026-09-22	Honor quit preference after last terminal exits
+13586	session	2026-09-22	Fix Claude SessionStart lifecycle after /clear
+13590	session	2026-09-22	Honor Claude integration toggle for wrapper shims
+13606	session	2026-09-22	Fix Codex monitor RSS growth on current main
+13633	session	2026-09-22	Prevent short control refs from rebinding after restart
+13688	sidebar	2026-09-22	Fix workspace reorder crash for a pinned group's anchor
+13704	session	2026-09-22	Control socket: never present resume approval UI from surface.resume.set (#13369)
+13728	layout	2026-09-23	fix: report the submitted prompt length, not the truncated preview's
+13826	session	2026-09-23	Fix Claude subcommand dispatch with cached command discovery
+13843	socket	2026-09-23	Fix validation of unresolved workspace reorder targets
+13845	session	2026-09-27	Fix duplicate-instance handler terminating unrelated helpers
+13877	layout	2026-09-25	fix(control): honor color/icon keys and validate hex in workspace.group.set_color/set_icon
+13888	socket	2026-09-25	fix(events): survive receive-timeout reconfiguration churn during replay
+13891	session	2026-09-24	Fix deterministic Codex auto-resume admission
+13947	perf	2026-09-23	fix(web): let the Vercel ignore step see the previous deployment
+13961	socket	2026-09-23	Name the workspace that workspace.reorder could not resolve
+13964	socket	2026-09-24	Resolve CLI workspace refs without requiring --window
+13968	input	2026-09-23	Mirror terminal focus before the runtime surface exists
+14045	socket	2026-09-24	Fix original prompt length in hook event telemetry
+14058	render	2026-09-24	Stop unrelated defaults writes and pane geometry changes from re-evaluating chrome-heavy views
+14062	session	2026-09-24	fix: drop a restored agent's tab mark once the agent quits
+14116	session	2026-09-24	Fix terminal session flicker on display changes
+14130	session	2026-09-24	Fix main compile: read matchingObservation after its declaration in Workspace restore check
+14276	input	2026-09-24	fix(focus): defer every terminal focus reassertion until surface geometry is usable
+14297	render	2026-09-24	fix(portal): flush the coalesced live-resize pass on its first hop
+14334	socket	2026-09-25	test: stop the CLI no-socket regression waiting 90 s for an app it never starts
+14406	sidebar	2026-09-25	test: fix the dead-key crash and sidebar AX walk failing on main
+14412	session	2026-09-27	Restore legacy Subrouter Claude sessions through the proxy
+14419	session	2026-09-25	fix: keep unknown agent liveness unknown on session restore
+14442	render	2026-09-25	Only treat runs of "?" as lost plain text when pasting
+14502	browser	2026-09-28	fix(browser): render local UTF-8 text correctly
+14508	input	2026-09-28	Fix Ghostty tab and window keybindings
+14522	socket	2026-09-28	fix: bring Pi agent integration to parity
+14582	input	2026-09-30	Fix Cmd+I notifications popover anchor
+14646	browser	2026-09-26	Keep active pane border aligned when split zoom changes pane bounds
+14653	input	2026-09-25	Fix extra spacing in Korean fallback glyphs
+14661	socket	2026-09-25	fix: make the event-stream reconnect decision a value so package-conventions-lint passes
+14673	socket	2026-09-25	Start a never-shown terminal before surface.read_text and read_screen
+14698	socket	2026-09-25	Report the closed surface's own ref from surface.close
+14704	layout	2026-09-25	Keep closePanel's unmapped fallback from closing another panel's tab
+14706	input	2026-09-25	close-surface: reject a blank --workspace or --window
+14784	session	2026-09-26	Fix main-thread deadlock in session autosave via ghostty_surface_needs_confirm_quit
+14786	input	2026-09-26	Fix TextBox IME replacement range crash
+14787	session	2026-09-26	Code session snapshots on a main-sized stack to fix deep split SIGBUS
+14810	input	2026-09-26	cmux welcome: point at live shortcuts instead of a fixed list
+14812	session	2026-09-27	fix(claude-wrapper): stop leaking injected NODE_OPTIONS through a native claude
+14824	session	2026-09-26	Keep rotated session snapshots and hold back poorer early saves
+14831	session	2026-09-26	Stop other bundles and scripts from killing the running cmux
+14841	render	2026-09-27	Resolve a separate sidebar's content against its own backdrop
+14847	render	2026-09-26	Stop shell integration spawning for disabled features before the first prompt
+14860	session	2026-09-27	Fix prediction echo misses on sgr0 and bound keys, keep pinned-group windows on restore
+14888	render	2026-09-27	test: free the remaining hosted test terminals and scope the portal leak check
+14892	input	2026-09-27	Keep the unfocused-pane dim in step with focus when a pane is revealed
+14971	session	2026-09-27	Keep agent resume bindings through the update-relaunch save
+15121	layout	2026-09-28	Fix tab hover landing on the first tab
+15133	session	2026-09-29	Fix Codex fork session binding
+15255	socket	2026-09-29	fix(bash): keep $? for PROMPT_COMMAND hooks after cmux's
+15369	render	2026-09-28	fix: keep the terminal area when the window is too narrow for the side panels
+15422	sidebar	2026-09-28	Fix split-space admission after sidebar pane changes
+15520	render	2026-09-30	Fix live terminal surfaces that never present a frame
+15550	render	2026-09-29	Fix pane drop target rendering in the wrong pane
+15565	input	2026-09-30	Fix Feature Flags window trapping Cmd-` and ignoring Cmd-W
+15567	session	2026-09-29	fix: settle Codex monitor completions before owner check
+15603	session	2026-09-29	fix: settle Claude Stop reentry after hook block
+15612	session	2026-09-29	Fix Codex monitor recovery during transient owner loss
+15738	render	2026-09-30	fix(input): consume keys while terminal runtime is unavailable
+15756	sidebar	2026-09-29	Fix updater badge icon disappearing intermittently
+15764	session	2026-09-30	fix: rerun configured command after missing remote session
+15788	render	2026-09-30	Revert "Fix live terminal surfaces that never present a frame"
+15848	render	2026-09-30	fix(input): preserve C1 terminal control replies
+15849	render	2026-09-30	fix(input): preserve SOS terminal replies
+15887	sidebar	2026-09-30	fix: keep agent status running while hooks show activity
+15893	sidebar	2026-09-30	fix(sidebar): cut with an ellipsis character so a reference cannot re-parse
+15913	session	2026-09-30	fix(codex): arm the transcript monitor's watch before it reads
+15928	input	2026-09-30	Fix send-key Ctrl-letter input for Kitty keyboard protocol
+15930	session	2026-09-30	fix: restore the bonsplit pin main's sizing code needs
+15957	layout	2026-09-30	Fix narrow pane tab close UX
+15974	sidebar	2026-09-30	fix: clear agent notification ring after answer
+15980	socket	2026-09-30	fix(cli): reject extra send-key operands
+16098	browser	2026-10-01	fix(cli): list browser JSON flags in help
+16182	session	2026-09-30	fix: ignore duplicate panel IDs during session restore
+16204	browser	2026-09-30	Fix browser state restoration ordering
+16205	browser	2026-09-30	Fix browser state helper package convention
+16260	session	2026-09-30	fix: restore main compile (OpenCodePaths in CLI, Codex auto-naming scope)
+16261	render	2026-10-01	Bump Bonsplit: fix narrow-pane rendering test assumptions
+16371	session	2026-10-01	fix(codex): preserve multiline TOML strings during hook edits
+16378	session	2026-10-01	fix(codex): keep multiline closes visible after comments
+16408	sidebar	2026-10-01	fix: unblock main CI (settings compile, bonsplit tests)

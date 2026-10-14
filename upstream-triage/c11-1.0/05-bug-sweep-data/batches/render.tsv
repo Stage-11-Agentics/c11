@@ -1,0 +1,142 @@
+pr	batch	merged	title
+1308	render	2026-03-25	Fix Ghostty font-family fallback chain regression
+1826	render	2026-03-21	fix: AppleScript count windows returns 0 + working directory returns empty
+1837	render	2026-03-20	Fix terminal pane drag/drop handoff delay
+1858	render	2026-03-21	fix: apply background-opacity and background-blur to terminal rendering area (#879)
+1915	render	2026-03-23	Fix #1870: prevent split crash on Intel Macs caused by stale font pointer
+1937	render	2026-03-23	Fix terminal black screen on macOS 26.3.1 by dispatching Ghostty callbacks to main thread
+1957	render	2026-03-23	Fix Escape key not working in terminal panels (e.g. lazygit)
+1964	render	2026-03-23	Fix blank terminal renders after workspace switches
+2018	render	2026-03-25	fix: increase contentSideHitWidth to prevent accidental window resize
+2101	render	2026-03-25	fix: guard inherited terminal config against stale surfaces
+2179	render	2026-03-27	Fix Intel second-surface config inheritance crash
+2241	render	2026-03-28	Fix #1793: skip CJK fallback injection when font-family already covers glyphs
+2267	render	2026-03-28	Revert "Fix Intel second-surface config inheritance crash"
+2305	render	2026-03-28	Defer layout follow-up flush to avoid re-entrant displayIfNeeded crash
+2413	render	2026-04-01	Fix stray 'C' insertion from Speakly dictation
+2613	render	2026-04-06	Keep prompt colors when switching local TERM to xterm-256color
+2622	render	2026-04-06	Fix sidebar bg: add missing locale entries and portal resync
+2658	render	2026-04-07	Hide stale startup workspace portals during teardown
+2813	render	2026-04-12	fix: allow symlinked Ghostty config files
+2840	render	2026-04-13	Fix blank split panes after portal reveal
+2855	render	2026-04-13	Fix macOS modifier desync causing idle terminal input corruption
+3034	render	2026-04-20	Fix DebugEventLog NSFileHandle ObjC exception crash
+3048	render	2026-04-20	Fix terminal blanking after OSC completion notifications
+3055	render	2026-04-22	Fix minimal-mode traffic-light inset and new-window Bonsplit tab bar
+3150	render	2026-04-29	Fix minimal mode window routing and portal hit testing
+3152	render	2026-04-25	Keep selected workspace visible in sidebar
+3155	render	2026-04-25	Hide portals for unmounted workspaces
+3194	render	2026-04-29	Fix minimal-mode drag pass-through for new windows
+3399	render	2026-05-01	Fix minimal-mode pane tab rendering
+3525	render	2026-05-05	Fix config window to open active cmux Ghostty config
+3612	render	2026-05-07	Keep Settings layered above the main window
+3769	render	2026-05-11	Fix multi-image terminal drops
+3836	render	2026-05-11	Fix McBopomofo Bopomofo candidate opening
+3845	render	2026-05-11	Revert "Fix McBopomofo Bopomofo candidate opening"
+3885	render	2026-05-13	Prevent display-link crash from terminal portal layout reentry
+3916	render	2026-05-12	Prevent Metal renderer row rebuild crash
+3956	render	2026-05-18	Fix #3511: discover cmux user themes
+3986	render	2026-05-23	Fix key repeat rendering lag
+4083	render	2026-05-14	Keep selected workspace visible after sidebar reorders
+4102	render	2026-05-13	Fix terminal portal resize lag
+4121	render	2026-05-18	Fix surface tab bar action buttons clipping
+4233	render	2026-05-16	Fix offscreen terminal helper PTY startup
+4278	render	2026-05-18	Fix conditional light theme foreground rendering
+4359	render	2026-05-20	Fix repeated cmux themes set reloads
+4567	render	2026-05-22	Fix Ghostty split theme appearance resolution
+4594	render	2026-05-24	Fix markdown files with trailing punctuation detected as URLs
+4652	render	2026-05-23	Fix theme picker chrome preview sync
+4728	render	2026-05-25	Fix cmux terminal environment injection
+4780	render	2026-05-27	Fix matched sidebar terminal background
+4795	render	2026-05-30	Fix embedded Ghostty split theme resolution
+4820	render	2026-05-31	Fix hidden sidebar PR polling
+5474	render	2026-06-06	Fix main window minimum-width ratchet
+5488	render	2026-06-06	Fix sidebar close button hidden under wrapped workspace titles
+5773	render	2026-06-10	Don't hijack ZDOTDIR when the bundled shell-integration bootstrap is missing
+5826	render	2026-06-10	Fix light themes rendering white-on-white terminals (#3459)
+6057	render	2026-06-14	Fix stale Metal drawable after terminal layer realization
+6341	render	2026-06-19	Fix ~100% CPU re-render loop when selecting a bundled extension sidebar (#5970)
+6386	render	2026-06-19	fix: terminal content duplication on window resize (revives #4765)
+6396	render	2026-06-18	Fix blank SF Symbol controls on macOS 27
+6589	render	2026-06-22	Fix hidden popover relayout during SwiftUI updates
+6592	render	2026-06-22	Fix portal hit-test CPU on pointer movement
+6613	render	2026-06-23	Fix sidebar lag regression since v0.64.16 (#6612): cut per-row font-modifier + pin-state work
+6653	render	2026-06-23	Fix oversized surface tab width — make tabs hug their content (#6652)
+6896	render	2026-06-29	Fix light-theme white-on-white from host/surface theme divergence (#6411)
+7183	render	2026-07-04	Fix malformed LC_ALL collapsing spawned-shell locale to C (#7152)
+7497	render	2026-07-07	Fix terminal path fragments opening as HTTPS URLs
+7499	render	2026-07-07	Revert "Fix terminal path fragments opening as HTTPS URLs"
+7637	render	2026-07-08	Fix tab icon shift during pane resize
+7729	render	2026-07-09	Fix macOS 15 blank icon rendering
+7740	render	2026-07-10	Fix stale terminal agent tab icons
+7763	render	2026-07-10	Fix shared Ghostty custom shaders rendering black terminals
+7778	render	2026-07-10	Revert "Fix shared Ghostty custom shaders rendering black terminals"
+7815	render	2026-07-10	Fix never-green windows-gnu CI: ghostty-vt static lib name + remove committed mux/target
+8115	render	2026-07-15	Fix visible popover resize crash
+8168	render	2026-07-15	Fix automatic terminal top inset
+8195	render	2026-07-15	Fix animated update popover resize reentrancy
+8234	render	2026-07-16	Fix CmuxTerminal package test linking
+8240	render	2026-07-16	Coalesce terminal resizes during split-divider drags
+8540	render	2026-07-22	Fix renderer presentation for background-created surfaces
+8626	render	2026-07-24	Fix sidebar reopen cutoff render
+8656	render	2026-08-04	Skip an inherited terminal surface the registry no longer owns
+8793	render	2026-07-24	Prevent workspace switch renderer freezes
+8848	render	2026-07-25	fix: eliminate Ghostty terminal typing lag
+8964	render	2026-07-27	Fix zsh prompt wrap spacer lines
+8967	render	2026-07-27	Fix blank panes after skipped initial layout
+8998	render	2026-07-30	Reclaim hidden Ghostty renderer memory
+9000	render	2026-07-28	Fix leaked openThread loops burning ~90% of cmux idle CPU
+9063	render	2026-07-28	Fix occasional dim terminal text after appearance changes
+9111	render	2026-07-29	Prevent stalled remote PTY starts and bound wedged reattach loops
+9117	render	2026-07-29	Fix main-thread livelock under saturated terminal output
+9211	render	2026-07-30	Fix hanging cmux theme picker
+9358	render	2026-08-10	Fix sidebar-triggered main-actor terminal teardown hang
+9486	render	2026-08-04	Stop blank Ghostty opener stderr log bursts
+9764	render	2026-08-10	Fix surface-scoped terminal theme reload ordering
+9796	render	2026-08-08	Make cold PTY spawn unstarvable: reclaim bootstrap-window custody, bound the shim gate, unpin prime slots, surface queued sends (#9769)
+9921	render	2026-08-11	Prevent recursive deferred-action release chains
+10089	render	2026-08-13	Fix sidebar leading-edge clipping after resize
+10133	render	2026-08-14	fix: bound sidebar git status watching
+10223	render	2026-08-16	Fix double-open: deliver each terminal open event to exactly one handler
+10492	render	2026-08-22	Fix white-on-white chrome icons for translucent themes in light windows
+10510	render	2026-08-21	fix: bound terminal title propagation before AppKit (#10507)
+10552	render	2026-08-22	Fix sidebar drag validation main-thread hangs
+10569	render	2026-09-27	fix(spm): resolve GhosttyKit/GhosttyRuntimeTestStubs target name collisions
+10627	render	2026-08-24	Fix NSColor darken crash for non-RGB colors
+10661	render	2026-09-03	fix(history): stop idle History menu graph rebuild loop
+10856	render	2026-09-25	fix(portal): ask bonsplit which pane owns a tab instead of scanning
+10901	render	2026-08-27	Fix macOS privacy prompts for terminal child processes
+10922	render	2026-08-27	Present terminal renderers in on-screen windows that never report an occlusion .visible bit (fixes the display-liveness CI regression from #10815)
+10967	render	2026-09-25	fix: make window-chrome separators visible in light mode
+11528	render	2026-09-02	Fix transient PTY resizes during workspace reveal
+11530	render	2026-09-03	Fix terminal text bleed during live window resize
+11887	render	2026-09-03	Revert "Fix terminal text bleed during live window resize"
+11954	render	2026-09-30	Fix blank terminal surface after completion notification
+12009	render	2026-09-25	fix(portal): repaint the divider overlay only when it could have changed
+12066	render	2026-09-25	Honor Ghostty split-divider-color in cmux panes
+12210	render	2026-09-11	Fix terminal colors and pane clipping
+12235	render	2026-09-10	fix: isolate Ghostty numeric locale from CoreUI symbol crashes
+12310	render	2026-09-11	Prevent terminal flicker and delayed nested layout on workspace switches
+12329	render	2026-09-11	Revert "Fix terminal colors and pane clipping"
+12343	render	2026-09-13	Fix terminal link routing and Option dead-key input
+12414	render	2026-09-13	Fix stale portal layers after workspace switches
+12521	render	2026-09-13	Fix stable layout reentrant hangs during workspace and portal churn
+12725	render	2026-09-21	Prevent reentrant geometry reconciliation and diagnose terminal hang phases
+12783	render	2026-09-18	Fix checklist remove button rendering and hover
+12812	render	2026-09-17	Fix light terminal defaults with non-color Ghostty settings
+13191	render	2026-09-20	fix: update Ghostty environment lifetime fix
+13574	render	2026-09-22	Retire stale zoom intent after external resize
+14058	render	2026-09-24	Stop unrelated defaults writes and pane geometry changes from re-evaluating chrome-heavy views
+14297	render	2026-09-24	fix(portal): flush the coalesced live-resize pass on its first hop
+14442	render	2026-09-25	Only treat runs of "?" as lost plain text when pasting
+14841	render	2026-09-27	Resolve a separate sidebar's content against its own backdrop
+14847	render	2026-09-26	Stop shell integration spawning for disabled features before the first prompt
+14888	render	2026-09-27	test: free the remaining hosted test terminals and scope the portal leak check
+15369	render	2026-09-28	fix: keep the terminal area when the window is too narrow for the side panels
+15520	render	2026-09-30	Fix live terminal surfaces that never present a frame
+15550	render	2026-09-29	Fix pane drop target rendering in the wrong pane
+15738	render	2026-09-30	fix(input): consume keys while terminal runtime is unavailable
+15788	render	2026-09-30	Revert "Fix live terminal surfaces that never present a frame"
+15848	render	2026-09-30	fix(input): preserve C1 terminal control replies
+15849	render	2026-09-30	fix(input): preserve SOS terminal replies
+16261	render	2026-10-01	Bump Bonsplit: fix narrow-pane rendering test assumptions

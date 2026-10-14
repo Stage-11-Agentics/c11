@@ -1,0 +1,40 @@
+[0.64.18]	Wire PDF preview download and print toolbar actions
+[0.64.10]	Fix restored panel unread sidebar badges so badge state survives session restore ([6f1ecc9f](https://github.com/manaflow-ai/cmux/commit/6f1ecc9fbfdbe2a3e1bb29e3ec1c018459629e59))
+[0.64.10]	Prevent DEV builds from stealing the stable CLI socket when both run side-by-side ([5ab642a3](https://github.com/manaflow-ai/cmux/commit/5ab642a3e9f8878f76e8d525a8d0ccc8c359a69b))
+[0.64.8]	Prevent minimal-mode pane tabs from moving the window when dragged ([e7941740](https://github.com/manaflow-ai/cmux/commit/e79417400654f71f4a8a26f59d5abc316366307d))
+[0.64.8]	Fix Antigravity presentation and resume ([0f67df81](https://github.com/manaflow-ai/cmux/commit/0f67df81566d677194e469c060f2a9367db02f7b))
+[0.64.8]	Fix Antigravity Vault resume indexing ([9fa5d1d8](https://github.com/manaflow-ai/cmux/commit/9fa5d1d8724d4b65bf886d86cc7bb9e9c295a026))
+[0.64.8]	Fix Antigravity fallback session build ([80fe38d6](https://github.com/manaflow-ai/cmux/commit/80fe38d6d0b3252b8f2f3c27cd78c0ca0a183016))
+[0.64.8]	Fix Antigravity conversation sanitizer width ([8bd285a9](https://github.com/manaflow-ai/cmux/commit/8bd285a94798dd49791995b699c3c2267ae06b6a))
+[0.64.8]	Fix Grok agent-scoped Vault filtering ([12ae177f](https://github.com/manaflow-ai/cmux/commit/12ae177f19caf91389770488c8aa2d0c2a3717c1))
+[0.64.8]	Fix Grok Vault titles and icon ([84373476](https://github.com/manaflow-ai/cmux/commit/843734760f019873c68e40657e48f4c740f24867))
+[0.64.8]	Deduplicate Grok Vault sessions ([9f66dffd](https://github.com/manaflow-ai/cmux/commit/9f66dffd2c352b4bd4d817aa3fdca5b04f5edb96))
+[0.64.8]	Honor shell Grok homes in Vault, including custom hook state directories ([be8c37c4](https://github.com/manaflow-ai/cmux/commit/be8c37c4f7ca82b4acd6226a22c34f6c1bbc6414), [f95b25b9](https://github.com/manaflow-ai/cmux/commit/f95b25b996b679bf02b4db2e6b24a7e97f15e274))
+[0.64.8]	Restore compact pane tab width ([f0370709](https://github.com/manaflow-ai/cmux/commit/f0370709a008e5165457f9cfc9ad41e75ebc942c))
+[0.64.8]	Fix session search ripgrep cancellation crash ([fa623368](https://github.com/manaflow-ai/cmux/commit/fa62336863148202fdefe679f2665b5801b1443c))
+[0.64.8]	Preserve right sidebar remembered mode ([aac80054](https://github.com/manaflow-ai/cmux/commit/aac800543a098f026091ab38e0bdf78e8beba5ff))
+[0.64.8]	Persist restored pane notifications and resync restored notification badges ([e4856922](https://github.com/manaflow-ai/cmux/commit/e4856922b07f96f9d5065fc2a46da346dabd52a2), [9ffdb45a](https://github.com/manaflow-ai/cmux/commit/9ffdb45a54e2c80832e2c471c1d10db06233b474))
+[0.64.8]	Preserve workspace cwd metadata for registered agents ([9b1e186d](https://github.com/manaflow-ai/cmux/commit/9b1e186d2ea7ef67e7c624b5e011289462a56eac))
+[0.64.8]	Preserve transparent terminal hosting ([1ca56296](https://github.com/manaflow-ai/cmux/commit/1ca56296d6c47acbcb6edddb47e89bd159097e2e))
+[0.64.8]	Keep browser URL tied to committed navigation and harden provisional navigation state ([40863609](https://github.com/manaflow-ai/cmux/commit/4086360910a9f4d40312f0536fcb03cb662c4ea7), [e240c302](https://github.com/manaflow-ai/cmux/commit/e240c302a10d43dc8bbf7ff17700af514166316e))
+[0.64.8]	Fix sidebar overlay contrast scheme and keep sidebar chrome readable across themes ([452745b6](https://github.com/manaflow-ai/cmux/commit/452745b65753953fed9d66cbb26878d6f755315b), [4223df74](https://github.com/manaflow-ai/cmux/commit/4223df74efe9bf0292c0b1e420950fdcb40c4e12))
+[0.64.8]	Synchronize theme contrast on reload and align terminal scheme with live theme ([228f3abd](https://github.com/manaflow-ai/cmux/commit/228f3abdd9d1c8fb93f640c5c202e6d2c0dcd13a), [b6d34706](https://github.com/manaflow-ai/cmux/commit/b6d34706683f6f4bc5aec8a4054939c6465a854b))
+[0.64.8]	Reload themes through the cmux socket so theme changes propagate to running instances ([1be9d26c](https://github.com/manaflow-ai/cmux/commit/1be9d26c3d79c92eff85fd8693973b5d893cd29b))
+[0.64.8]	Foreground and reload after interactive theme picker ([b0f58e47](https://github.com/manaflow-ai/cmux/commit/b0f58e4761a6bce30b6a6c1abc3916134e16b234), [8a4e57cf](https://github.com/manaflow-ai/cmux/commit/8a4e57cf7db118faaa9a6e0409b4c63afde36d57))
+[0.64.8]	Ignore inherited socket context from other cmux bundles ([b361e9a2](https://github.com/manaflow-ai/cmux/commit/b361e9a2fc04902864dda8197d82000d3330d3bb))
+[0.64.8]	Preserve numbered shortcut stale-menu routing and remapped close defaults ([d198a962](https://github.com/manaflow-ai/cmux/commit/d198a96266990062d01a6d968158e64d773bd6a2), [f2b257fb](https://github.com/manaflow-ai/cmux/commit/f2b257fb452b59dc674da4cb91d9ea6e97538c88))
+[0.64.8]	Clear restored unread on workspace resume and defer dismissal to focused panel ([b24cf548](https://github.com/manaflow-ai/cmux/commit/b24cf5484f26ef14cd1b90813c695607aad3b684), [f594d5a8](https://github.com/manaflow-ai/cmux/commit/f594d5a808dcf84a9c7492a03bf074071df85877))
+[0.64.8]	Update Bonsplit minimal tab drag hit testing and keep titlebar drag handle out of pane tabs ([36fc880f](https://github.com/manaflow-ai/cmux/commit/36fc880fdd8a070a545fbb1febb04405543c00b6), [735dde1d](https://github.com/manaflow-ai/cmux/commit/735dde1dccd7e1902d13f1e46c1f99eff674f5cd))
+[0.64.8]	Gate process termination until launch succeeds and handle deferred cancellation edge cases ([a14ca57c](https://github.com/manaflow-ai/cmux/commit/a14ca57cd0621b5f0c9371bd0ac71bbf60243b90), [227305d5](https://github.com/manaflow-ai/cmux/commit/227305d522d49905c02ea4941e9578d7d1a70c7c))
+[0.64.8]	Deduplicate shell wrapper installer ([a21a21c5](https://github.com/manaflow-ai/cmux/commit/a21a21c55fc26ebf59a5dcff29d30b6f71933ea2))
+[0.64.7]	Fix permission notifications after auto-allow ([274128ec](https://github.com/manaflow-ai/cmux/commit/274128ec607500dcfc44cfe8495dae40eee87a68))
+[0.64.7]	Fix markdown and file preview panel session reuse ([838ad59f](https://github.com/manaflow-ai/cmux/commit/838ad59fed4e34ac913dc65ab9d7e391abaa708f))
+[0.64.7]	Fix nightly startup crash ([76ba2bfd](https://github.com/manaflow-ai/cmux/commit/76ba2bfde0ee6b7ef8773c2cb5a7897924457616))
+[0.64.5]	Fix shared WebView task manager attribution
+[0.64.5]	Cover right sidebar tool panel in search
+[0.64.5]	Fix repeated assistant iMessage completions
+[0.64.5]	Sanitize Claude Agent View passthrough env
+[0.64.4]	Resume Claude, Codex, and OpenCode sessions from the session's original cwd.
+[0.64.4]	Route SSH image drops through the terminal text path.
+[0.64.4]	Fix Cmd-W to close Task Manager and auxiliary windows.
+[0.64.4]	Fix command palette arrow keys and no-match flash.

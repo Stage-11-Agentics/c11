@@ -1,0 +1,106 @@
+pr	batch	merged	title
+1754	sidebar	2026-03-20	fix: align titlebar icons with traffic-light buttons
+1800	sidebar	2026-03-19	Make remote sidebar directory canonicalization preserve live paths
+1859	sidebar	2026-03-20	fix(sidebar): avoid premature workspace title truncation
+1908	sidebar	2026-03-22	Fix Sparkle update dialog requiring two presses
+2046	sidebar	2026-03-25	Fix sidebar badges not refreshing on workspace state change
+2142	sidebar	2026-03-25	Fix sidebar update pill cached popover flow
+2168	sidebar	2026-03-25	Fix update attempt refreshing pill without actually updating
+2218	sidebar	2026-03-28	Fix minimal mode toggle not updating titlebar state
+2328	sidebar	2026-03-30	Fix sidebar LazyVStack layout loop
+2331	sidebar	2026-03-30	Fix sidebar live refresh for branch and PR state
+2359	sidebar	2026-03-30	Fix #2358 update error details dialog overflow
+2378	sidebar	2026-03-31	Fix transparent background flash during sidebar toggle
+2405	sidebar	2026-03-31	Fix duplicate sidebar git metadata publishes
+2562	sidebar	2026-04-04	Fix missing sidebar ports for agent-run dev servers
+2563	sidebar	2026-04-04	Fix missing sidebar git branch metadata for workspaces
+2566	sidebar	2026-04-07	Fix workspace color picker context menu blinking
+2585	sidebar	2026-04-06	Fix sidebar PR status polling rate limits
+2797	sidebar	2026-05-20	Fix git index.lock polling in sidebar metadata watcher
+3028	sidebar	2026-04-20	Fix 100% CPU from ContentView publisher feedback loop (fixes #3020)
+3138	sidebar	2026-04-29	Fix ecosystemd idle overlay churn
+3179	sidebar	2026-04-28	Fix transparent titlebar backdrop matching
+3269	sidebar	2026-04-29	Fix locale separators in sidebar identifiers
+3382	sidebar	2026-05-01	Fix sidebar tint transparency backdrop ownership
+3436	sidebar	2026-05-02	Clamp Settings window away from display edge
+3546	sidebar	2026-05-05	Fix sidebar workspace close hover state
+3727	sidebar	2026-05-08	Fix Mark Workspace as Unread enablement
+3744	sidebar	2026-05-10	Clear surface notifications during pane teardown
+3833	sidebar	2026-05-12	Keep update pill polling current after first update
+3874	sidebar	2026-05-12	Fix #3803: clear sidebar freeze after color/reorder so workspace row keeps updating
+3924	sidebar	2026-05-19	Fix permission notifications after auto-allow
+3946	sidebar	2026-05-19	Fix ripgrep resolution for Nix installs
+4084	sidebar	2026-05-13	Fix sidebar unread badge after re-marking notifications
+4296	sidebar	2026-05-18	Open crash diagnostics from notifications
+4334	sidebar	2026-05-21	Suppress nested agent hook notifications
+4353	sidebar	2026-05-19	Fix NIGHTLY update bundle icon metadata
+4415	sidebar	2026-05-20	Fix settings appearance dispatch_once reentrancy
+4456	sidebar	2026-05-21	Fix notification Settings open path
+4481	sidebar	2026-05-21	Fix minimal-mode sidebar titlebar icon alignment
+4534	sidebar	2026-05-30	Fix Reload Configuration menu action
+4610	sidebar	2026-05-23	Fix sidebar edge fade background
+4687	sidebar	2026-07-06	Fix PDF preview download and print toolbar actions
+4934	sidebar	2026-05-29	Fix bash job notification spam
+5104	sidebar	2026-06-01	Follow-up to #5102: simplify titlebar inset + fix sidebar-toggle animation desync
+5127	sidebar	2026-06-01	Fall back to the default sidebar when extensions is disabled
+5253	sidebar	2026-06-02	Fix workspace-group "Delete Group" context-menu no-op
+5279	sidebar	2026-06-03	Fix stale sidebar git branch after cd out of a repo into a non-git dir
+5325	sidebar	2026-06-04	Fix sidebar workspace frame collection virtualization
+5402	sidebar	2026-06-05	Coalesce sidebar git metadata probes
+5662	sidebar	2026-06-10	Fix sidebar status pills for newly created workspaces
+5707	sidebar	2026-06-10	Stop titlebar elements from shifting when toggling the sidebar
+5806	sidebar	2026-06-20	Fix #5770: recover Settings open from offscreen frames and silent no-ops
+5855	sidebar	2026-06-11	Cap sidebar status/metadata dictionaries to bound the sidebar view-graph livelock (#5845)
+5884	sidebar	2026-06-11	Revert "Cap sidebar status/metadata dictionaries to bound the sidebar view-graph livelock (#5845)"
+6000	sidebar	2026-06-18	Fix macOS notification fallback identity
+6003	sidebar	2026-06-14	Fix top-right titlebar drag chrome
+6033	sidebar	2026-06-13	Sidebar perf: kill the LazyVStack layout livelock (combined: 6019 + 6021 + 6026)
+6068	sidebar	2026-06-14	Fix unexpected menu-bar-only activation policy
+6111	sidebar	2026-06-14	Fix sidebar row-height layout feedback
+6188	sidebar	2026-06-16	Sidebar: remove rows measurement that re-livelocks layout at scale
+6460	sidebar	2026-06-20	Fix title-churn beachball in transcript adoption and sidebar rows
+6552	sidebar	2026-06-22	Reduce redundant panel title update work
+6558	sidebar	2026-06-22	Fix sidebar row-height layout feedback
+6678	sidebar	2026-06-23	Bump Sparkle to 2.9.3 to fix auto-update agent kill on macOS 26
+6804	sidebar	2026-06-29	Fix stale sidebar agent status refresh
+6960	sidebar	2026-07-28	Fix desktop notification permission settings row
+7174	sidebar	2026-07-05	Fix NIGHTLY update never installing (Update Available loop)
+7545	sidebar	2026-07-08	Fix sidebar workspace close hover reconciliation
+7551	sidebar	2026-07-08	Fix stale delete group membership confirmation
+7754	sidebar	2026-07-10	Fix sidebar hang during sustained process-title churn
+7946	sidebar	2026-07-14	Resolve agent notification targets from live identity at delivery time
+7952	sidebar	2026-07-13	Stabilize sidebar ports across transient scan misses
+8067	sidebar	2026-07-15	Replace per-row sidebar hover reconcilers with a single pointer owner
+8084	sidebar	2026-07-15	Fix title-churn typing latency
+8296	sidebar	2026-07-17	Bound overflowing confirmation dialog content
+8513	sidebar	2026-07-22	Fix Settings and main window zombies under AeroSpace
+8631	sidebar	2026-08-26	Settings load writes UserDefaults when nothing changed, and pays for it twice over
+8892	sidebar	2026-07-26	Fix current main Swift CI regressions
+9037	sidebar	2026-07-28	Fix first-open Fork Conversation tab menu availability
+9324	sidebar	2026-08-05	Retire stale sidebar port badges despite vanished TTYs, privileged owners, and zombies
+9613	sidebar	2026-08-11	Give SidebarRowTextView ownership of link styling so selected-row description links stay readable
+9630	sidebar	2026-08-06	Fix beachball: bound every UNUserNotificationCenter call so a wedged usernotificationsd can't deadlock the main thread
+9854	sidebar	2026-08-11	Fix sidebar workspace-switch layout reentry
+10074	sidebar	2026-08-13	Fix native sidebar row ownership during layout
+10169	sidebar	2026-09-26	Keep a collapsed sidebar group folded when the workspace below it closes
+10351	sidebar	2026-09-25	fix: keep spinner titles animating without waking the app on every frame
+10564	sidebar	2026-09-08	perf: make reload-config surface fanout incremental
+10591	sidebar	2026-08-23	Fix degraded SF Symbol rasterization after #10549
+10633	sidebar	2026-08-27	Fix stale sidebar port badges
+10822	sidebar	2026-08-26	fix: disambiguate notification cleanup inference
+11476	sidebar	2026-09-25	Tell the user why a file upload failed
+12283	sidebar	2026-09-10	Updater: finish delayed Sparkle callbacks on cancel
+12298	sidebar	2026-09-11	fix: keep main windows out of fullscreen tiling
+12455	sidebar	2026-09-13	Fix Agent notification semantics CI reliability
+12473	sidebar	2026-09-13	Fix NIGHTLY passive update pill discovery
+12594	sidebar	2026-09-14	Fix current main Swift compile errors
+12929	sidebar	2026-09-20	Fix non-glass overlay hosting that disrupts Minimal Mode chrome
+13228	sidebar	2026-09-21	Fix sidebar workspace creation window routing
+13688	sidebar	2026-09-22	Fix workspace reorder crash for a pinned group's anchor
+14406	sidebar	2026-09-25	test: fix the dead-key crash and sidebar AX walk failing on main
+15422	sidebar	2026-09-28	Fix split-space admission after sidebar pane changes
+15756	sidebar	2026-09-29	Fix updater badge icon disappearing intermittently
+15887	sidebar	2026-09-30	fix: keep agent status running while hooks show activity
+15893	sidebar	2026-09-30	fix(sidebar): cut with an ellipsis character so a reference cannot re-parse
+15974	sidebar	2026-09-30	fix: clear agent notification ring after answer
+16408	sidebar	2026-10-01	fix: unblock main CI (settings compile, bonsplit tests)

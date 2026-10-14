@@ -6054,7 +6054,11 @@ final class Workspace: Identifiable, ObservableObject {
                     busyExhausted: false,
                     strandedDoorbell: reason == "draft" && captureNote.stranded
                 )
-                self.logMailboxDoorbellRelook([entry], plan: plan)
+                // Oldest first, as every later look names it.
+                self.logMailboxDoorbellRelook(
+                    self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
+                    plan: plan
+                )
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             },
             noteHeldUntil: { [weak self] deadline in
@@ -6866,11 +6870,13 @@ final class Workspace: Identifiable, ObservableObject {
     /// takes no stdin mail, the read failed, or the composer holds something
     /// the Return could submit. Socket path only; a keystroke never reads.
     func mailboxNoOpReturnProbe(surfaceId: UUID) -> MailboxNoOpReturn.Probe? {
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
         guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId),
               let terminalPanel = panels[surfaceId] as? TerminalPanel,
               let native = terminalPanel.surface.surface,
-              let region = TerminalController.shared.capturePromptInputRegion(surface: native) else { return nil }
-        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+              let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
+            return nil
+        }
         guard MailboxNoOpReturn.admits(PromptInputClassifier.classify(region, harness: harness).state) else {
             return nil
         }
@@ -6894,8 +6900,8 @@ final class Workspace: Identifiable, ObservableObject {
     private func finishMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
         guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
               let native = terminalPanel.surface.surface else { return }
-        let after = TerminalController.shared.capturePromptInputRegion(surface: native)
         let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        let after = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness)
         let retract = MailboxNoOpReturn.shouldRetract(
             probe: probe,
             after: after,

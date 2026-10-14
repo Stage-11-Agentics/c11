@@ -6897,24 +6897,34 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
-    /// C11-407: the composer just before a socket Return. Nil when this panel
-    /// takes no stdin mail, the read failed, or the composer holds something
-    /// the Return could submit. Socket path only; a keystroke never reads.
-    func mailboxNoOpReturnProbe(surfaceId: UUID) -> MailboxNoOpReturn.Probe? {
+    /// C11-407: classify the composer just before a socket Return. A failed
+    /// renderer read is nil; a successful but unrecognized read is `.unknown`.
+    /// Socket path only; a keystroke never reads.
+    func socketReturnInputRead(surfaceId: UUID) -> MailboxNoOpReturn.Read? {
         let harness = surfaceActivityTerminalKind(panelId: surfaceId)
-        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId),
-              let terminalPanel = panels[surfaceId] as? TerminalPanel,
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
               let native = terminalPanel.surface.surface,
               let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
             return nil
         }
-        guard MailboxNoOpReturn.admits(PromptInputClassifier.classify(region, harness: harness).state) else {
-            return nil
-        }
-        return MailboxNoOpReturn.Probe(
-            region: region,
-            mark: mailboxStdinState.buffer.noOpReturnMark(surfaceId: surfaceId, at: Date())
+        let state = PromptInputClassifier.classify(region, harness: harness).state
+        let probe = mailboxDeliveryIncludesStdin(surfaceId: surfaceId) && MailboxNoOpReturn.admits(state)
+            ? MailboxNoOpReturn.Probe(
+                region: region,
+                mark: mailboxStdinState.buffer.noOpReturnMark(surfaceId: surfaceId, at: Date())
+            )
+            : nil
+        return MailboxNoOpReturn.Read(
+            state: state,
+            probe: probe
         )
+    }
+
+    /// Only an empty or suggestion composer can be rechecked after Return to
+    /// restore the mailbox idle period when that Return started no agent turn.
+    func mailboxNoOpReturnProbe(surfaceId: UUID) -> MailboxNoOpReturn.Probe? {
+        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId) else { return nil }
+        return socketReturnInputRead(surfaceId: surfaceId)?.probe
     }
 
     /// Look at the composer again `settle` after the Return. When it shows

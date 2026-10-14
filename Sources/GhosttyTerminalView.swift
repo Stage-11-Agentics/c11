@@ -4297,7 +4297,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     func scheduleSubmitReturnAfterPasteDelay(
         then finish: @escaping () -> Void = {},
         feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil,
-        beforeReturn: (@MainActor () -> Bool)? = nil
+        beforeReturn: (@MainActor () -> Bool)? = nil,
+        onReturnDispatched: ((Bool) -> Void)? = nil
     ) {
         let delayMs: Int
 #if DEBUG
@@ -4325,14 +4326,21 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 feedAnswerGate.enqueue { work in work() }
             } else {
                 let allowed = MainActor.assumeIsolated { beforeReturn?() ?? true }
-                if allowed { _ = sendKeyNow(.returnKey) }
+                let dispatched = allowed && sendKeyNow(.returnKey)
+                finish()
+                onReturnDispatched?(dispatched)
+                return
             }
             finish()
             return
         }
         let delay = TimeInterval(delayMs) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { finish(); return }
+            guard let self else {
+                finish()
+                onReturnDispatched?(false)
+                return
+            }
             if let feedAnswerGate {
                 // Run inline on the main actor inside this transaction. The
                 // worker may cancel while this is still pending; enqueue then
@@ -4340,7 +4348,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 feedAnswerGate.enqueue { work in work() }
             } else {
                 let allowed = MainActor.assumeIsolated { beforeReturn?() ?? true }
-                if allowed { _ = self.sendKeyNow(.returnKey) }
+                let dispatched = allowed && self.sendKeyNow(.returnKey)
+                finish()
+                onReturnDispatched?(dispatched)
+                return
             }
             finish()
         }

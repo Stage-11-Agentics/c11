@@ -7548,6 +7548,15 @@ class TerminalController {
         }
     }
 
+    static func noOpReturnRead(for terminalSurface: TerminalSurface) -> MailboxNoOpReturn.Read? {
+        MainActor.assumeIsolated {
+            AppDelegate.shared?.workspaceContainingPanel(
+                panelId: terminalSurface.id,
+                preferredWorkspaceId: terminalSurface.workspaceId
+            )?.workspace.socketReturnInputRead(surfaceId: terminalSurface.id)
+        }
+    }
+
     static func checkNoOpReturn(_ probe: MailboxNoOpReturn.Probe?, for terminalSurface: TerminalSurface) {
         guard let probe else { return }
         MainActor.assumeIsolated {
@@ -7711,8 +7720,9 @@ class TerminalController {
     /// newline can produce two. Raw/paste opts into preserveNewlines: its
     /// newline bytes remain content and only explicit submit requests Return.
     ///
-    /// Returns whether a submit Return was dispatched, so the caller can report
-    /// what happened rather than what was asked for.
+    /// Returns whether this send requested a Return. When provided, the
+    /// completion reports whether the Return was actually dispatched after
+    /// the delayed composer check.
     @MainActor
     @discardableResult
     func deliverSocketSendText(
@@ -7721,24 +7731,34 @@ class TerminalController {
         preserveNewlines: Bool = false,
         terminalSurface: TerminalSurface,
         surface: ghostty_surface_t,
-        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil
+        feedAnswerGate: FailClosedCommitGate<FeedAnswerSubmitOutcome>? = nil,
+        onReturnDispatched: ((Bool) -> Void)? = nil
     ) -> Bool {
         let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
         let body = delivery.body
         let wantsReturn = delivery.wantsReturn
+        let operatorInputAtDispatch = terminalSurface.lastOperatorInputAt
 
         // One input transaction from the first byte to the submit Return, so
         // no other writer (the mailbox push, another send, the text box)
         // lands in the paste-settle window. If one is in flight, this runs
         // after it; the live surface is re-read then.
         terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
-            guard let self, let terminalSurface else { return finish() }
+            guard let self, let terminalSurface else {
+                onReturnDispatched?(false)
+                return finish()
+            }
             guard let surface = terminalSurface.surface else {
-                _ = terminalSurface.queueSocketSendIfDetached(
+                guard feedAnswerGate == nil else {
+                    onReturnDispatched?(false)
+                    return finish()
+                }
+                let queued = terminalSurface.queueSocketSendIfDetached(
                     text,
                     submit: submit,
                     preserveNewlines: preserveNewlines
                 )
+                onReturnDispatched?(queued && wantsReturn)
                 return finish()
             }
             if !body.isEmpty {
@@ -7750,18 +7770,24 @@ class TerminalController {
             }
             if wantsReturn {
                 // A bare Return (an empty `send` with submit) may have nothing
-                // to submit: read the composer first (C11-407).
-                var noOpProbe: MailboxNoOpReturn.Probe? = body.isEmpty && feedAnswerGate == nil
-                    ? Self.noOpReturnProbe(for: terminalSurface) : nil
+                // to submit: retain an initial probe for the no-op take-back,
+                // and re-read at the paste boundary before sending (C11-407).
+                let shouldGuardBareReturn = body.isEmpty && feedAnswerGate == nil
+                let initialNoOpRead = shouldGuardBareReturn ? Self.noOpReturnRead(for: terminalSurface) : nil
+                var noOpProbe = initialNoOpRead?.probe
                 let beforeReturn: (@MainActor () -> Bool)?
-                if noOpProbe != nil {
+                if shouldGuardBareReturn {
                     beforeReturn = { [weak terminalSurface] () -> Bool in
-                        MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: noOpProbe) {
-                            guard let terminalSurface else { return nil }
-                            let refreshed = Self.noOpReturnProbe(for: terminalSurface)
-                            noOpProbe = refreshed
-                            return refreshed
+                        guard let terminalSurface else { return true }
+                        let refreshedRead = Self.noOpReturnRead(for: terminalSurface)
+                        if noOpProbe != nil {
+                            noOpProbe = refreshedRead?.probe
                         }
+                        return MailboxNoOpReturn.shouldSubmitDelayedReturn(
+                            operatorInputAtDispatch: operatorInputAtDispatch,
+                            operatorInputAtReturn: terminalSurface.lastOperatorInputAt,
+                            freshState: refreshedRead?.state
+                        )
                     }
                 } else {
                     beforeReturn = nil
@@ -7771,12 +7797,15 @@ class TerminalController {
                 // window is silently dropped by Claude Code and codex. Same
                 // paste-settle delay the interactive text box uses.
                 terminalSurface.scheduleSubmitReturnAfterPasteDelay(
-                    then: { [weak terminalSurface] in
-                        finish()
-                        if let terminalSurface { Self.checkNoOpReturn(noOpProbe, for: terminalSurface) }
-                    },
+                    then: finish,
                     feedAnswerGate: feedAnswerGate,
-                    beforeReturn: beforeReturn
+                    beforeReturn: beforeReturn,
+                    onReturnDispatched: feedAnswerGate == nil ? { [weak terminalSurface] dispatched in
+                        if dispatched, let terminalSurface {
+                            Self.checkNoOpReturn(noOpProbe, for: terminalSurface)
+                        }
+                        onReturnDispatched?(dispatched)
+                    } : nil
                 )
             } else {
                 // Text left in the input line without a submit is a draft the
@@ -7786,6 +7815,7 @@ class TerminalController {
                     terminalSurface.lastOperatorKeyAt = Date()
                 }
                 finish()
+                onReturnDispatched?(false)
             }
         }
         return wantsReturn

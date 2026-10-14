@@ -586,19 +586,26 @@ enum MailboxNoOpReturn {
         let mark: MailboxStdinBuffer.NoOpReturnMark
     }
 
+    struct Read: Equatable {
+        let state: PromptInputState
+        let probe: Probe?
+    }
+
     /// A composer a Return cannot submit from.
     static func admits(_ state: PromptInputState) -> Bool {
         state == .empty || state == .suggestion
     }
 
-    /// A socket Return waits for the paste-settle delay. Refresh its no-op
-    /// probe at that boundary so text the operator entered during the wait
-    /// cannot later be mistaken for an empty submit and reopened as idle.
-    /// A bare socket Return that was safe at dispatch time is suppressed if
-    /// the fresh composer read can no longer prove it is empty or a suggestion.
-    static func shouldSubmitDelayedReturn(initial: Probe?, recapture: () -> Probe?) -> Bool {
-        guard initial != nil else { return true }
-        return recapture() != nil
+    /// A bare socket Return waits for the paste-settle delay. Suppress it only
+    /// when the operator typed after dispatch or a successful fresh read sees
+    /// a draft. Busy, failed, and unknown reads preserve the existing Return.
+    static func shouldSubmitDelayedReturn(
+        operatorInputAtDispatch: Date?,
+        operatorInputAtReturn: Date?,
+        freshState: PromptInputState?
+    ) -> Bool {
+        guard operatorInputAtDispatch == operatorInputAtReturn else { return false }
+        return freshState != .draft
     }
 
     /// The Return changed nothing on screen: the same complete capture, cell

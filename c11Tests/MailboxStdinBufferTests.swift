@@ -490,25 +490,37 @@ final class MailboxNoOpReturnTests: XCTestCase {
         }
     }
 
-    /// A keystroke during the socket Return's paste delay makes the fresh
-    /// read a draft, so the later idle check must not retain its old probe.
-    func testDelayedReturnDropsProbeWhenComposerChangesToDraft() {
-        let initial = MailboxNoOpReturn.Probe(
-            region: region(),
-            mark: .init(at: t(0), turn: nil, lastSubmit: nil)
-        )
-        var captures = 0
-        let shouldSubmit = MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: initial) {
-            captures += 1
-            return nil // The production reader returns nil for a draft.
+    /// A delayed bare Return is withheld only for a changed operator stamp or
+    /// a positive draft classification. A failed or unknown read still sends.
+    func testDelayedReturnSuppressesOnlyForOperatorInputOrPositiveDraftRead() {
+        let dispatchedAt = t(10)
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: t(11),
+            freshState: .unknown
+        ))
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: nil,
+            operatorInputAtReturn: t(11),
+            freshState: nil
+        ))
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: dispatchedAt,
+            freshState: .draft
+        ))
+        for state in [PromptInputState.empty, .suggestion, .dialog, .unknown, .unavailable] {
+            XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+                operatorInputAtDispatch: dispatchedAt,
+                operatorInputAtReturn: dispatchedAt,
+                freshState: state
+            ), "\(state.rawValue) must preserve the existing Return")
         }
-        XCTAssertFalse(shouldSubmit)
-        XCTAssertEqual(captures, 1)
-        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: initial) { initial })
-        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: nil) {
-            XCTFail("no initial probe must not recapture")
-            return nil
-        })
+        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: dispatchedAt,
+            freshState: nil
+        ), "a failed/busy read must preserve the existing Return")
     }
 
     /// The submit is taken back only when the composer still reads empty or

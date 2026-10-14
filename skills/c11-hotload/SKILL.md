@@ -111,6 +111,8 @@ When notification permission is denied, QA mode also suppresses the Settings
 page's explicit **enable** and **send test** prompts for the duration of that
 launch; they share the notification-settings prompt gate.
 
+QA launches also skip creating the first-run welcome workspace.
+
 ```bash
 # Tagged automation launcher — dedicated flag:
 ./scripts/launch-tagged-automation.sh <tag> --qa           # fresh (clean slate)

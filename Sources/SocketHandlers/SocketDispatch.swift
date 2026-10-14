@@ -101,6 +101,8 @@ extension TerminalController {
         }
 
         switch request.method {
+        case "system.capabilities":
+            return v2Ok(id: request.id, result: v2Capabilities())
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
         case "window.resize":

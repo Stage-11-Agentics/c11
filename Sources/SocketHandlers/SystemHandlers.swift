@@ -50,7 +50,7 @@ extension TerminalController {
         }
     }
 
-    private func v2Capabilities() -> [String: Any] {
+    nonisolated func v2Capabilities() -> [String: Any] {
         var methods: [String] = [
             "agent.event.append",
             "agent.prompt_cache.report",
@@ -352,11 +352,12 @@ extension TerminalController {
             ])
         }
 
+        let runtime = systemCapabilitiesRuntimeSnapshot()
         return [
             "protocol": "cmux-socket",
             "version": 2,
-            "socket_path": socketPath,
-            "access_mode": accessMode.rawValue,
+            "socket_path": runtime.socketPath,
+            "access_mode": runtime.accessMode,
             "methods": methods.sorted(),
             "features_version": CapabilityFeatures.schemaVersion,
             "features": CapabilityFeatures.current.payload,

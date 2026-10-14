@@ -1623,7 +1623,10 @@ class WorkspaceManager: ObservableObject {
             "selectedTabId": select ? newWorkspace.id.uuidString : (snapshot.selectedWorkspaceId?.uuidString ?? "")
         ])
 #endif
-        if autoWelcomeIfNeeded && select && !UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey) {
+        if autoWelcomeIfNeeded && select && WelcomeSettings.shouldAutoPresentFirstRunWelcome(
+            qa: QALaunchPolicy.current(),
+            hasShown: UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey)
+        ) {
             if let appDelegate = AppDelegate.shared {
                 appDelegate.sendWelcomeCommandWhenReady(to: newWorkspace, markShownOnSend: true)
             } else {

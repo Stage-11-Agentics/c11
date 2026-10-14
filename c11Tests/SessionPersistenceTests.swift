@@ -816,6 +816,34 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(decision(["C11_QA_LAUNCH": "fresh"], prompted: true))
     }
 
+    @MainActor
+    func testQALaunchSuppressesNotificationPromptAtStoreBoundary() {
+        let store = TerminalNotificationStore.makeForNotificationCommandTesting()
+        var windowLookups = 0
+        store.configureNotificationSettingsPromptHooksForTesting(
+            windowProvider: {
+                windowLookups += 1
+                return nil
+            },
+            alertFactory: { NSAlert() },
+            scheduler: { _, _ in },
+            urlOpener: { _ in },
+            qaPolicyProvider: { .on(.fresh) }
+        )
+
+        store.promptToEnableNotificationsForTesting()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        XCTAssertEqual(windowLookups, 0, "the QA guard must suppress the production prompt call")
+    }
+
+    func testFirstRunWelcomeDoesNotPersistInQALaunches() {
+        XCTAssertFalse(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .on(.fresh), hasShown: false))
+        XCTAssertFalse(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .on(.resume), hasShown: false))
+        XCTAssertFalse(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .off, hasShown: true))
+        XCTAssertTrue(WelcomeSettings.shouldAutoPresentFirstRunWelcome(qa: .off, hasShown: false))
+    }
+
     func testQALaunchPolicyDualReadsLegacyKeyButC11Wins() {
         XCTAssertEqual(
             QALaunchPolicy.current(environment: ["CMUX_QA_LAUNCH": "resume"]),

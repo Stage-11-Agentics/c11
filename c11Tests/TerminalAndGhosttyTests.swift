@@ -3283,20 +3283,29 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
         XCTAssertEqual(surface.inputTransactionEpoch, epochA + 2)
     }
 
-    func testLargeSynchronousTransactionQueueDrainsWithoutNesting() {
+    func testSynchronousTransactionQueueDrainsWithoutNesting() {
         let surface = makeSurface()
-        let queuedCount = 20_000
+        let queuedCount = 256
         var completed = 0
+        var bodyDepth = 0
+        var maximumBodyDepth = 0
         surface.performInputTransaction { finish in
+            bodyDepth += 1
+            maximumBodyDepth = max(maximumBodyDepth, bodyDepth)
             for _ in 0..<queuedCount {
                 surface.performInputTransaction { nextFinish in
+                    bodyDepth += 1
+                    maximumBodyDepth = max(maximumBodyDepth, bodyDepth)
                     completed += 1
                     nextFinish()
+                    bodyDepth -= 1
                 }
             }
             finish()
+            bodyDepth -= 1
         }
         XCTAssertEqual(completed, queuedCount)
+        XCTAssertEqual(maximumBodyDepth, 1, "synchronous completions must not nest transaction bodies")
         XCTAssertFalse(surface.isInputTransactionActive)
     }
 

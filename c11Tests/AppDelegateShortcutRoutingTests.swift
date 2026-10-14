@@ -171,6 +171,35 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertEqual(secondManager.workspaces.count, secondCount + 1, "Workspace creation should target key/main window context")
     }
 
+    func testClosingWindowForgetsMailboxBadgesForItsPanels() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+        let windowId = appDelegate.createMainWindow()
+        guard let manager = appDelegate.workspaceManagerFor(windowId: windowId),
+              let workspace = manager.workspaces.first,
+              let panelId = workspace.panels.keys.first else {
+            closeWindow(withId: windowId)
+            XCTFail("Expected a panel in the new window")
+            return
+        }
+        defer {
+            MailboxBadgeStore.shared.forget(panelId: panelId)
+            closeWindow(withId: windowId)
+        }
+
+        MailboxBadgeStore.shared.track(panelId: panelId, workspaceId: workspace.id)
+        XCTAssertTrue(MailboxBadgeStore.shared.isTracking(panelId: panelId))
+
+        closeWindow(withId: windowId)
+
+        XCTAssertFalse(
+            MailboxBadgeStore.shared.isTracking(panelId: panelId),
+            "closing its owning window must remove the panel from mailbox badge recounts"
+        )
+    }
+
     func testCmdNPresentsPickerAndResolvesEventWindowWhenObjectKeyLookupIsMismatched() {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")

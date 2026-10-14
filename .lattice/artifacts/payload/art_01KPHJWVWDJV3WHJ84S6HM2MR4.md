@@ -1,1 +1,0 @@
-Groomed 13 plan notes across the backlog: 11 substantively expanded (CMUX-1, 3, 4, 5, 6, 7, 8, 10, 11, 12, 14), 2 footer-only (CMUX-15, 16 — already adequate). Skipped CMUX-2/9/13 (claimed) and CMUX-17 (self). No tickets flagged for human input — codebase + docs + CLAUDE.md carried enough context. See per-ticket footers in .lattice/notes/*.md.

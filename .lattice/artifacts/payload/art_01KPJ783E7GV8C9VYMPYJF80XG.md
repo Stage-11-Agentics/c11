@@ -1,1 +1,0 @@
-Confirmed done by Atin at v0.11.0 prod cut — default pane grid auto-spawn landed (#24); follow-ups tracked in CMUX-20 (also done).

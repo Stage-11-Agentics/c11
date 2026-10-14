@@ -1,1 +1,0 @@
-docs/agent-config-primitive-design.md

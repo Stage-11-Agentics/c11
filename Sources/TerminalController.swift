@@ -7786,6 +7786,7 @@ class TerminalController {
                         return MailboxNoOpReturn.shouldSubmitDelayedReturn(
                             operatorInputAtDispatch: operatorInputAtDispatch,
                             operatorInputAtReturn: terminalSurface.lastOperatorInputAt,
+                            dispatchState: initialNoOpRead?.state,
                             freshState: refreshedRead?.state
                         )
                     }

@@ -1195,7 +1195,9 @@ extension TerminalController {
                 phaseBFields["input_guard"] = status.rawValue
             }
         }
-        phaseBSema.wait()
+        if phaseBSema.wait(timeout: .now() + 5) == .timedOut {
+            submitted = false
+        }
         if let phaseBError { return phaseBError }
 
         #if DEBUG

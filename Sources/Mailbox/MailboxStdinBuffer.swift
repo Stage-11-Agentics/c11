@@ -596,16 +596,19 @@ enum MailboxNoOpReturn {
         state == .empty || state == .suggestion
     }
 
-    /// A bare socket Return waits for the paste-settle delay. Suppress it only
-    /// when the operator typed after dispatch or a successful fresh read sees
-    /// a draft. Busy, failed, and unknown reads preserve the existing Return.
+    /// A bare socket Return waits for the paste-settle delay. Suppress it when
+    /// the operator typed after dispatch, or when the dispatch-time read
+    /// admitted the Return and a successful fresh read now sees a draft. Busy,
+    /// failed, and unknown reads preserve the existing Return.
     static func shouldSubmitDelayedReturn(
         operatorInputAtDispatch: Date?,
         operatorInputAtReturn: Date?,
+        dispatchState: PromptInputState?,
         freshState: PromptInputState?
     ) -> Bool {
         guard operatorInputAtDispatch == operatorInputAtReturn else { return false }
-        return freshState != .draft
+        let dispatchAdmittedReturn = dispatchState.map { admits($0) } ?? false
+        return !(dispatchAdmittedReturn && freshState == .draft)
     }
 
     /// The Return changed nothing on screen: the same complete capture, cell

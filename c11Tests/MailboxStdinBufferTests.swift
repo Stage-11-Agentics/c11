@@ -497,28 +497,39 @@ final class MailboxNoOpReturnTests: XCTestCase {
         XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
             operatorInputAtDispatch: dispatchedAt,
             operatorInputAtReturn: t(11),
+            dispatchState: .empty,
             freshState: .unknown
         ))
         XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
             operatorInputAtDispatch: nil,
             operatorInputAtReturn: t(11),
+            dispatchState: nil,
             freshState: nil
         ))
         XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
             operatorInputAtDispatch: dispatchedAt,
             operatorInputAtReturn: dispatchedAt,
+            dispatchState: .empty,
             freshState: .draft
         ))
+        XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: dispatchedAt,
+            operatorInputAtReturn: dispatchedAt,
+            dispatchState: .draft,
+            freshState: .draft
+        ), "a Return already admitted on a known draft must still submit")
         for state in [PromptInputState.empty, .suggestion, .dialog, .unknown, .unavailable] {
             XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
                 operatorInputAtDispatch: dispatchedAt,
                 operatorInputAtReturn: dispatchedAt,
+                dispatchState: .empty,
                 freshState: state
             ), "\(state.rawValue) must preserve the existing Return")
         }
         XCTAssertTrue(MailboxNoOpReturn.shouldSubmitDelayedReturn(
             operatorInputAtDispatch: dispatchedAt,
             operatorInputAtReturn: dispatchedAt,
+            dispatchState: .empty,
             freshState: nil
         ), "a failed/busy read must preserve the existing Return")
     }

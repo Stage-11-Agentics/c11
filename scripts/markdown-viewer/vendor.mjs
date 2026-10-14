@@ -11,6 +11,7 @@ const nm = path.join(here, 'node_modules');
 await mkdir(out, { recursive: true });
 await build({ entryPoints:[path.join(here,'markdown-entry.js')], outfile:path.join(out,'markdown.js'), bundle:true, minify:true, format:'iife', legalComments:'eof' });
 for (const [pkg, src, dst] of [
+  // package.json's KaTeX override changes npm resolution; Mermaid's prebuilt bundle still embeds KaTeX 0.16.45.
   ['mermaid','dist/mermaid.min.js','mermaid.min.js'],
   ['@highlightjs/cdn-assets','highlight.min.js','highlight.min.js'],
   ['dompurify','dist/purify.min.js','purify.min.js'],
@@ -51,6 +52,8 @@ async function notices(dir,prefix='') {
   }
 }
 await notices(nm);
+// Mermaid 11.16.1 prebundles parser dependencies, so their notices are not present in node_modules.
+licenses += await readFile(path.join(here,'mermaid-bundled-notices.md'),'utf8');
 const files={};
 async function hashes(dir) { for(const e of await readdir(dir,{withFileTypes:true})) {
   const f=path.join(dir,e.name); if(e.isDirectory()) await hashes(f);

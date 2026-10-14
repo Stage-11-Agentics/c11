@@ -79,6 +79,9 @@ struct MailboxStdinBuffer {
     private var queues: [UUID: [Entry]] = [:]
     private var turns: [UUID: AgentTurn] = [:]
     private var lastSubmitAt: [UUID: Date] = [:]
+    /// The newest agent report or attach, deduplicated or not. A Return is
+    /// only taken back while nothing from the agent has arrived since.
+    private var lastReportedAt: [UUID: Date] = [:]
     /// When the agent's session last started or re-attached.
     private var attachedAt: [UUID: Date] = [:]
     /// The interactive agent process each panel's turn edges came from
@@ -140,6 +143,11 @@ struct MailboxStdinBuffer {
     /// turn end carries the agent's own clock, so one polled late is caught
     /// here; hook and wrapper edges are stamped when c11 receives them.
     mutating func noteAgentTurn(surfaceId: UUID, atPrompt: Bool, at now: Date) {
+        lastReportedAt[surfaceId] = max(lastReportedAt[surfaceId] ?? now, now)
+        setTurn(surfaceId: surfaceId, atPrompt: atPrompt, at: now)
+    }
+
+    private mutating func setTurn(surfaceId: UUID, atPrompt: Bool, at now: Date) {
         if atPrompt, let lastSubmit = lastSubmitAt[surfaceId], now < lastSubmit { return }
         if let current = turns[surfaceId], current.atPrompt == atPrompt { return }
         turns[surfaceId] = AgentTurn(atPrompt: atPrompt, since: now)
@@ -153,8 +161,41 @@ struct MailboxStdinBuffer {
     mutating func noteSubmit(surfaceId: UUID, at eventAt: Date) {
         lastSubmitAt[surfaceId] = max(lastSubmitAt[surfaceId] ?? .distantPast, eventAt)
         if let turn = turns[surfaceId], eventAt >= turn.since {
-            noteAgentTurn(surfaceId: surfaceId, atPrompt: false, at: eventAt)
+            setTurn(surfaceId: surfaceId, atPrompt: false, at: eventAt)
         }
+    }
+
+    /// The turn state just before a socket Return lands on a composer that
+    /// reads empty or a suggestion (C11-407).
+    struct NoOpReturnMark: Equatable {
+        let at: Date
+        let turn: AgentTurn?
+        let lastSubmit: Date?
+    }
+
+    func noOpReturnMark(surfaceId: UUID, at: Date) -> NoOpReturnMark {
+        NoOpReturnMark(at: at, turn: turns[surfaceId], lastSubmit: lastSubmitAt[surfaceId])
+    }
+
+    /// Take back the submit edges a socket Return recorded when the composer
+    /// showed it started no turn. Only while nothing else moved the turn: no
+    /// agent report or attach since the mark, and the turn is the one the
+    /// mark saw or the working state those submits made. A prompt the mark
+    /// saw comes back as a new idle period, so mail that arrived after the
+    /// Return is not skipped as already rung. True when it took them back.
+    mutating func retractNoOpReturn(surfaceId: UUID, mark: NoOpReturnMark, now: Date) -> Bool {
+        guard let submitted = lastSubmitAt[surfaceId], submitted >= mark.at,
+              (lastReportedAt[surfaceId] ?? .distantPast) < mark.at else { return false }
+        let current = turns[surfaceId]
+        let movedBySubmit = current.map { !$0.atPrompt && $0.since >= mark.at } ?? false
+        guard current == mark.turn || movedBySubmit else { return false }
+        lastSubmitAt[surfaceId] = mark.lastSubmit
+        if let turn = mark.turn, turn.atPrompt {
+            turns[surfaceId] = AgentTurn(atPrompt: true, since: max(now, submitted))
+        } else {
+            turns[surfaceId] = mark.turn
+        }
+        return true
     }
 
     /// A session started or re-attached at `at` (`JournalMailboxBoundary`
@@ -162,6 +203,7 @@ struct MailboxStdinBuffer {
     /// process, or the Return that launched this one, so the turn is unknown
     /// again. A newer edge stays.
     mutating func noteAgentAttached(surfaceId: UUID, at: Date) {
+        lastReportedAt[surfaceId] = max(lastReportedAt[surfaceId] ?? at, at)
         attachedAt[surfaceId] = max(attachedAt[surfaceId] ?? at, at)
         if let turn = turns[surfaceId], turn.since <= at {
             turns.removeValue(forKey: surfaceId)
@@ -175,6 +217,7 @@ struct MailboxStdinBuffer {
     /// exited, so its turn edges no longer describe the panel.
     mutating func forgetAgent(surfaceId: UUID) {
         turns.removeValue(forKey: surfaceId)
+        lastReportedAt.removeValue(forKey: surfaceId)
         attachedAt.removeValue(forKey: surfaceId)
         agentPids.removeValue(forKey: surfaceId)
     }
@@ -260,6 +303,7 @@ struct MailboxStdinBuffer {
     mutating func removeSurface(_ surfaceId: UUID) -> [Entry] {
         turns.removeValue(forKey: surfaceId)
         lastSubmitAt.removeValue(forKey: surfaceId)
+        lastReportedAt.removeValue(forKey: surfaceId)
         attachedAt.removeValue(forKey: surfaceId)
         agentPids.removeValue(forKey: surfaceId)
         return queues.removeValue(forKey: surfaceId) ?? []
@@ -270,6 +314,7 @@ struct MailboxStdinBuffer {
         queues = queues.filter { surfaceIds.contains($0.key) }
         turns = turns.filter { surfaceIds.contains($0.key) }
         lastSubmitAt = lastSubmitAt.filter { surfaceIds.contains($0.key) }
+        lastReportedAt = lastReportedAt.filter { surfaceIds.contains($0.key) }
         attachedAt = attachedAt.filter { surfaceIds.contains($0.key) }
         agentPids = agentPids.filter { surfaceIds.contains($0.key) }
     }
@@ -506,5 +551,46 @@ enum MailboxAgentForeground {
             info, expectedStartTime: process.startTime,
             panelTerminalDevice: panelDevice, terminalIsCanonical: terminalIsCanonical(path: path)
         )
+    }
+}
+
+/// C11-407. A socket Return on a composer that holds nothing to submit
+/// (empty, or only a suggestion, by the panel's own reader) starts no turn,
+/// but it is recorded as a submit and closes the ring gate. The socket
+/// path reads the composer before the Return, which is not the operator's
+/// typing path, and looks again after `settle`: an unchanged composer and no
+/// agent report in between mean no turn started, so that submit is taken
+/// back. A keystroke Return is never read here.
+enum MailboxNoOpReturn {
+    /// How long after the Return the composer is read again. A real submit
+    /// clears or changes it within a frame or two.
+    static let settle: TimeInterval = 1.0
+
+    struct Probe: Equatable {
+        let region: PromptRegionSnapshot
+        let mark: MailboxStdinBuffer.NoOpReturnMark
+    }
+
+    /// A composer a Return cannot submit from.
+    static func admits(_ state: PromptInputState) -> Bool {
+        state == .empty || state == .suggestion
+    }
+
+    /// The Return changed nothing on screen: the same complete capture, cell
+    /// for cell, with the cursor where it was. Any change keeps the submit.
+    static func unchanged(before: PromptRegionSnapshot, after: PromptRegionSnapshot) -> Bool {
+        before.complete && after.complete && before == after
+    }
+
+    /// Take the submit back only when the composer still reads empty or a
+    /// suggestion, nothing on screen changed, and the journal shows no turn.
+    static func shouldRetract(
+        probe: Probe,
+        after: PromptRegionSnapshot?,
+        afterState: PromptInputState?,
+        journalTurnOpen: Bool
+    ) -> Bool {
+        guard !journalTurnOpen, let after, let afterState, admits(afterState) else { return false }
+        return unchanged(before: probe.region, after: after)
     }
 }

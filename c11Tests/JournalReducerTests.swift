@@ -493,3 +493,85 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertFalse(attached.stillHolds(projected: live, current: working))
     }
 }
+
+/// C11-412. Claude fires no Stop hook on an Esc interrupt. Its transcript
+/// marker ends the turn it names, and only that turn.
+final class ClaudeTranscriptInterruptTests: XCTestCase {
+    private func hookStart(prompt: String?) -> JournalDraft {
+        var draft = JournalTestData.draft(.turnStarted)
+        draft.turnID = prompt
+        return draft
+    }
+
+    private func interrupt(prompt: String?, atMs: Int64 = 5_000) -> JournalDraft {
+        var draft = JournalDraft(kind: .turnInterrupted, emittedAtMs: atMs + 200, panelID: JournalTestData.panel,
+                                 workspaceID: JournalTestData.workspace, sessionID: "fixture-session",
+                                 agentKind: "claude-code", source: .transcript, adapter: .claudeTranscript,
+                                 nativeEvent: "turn.interrupted")
+        draft.adapterVersion = JournalNativeClockEvidence.claudeTranscriptVersion
+        draft.turnID = prompt
+        draft.occurredAtMs = atMs
+        draft.timeQuality = .nativeLocal
+        return draft
+    }
+
+    func testMarkerForTheWorkingPromptEndsTheTurn() throws {
+        let working = JournalTestData.fold(nil, hookStart(prompt: "prompt-1"), seq: 1).snapshot
+        XCTAssertEqual(working?.phase, .working)
+        let applied = JournalTestData.fold(working, interrupt(prompt: "prompt-1"), seq: 2)
+        XCTAssertEqual(applied.effect, .applied)
+        XCTAssertEqual(applied.snapshot?.phase, .idle)
+        XCTAssertEqual(applied.snapshot?.turnOutcome, "interrupted")
+    }
+
+    /// A marker read late, after a newer prompt started, names the old prompt
+    /// and must not idle the new turn. A marker with no prompt id cannot be
+    /// tied to a turn at all, and neither can a turn whose hook gave no id.
+    func testMarkerForAnotherPromptOrNoPromptChangesNothing() throws {
+        let working = try XCTUnwrap(JournalTestData.fold(nil, hookStart(prompt: "prompt-2"), seq: 1).snapshot)
+        for marker in [interrupt(prompt: "prompt-1"), interrupt(prompt: nil)] {
+            let result = JournalTestData.fold(working, marker, seq: 2)
+            XCTAssertEqual(result.effect, .stale)
+            XCTAssertEqual(result.snapshot?.phase ?? working.phase, .working)
+        }
+        let unnamed = try XCTUnwrap(JournalTestData.fold(nil, hookStart(prompt: nil), seq: 1).snapshot)
+        let result = JournalTestData.fold(unnamed, interrupt(prompt: "prompt-1"), seq: 2)
+        XCTAssertEqual(result.effect, .stale)
+    }
+
+    /// A finished turn is not ended again, and a marker cannot start or end
+    /// a turn as a Stop would: the adapter carries only `interrupt`.
+    func testMarkerOnAnIdleTurnIsAdvisory() throws {
+        let working = JournalTestData.fold(nil, hookStart(prompt: "prompt-1"), seq: 1).snapshot
+        var stop = JournalTestData.draft(.turnCompleted)
+        stop.turnID = "prompt-1"
+        let stopped = JournalTestData.fold(working, stop, seq: 2).snapshot
+        XCTAssertEqual(stopped?.phase, .idle)
+        XCTAssertNotEqual(JournalTestData.fold(stopped, interrupt(prompt: "prompt-1"), seq: 3).effect, .applied)
+        var asStop = interrupt(prompt: "prompt-1")
+        asStop.kind = .turnCompleted
+        XCTAssertEqual(JournalTestData.fold(working, asStop, seq: 3).effect, .advisory)
+    }
+
+    /// The interrupted turn reopens the mail gate, like a transcript turn end,
+    /// stamped no later than c11 recorded it.
+    func testInterruptedTurnIsAMailboxPromptBoundary() throws {
+        let working = JournalTestData.fold(nil, hookStart(prompt: "prompt-1"), seq: 1).snapshot
+        let marker = interrupt(prompt: "prompt-1", atMs: 9_000)
+        let fold = JournalTestData.fold(working, marker, seq: 2)
+        let result = JournalAppendResult(
+            receipt: JournalReceipt(eventID: marker.eventID, sequence: 2, committedAtMs: 10_002,
+                                    replayed: false, projectionEffect: fold.effect),
+            changedSnapshot: fold.snapshot
+        )
+        let boundary = try XCTUnwrap(JournalMailboxBoundary.make(
+            draft: marker, result: result, historical: false, pid: nil, verifiedNativeClock: true
+        ))
+        XCTAssertFalse(boundary.working)
+        XCTAssertFalse(boundary.headless)
+        XCTAssertEqual(boundary.at, Date(timeIntervalSince1970: 9))
+        XCTAssertNil(JournalMailboxBoundary.make(
+            draft: marker, result: result, historical: false, pid: nil, verifiedNativeClock: false
+        ), "a transcript edge needs the reader's verified clock")
+    }
+}

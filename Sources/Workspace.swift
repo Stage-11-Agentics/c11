@@ -6862,6 +6862,56 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
+    /// C11-407: the composer just before a socket Return. Nil when this panel
+    /// takes no stdin mail, the read failed, or the composer holds something
+    /// the Return could submit. Socket path only; a keystroke never reads.
+    func mailboxNoOpReturnProbe(surfaceId: UUID) -> MailboxNoOpReturn.Probe? {
+        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId),
+              let terminalPanel = panels[surfaceId] as? TerminalPanel,
+              let native = terminalPanel.surface.surface,
+              let region = TerminalController.shared.capturePromptInputRegion(surface: native) else { return nil }
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        guard MailboxNoOpReturn.admits(PromptInputClassifier.classify(region, harness: harness).state) else {
+            return nil
+        }
+        return MailboxNoOpReturn.Probe(
+            region: region,
+            mark: mailboxStdinState.buffer.noOpReturnMark(surfaceId: surfaceId, at: Date())
+        )
+    }
+
+    /// Look at the composer again `settle` after the Return. When it shows
+    /// the Return started nothing, take the submit back and run the ring
+    /// decision, so mail that waited behind that Return rings now.
+    func checkMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + MailboxNoOpReturn.settle) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.finishMailboxNoOpReturn(surfaceId: surfaceId, probe: probe)
+            }
+        }
+    }
+
+    private func finishMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
+              let native = terminalPanel.surface.surface else { return }
+        let after = TerminalController.shared.capturePromptInputRegion(surface: native)
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        let retract = MailboxNoOpReturn.shouldRetract(
+            probe: probe,
+            after: after,
+            afterState: after.map { PromptInputClassifier.classify($0, harness: harness).state },
+            journalTurnOpen: MailboxStdinDelivery.journalTurnOpen(JournalCoordinator.shared.snapshot(panelID: surfaceId))
+        )
+        guard retract,
+              mailboxStdinState.buffer.retractNoOpReturn(surfaceId: surfaceId, mark: probe.mark, now: Date()) else {
+            return
+        }
+#if DEBUG
+        dlog("mailbox.noop_return.retracted surface=\(surfaceId.uuidString.prefix(8))")
+#endif
+        ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+    }
+
     /// A session started or re-attached in this panel (C11-398). The turn is
     /// unknown until the harness reports an edge, and the ring decision runs
     /// for mail already queued. Without the interactive PID the start came

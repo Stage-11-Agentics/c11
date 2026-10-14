@@ -40,12 +40,14 @@ enum JournalSource: String, Codable, Sendable {
 enum JournalAdapter: String, Codable, Sendable {
     case claudeHook = "claude_hook", opencodePlugin = "opencode_plugin", piPlugin = "pi_plugin"
     case codexNotify = "codex_notify", codexTranscript = "codex_transcript", grokTranscript = "grok_transcript"
+    /// Claude's transcript, read only for the Esc interrupt its hooks never report.
+    case claudeTranscript = "claude_transcript"
     case shell, keypress, selfReport = "self_report", c11
     var source: JournalSource {
         switch self {
         case .claudeHook, .codexNotify: return .hook
         case .opencodePlugin, .piPlugin: return .plugin
-        case .codexTranscript, .grokTranscript: return .transcript
+        case .codexTranscript, .grokTranscript, .claudeTranscript: return .transcript
         case .shell: return .shell
         case .keypress: return .keypress
         case .selfReport: return .selfReport
@@ -59,6 +61,7 @@ enum JournalAdapter: String, Codable, Sendable {
         case .piPlugin, .codexNotify: return ["turn"]
         case .codexTranscript: return ["turn", "interrupt"]
         case .grokTranscript: return ["turn"]
+        case .claudeTranscript: return ["interrupt"]
         case .c11: return ["control"]
         default: return []
         }
@@ -181,11 +184,13 @@ struct JournalDraft: Codable, Equatable {
 enum JournalNativeClockEvidence {
     static let codexTranscriptVersion = "codex-rollout-clock-v1"
     static let grokTranscriptVersion = "grok-events-clock-v1"
+    static let claudeTranscriptVersion = "claude-transcript-clock-v1"
 
     static func adapterVersion(for adapter: JournalAdapter) -> String? {
         switch adapter {
         case .codexTranscript: return codexTranscriptVersion
         case .grokTranscript: return grokTranscriptVersion
+        case .claudeTranscript: return claudeTranscriptVersion
         default: return nil
         }
     }
@@ -201,7 +206,8 @@ enum JournalNativeClockEvidence {
              ("codex", .codexTranscript, "turn.completed", .turnCompleted),
              ("codex", .codexTranscript, "turn.interrupted", .turnInterrupted),
              ("grok", .grokTranscript, "turn.started", .turnStarted),
-             ("grok", .grokTranscript, "turn.completed", .turnCompleted):
+             ("grok", .grokTranscript, "turn.completed", .turnCompleted),
+             ("claude-code", .claudeTranscript, "turn.interrupted", .turnInterrupted):
             return true
         default:
             return false

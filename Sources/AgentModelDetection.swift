@@ -349,6 +349,10 @@ enum ParsedTranscriptLifecycle: Equatable, Sendable {
     case grokStart(at: Date?, turnID: String?, sessionID: String?, primary: Bool)
     case grokEnd(at: Date?, outcome: String?)
     case grokMalformed
+    /// Claude Code's Esc interrupt. It fires no Stop hook; its only record is
+    /// a user line `[Request interrupted by user]` (or `… for tool use]`),
+    /// whose `promptId` names the interrupted prompt.
+    case claudeInterrupt(at: Date?, promptID: String?)
 }
 
 struct TranscriptLifecycleObservation: Equatable, Sendable {
@@ -849,6 +853,15 @@ struct AgentModelProbe: Sendable {
         case .grokMalformed:
             state.grokPendingStart = nil
             return false
+        case .claudeInterrupt(let at, let promptID):
+            // The interrupt names its prompt; the journal applies it only to a
+            // working turn with that same prompt id. The line's other signals
+            // are kept as they were before this edge existed.
+            if let promptID {
+                observations.append(.init(kind: .turnInterrupted, occurredAt: at,
+                                           nativeEvent: "turn.interrupted", turnID: promptID, isChild: false))
+            }
+            return true
         }
     }
 
@@ -1008,6 +1021,12 @@ struct AgentModelProbe: Sendable {
             }
             let text = (message?["content"] as? String)
                 ?? blocks?.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String
+            if let blocks, blocks.count == 1, let text, claudeInterruptMarkers.contains(text) {
+                return ParsedTranscriptLine(
+                    event: .prompt(at: at),
+                    lifecycle: .claudeInterrupt(at: at, promptID: validOpaque(object["promptId"] as? String))
+                )
+            }
             if let text, localCommandEchoPrefixes.contains(where: { text.hasPrefix($0) }) {
                 // `/model` swaps the model the cache belongs to; `/effort`
                 // moves its breakpoints.
@@ -1045,6 +1064,14 @@ struct AgentModelProbe: Sendable {
             return ParsedTranscriptLine()
         }
     }
+
+    /// The exact text Claude Code writes when Esc interrupts a turn, as the
+    /// only block of a content array. A typed prompt is recorded as a plain
+    /// string, so typing this text is not an interrupt.
+    static let claudeInterruptMarkers: Set<String> = [
+        "[Request interrupted by user]",
+        "[Request interrupted by user for tool use]",
+    ]
 
     /// How Claude Code records a slash command, its output, and `!` shell lines.
     /// A skill command (`<command-message>` first) does send a prompt; its

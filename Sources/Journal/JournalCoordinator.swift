@@ -503,7 +503,9 @@ struct JournalMailboxBoundary: Sendable {
                         at: Date(timeIntervalSince1970: Double(committedAtMs) / 1000),
                         headless: pid == nil)
         case .transcript:
-            guard draft.kind == .turnCompleted, state.phase == .idle, verifiedNativeClock,
+            // An interrupted turn is over too (Codex `turn_aborted`, Claude's
+            // Esc marker): the agent is back at its prompt.
+            guard [.turnCompleted, .turnInterrupted].contains(draft.kind), state.phase == .idle, verifiedNativeClock,
                   let endedAtMs = draft.occurredAtMs else { return nil }
             // Never later than c11 recorded it: a skewed agent clock must not
             // stamp the gate in the future.

@@ -1379,19 +1379,267 @@ final class GrokPromptSuggestionTests: XCTestCase {
     }
 }
 
+/// C11-414. Grok's composer after a click in its transcript. Grok draws it
+/// dim, hides the cursor and parks it on the footer, or far above after a
+/// hover. Real Grok 1.0.52 takes a paste there into the composer and
+/// refocuses it, so the dim placeholder rings; a typed draft that lost focus
+/// would take the paste spliced onto it, so it never rings.
+final class GrokUnfocusedComposerTests: XCTestCase {
+    private let placeholders = [
+        GrokUnfocusedCaptures.unfocusedPlaceholderBelow,
+        GrokUnfocusedCaptures.unfocusedPlaceholderAbove,
+    ]
+
+    func testUnfocusedPlaceholderIsASuggestionThatRings() {
+        for capture in placeholders {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok"),
+                           .init(state: .suggestion, draftLength: nil))
+            XCTAssertNil(PromptInputClassifier.composerText(region, harness: "grok"))
+            let state = PromptInputClassifier.classify(region, harness: "grok").state
+            XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .ring)
+            XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .deliver(.checked))
+        }
+    }
+
+    /// Typed text that lost focus has the placeholder's bits and differs only
+    /// in its brighter grey. The literal `Build anything`, typed, is a draft
+    /// focused or not.
+    func testTypedTextIsADraftFocusedOrNot() {
+        let cases: [(GrokCapture, String)] = [
+            (GrokUnfocusedCaptures.unfocusedTypedDraftBelow, "fix the lint errors"),
+            (GrokUnfocusedCaptures.unfocusedTypedDraftAbove, "fix the lint errors"),
+            (GrokUnfocusedCaptures.unfocusedTypedBuildAnythingBelow, "Build anything"),
+            (GrokUnfocusedCaptures.unfocusedTypedBuildAnythingAbove, "Build anything"),
+            (GrokUnfocusedCaptures.typedBuildAnythingFocused, "Build anything"),
+        ]
+        for (capture, text) in cases {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok"),
+                           .init(state: .draft, draftLength: text.count), text)
+            XCTAssertEqual(PromptInputClassifier.composerText(region, harness: "grok"), text)
+            XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: .draft)), .skip(reason: "draft"))
+            XCTAssertEqual(SendInputGuard.decide(state: .draft, allowUnguarded: false), .refuse(reason: "draft"))
+        }
+    }
+
+    /// The doorbell line left unsubmitted, then a transcript click: still
+    /// the stranded invitation, which is never typed over.
+    func testUnfocusedStrandedDoorbellLineIsTheInvitation() {
+        let region = GrokUnfocusedCaptures.unfocusedDoorbellStrandedBelow.region()
+        let state = PromptInputClassifier.classify(region, harness: "grok").state
+        XCTAssertEqual(state, .draft)
+        XCTAssertEqual(FeedAnswerComposerCheck.compare(
+            state: state,
+            composer: PromptInputClassifier.composerText(region, harness: "grok"),
+            expected: MailboxDoorbell.text
+        ), .matches)
+    }
+
+    /// Fail closed: without colors the placeholder is typed text.
+    func testUnfocusedPlaceholderWithoutColorIsADraft() {
+        for capture in placeholders {
+            XCTAssertEqual(PromptInputClassifier.classify(capture.region(dropColor: true), harness: "grok").state, .draft)
+        }
+    }
+
+    /// One character in the typed grey makes the composer a draft.
+    func testOneBrightCharacterInTheUnfocusedComposerIsADraft() {
+        for capture in placeholders {
+            let region = capture.region(recolor: { y, x, fg in y == 25 && x == 10 ? 0x9B9B9B : fg })
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+        }
+    }
+
+    /// A hover parks the cursor 17 rows above the composer. Only the screen's
+    /// bottom rows hold it; without them, or with a clipped read, it stays
+    /// unknown and is not rung.
+    func testComposerOutsideTheCursorWindowNeedsTheBottomRows() {
+        for capture in [GrokUnfocusedCaptures.unfocusedPlaceholderAbove,
+                        GrokUnfocusedCaptures.unfocusedTypedDraftAbove] {
+            XCTAssertEqual(PromptInputClassifier.classify(capture.region(dropBottom: true), harness: "grok").state, .unknown)
+            XCTAssertEqual(PromptInputClassifier.classify(capture.region(bottomIncomplete: true), harness: "grok").state, .unknown)
+        }
+    }
+
+    /// With the cursor inside the box the composer is focused, and the
+    /// focused reader decides: upright `Build anything` there is a draft.
+    func testCursorInsideTheBoxUsesTheFocusedReader() {
+        let region = GrokUnfocusedCaptures.unfocusedPlaceholderBelow.region(cursorX: 6, cursorY: 25)
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "grok").state, .draft)
+    }
+
+    /// Grok's transcript hover box has square corners around a `│   ❯` past
+    /// prompt. It is not the composer, even when its text is dim.
+    func testSquareCorneredBoxIsNotTheComposer() {
+        let dim: UInt32 = 0x4E4E4E
+        let bg: UInt32 = 0x141414
+        let capture = GrokCapture(cursorX: 10, cursorY: 24, rows: [
+            (20, [S("  ┌" + String(repeating: "─", count: 40) + "┐", fg: dim, bg: bg)]),
+            (21, [S("  │ ❯ ", fg: dim, bg: bg), S("Build anything", fg: dim, bg: bg), S("                          │", fg: dim, bg: bg)]),
+            (22, [S("  └" + String(repeating: "─", count: 40) + "┘", fg: dim, bg: bg)]),
+            (23, [S("")]),
+            (24, [S("  Ctrl+e:expand thinking  │  Space:prompt", fg: 0x6C6C6C, bg: bg)]),
+        ])
+        XCTAssertEqual(PromptInputClassifier.classify(capture.region(), harness: "grok").state, .unknown)
+    }
+
+    func testOnlyGrokReadsTheScreenBottom() {
+        XCTAssertTrue(PromptInputClassifier.readsScreenBottom(harness: "grok"))
+        XCTAssertTrue(PromptInputClassifier.readsScreenBottom(harness: " Grok "))
+        for harness in ["claude-code", "codex", "opencode", "pi", "omp", "copilot", nil] as [String?] {
+            XCTAssertFalse(PromptInputClassifier.readsScreenBottom(harness: harness), harness ?? "untyped")
+        }
+    }
+
+    /// The unfocused reading is Grok's only. Other readers never call these
+    /// captures empty or a suggestion, so they are not rung.
+    func testUnfocusedCapturesOnOtherPanelsAreNotRung() {
+        for capture in placeholders {
+            for harness in ["claude-code", "codex", "opencode", "pi", "omp", nil] as [String?] {
+                let state = PromptInputClassifier.classify(capture.region(), harness: harness).state
+                XCTAssertFalse(state == .empty || state == .suggestion, harness ?? "untyped")
+            }
+        }
+    }
+
+    /// Grok 1.0.52's greys on its own background, either side of 3:1.
+    func testContrastRuleSeparatesGroksGreys() {
+        let bg: UInt32 = 0x141414
+        XCTAssertLessThan(PromptInputClassifier.contrastRatio(0x4E4E4E, bg), PromptInputClassifier.ghostTextContrast)
+        XCTAssertLessThan(PromptInputClassifier.contrastRatio(0x585858, bg), PromptInputClassifier.ghostTextContrast)
+        XCTAssertGreaterThan(PromptInputClassifier.contrastRatio(0x9B9B9B, bg), PromptInputClassifier.ghostTextContrast)
+        XCTAssertGreaterThan(PromptInputClassifier.contrastRatio(0xE1E1E1, bg), PromptInputClassifier.ghostTextContrast)
+        XCTAssertEqual(PromptInputClassifier.contrastRatio(0xFFFFFF, 0x000000), 21, accuracy: 0.01)
+        XCTAssertEqual(PromptInputClassifier.contrastRatio(0x000000, 0xFFFFFF), 21, accuracy: 0.01)
+    }
+}
+
+/// C11-406 review H: three sub-guards of Grok's italic-suggestion rule, each
+/// pinned by a shape no Grok draws. Every one fails closed to a draft.
+final class GrokSuggestionSubGuardTests: XCTestCase {
+    private func box(_ rows: [(Int, [S])]) -> GrokCapture {
+        GrokCapture(cursorX: 6, cursorY: 25, rows:
+            [(24, [S("  ╭" + String(repeating: "─", count: 50) + "╮  ")])] + rows)
+    }
+
+    /// The first content cell is an italic space, not an italic glyph.
+    func testItalicSpaceOnTheCursorCellIsADraft() {
+        let capture = box([
+            (25, [S("  │ ❯ "), S(" Reply with the one word CHARLIE and stop.", italic: true), S("   │  ")]),
+            (26, [S("  ╰──── Grok 4.7 (high) · always-approve ─╯  ")]),
+        ])
+        XCTAssertEqual(PromptInputClassifier.classify(capture.region(), harness: "grok").state, .draft)
+    }
+
+    /// Only the prompt row's first cell counts. A continuation row that
+    /// starts with an italic glyph does not stand in for it.
+    func testOnlyThePromptRowsFirstCellCounts() {
+        let capture = box([
+            (25, [S("  │ ❯ "), S(" Reply with the one word", italic: true), S("     │  ")]),
+            (26, [S("  │ "), S("CHARLIE and stop.", italic: true), S("     │  ")]),
+            (27, [S("  ╰──── Grok 4.7 (high) · always-approve ─╯  ")]),
+        ])
+        XCTAssertEqual(PromptInputClassifier.classify(capture.region(), harness: "grok").state, .draft)
+    }
+
+    /// A faint first cell is not the suggestion's italic glyph.
+    func testFaintItalicFirstCellIsADraft() {
+        let capture = box([
+            (25, [S("  │ ❯ "), S("R", faint: true, italic: true),
+                  S("eply with the one word CHARLIE and stop.", italic: true), S("   │  ")]),
+            (26, [S("  ╰──── Grok 4.7 (high) · always-approve ─╯  ")]),
+        ])
+        XCTAssertEqual(PromptInputClassifier.classify(capture.region(), harness: "grok").state, .draft)
+    }
+}
+
+/// The native import carries every cell field. C11-406 review: the italic
+/// wiring had no test; C11-414 adds the truecolor fields beside it.
+final class PromptRegionNativeImportTests: XCTestCase {
+    func testImportCarriesItalicAndTruecolor() throws {
+        var native = ghostty_prompt_region_s()
+        native.cursor_x = 1
+        native.cursor_y = 7
+        native.row_count = 1
+        native.cell_count = 3
+        native.text_len = 3
+        native.complete = true
+        var row = ghostty_prompt_region_row_s()
+        row.screen_y = 7
+        row.cell_start = 0
+        row.cell_count = 3
+        var plain = ghostty_prompt_region_cell_s()
+        plain.text_offset = 0
+        plain.text_len = 1
+        var styled = ghostty_prompt_region_cell_s()
+        styled.text_offset = 1
+        styled.text_len = 1
+        styled.italic = true
+        styled.fg_rgb_set = true
+        styled.fg_rgb = 0x4E4E4E
+        styled.bg_rgb_set = true
+        styled.bg_rgb = 0x141414
+        var fgOnly = ghostty_prompt_region_cell_s()
+        fgOnly.text_offset = 2
+        fgOnly.text_len = 1
+        fgOnly.faint = true
+        fgOnly.fg_rgb_set = true
+        fgOnly.fg_rgb = 0x010203
+        fgOnly.bg_rgb = 0x999999
+        let text = "abc".utf8.map { CChar(bitPattern: $0) }
+
+        let snapshot = try XCTUnwrap(PromptRegionNativeImport.snapshot(
+            native: native, rows: [row], cells: [plain, styled, fgOnly], text: text
+        ))
+        XCTAssertEqual(snapshot.cursorX, 1)
+        XCTAssertEqual(snapshot.cursorY, 7)
+        XCTAssertTrue(snapshot.complete)
+        XCTAssertEqual(snapshot.rows.first?.cellRange, 0..<3)
+        XCTAssertEqual(snapshot.cells[0], PromptRegionCell(textOffset: 0, textLength: 1, faint: false))
+        XCTAssertEqual(snapshot.cells[1], PromptRegionCell(textOffset: 1, textLength: 1, faint: false, italic: true,
+                                                           fg: 0x4E4E4E, bg: 0x141414))
+        XCTAssertEqual(snapshot.cells[2], PromptRegionCell(textOffset: 2, textLength: 1, faint: true,
+                                                           fg: 0x010203, bg: nil))
+        XCTAssertEqual(snapshot.text, Data("abc".utf8))
+        XCTAssertNil(snapshot.screenBottom)
+    }
+
+    func testImportDropsCountsPastTheBuffers() {
+        var native = ghostty_prompt_region_s()
+        native.row_count = 1
+        native.cell_count = 2
+        var row = ghostty_prompt_region_row_s()
+        row.cell_count = 2
+        XCTAssertNil(PromptRegionNativeImport.snapshot(
+            native: native, rows: [row], cells: [ghostty_prompt_region_cell_s()], text: []
+        ))
+        native.cell_count = 1
+        XCTAssertNil(PromptRegionNativeImport.snapshot(
+            native: native, rows: [row], cells: [ghostty_prompt_region_cell_s()], text: []
+        ))
+    }
+}
+
 private struct GrokCapture {
     let cursorX: Int
     let cursorY: Int
     let rows: [(Int, [S])]
+    /// The screen's last 16 rows, as Grok panels also read them.
+    var bottomRows: [(Int, [S])]? = nil
 
     struct S {
         let text: String
         var faint = false
         var italic = false
-        init(_ text: String, faint: Bool = false, italic: Bool = false) {
+        var fg: UInt32?
+        var bg: UInt32?
+        init(_ text: String, faint: Bool = false, italic: Bool = false, fg: UInt32? = nil, bg: UInt32? = nil) {
             self.text = text
             self.faint = faint
             self.italic = italic
+            self.fg = fg
+            self.bg = bg
         }
     }
 
@@ -1413,8 +1661,42 @@ private struct GrokCapture {
         cursorX: Int? = nil,
         cursorY: Int? = nil,
         dropItalic: Bool = false,
-        uprightAt: (y: Int, x: Int)? = nil
+        uprightAt: (y: Int, x: Int)? = nil,
+        dropColor: Bool = false,
+        dropBottom: Bool = false,
+        bottomIncomplete: Bool = false,
+        recolor: ((Int, Int, UInt32?) -> UInt32?)? = nil
     ) -> PromptRegionSnapshot {
+        let window = Self.cells(rows, dropItalic: dropItalic, uprightAt: uprightAt, dropColor: dropColor, recolor: recolor)
+        var snapshot = PromptRegionSnapshot(
+            cursorX: cursorX ?? self.cursorX,
+            cursorY: cursorY ?? self.cursorY,
+            cursorPendingWrap: false,
+            complete: true,
+            rows: window.rows,
+            cells: window.cells,
+            text: window.text
+        )
+        if let bottomRows, !dropBottom {
+            let bottom = Self.cells(bottomRows, dropItalic: dropItalic, uprightAt: uprightAt, dropColor: dropColor, recolor: recolor)
+            snapshot.screenBottom = PromptRegionRows(
+                complete: !bottomIncomplete,
+                rows: bottom.rows,
+                cells: bottom.cells,
+                text: bottom.text
+            )
+        }
+        return snapshot
+    }
+
+    /// `recolor` maps (row, column, fg) to the fg a cell gets instead.
+    private static func cells(
+        _ rows: [(Int, [S])],
+        dropItalic: Bool,
+        uprightAt: (y: Int, x: Int)?,
+        dropColor: Bool,
+        recolor: ((Int, Int, UInt32?) -> UInt32?)?
+    ) -> (rows: [PromptRegionRow], cells: [PromptRegionCell], text: Data) {
         var bytes = Data()
         var cells: [PromptRegionCell] = []
         var outputRows: [PromptRegionRow] = []
@@ -1426,9 +1708,12 @@ private struct GrokCapture {
                     let encoded = Array(String(scalar).utf8)
                     var italic = span.italic && !dropItalic
                     if let upright = uprightAt, upright.y == y, upright.x == x { italic = false }
+                    var fg = dropColor ? nil : span.fg
+                    if let recolor { fg = recolor(y, x, fg) }
                     cells.append(PromptRegionCell(
                         textOffset: bytes.count, textLength: encoded.count,
-                        faint: span.faint, italic: italic
+                        faint: span.faint, italic: italic,
+                        fg: fg, bg: dropColor ? nil : span.bg
                     ))
                     bytes.append(contentsOf: encoded)
                     x += 1
@@ -1438,15 +1723,7 @@ private struct GrokCapture {
                 screenY: y, cellRange: start..<cells.count, softWrap: false, wrapContinuation: false
             ))
         }
-        return PromptRegionSnapshot(
-            cursorX: cursorX ?? self.cursorX,
-            cursorY: cursorY ?? self.cursorY,
-            cursorPendingWrap: false,
-            complete: true,
-            rows: outputRows,
-            cells: cells,
-            text: bytes
-        )
+        return (outputRows, cells, bytes)
     }
 }
 
@@ -1614,6 +1891,196 @@ private enum GrokCaptures {
         (27, [S("                                            ")]),
         (28, [S("  Tab/→:accept suggestion"), S("  │  ", faint: true), S("Shift+Tab:    ")]),
         (29, [S("                                            ")]),
+    ])
+
+}
+
+// Generated from real Grok 1.0.52 (Grok 4.7) pty captures by gen_fixture_414.py.
+private enum GrokUnfocusedCaptures {
+    /// The operator typed `Build anything` into the focused composer: upright, 225 grey.
+    static let typedBuildAnythingFocused = GrokCapture(cursorX: 20, cursorY: 25, rows: [
+        (16, [S("                                                                                                    ", bg: 0x141414)]),
+        (17, [S("                                                                                                    ", bg: 0x141414)]),
+        (18, [S("  ", bg: 0x141414), S("Help improve Grok", fg: 0xE1E1E1, bg: 0x141414), S("                                                             ", bg: 0x141414), S("[Opt out]", fg: 0x787878, bg: 0x141414), S(" ", bg: 0x141414), S("[Opt in]", fg: 0xE1E1E1, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x505058, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x505058, bg: 0x141414), S(" ", fg: 0xE1E1E1, bg: 0x141414), S("❯ ", fg: 0xC8C8C8, bg: 0x141414), S("Build anything                                                                             ", fg: 0xE1E1E1, bg: 0x141414), S("│", fg: 0x505058, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x505058, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x808080, bg: 0x141414), S(" ─╯", fg: 0x505058, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Enter", fg: 0xC8C8C8, bg: 0x141414), S(":send", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Opt+Enter", fg: 0xC8C8C8, bg: 0x141414), S(":newline", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Shift+Tab", fg: 0xC8C8C8, bg: 0x141414), S(":mode", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                        ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// A transcript click: dim `Build anything` placeholder (78 grey), cursor hidden on the footer below the box.
+    static let unfocusedPlaceholderBelow = GrokCapture(cursorX: 62, cursorY: 28, rows: [
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("Build anything", fg: 0x4E4E4E, bg: 0x141414), S("                                                                             ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":expand thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                    ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// Typed `Build anything`, then a transcript click: the same text and bits as the placeholder, in 155 grey.
+    static let unfocusedTypedBuildAnythingBelow = GrokCapture(cursorX: 74, cursorY: 28, rows: [
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("Build anything                                                                             ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":expand thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                    ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// Typed `fix the lint errors`, then a transcript click: 155 grey, cursor on the footer.
+    static let unfocusedTypedDraftBelow = GrokCapture(cursorX: 74, cursorY: 28, rows: [
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("fix the lint errors                                                                        ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":collapse thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                  ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// The doorbell line pasted and not submitted, then a transcript click.
+    static let unfocusedDoorbellStrandedBelow = GrokCapture(cursorX: 74, cursorY: 28, rows: [
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("You have mail: run c11 mailbox recv --ack when you want to receive it.                     ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":collapse thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                  ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// A transcript click, then a hover: the hover box redraws and parks the cursor 17 rows above the composer.
+    static let unfocusedPlaceholderAbove = GrokCapture(cursorX: 99, cursorY: 8, rows: [
+        (0, [S("                                                                                                    ", bg: 0x141414)]),
+        (1, [S("  ", bg: 0x141414), S("~/c/p/grokcap/work", fg: 0xC8C8C8, bg: 0x141414), S("                                                      ", bg: 0x141414), S("32K / 256K", fg: 0xDBDBDB, bg: 0x141414), S(" │ ", fg: 0x414141, bg: 0x141414), S("[Dashboard]", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (2, [S(" ", bg: 0x141414), S("┌", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┐", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (3, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (4, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("   ", bg: 0x242424), S("❯ ", fg: 0xC8C8C8, bg: 0x242424), S("Reply with the one word ALPHA and stop.", fg: 0xE1E1E1, bg: 0x242424), S("                                         ", bg: 0x242424), S("  2:27 AM", fg: 0x6C6C6C, bg: 0x242424), S("  ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (5, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (6, [S(" ", bg: 0x141414), S("└", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┘", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (7, [S(" ", bg: 0x141414), S("│", fg: 0x1E1E22, bg: 0x141414), S("   ", bg: 0x141414), S("ALPHA", fg: 0xC8C8C8, bg: 0x141414), S("                                                                             ", bg: 0x141414), S("  2:27 AM", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414), S("│", fg: 0x1E1E22, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (8, [S(" ", bg: 0x141414), S("└", fg: 0x1E1E22, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┘", fg: 0x1E1E22, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (9, [S("     ", bg: 0x141414), S("Worked for 2.8s", fg: 0x6C6C6C, bg: 0x141414), S("                                                                                ", bg: 0x141414)]),
+        (10, [S("                                                                                                    ", bg: 0x141414)]),
+        (11, [S("                                                                                                    ", bg: 0x141414)]),
+        (12, [S("                                                                                                    ", bg: 0x141414)]),
+        (13, [S("                                                                                                    ", bg: 0x141414)]),
+        (14, [S("                                                                                                    ", bg: 0x141414)]),
+    ], bottomRows: [
+        (14, [S("                                                                                                    ", bg: 0x141414)]),
+        (15, [S("                                                                                                    ", bg: 0x141414)]),
+        (16, [S("                                                                                                    ", bg: 0x141414)]),
+        (17, [S("                                                                                                    ", bg: 0x141414)]),
+        (18, [S("  ", bg: 0x141414), S("Help improve Grok", fg: 0xE1E1E1, bg: 0x141414), S("                                                             ", bg: 0x141414), S("[Opt out]", fg: 0x787878, bg: 0x141414), S(" ", bg: 0x141414), S("[Opt in]", fg: 0xE1E1E1, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("Build anything", fg: 0x4E4E4E, bg: 0x141414), S("                                                                             ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":collapse thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                  ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// Typed `fix the lint errors`, a transcript click, then a hover: cursor parked above, out of the cursor window.
+    static let unfocusedTypedDraftAbove = GrokCapture(cursorX: 99, cursorY: 8, rows: [
+        (0, [S("                                                                                                    ", bg: 0x141414)]),
+        (1, [S("  ", bg: 0x141414), S("~/c/p/grokcap/work", fg: 0xC8C8C8, bg: 0x141414), S("                                                      ", bg: 0x141414), S("32K / 256K", fg: 0xDBDBDB, bg: 0x141414), S(" │ ", fg: 0x414141, bg: 0x141414), S("[Dashboard]", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (2, [S(" ", bg: 0x141414), S("┌", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┐", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (3, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (4, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("   ", bg: 0x242424), S("❯ ", fg: 0xC8C8C8, bg: 0x242424), S("Reply with the one word ALPHA and stop.", fg: 0xE1E1E1, bg: 0x242424), S("                                         ", bg: 0x242424), S("  2:27 AM", fg: 0x6C6C6C, bg: 0x242424), S("  ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (5, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (6, [S(" ", bg: 0x141414), S("└", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┘", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (7, [S(" ", bg: 0x141414), S("│", fg: 0x1E1E22, bg: 0x141414), S("   ", bg: 0x141414), S("ALPHA", fg: 0xC8C8C8, bg: 0x141414), S("                                                                             ", bg: 0x141414), S("  2:27 AM", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414), S("│", fg: 0x1E1E22, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (8, [S(" ", bg: 0x141414), S("└", fg: 0x1E1E22, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┘", fg: 0x1E1E22, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (9, [S("     ", bg: 0x141414), S("Worked for 2.8s", fg: 0x6C6C6C, bg: 0x141414), S("                                                                                ", bg: 0x141414)]),
+        (10, [S("                                                                                                    ", bg: 0x141414)]),
+        (11, [S("                                                                                                    ", bg: 0x141414)]),
+        (12, [S("                                                                                                    ", bg: 0x141414)]),
+        (13, [S("                                                                                                    ", bg: 0x141414)]),
+        (14, [S("                                                                                                    ", bg: 0x141414)]),
+    ], bottomRows: [
+        (14, [S("                                                                                                    ", bg: 0x141414)]),
+        (15, [S("                                                                                                    ", bg: 0x141414)]),
+        (16, [S("                                                                                                    ", bg: 0x141414)]),
+        (17, [S("                                                                                                    ", bg: 0x141414)]),
+        (18, [S("  ", bg: 0x141414), S("Help improve Grok", fg: 0xE1E1E1, bg: 0x141414), S("                                                             ", bg: 0x141414), S("[Opt out]", fg: 0x787878, bg: 0x141414), S(" ", bg: 0x141414), S("[Opt in]", fg: 0xE1E1E1, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("fix the lint errors                                                                        ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":collapse thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                  ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
+    ])
+
+    /// Typed `Build anything`, a transcript click, then a hover: cursor parked above.
+    static let unfocusedTypedBuildAnythingAbove = GrokCapture(cursorX: 99, cursorY: 8, rows: [
+        (0, [S("                                                                                                    ", bg: 0x141414)]),
+        (1, [S("  ", bg: 0x141414), S("~/c/p/grokcap/work", fg: 0xC8C8C8, bg: 0x141414), S("                                                      ", bg: 0x141414), S("32K / 256K", fg: 0xDBDBDB, bg: 0x141414), S(" │ ", fg: 0x414141, bg: 0x141414), S("[Dashboard]", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (2, [S(" ", bg: 0x141414), S("┌", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┐", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (3, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (4, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("   ", bg: 0x242424), S("❯ ", fg: 0xC8C8C8, bg: 0x242424), S("Reply with the one word ALPHA and stop.", fg: 0xE1E1E1, bg: 0x242424), S("                                         ", bg: 0x242424), S("  2:27 AM", fg: 0x6C6C6C, bg: 0x242424), S("  ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (5, [S(" ", bg: 0x141414), S("│", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x242424), S("│", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (6, [S(" ", bg: 0x141414), S("└", fg: 0x3C3C41, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┘", fg: 0x3C3C41, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (7, [S(" ", bg: 0x141414), S("│", fg: 0x1E1E22, bg: 0x141414), S("   ", bg: 0x141414), S("ALPHA", fg: 0xC8C8C8, bg: 0x141414), S("                                                                             ", bg: 0x141414), S("  2:27 AM", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414), S("│", fg: 0x1E1E22, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (8, [S(" ", bg: 0x141414), S("└", fg: 0x1E1E22, bg: 0x141414), S("                                                                                                ", bg: 0x141414), S("┘", fg: 0x1E1E22, bg: 0x141414), S(" ", bg: 0x141414)]),
+        (9, [S("     ", bg: 0x141414), S("Worked for 2.8s", fg: 0x6C6C6C, bg: 0x141414), S("                                                                                ", bg: 0x141414)]),
+        (10, [S("                                                                                                    ", bg: 0x141414)]),
+        (11, [S("                                                                                                    ", bg: 0x141414)]),
+        (12, [S("                                                                                                    ", bg: 0x141414)]),
+        (13, [S("                                                                                                    ", bg: 0x141414)]),
+        (14, [S("                                                                                                    ", bg: 0x141414)]),
+    ], bottomRows: [
+        (14, [S("                                                                                                    ", bg: 0x141414)]),
+        (15, [S("                                                                                                    ", bg: 0x141414)]),
+        (16, [S("                                                                                                    ", bg: 0x141414)]),
+        (17, [S("                                                                                                    ", bg: 0x141414)]),
+        (18, [S("  ", bg: 0x141414), S("Help improve Grok", fg: 0xE1E1E1, bg: 0x141414), S("                                                             ", bg: 0x141414), S("[Opt out]", fg: 0x787878, bg: 0x141414), S(" ", bg: 0x141414), S("[Opt in]", fg: 0xE1E1E1, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (19, [S("  ", bg: 0x141414), S("Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g.,", fg: 0x787878, bg: 0x141414), S("                             ", bg: 0x141414)]),
+        (20, [S("  ", bg: 0x141414), S("prompts, traces, & metrics, for training and debugging purposes. Change", fg: 0x787878, bg: 0x141414), S("                           ", bg: 0x141414)]),
+        (21, [S("  ", bg: 0x141414), S("anytime via settings.", fg: 0x787878, bg: 0x141414), S("                                                                             ", bg: 0x141414)]),
+        (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
+        (23, [S("                                                                                                    ", bg: 0x141414)]),
+        (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("Build anything                                                                             ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (27, [S("                                                                                                    ", bg: 0x141414)]),
+        (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":collapse thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                  ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (29, [S("                                                                                                    ", bg: 0x141414)]),
     ])
 
 }

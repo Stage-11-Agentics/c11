@@ -397,9 +397,9 @@ typedef enum {
 
 // Bounded active-screen prompt-region capture. Callers provide storage for at
 // most these limits; native traversal stops at the same limits and marks a
-// clipped result incomplete. Text is UTF-8, cell entries retain SGR-2 faint
-// and SGR-3 italic, and rows preserve hard/soft-wrap boundaries. No scrollback
-// or colors.
+// clipped result incomplete. Text is UTF-8, cell entries retain SGR-2 faint,
+// SGR-3 italic and explicit truecolor, and rows preserve hard/soft-wrap
+// boundaries. No scrollback; palette and default colors are not resolved.
 #define GHOSTTY_PROMPT_REGION_MAX_ROWS 16
 #define GHOSTTY_PROMPT_REGION_MAX_CELLS 4096
 #define GHOSTTY_PROMPT_REGION_MAX_TEXT_BYTES 16384
@@ -424,6 +424,12 @@ typedef struct {
   uint32_t text_len;
   bool faint;
   bool italic;
+  // Explicit truecolor only (SGR 38;2 / 48;2), as 0x00RRGGBB. Palette and
+  // default colors are not resolved: the `_set` flag is false and the value 0.
+  bool fg_rgb_set;
+  bool bg_rgb_set;
+  uint32_t fg_rgb;
+  uint32_t bg_rgb;
 } ghostty_prompt_region_cell_s;
 
 typedef enum {
@@ -1188,6 +1194,15 @@ ghostty_text_read_status_e ghostty_surface_try_read_selection(ghostty_surface_t,
 // be interpreted as an empty prompt. Result contains only data copied into the
 // caller-owned buffers; it allocates no text and has no matching free function.
 ghostty_text_read_status_e ghostty_surface_try_read_prompt_region(
+    ghostty_surface_t,
+    ghostty_prompt_region_s*,
+    ghostty_prompt_region_row_s*, uintptr_t,
+    ghostty_prompt_region_cell_s*, uintptr_t,
+    char*, uintptr_t);
+// Same bounds, lock and status as above, but the window is the last 16 rows of
+// the active screen. The result still reports the live cursor, which may sit
+// outside the window.
+ghostty_text_read_status_e ghostty_surface_try_read_prompt_region_bottom(
     ghostty_surface_t,
     ghostty_prompt_region_s*,
     ghostty_prompt_region_row_s*, uintptr_t,

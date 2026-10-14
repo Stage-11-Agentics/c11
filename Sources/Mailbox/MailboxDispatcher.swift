@@ -189,6 +189,11 @@ final class MailboxDispatcher {
         )
     }
 
+    /// One line per held-composer look, so the watch is visible in the log.
+    func logStdinRecheck(id: String, recipient: String, reason: String, nextMs: Int) {
+        log.append(.doorbellRecheck(id: id, recipient: recipient, reason: reason, nextMs: nextMs))
+    }
+
     /// The stdin push could not claim an envelope; it stays in the inbox.
     func logStdinClaimFailed(id: String, recipient: String, errno code: Int32) {
         log.append(.claimFailed(id: id, recipient: recipient, errno: code))

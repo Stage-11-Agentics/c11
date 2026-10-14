@@ -60,6 +60,10 @@ final class MailboxDispatchLog {
         /// stays in the inbox root and nothing was typed. Logged as a
         /// `handler` event (outcome `claim_failed`) carrying the errno.
         case claimFailed(id: String, recipient: String, errno: Int32)
+        /// A held ring looked at the composer again and scheduled its next
+        /// look. Logged as a `handler` event (outcome `doorbell_recheck`)
+        /// with `reason` and `next_ms`, one line per look.
+        case doorbellRecheck(id: String, recipient: String, reason: String, nextMs: Int)
     }
 
     /// Dispatcher-observable outcomes for a single handler invocation.
@@ -110,6 +114,9 @@ final class MailboxDispatchLog {
         case doorbellCapped = "doorbell_capped"
         /// The invitation was not submitted. `reason` is the feed-answer code.
         case doorbellFailed = "doorbell_failed"
+        /// A held ring looked again. `reason` is `draft`, `unknown_prompt`
+        /// or `stranded`; `next_ms` is the delay to the next look.
+        case doorbellRecheck = "doorbell_recheck"
     }
 
     // MARK: - File I/O
@@ -193,6 +200,14 @@ final class MailboxDispatchLog {
             payload["handler"] = "stdin"
             payload["outcome"] = HandlerOutcome.claimFailed.rawValue
             payload["errno"] = Int(code)
+        case .doorbellRecheck(let id, let recipient, let reason, let nextMs):
+            payload["event"] = "handler"
+            payload["id"] = id
+            payload["recipient"] = recipient
+            payload["handler"] = "stdin"
+            payload["outcome"] = HandlerOutcome.doorbellRecheck.rawValue
+            payload["reason"] = reason
+            payload["next_ms"] = nextMs
         }
 
         guard

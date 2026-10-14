@@ -1049,3 +1049,153 @@ final class MailboxDoorbellTests: XCTestCase {
         return (watch, now)
     }
 }
+
+/// C11-414 and C11-400 K/M/G. A held composer (a draft, an unreadable
+/// prompt, or the stranded doorbell line) looks again on one bounded series:
+/// 5, 15, 30 s, then every 60 s. Every look is named so it can be logged.
+final class HeldComposerSeriesTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_000)
+
+    private func plan(
+        _ decision: MailboxDoorbell.Decision,
+        stranded: Bool = false,
+        watch: MailboxDoorbellSequence.DraftWatch? = nil,
+        epoch: String = "1|prompt",
+        ids: Set<String> = ["a"],
+        at now: Date? = nil
+    ) -> MailboxDoorbellSequence.Plan {
+        MailboxDoorbellSequence.plan(
+            decision: decision,
+            attempts: [],
+            now: now ?? start,
+            busyExhausted: false,
+            strandedDoorbell: stranded,
+            draftWatch: watch,
+            epoch: epoch,
+            unreadIds: ids
+        )
+    }
+
+    /// Follows a held skip for `looks` looks and returns the delays.
+    private func series(
+        _ decision: MailboxDoorbell.Decision,
+        stranded: Bool = false,
+        looks: Int
+    ) -> (delays: [TimeInterval], relooks: [String?], watch: MailboxDoorbellSequence.DraftWatch?) {
+        var watch: MailboxDoorbellSequence.DraftWatch?
+        var now = start
+        var delays: [TimeInterval] = []
+        var relooks: [String?] = []
+        for _ in 0..<looks {
+            let step = plan(decision, stranded: stranded, watch: watch, at: now)
+            watch = step.draftWatch
+            relooks.append(step.relook)
+            guard case .after(let delay) = step.rearm else { break }
+            delays.append(delay)
+            now = now.addingTimeInterval(delay)
+        }
+        return (delays, relooks, watch)
+    }
+
+    /// C11-414 part 2: an unreadable prompt used to wait for the next envelope.
+    func testUnknownPromptLooksAgainOnTheHeldSeries() {
+        let run = series(.skip(reason: "unknown_prompt"), looks: 40)
+        XCTAssertEqual(run.delays.count, 40)
+        XCTAssertEqual(Array(run.delays.prefix(3)), [5, 15, 30])
+        XCTAssertTrue(run.delays.dropFirst(3).allSatisfy { $0 == 60 })
+        XCTAssertTrue(run.relooks.allSatisfy { $0 == "unknown_prompt" })
+        XCTAssertEqual(run.watch?.exhausted, true)
+    }
+
+    /// The unknown series ends on a ring, on no unread mail, on covered mail,
+    /// and on a closed gate. It never rings on its own.
+    func testUnknownSeriesEndsOnEveryOtherDecision() {
+        let watch = series(.skip(reason: "unknown_prompt"), looks: 3).watch
+        for decision: MailboxDoorbell.Decision in [
+            .ring, .skip(reason: "no_mail"), .skip(reason: "already_covered"),
+            .skip(reason: "gate_closed"), .skip(reason: "dialog"), .skip(reason: "once_per_idle"),
+        ] {
+            let next = plan(decision, watch: watch)
+            XCTAssertEqual(next.rearm, .none, "\(decision)")
+            XCTAssertNil(next.draftWatch, "\(decision)")
+            XCTAssertNil(next.relook, "\(decision)")
+        }
+    }
+
+    /// An unreadable prompt that becomes a draft, or back, keeps one series.
+    func testDraftAndUnknownShareOneSeries() {
+        let first = plan(.skip(reason: "unknown_prompt"))
+        XCTAssertEqual(first.rearm, .after(5))
+        let second = plan(.skip(reason: "draft"), watch: first.draftWatch, at: start.addingTimeInterval(5))
+        XCTAssertEqual(second.rearm, .after(15))
+        let third = plan(.skip(reason: "unknown_prompt"), watch: second.draftWatch, at: start.addingTimeInterval(20))
+        XCTAssertEqual(third.rearm, .after(30))
+    }
+
+    /// C11-400 K: a composer still holding the doorbell line used to look
+    /// again every 0.5 s with no bound. It is on the held series now.
+    func testStrandedDoorbellLineLooksAgainOnTheBoundedSeries() {
+        let run = series(.skip(reason: "draft"), stranded: true, looks: 40)
+        XCTAssertEqual(Array(run.delays.prefix(3)), [5, 15, 30])
+        XCTAssertTrue(run.delays.allSatisfy { $0 >= 5 })
+        XCTAssertTrue(run.relooks.allSatisfy { $0 == "stranded" })
+        XCTAssertFalse(run.delays.contains(MailboxDoorbellSequence.shortRecheck))
+    }
+
+    /// Once the stranded line is cleared the next look rings, and the series ends.
+    func testClearedStrandedLineRingsOnTheNextLook() {
+        let held = plan(.skip(reason: "draft"), stranded: true)
+        var cleared = MailboxDoorbell.Input()
+        cleared.unreadIds = ["a"]
+        cleared.prompt = .empty
+        let decision = MailboxDoorbell.decide(cleared)
+        XCTAssertEqual(decision, .ring)
+        let next = plan(decision, watch: held.draftWatch, at: start.addingTimeInterval(5))
+        XCTAssertEqual(next.arrival, .ring)
+        XCTAssertEqual(next.rearm, .none)
+        XCTAssertNil(next.draftWatch)
+    }
+
+    /// C11-400 M: each held look is named for its dispatch line. Other
+    /// re-arms are not held looks.
+    func testEveryHeldLookIsNamed() {
+        XCTAssertEqual(plan(.skip(reason: "draft")).relook, "draft")
+        XCTAssertEqual(plan(.skip(reason: "draft"), stranded: true).relook, "stranded")
+        XCTAssertEqual(plan(.skip(reason: "unknown_prompt")).relook, "unknown_prompt")
+        XCTAssertNil(plan(.deferRing(after: 2)).relook)
+        XCTAssertNil(plan(.skip(reason: "rate_capped")).relook)
+        XCTAssertNil(MailboxDoorbellSequence.plan(
+            decision: .skip(reason: "unavailable"), attempts: [], now: start,
+            busyExhausted: true, strandedDoorbell: false
+        ).relook)
+    }
+
+    func testRecheckLineCarriesReasonAndNextDelay() throws {
+        let line = MailboxDispatchLog.serialize(
+            event: .doorbellRecheck(id: "A", recipient: "watcher", reason: "unknown_prompt", nextMs: 15_000),
+            at: Date(timeIntervalSince1970: 0)
+        )
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.dropLast().utf8)) as? [String: Any])
+        XCTAssertEqual(obj["event"] as? String, "handler")
+        XCTAssertEqual(obj["handler"] as? String, "stdin")
+        XCTAssertEqual(obj["id"] as? String, "A")
+        XCTAssertEqual(obj["outcome"] as? String, "doorbell_recheck")
+        XCTAssertEqual(obj["reason"] as? String, "unknown_prompt")
+        XCTAssertEqual(obj["next_ms"] as? Int, 15_000)
+    }
+
+    /// C11-400 G, adopted from the C11-405 verify probes: mail a submitted
+    /// ring already covered is skipped before a text-box draft is considered,
+    /// so it starts no held series.
+    func testRV405CoveredBeatsTextBoxDraft() {
+        var input = MailboxDoorbell.Input()
+        input.unreadIds = ["a"]
+        input.coveredIds = ["a"]
+        input.textBoxUnsent = true
+        input.prompt = nil
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "already_covered"))
+        let covered = plan(MailboxDoorbell.decide(input))
+        XCTAssertEqual(covered.rearm, .none)
+        XCTAssertNil(covered.draftWatch)
+    }
+}

@@ -209,12 +209,17 @@ enum MailboxDoorbellSequence {
     struct Plan: Equatable {
         var arrival: MailboxDoorbell.Arrival
         var rearm: Rearm
-        /// The draft backoff after this decision. Nil when this skip is not
-        /// a plain draft, or when that backoff has not started.
+        /// The held-composer backoff after this decision. Nil when this skip
+        /// is not a held composer, or when that backoff has not started.
         var draftWatch: DraftWatch?
+        /// Set when `rearm` is a look on the held-composer series: `draft`,
+        /// `unknown_prompt`, or `stranded` (the composer still holds the
+        /// doorbell line). The caller writes one dispatch line for it.
+        var relook: String? = nil
     }
 
-    /// One draft-skip series, started for a set of unread ids.
+    /// One held-composer series, started for a set of unread ids. A draft,
+    /// an unreadable prompt, and a stranded doorbell line share it.
     /// `exhausted` means the 10 minute schedule is over. The same ids keep a
     /// 60 second look. A new id, or a new epoch, starts again at 5 seconds.
     struct DraftWatch: Equatable {
@@ -226,8 +231,8 @@ enum MailboxDoorbellSequence {
         var exhausted: Bool
     }
 
-    /// First looks after a draft skip, then `draftRecheckInterval`. Past
-    /// `draftRecheckBound` the same mail stays on that interval.
+    /// First looks after a held-composer skip, then `draftRecheckInterval`.
+    /// Past `draftRecheckBound` the same mail stays on that interval.
     static let draftRecheckDelays: [TimeInterval] = [5, 15, 30]
     static let draftRecheckInterval: TimeInterval = 60
     static let draftRecheckBound: TimeInterval = 600
@@ -236,9 +241,14 @@ enum MailboxDoorbellSequence {
     static let busyAttempts = 3
     /// Gap between those captures.
     static let busyRetryGap: TimeInterval = 0.075
-    /// Later look after a busy read, a stranded line, or an open prompt
-    /// whose input transaction is still active.
+    /// Later look after a busy read, a failed paste, or an open prompt whose
+    /// input transaction is still active.
     static let shortRecheck: TimeInterval = 0.5
+
+    /// Skips that hold mail at an open prompt until the composer changes.
+    /// Each looks again on the held-composer series. Nothing else re-arms a
+    /// ring there, so without the series the mail waits for the next envelope.
+    static let heldComposerReasons: Set<String> = ["draft", "unknown_prompt"]
 
     static func shouldRetryBusy(tryIndex: Int) -> Bool {
         tryIndex >= 0 && tryIndex + 1 < busyAttempts
@@ -329,10 +339,10 @@ enum MailboxDoorbellSequence {
 
     /// `rate_capped` looks again when the oldest attempt leaves the window.
     /// A busy read that has used its captures looks again after `shortRecheck`.
-    /// A composer that still holds the doorbell line looks again too, and is
-    /// not retyped by this plan. A plain draft looks again on the draft
-    /// backoff. A covered ring waits for a new envelope. Any other keep waits
-    /// for a later edge.
+    /// A draft, an unreadable prompt, and a composer that still holds the
+    /// doorbell line look again on the held-composer series; this plan never
+    /// retypes the line. A covered ring waits for a new envelope. Any other
+    /// keep waits for a later edge.
     static func plan(
         decision: MailboxDoorbell.Decision,
         attempts: [Date],
@@ -346,6 +356,7 @@ enum MailboxDoorbellSequence {
         let arrival = MailboxDoorbell.arrival(for: decision)
         let rearm: Rearm
         var watch = draftWatch
+        var relook: String?
         switch decision {
         case .deferRing(let after):
             rearm = .after(after)
@@ -361,10 +372,7 @@ enum MailboxDoorbellSequence {
         case .skip(let reason) where reason == "unavailable" && busyExhausted:
             rearm = .after(shortRecheck)
             watch = nil
-        case .skip(let reason) where reason == "draft" && strandedDoorbell:
-            rearm = .after(shortRecheck)
-            watch = nil
-        case .skip(let reason) where reason == "draft":
+        case .skip(let reason) where heldComposerReasons.contains(reason):
             let step = nextDraftRecheck(
                 watch: draftWatch,
                 epoch: epoch,
@@ -373,11 +381,12 @@ enum MailboxDoorbellSequence {
             )
             rearm = step.rearm
             watch = step.watch
+            relook = reason == "draft" && strandedDoorbell ? "stranded" : reason
         default:
             rearm = .none
             watch = nil
         }
-        return Plan(arrival: arrival, rearm: rearm, draftWatch: watch)
+        return Plan(arrival: arrival, rearm: rearm, draftWatch: watch, relook: relook)
     }
 
     /// Ids from the pre-hop snapshot that are no longer in the inbox root.

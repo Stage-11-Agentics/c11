@@ -79,7 +79,7 @@ To validate what the operator actually sees, load `c11-computer-use`. Socket and
 
 ## Lattice tickets
 
-Non-trivial tickets run through **`lattice-orchestrator-v2`** (source: `~/Projects/Stage11/code/overwatch/skills/lattice-orchestrator-v2/`). The in-repo `skills/lattice-orchestrator` is the legacy version, still shipped for installs; don't use it for c11 tickets. v2 runs one owner per ticket in its own worktree, independent review, runtime proof, a Merge Captain, terminal audit. c11 tickets earn it: typing-latency hot paths, tagged builds, localization passes, and submodule state that must not bleed between parallel work. Inline is fine for one-line edits, mechanical changes with no review surface, or when Atin says "just do it." The c11 board is local (`.lattice/`, not hosted). Commit deliberate `.lattice/config.json` edits immediately.
+Non-trivial tickets run through **`lattice-hosted-orchestrator`**, because the c11 board is hosted (`stage11/c11` on lattice.stage11.ai; `lattice remote status` shows the binding). The in-repo `skills/lattice-orchestrator` is the legacy version, still shipped for installs; don't use it for c11 tickets. It runs one owner per ticket in its own worktree, independent review, runtime proof, a Merge Captain, terminal audit. c11 tickets earn it: typing-latency hot paths, tagged builds, localization passes, and submodule state that must not bleed between parallel work. Inline is fine for one-line edits, mechanical changes with no review surface, or when Atin says "just do it." `.lattice/` is a read-only cache of the hosted board and is gitignored; write the board only through the `lattice` CLI. Run only as many owners as Atlas can build for (two c11 build slots): more owners than slots just queue.
 
 ## Builds
 

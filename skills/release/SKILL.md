@@ -44,6 +44,7 @@ If the operator says "skip pre-flight," skip. Otherwise run all four every time.
 
 4. Update changelogs:
 - Update `CHANGELOG.md`.
+- The `## [X.Y.Z] - YYYY-MM-DD` section is the release body; `release.yml` and `release-local.sh` refuse a tag without it.
 - Do not edit a separate docs changelog file; `web/app/[locale]/docs/changelog/page.tsx` renders from `CHANGELOG.md`.
 - Use categories `Added`, `Changed`, `Fixed`, `Removed`.
 - **Credit contributors inline** (see Contributor Credits below).
@@ -75,9 +76,12 @@ git diff "$(git describe --tags --abbrev=0 --match 'v*')..HEAD" -- \
   Sources/Panels/BrowserPanelView.swift \
   Sources/BrowserWindowPortal.swift \
   Sources/Panels/MarkdownWebRenderer.swift \
-  Sources/MarkdownCorpusIndex.swift \
   Sources/UntrustedRepositoryGit.swift \
-  Resources/markdown-viewer/
+  Sources/MarkdownAssetPolicy.swift \
+  Sources/MarkdownCorpusIndex.swift \
+  Sources/SocketHandlers/MarkdownFeedbackHandlers.swift \
+  Resources/markdown-viewer/ \
+  Sources/Events/EventLog.swift
 ```
 
 The URL handler around `Sources/AppDelegate.swift:2301` (`application(_:open:)`)
@@ -164,7 +168,7 @@ Credit the people who made each release happen:
 
 - **Per-entry:** Append `— thanks @user!` for code contributions, including c11 maintainers when they made the change. Use `— thanks @user for the report!` for bug reporters (when different from PR author). When a release imports an upstream commit, preserve its original authorship and credit that contributor; do not credit manaflow-ai's core team by default.
 - **Summary:** Add a `### Thanks to N contributors!` section at the bottom of each release with an alphabetical list of linked handles for people who contributed to that release, including c11 maintainers and authors of imported upstream commits.
-- **GitHub Release body:** Include the same "Thanks to N contributors!" section with linked handles.
+- **GitHub Release body:** The release workflow automatically uses the changelog section, including its "Thanks to N contributors!" section with linked handles.
 
 ## Version bumping
 

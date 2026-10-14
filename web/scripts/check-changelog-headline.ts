@@ -22,5 +22,23 @@ if (!thanks.items.some((item) => item.includes("[@BenevolentFutures]"))) {
   throw new Error("1.1.0 contributor link was not parsed into the Thanks section");
 }
 
+const listFixture = parseChangelog(`## [0.1.0] - 2026-01-01
+
+### Changed
+- Parent item
+  - Child detail
+| Metric | Value |
+| --- | --- |
+- Next item`);
+const changedItems = listFixture[0]?.sections[0]?.items;
+if (
+  changedItems?.length !== 2 ||
+  changedItems[0] !== "Parent item\nChild detail" ||
+  changedItems[1] !== "Next item"
+) {
+  throw new Error(`Unexpected list/table parsing: ${JSON.stringify(changedItems)}`);
+}
+
 console.log(`1.1.0 headline: ${version.intro}`);
 console.log(`1.1.0 thanks: ${thanks.items.join(", ")}`);
+console.log("nested changelog lists and tables: passed");

@@ -37,6 +37,13 @@ export function parseChangelog(markdown: string): ChangelogVersion[] {
       continue;
     }
 
+    const subitemMatch = line.match(/^(\s+)- (.+)$/);
+    if (subitemMatch && currentSection?.items.length) {
+      const lastItemIndex = currentSection.items.length - 1;
+      currentSection.items[lastItemIndex] += `\n${subitemMatch[2]}`;
+      continue;
+    }
+
     const itemMatch = line.match(/^- (.+)$/);
     if (itemMatch) {
       if (currentSection) {
@@ -54,6 +61,7 @@ export function parseChangelog(markdown: string): ChangelogVersion[] {
     }
 
     const trimmed = line.trim();
+    if (trimmed.startsWith("|")) continue;
     if (!trimmed || trimmed.startsWith("#")) continue;
 
     const headlineMatch = trimmed.match(/^Headline:\s*(.+)$/);

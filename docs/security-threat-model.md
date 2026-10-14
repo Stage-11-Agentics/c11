@@ -765,12 +765,11 @@ git diff <last-tag>..HEAD -- \
   Sources/Panels/BrowserPanelView.swift \
   Sources/BrowserWindowPortal.swift \
   Sources/Panels/MarkdownWebRenderer.swift \
+  Sources/UntrustedRepositoryGit.swift \
   Sources/MarkdownAssetPolicy.swift \
   Sources/MarkdownCorpusIndex.swift \
   Sources/SocketHandlers/MarkdownFeedbackHandlers.swift \
-  Resources/markdown-viewer/index.html \
-  Resources/markdown-viewer/viewer.js \
-  Resources/markdown-viewer/vendor/MANIFEST.json \
+  Resources/markdown-viewer/ \
   Sources/Events/EventLog.swift
 ```
 

@@ -306,3 +306,23 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
   `italic`) the same in three places: the submodule's `include/ghostty.h`,
   c11's repo-root `ghostty.h` (the copy the bridging header imports), and
   the Swift importer in `TerminalController.swift`.
+
+### 14) C11-414 truecolor cells and a bottom-anchored prompt-region read
+
+- Commit: `ed0a968cc059ba9249cc6887bbb54e8363fc619b`
+- Files: `include/ghostty.h`, `src/apprt/embedded.zig`,
+  `src/terminal/prompt_region.zig`
+- `ghostty_prompt_region_cell_s` gains `bool fg_rgb_set`, `bool bg_rgb_set`,
+  `uint32_t fg_rgb`, `uint32_t bg_rgb` after `italic` (0x00RRGGBB, explicit
+  SGR 38;2 / 48;2 only; palette and default colors stay unresolved and read
+  unset). A bg-only cell reports its truecolor background. Grok draws its
+  unfocused composer's `Build anything` placeholder and an unfocused typed
+  draft with the same text and no faint or italic bit; only the grey differs.
+- Adds `ghostty_surface_try_read_prompt_region_bottom`: the same one-shot
+  try-lock and limits, but the window is the last 16 rows of the active
+  screen, and the result still reports the live cursor. Grok parks its hidden
+  cursor far above the composer after a hover, outside the cursor window.
+- On rebase, keep the cell field order (`text_offset`, `text_len`, `faint`,
+  `italic`, `fg_rgb_set`, `bg_rgb_set`, `fg_rgb`, `bg_rgb`) the same in the
+  submodule header, c11's repo-root `ghostty.h`, the Zig `extern struct`, and
+  `PromptRegionNativeImport` in `TerminalController.swift`.

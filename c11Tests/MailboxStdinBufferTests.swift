@@ -437,6 +437,18 @@ final class MailboxNoOpReturnTests: XCTestCase {
         }
     }
 
+    /// The agent exited after the mark (its shell came back): the Return is
+    /// not taken back, and no turn is made up for a panel with no agent.
+    func testAnAgentThatExitedIsNotGivenATurnBack() {
+        var buffer = MailboxStdinBuffer()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        let mark = buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+        buffer.noteSubmit(surfaceId: panel, at: t(10.4))
+        buffer.forgetAgent(surfaceId: panel)
+        XCTAssertFalse(buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11.5)))
+        XCTAssertNil(buffer.agentTurn(surfaceId: panel))
+    }
+
     /// No submit after the mark: nothing to take back.
     func testNothingToTakeBackWithoutASubmit() {
         var buffer = MailboxStdinBuffer()

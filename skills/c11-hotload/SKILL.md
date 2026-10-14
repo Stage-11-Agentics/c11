@@ -83,7 +83,7 @@ requirements: `docs/validation/c11-349/README.md`.
 | `./scripts/remote-build.sh --tag <tag> --mode release` | Ad-hoc staging Release app; no publish or launch |
 | `./scripts/remote-build.sh --tag <tag> --mode release --wmo --universal` | Release staging with production compilation settings |
 
-Test selection uses the safe per-PID socket wrapper. Pass `-resultBundlePath <relative-path>.xcresult` to retrieve an xcresult. Signing/notarization for publication remains in GitHub Actions, with named approval of exact signed bytes; this route does not copy credentials. For `c11Tests` test runs, `remote-build.sh` reads `scripts/host-test-quarantine.tsv` and automatically skips both `all` and `atlas` rows, logging each scope. An exact quarantined method named in `-only-testing:c11Tests/.../testMethod` runs without the automatic skip. Use `--no-host-quarantine` to disable automatic skips.
+Test selection uses the safe per-PID socket wrapper. Pass `-resultBundlePath <relative-path>.xcresult` to retrieve an xcresult. Signing/notarization for publication remains in GitHub Actions, with named approval of exact signed bytes; this route does not copy credentials. For `c11Tests` and `c11LogicTests` test runs, `remote-build.sh` reads `scripts/host-test-quarantine.tsv` and automatically skips both `all` and `atlas` rows, logging each scope. An exact quarantined method named in `-only-testing:<target>/<Class>/testMethod` runs without the automatic skip. Use `--no-host-quarantine` to disable automatic skips.
 
 ## Existing on-Atlas entry points
 

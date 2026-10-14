@@ -517,7 +517,7 @@ def main():
     parser.add_argument("--tag", required=True)
     parser.add_argument("--mode", choices=("debug", "test", "release"), default="debug")
     parser.add_argument("--no-host-quarantine", action="store_true",
-                        help="run c11Tests methods from the shared quarantine inventory")
+                        help="run quarantined c11Tests and c11LogicTests methods from the shared inventory")
     parser.add_argument("--launch", action="store_true", help="launch a returned Debug app with QA fresh")
     for option in ("clean", "wmo", "universal"):
         parser.add_argument("--" + option, action="store_true")

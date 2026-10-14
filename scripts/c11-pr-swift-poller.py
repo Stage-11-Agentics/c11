@@ -544,6 +544,51 @@ def group_alive(pgid):
     return True
 
 
+def _process_snapshot():
+    """Return pid -> (ppid, state) rows from the local process table."""
+    listed = subprocess.run(
+        ["ps", "-axo", "pid=,ppid=,state="], capture_output=True, text=True
+    )
+    if listed.returncode != 0:
+        return {}
+    processes = {}
+    for line in listed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        processes[pid] = (ppid, parts[2])
+    return processes
+
+
+def _process_descendants(roots, processes):
+    """Return live descendants of roots, deepest first, across process groups."""
+    children = {}
+    for pid, (ppid, state) in processes.items():
+        if not state.startswith("Z"):
+            children.setdefault(ppid, []).append(pid)
+    depths = {}
+    pending = [(root, 0) for root in roots]
+    while pending:
+        parent, depth = pending.pop()
+        for child in children.get(parent, ()):
+            if child not in depths:
+                depths[child] = depth + 1
+                pending.append((child, depth + 1))
+    deepest_first = sorted(depths.items(), key=lambda item: item[1], reverse=True)
+    return [pid for pid, _depth in deepest_first]
+
+
+def _signal_pid(pid, sig):
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _pgid_live(pgid):
     """True when ps shows a non-zombie member of this process group."""
     listed = subprocess.run(["ps", "-axo", "pgid=,state="], capture_output=True, text=True)
@@ -582,20 +627,51 @@ def lock_is_free(path):
         os.close(fd)
 
 
-def kill_until_esrch(pgid, alive, kill, sleep, monotonic, term_grace, budget):
-    """TERM, then KILL after term_grace, until ESRCH or budget. Returns True on ESRCH."""
+def kill_until_esrch(pgid, alive, kill, sleep, monotonic, term_grace, budget, track_tree=False):
+    """Terminate the recorded process group and all live descendants, then wait."""
     started = monotonic()
     deadline = started + budget
-    kill(pgid, signal.SIGTERM)
+    members = {pgid}
+    if track_tree:
+        members.update(_process_descendants({pgid}, _process_snapshot()))
+
+    def discover_and_signal(sig):
+        if track_tree:
+            processes = _process_snapshot()
+            descendants = _process_descendants(members, processes)
+            members.update(descendants)
+            for pid in descendants:
+                _signal_pid(pid, sig)
+        kill(pgid, sig)
+
+    def has_live_members():
+        if track_tree:
+            processes = _process_snapshot()
+            descendants = _process_descendants(members, processes)
+            new_members = set(descendants) - members
+            members.update(new_members)
+            new_signal = signal.SIGKILL if killed else signal.SIGTERM
+            for pid in new_members:
+                _signal_pid(pid, new_signal)
+        if alive(pgid):
+            return True
+        if not track_tree:
+            return False
+        return any(
+            pid in processes and not processes[pid][1].startswith("Z")
+            for pid in members
+        )
+
+    discover_and_signal(signal.SIGTERM)
     killed = False
     while True:
-        if not alive(pgid):
+        if not has_live_members():
             return True
         now = monotonic()
         if now >= deadline:
-            return not alive(pgid)
+            return not has_live_members()
         if not killed and now >= started + term_grace:
-            kill(pgid, signal.SIGKILL)
+            discover_and_signal(signal.SIGKILL)
             killed = True
         sleep(min(0.2, deadline - now))
 
@@ -620,6 +696,7 @@ def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=
     A free lock does not clear running.json while the recorded group exists.
     running.json is removed only after killpg confirms ESRCH.
     """
+    track_tree = alive is None
     alive = alive or group_alive
     kill = kill or _signal_group
     sleep = sleep or time.sleep
@@ -631,7 +708,10 @@ def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=
     pgid = None if recorded is None else recorded.get("pgid")
     if pgid is not None and alive(pgid):
         append_event(root, {"event": "probe-alive", "pgid": pgid})
-        gone = kill_until_esrch(pgid, alive, kill, sleep, monotonic, term_grace, budget)
+        gone = kill_until_esrch(
+            pgid, alive, kill, sleep, monotonic, term_grace, budget,
+            track_tree=track_tree,
+        )
         if not gone or alive(pgid):
             append_event(root, {"event": "stuck", "reason": "group"})
             return "stuck"

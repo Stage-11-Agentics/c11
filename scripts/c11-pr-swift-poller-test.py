@@ -650,6 +650,50 @@ class CapacityAndRecoveryTests(unittest.TestCase):
                 if text:
                     _kill(int(text[0]))
 
+    def test_recover_kills_descendant_that_moved_to_another_process_group(self):
+        state = self.root / "state"
+        state.mkdir()
+        child = self.root / "detached-child.py"
+        parent = self.root / "build-parent.py"
+        child_pid_path = self.root / "detached-child.pid"
+        child.write_text(textwrap.dedent("""
+            import os, sys, time
+            open(sys.argv[1], "w").write(str(os.getpid()))
+            while True:
+                time.sleep(30)
+        """))
+        parent.write_text(textwrap.dedent("""
+            import subprocess, sys, time
+            subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2]], start_new_session=True)
+            while True:
+                time.sleep(30)
+        """))
+        build = subprocess.Popen(
+            [sys.executable, str(parent), str(child), str(child_pid_path)],
+            start_new_session=True,
+        )
+        try:
+            _wait_for(child_pid_path)
+            detached_pid = int(child_pid_path.read_text())
+            self.assertNotEqual(os.getpgid(detached_pid), build.pid)
+            poller.write_running(self.root, {"pgid": build.pid, "acquired_at": time.time()})
+            outcome = poller.recover(self.root, term_grace=1, budget=8)
+            self.assertEqual(outcome, "ready")
+            build.wait(timeout=5)
+            self.assertFalse(
+                _alive(detached_pid),
+                "recovery must kill a descendant outside the recorded group",
+            )
+            self.assertFalse(poller.running_path(self.root).exists())
+        finally:
+            if build.poll() is None:
+                build.kill()
+                build.wait(timeout=5)
+            if child_pid_path.exists():
+                detached_pid = int(child_pid_path.read_text())
+                if _alive(detached_pid):
+                    os.kill(detached_pid, signal.SIGKILL)
+
     def test_child_does_not_exec_when_the_second_revalidate_moves(self):
         state = self.root / "state"
         state.mkdir()

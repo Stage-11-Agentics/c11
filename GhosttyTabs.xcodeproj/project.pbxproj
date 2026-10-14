@@ -374,6 +374,7 @@
 		C1124400000000000000B004 /* AgentModelDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B003 /* AgentModelDetectionTests.swift */; };
 		C1124400000000000000B012 /* TabActivitySignals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B011 /* TabActivitySignals.swift */; };
 		C1124400000000000000B014 /* PanelActivitySignalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B013 /* PanelActivitySignalsTests.swift */; };
+		C22600000000000000000002 /* AppNapActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000001 /* AppNapActivity.swift */; };
 		C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */; };
 		C11250C0A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11250C1A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift */; };
 		C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */; };
@@ -995,6 +996,7 @@
 		C1124400000000000000B003 /* AgentModelDetectionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentModelDetectionTests.swift; sourceTree = "<group>"; };
 		C1124400000000000000B011 /* TabActivitySignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabActivitySignals.swift; sourceTree = "<group>"; };
 		C1124400000000000000B013 /* PanelActivitySignalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelActivitySignalsTests.swift; sourceTree = "<group>"; };
+		C22600000000000000000001 /* AppNapActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNapActivity.swift; sourceTree = "<group>"; };
 		C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentLaunchModelTierTests.swift; sourceTree = "<group>"; };
 		C11250C1A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaInteractionCardRenderTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStore.swift; sourceTree = "<group>"; };
@@ -1458,6 +1460,7 @@
 				C1124400000000000000B001 /* AgentModelDetection.swift */,
 				C1382000000000000000A001 /* PromptCacheReports.swift */,
 				C1124400000000000000B011 /* TabActivitySignals.swift */,
+				C22600000000000000000001 /* AppNapActivity.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
 				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
@@ -2449,6 +2452,7 @@
 				C1124400000000000000B002 /* AgentModelDetection.swift in Sources */,
 				C1382000000000000000A002 /* PromptCacheReports.swift in Sources */,
 				C1124400000000000000B012 /* TabActivitySignals.swift in Sources */,
+				C22600000000000000000002 /* AppNapActivity.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
 				C1130600A1B2C3D4E5F60701 /* ClaudeStopTranscript.swift in Sources */,

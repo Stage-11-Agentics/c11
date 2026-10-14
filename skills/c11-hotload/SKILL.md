@@ -60,6 +60,8 @@ Remote failure returns nonzero, retrieves available logs, and preserves the prev
 
 In the c11 1.0 run, packaged-app validation and computer use run on Atlas only. The laptop receives the app but does not launch it. On Atlas, launch the retained tagged app using its source checkout's `launch-tagged-automation.sh`. Never launch an untagged c11 DEV app.
 
+Tagged builds can run behind production during socket work: c11 holds a user-initiated activity while a socket client is connected and for 60 seconds after the last disconnect. Shell telemetry sends a socket report every 45 seconds, so an open shell keeps the activity held and the idle release rarely fires; the activity still allows system idle sleep.
+
 Live proofs that need real agent panels (Claude Code, Codex, Grok receiving mail or running hooks) run in an Atlas sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained Atlas copy of a remote build is under `~/c11-builds/<tag>/artifacts/<invocation>/`; running the sandbox scripts on Atlas with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
 
 ## Isolate activity-history validation

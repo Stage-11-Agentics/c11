@@ -3,6 +3,7 @@ import path from "path";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { getTranslations } from "next-intl/server";
+import { parseChangelog } from "@/lib/changelog";
 import { changelogMedia, type VersionMedia } from "./changelog-media";
 
 /** Read PNG dimensions from the IHDR chunk (bytes 16-23). */
@@ -22,71 +23,6 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     title: t("metaTitle"),
     description: t("metaDescription"),
   };
-}
-
-interface ChangelogSection {
-  heading: string;
-  items: string[];
-}
-
-interface ChangelogVersion {
-  version: string;
-  date: string;
-  intro?: string;
-  sections: ChangelogSection[];
-}
-
-function parseChangelog(markdown: string): ChangelogVersion[] {
-  const versions: ChangelogVersion[] = [];
-  let current: ChangelogVersion | null = null;
-  let currentSection: ChangelogSection | null = null;
-
-  for (const line of markdown.split("\n")) {
-    const versionMatch = line.match(/^## \[(.+?)\] - (.+)$/);
-    if (versionMatch) {
-      if (current) versions.push(current);
-      current = {
-        version: versionMatch[1],
-        date: versionMatch[2],
-        sections: [],
-      };
-      currentSection = null;
-      continue;
-    }
-
-    if (!current) continue;
-
-    const sectionMatch = line.match(/^### (.+)$/);
-    if (sectionMatch) {
-      currentSection = { heading: sectionMatch[1], items: [] };
-      current.sections.push(currentSection);
-      continue;
-    }
-
-    const itemMatch = line.match(/^- (.+)$/);
-    if (itemMatch) {
-      if (currentSection) {
-        currentSection.items.push(itemMatch[1]);
-      } else {
-        if (!current.sections.length) {
-          currentSection = { heading: "", items: [] };
-          current.sections.push(currentSection);
-        }
-        current.sections[current.sections.length - 1].items.push(
-          itemMatch[1]
-        );
-      }
-      continue;
-    }
-
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith("#")) {
-      current.intro = trimmed;
-    }
-  }
-
-  if (current) versions.push(current);
-  return versions;
 }
 
 function InlineMarkdown({ text }: { text: string }) {

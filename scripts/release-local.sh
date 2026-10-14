@@ -123,6 +123,12 @@ die() { printf '\nRELEASE-LOCAL FAILED: %s\n' "$*" >&2; exit 1; }
 # Prints a command a dry run skips, shell-quoted so it can be pasted.
 would() { printf '  WOULD RUN:'; printf ' %q' "$@"; printf '\n'; }
 
+RELEASE_NOTES="$OUT/release-notes.md"
+if ! "$ROOT/scripts/extract-release-notes.sh" "$VERSION" "$ROOT/CHANGELOG.md" >"$RELEASE_NOTES"; then
+  die "could not extract the $TAG section from CHANGELOG.md"
+fi
+note "release body source: CHANGELOG.md section for $TAG ($RELEASE_NOTES)"
+
 KEY_DIR=""
 cleanup() {
   # The exported Sparkle key lives only in this 0700 dir during step 13.
@@ -174,7 +180,7 @@ fi
 
 PBX_VERSIONS="$(grep -E '^\s*MARKETING_VERSION = ' GhosttyTabs.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/' | sort -u)"
 PBX_BUILDS="$(grep -E '^\s*CURRENT_PROJECT_VERSION = ' GhosttyTabs.xcodeproj/project.pbxproj | sed -E 's/.*= ([^;]+);/\1/' | sort -u)"
-note "MARKETING_VERSION: $(echo $PBX_VERSIONS); CURRENT_PROJECT_VERSION: $(echo $PBX_BUILDS)"
+note "MARKETING_VERSION: $PBX_VERSIONS; CURRENT_PROJECT_VERSION: $PBX_BUILDS"
 [[ "$(wc -l <<<"$PBX_VERSIONS" | tr -d ' ')" == "1" ]] || die "targets disagree on MARKETING_VERSION"
 if [[ "$PBX_VERSIONS" != "$VERSION" ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -652,9 +658,10 @@ verify_remote_assets() {
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   if [[ -z "$RELEASE_ID" ]]; then
-    would gh release create "$TAG" --repo "$REPO_SLUG" --verify-tag --draft --title "$TAG" --generate-notes "${ASSETS[@]}"
+    would gh release create "$TAG" --repo "$REPO_SLUG" --verify-tag --draft --title "$TAG" --notes-file "$RELEASE_NOTES" "${ASSETS[@]}"
   else
     [[ "$RELEASE_DRAFT" == "true" ]] || would gh api -X PATCH "repos/$REPO_SLUG/releases/$RELEASE_ID" -F draft=true
+    would gh release edit "$TAG" --repo "$REPO_SLUG" --notes-file "$RELEASE_NOTES"
     would gh release upload "$TAG" --repo "$REPO_SLUG" "${ASSETS[@]}"
   fi
   note "  then verify every asset name/size/digest via: gh api repos/$REPO_SLUG/releases/<id>"
@@ -666,10 +673,11 @@ else
   # (invisible, never `latest`) until every asset is verified. No --clobber
   # anywhere: an existing asset is never overwritten.
   if [[ -z "$RELEASE_ID" ]]; then
-    gh release create "$TAG" --repo "$REPO_SLUG" --verify-tag --draft --title "$TAG" --generate-notes "${ASSETS[@]}"
+    gh release create "$TAG" --repo "$REPO_SLUG" --verify-tag --draft --title "$TAG" --notes-file "$RELEASE_NOTES" "${ASSETS[@]}"
     RELEASE_ID="$(jq -r .id <<<"$(find_release)")"
     [[ -n "$RELEASE_ID" && "$RELEASE_ID" != "null" ]] || die "created draft for $TAG not found"
   else
+    gh release edit "$TAG" --repo "$REPO_SLUG" --notes-file "$RELEASE_NOTES"
     if [[ "$RELEASE_DRAFT" != "true" ]]; then
       note "release $TAG is published without assets; turning it into a draft before uploading"
       gh api -X PATCH "repos/$REPO_SLUG/releases/$RELEASE_ID" -F draft=true >/dev/null

@@ -77,6 +77,21 @@ jobs:
               throw error;
             }
 
+      - name: Prepare release notes from changelog
+        id: release_notes
+        if: steps.guard_release_assets.outputs.skip_upload != 'true'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a version tag, got: $TAG" >&2
+            exit 1
+          fi
+          NOTES_PATH="$RUNNER_TEMP/c11-release-notes.md"
+          ./scripts/extract-release-notes.sh "${TAG#v}" "$GITHUB_WORKSPACE/CHANGELOG.md" > "$NOTES_PATH"
+          echo "path=$NOTES_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Select Xcode
         if: steps.guard_release_assets.outputs.skip_all != 'true'
         run: |
@@ -337,7 +352,7 @@ jobs:
             remote-daemon-assets/c11d-remote-linux-amd64
             remote-daemon-assets/c11d-remote-checksums.txt
             remote-daemon-assets/c11d-remote-manifest.json
-          generate_release_notes: true
+          body_path: ${{ steps.release_notes.outputs.path }}
           overwrite_files: false
 
       - name: Cleanup keychain

@@ -4118,6 +4118,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     func noteScrollbar(total: UInt64, len: UInt64) {
         if scrollbackGrowth.observe(total: total, len: len) {
             lastOutputGrowthAt = Date()
+            AppNapActivityCoordinator.shared.noteTerminalOutput()
         }
     }
 

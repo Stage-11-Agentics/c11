@@ -193,3 +193,64 @@ final class PanelActivitySignalsTests: XCTestCase {
         XCTAssertEqual(PanelSheetDetailBuilder.build(inputs { $0.isBeingSeen = true }).clockTexts["seen"], "now")
     }
 }
+
+final class AppNapActivityPolicyTests: XCTestCase {
+    func testFirstSocketClientAcquiresOnceAndLastDisconnectReleasesAfterIdleWindow() {
+        var policy = AppNapActivityPolicy(idleWindow: 30)
+
+        XCTAssertEqual(policy.socketClientConnected(at: 10), .acquire)
+        XCTAssertEqual(policy.socketClientConnected(at: 12), .unchanged, "a second client must not acquire twice")
+        XCTAssertEqual(policy.socketClientDisconnected(at: 20), .unchanged)
+        XCTAssertEqual(policy.socketClientDisconnected(at: 25), .unchanged, "the idle grace keeps the assertion")
+        XCTAssertEqual(policy.connectedSocketClients, 0)
+        XCTAssertEqual(policy.idleWindowElapsed(at: 54.9), .unchanged)
+        XCTAssertEqual(policy.idleWindowElapsed(at: 55), .release)
+        XCTAssertFalse(policy.holdsActivityAssertion)
+    }
+
+    func testRecentTerminalOutputExtendsIdleWindowWithoutReacquiring() {
+        var policy = AppNapActivityPolicy(idleWindow: 30)
+
+        XCTAssertEqual(policy.socketClientConnected(at: 0), .acquire)
+        XCTAssertEqual(policy.socketClientDisconnected(at: 1), .unchanged)
+        XCTAssertEqual(policy.terminalOutput(at: 20), .unchanged)
+        XCTAssertEqual(policy.idleWindowElapsed(at: 49.9), .unchanged)
+        XCTAssertEqual(policy.idleWindowElapsed(at: 50), .release)
+    }
+
+    func testExtraDisconnectDoesNotUnderflowClientCountOrReleaseEarly() {
+        var policy = AppNapActivityPolicy(idleWindow: 30)
+
+        XCTAssertEqual(policy.socketClientDisconnected(at: 10), .unchanged)
+        XCTAssertEqual(policy.connectedSocketClients, 0)
+        XCTAssertFalse(policy.holdsActivityAssertion)
+    }
+
+    func testOutOfOrderWorkSignalsDoNotMoveReleaseDeadlineBackwards() {
+        var policy = AppNapActivityPolicy(idleWindow: 30)
+
+        XCTAssertEqual(policy.socketClientConnected(at: 0), .acquire)
+        XCTAssertEqual(policy.socketClientDisconnected(at: 10), .unchanged)
+        XCTAssertEqual(policy.terminalOutput(at: 20), .unchanged)
+        XCTAssertEqual(policy.terminalOutput(at: 5), .unchanged)
+        XCTAssertEqual(policy.idleWindowElapsed(at: 49.9), .unchanged)
+        XCTAssertEqual(policy.idleWindowElapsed(at: 50), .release)
+    }
+
+    func testManyConnectionCyclesAcquireAndReleaseOncePerActivePeriod() {
+        var policy = AppNapActivityPolicy(idleWindow: 10)
+        var transitions: [AppNapActivityTransition] = []
+
+        for cycle in 0..<100 {
+            let start = TimeInterval(cycle * 20)
+            transitions.append(policy.socketClientConnected(at: start))
+            transitions.append(policy.socketClientDisconnected(at: start + 1))
+            transitions.append(policy.idleWindowElapsed(at: start + 11))
+        }
+
+        XCTAssertEqual(transitions.filter { $0 == .acquire }.count, 100)
+        XCTAssertEqual(transitions.filter { $0 == .release }.count, 100)
+        XCTAssertEqual(policy.connectedSocketClients, 0)
+        XCTAssertFalse(policy.holdsActivityAssertion)
+    }
+}

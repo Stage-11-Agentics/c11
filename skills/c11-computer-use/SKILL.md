@@ -73,6 +73,7 @@ scripts/sandbox-agent.sh <run-id> verify-clean            # after down; --contro
 ## Launch discipline
 
 - Launch **only tagged builds** (`./scripts/reload.sh --tag <tag>`, or `./scripts/launch-tagged-automation.sh <tag> --qa fresh`). Never `open` an untagged `c11 DEV.app` — it conflicts with the operator's running instance. For a click, drag, or activation check, pass that `.app` to `scripts/sandbox-up.sh` instead of opening it on the operator's session.
+- Tagged builds may stay behind production during socket work: c11 holds a user-initiated activity while a client is connected and for 60 seconds after the last disconnect or visible terminal scrollback growth, then releases it.
 - Suppress the startup dialogs for automation: `C11_QA_LAUNCH=fresh` (the skills-install sheet, the resume picker, and the notifications-off sheet otherwise block coordinate-driven UI). `reload.sh --tag` does **not** set it; export it yourself or use `launch-tagged-automation.sh --qa`.
 - Quit only **your** build when done — `kill <your-pid>`, never a blanket match on `c11`.
 

@@ -1498,6 +1498,7 @@ class TerminalController {
     }
 
     func start(workspaceManager: WorkspaceManager, socketPath: String, accessMode: SocketControlMode) {
+        _ = AppNapActivityCoordinator.shared
         self.workspaceManager = workspaceManager
         self.accessMode = accessMode
 
@@ -2203,8 +2204,14 @@ class TerminalController {
                 let peerPid = getPeerPid(clientSocket)
 
                 // Handle client in new thread
+                AppNapActivityCoordinator.shared.socketClientDidConnect()
                 Thread.detachNewThread { [weak self] in
-                    self?.handleClient(clientSocket, peerPid: peerPid)
+                    defer { AppNapActivityCoordinator.shared.socketClientDidDisconnect() }
+                    guard let self else {
+                        close(clientSocket)
+                        return
+                    }
+                    self.handleClient(clientSocket, peerPid: peerPid)
                 }
             }
         }

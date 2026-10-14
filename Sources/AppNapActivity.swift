@@ -6,12 +6,12 @@ enum AppNapActivityTransition: Equatable {
     case unchanged
 }
 
-/// The lifecycle policy for c11's user-initiated activity assertion.
+/// The lifecycle policy for c11's App Nap opt-out that allows system idle sleep.
 ///
-/// A connected socket client keeps the assertion active. After the final
-/// client disconnects, recent terminal output or the disconnect itself keeps
-/// it active for one idle window. The policy is pure so connection churn and
-/// the release boundary can be tested without waiting on process activity.
+/// A connected socket client keeps the assertion active. The final
+/// disconnect keeps it active for one idle window. The policy is pure so
+/// connection churn and the release boundary can be tested without waiting on
+/// process activity.
 struct AppNapActivityPolicy {
     static let defaultIdleWindow: TimeInterval = 60
 
@@ -43,11 +43,6 @@ struct AppNapActivityPolicy {
         return reconcile(at: uptime)
     }
 
-    mutating func terminalOutput(at uptime: TimeInterval) -> AppNapActivityTransition {
-        recordWork(at: uptime)
-        return reconcile(at: uptime)
-    }
-
     mutating func idleWindowElapsed(at uptime: TimeInterval) -> AppNapActivityTransition {
         reconcile(at: uptime)
     }
@@ -74,57 +69,65 @@ struct AppNapActivityPolicy {
 final class AppNapActivityCoordinator: @unchecked Sendable {
     static let shared = AppNapActivityCoordinator()
 
-    private let queue = DispatchQueue(label: "com.stage11.c11.app-nap-activity", qos: .userInitiated)
+    private let queue: DispatchQueue
     private let idleTimer: DispatchSourceTimer
-    private let outputSignalLock = NSLock()
-    private var policy = AppNapActivityPolicy()
+    private let now: () -> TimeInterval
+    private let beginActivity: (ProcessInfo.ActivityOptions, String) -> NSObjectProtocol?
+    private let endActivity: (NSObjectProtocol) -> Void
+    private var policy: AppNapActivityPolicy
     private var activity: NSObjectProtocol?
-    private var lastOutputSignalAt: TimeInterval?
 
-    private init() {
-        idleTimer = DispatchSource.makeTimerSource(queue: queue)
-        idleTimer.setEventHandler { [weak self] in
-            guard let self else { return }
-            let now = ProcessInfo.processInfo.systemUptime
-            self.apply(self.policy.idleWindowElapsed(at: now))
+    init(
+        idleWindow: TimeInterval = AppNapActivityPolicy.defaultIdleWindow,
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        beginActivity: @escaping (ProcessInfo.ActivityOptions, String) -> NSObjectProtocol? = {
+            options, reason in ProcessInfo.processInfo.beginActivity(options: options, reason: reason)
+        },
+        endActivity: @escaping (NSObjectProtocol) -> Void = {
+            activity in ProcessInfo.processInfo.endActivity(activity)
         }
-        idleTimer.schedule(deadline: .distantFuture)
-        idleTimer.resume()
+    ) {
+        self.queue = DispatchQueue(label: "com.stage11.c11.app-nap-activity", qos: .userInitiated)
+        self.now = now
+        self.beginActivity = beginActivity
+        self.endActivity = endActivity
+        self.policy = AppNapActivityPolicy(idleWindow: idleWindow)
+
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        self.idleTimer = timer
+        timer.setEventHandler { [weak self] in
+            self?.idleTimerDidFire()
+        }
+        timer.schedule(deadline: .distantFuture)
+        timer.resume()
     }
 
     func socketClientDidConnect() {
         queue.async { [weak self] in
             guard let self else { return }
-            let now = ProcessInfo.processInfo.systemUptime
-            self.apply(self.policy.socketClientConnected(at: now))
+            self.apply(self.policy.socketClientConnected(at: self.now()))
         }
     }
 
     func socketClientDidDisconnect() {
         queue.async { [weak self] in
             guard let self else { return }
-            let now = ProcessInfo.processInfo.systemUptime
-            self.apply(self.policy.socketClientDisconnected(at: now))
+            self.apply(self.policy.socketClientDisconnected(at: self.now()))
         }
     }
 
-    /// Called only when visible terminal scrollback grows, not for each key or
-    /// socket message. At most one update per second reaches the state queue.
-    func noteTerminalOutput() {
-        let now = ProcessInfo.processInfo.systemUptime
-        outputSignalLock.lock()
-        if let lastOutputSignalAt, now - lastOutputSignalAt < 1 {
-            outputSignalLock.unlock()
-            return
-        }
-        lastOutputSignalAt = now
-        outputSignalLock.unlock()
+    /// Runs the real timer handler synchronously for coordinator-level tests.
+    func fireIdleTimerForTesting() {
+        queue.sync { idleTimerDidFire() }
+    }
 
-        queue.async { [weak self] in
-            guard let self else { return }
-            let eventTime = ProcessInfo.processInfo.systemUptime
-            self.apply(self.policy.terminalOutput(at: eventTime))
-        }
+    /// Waits for previously enqueued socket events in coordinator-level tests.
+    func drainForTesting() {
+        queue.sync {}
+    }
+
+    private func idleTimerDidFire() {
+        apply(policy.idleWindowElapsed(at: now()))
     }
 
     private func apply(_ transition: AppNapActivityTransition) {
@@ -132,14 +135,14 @@ final class AppNapActivityCoordinator: @unchecked Sendable {
         switch transition {
         case .acquire:
             if activity == nil {
-                activity = ProcessInfo.processInfo.beginActivity(
-                    options: [.userInitiated],
-                    reason: "c11 is serving agent work"
+                activity = beginActivity(
+                    [.userInitiatedAllowingIdleSystemSleep],
+                    "c11 is serving agent work"
                 )
             }
         case .release:
             if let activity {
-                ProcessInfo.processInfo.endActivity(activity)
+                endActivity(activity)
                 self.activity = nil
             }
         case .unchanged:
@@ -153,7 +156,7 @@ final class AppNapActivityCoordinator: @unchecked Sendable {
             idleTimer.schedule(deadline: .distantFuture)
             return
         }
-        let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+        let delay = max(0, deadline - now())
         idleTimer.schedule(deadline: .now() + delay, leeway: .milliseconds(100))
     }
 }

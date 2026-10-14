@@ -208,16 +208,6 @@ final class AppNapActivityPolicyTests: XCTestCase {
         XCTAssertFalse(policy.holdsActivityAssertion)
     }
 
-    func testRecentTerminalOutputExtendsIdleWindowWithoutReacquiring() {
-        var policy = AppNapActivityPolicy(idleWindow: 30)
-
-        XCTAssertEqual(policy.socketClientConnected(at: 0), .acquire)
-        XCTAssertEqual(policy.socketClientDisconnected(at: 1), .unchanged)
-        XCTAssertEqual(policy.terminalOutput(at: 20), .unchanged)
-        XCTAssertEqual(policy.idleWindowElapsed(at: 49.9), .unchanged)
-        XCTAssertEqual(policy.idleWindowElapsed(at: 50), .release)
-    }
-
     func testExtraDisconnectDoesNotUnderflowClientCountOrReleaseEarly() {
         var policy = AppNapActivityPolicy(idleWindow: 30)
 
@@ -229,10 +219,8 @@ final class AppNapActivityPolicyTests: XCTestCase {
     func testOutOfOrderWorkSignalsDoNotMoveReleaseDeadlineBackwards() {
         var policy = AppNapActivityPolicy(idleWindow: 30)
 
-        XCTAssertEqual(policy.socketClientConnected(at: 0), .acquire)
+        XCTAssertEqual(policy.socketClientConnected(at: 20), .acquire)
         XCTAssertEqual(policy.socketClientDisconnected(at: 10), .unchanged)
-        XCTAssertEqual(policy.terminalOutput(at: 20), .unchanged)
-        XCTAssertEqual(policy.terminalOutput(at: 5), .unchanged)
         XCTAssertEqual(policy.idleWindowElapsed(at: 49.9), .unchanged)
         XCTAssertEqual(policy.idleWindowElapsed(at: 50), .release)
     }
@@ -252,5 +240,104 @@ final class AppNapActivityPolicyTests: XCTestCase {
         XCTAssertEqual(transitions.filter { $0 == .release }.count, 100)
         XCTAssertEqual(policy.connectedSocketClients, 0)
         XCTAssertFalse(policy.holdsActivityAssertion)
+    }
+}
+
+final class AppNapActivityCoordinatorTests: XCTestCase {
+    private final class Clock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedUptime: TimeInterval = 0
+
+        var uptime: TimeInterval {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedUptime
+        }
+
+        func set(_ uptime: TimeInterval) {
+            lock.lock()
+            storedUptime = uptime
+            lock.unlock()
+        }
+    }
+
+    private final class ActivityRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedOptions: [ProcessInfo.ActivityOptions] = []
+        private var beganTokens: [ObjectIdentifier] = []
+        private var endedTokens: [ObjectIdentifier] = []
+
+        var options: [ProcessInfo.ActivityOptions] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedOptions
+        }
+
+        var beginCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return beganTokens.count
+        }
+
+        var endCount: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return endedTokens.count
+        }
+
+        var tokensBalanced: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return beganTokens == endedTokens
+        }
+
+        func begin(options: ProcessInfo.ActivityOptions) -> NSObjectProtocol {
+            let token = NSObject()
+            lock.lock()
+            storedOptions.append(options)
+            beganTokens.append(ObjectIdentifier(token))
+            lock.unlock()
+            return token
+        }
+
+        func end(_ token: NSObjectProtocol) {
+            lock.lock()
+            endedTokens.append(ObjectIdentifier(token as AnyObject))
+            lock.unlock()
+        }
+    }
+
+    func testChurnBurstUsesSleepAllowingOptionsAndBalancesTimerRelease() {
+        let clock = Clock()
+        let recorder = ActivityRecorder()
+        let coordinator = AppNapActivityCoordinator(
+            idleWindow: 60,
+            now: { clock.uptime },
+            beginActivity: { options, _ in recorder.begin(options: options) },
+            endActivity: { recorder.end($0) }
+        )
+
+        for _ in 0..<25 {
+            coordinator.socketClientDidConnect()
+            coordinator.socketClientDidDisconnect()
+        }
+        coordinator.drainForTesting()
+
+        XCTAssertEqual(recorder.beginCount, 1, "a churn burst should acquire one coalesced activity")
+        XCTAssertEqual(recorder.options.count, 1)
+        XCTAssertFalse(
+            recorder.options[0].contains(.idleSystemSleepDisabled),
+            "agent activity must not disable system idle sleep"
+        )
+        XCTAssertEqual(recorder.endCount, 0, "the idle window keeps the activity held")
+
+        clock.set(59.9)
+        coordinator.fireIdleTimerForTesting()
+        XCTAssertEqual(recorder.endCount, 0, "the activity remains held before the idle deadline")
+
+        clock.set(60)
+        coordinator.fireIdleTimerForTesting()
+        XCTAssertEqual(recorder.endCount, 1, "the timer releases the activity at the idle deadline")
+        XCTAssertTrue(recorder.tokensBalanced, "every begun activity token must be ended exactly once")
     }
 }

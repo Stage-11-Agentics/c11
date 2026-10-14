@@ -97,6 +97,28 @@ final class AgentConfigEditorModelTests: XCTestCase {
         )
     }
 
+    /// The committed captures exercise the same parser + merge path as the
+    /// shipping catalog, without invoking any harness CLI from the test.
+    private func fixtureCatalog(includeGrok: Bool = true) throws -> StubModelCatalog {
+        let fixturesURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures")
+            .appendingPathComponent("model-catalog", isDirectory: true)
+        func fixture(_ name: String) throws -> String {
+            try String(contentsOf: fixturesURL.appendingPathComponent(name), encoding: .utf8)
+        }
+
+        let live: [String: [RawCatalogRecord]] = [
+            "opencode": OpencodeModelsParser.parse(try fixture("opencode-models.txt")),
+            "pi": PiModelsParser.parse(try fixture("pi-list-models.txt")),
+            "omp": OmpModelsParser.parse(try fixture("omp-models.txt")),
+            "kimi": KimiProviderListParser.parse(try fixture("kimi-provider-list.json")),
+            "grok": includeGrok ? GrokModelsParser.parse(try fixture("grok-models.txt")) : [],
+            "codex": CodexModelsCacheParser.parse(try fixture("codex-models-cache.json")),
+        ]
+        return StubModelCatalog(ModelCatalogEnumerator.merged(live: live, previous: []))
+    }
+
     // MARK: Provider axis
 
     func testProviderOptionsLeadWithTheKnownBrandsAndTailIntoOverflow() {
@@ -471,7 +493,8 @@ final class AgentConfigEditorModelTests: XCTestCase {
 
     func testModelOptionsListAProvidersModelsAndSearchNarrowsThem() {
         let all = AgentConfigAxes.modelOptions(provider: "anthropic", query: "", catalog: catalog)
-        XCTAssertEqual(Set(all.map(\.id)), ["opus", "sonnet", "claude-opus-4-8"])
+        XCTAssertEqual(all.map(\.id), ["claude-opus-4-8", "opus", "sonnet"],
+                       "non-xAI providers keep the catalog's existing order")
 
         let filtered = AgentConfigAxes.modelOptions(provider: "anthropic", query: "son", catalog: catalog)
         XCTAssertEqual(filtered.map(\.id), ["sonnet"])
@@ -482,6 +505,60 @@ final class AgentConfigEditorModelTests: XCTestCase {
                       "no provider and no query is the Inherit case, not a 628-row dump")
         let hits = AgentConfigAxes.modelOptions(provider: nil, query: "grok-4.5", catalog: catalog)
         XCTAssertEqual(hits.map(\.id), ["grok-4.5"])
+    }
+
+    func testEmptyXAIQueryLeadsWithFixtureNativeModelsAndKeepsCatalogOrder() throws {
+        let fixtureCatalogForTest = try fixtureCatalog()
+        let catalogOrder = fixtureCatalogForTest.models(forProvider: "xai")
+        let native = catalogOrder.filter { $0.harness == AgentConfigAxes.grokHarnessKey }
+        let routed = catalogOrder.filter { $0.harness != AgentConfigAxes.grokHarnessKey }
+
+        XCTAssertFalse(native.isEmpty, "the committed Grok capture must contribute a native row")
+        let options = AgentConfigAxes.modelOptions(provider: "xai", query: "", catalog: fixtureCatalogForTest)
+        XCTAssertEqual(options, native + routed,
+                       "each group keeps the full fixture catalog's existing order")
+        XCTAssertEqual(options.count, Set(options.map(\.id)).count, "shared provider rows appear once")
+
+        let shared = try XCTUnwrap(fixtureCatalogForTest.model(provider: "xai", id: "grok-4.5"))
+        let sharedHarnesses = fixtureCatalogForTest.harnesses(forModel: shared)
+        XCTAssertTrue(sharedHarnesses.contains("grok"))
+        XCTAssertTrue(sharedHarnesses.contains("opencode"))
+        XCTAssertEqual(options.filter { $0.id == "grok-4.5" }.count, 1,
+                       "the Grok model also listed by OpenRouter remains one row")
+    }
+
+    func testEmptyXAIQueryPreservesOrderWithinMultipleNativeRows() {
+        let catalogOrder = catalog.models(forProvider: "xai")
+        let native = catalogOrder.filter { $0.harness == AgentConfigAxes.grokHarnessKey }
+        let routed = catalogOrder.filter { $0.harness != AgentConfigAxes.grokHarnessKey }
+
+        XCTAssertEqual(native.map(\.id), ["grok-4.5", "grok-4.6", "grok-4.7", "grok-4.7-build-fast"])
+        XCTAssertEqual(
+            AgentConfigAxes.modelOptions(provider: "xai", query: "", catalog: catalog),
+            native + routed
+        )
+    }
+
+    func testNonEmptyXAISearchKeepsTheFixtureCatalogRanking() throws {
+        let fixtureCatalogForTest = try fixtureCatalog()
+        let expected = fixtureCatalogForTest.search("grok-4", provider: "xai", limit: 200)
+
+        XCTAssertEqual(
+            AgentConfigAxes.modelOptions(provider: "xai", query: "grok-4", catalog: fixtureCatalogForTest),
+            expected,
+            "a query continues to use the catalog's prefix-first ranking"
+        )
+    }
+
+    func testEmptyXAICatalogWithoutGrokFallsBackToCatalogOrder() throws {
+        let fixtureCatalogForTest = try fixtureCatalog(includeGrok: false)
+        let expected = fixtureCatalogForTest.models(forProvider: "xai")
+
+        XCTAssertTrue(expected.allSatisfy { $0.harness != AgentConfigAxes.grokHarnessKey })
+        XCTAssertEqual(
+            AgentConfigAxes.modelOptions(provider: "xai", query: "", catalog: fixtureCatalogForTest),
+            expected
+        )
     }
 
     // MARK: Manifest-derived axes
@@ -640,10 +717,18 @@ private final class StubModelCatalog: EditorModelCatalog {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         let pool = provider.map { models(forProvider: $0) } ?? index.allModels
         guard !needle.isEmpty else { return Array(pool.prefix(limit)) }
-        let hits = pool.filter {
-            $0.id.lowercased().contains(needle) || $0.displayName.lowercased().contains(needle)
+        var prefix: [CatalogModel] = []
+        var contains: [CatalogModel] = []
+        for model in pool {
+            let id = model.id.lowercased()
+            let name = model.displayName.lowercased()
+            if id.hasPrefix(needle) || name.hasPrefix(needle) {
+                prefix.append(model)
+            } else if id.contains(needle) || name.contains(needle) {
+                contains.append(model)
+            }
         }
-        return Array(hits.prefix(limit))
+        return Array((prefix + contains).prefix(limit))
     }
 
     func modelFlagValue(for model: CatalogModel, harness: String) -> String {

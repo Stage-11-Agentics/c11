@@ -3,20 +3,22 @@ import Foundation
 /// QA / automation launch policy, parsed from the `C11_QA_LAUNCH`
 /// environment variable (dual-read `CMUX_QA_LAUNCH`).
 ///
-/// A normal interactive launch can present two blocking dialogs before the
+/// A normal interactive launch can present blocking dialogs before the
 /// operator reaches a usable window: the Agent Skills install/update
-/// onboarding sheet, and the "Resume previous session?" picker. Those are
-/// correct for humans but a nuisance for automated QA, which wants the GUI
-/// up with no modal in the way and a deterministic resume decision.
+/// onboarding sheet, the "Resume previous session?" picker, and, when
+/// notifications are already off, the "Turn on notifications for c11"
+/// sheet. Those are correct for humans but a nuisance for automated QA,
+/// which wants the GUI up with no modal in the way and a deterministic
+/// resume decision.
 ///
 /// Setting `C11_QA_LAUNCH` to any non-empty value turns **QA mode** on:
-/// both dialogs are suppressed. The value selects the resume direction:
+/// those dialogs are suppressed. The value selects the resume direction:
 ///
 /// ```
 ///   C11_QA_LAUNCH=fresh    QA mode, start clean (no session restore)
 ///   C11_QA_LAUNCH=resume   QA mode, silently restore the prior session
 ///   C11_QA_LAUNCH=<other>  QA mode, default: fresh
-///   (unset / empty)        normal interactive launch (both dialogs may show)
+///   (unset / empty)        normal interactive launch (those dialogs may show)
 /// ```
 ///
 /// The variable is read fresh from the environment each launch and never
@@ -56,8 +58,9 @@ enum QALaunchPolicy: Equatable {
         }
     }
 
-    /// QA mode is active — suppress the skill-install and resume-session
-    /// dialogs.
+    /// QA mode is active. Call sites use this to suppress the skill-install
+    /// sheet, the resume picker, and the notifications-off sheet. The flag
+    /// is read for this launch only and never written back.
     var isActive: Bool {
         if case .on = self { return true }
         return false

@@ -7751,8 +7751,21 @@ class TerminalController {
             if wantsReturn {
                 // A bare Return (an empty `send` with submit) may have nothing
                 // to submit: read the composer first (C11-407).
-                var noOpProbe = body.isEmpty && feedAnswerGate == nil
+                var noOpProbe: MailboxNoOpReturn.Probe? = body.isEmpty && feedAnswerGate == nil
                     ? Self.noOpReturnProbe(for: terminalSurface) : nil
+                let beforeReturn: (@MainActor () -> Bool)?
+                if noOpProbe != nil {
+                    beforeReturn = { [weak terminalSurface] () -> Bool in
+                        MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: noOpProbe) {
+                            guard let terminalSurface else { return nil }
+                            let refreshed = Self.noOpReturnProbe(for: terminalSurface)
+                            noOpProbe = refreshed
+                            return refreshed
+                        }
+                    }
+                } else {
+                    beforeReturn = nil
+                }
                 // The Return must land *after* the target has finished
                 // ingesting the paste — a Return inside the paste-processing
                 // window is silently dropped by Claude Code and codex. Same
@@ -7763,14 +7776,7 @@ class TerminalController {
                         if let terminalSurface { Self.checkNoOpReturn(noOpProbe, for: terminalSurface) }
                     },
                     feedAnswerGate: feedAnswerGate,
-                    beforeReturn: noOpProbe == nil ? nil : { [weak terminalSurface] in
-                        MailboxNoOpReturn.shouldSubmitDelayedReturn(initial: noOpProbe) {
-                            guard let terminalSurface else { return nil }
-                            let refreshed = Self.noOpReturnProbe(for: terminalSurface)
-                            noOpProbe = refreshed
-                            return refreshed
-                        }
-                    }
+                    beforeReturn: beforeReturn
                 )
             } else {
                 // Text left in the input line without a submit is a draft the

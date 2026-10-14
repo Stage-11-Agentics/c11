@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -24,6 +25,108 @@ final class CapabilityFeaturesTests: XCTestCase {
         let methods = try XCTUnwrap(result["methods"] as? [String])
         XCTAssertTrue(methods.contains("markdown.backlinks"))
         XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "markdown.backlinks"), .socketWorker)
+    }
+
+    @MainActor
+    func testCapabilitiesAndClaudeStopEdgeFinishWhileMainThreadIsStalled() throws {
+        XCTAssertTrue(Thread.isMainThread)
+
+        let controller = TerminalController.makeForTesting()
+        let mainResponse = controller.v2DispatchSystem("system.capabilities", id: 1, params: [:])
+        let expectedPayload = try canonicalJSON(mainResponse)
+
+        // Give the real append handler an isolated, already-open store. The
+        // test never touches the app or logic-test bundle's persistent journal.
+        let journalDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-402-journal-\(UUID().uuidString)", isDirectory: true)
+        var journalStore: JournalStore? = try JournalStore(
+            layout: JournalStorageLayout(directory: journalDirectory)
+        )
+        let previousStore = JournalCoordinator.shared.replaceStoreForTesting(journalStore)
+        defer {
+            _ = JournalCoordinator.shared.replaceStoreForTesting(previousStore)
+            journalStore = nil
+            try? FileManager.default.removeItem(at: journalDirectory)
+        }
+
+        let workspaceID = UUID()
+        let panelID = UUID()
+        var draft = try XCTUnwrap(ClaudeHookMapping.map(
+            subcommand: "stop",
+            object: ["session_id": "c11-402-test-session"]
+        ))
+        draft.panelID = panelID
+        draft.workspaceID = workspaceID
+        let event = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: draft.canonicalData()) as? [String: Any]
+        )
+        let appendRequest = try XCTUnwrap(String(
+            data: JSONSerialization.data(withJSONObject: [
+                "id": 2,
+                "method": "agent.event.append",
+                "params": ["event": event]
+            ], options: [.sortedKeys]),
+            encoding: .utf8
+        ))
+
+        let replies = LockedSocketReplies()
+        let finished = DispatchSemaphore(value: 0)
+        let worker = DispatchQueue(label: "system-capabilities-hook-test")
+        let hookDeadline = DispatchTime.now() + .milliseconds(250)
+        worker.async {
+            replies.store("worker_is_main", String(Thread.isMainThread))
+            replies.store("capabilities", controller.processCommandUsingSocketExecutionPolicy(
+                #"{"id":1,"method":"system.capabilities","params":{}}"#
+            ))
+            // A real hook cannot submit the lifecycle edge until capability
+            // discovery returns. If that answer missed the hook deadline, do
+            // not let the late main-thread response mutate the isolated journal.
+            guard DispatchTime.now() < hookDeadline else {
+                finished.signal()
+                return
+            }
+            replies.store("hook_edge", controller.processCommandUsingSocketExecutionPolicy(appendRequest))
+            replies.store("idle_activity", controller.processCommandUsingSocketExecutionPolicy(
+                "report_agent_activity idle --tab=\(workspaceID.uuidString) --panel=\(panelID.uuidString)"
+            ))
+            finished.signal()
+        }
+
+        // This blocks main for the same 250 ms window the Claude hook gives a
+        // socket request. A main-actor dispatch cannot finish here.
+        let completedBeforeHookDeadline = finished.wait(timeout: hookDeadline)
+        guard completedBeforeHookDeadline == .success else {
+            // The test resumes main at the deadline. Drain any already-started
+            // worker request before the defer restores and removes its journal.
+            // Running the main loop also releases a deliberately main-routed
+            // capabilities request so the worker can observe the expired bound.
+            while finished.wait(timeout: .now()) != .success {
+                _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            }
+            XCTFail("capability discovery and the Claude Stop edge must finish while main is stalled")
+            return
+        }
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "system.capabilities"), .socketWorker)
+
+        let result = replies.snapshot()
+        XCTAssertEqual(result["worker_is_main"], "false")
+        let workerResponse = try XCTUnwrap(result["capabilities"])
+        XCTAssertEqual(try canonicalJSON(workerResponse), expectedPayload,
+                       "the worker reply must preserve the existing capabilities payload")
+
+        let edgeResponse = try XCTUnwrap(result["hook_edge"])
+        let edgeEnvelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(edgeResponse.utf8)) as? [String: Any])
+        XCTAssertEqual(edgeEnvelope["ok"] as? Bool, true)
+        let receipt = try XCTUnwrap(edgeEnvelope["result"] as? [String: Any])
+        XCTAssertEqual(receipt["event_id"] as? String, draft.eventID.uuidString,
+                       "the synthetic Claude Stop hook edge must be durably committed")
+        XCTAssertEqual(result["idle_activity"], "OK",
+                       "the hook's legacy idle report must also receive its worker acknowledgement")
+        let recorded = try XCTUnwrap(
+            try journalStore?.readPage(after: 0).first { $0.draft.eventID == draft.eventID }
+        )
+        XCTAssertEqual(recorded.draft.kind, .turnCompleted)
+        XCTAssertEqual(recorded.draft.nativeEvent, "Stop")
     }
 
     func testMarkdownAgentMethodsRunOnSocketWorkersWithoutInAppFocusIntent() {
@@ -73,4 +176,26 @@ final class CapabilityFeaturesTests: XCTestCase {
         XCTAssertEqual(registry.payload.first?["id"] as? String, "events.offline")
         XCTAssertEqual(registry.payload.first?["version"] as? Int, 7)
     }
+}
+
+private final class LockedSocketReplies: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func store(_ key: String, _ value: String) {
+        lock.lock()
+        values[key] = value
+        lock.unlock()
+    }
+
+    func snapshot() -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+private func canonicalJSON(_ text: String) throws -> Data {
+    let object = try JSONSerialization.jsonObject(with: Data(text.utf8))
+    return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
 }

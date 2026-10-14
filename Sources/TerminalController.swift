@@ -323,6 +323,9 @@ class TerminalController {
     // — the C11-105 production unlink mechanism. See `stop()` for the matching
     // empty-path guard.
     nonisolated(unsafe) var socketPath = ""
+    // `system.capabilities` runs on socket workers. This mirror is guarded by
+    // `listenerStateLock` so that handler never reads the main-actor property.
+    private nonisolated(unsafe) var capabilitiesAccessModeRawValue = SocketControlMode.c11Only.rawValue
     private nonisolated(unsafe) var serverSocket: Int32 = -1
     private nonisolated(unsafe) var isRunning = false
     private nonisolated(unsafe) var acceptLoopAlive = false
@@ -413,7 +416,9 @@ class TerminalController {
     }
     private var clientHandlers: [Int32: Thread] = [:]
     var workspaceManager: WorkspaceManager?
-    var accessMode: SocketControlMode = .c11Only
+    var accessMode: SocketControlMode = .c11Only {
+        didSet { withListenerState { capabilitiesAccessModeRawValue = accessMode.rawValue } }
+    }
     /// The password that password mode checks `auth` / `auth.login` against.
     private nonisolated let socketPasswordSource: SocketControlPasswordStore.Source
     private let myPid = getpid()
@@ -436,6 +441,7 @@ class TerminalController {
 
     private struct ListenerStateSnapshot {
         let socketPath: String
+        let capabilitiesAccessModeRawValue: String
         let serverSocket: Int32
         let isRunning: Bool
         let acceptLoopAlive: Bool
@@ -683,6 +689,7 @@ class TerminalController {
         withListenerState {
             ListenerStateSnapshot(
                 socketPath: socketPath,
+                capabilitiesAccessModeRawValue: capabilitiesAccessModeRawValue,
                 serverSocket: serverSocket,
                 isRunning: isRunning,
                 acceptLoopAlive: acceptLoopAlive,
@@ -708,6 +715,13 @@ class TerminalController {
     /// that `stop()` would unlink.
     var socketPathSnapshot: String {
         withListenerState { socketPath }
+    }
+
+    /// Immutable facts needed by `system.capabilities`, captured under the
+    /// listener lock so the socket worker never reads main-owned state.
+    nonisolated func systemCapabilitiesRuntimeSnapshot() -> (socketPath: String, accessMode: String) {
+        let snapshot = listenerStateSnapshot()
+        return (snapshot.socketPath, snapshot.capabilitiesAccessModeRawValue)
     }
 
     /// Test seam: construct a fresh, never-started `TerminalController` whose
@@ -2508,6 +2522,9 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        // Static build facts plus a listener-lock snapshot; no AppKit or
+        // workspace state is read by system.capabilities.
+        "system.capabilities",
         // Cache telemetry: validated and folded into a lock-guarded store on
         // the worker; the liveness sweep reads it, so no main-thread hop.
         "agent.prompt_cache.report",

@@ -24,6 +24,22 @@ final class JournalCoordinator: @unchecked Sendable {
         self.store = store
     }
 
+    #if DEBUG
+    /// Replaces the backing store for a test that exercises the socket append
+    /// route. Return the previous store so the caller can restore it afterward.
+    @discardableResult
+    func replaceStoreForTesting(_ store: JournalStore?) -> JournalStore? {
+        openLock.lock()
+        defer { openLock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
+        let previous = self.store
+        self.store = store
+        storageError = nil
+        return previous
+    }
+    #endif
+
     func register(panelID: UUID, workspaceID: UUID) {
         lock.lock(); let changed = targets[panelID] != workspaceID; targets[panelID] = workspaceID; lock.unlock()
         if changed { refreshOwners([panelID]) }

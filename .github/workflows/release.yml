@@ -278,6 +278,21 @@ jobs:
             echo "Missing notarization secrets (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID)" >&2
             exit 1
           fi
+          retry_stapler() {
+            # Apple's ticket service (api.apple-cloudkit.com) drops connections from
+            # hosted runners intermittently (NSURLErrorDomain -1005, stapler exit 68).
+            # Notarization has already been accepted at this point; retry the ticket fetch.
+            local attempt=1
+            until xcrun stapler "$@"; do
+              if [ "$attempt" -ge 8 ]; then
+                echo "stapler $1 failed after $attempt attempts" >&2
+                return 1
+              fi
+              echo "stapler $1 failed (attempt $attempt); retrying in $((attempt * 15))s" >&2
+              sleep $((attempt * 15))
+              attempt=$((attempt + 1))
+            done
+          }
           APP_PATH="build/Build/Products/Release/c11.app"
           ZIP_SUBMIT="c11-notary.zip"
           DMG_RELEASE="c11-macos.dmg"
@@ -290,8 +305,8 @@ jobs:
             xcrun notarytool log "$APP_SUBMIT_ID" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" || true
             exit 1
           fi
-          xcrun stapler staple "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          retry_stapler staple "$APP_PATH"
+          retry_stapler validate "$APP_PATH"
           spctl -a -vv --type execute "$APP_PATH"
           rm -f "$ZIP_SUBMIT"
           # create-dmg generates a styled drag-to-install DMG
@@ -308,8 +323,8 @@ jobs:
             xcrun notarytool log "$DMG_SUBMIT_ID" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" || true
             exit 1
           fi
-          xcrun stapler staple "$DMG_RELEASE"
-          xcrun stapler validate "$DMG_RELEASE"
+          retry_stapler staple "$DMG_RELEASE"
+          retry_stapler validate "$DMG_RELEASE"
 
       - name: Upload dSYMs to Sentry
         if: steps.guard_release_assets.outputs.skip_all != 'true'

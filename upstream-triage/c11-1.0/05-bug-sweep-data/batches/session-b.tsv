@@ -1,0 +1,89 @@
+pr	batch	merged	title
+8549	session	2026-07-21	Fix identify caller recovery for restored shells
+8567	session	2026-08-25	Fix retained closed window contexts and PTY respawn
+8615	session	2026-07-22	Fix DispatchWorkItem chain stack overflow
+8619	session	2026-07-22	Stop firing duplicate agent resumes on relaunch
+8675	session	2026-07-24	Fit same-display restored windows to visible bounds
+8687	session	2026-07-23	Fix restored resume workspace titles
+8695	session	2026-07-23	Preserve workspace IDs across session restore
+8753	session	2026-08-04	Close only the workspaces a tab manager actually owns
+9185	session	2026-07-30	Fix Codex resume notification rebinding
+9282	session	2026-08-01	Fix sender-relative key-window routing for restored windows
+9370	session	2026-08-01	Fix restoring Codex sessions across relaunch generations
+9397	session	2026-08-02	Fix Kimi restore-of-restore binding kind decoding
+9399	session	2026-08-02	Preserve Pi resume identity across repeated restores
+9452	session	2026-08-03	Include Pi session titles in notifications
+9477	session	2026-08-04	Reject unknown flags for surface resume set
+9549	session	2026-08-04	Fix Pi fork probes without slowing Pi hooks
+9621	session	2026-08-05	Preserve workspace titles during session restore
+9627	session	2026-09-25	Fix startup-race crash in v2RefreshKnownRefs against a half-restored session (#2751)
+9631	session	2026-08-05	Fix restore caller surface resolution
+9749	session	2026-09-04	Preserve recoverable windows in session snapshots
+9776	session	2026-08-11	Keep background attention from raising Stage Manager windows
+9777	session	2026-08-08	Stop AX snapshots from retaining transient windows
+9780	session	2026-08-07	Fix duplicate Codex hook channels and watchdog leaks
+10018	session	2026-08-12	Revert portal hierarchy mutation tracker launch crash
+10058	session	2026-08-13	Fix stale control-socket rebind and restore startup race
+10100	session	2026-08-14	fix: verify Codex resume binding ownership
+10117	session	2026-08-14	Include `claude attach` in `claude_builtin_command_name`
+10175	session	2026-08-15	Make Claude SessionStart the sole owner of fork session identity
+10293	session	2026-08-22	Fix Claude wrapper settings re-entry loop
+10335	session	2026-08-19	Fix false needs-attention on Claude SubagentStop
+10343	session	2026-09-27	Stop a finished Claude subagent from flipping the pane to needs-input
+10347	session	2026-09-27	fix: record why a launch capture was rejected, not just that it was
+10440	session	2026-09-27	fix: record launch capture rejection reasons
+10773	session	2026-09-03	Fix aggregate child memory pressure before compressor exhaustion
+10804	session	2026-08-27	Fix stale native drag sessions disabling pane and workspace drags
+10823	session	2026-08-27	fix: restore Codex sessions without stale child bindings
+10838	session	2026-08-28	Fix premature Codex completion notifications
+10846	session	2026-08-27	fix: restore session snapshot after crash (#9825)
+11186	session	2026-09-01	Fix workspace drag sessions that wedge Mission Control
+11224	session	2026-09-01	Fail closed when notification pane identity is unproven
+11358	session	2026-09-08	Prevent autoresume from duplicating live agent sessions
+11527	session	2026-09-02	Fix Pi reload CSI query response routing
+11529	session	2026-09-02	fix: persist hook event and clear stale session summaries
+11972	session	2026-09-05	fix(computer-use): require explicit setup and skill installation
+11976	session	2026-09-08	Unify semantic agent notification admission and replay protection
+12062	session	2026-09-08	Fix Codex native titles not reaching terminal tabs
+12115	session	2026-09-10	Fix Pi resume bindings so relaunch restores keep working
+12178	session	2026-09-09	Refit native fullscreen windows after display topology changes
+12436	session	2026-10-01	fix(session): discard persisted listening ports on restore
+12623	session	2026-09-25	Session snapshots can send binding actions to ghostty on a surface that is no longer live
+12659	session	2026-09-15	fix: remove stale Codex resume helper call
+12697	session	2026-09-15	Fix recursive Codex autoresume after nightly regression
+12796	session	2026-09-17	Fix terminals garbling after restore: exec resumed agents with the default signal state
+12822	session	2026-09-25	Fix Codex writer ownership during quit and restore
+12990	session	2026-09-24	Fix persistent LaunchServices registration from duplicate plist keys
+13009	session	2026-09-20	Bound automatic terminal titles before session persistence
+13057	session	2026-09-24	Fix Codex monitor RSS growth during transcript updates
+13586	session	2026-09-22	Fix Claude SessionStart lifecycle after /clear
+13590	session	2026-09-22	Honor Claude integration toggle for wrapper shims
+13606	session	2026-09-22	Fix Codex monitor RSS growth on current main
+13633	session	2026-09-22	Prevent short control refs from rebinding after restart
+13704	session	2026-09-22	Control socket: never present resume approval UI from surface.resume.set (#13369)
+13826	session	2026-09-23	Fix Claude subcommand dispatch with cached command discovery
+13845	session	2026-09-27	Fix duplicate-instance handler terminating unrelated helpers
+13891	session	2026-09-24	Fix deterministic Codex auto-resume admission
+14062	session	2026-09-24	fix: drop a restored agent's tab mark once the agent quits
+14116	session	2026-09-24	Fix terminal session flicker on display changes
+14130	session	2026-09-24	Fix main compile: read matchingObservation after its declaration in Workspace restore check
+14412	session	2026-09-27	Restore legacy Subrouter Claude sessions through the proxy
+14419	session	2026-09-25	fix: keep unknown agent liveness unknown on session restore
+14784	session	2026-09-26	Fix main-thread deadlock in session autosave via ghostty_surface_needs_confirm_quit
+14787	session	2026-09-26	Code session snapshots on a main-sized stack to fix deep split SIGBUS
+14812	session	2026-09-27	fix(claude-wrapper): stop leaking injected NODE_OPTIONS through a native claude
+14824	session	2026-09-26	Keep rotated session snapshots and hold back poorer early saves
+14831	session	2026-09-26	Stop other bundles and scripts from killing the running cmux
+14860	session	2026-09-27	Fix prediction echo misses on sgr0 and bound keys, keep pinned-group windows on restore
+14971	session	2026-09-27	Keep agent resume bindings through the update-relaunch save
+15133	session	2026-09-29	Fix Codex fork session binding
+15567	session	2026-09-29	fix: settle Codex monitor completions before owner check
+15603	session	2026-09-29	fix: settle Claude Stop reentry after hook block
+15612	session	2026-09-29	Fix Codex monitor recovery during transient owner loss
+15764	session	2026-09-30	fix: rerun configured command after missing remote session
+15913	session	2026-09-30	fix(codex): arm the transcript monitor's watch before it reads
+15930	session	2026-09-30	fix: restore the bonsplit pin main's sizing code needs
+16182	session	2026-09-30	fix: ignore duplicate panel IDs during session restore
+16260	session	2026-09-30	fix: restore main compile (OpenCodePaths in CLI, Codex auto-naming scope)
+16371	session	2026-10-01	fix(codex): preserve multiline TOML strings during hook edits
+16378	session	2026-10-01	fix(codex): keep multiline closes visible after comments

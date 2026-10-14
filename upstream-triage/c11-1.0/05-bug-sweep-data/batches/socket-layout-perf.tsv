@@ -1,0 +1,132 @@
+pr	batch	merged	title
+1621	socket	2026-03-18	Fix missing command palette open-in targets
+1677	socket	2026-03-20	fix(shell): check git repo before running git commands to prevent TCC prompts
+2147	layout	2026-03-26	fix: route PWD action to correct TabManager per tabId
+2150	socket	2026-03-27	fix(socket): return not_found when surface_id is provided but unresolvable
+2283	layout	2026-03-28	Fix ARC workspace inheritance crash and native Zig helper builds
+2345	layout	2026-03-30	Fix fullscreen new windows opening in current Space
+2375	layout	2026-03-30	Fix minimal mode tab bar disappearing in fullscreen
+2466	perf	2026-04-01	Fix shell integration review regressions
+2468	layout	2026-04-01	Fix macOS 26 glass background gating (#2459)
+2601	socket	2026-04-04	Fix sidebar layout loop and CLI socket deadlocks
+2639	layout	2026-07-28	fix: goto_split:previous/next cycle through all panes with wrapping
+2740	layout	2026-04-09	Fix minimal-mode traffic-light inset for new workspaces
+2893	perf	2026-04-14	Fix PortScanner subprocess pipe fd leak
+2972	layout	2026-04-18	Fix startup hang from repeated file drop overlay install
+2979	layout	2026-04-18	Fix main CI by deferring file-drop overlay retries
+2986	layout	2026-04-22	Fix AX window polling stalls with app hierarchy caching
+2989	layout	2026-04-18	Fix close confirmation bypass when spamming close
+3036	layout	2026-04-22	Fix main-thread blocking in workspace PR refresh
+3153	layout	2026-04-25	Fix multi-workspace close confirmation modality
+3173	perf	2026-04-27	fix: add AppleEvents usage description
+3331	layout	2026-04-30	Fix Bonsplit tab bar height
+3351	layout	2026-04-30	Update Bonsplit selected tab separator
+3361	socket	2026-05-01	Fix CLI socket wait telemetry
+3543	socket	2026-05-18	Fix variant-aware CLI socket fallback
+3558	layout	2026-05-05	fix: open links in MarkdownPanelView via explicit OpenURLAction
+3587	socket	2026-05-07	Count cmux app RSS in Task Manager totals
+3643	socket	2026-05-06	Fix main macOS CI
+3698	socket	2026-05-07	Fix command palette arrow keys and no-match flash
+3804	layout	2026-05-10	Fix folder proxy icon drag
+3811	socket	2026-05-13	Fix #3807: bring notification CLI to panel parity
+3823	socket	2026-05-10	Fix Escape command palette dismissal
+3847	socket	2026-05-11	Fix managed defaults replay after user changes
+3882	layout	2026-05-12	Fix #2791: preserve window position across sleep/wake with multiple monitors
+3886	layout	2026-06-01	Fix #3799: preserve per-pane OSC 11 backgrounds on inactive panes
+4042	layout	2026-05-13	Fix new-workspace caller window routing
+4132	socket	2026-05-19	Fix task manager process accounting accuracy
+4137	socket	2026-05-15	Fix background new-workspace commands
+4290	layout	2026-05-20	Fix minimal mode pane tab drag routing
+4318	perf	2026-05-19	Fix nightly startup crash
+4381	layout	2026-05-23	Fix asymmetric equalize splits
+4438	layout	2026-05-20	Fix pane tab width regression after #4290
+4513	socket	2026-06-14	Fix stale remote connected state after proxy disconnect
+4568	layout	2026-05-23	Fix runProcess pipe teardown crash
+4679	socket	2026-05-26	Forward CLI subcommands from GUI binary to bundled CLI (fixes #4678)
+4800	socket	2026-05-28	Fix NSFileHandle process pipe read crashes
+4812	socket	2026-05-27	Open external path arguments without socket access
+4873	layout	2026-05-27	Fix Bonsplit tab indicator drift
+4959	layout	2026-05-29	Fix zsh hook errors when job table is saturated
+5035	socket	2026-05-31	Fix sidebar Project Worktrees + button: workspace tab exits immediately (#5032)
+5076	layout	2026-06-01	Fix #5075: clear split zoom when closing maximized tab
+5106	layout	2026-06-01	Revert "Fix #3799: preserve per-pane OSC 11 backgrounds on inactive panes"
+5131	layout	2026-06-01	Stabilize git metadata FSEvents watcher
+5509	socket	2026-06-06	Fix OSC 11 sequences appearing as literal text in cmux send
+5541	layout	2026-06-08	Keep pinned workspaces inside groups
+5595	socket	2026-06-08	Fix inline VS Code command palette and WebSocket startup
+5664	socket	2026-06-09	Fix publishV2 JSON response retention
+5695	socket	2026-06-09	Cover shell startup matrix
+6056	layout	2026-06-13	Fix OpenWrt BusyBox remote platform probe
+6254	socket	2026-06-18	Reduce Sentry CLI broken-pipe crashes and hangs
+6289	socket	2026-06-17	Fix self-hosted CI compatibility failures
+6368	layout	2026-06-18	Release closed macOS helper windows
+6605	socket	2026-06-22	Fix explicit surface routing for read-screen and send
+6786	layout	2026-06-26	Fix tab bar modifier-hold layout shift
+6815	perf	2026-06-29	Fix zsh shell integration printing `file exists` under noclobber (#6714)
+6860	socket	2026-06-29	Never park the main thread waiting on a socket callback (#5830)
+7076	layout	2026-06-30	Fix minimal mode toggle relayout hang
+7182	layout	2026-07-14	Bound background-prime workspace mounts to fix main-thread stall with many agent panes (#7136)
+7308	layout	2026-07-08	Fit main windows after display topology changes
+7749	socket	2026-07-10	Fix typed window handles in CLI window commands
+7997	layout	2026-07-14	Fix #7975 tab bar relayout feedback loop
+8123	socket	2026-07-15	Fix typing-latency instrumentation: probe redaction, probe attribution, CGEvent-backed key simulation
+8193	layout	2026-07-15	Fix inconsistent table border thickness
+8272	socket	2026-07-16	Fix Intel macOS 14 compatibility verification
+8437	socket	2026-07-19	Fix stable IDs in mirror workspace CLI output
+8659	perf	2026-07-22	Fix: exclude .attrib from watched filesystem events
+8693	socket	2026-07-28	Fix blocking Pi extension hook dispatch
+8794	layout	2026-07-24	Fix tab drops across full tab bar
+8966	layout	2026-07-27	Fix disabled workspace cwd inheritance
+9046	layout	2026-07-29	fix: complete goto_split previous/next pane cycling
+9077	perf	2026-07-28	Fix detached shell reports under cmuxOnly
+9187	perf	2026-07-30	Fix subprocess pipe descriptor leaks
+9233	socket	2026-07-31	fix: clear Xcode 26.3 warning gate
+9244	layout	2026-09-06	Fix intermittent warm workspace switch latency
+9288	layout	2026-07-31	Fix pinned workspace grouping and group reordering
+9333	socket	2026-08-30	Fix stale socket terminal surface bindings
+9398	layout	2026-08-03	Fix tab drag reorder to middle positions
+9420	perf	2026-08-03	Fix noclobber 'cannot overwrite existing file' error from bash shell integration
+9422	layout	2026-08-03	Fail closed for stale destructive surface targets
+9765	layout	2026-08-07	Fix horizontal tab strip insertion positions
+10035	layout	2026-08-12	Fix intermittent dragging for wide tabs
+10038	layout	2026-08-12	Fix pane tab drags silently never starting (#10033)
+10234	socket	2026-08-17	Fix nightly macOS Release compile on main
+10549	layout	2026-08-22	Fix SF Symbol materialization during window layout
+10558	socket	2026-08-22	perf: move control-socket connections and reads off-main
+10584	layout	2026-08-22	Revert "Fix SF Symbol materialization during window layout"
+10712	socket	2026-09-24	Fix cmux events access-denied stream error
+10959	socket	2026-08-27	Integrate Escape passthrough fix from PR #9810
+11035	layout	2026-09-24	Reap disowned shell watchers on parent PID reuse (issue 10926)
+11050	socket	2026-08-31	Escape uncreatable socket state directory to /tmp; dedupe listener-failure captures per episode
+11051	socket	2026-08-31	CLI Sentry: per-failure-class fingerprints, mute Not-connected race, throttle timeouts
+11442	socket	2026-09-01	fix: clear Swift warning budget regressions
+11720	socket	2026-09-02	Fix cmux-cli compile error on main: hookEventName argument order
+11999	socket	2026-09-05	Fix nightly macOS build: repair what the #11789 squash merge broke
+12167	layout	2026-09-09	Let only a control under the pointer veto a pane tab drag; hit-test window points in the right coordinate space (#12152 follow-up)
+12277	socket	2026-09-10	Fix Nightly Freestyle machine creation
+12397	layout	2026-09-26	Fix goto_split skipping adjacent column
+12503	socket	2026-09-13	Fix CLI closed-pipe crashes and disconnect telemetry
+12842	socket	2026-09-17	Fix dropped socket-send bytes and GHOSTTY_BIN_DIR use-after-free (ghostty bump)
+12853	layout	2026-09-25	fix: keep split zoom when the zoomed pane outlives a tab close
+13214	socket	2026-09-22	fix: fail closed on aliased RPC target selectors
+13229	socket	2026-09-22	fix: close control socket recovery races
+13292	socket	2026-09-21	fix: wait for control socket dispatch sources before close
+13404	socket	2026-09-24	Move split terminals in the same transaction as the bonsplit tree update (#13387)
+13728	layout	2026-09-23	fix: report the submitted prompt length, not the truncated preview's
+13843	socket	2026-09-23	Fix validation of unresolved workspace reorder targets
+13877	layout	2026-09-25	fix(control): honor color/icon keys and validate hex in workspace.group.set_color/set_icon
+13888	socket	2026-09-25	fix(events): survive receive-timeout reconfiguration churn during replay
+13947	perf	2026-09-23	fix(web): let the Vercel ignore step see the previous deployment
+13961	socket	2026-09-23	Name the workspace that workspace.reorder could not resolve
+13964	socket	2026-09-24	Resolve CLI workspace refs without requiring --window
+14045	socket	2026-09-24	Fix original prompt length in hook event telemetry
+14334	socket	2026-09-25	test: stop the CLI no-socket regression waiting 90 s for an app it never starts
+14522	socket	2026-09-28	fix: bring Pi agent integration to parity
+14661	socket	2026-09-25	fix: make the event-stream reconnect decision a value so package-conventions-lint passes
+14673	socket	2026-09-25	Start a never-shown terminal before surface.read_text and read_screen
+14698	socket	2026-09-25	Report the closed surface's own ref from surface.close
+14704	layout	2026-09-25	Keep closePanel's unmapped fallback from closing another panel's tab
+15121	layout	2026-09-28	Fix tab hover landing on the first tab
+15255	socket	2026-09-29	fix(bash): keep $? for PROMPT_COMMAND hooks after cmux's
+15957	layout	2026-09-30	Fix narrow pane tab close UX
+15980	socket	2026-09-30	fix(cli): reject extra send-key operands

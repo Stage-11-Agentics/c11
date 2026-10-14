@@ -1,0 +1,105 @@
+pr	batch	merged	title
+5005	input	2026-05-31	Fix #5003: protect titlebar controls from resize drags
+5045	input	2026-05-31	Fix clipped titlebar shortcut-hint tooltip and floor sidebar width to its extent
+5101	input	2026-06-01	Fix #5099: keep right-sidebar titlebar buttons clickable (stop reparenting interactive controls)
+5102	input	2026-06-01	Fix #5099: titlebar band swallows right-sidebar button clicks
+5108	input	2026-06-02	Fix #5100: bound focus-surface broadcast re-entrancy (426s hang)
+5145	input	2026-06-01	Fix titlebar shortcut-hint pills clipped at bottom on macOS 26.5
+5175	input	2026-06-02	Fix restored scrollback keeping original theme's colors (white-on-white after theme change)
+5182	input	2026-06-02	Restore right-click sidebar-button view switcher and built-in views (#5173)
+5196	input	2026-06-10	Fix: make Select Workspace 1…9 / Surface 1…9 shortcuts actually rebindable (#5189)
+5292	input	2026-06-03	Fix copy-mode vim keys swallowed under non-ASCII input sources (Korean, Japanese Kana, Zhuyin)
+5296	input	2026-06-03	Fix #5269: recover terminal focus when first responder is stranded in another window
+5317	input	2026-06-04	Fix TextBox teardown crash when toggling sidebar background
+5335	input	2026-06-04	Fix terminal selection mouse-up with find overlay
+5340	input	2026-06-04	Fix TextBox IME and input-source handling
+5480	input	2026-06-05	Fix notification sound selection playback
+5601	input	2026-06-08	Fix sidebar Shift-click range anchor after no-op drag
+5616	input	2026-06-30	Fix workspace number shortcut rebinding
+5651	input	2026-06-12	fix: honor Focus / Do Not Disturb for the fallback notification sound
+5760	input	2026-06-10	Fix updater error copy for wedged-launchd install failures, add manual-download fallback
+5955	input	2026-06-12	Re-assert sidebar overlay scrollers when the preferred scroller style changes (#3241 sidebar scope)
+5956	input	2026-06-12	Fix Find pane for same-directory workspaces
+6052	input	2026-06-13	Sidebar row cleanups: branchless frame anchor, drop description .id, lazy Finder resolve (Fix 5: F9/F11/F13)
+6055	input	2026-06-13	Fix Cmd+T cwd after session restore
+6073	input	2026-06-14	Fix minimal UI terminal top-row hit testing
+6200	input	2026-06-22	Fix copy-on-select Ghostty parity
+6221	input	2026-06-22	Fix vim copy-mode cursor, V/Y, and pasteboard
+6359	input	2026-06-18	Fix terminal focus retry after tiny responder handoff
+6416	input	2026-06-19	Fix notification jump focus for nested tabs
+6449	input	2026-06-24	Only double precise scroll deltas for gesture devices (fix high-res mouse runaway scroll)
+6477	input	2026-06-22	Fix Cmd+grave show/hide global hotkey
+6591	input	2026-06-22	Cache settings search index per runtime
+6621	input	2026-06-23	Fix Cmd+T opening in home after agent-resume session restore (#6617)
+6627	input	2026-06-23	Fix sidebar tab selection highlight timing
+6757	input	2026-06-25	fix(cli): default workspace-scoped commands to the caller's workspace, not the focused one
+6801	input	2026-07-02	Decouple scroll from full-window relayout (drop NSWindow.didUpdate follow-up wake)
+6812	input	2026-07-02	Fix tab bar width shift on surface focus
+6837	input	2026-06-29	Bound app termination with a force-exit watchdog (#6758)
+6923	input	2026-09-26	fix: join soft-wrapped rows when copying terminal text
+7117	input	2026-06-30	Fix sidebar scroll render storm
+7228	input	2026-07-06	Fix agent hooks misrouting notifications/status/summary to the focused tab
+7278	input	2026-07-10	Reassert Ghostty focus before physical input
+7400	input	2026-07-06	Fix workspace drag pasteboard deadlock
+7437	input	2026-07-08	Fix Codex Security scan findings
+7598	input	2026-07-08	Fix undo shortcut crash routing
+7698	input	2026-07-09	Fix zh-Hant showing as zh-Hans: own AppleLanguages writes and apply language selection at change time
+7816	input	2026-07-10	Make pane-divider resize cursors easier to hit and stop cursor bleed-through from occluded windows
+7901	input	2026-07-14	Fix notification scroll restoration (#7897)
+7909	input	2026-07-12	Fix command palette outside-click dismissal lifecycle
+8071	input	2026-07-14	Fix overflowing tab selection scroll and chrome alignment
+8110	input	2026-07-15	Fix Cmd-click for soft-wrapped URLs
+8155	input	2026-07-15	Harden title-churn lifetimes and shortcut cache refresh
+8190	input	2026-07-16	Fix unauthenticated GitHub sidebar polling
+8211	input	2026-07-16	Fix sidebar scroll layout livelock
+8226	input	2026-07-19	Fix sidebar GitHub polling lifecycle regressions
+8366	input	2026-07-17	Lawrence Sidebar: consolidated dogfood fixes (badge centering, selection coalescing, Equatable boundary, hover enforcement, highlight width)
+8688	input	2026-07-24	Fix TextBox IME composition rendering
+8699	input	2026-07-27	Fix foreground scope for Global Search shortcut
+8838	input	2026-08-12	Keep screenshot paste preparation off the main thread
+8853	input	2026-07-24	Fix focus history shortcut rebinding
+8927	input	2026-07-27	Focused-read indicator survives surface-scoped mark-read again
+8995	input	2026-07-28	Fix Vim Mode cursor and selection rendering
+9031	input	2026-07-28	Fix sticky workspace identity leaking into Cmd+N
+9084	input	2026-07-28	Fix TextBox selection replacement under refresh churn
+9734	input	2026-08-11	Fix literal tildes in terminal-inserted paths
+9754	input	2026-08-10	Fix drag-to-split cursor focus reconciliation
+9781	input	2026-08-11	Keep cmux's bundled open shim first on PATH
+9808	input	2026-08-08	Resolve NFD Hangul clusters via canonical composition for font selection
+10021	input	2026-08-12	Preserve focus when closing an unfocused pane
+10248	input	2026-09-25	Honor ui.newWorkspace.action for sidebar empty-area double-click
+10363	input	2026-08-19	Fix terminal Copy Mode selection scope across split panes
+10452	input	2026-08-19	Fix Option-only shortcut bindings for arrows and text
+10489	input	2026-08-22	Preserve terminal scrollback across pane resize
+10670	input	2026-09-26	fix: keep cmux shell prompts on a block cursor
+10820	input	2026-08-26	fix: restore nightly CLI compilation after Cursor approvals
+10835	input	2026-09-26	Preserve native resize cursors at main window edges
+11059	input	2026-09-01	Hand keyboard focus to the opened panel after a right-sidebar file drop
+11254	input	2026-09-04	fix: keep double-click word selection anchored during drag
+11316	input	2026-09-01	Fix macOS compile break from #11224 (GhosttySurfaceScrollView has no terminalSurface)
+11349	input	2026-09-04	Fix SGR mouse button routing on focus clicks
+11515	input	2026-09-03	Fix native terminal Copy honoring Ghostty clipboard flavor
+12053	input	2026-09-21	Fix window frame repair and restore strict app-host CI
+12056	input	2026-09-06	Fix SwiftUI dynamic text selection hangs
+12057	input	2026-09-06	Fix corrupted PATH bytes in terminal panes
+12401	input	2026-09-26	fix: report goto_split failure at pane edges
+12570	input	2026-09-14	Fix Cmd+Z stale undo target crash (#7272)
+12607	input	2026-09-21	Retire inactive terminal portal views while preserving sessions
+12817	input	2026-09-25	Fix Copy Mode scrollback and app-host lifecycle regressions
+12997	input	2026-09-25	Fix Option dead-key composition in terminal
+13015	input	2026-09-25	fix: resolve the terminal Copy guard through the Command-aware keyboard layout (#10872)
+13018	input	2026-09-25	fix: defer Cmd+Q termination so terminateLater cleanup can run (#10788)
+13301	input	2026-09-25	Fix SIGSEGV in open wrapper on multibyte arguments
+13581	input	2026-09-22	Fix Japanese IME Backspace during conversion
+13583	input	2026-09-22	Honor quit preference after last terminal exits
+13968	input	2026-09-23	Mirror terminal focus before the runtime surface exists
+14276	input	2026-09-24	fix(focus): defer every terminal focus reassertion until surface geometry is usable
+14508	input	2026-09-28	Fix Ghostty tab and window keybindings
+14582	input	2026-09-30	Fix Cmd+I notifications popover anchor
+14653	input	2026-09-25	Fix extra spacing in Korean fallback glyphs
+14706	input	2026-09-25	close-surface: reject a blank --workspace or --window
+14786	input	2026-09-26	Fix TextBox IME replacement range crash
+14810	input	2026-09-26	cmux welcome: point at live shortcuts instead of a fixed list
+14892	input	2026-09-27	Keep the unfocused-pane dim in step with focus when a pane is revealed
+15565	input	2026-09-30	Fix Feature Flags window trapping Cmd-` and ignoring Cmd-W
+15928	input	2026-09-30	Fix send-key Ctrl-letter input for Kitty keyboard protocol

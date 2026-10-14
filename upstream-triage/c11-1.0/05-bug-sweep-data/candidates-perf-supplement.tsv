@@ -1,0 +1,163 @@
+pr	merged	version	title	changelog	files
+1741	2026-03-18		SEO hardening: canonicals, sitemap x-default, legal dates		
+1743	2026-03-18		Wire split test files into build phase, add test timeout		
+2109	2026-03-25		Reduce shell integration prompt latency		
+2116	2026-03-28		perf: coalesce scrollbar updates during bulk output		
+2655	2026-04-07		Add settings.json review guardrail for Settings rows		
+2662	2026-04-07		Coalesce sidebar PR polling per-repo, drop checks fetch, state-machine the probe queue		
+3078	2026-04-22		Reduce idle overlay animation log churn		
+3086	2026-04-22		Revert "Reduce idle overlay animation log churn"		
+3207	2026-05-05		Add activation session performance benchmark		
+3340	2026-04-30		Route blocking v2 socket methods off main		
+3355	2026-04-30		Harden socket response writes		
+3429	2026-05-04		Recover TabManager routes for live terminal surfaces		
+4184	2026-05-19		Avoid idle background terminal surface priming		
+4244	2026-05-18		browser: discard hidden webviews for memory		
+4323	2026-05-22		Harden remote websocket PTY sessions		
+4437	2026-05-20		Add recursive memory attribution diagnostics		
+4491	2026-05-23		Add update progress timeouts		
+4655	2026-05-23		Revert update progress timeouts		
+4706	2026-09-25		Guard direct GhosttyKit setup against incompatible Zig		
+4732	2026-05-25		Harden Eternal Terminal option parsing		
+4837	2026-05-27		Add scripts/cleanup-dev-builds.sh for safely reclaiming tagged DerivedData		
+4863	2026-05-28		Reduce browser WebView input latency		
+4944	2026-05-28		Guard E2E Depot runner identity		
+5218	2026-06-02		Share bounded transcript tail reads across agent hooks		
+5243	2026-06-03		Move v2 read-text scrollback work off main actor		
+5334	2026-06-04		Web: harden production security headers		
+5365	2026-06-05		CmuxControlSocket: extract the listener transport + recovery policy from TerminalController		
+5403	2026-06-05		Reduce settings observer task churn		
+5416	2026-06-05		CmuxControlSocket: harden transport edges from PR #5365 review threads		
+5857	2026-06-12		Reclaim offscreen terminal renderer GPU memory (IOSurface) non-destructively		
+5870	2026-06-11		browser actions: honor beforeinput on contenteditable, guard focus-mode side-effect, scope --return-to		
+5969	2026-06-15		Raise release build-sign-notarize timeout to 40 minutes		
+6260	2026-06-17		Reduce CMUX UI lag from Settings, sidebar, git, and browser churn		
+6529	2026-06-21		perf: GTV hot-path latency baseline (probe unmask + handleAction timing + XCUITest)		
+6583	2026-06-22		Gate idle pollers to active workspace		
+6585	2026-06-22		Evict hidden browser WebViews under memory pressure		
+6619	2026-06-22		Remove high-memory pane warning UI (triangle + popover); keep guardrail engine		
+6765	2026-06-25		Bound waitlist email validation with fail-open timeouts		
+6807	2026-07-02		perf(sidebar): throttle immediate observation publisher to coalesce agent title bursts		
+6823	2026-06-29		Move logBackground I/O off the main thread (async background-log writer)		
+7050	2026-06-29		Reclaim hidden terminal renderers on memory pressure		
+7221	2026-07-03		Enforce the sidebar lazy-layout contract: behavioral scale gate + row-view guard		
+7357	2026-07-05		control socket: move CLI command handling off the main thread (tranches A-E of #5757)		
+7496	2026-07-07		Add memory pressure response layer		
+7527	2026-07-08		Reduce sidebar geometry measurement churn		
+7757	2026-07-10		Bootstrap oRPC + OpenAPI + type-safe Swift client pipeline		
+7765	2026-07-10		Gate sidebar resize hover affordance on window occlusion		
+7794	2026-07-10		Avoid publishing blank resolved icon renders		
+7863	2026-07-14		Reduce typing latency in large busy workspaces		
+7954	2026-07-13		Harden long-uptime sidebar observation lifecycle (#7929)		
+7972	2026-07-13		Extend App Store Connect request timeout		
+8138	2026-07-15		Revert "Reduce typing latency in large busy workspaces" (#7863)		
+8246	2026-07-16		Prevent Nightly false-green starvation		
+8247	2026-07-16		Drain buffered coalesced values before completion		
+8347	2026-07-18		Harden docs deployment authentication		
+8390	2026-07-18		Lawrence Sidebar round 2: reactivity, resize settle, selection coalescing, behavior tests		
+8576	2026-07-22		Harden reconnect: host cooldown parity, persistent diagnostics, per-device rate limits		
+8778	2026-07-24		Deleted Macs are not hidden: clear legacy markers, retire legacy recovery		
+9026	2026-07-28		Stop reentrant focus storms (#8843)		
+9366	2026-08-01		Harden resource SDK cancellation and transport lifecycles		
+9402	2026-08-03		Harden route-content equivalence against reorders, missing baselines, and install races		
+9575	2026-08-04		Recover one pane instead of restarting the session when its seed retention overflows		
+9763	2026-09-01		Mitigate Sparkle updater-agent timeouts under endpoint security		
+9791	2026-08-07		Harden install analytics privacy		
+9993	2026-08-11		Make initial route timeout tests owner-driven		
+10059	2026-08-13		Recover ambient CLI from stale dev socket		
+10277	2026-09-30		perf: read listening ports from the kernel instead of spawning lsof		
+10490	2026-08-22		Journal-backed sidebar agent lifecycle: semantic event log + deterministic reducer + startup replay		
+10815	2026-08-26		Occlude and reclaim terminal renderers when the hosting window is hidden		
+11162	2026-08-29		Bound ThreadOutput backlog and terminate on overflow		
+11313	2026-09-01		web: billing recovery — email-claim redemption, portal for lapsed subscribers, dunning		
+11425	2026-09-03		Guard PTY child during terminal host startup		
+11432	2026-09-03		Bound pairing decision channel		
+11435	2026-09-03		Bound workspace HTTP token reads		
+11588	2026-09-02		Bound managed enrollment file reads		
+11662	2026-09-02		Admin Pro roster: bounded team lookups, truncation flag, scan sequence guard		
+11746	2026-09-03		Avoid cloning occluders during graphics cache checks		
+11837	2026-09-24		perf(sidebar): index workspaces for extension snapshots		
+11857	2026-09-04		cmux-remote: bound live invitation state		
+11933	2026-09-04		perf: deduplicate dashboard Stack user reads		
+11943	2026-09-04		Harden provider and local security boundaries		
+12241	2026-09-10		web: set the health probe statement_timeout inside a transaction		
+12352	2026-09-13		build(setup): preflight Metal before setup mutations		
+12699	2026-09-15		Harden production deployment rollback guards		
+13010	2026-09-20		perf: coalesce durable event-log batch writes		
+13014	2026-09-20		perf: coalesce concurrent process snapshots across diagnostics and restore		
+13130	2026-09-20		perf: split BrowserPanelView's modifier chain so it type-checks quickly		
+13134	2026-09-20		perf: skip unchanged reload post-build work		
+13209	2026-09-20		perf: skip unchanged bundled resource builds		
+13241	2026-09-20		perf(reload): clone the tagged app staging copy on APFS		
+13273	2026-09-20		Avoid unused app-host artifact uploads from compile-only forks		
+13285	2026-09-20		Reduce provider error classifier complexity		
+13397	2026-09-29		Control socket: bound main-actor hops, answer rejected clients, expire stale jobs (#13369 second half)		
+13442	2026-09-21		Avoid popover binding writes during SwiftUI updates		
+13466	2026-09-21		Make the history guard shallow		
+13496	2026-09-21		Run slow CLI guard contracts in parallel		
+13497	2026-09-21		Run slow source-lint guards in parallel		
+13500	2026-09-21		Split the remaining quality guard critical path		
+13501	2026-09-22		Split the app-host guard critical path		
+13502	2026-09-22		Split the release guard critical path		
+13530	2026-09-22		perf: keep recursive warm-slot disk scans off foreground path		
+13580	2026-09-22		Bound warm-slot telemetry without per-event fsync		
+13585	2026-09-22		Route Linux guard tests by owning group		
+13589	2026-09-22		#13531: harden cold-task cleanup ownership and recovery		
+13862	2026-09-23		perf(build): SettingsRuntime reference + Settings pages as a workspace pane (#12737)		
+13910	2026-09-23		Add bounded collector for dev app backend diagnostics		
+14210	2026-09-25		perf(tests): stop the slowest app-host unit tests waiting out real timeouts		
+14686	2026-09-25		Predicted echo: seed alternate screen from ghostty, guard stale erases		
+14764	2026-09-26		scripts: merge-main.sh merges the last green main and labels guard failures		
+14813	2026-09-26		Remove duplicate keys from Resources/Info.plist and guard against them		
+14822	2026-09-26		perf: skip no-op UserDefaults writes on every session autosave		
+14834	2026-09-28		cli: answer queued agent hooks inside the agent's hook timeout		
+14870	2026-09-28		Recover agent sessions from the journal after an unclean exit		
+14872	2026-09-28		perf(claude-wrapper): skip redundant settings validation, read MDM policy once, overlap generation with the ping		
+14931	2026-09-27		perf: stop launching the cmux CLI for every queued Claude hook		
+14951	2026-09-27		Add terminal.confirmUnsafePaste to confirm unsafe pastes in a window sheet		
+14953	2026-09-27		Show a brief notice when Cmd+V fails on an oversized image or a timeout		
+14991	2026-09-27		Honor macOS Differentiate Without Color, Increase Contrast and Reduce Transparency		
+15016	2026-09-27		merge-main: run local guards only when asked		
+15057	2026-09-27		tools: wire-app-sources wires any target; guard cmuxUITests wiring		
+15083	2026-09-28		Recover a missing team scope instead of failing Mac pairing		
+15125	2026-09-28		Pane focus memory and New Pane (Auto Layout)		
+15154	2026-10-01		Keep browser page state when Memory Saver frees a hidden pane		
+15173	2026-09-28		Keep a finished agent turn idle when a late tool result arrives		
+15298	2026-09-30		Task Manager: agent status, idle time and Close Terminal		
+15324	2026-09-28		Recover routed Claude sessions through cmux restore; journal closed panes		
+15467	2026-09-29		Keep idle Claude sessions restorable through process census churn		
+15613	2026-09-30		Add guarded Close Tab UX		
+15697	2026-09-29		feat: add cmux agent recovery workspaces		
+15802	2026-09-30		cmux-next: terminal attach state machine, bounded output, compat reads from ControlSnapshot		
+15993	2026-09-30		Document the 32 CLI verbs the contract table was missing, and guard it		
+16045	2026-09-30		Recover terminal chat when transcript files are replaced		
+16257	2026-10-01		Keep finished Claude sessions idle after delayed reminders		
+2176	2026-03-26	[0.63.0]	Fix workspace creation snapshot crash	Fix Cmd+N workspace creation crashes caused by stale snapshots, ARC hotpaths, and restore-time races	
+2183	2026-03-26	[0.63.0]	Fix Cmd+N crash: retain snapshot workspaces through creation	Fix Cmd+N workspace creation crashes caused by stale snapshots, ARC hotpaths, and restore-time races	
+2308	2026-03-28	[0.63.1]	Fix macOS compat: versioned geometry persistence and re-entrant layout crash	Fix macOS compatibility with versioned geometry persistence to prevent future upgrade crashes	
+3469	2026-05-04		Fix CircleCI Bun install prefix		
+3565	2026-05-05	[0.64.2]	Fix v0.64.1 bundled CLI launch crash	Fix launch crash on v0.64.1 caused by the bundled CLI failing to load the Sentry framework	GhosttyTabs.xcodeproj/project.pbxproj
+5551	2026-06-13		fix(web): read changelog PNG height from correct IHDR offset		web/app/[locale]/docs/changelog/page.tsx,web/app/[locale]/docs/changelog/png-dimensions.ts,web/tests/png-dimensions.test.ts
+6412	2026-06-19		ci(tests): fix AppDelegateShortcutRoutingTests teardown crash + make app-host backtraces cheap		.github/swift-file-length-budget.tsv,scripts/ci/xcodebuild_noninteractive.py
+6417	2026-06-19	[0.64.17]	Guard PostHog flush against shutdown stalls	Prevent quit hangs from analytics flushing	
+6425	2026-06-21	[0.64.17]	Fix changelog title clipping	Fix the changelog title clipping	web/app/[locale]/docs/changelog/page.tsx
+6624	2026-06-23		ci: align xcode-select default with selected toolchain (fix git-shell-out test crashes)		.github/swift-file-length-budget.tsv,scripts/select-ci-xcode.sh
+6870	2026-06-29	[0.64.18]	Guard workspace sidebar LazyVStack against layout re-livelock (#6384)	Guard the workspace sidebar against layout re-livelock	scripts/check-sidebar-lazy-layout.py
+8851	2026-07-28	[0.64.21]	cmuxTests: stop FileDropOverlayViewTests killing its test host on a missing environment object	Fix leaked `openThread` loops burning ~90% of cmux idle CPU	
+9368	2026-08-11	[0.64.23]	Cache and gate Ghostty macOS unified logging	Fix idle CPU burn from uncached Ghostty logging setup	scripts/ghosttykit-checksums.txt
+9436	2026-08-03	[0.64.22]	Disable Ghostty native Sentry in embedded builds	Fix a crash seconds after launch on Intel Macs; cmux is now the only process-wide crash handler, and embedded GhosttyKit no longer links Ghostty's native Sentry initializer	scripts/build-sign-upload.sh,scripts/download-prebuilt-ghosttykit.sh,scripts/ensure-ghosttykit.sh,scripts/ghosttykit-checksums.txt,scripts/validate-xcframework-archive.py
+9799	2026-08-07		Fix install analytics determinism gate		web/tests/install-analytics.test.tsx
+10741	2026-08-25		Un-deadlock CmxConnectivityPeerSessionTests (red swift-package-tests gate on main)		
+10972	2026-08-27		observability: defer and flush Sentry sends so they survive the serverless freeze		web/services/observability/report.ts
+12425	2026-09-24		fix(ci): install Metal Toolchain before GhosttyKit fallback		scripts/ensure-ghosttykit.sh,scripts/ensure-metal-toolchain.sh
+12800	2026-09-21		Investigate post-update hang: controlled reproduction results		
+12826	2026-09-18	Unreleased	Fix NFD Hangul filename shaping with composed-only fonts	Korean filenames with decomposed Hangul render correctly with fonts like D2Coding instead of showing unrelated symbols	scripts/ghosttykit-checksums.txt
+13180	2026-09-20		ci: preserve RemoteTmuxMirror crash diagnostics		
+13250	2026-09-20	Unreleased	fix: use complete settings paths in checkout and installed skill	`cmux-settings validate` in the bundled skill accepts every supported setting path, such as `sidebar.showPorts`	skills/cmux-settings/scripts/cmux-settings
+14055	2026-09-24		ci: name the hung test when a Swift package test step stalls		scripts/ci/ci_process_tree.py,scripts/ci/hung_test_watchdog.py,scripts/ci/run-swift-testing-suites.sh,scripts/ci/run_with_timeout.py,scripts/ci/select_package_tests.py,scripts/ci/workflow_guard_groups.py
+14296	2026-09-25		fix(web): store sandbox for production-bundle installs that declare it		web/app/api/device-tokens/route.ts,web/services/apns/routePolicy.ts,web/tests/apns.test.ts
+14307	2026-09-24		ci: make a changed-suites run prove a known-failure fix		scripts/ci/app_host_result_accounting.py,scripts/ci/run-app-host-unit-batches.sh
+14424	2026-09-25	Unreleased	fix(homebrew): generate the symbol form of depends_on macos	Installing cmux from the Homebrew tap no longer prints a deprecation warning about `depends_on macos`	scripts/build-sign-upload.sh
+14768	2026-09-26		ci: attribute a red guard to the change that broke it and say how to fix it		scripts/ci/guard_attribution.py,scripts/ci/run_ci_guards.py
+14886	2026-09-27		test: free hosted test terminals so the portal leak check stops failing		cmux.xcodeproj/project.pbxproj,cmuxTests/CJKIMEInputTests+DeadKeyComposition.swift,cmuxTests/TerminalSurfaceTestTeardown.swift,cmuxTests/TerminalWindowPortalLifecycleTests+Workspace.swift
+15811	2026-09-30		Fix the cross-surface ordered-input test hang		

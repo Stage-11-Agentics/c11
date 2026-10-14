@@ -1,0 +1,105 @@
+pr	batch	merged	title
+1235	input	2026-08-30	Fix phantom terminal text selection state desync
+1649	input	2026-03-20	Fix keyboard shortcuts with CJK input sources
+1700	input	2026-03-20	fix: skip Korean from CJK font-codepoint-map auto-injection
+1709	input	2026-03-23	fix(terminal): prevent cursor movement on double-click selection
+1855	input	2026-03-20	Fix focused notification sound playback
+1899	input	2026-03-25	Fix Ghostty resize_split keybind support
+1913	input	2026-03-23	Fix keyboard shortcuts not working with Korean input mode
+1930	input	2026-03-25	Fix workspace creation failing after long uptime
+1950	input	2026-03-23	Fix splitter hitbox overlap and terminal scrollbar width resync
+1959	input	2026-03-22	Fix unbound Cmd+Shift+key combos being silently swallowed
+1965	input	2026-03-23	Preserve explicit wheel scrollback against passive follow
+1981	input	2026-03-23	Fix UI test foreground activation on CI
+1985	input	2026-03-25	Fix #1983: avoid workspace creation crash after restore
+2023	input	2026-03-24	Avoid crash when creating a new workspace
+2033	input	2026-03-25	Consume Cmd+number shortcuts when workspace index is out of bounds
+2034	input	2026-03-25	Handle Cmd+O in handleCustomShortcut to prevent Documents folder open
+2075	input	2026-03-25	fix: prevent Japanese IME confirmation Enter from executing command
+2088	input	2026-03-25	Fix all split panes appearing focused after layout restoration
+2089	input	2026-03-26	Fix command palette focus after terminal find
+2117	input	2026-03-25	Fix first click on detected update pill
+2127	input	2026-03-25	Add regression coverage for Cmd+N workspace creation crash
+2133	input	2026-03-25	Fix Cmd+N crash from stale workspace creation snapshots
+2173	input	2026-03-25	Fix Cmd+N workspace creation snapshot crashes
+2178	input	2026-03-26	Fix Cmd+N crash from workspace creation config snapshots
+2181	input	2026-03-26	Fix Release-only Cmd+N workspace snapshot UAF
+2186	input	2026-03-26	fix(quit): enforce Warn Before Quit when Cmd+Q arrives via app switcher
+2202	input	2026-03-26	fix: keyboard shortcuts not working with Russian layout
+2204	input	2026-03-26	Fix Cmd+N nightly crash: avoid local Workspace refs in ARC hotpath
+2221	input	2026-03-26	Revert liveSurfaceForGhosttyAccess: fix Cmd+N @Published nil crash
+2354	input	2026-03-30	Fix #2347 terminal focus and surface recovery
+2393	input	2026-03-31	Keep cmd+p stable during animated workspace title updates
+2394	input	2026-03-31	Fix Ctrl+K in the command palette
+2412	input	2026-03-31	Fix main CI workspace retention in cmd-p switcher
+2447	input	2026-04-06	fix: stop swallowing ABC-QWERTZ / and ? in terminal input
+2464	input	2026-04-01	Fix CLI commands briefly stealing focus
+2467	input	2026-04-01	Fix paste from Raycast and apps using alternate plain-text UTIs
+2471	input	2026-04-04	Fix session restore terminal cursor focus race
+2505	input	2026-04-06	Fix terminals freezing when first responder drifts
+2511	input	2026-04-06	Fix focus reporting leak during pane creation (#2446)
+2518	input	2026-04-03	fix: new-split falls back to focused surface when target is stale
+2529	input	2026-04-02	Fix Korean IME jamo leak during composition
+2579	input	2026-04-06	Suppress cmd-hover path highlighting while terminal selection is active
+2615	input	2026-04-06	Fix React Grab Cmd-Shift-G terminal round-trip
+2678	input	2026-04-08	Auto-hide terminal scroll bar fixes 2674
+2725	input	2026-04-08	Fix terminal selection autoscroll past viewport edge
+2767	input	2026-04-10	Fix command-hold shortcut hints and prevent sidebar truncation
+2768	input	2026-04-10	Fix Raycast paste fallback regression
+2831	input	2026-04-12	Fix Cmd+click file path punctuation trimming
+2833	input	2026-04-14	Fix appIcon=automatic crash on macOS Tahoe
+2836	input	2026-04-18	Fix bilibili search popup opening detached window
+2847	input	2026-04-12	Fix paste only pasting first character (#2805)
+2877	input	2026-04-14	fix: prefer UTF-8 plain text in pasteboard to avoid Mac OS Roman loss
+2927	input	2026-04-16	Fix scrollback-limit byte handling
+2994	input	2026-04-19	Fix Cmd/Ctrl shortcut hint parity (#2992)
+3012	input	2026-04-19	Fix #3011 blank terminal after workspace selection
+3015	input	2026-04-20	Pin regular-weight Japanese auto-fallback face
+3035	input	2026-04-20	Explain shortcut recorder rejections inline (fixes #2988)
+3063	input	2026-04-21	Drop stale merged PR from sidebar badge selection (#3054)
+3182	input	2026-04-27	Fix feedback editor scrolling
+3221	input	2026-04-28	Restore cmux themes Enter apply
+3268	input	2026-05-05	Fix #3069 non-ASCII Cmd+V paste when rich clipboard payloads are lossy
+3292	input	2026-05-05	fix: deduplicate numpad input across IME full-to-half-width transition (#3284)
+3309	input	2026-05-04	Follow up equalize splits shortcut fixes
+3330	input	2026-04-30	fix: make find escape behavior consistent
+3332	input	2026-05-05	Fix unbound Cmd+Shift forwarding to terminal (#1718)
+3378	input	2026-05-01	Fix cmux theme picker Enter from search
+3431	input	2026-05-02	Fix launch theme before app appearance exists
+3455	input	2026-05-04	Fix shortcut settings dispatch_once launch crash
+3462	input	2026-05-04	Fix editable shortcuts from settings.json
+3476	input	2026-05-04	Fix settings-file launch crash paths
+3479	input	2026-05-04	Fix live theme picker application
+3489	input	2026-05-05	Preserve context-separated shortcuts through recorder swaps
+3532	input	2026-05-05	Fix notification dismissal with stale app focus
+3539	input	2026-05-06	Fix file preview drop routing
+3559	input	2026-05-05	fix: prevent recursive os_unfair_lock crash on cmd-clicked .md viewer route + drop fragment/query gate
+3567	input	2026-05-05	Fix Finder image drops into Claude Code terminals
+3570	input	2026-05-05	Fix sidebar scroller visibility
+3574	input	2026-05-07	Restore Zhuyin IME candidate marked-text handling
+3580	input	2026-06-10	Fix OSC 8 Cmd-click hyperlinks in terminal panes
+3611	input	2026-05-07	Fix Cmd+N window size after last window closes
+3628	input	2026-05-10	fix: close all targeted tabs in pane right-click 'Close Other Tabs' (#3605)
+3720	input	2026-05-08	Fix terminal top-row click routing
+3734	input	2026-05-08	Fix Cmd-W for Task Manager and auxiliary windows
+3740	input	2026-05-08	Fix tab bar empty-click behavior
+3881	input	2026-05-12	Fix #3856: honor focusPaneOnFirstClick for minimal-mode chrome and workspace sidebar
+3907	input	2026-05-12	Fix cmux frontmost state without keyboard focus
+3929	input	2026-05-12	Fix garbled Chinese paste text
+3981	input	2026-06-04	Fix printable Option key shortcut routing
+4077	input	2026-05-13	Save crash diagnostics under cmux state
+4095	input	2026-05-13	Fix Korean 2-Set terminal arrows
+4193	input	2026-05-18	Fix tagged dev CLI socket selection
+4291	input	2026-05-18	Fix Cmd-hover bounds for spaced file paths
+4382	input	2026-05-19	Fix Option dead-key accent composition
+4391	input	2026-06-14	Fix terminal top-row mouse event routing
+4400	input	2026-05-20	Route keyboard/menu equalize_splits through v2ProportionalEqualize so 3+ panes split evenly
+4406	input	2026-05-20	Fix remapped Cmd+W close shortcuts
+4442	input	2026-05-20	Fix shortcut recorder state leak in AppDelegate tests
+4445	input	2026-05-20	Fix main shortcut routing CI regressions
+4557	input	2026-05-22	Fix Git repository search root traversal
+4613	input	2026-05-26	Keep Cmd-Tab app switching off session snapshot path
+4615	input	2026-05-23	Fix close shortcuts targeting original window
+4676	input	2026-05-26	Fix release stress socket heartbeat and stale focus-pane target
+4767	input	2026-06-10	Fix sidebar scrollbar: hide when content fits, fade overlay knob when idle (#3241)
+4784	input	2026-05-26	Fix TextBox teardown exclusivity crash

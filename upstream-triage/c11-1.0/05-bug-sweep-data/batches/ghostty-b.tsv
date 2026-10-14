@@ -1,0 +1,208 @@
+354e3626b	2026-06-04	fix: suppress mouse reporting for the full cmd-clicked link click
+55d154a97	2026-06-03	fix: gate link refresh on effective mouse-reporting state
+1c7613c95	2026-06-03	fix: open terminal links on cmd-click even when mouse reporting is active
+7fa6fffbc	2026-06-03	terminal: saturate cursor subtraction in resizeCols
+c4e1ab888	2026-06-01	core: send selection_changed notification
+ef68e9640	2026-05-30	macos: fix GHOSTTY_QUICK_TERMINAL not set for quick terminal splits
+ab82b8ab7	2026-06-01	core: fix use-after-free in Surface.setSelection
+a181c386c	2026-05-31	config: fix missing space in docs
+eb5c1c722	2026-05-30	fix(macos): mark Swift os.Logger interpolations as public
+e32d7abe6	2026-05-31	macos: fix swiftlint opening_brace issue
+ff963f311	2026-05-29	Renamed timeout source and callback function. Added comment explaining timeout delay.
+1753d57bf	2026-05-28	remove timeout source when window is disposed
+00eb48a99	2026-05-27	write_active_file: keep row boundaries (unwrap=false) (#68)
+68959c5c6	2026-05-27	terminal: fix selection gesture edge cases
+57d202066	2026-04-27	macOS: clear stale OSC 11 background cache on config change
+37997f8db	2026-05-26	Use a timeout callback to wait for changes in window active state to settle. Depending on the backend a window might temporarily become inactive.
+9910a1a47	2026-05-25	test: add audio-bell thread-leak NixOS check (GNOME/Wayland)
+0b6d91e53	2026-05-25	apprt/gtk: reuse one audio-bell MediaFile per surface to fix thread leak
+a5550a2dc	2026-05-25	cli: fix readEntries leak and double-free
+545a5aef6	2026-05-23	libghostty: document selection snapshot lifetime
+da541bea6	2026-05-23	fix stray brace from conflict resolution
+7a346dd8d	2026-05-23	macOS: fix search bar Enter key blocking IME composition
+fffdaadcb	2026-05-18	Fix upstream merge regressions for cmux
+bf716a0c3	2026-05-18	feat: add extension to normalize OSPasteboard string interface
+ff6e1260d	2026-05-18	fix: handle dotted spaced path prefixes
+6eed7af92	2026-05-18	fix: bound spaced file path links
+6e10706a7	2026-05-18	test: cover spaced file path link bounds
+22b9df25e	2026-05-17	Fix "Available since"
+69cab3d80	2026-05-17	feat: select needle when reading from pasteboard
+59eece9a8	2026-05-16	feat: use find pasteboard to store search needle
+93d1142ad	2026-05-15	small formatting changes
+54a38e813	2026-05-14	Distinguish resize and manual update using a combination of max-position and position properties. Listening to drag events directly did not work that well.
+aef980e27	2026-05-13	Allow crash report subdirectory override
+e59e27f8b	2026-05-12	Fix nested splits disappearing and focus being lost.
+2c6dd5940	2026-04-19	macOS: fix render_thread "stuck" after dragging surface to another tab within the same window
+366c34831	2026-04-19	macOS: fix first responder after dragging a non-focused surface
+fe972c095	2026-05-11	Bound renderer preedit catch-up to shaped glyphs
+70b95dada	2026-05-11	Expose unsafe preedit catch-up in renderer rows
+ec145bca9	2026-05-08	Fix translation errors in eu
+c44afa625	2026-05-06	fix: preserve active cursor position during reflow
+3f11e695d	2026-05-06	fix: apply variation selectors to preceding codepoint
+5d1ba056b	2026-05-05	Refresh embedded mouse state when modifiers change
+57a9adce7	2026-05-05	fix datastruct/SplitTree not calculating the correct new split ratio when resizing a split
+81e399c41	2026-05-05	build(deps): bump cachix/install-nix-action from 31.10.5 to 31.10.6
+c20fcfa1b	2026-05-04	Fix zero-width grapheme attachment during pending wrap
+61595b5ec	2026-04-29	macOS: fix focus state when toggling command palette from inline title editor
+dae04211c	2026-04-28	Fix fork CI runner fallback
+aa650937d	2026-03-13	Fix cmux theme picker preview writes
+b90dee5f9	2026-03-13	Fix cmux theme picker preview writes
+154169b05	2026-03-19	Fix speedy high-resolution scrolling on Linux
+97c5a21ab	2026-04-27	macOS: fix ending search in menu bar does focus on surface
+6c6865092	2026-04-26	fix: update Se terminfo entry to reset cursor to configured default
+ac67a6160	2026-04-27	renderer: fix preedit range width
+b66258806	2026-04-26	test: only change themes in theme tests
+c4a671ba5	2026-04-25	fix: remove test as has been suggested in comment
+fa141a726	2026-04-15	Fix Korean IME committed text handling for arrow keys
+85dc4b184	2026-04-25	surface: respect semantic prompt boundaries for links
+6fb86a819	2026-04-15	flatpak: update runtime to GNOME 50
+00dfd67be	2026-04-23	pkg/highway: replace resolveTargetQuery with direct CPU detection
+ae1dd5666	2026-04-23	fuzz: fix macOS AFL toolchain and linker setup for macOS 26.4
+b0b23f53a	2026-04-23	macOS: check abnormal-command-exit-runtime when process exits
+a8ed37a79	2026-04-23	macOS: fix command parsing in NewTerminalIntent
+08a2d9b22	2026-04-13	build: share combineArchives and fix internal archive names
+ce3c319ab	2026-04-23	build(deps): bump cachix/install-nix-action from 31.10.4 to 31.10.5
+50e8ebaf6	2026-04-20	surface: sync middle-click paste source with copy-on-select
+83027407e	2026-04-20	terminal: fix memory leak that could happen with invalid Kitty image cmd
+c7a73076e	2026-04-20	macOS: fix App Icon update in Finders
+adb0d793a	2026-04-19	android: Avoid referencing POSIX shared memory functions
+8a6c66468	2026-04-20	Fix typo in i18n_locales.zig.
+9cbca5459	2026-04-20	Fix typo + improve fluency in README_TRANSLATORS § Viewing translations.
+5939b8c1b	2026-04-17	macOS: fix 12266 by using the correct coordinates for the hitTest
+815ccb060	2026-04-15	terminal: fix viewport pin during resize reflow
+3ee0b0a77	2026-04-14	i18n: fix gender agreement for match translations (be)
+ff9ca55b5	2026-04-14	i18n: fix terminology in Belarusian translation (be)
+858e856e2	2026-04-14	macOS: fix shortcuts not showing on menu item for `scroll_to_selection` and `search_selection`
+2648668da	2026-04-13	fix quick-terminal breaking when it is manually toggled while autohide is enabled
+de4992c2b	2026-04-12	decbkm: use if statements instead of named blocks
+53019991f	2026-04-12	macOS: fix the arrow alignment of the secure input popover
+bf6fd4abe	2026-04-12	macOS: add `focusDidChange` & `sizeDidChange` placeholders to `OSSurfaceView`
+650cd9664	2026-04-11	macOS: fix memory leak of TerminalController
+4fd16ef9b	2026-04-11	build: install ghostty-internal dll/static with new names
+41c872c1f	2026-04-10	macOS: fix tab title editor frame update during winding resizing
+1855b3efc	2026-04-09	build(deps): bump cachix/install-nix-action from 31.10.3 to 31.10.4
+363cb9560	2026-04-08	macOS: fix icon style not updating on Tahoe
+97b8b8faa	2026-04-07	fix: zig 0.15.2 compat - std.io.getStdOut -> deprecatedWriter
+249aee701	2026-04-06	example/swift-vt-xcframework: fix buffer overflow
+65e3265e3	2026-04-06	libghostty: fix kitty graphics test failures
+68a8cbb06	2026-04-06	libghostty: fix expected format in image_get test
+e39093786	2026-04-06	macos: fix badge permission
+29e3de737	2026-04-04	terminal: make wuffs runtime-swappable, enable Kitty graphics for libvt
+30fdc8f4c	2026-04-02	macOS: fix cannot rebind super+up and super+down
+18f270222	2026-04-02	macOS: fix Find Next/Previous button in the menu bar is not working as expected
+c16cf0ef0	2026-04-01	fix: Ensure snap paths come first in gio module loading
+702a2b43c	2026-04-01	macOS: fix upper cased letter is not correctly mapped to menu shortcut
+c8702ece8	2026-04-01	gtk(chore): fix typos
+4803d58bb	2026-03-31	apprt/embedded: fix ghostty_surface_free_text parameter mismatch
+591dbd511	2026-03-31	macOS: fix incorrect delete symbol mapping
+a75615992	2026-03-30	Fix OSC 99 parser for upstream API changes
+2be58ee0e	2026-03-30	Fix DECRPM mode 2031 reporting wrong color scheme
+ea482b73e	2026-03-13	Fix cmux theme picker preview writes
+a3588ac53	2026-02-10	macos: reduce transient blank/scaled frames during resize
+05cf31b38	2026-02-08	macos: restart display link after display ID change
+3864fa585	2026-03-30	build(deps): bump cachix/install-nix-action from 31.10.2 to 31.10.3
+5de30c0dc	2026-03-30	Revert "macOS: fix tab context menu opens on macOS 26 with titlebar tabs (#9831)"
+013579cfc	2026-03-29	macOS: fix initial focus of command palette when building with Xcode 26.4
+32920b6b2	2026-03-28	macOS: handle surface focus more gracefully
+af3695994	2026-03-29	gtk: only trigger resize callbacks and overlay when size actually changes
+1fcd80daa	2026-03-28	libghostty: add cpp-vt-stream example and fix C++ header compatibility
+3c2c596dc	2026-03-28	fix global keybinds from not repsonding anymore
+2b1ec5db6	2026-03-28	cli: dupe argument strings to retain their memory
+f0badd34d	2026-03-28	fix: replace hardcoded locale.h constants with build-system TranslateC
+96bad9020	2026-03-28	Fix DECRPM mode 2031 reporting wrong color scheme (#20)
+ad0c5fbec	2026-03-26	macOS: fix regression caused by 3ee8ef4f650f550698ee1e8e81e591511e195bf4
+95ee87890	2026-03-26	macOS: add test case for search bar focus change
+11574c35a	2026-03-26	libghostty: expose paste encode to C API
+43f3dc5f1	2026-03-25	zsh: fix trailing '%' in PS1/PS2 combining with marks
+c12f62c82	2026-03-24	vt: handle pixel sizes and size reports in ghostty_terminal_resize
+6f18d44ed	2026-03-24	vt: add title_changed effect callback
+68378a0bb	2026-03-24	build: increase comptime branch quota for ghostty.h enum checks
+ce9930051	2026-03-24	build: fix freetype C enum signedness for MSVC
+147596d56	2026-03-24	build(deps): bump cachix/install-nix-action from 31.10.1 to 31.10.2
+701d1d55d	2026-03-23	terminal: fix secondary DA test to match default firmware version
+22c7edf3f	2026-03-22	terminal: rename set_window_title effect to title_changed
+c1e616c6c	2026-03-23	libghostty: add ghostty_free for cross-runtime memory safety
+1ce057f05	2026-03-23	build: disable ubsan and bundled runtimes for MSVC targets
+3c8d0a9c2	2026-03-23	vt: fix test failures in render and key_encode
+8bc75907b	2026-03-23	gtk: Fix casing for openUri
+e7a18ea5b	2026-03-20	vt: fix render state cell style and graphemes_buf APIs
+220d6fd43	2026-03-20	nix: add systems input and fix zig follows
+900afa7b8	2026-03-19	fix types
+b0789af58	2026-03-19	core: fix c macro comparisons
+264a1a7cd	2026-03-19	core: fix target for macos libc search
+d80d84862	2026-03-19	macOS: fix mouse not working correctly in CommandPaletteView (#11658)
+27fd1c778	2026-03-18	gtk/winproto: fix memleak & other tweaks
+2d514013d	2026-03-17	fix "open terminal here" action on Plasma
+978abdeeb	2026-03-16	Fix tmux control block terminator parsing
+69554f414	2026-03-15	shell-integration: fix ssh-env SetEnv clobbering user SSH config
+f730eed21	2026-03-14	vt: fix missing formatter docs in doxygen
+fe6e7fbc6	2026-03-13	vt: ghostty_terminal_resize
+af84fdbea	2026-03-12	fix tests
+64331b8c3	2026-03-12	snap: Don't leak LD_LIBRARY_PATH set by the snap launcher
+07bc88868	2026-03-12	macOS: fix window position when dragging split into a new window
+5e3866381	2026-03-12	macOS: fix window cascading for the second window
+ea262cdd3	2026-03-12	macOS: fix window cascading for 3rd+ window
+4f849a151	2026-03-12	macOS: fix window position for the very first window
+e31615d00	2026-03-11	bash: fix extra newlines with readline vi mode indicator
+26d8bd9e7	2026-03-11	bash: fix multiline PS1 with command substitutions
+c2206542d	2026-03-11	macos: fix tab title rename hit testing and focus handling in fullscreen mode
+82a805296	2026-03-11	docs: fix backtick rendering in selection-word-chars default value
+ad6d3665c	2026-03-11	gtk: fix +new-window `--working-directory` inferrence.
+6dd5b856b	2026-03-10	macos: disable Tahoe one-time codes
+85bec8033	2026-03-11	build(deps): bump cachix/install-nix-action from 31.10.0 to 31.10.1
+04d5efc8e	2026-03-10	config: working-directory expands ~/ prefix
+53637ec7b	2026-03-10	fix jump_to_prompt forward behavior for multiline prompts
+aaad43c23	2026-03-10	macos: make paste_from_clipboard performable on macos
+a6cd1b08a	2026-03-10	macOS: fix intrinsicContentSize race in windowDidLoad (#11256)
+cfedda1a0	2026-03-10	macOS: add regression tests for intrinsicContentSize race (#11256)
+96f9772cd	2026-03-09	tests: disable tests that fail if you have locally installed fonts
+3ba49a784	2026-03-09	terminal: fix grapheme edge-wrap hyperlink integrity panic
+235dde684	2026-03-08	fix: list-actions outputs without `--docs`
+df4d9bc0d	2026-03-08	macos: fix quick terminal glassy background
+4bb602b0e	2026-03-07	Fix snap EGL vendor dirs to include host NVIDIA ICD paths
+f72d41675	2026-03-06	macos: fix AppleScript quit command being silently ignored
+40c74811f	2026-03-05	macos: fix perform action
+3dde6e255	2026-03-04	terminal: bound link regex search work with Oniguruma retry limits
+5bc5820f3	2026-03-04	gtk: simplify new-window action memory management with an arena
+9a3dbe10b	2026-03-04	zsh: fix extra newlines with leading-newline prompts
+e07aefa60	2026-03-04	fix: zsh shell integration when `sudo` and `ssh` aliases are defined
+69df92b56	2026-03-04	build(deps): bump cachix/install-nix-action from 31.9.1 to 31.10.0
+391c9044b	2026-03-02	pkg/afl++: remove @@ from run target since we use in-memory targets
+177612a4c	2026-03-02	terminal: fix insertBlanks orphaned spacer_tail beyond right margin
+b39a00ddf	2026-03-02	terminal: fix insertLines/deleteLines orphaned cells on full clear
+1ba9f9187	2026-03-02	terminal: fix no-reflow resize leaving stale spacer heads
+e7030e73d	2026-03-02	terminal: fix printCell corrupting previous row when overwriting wide char
+90e96a389	2026-03-02	terminal: fix insertBlanks integrity violation with wide char at right margin
+97c11af34	2026-03-01	terminal: fix integrity violation printing wide char with hyperlink at right edge
+630c2dff1	2026-02-07	gtk: fix monitor ref ownership in Wayland quick terminal
+a595c00f3	2026-03-01	terminal: fix panic on CSI g (TBC) with overflowing param
+dce2326c4	2026-03-01	fix up gitattributes
+9157eb439	2026-03-01	terminal: insertBlanks should not crash with count 0 and CSI @ clamps [1,)
+dcaa8f397	2026-03-01	terminal: fix out-of-bounds access in CSI W handler with no params
+2ed0e3b82	2026-03-01	fix: format with prettier
+12f43dfb7	2026-02-28	fix(terminal): bounds check params in DCS passthrough entry
+6e622f8c7	2026-02-28	fix(macos): extract window cascade logic into helper function
+0db32ab9a	2026-02-28	macos: fix window size/position restoration on Cmd+W close
+2a4140146	2026-02-27	fix(macOS): filter phantom mouse events that defeat mouse-hide-while-typing
+3ee63035d	2026-02-26	macos: DockTilePlugin finds app bundle via `.app` suffix
+c4766dff7	2026-02-14	fix: restore terminalTitle variable removed in previous edit
+e6da439e4	2026-02-26	macos: style changes
+875985dbd	2026-02-26	zsh: fix ssh-terminfo shell integration to not interpret escape characters
+05a125533	2026-02-26	macos: fix glass tinting when theme changes
+20351a71d	2026-02-25	Fix Palette.C array size typo: [265] → [256]
+7db8346fc	2026-02-25	apprt/gtk: fix SIGSEGV on ImGui GLArea re-realize
+dd4e36f92	2026-02-24	macOS: fix crash when adding tab from tab overview
+57d570525	2026-02-24	gtk: clean up title renaming and fix a small leak
+0af3477e3	2026-01-27	fix: remove max() and magic numbers
+d9d65fdb9	2026-01-26	fix: calculate cell size before presenting gtk window
+407b3c082	2026-02-21	macos: fix new tab crash
+6052f664c	2026-02-19	macos: swiftlint 'opening_brace' rule
+2a62f21bf	2026-02-19	fix tests
+f66064b0b	2026-02-19	url: fix regression with unified diff lines
+85a631dd2	2026-02-18	build: stylistic changes for libvt
+44b7d3465	2026-02-17	fix: add support for apple SDK paths in Darwin builds
+d1cb22589	2026-02-18	Fix translation for 'Open in Ghostty'
+a1a47d011	2026-02-18	Fixed two strings plurals, capitalisation of one string
+1dc7158a3	2026-02-17	Fixing merge conflict
+77957aa31	2026-01-28	Fix Bengali test due to wider grapheme
+6afdf3400	2025-11-24	unicode: change cell to wide when grapheme width changes

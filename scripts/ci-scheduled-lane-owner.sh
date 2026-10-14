@@ -125,12 +125,12 @@ classify_runs() {
 
 existing_issue() {
   local title="$1"
-  # app/github-actions is the GITHUB_TOKEN author. A public issue with the
-  # same title is not ours to assign, comment on, or close.
+  # createdBy takes the bot's user login. The app slug app/github-actions
+  # matches nothing, so a public issue with the same title is not ours.
   gh issue list \
     --repo "$REPO" \
     --state open \
-    --author app/github-actions \
+    --author "github-actions[bot]" \
     --limit 100 \
     --json number,title \
     | jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty'

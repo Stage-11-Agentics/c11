@@ -97,7 +97,9 @@ case "$kind $sub" in
       echo '[]'
       exit 0
     fi
-    if [[ -n "$author" ]]; then
+    if [[ "$author" == "app/github-actions" ]]; then
+      echo '[]'
+    elif [[ -n "$author" ]]; then
       jq -s --arg state "$state_filter" --arg author "$author" \
         '[.[] | select(.state == $state and .author == $author) | {number, title}]' "${files[@]}"
     else
@@ -106,6 +108,10 @@ case "$kind $sub" in
     fi
     ;;
   "issue view")
+    if [[ -n "${TEST_GH_VIEW_FAIL:-}" ]]; then
+      echo "issue view failed" >&2
+      exit 1
+    fi
     [[ -n "$number" && "$json_fields" == "comments" && "$query" == ".comments[].body" ]] \
       || { echo "view missing fields" >&2; exit 2; }
     [[ -f "$(issue_file "$number")" ]] || { echo "no issue $number" >&2; exit 1; }
@@ -120,7 +126,7 @@ case "$kind $sub" in
       --arg title "$title" \
       --arg body "$body" \
       --arg assignee "$assignee" \
-      '{number:$number, title:$title, body:$body, assignee:$assignee, author:"app/github-actions", state:"open", comments:[]}' \
+      '{number:$number, title:$title, body:$body, assignee:$assignee, author:"github-actions[bot]", state:"open", comments:[]}' \
       > "$(issue_file "$n")"
     echo "https://github.com/${repo}/issues/${n}"
     ;;
@@ -209,7 +215,7 @@ live="$(run_owner)"
 printf '%s\n' "$live" | grep -q 'lane-owner: ci-hourly fail failure .* -> opened #1' \
   || fail "failure did not open: $live"
 [[ "$(find "$TMP_DIR/state" -maxdepth 1 -name '*.json' | wc -l | tr -d ' ')" == "1" ]] || fail "open created the wrong number of issues"
-jq -e '.number == 1 and .title == "CI scheduled lane failed: ci-hourly" and .assignee == "BenevolentFutures" and .author == "app/github-actions" and (.comments | length) == 1' \
+jq -e '.number == 1 and .title == "CI scheduled lane failed: ci-hourly" and .assignee == "BenevolentFutures" and .author == "github-actions[bot]" and (.comments | length) == 1' \
   "$TMP_DIR/state/1.json" >/dev/null || fail "opened issue shape: $(issue_json 1)"
 jq -e '.comments[0] | contains("failed (failure)") and contains("actions/runs/101") and contains("<!-- lane-run: failure https://github.com/Stage-11-Agentics/c11/actions/runs/101 -->")' \
   "$TMP_DIR/state/1.json" >/dev/null || fail "open comment: $(issue_json 1)"
@@ -225,6 +231,17 @@ printf '%s\n' "$live" | grep -q 'lane-owner: ci-hourly fail failure .* -> alread
   || fail "same run was commented again: $live"
 jq -e '(.comments | length) == 1' "$TMP_DIR/state/1.json" >/dev/null \
   || fail "same run added a comment: $(issue_json 1)"
+
+# A failed issue view stops the watcher instead of commenting again.
+writes_before="$(count_writes)"
+set +e
+TEST_GH_VIEW_FAIL=1 run_owner >"$TMP_DIR/view.out" 2>"$TMP_DIR/view.err"
+view_status=$?
+set -e
+[[ "$view_status" == "1" ]] || fail "failed issue view exited $view_status: $(cat "$TMP_DIR/view.out"; cat "$TMP_DIR/view.err")"
+[[ "$(count_writes)" == "$writes_before" ]] || fail "failed issue view still wrote"
+jq -e '(.comments | length) == 1' "$TMP_DIR/state/1.json" >/dev/null \
+  || fail "failed issue view added a comment: $(issue_json 1)"
 
 put_runs ci-hourly.yml "$(printf '[%s]\n' "$(run_json failure "$RECENT" 103)")"
 live="$(run_owner)"

@@ -171,7 +171,7 @@ jobs:
 
       - name: Upload verdict artifact (audit trail)
         if: steps.resolve.outputs.open == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: drawbridge-verdict-${{ steps.resolve.outputs.item_type }}-${{ steps.resolve.outputs.item_number }}
           path: /tmp/drawbridge/
@@ -353,7 +353,7 @@ jobs:
           # this job deliberately has no contents: write.
 
       - name: Upload gate result (audit trail)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: drawbridge-gates-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
           path: /tmp/gate/gates.json

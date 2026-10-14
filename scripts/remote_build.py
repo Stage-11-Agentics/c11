@@ -128,9 +128,13 @@ def snapshot(root, payload, args, held=None):
     existing_skips = {
         arg.split(":", 1)[1] for arg in test_args if arg.startswith("-skip-testing:")
     }
+    for item in host_quarantine:
+        item["explicitly_selected"] = item["test_id"] in selectors
+        item["already_skipped"] = item["test_id"] in existing_skips
+        item["auto_skipped"] = not item["explicitly_selected"] and not item["already_skipped"]
     test_args.extend(
         "-skip-testing:" + item["test_id"] for item in host_quarantine
-        if item["test_id"] not in existing_skips
+        if item["auto_skipped"]
     )
     manifest = {"invocation": uuid.uuid4().hex, "head": head, "bundles": bundles,
                 "branch": git(root, "branch", "--show-current"), "submodules": modules,
@@ -357,7 +361,16 @@ def remote(payload, locked=False):
                 app = derived / "Build/Products/Release" / ("c11 STAGING " + tag + ".app")
         with (artifacts / "build.log").open("w") as log:
             for item in manifest.get("host_test_quarantine", []):
-                log.write("[host-quarantine] %s: %s\n" % (item["test_id"], item["reason"]))
+                if item.get("explicitly_selected"):
+                    action = "explicitly selected; quarantine auto-skip omitted"
+                    if item.get("already_skipped"):
+                        action += "; caller also supplied -skip-testing"
+                elif item.get("already_skipped"):
+                    action = "already skipped by caller"
+                else:
+                    action = "skipped"
+                log.write("[host-quarantine] %s: %s scope=%s: %s\n" %
+                          (action, item["test_id"], item["scope"], item["reason"]))
             log.flush()
             build = subprocess.run([str(a) for a in command], cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT)
         build_log = (artifacts / "build.log").read_text()
@@ -442,7 +455,9 @@ def client(args):
         if result["compile"] != "ok" or (args.mode == "test" and result["tests"] != "ok"):
             raise ValueError("remote build/test result failed")
         if args.mode == "test":
-            print("C11_REMOTE_OK compile=ok tests=ok quarantined=%d" % len(result.get("host_test_quarantine", [])))
+            print("C11_REMOTE_OK compile=ok tests=ok quarantined=%d" %
+                  sum(1 for item in result.get("host_test_quarantine", [])
+                      if item.get("auto_skipped")))
             return 0
         app = local / result["app"]
         if digest(app / "Contents/MacOS/c11") != result["executable_sha256"]:

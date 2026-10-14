@@ -426,6 +426,34 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual((app / "sentinel").read_text(), "old artifact")
         self.assertFalse(marker.exists())
 
+    def test_snapshot_does_not_auto_skip_exactly_selected_quarantine_method(self):
+        inventory = self.worktree / "scripts" / "host-test-quarantine.tsv"
+        inventory.parent.mkdir()
+        selected = "c11Tests/ExampleTests/testSelected"
+        atlas_only = "c11Tests/ExampleTests/testAtlasOnly"
+        all_scope = "c11Tests/ExampleTests/testAllScope"
+        inventory.write_text(
+            f"{selected}\tatlas\tExplicitly selected.\n"
+            f"{atlas_only}\tatlas\tAtlas limitation.\n"
+            f"{all_scope}\tall\tShared limitation.\n"
+        )
+        self.args.mode = "test"
+        self.args.no_host_quarantine = False
+        self.args.extra = [
+            "-only-testing:" + selected,
+            "-only-testing:c11Tests/OtherTests/testRequested",
+        ]
+        manifest = remote.snapshot(self.worktree, self.payload, self.args)
+
+        self.assertNotIn("-skip-testing:" + selected, manifest["test_args"])
+        self.assertIn("-skip-testing:" + atlas_only, manifest["test_args"])
+        self.assertIn("-skip-testing:" + all_scope, manifest["test_args"])
+        quarantine = {row["test_id"]: row for row in manifest["host_test_quarantine"]}
+        self.assertTrue(quarantine[selected]["explicitly_selected"])
+        self.assertFalse(quarantine[selected]["auto_skipped"])
+        self.assertTrue(quarantine[atlas_only]["auto_skipped"])
+        self.assertTrue(quarantine[all_scope]["auto_skipped"])
+
 
 class QuarantineInventoryTests(unittest.TestCase):
     def setUp(self):
@@ -438,31 +466,56 @@ class QuarantineInventoryTests(unittest.TestCase):
     def test_exact_methods_and_reasons_are_returned(self):
         self.inventory.write_text(
             "# exact host test methods\n"
-            "c11Tests/ExampleTests/testFirst\tReason one.\n"
-            "c11Tests/ExampleTests/testSecond\tReason two.\n"
+            "c11Tests/ExampleTests/testFirst\tall\tReason one.\n"
+            "c11Tests/ExampleTests/testSecond\tatlas\tReason two.\n"
         )
         self.assertEqual(
             remote.read_host_test_quarantine(self.root),
             [
-                {"test_id": "c11Tests/ExampleTests/testFirst", "reason": "Reason one."},
-                {"test_id": "c11Tests/ExampleTests/testSecond", "reason": "Reason two."},
+                {"test_id": "c11Tests/ExampleTests/testFirst", "scope": "all", "reason": "Reason one."},
+                {"test_id": "c11Tests/ExampleTests/testSecond", "scope": "atlas", "reason": "Reason two."},
             ],
         )
 
+    def test_ci_actions_skip_all_scope_and_keep_atlas_scope_running(self):
+        helper = ROOT / "scripts" / "host_test_quarantine.py"
+        output = subprocess.check_output(
+            [sys.executable, str(helper), "--ci-actions"], text=True
+        )
+        actions = {
+            fields[1]: fields[0]
+            for line in output.splitlines()
+            if (fields := line.split("\t", 3))
+        }
+        self.assertEqual(actions[
+            "c11Tests/AppDelegateShortcutRoutingTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel"
+        ], "run")
+        self.assertEqual(actions[
+            "c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach"
+        ], "run")
+        self.assertEqual(actions[
+            "c11Tests/GhosttyBackquoteRegressionTests/testShiftBackquoteEscFallbackSendsLiteralTilde"
+        ], "skip")
+
     def test_class_selector_is_rejected(self):
-        self.inventory.write_text("c11Tests/ExampleTests\tA class is too broad.\n")
+        self.inventory.write_text("c11Tests/ExampleTests\tall\tA class is too broad.\n")
         with self.assertRaisesRegex(ValueError, "exact c11Tests method"):
             remote.read_host_test_quarantine(self.root)
 
     def test_missing_reason_is_rejected(self):
-        self.inventory.write_text("c11Tests/ExampleTests/testFirst\t \n")
+        self.inventory.write_text("c11Tests/ExampleTests/testFirst\tall\t \n")
         with self.assertRaisesRegex(ValueError, "one-line reason"):
+            remote.read_host_test_quarantine(self.root)
+
+    def test_unknown_scope_is_rejected(self):
+        self.inventory.write_text("c11Tests/ExampleTests/testFirst\tmacos\tWrong scope.\n")
+        with self.assertRaisesRegex(ValueError, "scope must be all or atlas"):
             remote.read_host_test_quarantine(self.root)
 
     def test_duplicate_selector_is_rejected(self):
         self.inventory.write_text(
-            "c11Tests/ExampleTests/testFirst\tFirst reason.\n"
-            "c11Tests/ExampleTests/testFirst\tSecond reason.\n"
+            "c11Tests/ExampleTests/testFirst\tall\tFirst reason.\n"
+            "c11Tests/ExampleTests/testFirst\tatlas\tSecond reason.\n"
         )
         with self.assertRaisesRegex(ValueError, "duplicate host quarantine selector"):
             remote.read_host_test_quarantine(self.root)

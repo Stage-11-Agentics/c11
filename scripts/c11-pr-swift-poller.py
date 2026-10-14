@@ -1224,12 +1224,21 @@ class Supervisor:
         self.credential_skipped = False
         self.awaiting_kit = {}
         self.status_owed = {}
+        self.cold_retries = set()
         self.derived = self.root / "cache" / "DerivedData"
 
     def state(self):
         path = self.root / "state"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def _remember_cold_retry(self, item):
+        self.cold_retries.add((item["pr"], item["sha"]))
+
+    def _clear_cold_retry(self, number, sha=None):
+        self.cold_retries.difference_update({
+            key for key in self.cold_retries if key[0] == number and (sha is None or key[1] == sha)
+        })
 
     def log(self, **fields):
         forbidden = ("authorization", "token", "pem", "private")
@@ -1432,6 +1441,9 @@ class Supervisor:
         """
         for captured in admitted:
             number = captured["pr"]
+            for recorded_number, recorded_sha in list(self.cold_retries):
+                if recorded_number == number and recorded_sha != captured["sha"]:
+                    self._clear_cold_retry(number, sha=recorded_sha)
             index = next((i for i, item in enumerate(self.queue) if item["pr"] == number), None)
             done = self.reported.get(number) == captured["sha"] or (number, captured["sha"]) in self.status_owed
             if index is not None and (self.queue[index]["sha"] != captured["sha"] or self.queue[index]["ref"] != captured["ref"]):
@@ -1452,6 +1464,7 @@ class Supervisor:
             if self._post(sha, owed["state"], owed["description"], pr=number, deps=owed.get("deps")):
                 del self.status_owed[key]
                 self.reported[number] = sha
+                self._clear_cold_retry(number, sha=sha)
 
     def _resolve_absent(self, body):
         present = set()
@@ -1478,11 +1491,38 @@ class Supervisor:
                 self.log(decision="revoked", pr=item["pr"], reason=reason)
                 continue
             if fresh["sha"] != item["sha"] or fresh["ref"] != item["ref"]:
+                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.log(decision="superseded", pr=item["pr"])
                 kept.append(fresh)
                 continue
             kept.append(item)
         self.queue = kept
+
+        admitted_by_number = {item["pr"]: item for item in self.queue}
+        body_by_number = {obj["number"]: obj for obj in body
+                          if type(obj) is dict and type(obj.get("number")) is int}
+        for number, sha in list(self.cold_retries):
+            current = admitted_by_number.get(number)
+            if current is not None:
+                if current["sha"] != sha:
+                    self._clear_cold_retry(number, sha=sha)
+                continue
+            if number in body_by_number and (number, sha) in self.status_owed:
+                continue
+            if number in body_by_number:
+                self._clear_cold_retry(number, sha=sha)
+                continue
+            try:
+                looked = self.world.pull(number)
+            except CredentialUnavailable:
+                continue
+            if looked is None or (type(looked) is dict and looked.get("status") == 404):
+                self._clear_cold_retry(number, sha=sha)
+                continue
+            payload = looked.get("body", looked) if type(looked) is dict and "body" in looked else looked
+            ok, _reason, fresh = admit(payload)
+            if not ok or fresh["sha"] != sha:
+                self._clear_cold_retry(number, sha=sha)
 
     def _next_item(self):
         """The first queued head that still revalidates and has no terminal status.
@@ -1517,6 +1557,7 @@ class Supervisor:
                 return self._credential_skip(item)
             if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
+                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
                 self.queue.remove(item)
                 continue
@@ -1675,6 +1716,7 @@ class Supervisor:
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
         cold_cache = not self._dependency_is_warm(item["deps"])
+        cold_retry_used = (item["pr"], item["sha"]) in self.cold_retries
         self.derived = self._derived_data(item["deps"])
         cold_retry_queued = False
         for invocation in (1, 2):
@@ -1689,7 +1731,9 @@ class Supervisor:
                 log = self.world.build_log or ""
                 if all(armed_test_ran(log, name) for name in ARMED_TESTS) and "** TEST SUCCEEDED **" in log:
                     self._mark_dependency_warm(item["deps"])
-                    if invocation == 1 and cold_cache and self.build_seconds() > BUDGET_S:
+                    if (invocation == 1 and cold_cache and not cold_retry_used
+                            and self.build_seconds() > BUDGET_S):
+                        self._remember_cold_retry(item)
                         cold_retry_queued = True
                 break
             if STALE_MODULE in (self.world.build_log or ""):
@@ -1715,6 +1759,7 @@ class Supervisor:
         self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
         self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
         if self.delivered:
+            self._clear_cold_retry(item["pr"], sha=item["sha"])
             self.reported[item["pr"]] = item["sha"]
         else:
             self.status_owed[(item["pr"], item["sha"])] = {
@@ -1774,6 +1819,7 @@ class Supervisor:
         self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
                                     build_seconds=round(seconds, 3), deps=item.get("deps"))
         if self.delivered:
+            self._clear_cold_retry(item["pr"], sha=item["sha"])
             self.reported[item["pr"]] = item["sha"]
 
     def _post(self, sha, state, description, pr=None, **fields):

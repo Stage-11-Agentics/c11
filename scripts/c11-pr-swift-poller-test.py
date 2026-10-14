@@ -1435,6 +1435,112 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(len(supervisor.spawns), 2)
         self.assertEqual(supervisor.reported, {7: SHA_A})
 
+    def test_cold_retry_memory_survives_cache_eviction_and_yield(self):
+        shas = [SHA_A, SHA_B, "e" * 40, "f" * 40, "1" * 40]
+        items = [pr(number=7 + index, sha=sha, ref="feature-%s" % index)
+                 for index, sha in enumerate(shas)]
+        world = World(body=items)
+        world.tips.update({item["head"]["ref"]: item["head"]["sha"] for item in items})
+        world.resolved = {sha: "dependency-set-%s" % index for index, sha in enumerate(shas)}
+        spawn = world.spawn
+        supervisor = None
+        yield_next = {"value": False}
+
+        def run_spawn(command, log_path=None):
+            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
+            world.now += 121
+            world.build_log = SUCCESS_LOG
+            derived = Path(command[command.index("-derivedDataPath") + 1])
+            (derived / "Build").mkdir(parents=True, exist_ok=True)
+            if yield_next["value"]:
+                world.guest_names = ["c11-test-guest"]
+                pid = 424242
+                world.alive[pid] = True
+                record = json.loads((self.root / "state" / "current.json").read_text())
+                record.update({"pgid": pid, "slot": 1})
+                self.assertEqual(supervisor.watch(record), "guest")
+                world.guest_names = []
+            return spawn(command, log_path)
+
+        world.spawn = run_spawn
+        supervisor = poller.Supervisor(self.root, world)
+        deps_by_pr = {}
+        for item in items:
+            self.assertEqual(supervisor.poll_once(), "started")
+            deps_by_pr[item["number"]] = poller.dependency_key(
+                [world.resolved[item["head"]["sha"]]] * 2, [GITLINK, GITLINK]
+            )
+            world.now += 26
+
+        self.assertEqual(len([post for post in world.posts if post["state"] == "pending"]), 5)
+        first = items[0]
+        first_key = deps_by_pr[first["number"]]
+        self.assertFalse(supervisor._dependency_is_warm(first_key), "the first dependency key was pruned")
+        self.assertEqual(supervisor.cold_retries, {(item["number"], item["head"]["sha"]) for item in items})
+
+        # A yield does not consume the pending retry; the second actual build
+        # must classify normally even though the first dependency key was evicted.
+        yield_next["value"] = True
+        self.assertEqual(supervisor.poll_once(), "stopped")
+        self.assertIn((first["number"], first["head"]["sha"]), supervisor.cold_retries)
+        yield_next["value"] = False
+        self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
+        outcomes = []
+        for _ in range(5):
+            world.now += 26
+            outcomes.append(supervisor.poll_once())
+        self.assertEqual(outcomes, ["started"] * 5)
+        self.assertEqual(world.posts[-1]["state"], "failure")
+        self.assertEqual(world.posts[-1]["description"], "budget 121s")
+        self.assertEqual(len([post for post in world.posts
+                              if post["state"] == "pending"
+                              and post["description"] == "cold cache exceeded budget; warm retry queued"]), 5)
+        self.assertEqual(len(supervisor.spawns), 11, "five first attempts, one yielded retry, and five classified retries")
+        self.assertEqual(supervisor.cold_retries, set(), [
+            (item.get("pr"), item.get("sha"), item.get("state"))
+            for item in _decisions(self.root) if item.get("decision") == "result"
+        ])
+
+    def test_cold_retry_marker_survives_undelivered_terminal_status(self):
+        world = World(body=[pr()])
+        spawn = world.spawn
+        statuses = iter((201, 503, 503, 503, 201))
+        post = world.post_status
+
+        def post_with_one_terminal_miss(body):
+            post(body)
+            return {"status": next(statuses), "headers": {}, "body": {}}
+
+        def run_spawn(command, log_path=None):
+            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
+            world.now += 121
+            world.build_log = SUCCESS_LOG
+            key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
+            (self.root / "cache" / ("DerivedData-" + key) / "Build").mkdir(parents=True, exist_ok=True)
+            return spawn(command, log_path)
+
+        world.post_status = post_with_one_terminal_miss
+        world.spawn = run_spawn
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertEqual(supervisor.cold_retries, {(7, SHA_A)})
+
+        world.now += 26
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertEqual(supervisor.reported, {})
+        self.assertEqual(supervisor.cold_retries, {(7, SHA_A)}, "an undelivered terminal status must retain retry memory")
+
+        key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
+        (self.root / "state" / "warmed-dependencies" / key).unlink()
+        self.assertFalse(supervisor._dependency_is_warm(key))
+        world.now += 26
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertEqual(supervisor.reported, {7: SHA_A})
+        self.assertEqual(supervisor.cold_retries, set())
+        self.assertEqual(len([body for body in world.posts
+                              if body["state"] == "pending"
+                              and body["description"] == "cold cache exceeded budget; warm retry queued"]), 1)
+
     def test_status_post_retries_honour_retry_after(self):
         world = World(body=[pr()])
         replies = [

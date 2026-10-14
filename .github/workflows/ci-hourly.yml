@@ -189,11 +189,18 @@ jobs:
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           QUARANTINE_ROWS="$RUNNER_TEMP/c11-host-test-quarantine.tsv"
-          python3 "$GITHUB_WORKSPACE/scripts/host_test_quarantine.py" > "$QUARANTINE_ROWS"
+          python3 "$GITHUB_WORKSPACE/scripts/host_test_quarantine.py" --ci-actions > "$QUARANTINE_ROWS"
           SKIP_ARGS=()
-          while IFS=$'\t' read -r test_id reason; do
-            echo "Quarantined host test: $test_id: $reason"
-            SKIP_ARGS+=("-skip-testing:$test_id")
+          while IFS=$'\t' read -r action test_id scope reason; do
+            if [[ "$action" == "skip" ]]; then
+              echo "Quarantined host test (scope=$scope): $test_id: $reason"
+              SKIP_ARGS+=("-skip-testing:$test_id")
+            elif [[ "$action" == "run" ]]; then
+              echo "Atlas-only quarantine not applied; CI still runs (scope=$scope): $test_id: $reason"
+            else
+              echo "Unknown host quarantine action '$action' for $test_id" >&2
+              exit 2
+            fi
           done < "$QUARANTINE_ROWS"
           host_tests() {
             "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \

@@ -403,6 +403,21 @@ jobs:
             echo "Missing notarization secrets (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID)" >&2
             exit 1
           fi
+          retry_stapler() {
+            # Apple's ticket service (api.apple-cloudkit.com) drops connections from
+            # hosted runners intermittently (NSURLErrorDomain -1005, stapler exit 68).
+            # Notarization has already been accepted at this point; retry the ticket fetch.
+            local attempt=1
+            until xcrun stapler "$@"; do
+              if [ "$attempt" -ge 8 ]; then
+                echo "stapler $1 failed after $attempt attempts" >&2
+                return 1
+              fi
+              echo "stapler $1 failed (attempt $attempt); retrying in $((attempt * 15))s" >&2
+              sleep $((attempt * 15))
+              attempt=$((attempt + 1))
+            done
+          }
           notarize_and_package() {
             local app_path="$1"
             local dmg_release="$2"
@@ -420,8 +435,8 @@ jobs:
               xcrun notarytool log "$APP_SUBMIT_ID" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" || true
               exit 1
             fi
-            xcrun stapler staple "$app_path"
-            xcrun stapler validate "$app_path"
+            retry_stapler staple "$app_path"
+            retry_stapler validate "$app_path"
             spctl -a -vv --type execute "$app_path"
             rm -f "$zip_submit"
 
@@ -446,8 +461,8 @@ jobs:
               xcrun notarytool log "$DMG_SUBMIT_ID" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" || true
               exit 1
             fi
-            xcrun stapler staple "$dmg_release"
-            xcrun stapler validate "$dmg_release"
+            retry_stapler staple "$dmg_release"
+            retry_stapler validate "$dmg_release"
             cp "$dmg_release" "$dmg_immutable"
           }
 

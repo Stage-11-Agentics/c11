@@ -169,8 +169,8 @@ enum AgentConfigAxes {
     /// The models offered for the current provider, filtered by `query`.
     ///
     /// Search is not a nicety here: OpenAI alone publishes 176 models through
-    /// the five catalogs, so an unfiltered list is unusable. An empty query
-    /// returns the provider's models in catalog order.
+    /// the five catalogs, so an unfiltered list is unusable. An empty xAI query
+    /// leads with Grok Build's native rows; each group retains catalog order.
     static func modelOptions(
         provider: String?,
         query: String,
@@ -184,7 +184,30 @@ enum AgentConfigAxes {
             return needle.isEmpty ? [] : catalog.search(needle, provider: nil, limit: limit)
         }
         if needle.isEmpty {
-            return Array(catalog.models(forProvider: provider).prefix(limit))
+            let models = catalog.models(forProvider: provider)
+            let canonicalProvider = ModelCatalogProviders.canonical(provider)
+            guard canonicalProvider == "xai",
+                  models.contains(where: { $0.harness == grokHarnessKey }) else {
+                return Array(models.prefix(limit))
+            }
+
+            // The merged catalog has one row per provider/id and places its
+            // best-supported harness on `model.harness`. Stable partitioning
+            // exposes Grok's own rows first without changing either group's
+            // publisher/catalog order or duplicating models also routed by
+            // OpenRouter.
+            var native: [CatalogModel] = []
+            var routed: [CatalogModel] = []
+            native.reserveCapacity(models.count)
+            routed.reserveCapacity(models.count)
+            for model in models {
+                if model.harness == grokHarnessKey {
+                    native.append(model)
+                } else {
+                    routed.append(model)
+                }
+            }
+            return Array((native + routed).prefix(limit))
         }
         return catalog.search(needle, provider: provider, limit: limit)
     }

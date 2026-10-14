@@ -37,10 +37,12 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         coverage: TranscriptCoverage,
         now: Date = Date()
     ) {
-        guard ["codex", "grok"].contains(target.kind), !ref.placeholder else { return }
+        guard Self.transcriptKinds.contains(target.kind), !ref.placeholder else { return }
         let key = OwnerKey(panelID: target.surfaceId, workspaceID: target.workspaceId,
                            agentKind: target.kind, sessionID: ref.id)
-        if case .gap = coverage { requireGap(for: key) }
+        // Claude's hooks own its turn; its transcript adds only the interrupt,
+        // so a gap there says nothing about the journal's coverage.
+        if case .gap = coverage, target.kind != "claude-code" { requireGap(for: key) }
 
         if shouldEnqueueGap(for: key),
            let draft = Self.makeGapDraft(target: target, ref: ref, emittedAt: now) {
@@ -50,7 +52,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         for observation in lifecycle {
             guard let draft = Self.makeDraft(observation: observation, target: target,
                                              ref: ref, emittedAt: now) else {
-                requireGap(for: key)
+                if target.kind != "claude-code" { requireGap(for: key) }
                 recordDrop(for: key)
                 continue
             }
@@ -58,15 +60,20 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         }
     }
 
+    /// Harnesses whose transcript feeds the journal. Claude's adds only its
+    /// Esc interrupt.
+    static let transcriptKinds: Set<String> = ["codex", "grok", "claude-code"]
+
     static func makeDraft(
         observation: TranscriptLifecycleObservation,
         target: AgentModelDetector.Target,
         ref: ConversationRef,
         emittedAt: Date
     ) -> JournalDraft? {
-        guard ["codex", "grok"].contains(target.kind), !ref.placeholder, !ref.id.isEmpty,
+        guard transcriptKinds.contains(target.kind), !ref.placeholder, !ref.id.isEmpty,
               [.turnStarted, .turnCompleted, .turnInterrupted].contains(observation.kind),
               target.kind != "grok" || observation.kind != .turnInterrupted,
+              target.kind != "claude-code" || observation.kind == .turnInterrupted,
               !observation.isChild,
               let occurredAt = observation.occurredAt,
               let adapter = adapter(for: target.kind) else { return nil }
@@ -116,6 +123,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         switch kind {
         case "codex": return .codexTranscript
         case "grok": return .grokTranscript
+        case "claude-code": return .claudeTranscript
         default: return nil
         }
     }

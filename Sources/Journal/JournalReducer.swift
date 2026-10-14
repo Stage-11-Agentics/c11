@@ -189,6 +189,11 @@ enum JournalReducer {
             s.terminalRank = d.source.rank
         case .turnInterrupted:
             guard caps.contains("interrupt") else { return unchanged(.advisory, "unsupported_interrupt") }
+            // Claude's marker is read up to 10 s late. Only the prompt id ties it
+            // to the turn it ended; without that tie it could idle a newer turn.
+            if d.adapter == .claudeTranscript, d.turnID == nil || d.turnID != s.turnID {
+                return unchanged(.stale, "interrupt_not_correlated")
+            }
             if s.phase == .blocked {
                 // Transcript interruption does not prove that a pending request was cancelled.
                 s.confirmation = .unconfirmed

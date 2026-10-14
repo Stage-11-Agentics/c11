@@ -1328,6 +1328,80 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(KimiWireLocator.workDirSuffix(forCwd: "/Users/atin/Projects/Gregorovich"), "_6b6ccce27f11")
     }
 
+    // MARK: - C11-412 Claude Esc interrupt
+
+    /// Claude writes no Stop hook on Esc. Its transcript's interrupt line is
+    /// the one record of it, and its `promptId` names the interrupted prompt.
+    func testClaudeInterruptMarkerIsATurnInterruptForItsPrompt() throws {
+        let lines = """
+        {"type":"user","promptId":"prompt-1","timestamp":"2026-01-01T09:00:00.000Z","permissionMode":"default","message":{"role":"user","content":"long task"}}
+        {"type":"assistant","timestamp":"2026-01-01T09:00:02.000Z","message":{"id":"m1","model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"working"}]}}
+        {"type":"user","promptId":"prompt-1","interruptedMessageId":"m1","timestamp":"2026-01-01T09:00:05.000Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+        {"type":"user","promptId":"prompt-2","timestamp":"2026-01-01T09:01:00.000Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}
+        """
+        try place(Data((lines + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let first = probe.detectWithObservations(kind: "claude-code", ref: ref("claude-code", id: claudeId), state: &state)
+        XCTAssertEqual(first.lifecycle, [
+            .init(kind: .turnInterrupted, occurredAt: t("09:00:05"), nativeEvent: "turn.interrupted",
+                  turnID: "prompt-1", isChild: false),
+            .init(kind: .turnInterrupted, occurredAt: t("09:01:00"), nativeEvent: "turn.interrupted",
+                  turnID: "prompt-2", isChild: false),
+        ])
+        XCTAssertEqual(first.detection, .model("claude-opus-5-5"))
+        let second = probe.detectWithObservations(kind: "claude-code", ref: ref("claude-code", id: claudeId), state: &state)
+        XCTAssertTrue(second.lifecycle.isEmpty, "the same bytes must not interrupt twice")
+    }
+
+    /// Only Claude's own marker counts: a prompt the operator typed with that
+    /// text (a plain string), a marker with other blocks, a subagent's
+    /// marker, a meta line, and a marker without a prompt id are not edges.
+    func testClaudeInterruptLookalikesAreNotEdges() throws {
+        let marker = "[Request interrupted by user]"
+        let lines = """
+        {"type":"user","promptId":"p-typed","timestamp":"2026-01-01T09:00:00.000Z","message":{"role":"user","content":"\(marker)"}}
+        {"type":"user","promptId":"p-two","timestamp":"2026-01-01T09:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"\(marker)"},{"type":"text","text":"more"}]}}
+        {"type":"user","promptId":"p-side","isSidechain":true,"timestamp":"2026-01-01T09:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"\(marker)"}]}}
+        {"type":"user","promptId":"p-meta","isMeta":true,"timestamp":"2026-01-01T09:00:03.000Z","message":{"role":"user","content":[{"type":"text","text":"\(marker)"}]}}
+        {"type":"user","timestamp":"2026-01-01T09:00:04.000Z","message":{"role":"user","content":[{"type":"text","text":"\(marker)"}]}}
+        {"type":"user","promptId":"p-quote","timestamp":"2026-01-01T09:00:05.000Z","message":{"role":"user","content":[{"type":"text","text":"\(marker) please continue"}]}}
+        """
+        try place(Data((lines + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let result = probe.detectWithObservations(kind: "claude-code", ref: ref("claude-code", id: claudeId), state: &state)
+        XCTAssertEqual(result.lifecycle, [])
+    }
+
+    /// The Claude transcript draft is an interrupt only, on its own versioned
+    /// clock, with the prompt id as its turn.
+    func testClaudeTranscriptDraftIsAnInterruptOnly() throws {
+        let target = AgentModelDetector.Target(
+            workspaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            surfaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            kind: "claude-code"
+        )
+        let r = ref("claude-code", id: claudeId)
+        let interrupt = try XCTUnwrap(JournalTranscriptProducer.makeDraft(
+            observation: .init(kind: .turnInterrupted, occurredAt: t("09:00:05"),
+                               nativeEvent: "turn.interrupted", turnID: "prompt-1", isChild: false),
+            target: target, ref: r, emittedAt: t("09:00:06")
+        ))
+        XCTAssertEqual(interrupt.source, .transcript)
+        XCTAssertEqual(interrupt.adapter, .claudeTranscript)
+        XCTAssertEqual(interrupt.adapterVersion, JournalNativeClockEvidence.claudeTranscriptVersion)
+        XCTAssertEqual(interrupt.turnID, "prompt-1")
+        XCTAssertTrue(JournalNativeClockEvidence.verifies(interrupt))
+        XCTAssertEqual(JournalAdapter.claudeTranscript.capabilities, ["interrupt"])
+        for kind in [JournalKind.turnStarted, .turnCompleted] {
+            XCTAssertNil(JournalTranscriptProducer.makeDraft(
+                observation: .init(kind: kind, occurredAt: t("09:00:05"),
+                                   nativeEvent: kind == .turnStarted ? "turn.started" : "turn.completed",
+                                   turnID: "prompt-1", isChild: false),
+                target: target, ref: r, emittedAt: t("09:00:06")
+            ), "Claude's hooks own its turn starts and ends")
+        }
+    }
+
     func testProcessFactsReadThisProcessesDirectoryAndStart() throws {
         let facts = try XCTUnwrap(AgentProcessFacts.cwdAndStart(pid: getpid()))
         XCTAssertEqual(URL(fileURLWithPath: facts.cwd).resolvingSymlinksInPath().path,

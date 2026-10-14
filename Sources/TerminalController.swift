@@ -7489,10 +7489,14 @@ class TerminalController {
         }
         terminalSurface.writeOrDefer { [weak terminalSurface] in
             guard let terminalSurface, let live = terminalSurface.surface else { return }
+            let isReturn = keycode == UInt32(kVK_Return) && mods == GHOSTTY_MODS_NONE
+            // C11-407: read the composer before the Return, so a Return that
+            // had nothing to submit can be taken back once the screen shows it.
+            let noOpProbe = isReturn ? Self.noOpReturnProbe(for: terminalSurface) : nil
             Self.writeKeyEvent(surface: live, keycode: keycode, mods: mods, text: text,
                                unshiftedCodepoint: unshiftedCodepoint,
                                releaseAfterPress: releaseAfterPress, stillLive: stillLive)
-            if keycode == UInt32(kVK_Return), mods == GHOSTTY_MODS_NONE {
+            if isReturn {
                 // A socket-sent Return submits whatever is in the input
                 // line, exactly like a typed Return.
                 PanelLivenessDeriver.onAgentLifecycleChanged(
@@ -7501,10 +7505,32 @@ class TerminalController {
                     activity: .working,
                     source: .submit
                 )
+                Self.checkNoOpReturn(noOpProbe, for: terminalSurface)
             } else if Self.socketKeyTextIsDraft(mods: mods, text: text) {
                 // Typed text sits in the input line until a Return: a draft.
                 terminalSurface.lastOperatorKeyAt = Date()
             }
+        }
+    }
+
+    /// The panel's own composer read before a socket Return (C11-407). Nil
+    /// for a panel that takes no stdin mail or holds something to submit.
+    static func noOpReturnProbe(for terminalSurface: TerminalSurface) -> MailboxNoOpReturn.Probe? {
+        MainActor.assumeIsolated {
+            AppDelegate.shared?.workspaceContainingPanel(
+                panelId: terminalSurface.id,
+                preferredWorkspaceId: terminalSurface.workspaceId
+            )?.workspace.mailboxNoOpReturnProbe(surfaceId: terminalSurface.id)
+        }
+    }
+
+    static func checkNoOpReturn(_ probe: MailboxNoOpReturn.Probe?, for terminalSurface: TerminalSurface) {
+        guard let probe else { return }
+        MainActor.assumeIsolated {
+            AppDelegate.shared?.workspaceContainingPanel(
+                panelId: terminalSurface.id,
+                preferredWorkspaceId: terminalSurface.workspaceId
+            )?.workspace.checkMailboxNoOpReturn(surfaceId: terminalSurface.id, probe: probe)
         }
     }
 
@@ -7693,12 +7719,19 @@ class TerminalController {
                 }
             }
             if wantsReturn {
+                // A bare Return (an empty `send` with submit) may have nothing
+                // to submit: read the composer first (C11-407).
+                let noOpProbe = body.isEmpty && feedAnswerGate == nil
+                    ? Self.noOpReturnProbe(for: terminalSurface) : nil
                 // The Return must land *after* the target has finished
                 // ingesting the paste — a Return inside the paste-processing
                 // window is silently dropped by Claude Code and codex. Same
                 // paste-settle delay the interactive text box uses.
                 terminalSurface.scheduleSubmitReturnAfterPasteDelay(
-                    then: finish,
+                    then: { [weak terminalSurface] in
+                        finish()
+                        if let terminalSurface { Self.checkNoOpReturn(noOpProbe, for: terminalSurface) }
+                    },
                     feedAnswerGate: feedAnswerGate
                 )
             } else {

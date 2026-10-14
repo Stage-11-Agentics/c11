@@ -358,3 +358,157 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertNil(MailboxAgentForeground.terminalIsCanonical(path: "/dev/c11-no-such-tty"))
     }
 }
+
+/// C11-407. A socket Return on a composer with nothing to submit starts no
+/// turn. The socket path reads the composer first and again after the
+/// settle; when nothing changed, the submit it recorded is taken back.
+final class MailboxNoOpReturnTests: XCTestCase {
+    private let panel = UUID()
+
+    private func t(_ seconds: TimeInterval) -> Date {
+        Date(timeIntervalSince1970: 1_000 + seconds)
+    }
+
+    private func region(_ text: String = "│ ❯ Reply with ALPHA", cursorX: Int = 4, complete: Bool = true) -> PromptRegionSnapshot {
+        let bytes = Data(text.utf8)
+        var cells: [PromptRegionCell] = []
+        var offset = 0
+        for scalar in text.unicodeScalars {
+            let length = String(scalar).utf8.count
+            cells.append(PromptRegionCell(textOffset: offset, textLength: length, faint: false, italic: true))
+            offset += length
+        }
+        return PromptRegionSnapshot(
+            cursorX: cursorX, cursorY: 0, cursorPendingWrap: false, complete: complete,
+            rows: [PromptRegionRow(screenY: 0, cellRange: 0..<cells.count, softWrap: false, wrapContinuation: false)],
+            cells: cells, text: bytes
+        )
+    }
+
+    private func gate(_ buffer: MailboxStdinBuffer, journalTurnOpen: Bool = false, at now: Date) -> MailboxStdinBuffer.PromptGate {
+        buffer.promptGate(surfaceId: panel, isAgentKind: true, agentOwnsTerminal: true,
+                          journalTurnOpen: journalTurnOpen, now: now)
+    }
+
+    /// At its prompt, a Return on the suggestion closes the gate; taking it
+    /// back reopens it as a new idle period, so mail that arrived after the
+    /// Return is not skipped as already rung in the old one.
+    func testReturnOnAPromptIsTakenBackAsANewIdlePeriod() {
+        var buffer = MailboxStdinBuffer()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        let oldEpoch = buffer.ringEpoch(surfaceId: panel)
+        let mark = buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+        buffer.noteSubmit(surfaceId: panel, at: t(10.4))
+        XCTAssertEqual(gate(buffer, at: t(11)), .closed)
+        XCTAssertTrue(buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11.5)))
+        XCTAssertEqual(gate(buffer, at: t(11.5)), .open)
+        XCTAssertNotEqual(buffer.ringEpoch(surfaceId: panel), oldEpoch)
+        XCTAssertEqual(buffer.agentTurn(surfaceId: panel), .init(atPrompt: true, since: t(11.5)))
+    }
+
+    /// An agent whose turn was unknown goes back to unknown, not to a held
+    /// gate: the 2 minute submit window is gone.
+    func testUnknownTurnComesBackUnknown() {
+        var buffer = MailboxStdinBuffer()
+        buffer.noteAgentAttached(surfaceId: panel, at: t(0))
+        let mark = buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+        buffer.noteSubmit(surfaceId: panel, at: t(10.4))
+        XCTAssertEqual(gate(buffer, at: t(11)), .closed)
+        XCTAssertTrue(buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11.5)))
+        XCTAssertEqual(gate(buffer, at: t(11.5)), .unknown)
+    }
+
+    /// Anything from the agent after the mark keeps the submit: a turn
+    /// report, a duplicate working report, or a session attach.
+    func testAnAgentReportAfterTheMarkKeepsTheSubmit() {
+        for report in 0..<3 {
+            var buffer = MailboxStdinBuffer()
+            buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+            let mark = buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+            buffer.noteSubmit(surfaceId: panel, at: t(10.4))
+            switch report {
+            case 0: buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(10.6))
+            case 1: buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(10.6))
+            default: buffer.noteAgentAttached(surfaceId: panel, at: t(10.6))
+            }
+            let before = buffer.agentTurn(surfaceId: panel)
+            XCTAssertFalse(buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11.5)), "report \(report)")
+            XCTAssertEqual(buffer.agentTurn(surfaceId: panel), before)
+        }
+    }
+
+    /// The agent exited after the mark (its shell came back): the Return is
+    /// not taken back, and no turn is made up for a panel with no agent.
+    func testAnAgentThatExitedIsNotGivenATurnBack() {
+        var buffer = MailboxStdinBuffer()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        let mark = buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+        buffer.noteSubmit(surfaceId: panel, at: t(10.4))
+        buffer.forgetAgent(surfaceId: panel)
+        XCTAssertFalse(buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11.5)))
+        XCTAssertNil(buffer.agentTurn(surfaceId: panel))
+    }
+
+    /// No submit after the mark: nothing to take back.
+    func testNothingToTakeBackWithoutASubmit() {
+        var buffer = MailboxStdinBuffer()
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        buffer.noteSubmit(surfaceId: panel, at: t(5))
+        let mark = buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+        XCTAssertFalse(buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11)))
+    }
+
+    /// Only an empty or suggestion composer is probed. A draft, a dialog, an
+    /// unreadable or unavailable prompt keeps today's submit edge.
+    func testOnlyEmptyOrSuggestionIsProbed() {
+        XCTAssertTrue(MailboxNoOpReturn.admits(.empty))
+        XCTAssertTrue(MailboxNoOpReturn.admits(.suggestion))
+        for state in [PromptInputState.draft, .dialog, .unknown, .unavailable] {
+            XCTAssertFalse(MailboxNoOpReturn.admits(state), state.rawValue)
+        }
+    }
+
+    /// The submit is taken back only when the composer still reads empty or
+    /// a suggestion, every cell and the cursor are unchanged, both reads are
+    /// complete, and the journal shows no turn.
+    func testRetractNeedsAnUnchangedComposerAndNoJournalTurn() {
+        let before = region()
+        let probe = MailboxNoOpReturn.Probe(region: before, mark: .init(at: t(0), turn: nil, lastSubmit: nil))
+        XCTAssertTrue(MailboxNoOpReturn.shouldRetract(probe: probe, after: before, afterState: .suggestion, journalTurnOpen: false))
+        XCTAssertFalse(MailboxNoOpReturn.shouldRetract(probe: probe, after: before, afterState: .suggestion, journalTurnOpen: true))
+        XCTAssertFalse(MailboxNoOpReturn.shouldRetract(probe: probe, after: before, afterState: .draft, journalTurnOpen: false))
+        XCTAssertFalse(MailboxNoOpReturn.shouldRetract(probe: probe, after: nil, afterState: nil, journalTurnOpen: false))
+        XCTAssertFalse(MailboxNoOpReturn.shouldRetract(probe: probe, after: region("│ ❯ "), afterState: .empty, journalTurnOpen: false),
+                       "a suggestion that cleared means the Return took it")
+        XCTAssertFalse(MailboxNoOpReturn.shouldRetract(probe: probe, after: region(cursorX: 5), afterState: .suggestion, journalTurnOpen: false))
+        let clipped = MailboxNoOpReturn.Probe(region: region(complete: false), mark: probe.mark)
+        XCTAssertFalse(MailboxNoOpReturn.shouldRetract(probe: clipped, after: region(complete: false), afterState: .suggestion, journalTurnOpen: false))
+    }
+
+    /// End to end on the queue: mail sent after a socket Return on the
+    /// suggestion rings once the Return is taken back, even though the panel
+    /// was rung earlier in the same idle period.
+    func testMailAfterATakenBackReturnRings() {
+        let store = MailboxStdinBufferStore()
+        store.buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: t(0))
+        store.doorbell.update(surfaceId: panel) { $0.beginAttempt(at: t(1), epoch: store.buffer.ringEpoch(surfaceId: panel)) }
+        store.doorbell.update(surfaceId: panel) { $0.endAttempt() }
+        let mark = store.buffer.noOpReturnMark(surfaceId: panel, at: t(10))
+        store.buffer.noteSubmit(surfaceId: panel, at: t(10.4))
+        XCTAssertTrue(store.buffer.retractNoOpReturn(surfaceId: panel, mark: mark, now: t(11.5)))
+        let entry = MailboxStdinBuffer.Entry(id: "B", recipientName: "seat", block: "<c11-msg/>", bufferedAt: t(12))
+        let admitted = MailboxStdinDelivery.deliver(
+            state: store, surfaceId: panel, entry: entry,
+            gate: MailboxStdinDelivery.Gate(isAgentKind: true, ownsTerminal: true, now: t(12)),
+            logEvicted: { _ in },
+            ringInput: { _ in
+                var input = MailboxDoorbell.Input(prompt: .suggestion)
+                input.epoch = store.buffer.ringEpoch(surfaceId: self.panel)
+                input.rungThisEpoch = store.doorbell.ledger(for: self.panel).rung(in: input.epoch)
+                input.unreadIds = ["B"]
+                return input
+            }
+        )
+        XCTAssertEqual(admitted, .doorbell(bytes: entry.block.utf8.count, effect: .ring))
+    }
+}

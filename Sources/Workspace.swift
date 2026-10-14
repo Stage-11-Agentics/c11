@@ -6054,7 +6054,11 @@ final class Workspace: Identifiable, ObservableObject {
                     busyExhausted: false,
                     strandedDoorbell: reason == "draft" && captureNote.stranded
                 )
-                self.logMailboxDoorbellRelook([entry], plan: plan)
+                // Oldest first, as every later look names it.
+                self.logMailboxDoorbellRelook(
+                    self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
+                    plan: plan
+                )
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             },
             noteHeldUntil: { [weak self] deadline in
@@ -6860,6 +6864,58 @@ final class Workspace: Identifiable, ObservableObject {
             at: boundary.at,
             agentPid: boundary.pid
         )
+    }
+
+    /// C11-407: the composer just before a socket Return. Nil when this panel
+    /// takes no stdin mail, the read failed, or the composer holds something
+    /// the Return could submit. Socket path only; a keystroke never reads.
+    func mailboxNoOpReturnProbe(surfaceId: UUID) -> MailboxNoOpReturn.Probe? {
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId),
+              let terminalPanel = panels[surfaceId] as? TerminalPanel,
+              let native = terminalPanel.surface.surface,
+              let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
+            return nil
+        }
+        guard MailboxNoOpReturn.admits(PromptInputClassifier.classify(region, harness: harness).state) else {
+            return nil
+        }
+        return MailboxNoOpReturn.Probe(
+            region: region,
+            mark: mailboxStdinState.buffer.noOpReturnMark(surfaceId: surfaceId, at: Date())
+        )
+    }
+
+    /// Look at the composer again `settle` after the Return. When it shows
+    /// the Return started nothing, take the submit back and run the ring
+    /// decision, so mail that waited behind that Return rings now.
+    func checkMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + MailboxNoOpReturn.settle) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.finishMailboxNoOpReturn(surfaceId: surfaceId, probe: probe)
+            }
+        }
+    }
+
+    private func finishMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
+              let native = terminalPanel.surface.surface else { return }
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        let after = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness)
+        let retract = MailboxNoOpReturn.shouldRetract(
+            probe: probe,
+            after: after,
+            afterState: after.map { PromptInputClassifier.classify($0, harness: harness).state },
+            journalTurnOpen: MailboxStdinDelivery.journalTurnOpen(JournalCoordinator.shared.snapshot(panelID: surfaceId))
+        )
+        guard retract,
+              mailboxStdinState.buffer.retractNoOpReturn(surfaceId: surfaceId, mark: probe.mark, now: Date()) else {
+            return
+        }
+#if DEBUG
+        dlog("mailbox.noop_return.retracted surface=\(surfaceId.uuidString.prefix(8))")
+#endif
+        ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
     }
 
     /// A session started or re-attached in this panel (C11-398). The turn is

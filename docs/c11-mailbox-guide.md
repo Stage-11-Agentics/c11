@@ -296,11 +296,13 @@ c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's std
 
 | Harness | At its prompt when | Working when |
 |---------|--------------------|--------------|
-| Claude Code | each `Stop` hook | prompt submit, any submitted Return |
-| Codex | launch, each completed turn (its `notify` callback, or the turn end in its rollout file, whichever c11 records first) | any submitted Return |
+| Claude Code | each `Stop` hook; an Esc interrupt, read from the `[Request interrupted by user]` line in its transcript (within the 10 s transcript sweep) for the prompt it names | prompt submit, any submitted Return |
+| Codex | launch, each completed or interrupted turn (its `notify` callback, or the turn end or `turn_aborted` in its rollout file, whichever c11 records first) | any submitted Return |
 | Grok | launch, each `turn_ended` in its session's `events.jsonl` (from its wrapper or c11's transcript reader) | `turn_started`, any submitted Return |
 
 A turn end read from a transcript counts at the time the agent wrote it, not when c11 read it, and is ignored if a Return was submitted after it: the agent has had input since.
+
+A socket Return (`c11 send-key enter`, or `c11 send` with no text) on a composer the panel's reader calls empty or a suggestion usually starts no turn. c11 reads the composer before that Return and again a second later. If the composer is unchanged, no agent report arrived, and the journal shows no turn, the Return's submit edge is taken back and the gate reopens as a new idle period, so mail sent after it rings at once. A Return typed on the keyboard is never read; it holds the gate as below.
 
 A session start (a fresh launch, a session c11 resumed after a restart, a Claude `/clear`) says nothing about the turn. It names the agent's process and makes the turn **unknown** until the harness reports an edge. A working state with nothing behind it also becomes unknown: a working edge or Return holds the gate for 2 minutes, and if the agent's journal does not show a turn in progress by then, the turn reads as unknown. A turn the journal shows in progress holds for as long as it runs, including a long tool call that prints nothing.
 

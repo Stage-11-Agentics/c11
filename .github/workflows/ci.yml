@@ -34,6 +34,9 @@ jobs:
       - name: Validate the backstop CLI test step
         run: ruby tests/test_ci_python_cli_step.rb
 
+      - name: Validate Atlas performance lane
+        run: python3 scripts/c11-perf-lane-test.py
+
       - name: Validate parallel logic and backstop fan-out
         run: |
           set -euo pipefail

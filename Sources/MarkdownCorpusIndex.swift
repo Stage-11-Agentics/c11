@@ -1,6 +1,7 @@
 import CoreServices
 import Darwin
 import Foundation
+import OSLog
 
 struct MarkdownCorpusHeading: Equatable, Sendable {
     let level: Int
@@ -170,10 +171,60 @@ struct MarkdownCorpusSnapshot: Equatable, Sendable {
     }
 }
 
+/// Owns the CoreServices calls for one stream, with an injectable boundary for
+/// tests that need to control event delivery and dispatch ordering.
+struct MarkdownCorpusFSEventStreamDriver {
+    let create: (
+        FSEventStreamCallback,
+        UnsafeMutablePointer<FSEventStreamContext>,
+        CFArray
+    ) -> FSEventStreamRef?
+    let setDispatchQueue: (FSEventStreamRef, DispatchQueue) -> Void
+    let start: (FSEventStreamRef) -> Bool
+    let stop: (FSEventStreamRef) -> Void
+    let invalidate: (FSEventStreamRef) -> Void
+    let release: (FSEventStreamRef) -> Void
+
+    static let system = MarkdownCorpusFSEventStreamDriver(
+        create: { callback, context, paths in
+            FSEventStreamCreate(
+                kCFAllocatorDefault,
+                callback,
+                context,
+                paths,
+                UInt64(kFSEventStreamEventIdSinceNow),
+                0.25,
+                UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
+            )
+        },
+        setDispatchQueue: { stream, queue in FSEventStreamSetDispatchQueue(stream, queue) },
+        start: { FSEventStreamStart($0) },
+        stop: { _ = FSEventStreamStop($0) },
+        invalidate: { FSEventStreamInvalidate($0) },
+        release: { FSEventStreamRelease($0) }
+    )
+}
+
 /// A bounded, root-shared Markdown corpus. Directory discovery and every read
 /// happen on its utility queue; renderer callbacks only receive immutable
 /// snapshots. FSEvents drives refreshes and unchanged files reuse parsed data.
 final class MarkdownCorpusIndexer: @unchecked Sendable {
+    private static let logger = Logger(subsystem: "com.stage11.c11", category: "markdown.corpus")
+    private static let mustScanSubDirsFlag = Int(kFSEventStreamEventFlagMustScanSubDirs)
+    private static let unrecoverableEventLossFlags = Int(
+        kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped
+    )
+    private static let fullRescanEventFlagMask = mustScanSubDirsFlag | unrecoverableEventLossFlags
+    private static let fseventCallback: FSEventStreamCallback = { _, info, eventCount, rawPaths, eventFlags, _ in
+        guard let info else { return }
+        let indexer = Unmanaged<MarkdownCorpusIndexer>.fromOpaque(info).takeUnretainedValue()
+        MarkdownCorpusIndexer.logger.debug("FSEvents callback received root=\(indexer.rootURL.path, privacy: .private) event_count=\(eventCount, privacy: .public)")
+        let cfPaths = unsafeBitCast(rawPaths, to: CFArray.self)
+        let paths = (cfPaths as NSArray).compactMap { $0 as? String }
+        let flags = (0..<eventCount).map { index in eventFlags[index] }
+        indexer.scheduleRescan(for: paths, eventFlags: flags)
+    }
+
     struct Limits: Equatable, Sendable {
         var maximumDocuments = 5_000
         var maximumVisitedEntries = 50_000
@@ -219,6 +270,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     private let rootAccess: MarkdownAssetRoot?
     private let queue = DispatchQueue(label: "com.stage11.c11.markdown-corpus", qos: .utility)
     private let limits: Limits
+    private let streamDriver: MarkdownCorpusFSEventStreamDriver
     private let onUpdate: @Sendable (MarkdownCorpusSnapshot) -> Void
     private var stream: FSEventStreamRef?
     private var indexedFiles: [String: IndexedFile] = [:]
@@ -233,12 +285,14 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         rootURL: URL,
         limits: Limits = Limits(),
         priorityFileURLs: [URL] = [],
+        streamDriver: MarkdownCorpusFSEventStreamDriver = .system,
         onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot) -> Void
     ) {
         let canonicalRoot = rootURL.resolvingSymlinksInPath().standardizedFileURL
         self.rootURL = canonicalRoot
         rootAccess = MarkdownAssetRoot(directory: canonicalRoot)
         self.limits = limits
+        self.streamDriver = streamDriver
         self.onUpdate = onUpdate
         priorityRelativePaths = Self.relativePaths(for: priorityFileURLs, under: canonicalRoot)
     }
@@ -246,9 +300,16 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     convenience init(
         fileURL: URL,
         limits: Limits = Limits(),
+        streamDriver: MarkdownCorpusFSEventStreamDriver = .system,
         onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot) -> Void
     ) {
-        self.init(rootURL: Self.corpusRoot(for: fileURL), limits: limits, priorityFileURLs: [fileURL], onUpdate: onUpdate)
+        self.init(
+            rootURL: Self.corpusRoot(for: fileURL),
+            limits: limits,
+            priorityFileURLs: [fileURL],
+            streamDriver: streamDriver,
+            onUpdate: onUpdate
+        )
     }
 
     static func corpusRoot(for fileURL: URL) -> URL {
@@ -278,11 +339,12 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         }
     }
 
-    func start() {
+    func start(completion: (@Sendable (Bool) -> Void)? = nil) {
         queue.async { [weak self] in
-            guard let self, !self.stopped else { return }
+            guard let self, !self.stopped else { completion?(false); return }
             self.startWatcherOnQueue()
             self.scanAndPublish()
+            completion?(self.stream != nil)
         }
     }
 
@@ -312,15 +374,36 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
 
     deinit {
         if let stream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
+            streamDriver.stop(stream)
+            streamDriver.invalidate(stream)
+            streamDriver.release(stream)
         }
     }
 
     private func scheduleRescan(for paths: [String], eventFlags: [FSEventStreamEventFlags]) {
-        queue.async { [weak self] in
-            guard let self, !self.stopped, !self.scanQueued else { return }
+        queue.async(qos: .userInitiated) { [weak self] in
+            guard let self, !self.stopped else { return }
+            let lostEventFlags = eventFlags.reduce(into: 0) { combined, flags in
+                combined |= Int(flags) & Self.fullRescanEventFlagMask
+            }
+            let hasUnrecoverableLoss = eventFlags.contains {
+                Int($0) & Self.unrecoverableEventLossFlags != 0
+            }
+            let mustScanPathsRequireRescan = paths.enumerated().contains { index, path in
+                guard index < eventFlags.count,
+                      Int(eventFlags[index]) & Self.mustScanSubDirsFlag != 0 else { return false }
+                return !self.isInSkippedDirectory(path)
+            }
+            let mustScanWithoutPath = eventFlags.indices.contains { index in
+                index >= paths.count && Int(eventFlags[index]) & Self.mustScanSubDirsFlag != 0
+            }
+            if hasUnrecoverableLoss || mustScanPathsRequireRescan || mustScanWithoutPath {
+                Self.logger.notice("FSEvents reported incomplete path coverage; scheduling full rescan root=\(self.rootURL.path, privacy: .private) flags=\(lostEventFlags, privacy: .public)")
+                self.enqueueRescanOnQueue()
+                return
+            }
+            guard !self.scanQueued else { return }
+            var pathFilterDropCount = 0
             let events = paths.enumerated().compactMap { index, path -> (String, Bool)? in
                 let flags: FSEventStreamEventFlags = index < eventFlags.count ? eventFlags[index] : 0
                 let integerFlags = Int(flags)
@@ -328,22 +411,50 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 let isDirectory = integerFlags & kFSEventStreamEventFlagItemIsDir != 0
                     || (canonicalPath == self.rootURL.path
                         && integerFlags & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0)
-                return self.isRelevantFileEvent(canonicalPath, isDirectory: isDirectory) ? (canonicalPath, isDirectory) : nil
+                guard self.isRelevantFileEvent(canonicalPath, isDirectory: isDirectory) else {
+                    Self.logger.debug("FSEvents filtered event path=\(canonicalPath, privacy: .private) flags=\(integerFlags, privacy: .public)")
+                    pathFilterDropCount += 1
+                    return nil
+                }
+                return (canonicalPath, isDirectory)
             }
-            guard !events.isEmpty else { return }
+            guard !events.isEmpty else {
+                if pathFilterDropCount > 0 {
+                    Self.logger.info("FSEvents filter dropped events count=\(pathFilterDropCount, privacy: .public) irrelevant=\(pathFilterDropCount, privacy: .public) ignored=0")
+                }
+                return
+            }
             let ignored = self.ignoredEventPaths(events.map(\.0))
             let rootPrefix = self.rootURL.path.hasSuffix("/") ? self.rootURL.path : self.rootURL.path + "/"
-            guard events.contains(where: { event in
+            var ignoredFilterDropCount = 0
+            let eligibleEvents = events.filter { event in
                 let relative = event.0.hasPrefix(rootPrefix) ? String(event.0.dropFirst(rootPrefix.count)) : ""
-                return Self.isBoardEventPath(relative, isDirectory: event.1) || !ignored.contains(event.0)
-            }) else { return }
-            self.scanQueued = true
-            self.queue.async { [weak self] in
-                guard let self else { return }
-                self.scanQueued = false
-                guard !self.stopped else { return }
-                self.scanAndPublish()
+                let eligible = Self.isBoardEventPath(relative, isDirectory: event.1) || !ignored.contains(event.0)
+                if !eligible {
+                    Self.logger.debug("FSEvents filtered ignored event path=\(event.0, privacy: .private)")
+                    ignoredFilterDropCount += 1
+                }
+                return eligible
             }
+            let filterDropCount = pathFilterDropCount + ignoredFilterDropCount
+            if filterDropCount > 0 {
+                Self.logger.info("FSEvents filter dropped events count=\(filterDropCount, privacy: .public) irrelevant=\(pathFilterDropCount, privacy: .public) ignored=\(ignoredFilterDropCount, privacy: .public)")
+            }
+            guard !eligibleEvents.isEmpty else { return }
+            self.enqueueRescanOnQueue()
+        }
+    }
+
+    /// Caller must be on `queue`; the filesystem snapshot itself is always
+    /// taken after the current FSEvents batch has finished being handled.
+    private func enqueueRescanOnQueue() {
+        guard !scanQueued else { return }
+        scanQueued = true
+        queue.async(qos: .userInitiated) { [weak self] in
+            guard let self else { return }
+            self.scanQueued = false
+            guard !self.stopped else { return }
+            self.scanAndPublish()
         }
     }
 
@@ -356,32 +467,20 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             release: nil,
             copyDescription: nil
         )
-        let callback: FSEventStreamCallback = { _, info, eventCount, rawPaths, eventFlags, _ in
-            guard let info else { return }
-            let indexer = Unmanaged<MarkdownCorpusIndexer>.fromOpaque(info).takeUnretainedValue()
-            let cfPaths = unsafeBitCast(rawPaths, to: CFArray.self)
-            let paths = (cfPaths as NSArray).compactMap { $0 as? String }
-            let flags = (0..<eventCount).map { index in eventFlags[index] }
-            indexer.scheduleRescan(for: paths, eventFlags: flags)
-        }
         let paths = [rootURL.path] as CFArray
-        let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
-        guard let stream = FSEventStreamCreate(
-            kCFAllocatorDefault,
-            callback,
-            &context,
-            paths,
-            UInt64(kFSEventStreamEventIdSinceNow),
-            0.25,
-            flags
-        ) else { return }
-        FSEventStreamSetDispatchQueue(stream, queue)
-        guard FSEventStreamStart(stream) else {
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
+        guard let stream = streamDriver.create(Self.fseventCallback, &context, paths) else {
+            Self.logger.error("FSEvents stream create failed root=\(self.rootURL.path, privacy: .private)")
+            return
+        }
+        streamDriver.setDispatchQueue(stream, queue)
+        guard streamDriver.start(stream) else {
+            Self.logger.error("FSEvents stream start failed root=\(self.rootURL.path, privacy: .private)")
+            streamDriver.invalidate(stream)
+            streamDriver.release(stream)
             return
         }
         self.stream = stream
+        Self.logger.info("FSEvents stream started root=\(self.rootURL.path, privacy: .private)")
     }
 
     private func isRelevantFileEvent(_ eventPath: String, isDirectory: Bool) -> Bool {
@@ -392,6 +491,16 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         guard path.hasPrefix(prefix) else { return false }
         let relative = String(path.dropFirst(prefix.count))
         return Self.shouldRescan(relativePath: relative, isDirectory: isDirectory)
+    }
+
+    private func isInSkippedDirectory(_ eventPath: String) -> Bool {
+        let path = Self.resolvedPathAllowingMissingTail(eventPath)
+        let rootPath = rootURL.path
+        guard path != rootPath else { return false }
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard path.hasPrefix(prefix) else { return false }
+        let relative = String(path.dropFirst(prefix.count))
+        return !Self.shouldRescan(relativePath: relative, isDirectory: true)
     }
 
     static func shouldRescan(relativePath: String, isDirectory: Bool) -> Bool {
@@ -440,7 +549,10 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         guard let result = UntrustedRepositoryGit.run(
             in: rootURL,
             arguments: ["check-ignore", "-z", "--stdin"],
-            input: input
+            input: input,
+            onTimeout: {
+                Self.logger.error("git check-ignore timed out root=\(self.rootURL.path, privacy: .private) event_count=\(queryPairs.count, privacy: .public)")
+            }
         ), result.status == 0 else { return [] }
         let ignored = Set(result.output.split(separator: 0).map { String(decoding: $0, as: UTF8.self) })
         return Set(queryPairs.compactMap { pair in
@@ -450,9 +562,9 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
 
     private func stopWatcherOnQueue() {
         guard let stream else { return }
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
+        streamDriver.stop(stream)
+        streamDriver.invalidate(stream)
+        streamDriver.release(stream)
         self.stream = nil
     }
 

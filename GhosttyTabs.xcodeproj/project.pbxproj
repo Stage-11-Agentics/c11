@@ -57,6 +57,7 @@
 		31C140AD458A0058070C992D /* JournalReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */; };
 		32E8C6DFC5D1745577BCD85C /* PanelCloseForGoodPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272E746324754FAF16B14175 /* PanelCloseForGoodPolicy.swift */; };
 		33575F7E4C63569F35E154A9 /* NewWorkspaceTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93B19DC55D6C39A2387147C3 /* NewWorkspaceTitleTests.swift */; };
+		C46400000000000000000002 /* C11LogicTestsBundleBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000001 /* C11LogicTestsBundleBootstrap.swift */; };
 		352C25FFD890137B5F7A23B3 /* AgentManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA0F437E5CCBA5E90C3EC3F /* AgentManifestTests.swift */; };
 		36493FA6400141C484A5DCBD /* MarkdownWebRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */; };
 		365F4BE2806EC0D12A9336BD /* EventEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64628D6D2B44E2D7DCDCB79E /* EventEnvelope.swift */; };
@@ -705,6 +706,7 @@
 		060DB2BE0CFC4CE69EA6D7E5 /* MarkdownWebRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownWebRenderer.swift; sourceTree = "<group>"; };
 		06DBF89CEAC123699A1BCDB6 /* AgentLaunchStats.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentLaunchStats.swift; sourceTree = "<group>"; };
 		0AC6B52BF66E258E170A6B92 /* c11LogicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = c11LogicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C46400000000000000000001 /* C11LogicTestsBundleBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = c11Tests/C11LogicTestsBundleBootstrap.swift; sourceTree = SOURCE_ROOT; };
 		0D0D85360E4743C8A64E4740 /* markdown-viewer */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "Resources/markdown-viewer"; sourceTree = SOURCE_ROOT; };
 		10D684CFFB8CDEF89CE2D9E1 /* WorkspaceManagerSessionSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagerSessionSnapshotTests.swift; sourceTree = "<group>"; };
 		14920F1F89F560F631520E65 /* ScrapeCapturePipeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Conversation/ScrapeCapturePipeline.swift; sourceTree = "<group>"; };
@@ -2376,6 +2378,7 @@
 				93CDE69733F43A65B2BF466E /* MarkdownCorpusIndexTests.swift in Sources */,
 				32E8C6DFC5D1745577BCD85C /* PanelCloseForGoodPolicy.swift in Sources */,
 				4126FE0A41180AF029CA62D0 /* PanelLineageStore.swift in Sources */,
+				C46400000000000000000002 /* C11LogicTestsBundleBootstrap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3075,6 +3078,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 135;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = C11LogicTestsBundleBootstrap;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../../../c11.app/Contents/MacOS",
@@ -3097,6 +3101,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 135;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPrincipalClass = C11LogicTestsBundleBootstrap;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../../../c11\\ DEV.app/Contents/MacOS",

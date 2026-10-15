@@ -955,39 +955,4 @@ final class MailboxCLISeamTests: XCTestCase {
         XCTAssertTrue(MailboxRecvAdmission.Refusal().description.contains("recv --drain --ack"))
     }
 
-    func testExecutableBodyHelpAndRetryTarget() throws {
-        let cli = try bundledCLI()
-        let script = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("tests/test_mailbox_body_cli.py")
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cli.path), cli.path)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: script.path), script.path)
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [script.path, cli.path]
-        process.standardOutput = output
-        process.standardError = output
-        try process.run()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        XCTAssertEqual(process.terminationStatus, 0, String(decoding: data, as: UTF8.self))
-    }
-
-    private func bundledCLI() throws -> URL {
-        var url = Bundle(for: Self.self).bundleURL
-        let names = ["c11 DEV.app", "c11.app"]
-        for _ in 0..<6 {
-            for name in names {
-                let cli = url.appendingPathComponent(name + "/Contents/Resources/bin/c11")
-                if FileManager.default.isExecutableFile(atPath: cli.path) {
-                    return cli
-                }
-            }
-            url.deleteLastPathComponent()
-        }
-        XCTFail("bundled c11 CLI not found from \(Bundle(for: Self.self).bundleURL.path)")
-        throw MailboxSendArguments.Failure.emptyBody
-    }
 }

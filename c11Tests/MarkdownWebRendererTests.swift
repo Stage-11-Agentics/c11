@@ -1811,6 +1811,10 @@ extension MarkdownWebRendererTests {
     }
 
     func testCorpusBridgeSubmissionCostOnC11Checkout() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["C11_PERF_LANE"] == "1",
+            "Set C11_PERF_LANE=1 to run performance benchmarks"
+        )
         _ = NSApplication.shared
         var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path) {

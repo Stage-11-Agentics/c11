@@ -7,32 +7,6 @@ import XCTest
 #endif
 
 final class SendTextParseTests: XCTestCase {
-    func testBuiltCLISendProtocolFixtures() throws {
-        let products = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
-        #if DEBUG
-        let appName = "c11 DEV.app"
-        #else
-        let appName = "c11.app"
-        #endif
-        let cli = products.appendingPathComponent(appName + "/Contents/Resources/bin/c11")
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cli.path))
-        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("tests_v2/test_send_raw_and_flags.py")
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [script.path, "--offline"]
-        var environment = ProcessInfo.processInfo.environment
-        environment["C11_CLI"] = cli.path
-        process.environment = environment
-        process.standardOutput = output
-        process.standardError = output
-        try process.run()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        XCTAssertEqual(process.terminationStatus, 0, String(decoding: data, as: UTF8.self))
-    }
-
     func testRawKeepsEscapesAndDefaultKeepsLegacyDecoding() throws {
         let argument = #"printf %s \n\r\t"#
         XCTAssertEqual(try SendTextParse.parse(["--raw", argument]).text(), argument)

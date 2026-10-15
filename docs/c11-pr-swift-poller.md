@@ -6,6 +6,8 @@ The poller runs as the existing Atlas user, the same trust boundary as `remote-b
 
 The armed build uses Debug scheme `c11-logic` and the full `c11LogicTests` suite with eight parallel workers. The terminal status reads the xcresult summary, requires at least one executed test, and reports elapsed seconds. A test or build failure posts `failure`; elapsed time alone never does. An unreadable xcresult posts `error`. A successful first cold build over 120 seconds stays pending for one retry; its result is then classified by the build and tests.
 
+Atlas full-suite evidence: head `50f2d992d68e7fd7ae79fdda15b68f8776bd2dbb` passed with 21.740 seconds of build time and 38.299 seconds of test time, 60.039 seconds from slot acquisition to suite completion. The 14.108-second slot wait is excluded. This was the owner gate; the updated poller is installed only after its PR merges.
+
 **Live on Atlas since 2026-10-10** (Atin's GO-LIVE, gh mode). **Maintenance owner: Atin and the Orchestrator fleet.** Nothing in this tree bootstraps the LaunchAgent; the install below is done by hand. `c11-pr-swift-poller.py supervise` exits 2 unless `state/enabled.json` sets `enabled` to true, and exits 2 when the script sits inside the build worktree.
 
 ## Install (Atlas, user atinwoodard)

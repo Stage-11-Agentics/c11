@@ -1,9 +1,19 @@
 name: Prepare c11 macOS backstop runner
 description: Select Xcode and restore the native build caches used by each backstop job.
+inputs:
+  use-build-cache:
+    description: Restore GhosttyKit, Zig, and the general DerivedData cache for a build job.
+    required: false
+    default: "true"
+outputs:
+  xcode-version:
+    description: The selected Xcode version used to scope the DerivedData cache.
+    value: ${{ steps.select-xcode.outputs.version }}
 runs:
   using: composite
   steps:
     - name: Select Xcode
+      id: select-xcode
       shell: bash
       run: |
         set -euo pipefail
@@ -18,27 +28,31 @@ runs:
         XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
         XCODE_VER="${XCODE_VERSION_OUTPUT%%$'\n'*}"
         echo "XCODE_VER=$XCODE_VER" >> "$GITHUB_ENV"
+        echo "version=$XCODE_VER" >> "$GITHUB_OUTPUT"
         echo "$XCODE_VERSION_OUTPUT"
 
     - name: Cache GhosttyKit.xcframework
       id: cache-ghosttykit
+      if: ${{ inputs.use-build-cache != 'false' }}
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
       with:
         path: GhosttyKit.xcframework
         key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
 
     - name: Download pre-built GhosttyKit.xcframework
-      if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+      if: ${{ inputs.use-build-cache != 'false' && steps.cache-ghosttykit.outputs.cache-hit != 'true' }}
       shell: bash
       run: ./scripts/download-prebuilt-ghosttykit.sh
 
     - name: Cache process-scoped Zig
+      if: ${{ inputs.use-build-cache != 'false' }}
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
       with:
         path: ~/.cache/c11/zig/0.15.2
         key: zig-${{ runner.os }}-0.15.2
 
     - name: Ensure process-scoped Zig
+      if: ${{ inputs.use-build-cache != 'false' }}
       shell: bash
       run: |
         set -euo pipefail
@@ -48,6 +62,7 @@ runs:
         zig version
 
     - name: Cache DerivedData
+      if: ${{ inputs.use-build-cache != 'false' }}
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
       with:
         path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*

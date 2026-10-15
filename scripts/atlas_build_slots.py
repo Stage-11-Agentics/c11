@@ -63,11 +63,41 @@ def main():
                     tag_owned = try_lock(tag)
                 overloaded = high_load(root)
                 if tag_owned:
-                    # The reservations are independent lanes: sustained load
-                    # is observable but must not starve the shared fleet slot.
-                    candidates = [(1, slots[0])] if poller else [(2, slots[1])]
+                    # At high load, cap new work at one build. Each role holds
+                    # its normal slot and borrows the other as a guard, so a
+                    # poller cannot overlap a fleet build admitted just before
+                    # the load crossed the threshold.
+                    guard_slot = None
+                    prelocked_slot = None
+                    if poller:
+                        if overloaded:
+                            if try_lock(slots[0]):
+                                if try_lock(slots[1]):
+                                    candidates = [(1, slots[0])]
+                                    guard_slot = slots[1]
+                                    prelocked_slot = slots[0]
+                                else:
+                                    fcntl.flock(slots[0].fileno(), fcntl.LOCK_UN)
+                                    candidates = []
+                            else:
+                                candidates = []
+                        else:
+                            candidates = [(1, slots[0])]
+                    elif overloaded:
+                        if try_lock(slots[0]):
+                            if try_lock(slots[1]):
+                                candidates = [(2, slots[1])]
+                                guard_slot = slots[0]
+                                prelocked_slot = slots[1]
+                            else:
+                                fcntl.flock(slots[0].fileno(), fcntl.LOCK_UN)
+                                candidates = []
+                        else:
+                            candidates = []
+                    else:
+                        candidates = [(2, slots[1])]
                     for n, slot in candidates:
-                        if try_lock(slot):
+                        if slot is prelocked_slot or try_lock(slot):
                             waited = time.monotonic() - started
                             env = os.environ.copy()
                             env.pop("C11_BUILD_LOCK", None)
@@ -82,8 +112,11 @@ def main():
                                 except OSError as error:
                                     print(f"[atlas-slots] could not write slot timing: {error}", file=sys.stderr)
                             print(f"[atlas-slots] acquired slot={n} load={'high' if overloaded else 'normal'} tag={slug}", flush=True)
+                            held_fds = [tag.fileno(), slot.fileno()]
+                            if guard_slot is not None:
+                                held_fds.append(guard_slot.fileno())
                             return subprocess.call(sys.argv[command_index:], env=env,
-                                                   pass_fds=(tag.fileno(), slot.fileno()))
+                                                   pass_fds=tuple(held_fds))
                 waited = time.monotonic() - started
                 if waited >= timeout:
                     print("[atlas-slots] admission timed out", file=sys.stderr)

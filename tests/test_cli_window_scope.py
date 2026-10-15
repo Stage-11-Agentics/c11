@@ -528,6 +528,53 @@ def run_worker(worker: int, cli: str) -> int:
             assert not server.mutations and server.windows == fixture(), server.mutations
 
         try:
+            def tree_mode_cases(modes: tuple[str, ...]) -> None:
+                for mode in modes:
+                    server.tree_mode = mode
+                    for flags in ([], ["--all"], ["--window"]):
+                        payload = json.loads(run("tree", *flags, env=caller).stdout)
+                        assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
+                        expected_workspaces = b["workspaces"] if flags else [b_ws]
+                        assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [
+                            item["ref"] for item in expected_workspaces], payload
+                        routed("system.tree")
+                        if mode == "unsupported":
+                            routed("workspace.list")
+                        unchanged()
+                    for token in (b["workspaces"][1]["id"], b["workspaces"][1]["ref"]):
+                        payload = json.loads(run("tree", "--workspace", token, env=caller).stdout)
+                        assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
+                        assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [b["workspaces"][1]["ref"]], payload
+                        routed("system.tree")
+                        if mode == "unsupported":
+                            routed("workspace.list")
+                        unchanged()
+                    for token in (a_ws["id"], a_ws["ref"]):
+                        out = run("tree", "--workspace", token, env=caller, success=False)
+                        assert token in out.stderr, out.stderr
+                        assert not any(name == "system.tree" for name, _ in server.calls), server.calls
+                        unchanged()
+                server.tree_mode = "ignores_scope"
+
+            def flag_cases(commands: tuple[tuple[str, str], ...]) -> None:
+                for command, method in commands:
+                    args = [command, "--panel", "1", "--by", "operator"]
+                    if command == "raise-flag":
+                        args.append("Synthetic reason")
+                    payload = json.loads(run(*args, env=caller).stdout)
+                    assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
+                    routed(method)
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    args[2] = a_tab["ref"]
+                    run(*args, env=caller, success=False)
+                    unchanged()
+
+            # Spread the larger independent blocks across the eight fixture
+            # processes; the resulting groups contain 14 to 20 cases each.
+            tree_groups = {0: ("scoped",), 5: ("ignores_scope",), 7: ("unsupported",)}
+            if worker in tree_groups:
+                tree_mode_cases(tree_groups[worker])
+
             if worker == 0:
                 # UUID, global ref, and 0-based window index all resolve B without focus.
                 for token in (b["id"], "window:2", "1"):
@@ -632,6 +679,17 @@ def run_worker(worker: int, cli: str) -> int:
                     routed(method)
                     unchanged()
 
+                # Per-command focus-window is the explicit v1 focus action.
+                for token in (b["id"], b["ref"], "1"):
+                    run("focus-window", "--window", token, window=None)
+                    assert (f"focus_window {b['id']}", {}) in server.calls, server.calls
+                    assert server.windows[1]["key"] and not server.windows[0]["key"], server.windows
+
+                # Without global scope, caller-local behavior is preserved.
+                payload = json.loads(run("read-screen", window=None, env=caller).stdout)
+                assert payload["text"] == a_tab["text"], payload
+                unchanged()
+
             if worker == 2:
                 # Merged send parsing must preserve window admission for aliases
                 # and raw sends while retaining the new payload semantics.
@@ -732,19 +790,9 @@ def run_worker(worker: int, cli: str) -> int:
                 run("notify", "--title", "foreign", "--panel", a_tab["ref"], success=False)
                 unchanged()
 
-                for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
-                                        ("delegate", "flag.delegate"), ("undelegate", "flag.undelegate"),
-                                        ("suppress", "flag.delegate"), ("unsuppress", "flag.undelegate")):
-                    args = [command, "--panel", "1", "--by", "operator"]
-                    if command == "raise-flag":
-                        args.append("Synthetic reason")
-                    payload = json.loads(run(*args, env=caller).stdout)
-                    assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
-                    routed(method)
-                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                    args[2] = a_tab["ref"]
-                    run(*args, env=caller, success=False)
-                    unchanged()
+            if worker == 6:
+                flag_cases((("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
+                            ("delegate", "flag.delegate")))
 
             if worker == 4:
                 # A newer CLI first tries the canonical method, then retries only
@@ -769,6 +817,12 @@ def run_worker(worker: int, cli: str) -> int:
                 run("snapshot", "--workspace", a_ws["id"], success=False)
                 assert not any(name == "snapshot.create" for name, _ in server.calls), server.calls
                 unchanged()
+                for token in ("", "  ", "not-a-window", "window:999999", identifier("missing-window"), "999999", "-1"):
+                    out = run("read-screen", "--panel", b_tab["ref"], window=token, success=False)
+                    assert "window" in out.stderr.lower() and f"'{token}'" in out.stderr, (token, out.stderr)
+                    assert all(name in ("window.list", "system.capabilities", "auth synthetic-password")
+                               for name, _ in server.calls), server.calls
+                    unchanged()
                 for extra in ([], ["--in-place"]):
                     payload = json.loads(run("restore", "synthetic-snapshot", *extra, env=caller).stdout)
                     assert payload["window_id"] == b["id"], payload
@@ -841,6 +895,10 @@ def run_worker(worker: int, cli: str) -> int:
                 assert any(tab["id"] == b_tab["id"] for tab in server.windows[0]["workspaces"][0]["panels"])
                 assert not any(tab["id"] == b_tab["id"] for tab in server.windows[1]["workspaces"][0]["panels"])
 
+            if worker == 7:
+                flag_cases((("undelegate", "flag.undelegate"), ("suppress", "flag.delegate"),
+                            ("unsuppress", "flag.undelegate")))
+
             if worker == 6:
                 # Legacy routes need selected B's workspace on their v1 wire;
                 # otherwise these same endpoints mutate the key window A.
@@ -897,34 +955,6 @@ def run_worker(worker: int, cli: str) -> int:
                     unchanged()
 
             if worker == 7:
-                # Both modern response filtering and method-not-found fallback stay in B.
-                for mode in ("scoped", "ignores_scope", "unsupported"):
-                    server.tree_mode = mode
-                    for flags in ([], ["--all"], ["--window"]):
-                        payload = json.loads(run("tree", *flags, env=caller).stdout)
-                        assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
-                        expected_workspaces = b["workspaces"] if flags else [b_ws]
-                        assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [
-                            item["ref"] for item in expected_workspaces], payload
-                        routed("system.tree")
-                        if mode == "unsupported":
-                            routed("workspace.list")
-                        unchanged()
-                    for token in (b["workspaces"][1]["id"], b["workspaces"][1]["ref"]):
-                        payload = json.loads(run("tree", "--workspace", token, env=caller).stdout)
-                        assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
-                        assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [b["workspaces"][1]["ref"]], payload
-                        routed("system.tree")
-                        if mode == "unsupported":
-                            routed("workspace.list")
-                        unchanged()
-                    for token in (a_ws["id"], a_ws["ref"]):
-                        out = run("tree", "--workspace", token, env=caller, success=False)
-                        assert token in out.stderr, out.stderr
-                        assert not any(name == "system.tree" for name, _ in server.calls), server.calls
-                        unchanged()
-                server.tree_mode = "ignores_scope"
-
                 # A previously live handle must become invalid after closure, with
                 # no command dispatch or mutation in the surviving key window.
                 run("read-screen", "--panel", b_tab["ref"])
@@ -936,24 +966,6 @@ def run_worker(worker: int, cli: str) -> int:
                 assert b["ref"] in out.stderr, out.stderr
                 assert not any(name == "panel.read_text" for name, _ in server.calls), server.calls
                 assert server.windows == closed_state and server.mutations == close_mutations
-
-                for token in ("", "  ", "not-a-window", "window:999999", identifier("missing-window"), "999999", "-1"):
-                    out = run("read-screen", "--panel", b_tab["ref"], window=token, success=False)
-                    assert "window" in out.stderr.lower() and f"'{token}'" in out.stderr, (token, out.stderr)
-                    assert all(name in ("window.list", "system.capabilities", "auth synthetic-password")
-                               for name, _ in server.calls), server.calls
-                    unchanged()
-
-                # Per-command focus-window remains the explicit v1 focus action.
-                for token in (b["id"], b["ref"], "1"):
-                    run("focus-window", "--window", token, window=None)
-                    assert (f"focus_window {b['id']}", {}) in server.calls, server.calls
-                    assert server.windows[1]["key"] and not server.windows[0]["key"], server.windows
-
-                # Without global scope, caller-local behavior is preserved.
-                payload = json.loads(run("read-screen", window=None, env=caller).stdout)
-                assert payload["text"] == a_tab["text"], payload
-                unchanged()
         finally:
             server.shutdown()
             server.server_close()
@@ -968,8 +980,21 @@ def main() -> int:
         raise SystemExit("Set C11_CLI_BIN to the CLI built from this change; no bundled-CLI fallback.")
     cli = resolve_c11_cli()
     with ThreadPoolExecutor(max_workers=8) as pool:
-        counts = list(pool.map(lambda worker: run_worker(worker, cli), range(8)))
-    total = sum(counts)
+        futures = {worker: pool.submit(run_worker, worker, cli) for worker in range(8)}
+        counts: dict[int, int] = {}
+        failures: dict[int, Exception] = {}
+        for worker, future in futures.items():
+            try:
+                counts[worker] = future.result()
+            except Exception as error:
+                failures[worker] = error
+    if failures:
+        details = "\n".join(
+            f"worker {worker}: {type(error).__name__}: {error}"
+            for worker, error in sorted(failures.items())
+        )
+        raise AssertionError(f"{len(failures)} window-scope worker(s) failed:\n{details}")
+    total = sum(counts.values())
     if total != 138:
         raise AssertionError(f"expected 138 window-scope CLI cases, got {total}")
     print(f"PASS: {total} CLI fake-socket window-scope cases across 8 isolated workers")

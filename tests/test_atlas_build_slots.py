@@ -27,7 +27,8 @@ class SlotsTests(unittest.TestCase):
         self.command = [sys.executable, "-c", "import os,time,json; "
                         f"p={str(self.log)!r}; "
                         "f=open(p,'a'); f.write(json.dumps({'edge':'start','slot':os.environ.get('C11_ATLAS_BUILD_SLOT'),"
-                        "'wait':os.environ.get('C11_ATLAS_SLOT_WAIT_SECONDS'),'time':time.time()})+'\\n'); f.flush(); time.sleep(.25); "
+                        "'wait':os.environ.get('C11_ATLAS_SLOT_WAIT_SECONDS'),'time':time.time()})+'\\n'); f.flush(); "
+                        "time.sleep(float(os.environ.get('C11_TEST_BUILD_SECONDS','.25'))); "
                         "f.write(json.dumps({'edge':'end','time':time.time()})+'\\n'); f.close()"]
 
     def start(self, tag, poller=False, nested=False):
@@ -60,14 +61,46 @@ class SlotsTests(unittest.TestCase):
     def test_same_tag_serializes_even_with_two_slots(self):
         self.assertEqual(self.finish([self.start("same", poller=True), self.start("same")]), 1)
 
-    def test_sustained_high_load_keeps_fleet_slot_alongside_poller(self):
+    def test_sustained_high_load_allows_fleet_when_poller_slot_is_idle(self):
+        self.load.write_text("45")
+        self.env["C11_ATLAS_HIGH_LOAD_SECONDS"] = "0"
+        owner = self.start("owner")
+        self.assertEqual(self.finish([owner]), 1)
+        starts = [json.loads(line) for line in self.log.read_text().splitlines() if '"edge": "start"' in line]
+        self.assertEqual([event["slot"] for event in starts], ["2"])
+
+    def test_sustained_high_load_serializes_fleet_against_poller(self):
         self.load.write_text("45")
         self.env["C11_ATLAS_HIGH_LOAD_SECONDS"] = "0"
         poller = self.start("poller", poller=True)
+        deadline = time.monotonic() + 2
+        while not self.log.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(self.log.exists(), "poller should acquire slot 1 before starting the owner")
         owner = self.start("owner")
-        self.assertEqual(self.finish([poller, owner]), 2)
-        starts = [json.loads(line) for line in self.log.read_text().splitlines() if '"edge": "start"' in line]
+        self.assertEqual(self.finish([poller, owner]), 1)
+        events = sorted([json.loads(line) for line in self.log.read_text().splitlines()], key=lambda x: x["time"])
+        starts = [event for event in events if event["edge"] == "start"]
         self.assertEqual(sorted(event["slot"] for event in starts), ["1", "2"])
+        self.assertEqual([event["edge"] for event in events], ["start", "end", "start", "end"])
+
+    def test_sustained_high_load_poller_waits_for_fleet_already_on_slot_two(self):
+        self.env["C11_TEST_BUILD_SECONDS"] = "1.5"
+        owner = self.start("owner")
+        deadline = time.monotonic() + 2
+        while not self.log.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(self.log.exists(), "fleet build should acquire slot 2 before load rises")
+        self.load.write_text("45")
+        self.env["C11_ATLAS_HIGH_LOAD_SECONDS"] = "0"
+        self.env["C11_TEST_BUILD_SECONDS"] = ".25"
+        poller = self.start("poller", poller=True)
+        self.assertEqual(self.finish([owner, poller]), 1)
+        events = sorted([json.loads(line) for line in self.log.read_text().splitlines()], key=lambda x: x["time"])
+        starts = [event for event in events if event["edge"] == "start"]
+        self.assertEqual([event["slot"] for event in starts], ["2", "1"])
+        self.assertGreaterEqual(float(starts[1]["wait"]), 0.5)
+        self.assertEqual([event["edge"] for event in events], ["start", "end", "start", "end"])
 
     def test_nested_lock_does_not_deadlock(self):
         self.assertEqual(self.finish([self.start("nested", nested=True)]), 1)

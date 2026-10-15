@@ -288,7 +288,102 @@ def apply_overlay(root, payload, manifest):
             raise ValueError(f"overlay identity mismatch: {item['path']!r}")
 
 
+def observe_test_phase(process, log_path):
+    """Measure the XCTest phase from its live start/end markers in the build log."""
+    started = None
+    finished = None
+    position = 0
+    start_markers = ("Test Suite 'All tests' started at", "Testing started")
+    end_markers = (
+        "Test Suite 'All tests' passed at",
+        "Test Suite 'All tests' failed at",
+        "** TEST SUCCEEDED **",
+        "** TEST FAILED **",
+    )
+    with log_path.open("r", encoding="utf-8", errors="replace") as log:
+        while process.poll() is None:
+            log.seek(position)
+            chunk = log.read()
+            position = log.tell()
+            observed_at = time.monotonic()
+            for line in chunk.splitlines():
+                if started is None and any(marker in line for marker in start_markers):
+                    started = observed_at
+                if started is not None and any(marker in line for marker in end_markers):
+                    finished = observed_at
+            time.sleep(0.05)
+        log.seek(position)
+        chunk = log.read()
+        observed_at = time.monotonic()
+        for line in chunk.splitlines():
+            if started is None and any(marker in line for marker in start_markers):
+                started = observed_at
+            if started is not None and any(marker in line for marker in end_markers):
+                finished = observed_at
+    if started is None:
+        return 0.0
+    return max(0.0, (finished or time.monotonic()) - started)
+
+
+def require_test_success(build_log, source, env):
+    """Require a passing XCTest result with at least one executed test."""
+    bundles = re.findall(r"(?m)^[ \t]+(.+?\.xcresult)[ \t]*$", build_log)
+    if bundles:
+        bundle = Path(bundles[-1]).expanduser()
+        if not bundle.is_absolute():
+            bundle = source / bundle
+        try:
+            summary = run(["xcrun", "xcresulttool", "get", "test-results", "summary",
+                           "--path", bundle, "--compact"], env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            report = json.loads(summary.stdout)
+            if not isinstance(report, dict):
+                raise ValueError("xcresult summary is not a JSON object")
+            total = int(report.get("totalTestCount", 0))
+            skipped = int(report.get("skippedTests", 0))
+            failed = int(report.get("failedTests", 0))
+        except (OSError, subprocess.CalledProcessError, ValueError, TypeError) as error:
+            raise ValueError(f"could not read XCTest result bundle {bundle}: {error}") from error
+        executed = total - skipped
+        if executed <= 0:
+            raise ValueError(f"test action executed zero tests according to {bundle}")
+        if report.get("result") != "Passed" or failed:
+            raise ValueError(
+                f"test action xcresult was {report.get('result')!r} "
+                f"(executed {executed}, failed {failed})"
+            )
+        return
+
+    # Older xcodebuild versions may omit the result-bundle path from stdout.
+    # Keep their explicit summary support, including the zero-test guard.
+    executed = re.search(r"Executed ([0-9]+) tests?\b", build_log)
+    if "** TEST SUCCEEDED **" in build_log and executed and int(executed.group(1)) > 0:
+        return
+    raise ValueError("test action did not report a passing xcresult or nonzero test summary")
+
+
+def append_gate_record(manifest, result):
+    """Append one serialized owner-gate measurement on the build host."""
+    record = {
+        "tag": manifest["tag"],
+        "mode": manifest["mode"],
+        "head": manifest["head"],
+        "slot_wait_seconds": result.get("slot_wait_seconds", 0.0),
+        "build_seconds": result.get("build_seconds", 0.0),
+        "test_seconds": result.get("test_seconds", 0.0),
+        "result": "success" if result.get("ok") else "failure",
+        "invocation_id": manifest["invocation"],
+    }
+    path = Path.home() / "c11-builds" / "gates.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as gates:
+        fcntl.flock(gates.fileno(), fcntl.LOCK_EX)
+        gates.write(json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n")
+        gates.flush()
+
+
 def remote(payload, locked=False):
+    invocation_started = time.monotonic()
     manifest = json.loads((payload / "identity.json").read_text())
     base = Path.home() / "c11-builds" / manifest["slug"]
     artifacts = base / "artifacts" / manifest["invocation"]
@@ -296,10 +391,46 @@ def remote(payload, locked=False):
     if not locked:
         # Load and same-tag admission enclose source preparation, native builds, and snapshot.
         runner = Path(__file__).resolve()
-        return subprocess.call([sys.executable, payload / "atlas_build_slots.py", manifest["slug"],
-                                payload / "with-build-lock.sh", sys.executable,
-                                runner, "--remote-locked", payload])
-    result = dict(manifest, compile="failed", tests="na" if manifest["mode"] != "test" else "failed")
+        slot_record_path = artifacts / "slot.json"
+        slot_env = os.environ.copy()
+        slot_env["C11_ATLAS_SLOT_RECORD_PATH"] = str(slot_record_path)
+        try:
+            code = subprocess.call([sys.executable, payload / "atlas_build_slots.py", manifest["slug"],
+                                    payload / "with-build-lock.sh", sys.executable,
+                                    runner, "--remote-locked", payload], env=slot_env)
+        except OSError as error:
+            code = 4
+            print(f"[remote-build] could not start Atlas admission: {error}", file=sys.stderr)
+        try:
+            result = json.loads((artifacts / "result.json").read_text())
+        except (OSError, ValueError):
+            # Admission failures happen before the locked child can write result.json.
+            try:
+                slot_wait = json.loads(slot_record_path.read_text())["slot_wait_seconds"]
+            except (OSError, ValueError, KeyError):
+                slot_wait = time.monotonic() - invocation_started
+            result = {
+                "slot_wait_seconds": round(max(0.0, slot_wait), 3),
+                "build_seconds": 0.0,
+                "test_seconds": 0.0,
+                "ok": False,
+            }
+        try:
+            slot_record_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        try:
+            append_gate_record(manifest, result)
+        except OSError as error:
+            # Measurement must never change the app or test result.
+            print(f"[remote-build] could not append gate record: {error}", file=sys.stderr)
+        return code
+    try:
+        slot_wait = max(0.0, float(os.environ.get("C11_ATLAS_SLOT_WAIT_SECONDS", "0")))
+    except ValueError:
+        slot_wait = 0.0
+    result = dict(manifest, compile="failed", tests="na" if manifest["mode"] != "test" else "failed",
+                  slot_wait_seconds=round(slot_wait, 3), build_seconds=0.0, test_seconds=0.0)
     try:
         # Stable per-tag paths preserve incremental compiler/Zig caches between invocations.
         source = base / "source"
@@ -358,7 +489,8 @@ def remote(payload, locked=False):
                 command = [source / "scripts/reloads.sh", "--tag", tag, "--no-launch", "--derived-data", derived,
                            *manifest["release_options"]]
                 app = derived / "Build/Products/Release" / ("c11 STAGING " + tag + ".app")
-        with (artifacts / "build.log").open("w") as log:
+        log_path = artifacts / "build.log"
+        with log_path.open("w") as log:
             for item in manifest.get("host_test_quarantine", []):
                 if item.get("explicitly_selected"):
                     action = "explicitly selected; quarantine auto-skip omitted"
@@ -371,8 +503,17 @@ def remote(payload, locked=False):
                 log.write("[host-quarantine] %s: %s scope=%s: %s\n" %
                           (action, item["test_id"], item["scope"], item["reason"]))
             log.flush()
-            build = subprocess.run([str(a) for a in command], cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT)
-        build_log = (artifacts / "build.log").read_text()
+            if mode == "test":
+                build = subprocess.Popen([str(a) for a in command], cwd=source, env=env,
+                                         stdout=log, stderr=subprocess.STDOUT)
+                test_seconds = observe_test_phase(build, log_path)
+                build.wait()
+            else:
+                build = subprocess.run([str(a) for a in command], cwd=source, env=env,
+                                       stdout=log, stderr=subprocess.STDOUT)
+                test_seconds = 0.0
+        result["test_seconds"] = round(test_seconds, 3)
+        build_log = log_path.read_text()
         if mode == "test" and ("Test Suite " in build_log or "Testing started" in build_log):
             result["compile"] = "ok"
         # Failed assertions still produce diagnostic bundles. Snapshot them before
@@ -390,8 +531,7 @@ def remote(payload, locked=False):
         if build.returncode:
             raise subprocess.CalledProcessError(build.returncode, command)
         if mode == "test":
-            if "** TEST SUCCEEDED **" not in build_log or not re.search(r"Executed [1-9][0-9]* tests?", build_log):
-                raise ValueError("test action did not report TEST SUCCEEDED")
+            require_test_success(build_log, source, env)
             result["tests"] = "ok"
         if app:
             if not app.is_dir():
@@ -408,6 +548,7 @@ def remote(payload, locked=False):
         code = 3 if isinstance(error, ToolchainError) else (
             error.returncode if isinstance(error, subprocess.CalledProcessError) else 4)
         print(f"[remote-build] failure: {error}", file=sys.stderr)
+    result["build_seconds"] = round(max(0.0, time.monotonic() - invocation_started - result["test_seconds"]), 3)
     (artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print("C11_REMOTE_RESULT " + json.dumps({"invocation": manifest["invocation"], "artifacts": str(artifacts),
                                           "ok": result["ok"], "compile": result["compile"], "tests": result["tests"]}), flush=True)

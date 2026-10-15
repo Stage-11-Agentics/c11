@@ -394,7 +394,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         self.assertEqual(outcome, "no-start")
         self.assertEqual(supervisor.spawns, [])
 
-    def test_guest_or_other_slot_mid_build_kills_and_posts_pending(self):
+    def test_guest_mid_build_kills_and_posts_pending(self):
         held = subprocess.Popen(["sleep", "30"], start_new_session=True)
         try:
             record = {"pgid": held.pid, "slot": 1, "sha": SHA_A, "pr": 7}
@@ -405,19 +405,6 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             self.assertEqual(reason, "guest")
             self.assertEqual(held.wait(timeout=2), -signal.SIGTERM)
             self.assertEqual(world.posts[-1]["state"], "pending")
-            self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
-        finally:
-            _kill(held.pid)
-
-        held = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        try:
-            record = {"pgid": held.pid, "slot": 1, "sha": SHA_A, "pr": 7}
-            world = World()
-            world.held_slots.add(2)
-            supervisor = poller.Supervisor(self.root / "slot", world)
-            reason = supervisor.watch(record)
-            self.assertEqual(reason, "slot")
-            self.assertEqual(held.wait(timeout=2), -signal.SIGTERM)
             self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
         finally:
             _kill(held.pid)
@@ -768,6 +755,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         command = supervisor.spawns[0]["command"]
         self.assertEqual(Path(command[1]).name, "atlas_build_slots.py")
         self.assertEqual(command[2], "fu-371r")
+        self.assertEqual(command[3], "--poller")
         self.assertIn("child", command)
         slots = tempfile.TemporaryDirectory()
         try:
@@ -775,7 +763,8 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             env["C11_ATLAS_SLOTS_DIR"] = slots.name
             env["C11_ATLAS_SLOT_POLL_SECONDS"] = "0.1"
             result = subprocess.run(
-                [sys.executable, str(ROOT / "atlas_build_slots.py"), "fu-371r", sys.executable, "-c", "print('slot-child')"],
+                [sys.executable, str(ROOT / "atlas_build_slots.py"), "fu-371r", "--poller",
+                 sys.executable, "-c", "print('slot-child')"],
                 env=env, capture_output=True, text=True, timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1772,7 +1761,7 @@ class ReviewRegressionTests(unittest.TestCase):
 
         def spawn(command, log_path=None):
             world.spawned.append(command)
-            return subprocess.run(command[3:], env=env, capture_output=True, text=True, timeout=10).returncode
+            return subprocess.run(command[4:], env=env, capture_output=True, text=True, timeout=10).returncode
 
         world.spawn = spawn
         poller.Supervisor(self.root, world).poll_once()
@@ -2098,6 +2087,25 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertFalse((self.root / "argv.jsonl").exists())
         self.assertTrue(any(item.get("decision") == "no-start" and item.get("reason") == "slot" for item in _decisions(self.root)))
 
+    def test_shared_slot_at_start_does_not_block_the_poller(self):
+        self._enable()
+        lock = self.slots / "slot-2.lock"
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600); fcntl.flock(fd, fcntl.LOCK_EX); time.sleep(30)",
+             str(lock)],
+        )
+        self.procs.append(holder)
+        deadline = time.time() + 3
+        while time.time() < deadline and not poller.slot_held(self.slots, 2):
+            time.sleep(0.05)
+        self.assertTrue(poller.slot_held(self.slots, 2))
+        result = self._supervise()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "argv.jsonl").exists())
+        self.assertFalse(any(item.get("decision") == "no-start" and item.get("reason") == "slot"
+                             for item in _decisions(self.root)))
+
     # B1: build output, budget fields, GhosttyKit.
 
     def test_build_output_becomes_the_status(self):
@@ -2185,7 +2193,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertTrue((self.root / "argv.jsonl").exists())
         self.assertEqual((self.work / "GhosttyKit.xcframework").resolve(), self.kit.resolve())
 
-    # B1 and B3: the running build stops on a guest, the other slot, or a new head.
+    # B1 and B3: the running build stops on a guest or a new head.
 
     def test_guest_during_the_build_stops_the_group(self):
         self._enable()
@@ -2200,10 +2208,11 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "guest" for item in _decisions(self.root)))
         self.assertEqual(self.github.statuses()[-1], ("pending", "yielded to Atlas work"))
 
-    def test_other_slot_during_the_build_stops_the_group(self):
+    def test_other_slot_during_the_build_does_not_stop_the_poller(self):
         self._enable()
         ready = self.root / "child-ready"
-        self.build("pathlib.Path(%r).write_text(str(os.getpgrp())); time.sleep(40)" % str(ready))
+        self.build("pathlib.Path(%r).write_text(str(os.getpgrp())); time.sleep(6)\n" % str(ready)
+                   + SUCCESS_BUILD)
         proc = self._start()
         _wait_for(ready, timeout=20)
         import fcntl
@@ -2214,8 +2223,9 @@ class RuntimeIntegrationTests(RuntimeHarness):
         finally:
             os.close(lock)
         self.assertEqual(proc.returncode, 0, err)
-        self.assertFalse(poller.group_alive(int(ready.read_text())))
-        self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "slot" for item in _decisions(self.root)))
+        self.assertEqual(self.github.statuses()[-1][0], "success")
+        self.assertFalse(any(item.get("decision") == "yielded" and item.get("reason") == "slot"
+                             for item in _decisions(self.root)))
 
     def test_sha_change_kills_until_the_group_is_absent(self):
         self._enable()

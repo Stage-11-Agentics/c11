@@ -40,10 +40,14 @@ def capacity(root):
 
 def main():
     if len(sys.argv) < 3:
-        sys.exit("usage: atlas_build_slots.py <tag-slug> <command> [args...]")
+        sys.exit("usage: atlas_build_slots.py <tag-slug> [--poller] <command> [args...]")
     root = Path(os.environ.get("C11_ATLAS_SLOTS_DIR", "/tmp/c11-atlas-build-slots"))
     root.mkdir(parents=True, exist_ok=True)
     slug = sys.argv[1]
+    poller = sys.argv[2] == "--poller"
+    command_index = 3 if poller else 2
+    if len(sys.argv) <= command_index:
+        sys.exit("usage: atlas_build_slots.py <tag-slug> [--poller] <command> [args...]")
     if not slug or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in slug):
         sys.exit("invalid Atlas build slug")
     timeout = float(os.environ.get("C11_BUILD_LOCK_TIMEOUT", "5400"))
@@ -59,15 +63,24 @@ def main():
                     tag_owned = try_lock(tag)
                 limit = capacity(root)
                 if tag_owned:
-                    for n, slot in enumerate(slots[:limit], 1):
+                    candidates = [(1, slots[0])] if poller else ([(2, slots[1])] if limit > 1 else [])
+                    for n, slot in candidates:
                         if try_lock(slot):
+                            waited = time.monotonic() - started
                             env = os.environ.copy()
                             env.pop("C11_BUILD_LOCK", None)
                             env.pop("C11_ATLAS_LOCK_OWNER", None)
                             env["C11_ATLAS_BUILD_SLOT"] = str(n)
+                            env["C11_ATLAS_SLOT_WAIT_SECONDS"] = f"{waited:.3f}"
                             env["C11_BUILD_LOCK_DIR"] = str(root / ("build-" + str(n)))
+                            if env.get("C11_ATLAS_SLOT_RECORD_PATH"):
+                                try:
+                                    Path(env["C11_ATLAS_SLOT_RECORD_PATH"]).write_text(
+                                        json.dumps({"slot_wait_seconds": round(waited, 3)}) + "\n")
+                                except OSError as error:
+                                    print(f"[atlas-slots] could not write slot timing: {error}", file=sys.stderr)
                             print(f"[atlas-slots] acquired slot={n} capacity={limit} tag={slug}", flush=True)
-                            return subprocess.call(sys.argv[2:], env=env,
+                            return subprocess.call(sys.argv[command_index:], env=env,
                                                    pass_fds=(tag.fileno(), slot.fileno()))
                 waited = time.monotonic() - started
                 if waited >= timeout:

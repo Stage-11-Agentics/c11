@@ -398,6 +398,92 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(git(source / "ghostty", "rev-parse", "HEAD"), updated["submodules"]["ghostty"])
         self.assertEqual((artifacts / "tests.xcresult/failure.txt").read_text(), "diagnostic")
 
+    def test_remote_gate_record_captures_one_host_measurement(self):
+        scripts = self.worktree / "scripts"
+        scripts.mkdir()
+        (scripts / "host-test-quarantine.tsv").write_text("")
+        wrapper = scripts / "test-unit-local.sh"
+        wrapper.write_text("#!/bin/sh\n"
+                           "echo \"Test Suite 'All tests' started at now\"\n"
+                           "sleep 0.25\n"
+                           "result=\"$C11_TEST_DERIVED_DATA/Logs/Test/Parallel.xcresult\"\n"
+                           "mkdir -p \"$result\"\n"
+                           "echo 'Test session results, code coverage, and logs:'\n"
+                           "printf '\\t%s\\n' \"$result\"\n"
+                           "echo '** TEST SUCCEEDED **'\n"
+                           "# Parallel xcodebuild output has no Executed N tests summary.\n")
+        wrapper.chmod(0o755)
+        self.args.mode = "test"
+        manifest = remote.snapshot(self.worktree, self.payload, self.args)
+
+        fake = self.base / "tools"
+        fake.mkdir()
+        for name, version in (("xcodebuild", "Xcode 26.3"), ("zig", "0.15.2")):
+            tool = fake / name
+            tool.write_text("#!/bin/sh\nprintf '%s\\n' '" + version + "'\n")
+            tool.chmod(0o755)
+        summary = {"result": "Passed", "passedTests": 3090, "failedTests": 0,
+                   "skippedTests": 3, "totalTestCount": 3093}
+        xcresulttool = fake / "xcrun"
+        xcresulttool.write_text("#!/bin/sh\nprintf '%s\\n' '" + json.dumps(summary) + "'\n")
+        xcresulttool.chmod(0o755)
+        manifest["zig_dir"] = str(fake)
+        (self.payload / "identity.json").write_text(json.dumps(manifest))
+        for name in ("atlas_build_slots.py", "with-build-lock.sh"):
+            shutil.copy2(ROOT / "scripts" / name, self.payload / name)
+
+        home = self.base / "home"
+        home.mkdir()
+        slots = self.base / "slots"
+        load = self.base / "load"
+        load.write_text("0")
+        env = {
+            "HOME": str(home),
+            "PATH": os.environ["PATH"],
+            "C11_ATLAS_SLOTS_DIR": str(slots),
+            "C11_ATLAS_LOAD_FILE": str(load),
+            "C11_ATLAS_SLOT_POLL_SECONDS": "0.02",
+            "C11_BUILD_LOCK_TIMEOUT": "3",
+        }
+        with patch.dict(os.environ, env):
+            self.assertEqual(remote.remote(self.payload), 0)
+
+        artifacts = home / "c11-builds/fixture/artifacts" / manifest["invocation"]
+        result = json.loads((artifacts / "result.json").read_text())
+        gates = [json.loads(line) for line in (home / "c11-builds/gates.jsonl").read_text().splitlines()]
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["tests"], "ok")
+        self.assertEqual(len(gates), 1)
+        gate = gates[0]
+        self.assertEqual(set(gate), {
+            "tag", "mode", "head", "slot_wait_seconds", "build_seconds",
+            "test_seconds", "result", "invocation_id",
+        })
+        self.assertEqual(gate["tag"], "fixture")
+        self.assertEqual(gate["mode"], "test")
+        self.assertEqual(gate["head"], manifest["head"])
+        self.assertEqual(gate["invocation_id"], manifest["invocation"])
+        self.assertEqual(gate["result"], "success")
+        self.assertGreater(gate["test_seconds"], 0.0)
+        self.assertGreaterEqual(gate["build_seconds"], 0.0)
+        self.assertGreaterEqual(gate["slot_wait_seconds"], 0.0)
+        self.assertEqual(result["test_seconds"], gate["test_seconds"])
+
+    def test_xcresult_zero_executed_tests_is_failure(self):
+        bundle = self.base / "Empty.xcresult"
+        bundle.mkdir()
+        fake = self.base / "xcresulttool"
+        fake.mkdir()
+        summary = {"result": "Passed", "passedTests": 0, "failedTests": 0,
+                   "skippedTests": 0, "totalTestCount": 0}
+        tool = fake / "xcrun"
+        tool.write_text("#!/bin/sh\nprintf '%s\\n' '" + json.dumps(summary) + "'\n")
+        tool.chmod(0o755)
+        build_log = "Test session results, code coverage, and logs:\n\t" + str(bundle) + "\n** TEST SUCCEEDED **"
+
+        with self.assertRaisesRegex(ValueError, "executed zero tests"):
+            remote.require_test_success(build_log, self.base, {"PATH": str(fake)})
+
     def test_remote_failure_preserves_local_app_and_never_launches(self):
         # Fake transports exercise the actual client failure path, not source structure.
         fixture_scripts = self.worktree / "scripts"

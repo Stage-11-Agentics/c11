@@ -440,7 +440,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
 
     def test_watch_stops_when_a_guest_appears(self):
         world = World()
-        world.alive[4242] = True
+        world.alive[99999999] = True
         supervisor = poller.Supervisor(self.root, world)
         seen = {"n": 0}
 
@@ -450,14 +450,14 @@ class CapacityAndRecoveryTests(unittest.TestCase):
                 world.guest_names = ["c11-sb-appeared"]
             return True
 
-        reason = supervisor.watch_while(running, {"pgid": 4242, "slot": 1, "sha": SHA_A, "pr": 7})
+        reason = supervisor.watch_while(running, {"pgid": 99999999, "slot": 1, "sha": SHA_A, "pr": 7})
         self.assertEqual(reason, "guest")
         self.assertEqual(world.sleeps[0], 5)
         self.assertEqual(world.posts[-1]["state"], "pending")
         self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
-        self.assertEqual(world.kill_log[0], (4242, signal.SIGTERM))
-        self.assertEqual(world.kill_log[-1], (4242, signal.SIGKILL))
-        self.assertFalse(world.group_alive(4242))
+        self.assertEqual(world.kill_log[0], (99999999, signal.SIGTERM))
+        self.assertEqual(world.kill_log[-1], (99999999, signal.SIGKILL))
+        self.assertFalse(world.group_alive(99999999))
 
     def test_free_lock_clears_a_dead_group_only(self):
         dead = subprocess.Popen(["sleep", "30"], start_new_session=True)
@@ -1547,7 +1547,7 @@ class ReviewRegressionTests(unittest.TestCase):
             (derived / "Build").mkdir(parents=True, exist_ok=True)
             if yield_next["value"]:
                 world.guest_names = ["c11-test-guest"]
-                pid = 424242
+                pid = 99999999
                 world.alive[pid] = True
                 record = json.loads((self.root / "state" / "current.json").read_text())
                 record.update({"pgid": pid, "slot": 1})
@@ -1783,11 +1783,11 @@ class ReviewRegressionTests(unittest.TestCase):
     def test_running_sha_change_cancels_group(self):
         world = World(body=[pr(sha=SHA_B)])
         world.pull_body = pr(sha=SHA_B)
-        world.alive[4242] = True
+        world.alive[99999999] = True
         supervisor = poller.Supervisor(self.root, world)
-        supervisor.watch({"pgid": 4242, "slot": 1, "sha": SHA_A, "ref": "feature", "pr": 7})
+        supervisor.watch({"pgid": 99999999, "slot": 1, "sha": SHA_A, "ref": "feature", "pr": 7})
         self.assertTrue(world.kill_log)
-        self.assertFalse(world.group_alive(4242))
+        self.assertFalse(world.group_alive(99999999))
 
     def test_yield_waits_for_group_absence(self):
         marker = self.root / "ready"

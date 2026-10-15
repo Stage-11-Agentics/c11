@@ -44,6 +44,9 @@ IFS=: read -r slot owner < "$TMP_DIR/probe"
 [[ "$owner" =~ ^[0-9]+$ ]] || fail "wrapper did not acquire nested lock: $owner"
 [[ ! -d "$TMP_DIR/slots/build-$slot" ]] || fail "nested build lock leaked"
 
+# Exercise the poller-reserved and shared fleet slots under normal and high load.
+python3 "$ROOT_DIR/tests/test_atlas_build_slots.py"
+
 set +e
 C11_ATLAS_BUILD_SLUG=fixture \
   C11_ATLAS_SLOTS_DIR="$TMP_DIR/slots" \

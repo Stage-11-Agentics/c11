@@ -17,7 +17,7 @@ def try_lock(file):
         return False
 
 
-def capacity(root):
+def high_load(root):
     # The short gate serializes the shared load history, never a build.
     with (root / "admission.lock").open("a+") as gate:
         fcntl.flock(gate, fcntl.LOCK_EX)
@@ -35,7 +35,7 @@ def capacity(root):
         duration = float(os.environ.get("C11_ATLAS_HIGH_LOAD_SECONDS", "60"))
         high_since = (state.get("high_since") or now) if load > threshold else None
         state_path.write_text(json.dumps({"high_since": high_since}) + "\n")
-        return 1 if high_since is not None and now - high_since >= duration else 2
+        return high_since is not None and now - high_since >= duration
 
 
 def main():
@@ -61,9 +61,11 @@ def main():
             while True:
                 if not tag_owned:
                     tag_owned = try_lock(tag)
-                limit = capacity(root)
+                overloaded = high_load(root)
                 if tag_owned:
-                    candidates = [(1, slots[0])] if poller else ([(2, slots[1])] if limit > 1 else [])
+                    # The reservations are independent lanes: sustained load
+                    # is observable but must not starve the shared fleet slot.
+                    candidates = [(1, slots[0])] if poller else [(2, slots[1])]
                     for n, slot in candidates:
                         if try_lock(slot):
                             waited = time.monotonic() - started
@@ -79,7 +81,7 @@ def main():
                                         json.dumps({"slot_wait_seconds": round(waited, 3)}) + "\n")
                                 except OSError as error:
                                     print(f"[atlas-slots] could not write slot timing: {error}", file=sys.stderr)
-                            print(f"[atlas-slots] acquired slot={n} capacity={limit} tag={slug}", flush=True)
+                            print(f"[atlas-slots] acquired slot={n} load={'high' if overloaded else 'normal'} tag={slug}", flush=True)
                             return subprocess.call(sys.argv[command_index:], env=env,
                                                    pass_fds=(tag.fileno(), slot.fileno()))
                 waited = time.monotonic() - started
@@ -87,7 +89,7 @@ def main():
                     print("[atlas-slots] admission timed out", file=sys.stderr)
                     return 75
                 if waited - last_report >= 30:
-                    print(f"[atlas-slots] waiting tag={slug} capacity={limit} elapsed={waited:.0f}s", flush=True)
+                    print(f"[atlas-slots] waiting tag={slug} load={'high' if overloaded else 'normal'} elapsed={waited:.0f}s", flush=True)
                     last_report = waited
                 time.sleep(poll)
         finally:

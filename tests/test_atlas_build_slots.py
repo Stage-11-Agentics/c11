@@ -60,27 +60,14 @@ class SlotsTests(unittest.TestCase):
     def test_same_tag_serializes_even_with_two_slots(self):
         self.assertEqual(self.finish([self.start("same", poller=True), self.start("same")]), 1)
 
-    def test_sustained_high_load_one_slot_then_recovers(self):
-        self.assertEqual(self.finish([self.start("control")]), 1)
-        self.log.unlink()
+    def test_sustained_high_load_keeps_fleet_slot_alongside_poller(self):
         self.load.write_text("45")
         self.env["C11_ATLAS_HIGH_LOAD_SECONDS"] = "0"
         poller = self.start("poller", poller=True)
         owner = self.start("owner")
-        try:
-            _, error = poller.communicate(timeout=10)
-            self.assertEqual(poller.returncode, 0, error.decode())
-            self.assertIsNone(owner.poll(), "fleet owner should wait while only the poller slot is available")
-            self.log.unlink()
-            self.load.write_text("20")
-            self.assertEqual(self.finish([owner]), 1)
-            starts = [json.loads(line) for line in self.log.read_text().splitlines() if '"edge": "start"' in line]
-            self.assertEqual([event["slot"] for event in starts], ["2"])
-        finally:
-            for process in (poller, owner):
-                if process.poll() is None:
-                    process.terminate()
-                    process.communicate(timeout=5)
+        self.assertEqual(self.finish([poller, owner]), 2)
+        starts = [json.loads(line) for line in self.log.read_text().splitlines() if '"edge": "start"' in line]
+        self.assertEqual(sorted(event["slot"] for event in starts), ["1", "2"])
 
     def test_nested_lock_does_not_deadlock(self):
         self.assertEqual(self.finish([self.start("nested", nested=True)]), 1)

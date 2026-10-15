@@ -1,15 +1,17 @@
 name: CI main (macOS)
 
-# Native backstop for main: the app build, logic tests and host tests. It runs
-# when main changes, not on a clock. The concurrency group never cancels a
-# running build and holds at most one pending run, which each newer push
-# replaces. GitHub can admit an older push's run after a newer one, so a run
-# does not test its trigger: once admitted, it resolves the ref's tip once and
-# tests that commit. Every push is therefore followed by a run that starts after
-# it and tests a main that contains it. A pass posts a "CI main (macOS)" success
-# status on the tested commit; a run whose tip already has one skips the build.
-# If the tip cannot be resolved the run fails; if the green record cannot be
-# read the tip builds.
+# Native backstop for main: one app and test-products build followed by four independent test
+# jobs. It runs when main changes, not on a clock. The concurrency group never
+# cancels a running backstop and holds at most one pending run, which each newer
+# push replaces. GitHub can admit an older push's run after a newer one, so a
+# run does not test its trigger: once admitted, it resolves the ref's tip once
+# and tests that commit. Every push is therefore followed by a run that starts
+# after it and tests a main that contains it. A pass posts a "CI main (macOS)"
+# success status on the tested commit; a run whose tip already has one skips the
+# build and all four test jobs. The build job shares its exact-head DerivedData
+# with the test jobs so each runner can execute tests without rebuilding. If
+# the tip cannot be resolved the run fails; if
+# the green record cannot be read the tip builds.
 on:
   push:
     branches: [main]
@@ -57,12 +59,8 @@ jobs:
   build:
     needs: target
     if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
-    # Free standard runner (3 cores); the XLarge build took about 10 minutes.
     runs-on: macos-15
     timeout-minutes: 90
-    permissions:
-      contents: read
-      statuses: write
     env:
       TARGET_SHA: ${{ needs.target.outputs.sha }}
     steps:
@@ -72,69 +70,21 @@ jobs:
           ref: ${{ needs.target.outputs.sha }}
           submodules: recursive
 
-      - name: Select Xcode
-        run: |
-          set -euo pipefail
-          XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
-          if [ ! -d "$XCODE_DIR" ]; then
-            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -n 1 || true)"
-            [ -n "$XCODE_APP" ] || { echo "No Xcode.app found under /Applications" >&2; exit 1; }
-            XCODE_DIR="$XCODE_APP/Contents/Developer"
-          fi
-          echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR="$XCODE_DIR"
-          XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
-          XCODE_VER="${XCODE_VERSION_OUTPUT%%$'\n'*}"
-          echo "XCODE_VER=$XCODE_VER" >> "$GITHUB_ENV"
-          echo "$XCODE_VERSION_OUTPUT"
+      - name: Prepare c11 macOS backstop runner
+        id: runner-setup
+        uses: ./.github/actions/c11-macos-backstop-setup
 
-      - name: Cache GhosttyKit.xcframework
-        id: cache-ghosttykit
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
-        with:
-          path: GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
-
-      - name: Download pre-built GhosttyKit.xcframework
-        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
-        run: ./scripts/download-prebuilt-ghosttykit.sh
-
-      - name: Ensure process-scoped Zig
-        run: |
-          set -euo pipefail
-          ZIG_DIR="$(./scripts/ensure-zig.sh)"
-          echo "$ZIG_DIR" >> "$GITHUB_PATH"
-          export PATH="$ZIG_DIR:$PATH"
-          zig version
-
-      - name: Cache DerivedData
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+      - name: Restore the closest backstop DerivedData
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.pbxproj') }}
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
           restore-keys: |
-            deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-            deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-
-            deriveddata-build-${{ runner.os }}-
-
-      - name: Cache Swift packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
-        with:
-          path: .ci-source-packages
-          key: spm-${{ runner.os }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-          restore-keys: spm-${{ runner.os }}-
-
-      - name: Resolve Swift packages
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          mkdir -p "$SOURCE_PACKAGES_DIR"
-          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
-            -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -resolvePackageDependencies
+            c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-
+            c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-
 
       - name: Build app
+        shell: bash
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
@@ -145,6 +95,263 @@ jobs:
             -destination "platform=macOS" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
+
+      - name: Build logic test products
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -parallel-testing-enabled YES \
+            -parallel-testing-worker-count 3 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build-for-testing
+
+      - name: Build host test products
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 60 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build-for-testing
+
+      - name: Save exact-head DerivedData for test jobs
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
+
+  logic:
+    needs: [target, build]
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          submodules: recursive
+
+      - name: Prepare c11 macOS backstop runner
+        id: runner-setup
+        uses: ./.github/actions/c11-macos-backstop-setup
+        with:
+          use-build-cache: false
+
+      - name: Restore exact-head prebuilt products
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
+          fail-on-cache-miss: true
+
+      - name: Logic tests (gate)
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -parallel-testing-enabled YES \
+            -parallel-testing-worker-count 3 \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 60 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test-without-building
+
+      - name: Upload logic xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-logic-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  host-a:
+    needs: [target, build]
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          submodules: recursive
+
+      - name: Prepare c11 macOS backstop runner
+        id: runner-setup
+        uses: ./.github/actions/c11-macos-backstop-setup
+        with:
+          use-build-cache: false
+
+      - name: Restore exact-head prebuilt products
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
+          fail-on-cache-miss: true
+
+      - name: Host A unit tests (gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          QUARANTINE_ROWS="$RUNNER_TEMP/c11-host-test-quarantine.tsv"
+          python3 "$GITHUB_WORKSPACE/scripts/host_test_quarantine.py" --ci-actions > "$QUARANTINE_ROWS"
+          SKIP_ARGS=()
+          while IFS=$'\t' read -r action test_id scope reason; do
+            if [[ "$action" == "skip" ]]; then
+              echo "Quarantined host test (scope=$scope): $test_id: $reason"
+              SKIP_ARGS+=("-skip-testing:$test_id")
+            elif [[ "$action" == "run" ]]; then
+              echo "Atlas-only quarantine not applied; CI still runs (scope=$scope): $test_id: $reason"
+            else
+              echo "Unknown host quarantine action '$action' for $test_id" >&2
+              exit 2
+            fi
+          done < "$QUARANTINE_ROWS"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -only-testing:c11Tests \
+            -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            "${SKIP_ARGS[@]}" \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 60 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test-without-building
+
+      - name: Upload host A xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-host-a-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  host-b:
+    needs: [target, build]
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          submodules: recursive
+
+      - name: Prepare c11 macOS backstop runner
+        id: runner-setup
+        uses: ./.github/actions/c11-macos-backstop-setup
+        with:
+          use-build-cache: false
+
+      - name: Restore exact-head prebuilt products
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
+          fail-on-cache-miss: true
+
+      - name: Host B shortcut-routing tests (gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          QUARANTINE_ROWS="$RUNNER_TEMP/c11-host-test-quarantine.tsv"
+          python3 "$GITHUB_WORKSPACE/scripts/host_test_quarantine.py" --ci-actions > "$QUARANTINE_ROWS"
+          SKIP_ARGS=()
+          while IFS=$'\t' read -r action test_id scope reason; do
+            if [[ "$action" == "skip" ]]; then
+              echo "Quarantined host test (scope=$scope): $test_id: $reason"
+              SKIP_ARGS+=("-skip-testing:$test_id")
+            elif [[ "$action" == "run" ]]; then
+              echo "Atlas-only quarantine not applied; CI still runs (scope=$scope): $test_id: $reason"
+            else
+              echo "Unknown host quarantine action '$action' for $test_id" >&2
+              exit 2
+            fi
+          done < "$QUARANTINE_ROWS"
+          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
+            -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -only-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            "${SKIP_ARGS[@]}" \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 60 \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test-without-building
+
+      - name: Upload host B xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-host-b-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  python:
+    needs: [target, build]
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+          submodules: recursive
+
+      - name: Prepare c11 macOS backstop runner
+        id: runner-setup
+        uses: ./.github/actions/c11-macos-backstop-setup
+        with:
+          use-build-cache: false
+
+      - name: Restore exact-head prebuilt products
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
+          fail-on-cache-miss: true
+
+      - name: Locate CLI binary from exact-head build
+        shell: bash
+        run: |
+          set -euo pipefail
           CLI_CANDIDATES=( "$HOME"/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Build/Products/Debug/c11 )
           if [[ ${#CLI_CANDIDATES[@]} -ne 1 || ! -x "${CLI_CANDIDATES[0]}" ]]; then
             printf 'expected one built CLI binary, found %s candidates\n' "${#CLI_CANDIDATES[@]}" >&2
@@ -199,66 +406,17 @@ jobs:
       - name: Shell helper lifetime and git reporting
         run: bash tests/test_shell_git_watchers.sh
 
-      - name: Logic tests (gate)
-        # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
-        # mailbox, theme, socket password mode). Nothing is excluded: the
-        # password-store tests inject their Keychain reads and password file.
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
-            -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
-            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-            -disableAutomaticPackageResolution \
-            -destination "platform=macOS" \
-            -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 60 \
-            -maximum-test-execution-time-allowance 60 \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            test
-
-      - name: Host-bound unit tests (gate)
-        # Every exclusion is one exact method with a one-line reason. The shared
-        # inventory also drives remote-build.sh test mode; no class is excluded.
-        run: |
-          set -euo pipefail
-          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          QUARANTINE_ROWS="$RUNNER_TEMP/c11-host-test-quarantine.tsv"
-          python3 "$GITHUB_WORKSPACE/scripts/host_test_quarantine.py" --ci-actions > "$QUARANTINE_ROWS"
-          SKIP_ARGS=()
-          while IFS=$'\t' read -r action test_id scope reason; do
-            if [[ "$action" == "skip" ]]; then
-              echo "Quarantined host test (scope=$scope): $test_id: $reason"
-              SKIP_ARGS+=("-skip-testing:$test_id")
-            elif [[ "$action" == "run" ]]; then
-              echo "Atlas-only quarantine not applied; CI still runs (scope=$scope): $test_id: $reason"
-            else
-              echo "Unknown host quarantine action '$action' for $test_id" >&2
-              exit 2
-            fi
-          done < "$QUARANTINE_ROWS"
-          host_tests() {
-            "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
-              -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
-              "$@" \
-              "${SKIP_ARGS[@]}" \
-              -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
-              -disableAutomaticPackageResolution \
-              -destination "platform=macOS" \
-              -test-timeouts-enabled YES \
-              -default-test-execution-time-allowance 60 \
-              -maximum-test-execution-time-allowance 60 \
-              COMPILER_INDEX_STORE_ENABLE=NO \
-              test
-          }
-          # C11-332: AppDelegateShortcutRoutingTests runs in its own host process.
-          # Its closed main windows stay alive in this host, and the backlog they
-          # leave on the main queue starves later classes' deferred-mount waits.
-          host_tests -only-testing:c11Tests -skip-testing:c11Tests/AppDelegateShortcutRoutingTests
-          host_tests -only-testing:c11Tests/AppDelegateShortcutRoutingTests
-
+  record-green:
+    needs: [target, build, logic, host-a, host-b, python]
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      TARGET_SHA: ${{ needs.target.outputs.sha }}
+    steps:
       - name: Record green for the tested commit
-        # Best effort: without the status the next run rebuilds this commit.
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -267,5 +425,5 @@ jobs:
           gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
             -f state=success \
             -f context="$GREEN_STATUS_CONTEXT" \
-            -f description="Native build, logic and host tests passed" \
+            -f description="Native build, parallel logic, host and CLI tests passed" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

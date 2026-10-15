@@ -85,6 +85,8 @@ requirements: `docs/validation/c11-349/README.md`.
 
 Test selection uses the safe per-PID socket wrapper. Pass `-resultBundlePath <relative-path>.xcresult` to retrieve an xcresult. Signing/notarization for publication remains in GitHub Actions, with named approval of exact signed bytes; this route does not copy credentials. For `c11Tests` and `c11LogicTests` test runs, `remote-build.sh` reads `scripts/host-test-quarantine.tsv` and automatically skips both `all` and `atlas` rows, logging each scope. An exact quarantined method named in `-only-testing:<target>/<Class>/testMethod` runs without the automatic skip. Use `--no-host-quarantine` to disable automatic skips.
 
+The `c11-logic` scheme uses eight parallel workers through `remote-build.sh`. `scripts/test-unit-local.sh` enables parallel testing when `C11_TEST_PARALLEL_WORKERS` is set; the Atlas route sets it to eight. `ci-hourly.yml` uses three workers on `macos-15`.
+
 ## Existing on-Atlas entry points
 
 A person working on Atlas may use `./scripts/reload.sh --tag <tag>` to build and launch Debug, or `./scripts/reloads.sh --tag <tag>` for staging. For coordinated builds prefer the remote route, including from an SSH client. Both scripts support `--no-launch` to stage and sign without CLI-shim/socket writes, quits or launches. Their default remains launch. Never run `reloadp.sh` over another agent's session: it terminates the running production app.

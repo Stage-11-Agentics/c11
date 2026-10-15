@@ -334,6 +334,7 @@ class RoutingTests(unittest.TestCase):
         (scripts / "host-test-quarantine.tsv").write_text("")
         wrapper = scripts / "test-unit-local.sh"
         wrapper.write_text("#!/bin/sh\n[ \"$1\" = test ] || exit 88\n"
+                           "echo \"parallel-workers=${C11_TEST_PARALLEL_WORKERS:-none}\"\n"
                            "while [ $# -gt 0 ]; do\n"
                            "  if [ \"$1\" = -resultBundlePath ]; then\n"
                            "    mkdir -p \"$2\"; printf diagnostic > \"$2/failure.txt\"; break\n"
@@ -362,6 +363,7 @@ class RoutingTests(unittest.TestCase):
         result = json.loads((artifacts / "result.json").read_text())
         self.assertEqual(result["compile"], "ok")
         self.assertEqual(result["tests"], "failed")
+        self.assertIn("parallel-workers=8", (artifacts / "build.log").read_text())
         self.assertEqual((artifacts / "tests.xcresult/failure.txt").read_text(), "diagnostic")
         # Exercise the client's failed-request retrieval with the emitted artifacts.
         for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
@@ -397,6 +399,35 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(remote.remote(again, locked=True), 65)
         self.assertEqual(git(source / "ghostty", "rev-parse", "HEAD"), updated["submodules"]["ghostty"])
         self.assertEqual((artifacts / "tests.xcresult/failure.txt").read_text(), "diagnostic")
+
+    def test_logic_scheme_enables_parallel_workers_in_local_wrapper(self):
+        scripts = self.base / "local-wrapper" / "scripts"
+        scripts.mkdir(parents=True)
+        for name in ("test-unit-local.sh", "with-build-lock.sh"):
+            target = scripts / name
+            target.write_bytes((ROOT / "scripts" / name).read_bytes())
+            target.chmod(0o755)
+        (scripts / "assert-ghosttykit.sh").write_text("#!/bin/sh\nexit 0\n")
+        (scripts / "assert-ghosttykit.sh").chmod(0o755)
+        fake = self.base / "fake-xcode"
+        fake.mkdir()
+        xcodebuild = fake / "xcodebuild"
+        xcodebuild.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE\"\n")
+        xcodebuild.chmod(0o755)
+        capture = self.base / "xcodebuild-args"
+        result = subprocess.run(
+            [str(scripts / "test-unit-local.sh"), "test", "-only-testing:c11LogicTests/Example"],
+            cwd=self.base,
+            env=dict(os.environ, PATH=str(fake) + ":" + os.environ["PATH"],
+                     C11_BUILD_LOCK="0", C11_TEST_SCHEME="c11-logic",
+                     C11_TEST_PARALLEL_WORKERS="8", CAPTURE=str(capture)),
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        args = capture.read_text().splitlines()
+        self.assertEqual(args[args.index("-parallel-testing-enabled") + 1], "YES")
+        self.assertEqual(args[args.index("-parallel-testing-worker-count") + 1], "8")
+        self.assertIn("-only-testing:c11LogicTests/Example", args)
 
     def test_remote_gate_record_captures_one_host_measurement(self):
         scripts = self.worktree / "scripts"

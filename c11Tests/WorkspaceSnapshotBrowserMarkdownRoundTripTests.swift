@@ -56,7 +56,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let deps = makeDependencies()
         let result = WorkspaceLayoutExecutor.apply(
-            plan, options: ApplyOptions(select: false), dependencies: deps
+            plan, options: ApplyOptions(select: false, perStepTimeoutMs: 0), dependencies: deps
         )
         XCTAssertFalse(result.workspaceRef.isEmpty, "workspaceRef populated")
         XCTAssertTrue(
@@ -105,7 +105,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let deps = makeDependencies()
         let result = WorkspaceLayoutExecutor.apply(
-            plan, options: ApplyOptions(select: false), dependencies: deps
+            plan, options: ApplyOptions(select: false, perStepTimeoutMs: 0), dependencies: deps
         )
         XCTAssertTrue(
             result.failures.isEmpty,
@@ -151,7 +151,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let deps = makeDependencies()
         let result = WorkspaceLayoutExecutor.apply(
-            plan, options: ApplyOptions(select: false), dependencies: deps
+            plan, options: ApplyOptions(select: false, perStepTimeoutMs: 0), dependencies: deps
         )
         XCTAssertTrue(result.failures.isEmpty, "no apply failures: \(result.failures)")
 
@@ -188,7 +188,7 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
 
         let deps = makeDependencies()
         let result = WorkspaceLayoutExecutor.apply(
-            plan, options: ApplyOptions(select: false), dependencies: deps
+            plan, options: ApplyOptions(select: false, perStepTimeoutMs: 0), dependencies: deps
         )
         XCTAssertTrue(result.failures.isEmpty, "no apply failures: \(result.failures)")
 

@@ -476,6 +476,8 @@ def remote(payload, locked=False):
         if mode == "test":
             env["C11_TEST_DERIVED_DATA"] = str(base / "derived-test")
             env["C11_TEST_SCHEME"] = manifest.get("test_scheme", "c11-unit")
+            if env["C11_TEST_SCHEME"] == "c11-logic":
+                env["C11_TEST_PARALLEL_WORKERS"] = "8"
             # Selected tests must execute, not default to the build action.
             command = [source / "scripts/test-unit-local.sh", "test", *manifest["test_args"]]
             app = None

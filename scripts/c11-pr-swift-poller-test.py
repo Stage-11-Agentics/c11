@@ -88,7 +88,11 @@ class World:
             "Test Suite 'PanelLivenessDeriverTests' started\n"
             "** TEST SUCCEEDED **\nExecuted 2 tests\n"
         )
-        self.worktree = "/work"
+        self.test_result = {
+            "result": "Passed", "passedTests": 2, "failedTests": 0,
+            "skippedTests": 0, "totalTestCount": 2,
+        }
+        self.worktree = str(ROOT.parent)
         self.statuses = {}
         self.kill_log = []
         self.alive = {}
@@ -195,6 +199,9 @@ class World:
 
     def build_argv(self, worktree, derived, result):
         return poller.xcodebuild_argv(worktree, derived, result)
+
+    def test_summary(self):
+        return self.test_result
 
     def spawn(self, command, log_path=None):
         self.spawned.append(command)
@@ -940,18 +947,20 @@ class PollingAndCredentialTests(unittest.TestCase):
         self.assertFalse(poller.layout_inside_worktree("/tmp/c11-poller/bin/poller.py", "/tmp/work"))
 
     def test_status_description_and_budget(self):
-        state, description = poller.classify_result(
-            "Test Suite 'HealthFlagsTests' started\nTest Suite 'PanelLivenessDeriverTests' started\n"
-            "** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
+        passed = {
+            "result": "Passed", "passedTests": 1, "failedTests": 0,
+            "skippedTests": 0, "totalTestCount": 1,
+        }
+        state, description = poller.classify_result(15, passed)
         self.assertEqual((state, description), ("success", "15s"))
-        state, description = poller.classify_result(
-            "Test Suite 'HealthFlagsTests' started\nTest Suite 'PanelLivenessDeriverTests' started\n"
-            "** TEST SUCCEEDED **\nExecuted 1 test\n", 121)
-        self.assertEqual(state, "failure")
-        self.assertEqual(description, "budget 121s")
-        missing_slice = poller.classify_result(
-            "Test Suite 'HealthFlagsTests' started\n** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
-        self.assertEqual(missing_slice, ("failure", "failed 15s"))
+        self.assertEqual(poller.classify_result(121, passed), ("success", "121s"))
+        failed = dict(passed, result="Failed", failedTests=1)
+        self.assertEqual(poller.classify_result(15, failed), ("failure", "failed 15s"))
+        zero = dict(passed, passedTests=0, totalTestCount=0)
+        self.assertEqual(poller.classify_result(15, zero), ("failure", "failed 15s"))
+        all_skipped = dict(passed, passedTests=0, skippedTests=1, totalTestCount=1)
+        self.assertEqual(poller.classify_result(15, all_skipped), ("failure", "failed 15s"))
+        self.assertEqual(poller.classify_result(15, None), ("error", "result unavailable 15s"))
         body = poller.status_body(SHA_A, "pending", "yielded to Atlas work")
         self.assertLessEqual(len(body["description"]), 140)
         self.assertEqual(body["context"], "c11/pr-swift")
@@ -1415,6 +1424,24 @@ class ReviewRegressionTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_poller_argv_skips_all_logic_quarantine_rows_from_head_worktree(self):
+        worktree = self.root / "head"
+        inventory = worktree / "scripts" / "host-test-quarantine.tsv"
+        inventory.parent.mkdir(parents=True)
+        inventory.write_text(
+            "c11LogicTests/LogicBudgetTests/testAllScope\tall\tshared runner budget\n"
+            "c11Tests/HostBudgetTests/testAtlasScope\tatlas\tAtlas-only host test\n"
+            "c11LogicTests/LogicBudgetTests/testAtlasScope\tatlas\tAtlas load budget\n"
+        )
+
+        argv = poller.xcodebuild_argv(worktree, self.root / "DerivedData", self.root / "test.xcresult")
+        skips = [argument for argument in argv if argument.startswith("-skip-testing:")]
+
+        self.assertEqual(skips, [
+            "-skip-testing:c11LogicTests/LogicBudgetTests/testAllScope",
+            "-skip-testing:c11LogicTests/LogicBudgetTests/testAtlasScope",
+        ])
+
     def test_queue_advances_after_success(self):
         world = World(body=[pr(), pr(number=8)])
         supervisor = poller.Supervisor(self.root, world)
@@ -1463,7 +1490,7 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(result["build_seconds"], 119)
         self.assertEqual(result["post_seconds"], 5)
 
-    def test_warm_build_over_budget_fails_once(self):
+    def test_warm_build_over_budget_passes_when_tests_pass(self):
         world = World(body=[pr()])
         spawn = world.spawn
         key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
@@ -1479,7 +1506,7 @@ class ReviewRegressionTests(unittest.TestCase):
 
         world.spawn = run_spawn
         poller.Supervisor(self.root, world).poll_once()
-        self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("failure", "budget 121s")])
+        self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("success", "121s")])
 
     def test_cold_success_over_budget_posts_pending_and_retries_warm(self):
         world = World(body=[pr()])
@@ -1572,8 +1599,8 @@ class ReviewRegressionTests(unittest.TestCase):
             world.now += 26
             outcomes.append(supervisor.poll_once())
         self.assertEqual(outcomes, ["started"] * 5)
-        self.assertEqual(world.posts[-1]["state"], "failure")
-        self.assertEqual(world.posts[-1]["description"], "budget 121s")
+        self.assertEqual(world.posts[-1]["state"], "success")
+        self.assertEqual(world.posts[-1]["description"], "121s")
         self.assertEqual(len([post for post in world.posts
                               if post["state"] == "pending"
                               and post["description"] == "cold cache exceeded budget; warm retry queued"]), 5)
@@ -1923,11 +1950,23 @@ class RuntimeHarness(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.poller_bin = self.root / "c11-poller" / "bin"
+        self.poller_bin.mkdir(parents=True)
+        for name in ("c11-pr-swift-poller.py", "atlas_build_slots.py"):
+            staged = self.poller_bin / name
+            staged.write_bytes((ROOT / name).read_bytes())
         self.slots = self.root / "slots"
         self.slots.mkdir()
         self.work = self.root / "work"
         (self.work / "ghostty").mkdir(parents=True)
         (self.work / "vendor" / "bonsplit").mkdir(parents=True)
+        quarantine = self.work / "scripts" / "host-test-quarantine.tsv"
+        quarantine.parent.mkdir(parents=True)
+        quarantine.write_text(
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture\tatlas\twall-clock budget\n"
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture\tatlas\twall-clock budget\n"
+            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry\tatlas\twall-clock budget\n"
+        )
         self.kit = self.root / "kit" / GITLINK / "GhosttyKit.xcframework"
         self.kit.mkdir(parents=True)
         self.load = self.root / "load.txt"
@@ -1970,6 +2009,16 @@ class RuntimeHarness(unittest.TestCase):
                 sys.stdout.write("0.15.2\\n")
             raise SystemExit(0)
         """)
+        self.xcrun_bin = self.root / "xcrun-shim"
+        _write_exec(self.xcrun_bin, """
+            #!/usr/bin/env python3
+            import json, pathlib, sys
+            root = pathlib.Path(%r)
+            with open(root / "xcresult-argv.jsonl", "a") as handle:
+                handle.write(json.dumps(sys.argv[1:]) + "\\n")
+            print(json.dumps({"result": "Passed", "passedTests": 2, "failedTests": 0,
+                              "skippedTests": 0, "totalTestCount": 2}))
+        """ % str(self.root))
 
     def build(self, body):
         """The xcodebuild stand-in. It gets the real argv and the build env."""
@@ -1999,6 +2048,7 @@ class RuntimeHarness(unittest.TestCase):
         env["C11_POLLER_TART"] = str(self.tart_bin)
         env["C11_POLLER_ZIG"] = str(self.zig_bin)
         env["C11_POLLER_XCODEBUILD"] = str(self.xcodebuild)
+        env["C11_POLLER_XCRUN"] = str(self.xcrun_bin)
         env["C11_POLLER_KIT_CACHE"] = str(self.root / "kit")
         env["C11_POLLER_CADENCE_S"] = "0.05"
         env["C11_ATLAS_SLOTS_DIR"] = str(self.slots)
@@ -2008,7 +2058,7 @@ class RuntimeHarness(unittest.TestCase):
         return env
 
     def _argv(self, cycles):
-        argv = [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)]
+        argv = [sys.executable, str(self.poller_bin / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)]
         if cycles is not None:
             argv += ["--cycles", str(cycles)]
         return argv
@@ -2027,7 +2077,7 @@ class RuntimeHarness(unittest.TestCase):
 
     def _teardown(self, **extra):
         return subprocess.run(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
+            [sys.executable, str(self.poller_bin / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
             env=self._env(**extra), capture_output=True, text=True, timeout=20,
         )
 
@@ -2040,6 +2090,29 @@ class RuntimeHarness(unittest.TestCase):
 
 class RuntimeIntegrationTests(RuntimeHarness):
     # B1: gates.
+
+    def test_runtime_harness_uses_only_documented_bin_files(self):
+        self.assertEqual(
+            {path.name for path in self.poller_bin.iterdir()},
+            {"c11-pr-swift-poller.py", "atlas_build_slots.py"},
+        )
+        self.assertEqual(Path(self._argv(1)[1]).parent, self.poller_bin)
+
+    def test_malformed_quarantine_posts_error_without_crashing(self):
+        self._enable()
+        (self.work / "scripts" / "host-test-quarantine.tsv").write_text(
+            "c11LogicTests/BadSelector\tatlas\tbroken inventory\n"
+        )
+
+        result = self._supervise()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.github.statuses(), [("error", "quarantine unreadable")])
+        self.assertFalse((self.root / "argv.jsonl").exists())
+        self.assertNotIn("spawn", _events(self.root))
+        decided = self._results()[-1]
+        self.assertEqual(decided["state"], "error")
+        self.assertEqual(decided["description"], "quarantine unreadable")
 
     def test_disabled_file_still_exits_2(self):
         state = self.root / "state"
@@ -2054,7 +2127,9 @@ class RuntimeIntegrationTests(RuntimeHarness):
     def test_layout_inside_the_worktree_exits_2(self):
         state = self.root / "state"
         state.mkdir()
-        (state / "enabled.json").write_text(json.dumps({"enabled": True, "worktree": str(ROOT.parent)}) + "\n")
+        (state / "enabled.json").write_text(
+            json.dumps({"enabled": True, "worktree": str(self.poller_bin.parent)}) + "\n"
+        )
         result = self._supervise()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("worktree", result.stderr)
@@ -2121,8 +2196,23 @@ class RuntimeIntegrationTests(RuntimeHarness):
         bundle = Path(argv[argv.index("-resultBundlePath") + 1])
         self.assertEqual(bundle.parent, self.root / "state" / "results")
         self.assertIn("** TEST SUCCEEDED **", (bundle.parent / (bundle.name + ".log")).read_text())
-        self.assertIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
-        self.assertIn("-only-testing:c11LogicTests/PanelLivenessDeriverTests", argv)
+        self.assertEqual(argv[argv.index("-scheme") + 1], "c11-logic")
+        self.assertNotIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
+        self.assertNotIn("-only-testing:c11LogicTests/PanelLivenessDeriverTests", argv)
+        self.assertFalse(any(argument.startswith("-only-testing:") for argument in argv))
+        self.assertEqual(argv[argv.index("-parallel-testing-enabled") + 1], "YES")
+        self.assertEqual(argv[argv.index("-parallel-testing-worker-count") + 1], "8")
+        command_record = next(item for item in _decisions(self.root)
+                              if item.get("decision") == "xcodebuild-command")
+        self.assertEqual(command_record["skipped_test_ids"], [
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture",
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture",
+            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry",
+        ])
+        summary_argv = json.loads((self.root / "xcresult-argv.jsonl").read_text().splitlines()[0])
+        self.assertEqual(summary_argv[:5], ["xcresulttool", "get", "test-results", "summary", "--path"])
+        self.assertEqual(summary_argv[5], str(bundle))
+        self.assertEqual(summary_argv[6:], ["--compact"])
         key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
         self.assertEqual(Path(argv[argv.index("-derivedDataPath") + 1]), self.root / "cache" / ("DerivedData-" + key))
         self.assertEqual(decided["deps"], key)
@@ -2399,8 +2489,8 @@ class GhModeTests(RuntimeHarness):
         self.github.put("GET", "/repos/Stage-11-Agentics/c11", {"status": 200, "body": {
             "id": poller.REPO_ID, "full_name": poller.REPO_NAME, "permissions": {"push": True},
         }}, suffix=True)
-        self.bin = self.root / "bin"
-        self.bin.mkdir()
+        self.gh_bin = self.root / "bin"
+        self.gh_bin.mkdir()
         self.gh_calls = self.root / "gh-calls"
         self.fake_gh(ok_calls=None)
         self.gh_login = self.root / ".config" / "gh" / "hosts.yml"
@@ -2409,7 +2499,7 @@ class GhModeTests(RuntimeHarness):
 
     def fake_gh(self, ok_calls):
         """Answers `gh auth token` with the fixture token; after ok_calls answers, fails."""
-        _write_exec(self.bin / "gh", """
+        _write_exec(self.gh_bin / "gh", """
             #!/usr/bin/env python3
             import os, sys
             calls = %r
@@ -2425,7 +2515,7 @@ class GhModeTests(RuntimeHarness):
 
     def _env(self, **extra):
         env = super()._env(**extra)
-        env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
+        env["PATH"] = str(self.gh_bin) + os.pathsep + env.get("PATH", "")
         env["GH_TOKEN"] = "env-token-must-not-be-used"
         return env
 
@@ -2492,7 +2582,7 @@ class GhModeTests(RuntimeHarness):
 
     def fail_gh_when(self, condition):
         """Add a failure condition to the fake gh only; no production code is patched."""
-        path = self.bin / "gh"
+        path = self.gh_bin / "gh"
         text = path.read_text()
         path.write_text(text.replace("used = sum(1 for _ in open(calls))",
                                      "used = sum(1 for _ in open(calls))\n" + condition))

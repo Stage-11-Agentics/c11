@@ -34,6 +34,18 @@ jobs:
       - name: Validate the backstop CLI test step
         run: ruby tests/test_ci_python_cli_step.rb
 
+      - name: Validate parallel logic and backstop fan-out
+        run: |
+          set -euo pipefail
+          ruby tests/test_ci_logic_parallelism.rb
+          ruby tests/test_ci_backstop_split.rb
+
+      - name: Validate remote build test routing
+        run: python3 tests/test_remote_build_routing.py
+
+      - name: Validate c11 PR Swift poller
+        run: python3 scripts/c11-pr-swift-poller-test.py
+
       - name: Validate GhosttyKit checksum verification
         run: ./tests/test_ci_ghosttykit_checksum_verification.sh
 

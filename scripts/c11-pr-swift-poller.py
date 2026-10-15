@@ -60,13 +60,13 @@ LIST_URL = (
 )
 API = "https://api.github.com"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+HOST_TEST_ID = re.compile(r"c11(?:Logic)?Tests/[A-Za-z0-9_]+/test[A-Za-z0-9_]+\Z")
 USER_AGENT = "c11-pr-swift-poller"
 CADENCE_S = 25
 YIELD_INTERVAL_S = 5
 TERM_GRACE_S = 10
 KILL_BUDGET_S = 60
 BUDGET_S = 120
-ARMED_TESTS = ("HealthFlagsTests", "PanelLivenessDeriverTests")
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
@@ -100,6 +100,10 @@ _LOCK_FDS = []
 
 class OriginRefused(Exception):
     pass
+
+
+class QuarantineUnreadable(Exception):
+    """The captured head's quarantine inventory cannot be read or validated."""
 
 
 class ScopeStop(Exception):
@@ -436,7 +440,39 @@ def result_directory(state, attempt_id, invocation):
     return path
 
 
+def logic_quarantine_ids(worktree):
+    """Read all logic-test quarantine rows from the captured PR worktree."""
+    path = Path(worktree) / "scripts" / "host-test-quarantine.tsv"
+    test_ids = []
+    seen = set()
+    for line_number, line in enumerate(path.read_text().splitlines(), 1):
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) != 3 or any(not field for field in fields):
+            raise ValueError("%s:%s: expected selector, scope, and one-line reason" % (path, line_number))
+        test_id, scope, reason = fields
+        if not reason.strip() or reason != reason.strip():
+            raise ValueError("%s:%s: expected selector and one-line reason" % (path, line_number))
+        if not HOST_TEST_ID.fullmatch(test_id):
+            raise ValueError("%s:%s: expected one exact c11Tests or c11LogicTests method selector" %
+                             (path, line_number))
+        if scope not in ("all", "atlas"):
+            raise ValueError("%s:%s: scope must be all or atlas" % (path, line_number))
+        if test_id in seen:
+            raise ValueError("%s:%s: duplicate host quarantine selector %s" %
+                             (path, line_number, test_id))
+        seen.add(test_id)
+        if test_id.startswith("c11LogicTests/"):
+            test_ids.append(test_id)
+    return test_ids
+
+
 def xcodebuild_argv(worktree, derived, result_path):
+    try:
+        skipped_test_ids = logic_quarantine_ids(worktree)
+    except (OSError, ValueError) as error:
+        raise QuarantineUnreadable(str(error)) from error
     return [
         os.environ.get("C11_POLLER_XCODEBUILD") or XCODEBUILD,
         "-project", str(Path(worktree) / "GhosttyTabs.xcodeproj"),
@@ -446,7 +482,9 @@ def xcodebuild_argv(worktree, derived, result_path):
         "-derivedDataPath", str(derived),
         "-resultBundlePath", str(result_path),
         "test",
-        *["-only-testing:c11LogicTests/%s" % name for name in ARMED_TESTS],
+        *("-skip-testing:" + test_id for test_id in skipped_test_ids),
+        "-parallel-testing-enabled", "YES",
+        "-parallel-testing-worker-count", "8",
         "-test-timeouts-enabled", "YES",
         "-default-test-execution-time-allowance", "60",
         "-maximum-test-execution-time-allowance", "60",
@@ -466,28 +504,50 @@ def build_env():
     return env
 
 
-def classify_result(log_text, build_seconds):
-    seconds = int(build_seconds)
-    matched = re.search(r"Executed ([1-9][0-9]*) tests?", log_text or "")
-    passed = (
-        all(armed_test_ran(log_text, name) for name in ARMED_TESTS)
-        and "** TEST SUCCEEDED **" in (log_text or "")
-        and matched is not None
+def xcresult_summary(result_path):
+    """Read XCTest's result bundle summary; parallel xcodebuild logs omit totals."""
+    tool = os.environ.get("C11_POLLER_XCRUN") or "xcrun"
+    result = subprocess.run(
+        [tool, "xcresulttool", "get", "test-results", "summary",
+         "--path", str(result_path), "--compact"],
+        capture_output=True, text=True, timeout=30,
     )
-    if not passed:
+    if result.returncode != 0:
+        raise ValueError("xcresulttool exited %s" % result.returncode)
+    report = json.loads(result.stdout)
+    if type(report) is not dict:
+        raise ValueError("xcresult summary is not an object")
+    return report
+
+
+def xcresult_passes(report):
+    if type(report) is not dict or report.get("result") != "Passed":
+        return False
+    total = report.get("totalTestCount")
+    skipped = report.get("skippedTests")
+    failed = report.get("failedTests")
+    return (
+        type(total) is int and type(skipped) is int and type(failed) is int
+        and total - skipped > 0 and failed == 0
+    )
+
+
+def classify_result(build_seconds, summary):
+    seconds = int(build_seconds)
+    if type(summary) is not dict:
+        return "error", "result unavailable %ss" % seconds
+    if summary.get("result") == "Failed":
         return "failure", "failed %ss" % seconds
-    if build_seconds > BUDGET_S:
-        return "failure", "budget %ss" % seconds
-    return "success", "%ss" % seconds
-
-
-def armed_test_ran(log_text, name):
-    """Require XCTest output for the armed class, not just its command-line selector."""
-    return re.search(
-        r"^Test (?:Suite|Case) '[^']*\b%s\b" % re.escape(name),
-        log_text or "",
-        re.MULTILINE,
-    ) is not None
+    total = summary.get("totalTestCount")
+    skipped = summary.get("skippedTests")
+    failed = summary.get("failedTests")
+    if type(total) is not int or type(skipped) is not int or type(failed) is not int:
+        return "error", "result unavailable %ss" % seconds
+    if total - skipped <= 0 or failed > 0:
+        return "failure", "failed %ss" % seconds
+    if summary.get("result") == "Passed":
+        return "success", "%ss" % seconds
+    return "error", "result unavailable %ss" % seconds
 
 
 def link_ghosttykit(cache_root, sha, worktree):
@@ -529,19 +589,20 @@ def read_running(root):
 def group_alive(pgid):
     """True when the recorded group still has a live member.
 
-    killpg(pgid, 0) is the probe. On macOS it can return ESRCH for an
-    orphaned group that ps still lists, so a live process-table hit keeps
-    the group alive. The same call returns EPERM when the only member is an
-    unreaped zombie; a zombie is not a running build. A free lock is never
-    enough on its own.
+    killpg(pgid, 0) is only a permission/existence probe: Linux can report
+    success when the group contains only zombies, and macOS can report ESRCH
+    for an orphaned group that ps still lists. The process table distinguishes
+    live members from zombies. If that inspection fails, treat the group as
+    alive so recovery cannot mistake an unknown state for a clean exit. A free
+    lock is never enough on its own.
     """
     if type(pgid) is not int or pgid <= 1:
         return False
     try:
         os.killpg(pgid, 0)
     except (ProcessLookupError, PermissionError):
-        return _pgid_live(pgid)
-    return True
+        pass
+    return _pgid_live(pgid)
 
 
 def _process_snapshot():
@@ -590,10 +651,10 @@ def _signal_pid(pid, sig):
 
 
 def _pgid_live(pgid):
-    """True when ps shows a non-zombie member of this process group."""
+    """True unless ps proves this group has no non-zombie member."""
     listed = subprocess.run(["ps", "-axo", "pgid=,state="], capture_output=True, text=True)
     if listed.returncode != 0:
-        return False
+        return True
     wanted = str(pgid)
     for line in listed.stdout.splitlines():
         parts = line.split()
@@ -1298,6 +1359,7 @@ class Supervisor:
         self.attempt_clock = None
         self.acquired_at = None
         self.build_end = None
+        self.test_summary = None
         self.delivered = False
         self.stopped = None
         self.credential_skipped = False
@@ -1793,6 +1855,7 @@ class Supervisor:
         self.attempt_clock = self.world.time()
         self.stopped = None
         self.delivered = False
+        self.test_summary = None
         self._drop(item)
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
@@ -1806,17 +1869,28 @@ class Supervisor:
             self._note_acquired()
             if code == "rejected":
                 return "rejected"
+            if code == "quarantine-unreadable":
+                return code
             if self.stopped:
                 return "stopped"
             if self.world.last_exit == 0:
-                log = self.world.build_log or ""
-                if all(armed_test_ran(log, name) for name in ARMED_TESTS) and "** TEST SUCCEEDED **" in log:
+                try:
+                    self.test_summary = self.world.test_summary()
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    self.test_summary = None
+                    self.log(decision="xcresult-summary-unavailable", pr=item["pr"], sha=item["sha"],
+                             invocation=invocation, reason=str(error))
+                if xcresult_passes(self.test_summary):
                     self._mark_dependency_warm(item["deps"])
                     if (invocation == 1 and cold_cache and not cold_retry_used
                             and self.build_seconds() > BUDGET_S):
                         self._remember_cold_retry(item)
                         cold_retry_queued = True
+                elif self.test_summary is not None:
+                    self.log(decision="xcresult-tests-failed", pr=item["pr"], sha=item["sha"],
+                             invocation=invocation)
                 break
+            self.test_summary = None
             if STALE_MODULE in (self.world.build_log or ""):
                 return self._cache_fault(item, invocation)
         if cold_retry_queued:
@@ -1861,8 +1935,27 @@ class Supervisor:
             "result": str(result),
             "log": str(log_path),
         }
+        try:
+            argv = self.world.build_argv(self.world.worktree, self.derived, result)
+        except QuarantineUnreadable as error:
+            self.log(decision="quarantine-unreadable", pr=item["pr"], sha=item["sha"],
+                     invocation=invocation, reason=str(error))
+            description = "quarantine unreadable"
+            self.delivered = self._post(item["sha"], "error", description, pr=item["pr"],
+                                        invocation=invocation, reason=str(error))
+            if self.delivered:
+                self._clear_cold_retry(item["pr"], sha=item["sha"])
+                self.reported[item["pr"]] = item["sha"]
+            else:
+                self.status_owed[(item["pr"], item["sha"])] = {
+                    "state": "error", "description": description,
+                }
+            return "quarantine-unreadable"
         (self.state() / "current.json").write_text(json.dumps(current) + "\n")
-        argv = self.world.build_argv(self.world.worktree, self.derived, result)
+        skipped_test_ids = [argument[len("-skip-testing:"):]
+                            for argument in argv if argument.startswith("-skip-testing:")]
+        self.log(decision="xcodebuild-command", pr=item["pr"], sha=item["sha"],
+                 invocation=invocation, skipped_test_ids=skipped_test_ids)
         command = slot_command(self.root, argv)
         self.spawns.append({"command": command, "sha": item["sha"], "result": str(result), "invocation": invocation})
         append_event(self.root, {"event": "spawn", "sha": item["sha"], "invocation": invocation, "result": str(result)})
@@ -1894,8 +1987,8 @@ class Supervisor:
 
     def _finish(self, item, exit_code):
         seconds = self.build_seconds()
-        state, description = classify_result(self.world.build_log, seconds)
-        if exit_code != 0 and state == "success":
+        state, description = classify_result(seconds, self.test_summary)
+        if exit_code != 0:
             state, description = "failure", "failed %ss" % int(seconds)
         self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
                                     build_seconds=round(seconds, 3), deps=item.get("deps"))
@@ -2293,6 +2386,16 @@ class ProductionWorld:
 
     def build_argv(self, worktree, derived, result):
         return xcodebuild_argv(worktree, derived, result)
+
+    def test_summary(self):
+        try:
+            current = json.loads((self.root / "state" / "current.json").read_text())
+        except (OSError, ValueError) as error:
+            raise ValueError("current test result path is unavailable") from error
+        result_path = current.get("result") if type(current) is dict else None
+        if not isinstance(result_path, str) or not result_path:
+            raise ValueError("current test result path is invalid")
+        return xcresult_summary(result_path)
 
     @property
     def build_log(self):

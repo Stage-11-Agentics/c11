@@ -33,10 +33,17 @@ ACTUAL_SHA256="$(shasum -a 256 "$TMP_DIR/GhosttyKit.xcframework.tar.gz" | awk '{
 printf '%s %s\n' "$FIXTURE_SHA" "$ACTUAL_SHA256" > "$CHECKSUMS_FILE"
 
 for workflow in "${WORKFLOWS[@]}"; do
-  if ! grep -Fq './scripts/download-prebuilt-ghosttykit.sh' "$workflow"; then
-    echo "FAIL: $workflow must call download-prebuilt-ghosttykit.sh"
-    exit 1
+  if grep -Fq './scripts/download-prebuilt-ghosttykit.sh' "$workflow"; then
+    continue
   fi
+  if [ "$workflow" = "$ROOT_DIR/.github/workflows/ci-hourly.yml" ] \
+    && grep -Fq 'uses: ./.github/actions/c11-macos-backstop-setup' "$workflow" \
+    && grep -Fq 'run: ./scripts/download-prebuilt-ghosttykit.sh' \
+      "$ROOT_DIR/.github/actions/c11-macos-backstop-setup/action.yml"; then
+    continue
+  fi
+  echo "FAIL: $workflow must call download-prebuilt-ghosttykit.sh directly or through the backstop setup action"
+  exit 1
 done
 
 cat > "$BIN_DIR/curl" <<'EOF'

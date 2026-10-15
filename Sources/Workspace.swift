@@ -7084,6 +7084,7 @@ final class Workspace: Identifiable, ObservableObject {
     private var layoutFollowUpAttemptScheduled = false
     private var layoutFollowUpAttemptVersion: Int = 0
     private var layoutFollowUpStalledAttemptCount = 0
+    static let defaultLayoutFollowUpTimeout: TimeInterval = 2
 #if DEBUG
     private var debugLayoutFlushCount: UInt64 = 0
 #endif
@@ -11567,7 +11568,8 @@ final class Workspace: Identifiable, ObservableObject {
         browserPanelId: UUID? = nil,
         browserExitFocusPanelId: UUID? = nil,
         terminalFocusPanelId: UUID? = nil,
-        includeGeometry: Bool = false
+        includeGeometry: Bool = false,
+        timeout: TimeInterval = Workspace.defaultLayoutFollowUpTimeout
     ) {
         layoutFollowUpReason = reason
         if let browserPanelId {
@@ -11590,7 +11592,7 @@ final class Workspace: Identifiable, ObservableObject {
         if layoutFollowUpTimeoutWorkItem == nil {
             installLayoutFollowUpObservers()
         }
-        refreshLayoutFollowUpTimeout()
+        refreshLayoutFollowUpTimeout(after: timeout)
         // Defer the full-window layout flush until the current layout pass unwinds.
         // Structural callers can arrive from SwiftUI geometry updates, where a
         // synchronous displayIfNeeded() re-enters AppKit layout.
@@ -11657,13 +11659,13 @@ final class Workspace: Identifiable, ObservableObject {
             }
     }
 
-    private func refreshLayoutFollowUpTimeout() {
+    private func refreshLayoutFollowUpTimeout(after timeout: TimeInterval) {
         layoutFollowUpTimeoutWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.clearLayoutFollowUp()
         }
         layoutFollowUpTimeoutWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
     }
 
     private func clearLayoutFollowUp() {
@@ -12001,8 +12003,15 @@ final class Workspace: Identifiable, ObservableObject {
         (debugLayoutFlushCount, layoutFollowUpTimeoutWorkItem != nil)
     }
 
-    func debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: Bool = false) {
-        beginEventDrivenLayoutFollowUp(reason: "test.deferred.layout", includeGeometry: includeGeometry)
+    func debugBeginDeferredLayoutFollowUpForTesting(
+        includeGeometry: Bool = false,
+        timeout: TimeInterval = Workspace.defaultLayoutFollowUpTimeout
+    ) {
+        beginEventDrivenLayoutFollowUp(
+            reason: "test.deferred.layout",
+            includeGeometry: includeGeometry,
+            timeout: timeout
+        )
     }
 
     func debugClearLayoutFollowUpForTesting() {

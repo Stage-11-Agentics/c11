@@ -29,7 +29,9 @@ struct WorkspaceContentView: View {
     @EnvironmentObject var notificationStore: TerminalNotificationStore
 
     private var isMinimalMode: Bool {
-        WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
+        WorkspacePresentationModeSettings.ignoresTopSafeArea(
+            for: WorkspacePresentationModeSettings.mode(for: workspacePresentationMode)
+        )
     }
 
     private var useThemeM1bWorkspaceContentViewContextPath: Bool {

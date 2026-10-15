@@ -39,7 +39,7 @@ final class MailboxReceiptRecorder {
 
     /// Temp files a writer abandoned (crash between write and rename).
     static let staleTempAge: TimeInterval = 300
-    static let retryDelay: TimeInterval = 2
+    static let defaultRetryDelay: TimeInterval = 2
     /// Re-sweep of every workspace's spool, for receipts left where no open
     /// workspace watches (~40 ms for 11k workspace dirs, warm).
     static let everyWorkspaceSweepInterval: TimeInterval = 600
@@ -53,6 +53,7 @@ final class MailboxReceiptRecorder {
     private let isRecording: () -> Bool
     private let eventsDirectory: () -> URL?
     private let fileManager: FileManager
+    private let retryDelay: TimeInterval
 
     // Queue-confined state.
     private var watchers: [UUID: MailboxOutboxWatcher] = [:]
@@ -79,6 +80,7 @@ final class MailboxReceiptRecorder {
         flush: @escaping () -> Void = { EventEmitter.shared.flush() },
         confirmedDeliveries: @escaping (Set<String>) -> Set<String> = { EventEmitter.shared.confirmedDrainDeliveryIDs($0) },
         isRecording: @escaping () -> Bool = { EventEmitter.shared.isRecording },
+        retryDelay: TimeInterval = MailboxReceiptRecorder.defaultRetryDelay,
         eventsDirectory: @escaping () -> URL? = {
             (try? EventLogLayout.defaultStateURL()).map { EventLogLayout.eventsDirectoryURL(state: $0) }
         },
@@ -90,6 +92,7 @@ final class MailboxReceiptRecorder {
         self.flush = flush
         self.confirmedDeliveries = confirmedDeliveries
         self.isRecording = isRecording
+        self.retryDelay = retryDelay
         self.eventsDirectory = eventsDirectory
         self.fileManager = fileManager
     }
@@ -325,7 +328,7 @@ final class MailboxReceiptRecorder {
         let first = retrySpools.isEmpty
         retrySpools[workspaceId] = spool
         guard first else { return }
-        queue.asyncAfter(deadline: .now() + Self.retryDelay) { [weak self] in
+        queue.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
             guard let self else { return }
             let pending = self.retrySpools
             self.retrySpools = [:]

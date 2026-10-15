@@ -23,6 +23,8 @@ import Darwin
 /// memory without bound — drops surface in-stream as a `log.dropped` marker.
 final class EventLog {
 
+    static let defaultQueueWaitTimeout: TimeInterval = 2
+
     /// Posted on the log's utility queue after a line has been handed to the
     /// file handle. Consumers such as the messages page use it to debounce
     /// their own off-main rebuild without adding work to event emitters.
@@ -37,6 +39,7 @@ final class EventLog {
     private var retentionDays = 14
     private let titleWindow: TimeInterval
     private let maxTitlePanels: Int
+    private let queueWaitTimeout: TimeInterval
     private struct TitleWindow {
         let started: Date
         var latest: EventEnvelope
@@ -107,6 +110,7 @@ final class EventLog {
         retentionDays: Int = 14,
         titleWindow: TimeInterval = 60,
         maxTitlePanels: Int = 4096,
+        queueWaitTimeout: TimeInterval = EventLog.defaultQueueWaitTimeout,
         now: @escaping () -> Date = { Date() },
         healthMetrics: @escaping () -> [String: Any] = ActivityHistoryMetrics.sample,
         policy: ActivityHistoryPolicy? = nil,
@@ -129,6 +133,7 @@ final class EventLog {
         self.analyticsEnabled = policy?.analyticsEnabled ?? true
         self.titleWindow = titleWindow
         self.maxTitlePanels = max(1, maxTitlePanels)
+        self.queueWaitTimeout = queueWaitTimeout
         self.now = now
         self.healthMetrics = healthMetrics
         self.acquireWriterLock = acquireWriterLock
@@ -302,7 +307,7 @@ final class EventLog {
             body()
             completion.signal()
         }
-        return completion.wait(timeout: .now() + 2) == .success
+        return completion.wait(timeout: .now() + queueWaitTimeout) == .success
     }
 
     private func deadlineFired() {

@@ -31,6 +31,8 @@ import Foundation
 /// literal `</c11-msg>` in the body cannot forge a closing tag. This is a
 /// deliberate security property of the framing per design doc §prose.
 final class StdinMailboxHandler: MailboxHandler {
+    static let defaultTimeout: Duration = .milliseconds(500)
+
 
     /// Closure the dispatcher injects so the handler can resolve a
     /// TerminalPanel (or whatever write sink) on the main actor.
@@ -73,7 +75,7 @@ final class StdinMailboxHandler: MailboxHandler {
 
     init(
         writer: @escaping Writer,
-        timeout: Duration = .milliseconds(500)
+        timeout: Duration = StdinMailboxHandler.defaultTimeout
     ) {
         self.writer = writer
         self.timeout = timeout

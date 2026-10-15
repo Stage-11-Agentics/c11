@@ -786,10 +786,10 @@ final class TerminalNotificationStore: ObservableObject {
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
 
     /// `UNUserNotificationCenter.current()` requires an application bundle.
-    /// Bare c11LogicTests run under `xctest` without `NSApplication`, where
-    /// calling it traps inside UserNotifications. Keep the real center lazy and
-    /// unavailable only for that process shape; hosted tests and the app retain
-    /// the production transport.
+    /// Bare c11LogicTests run in a non-app XCTest bundle, where calling it can
+    /// trap inside UserNotifications. Keep the real center lazy and unavailable
+    /// only for that process shape; hosted tests and the app retain the
+    /// production transport.
     private let systemNotificationsEnabled: Bool
     private lazy var center: UNUserNotificationCenter? = {
         guard systemNotificationsEnabled else { return nil }
@@ -877,11 +877,13 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
 
-    private static func defaultSystemNotificationsEnabled(
+    static func defaultSystemNotificationsEnabled(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        hasApplication: Bool = NSApp != nil
+        bundleURL: URL = Bundle.main.bundleURL
     ) -> Bool {
-        !(environment["XCTestConfigurationFilePath"] != nil && !hasApplication)
+        let isUnderXCTest = environment["XCTestConfigurationFilePath"] != nil
+        let isApplicationBundle = bundleURL.pathExtension == "app"
+        return !(isUnderXCTest && !isApplicationBundle)
     }
 
     var unreadCount: Int {

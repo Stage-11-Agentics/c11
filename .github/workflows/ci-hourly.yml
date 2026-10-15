@@ -233,7 +233,10 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
             -only-testing:c11Tests \
-            -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            -skip-testing:c11Tests/CommandPaletteShortcutTests \
+            -skip-testing:c11Tests/WindowRoutingShortcutTests \
+            -skip-testing:c11Tests/WindowCloseShortcutTests \
+            -skip-testing:c11Tests/ShortcutLayoutTests \
             "${SKIP_ARGS[@]}" \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
@@ -301,7 +304,10 @@ jobs:
           done < "$QUARANTINE_ROWS"
           "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
             -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
-            -only-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            -only-testing:c11Tests/CommandPaletteShortcutTests \
+            -only-testing:c11Tests/WindowRoutingShortcutTests \
+            -only-testing:c11Tests/WindowCloseShortcutTests \
+            -only-testing:c11Tests/ShortcutLayoutTests \
             "${SKIP_ARGS[@]}" \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \

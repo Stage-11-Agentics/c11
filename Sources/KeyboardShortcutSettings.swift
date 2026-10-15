@@ -213,7 +213,7 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "o", command: true, shift: true, option: false, control: false)
             case .toggleTextBoxInput:
                 // Cmd+Option+T is already bound in AppDelegate to close-other-tabs
-                // (see AppDelegateShortcutRoutingTests); the upstream fork author's
+                // (see WindowCloseShortcutTests); the upstream fork author's
                 // own source comment calls out Cmd+Option+B as the conflict-free
                 // choice. See plan §4.5.
                 return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)

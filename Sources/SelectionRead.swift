@@ -10,7 +10,7 @@ final class SelectionReadOperation<Value>: @unchecked Sendable {
     private var state: State = .queued
     let deadline: DispatchTime
 
-    init(timeout: TimeInterval = 5) {
+    init(timeout: TimeInterval = SelectionRead.defaultOperationTimeout) {
         deadline = .now() + timeout
     }
 
@@ -56,6 +56,7 @@ final class SelectionReadOperation<Value>: @unchecked Sendable {
 }
 
 enum SelectionRead {
+    static let defaultOperationTimeout: TimeInterval = 5
     static let byteLimit = 1_048_576
 
     /// Native capture copies a prefix on main. Drop only an incomplete final

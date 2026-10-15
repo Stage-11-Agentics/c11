@@ -130,14 +130,24 @@ Dir.mktmpdir("c11-dependency-key-") do |fixture|
 end
 
 abort "expected exactly four test jobs" unless test_jobs.length == 4
+shortcut_routing_classes = %w[
+  CommandPaletteShortcutTests
+  WindowRoutingShortcutTests
+  WindowCloseShortcutTests
+  ShortcutLayoutTests
+]
 host_a = jobs.fetch("host-a").fetch("steps").find { |step| step["name"] == "Host A unit tests (gate)" }
 host_b = jobs.fetch("host-b").fetch("steps").find { |step| step["name"] == "Host B shortcut-routing tests (gate)" }
 logic = jobs.fetch("logic").fetch("steps").find { |step| step["name"] == "Logic tests (gate)" }
 abort "host A must exclude shortcut routing" unless
   host_a && host_a.fetch("run").include?("-only-testing:c11Tests") &&
-    host_a.fetch("run").include?("-skip-testing:c11Tests/AppDelegateShortcutRoutingTests")
+    shortcut_routing_classes.all? do |test_class|
+      host_a.fetch("run").include?("-skip-testing:c11Tests/#{test_class}")
+    end
 abort "host B must run the shortcut-routing group alone" unless
-  host_b && host_b.fetch("run").include?("-only-testing:c11Tests/AppDelegateShortcutRoutingTests")
+  host_b && shortcut_routing_classes.all? do |test_class|
+    host_b.fetch("run").include?("-only-testing:c11Tests/#{test_class}")
+  end
 { "logic" => logic, "host-a" => host_a, "host-b" => host_b }.each do |name, step|
   abort "#{name} must execute the exact-head prebuilt test products" unless
     step && step.fetch("run").include?("test-without-building")

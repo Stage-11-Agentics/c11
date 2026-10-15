@@ -7883,14 +7883,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the new workspace into otherwise.
     @MainActor
     func presentCreateWorkspaceSheet() {
+        // Prune stale registrations even when this request reuses an already
+        // open picker and returns before resolving the preferred window.
+        pruneOrphanedMainWindowContexts()
         if mainWindowContexts.isEmpty {
             openNewMainWindow(nil)
             return
         }
         if let existing = createWorkspaceSheetWindow {
-            existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
+            if existing.isVisible {
+                existing.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                return
+            }
+            // A close notification can still be queued on the main operation
+            // queue after `close()` has removed the window from AppKit.
+            // Discard that stale reference so this request can create a new one.
+            createWorkspaceSheetWindow = nil
+            if let observer = createWorkspaceSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            createWorkspaceSheetCloseObserver = nil
         }
         let initialDirectory = focusedWorkspaceWorkingDirectory()
             ?? FileManager.default.homeDirectoryForCurrentUser.path
@@ -7980,8 +7993,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
+        ) { [weak self, weak window] _ in
+            guard let self, let window, self.createWorkspaceSheetWindow === window else { return }
             if let observer = self.createWorkspaceSheetCloseObserver {
                 NotificationCenter.default.removeObserver(observer)
             }
@@ -11987,14 +12000,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { return true }
 
         // Chrome-like omnibar navigation while holding Cmd+N / Ctrl+N / Cmd+P / Ctrl+P.
-        if let delta = commandOmnibarSelectionDelta(flags: flags, chars: chars) {
+        if let delta = browserOmnibarSelectionDeltaForCommandNavigation(
+            hasFocusedAddressBar: hasFocusedAddressBarInShortcutContext,
+            flags: flags,
+            chars: chars
+        ) {
             dispatchBrowserOmnibarSelectionMove(delta: delta)
             startBrowserOmnibarSelectionRepeatIfNeeded(keyCode: event.keyCode, delta: delta)
             return true
         }
 
         if let delta = browserOmnibarSelectionDeltaForArrowNavigation(
-            hasFocusedAddressBar: browserAddressBarFocusedPanelId != nil,
+            hasFocusedAddressBar: hasFocusedAddressBarInShortcutContext,
             flags: event.modifierFlags,
             keyCode: event.keyCode
         ) {
@@ -12011,7 +12028,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Let omnibar-local Emacs navigation (Cmd/Ctrl+N/P) win while the browser
         // address bar is focused. Without this, app-level Cmd+N can steal focus.
-        if shouldBypassAppShortcutForFocusedBrowserAddressBar(flags: flags, chars: chars) {
+        if shouldBypassAppShortcutForFocusedBrowserAddressBar(
+            hasFocusedAddressBar: hasFocusedAddressBarInShortcutContext,
+            flags: flags,
+            chars: chars
+        ) {
             return false
         }
 
@@ -12728,10 +12749,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func shouldBypassAppShortcutForFocusedBrowserAddressBar(
+        hasFocusedAddressBar: Bool,
         flags: NSEvent.ModifierFlags,
         chars: String
     ) -> Bool {
-        guard browserAddressBarFocusedPanelId != nil else { return false }
+        guard hasFocusedAddressBar else { return false }
         let normalizedFlags = browserOmnibarNormalizedModifierFlags(flags)
         let isCommandOrControlOnly = normalizedFlags == [.command] || normalizedFlags == [.control]
         guard isCommandOrControlOnly else { return false }
@@ -12746,17 +12768,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         return shouldBypass
-    }
-
-    private func commandOmnibarSelectionDelta(
-        flags: NSEvent.ModifierFlags,
-        chars: String
-    ) -> Int? {
-        browserOmnibarSelectionDeltaForCommandNavigation(
-            hasFocusedAddressBar: browserAddressBarFocusedPanelId != nil,
-            flags: flags,
-            chars: chars
-        )
     }
 
     private func dispatchBrowserOmnibarSelectionMove(delta: Int) {

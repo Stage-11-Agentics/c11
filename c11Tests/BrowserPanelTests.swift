@@ -152,6 +152,10 @@ final class BrowserPanelProfileIsolationTests: XCTestCase {
 
 @MainActor
 final class BrowserProfileStoreLifecycleTests: XCTestCase {
+    func testDefaultBrowserProfileOperationTimeoutIsEightSeconds() {
+        XCTAssertEqual(TerminalController.defaultBrowserProfileOperationTimeout, 8)
+    }
+
     func testNeverCompletingRemovalLeavesWorkerPendingAndProfileResponsive() async throws {
         let store = BrowserProfileStore.shared
         let profile = try makeTemporaryBrowserPanelProfile(named: "Never-completes")
@@ -163,16 +167,22 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
         }
 
         let controller = TerminalController.shared
+        let timeout: TimeInterval = 0.2
+        let startedAt = DispatchTime.now()
         let response = await Task.detached(priority: .utility) {
             controller.v2BrowserProfileCommand(
                 method: "browser.profiles.clear",
-                params: ["profile": profile.id.uuidString, "confirm": true]
+                params: ["profile": profile.id.uuidString, "confirm": true],
+                timeout: timeout
             )
         }.value
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000_000
         guard case .err(let code, _, _) = response else {
             return XCTFail("Expected a pending response, got (response)")
         }
         XCTAssertEqual(code, "operation_pending")
+        XCTAssertGreaterThanOrEqual(elapsed, timeout * 0.75)
+        XCTAssertLessThan(elapsed, timeout + 0.6)
         XCTAssertTrue(store.isReserved(profile.id))
         XCTAssertNotNil(store.profileDefinition(id: profile.id))
 

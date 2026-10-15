@@ -821,7 +821,11 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
         XCTAssertNotEqual(base, changedSurfaceKind)
     }
 
-    func testCommandSearchBenchmarkBeatsLegacyPipeline() {
+    func testCommandSearchBenchmarkBeatsLegacyPipeline() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["C11_PERF_LANE"] == "1",
+            "Set C11_PERF_LANE=1 to run performance benchmarks"
+        )
         let entries = makeCommandEntries(count: 900)
         let corpus = entries.map { entry in
             CommandPaletteSearchCorpusEntry(
@@ -860,7 +864,11 @@ final class CommandPaletteSearchEngineTests: XCTestCase {
         )
     }
 
-    func testSwitcherSearchBenchmarkBeatsLegacyPipeline() {
+    func testSwitcherSearchBenchmarkBeatsLegacyPipeline() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["C11_PERF_LANE"] == "1",
+            "Set C11_PERF_LANE=1 to run performance benchmarks"
+        )
         let entries = makeSwitcherEntries(count: 400)
         let corpus = entries.map { entry in
             CommandPaletteSearchCorpusEntry(

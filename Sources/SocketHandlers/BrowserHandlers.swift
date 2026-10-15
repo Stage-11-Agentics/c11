@@ -43,6 +43,8 @@ private final class V2BrowserAwaitGate {
 // its handler methods are internal (not private) because the v2DispatchBrowser
 // slice and the methods now span both files.
 extension TerminalController {
+    nonisolated static let defaultBrowserProfileOperationTimeout: TimeInterval = 8
+
 
     /// The main-actor snapshot passed to a browser worker-policy handler. The
     /// web view itself is only touched by the worker through helpers that hop
@@ -387,7 +389,11 @@ extension TerminalController {
         }
     }
 
-    nonisolated func v2BrowserProfileCommand(method: String, params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserProfileCommand(
+        method: String,
+        params: [String: Any],
+        timeout: TimeInterval = TerminalController.defaultBrowserProfileOperationTimeout
+    ) -> V2CallResult {
         switch method {
         case "browser.profiles.list":
             return v2BrowserProfileMainHop { @MainActor in
@@ -510,7 +516,7 @@ extension TerminalController {
                 }
             }
 
-            guard semaphore.wait(timeout: .now() + 8.0) == .success else {
+            guard semaphore.wait(timeout: .now() + timeout) == .success else {
                 gate.cancel()
                 lock.lock()
                 defer { lock.unlock() }

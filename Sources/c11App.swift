@@ -37,6 +37,10 @@ enum WorkspacePresentationModeSettings {
     static func isMinimal(defaults: UserDefaults = .standard) -> Bool {
         mode(defaults: defaults) == .minimal
     }
+
+    static func ignoresTopSafeArea(for mode: Mode) -> Bool {
+        mode == .minimal
+    }
 }
 
 enum WorkspaceButtonFadeSettings {

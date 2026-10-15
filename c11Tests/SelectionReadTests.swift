@@ -53,13 +53,18 @@ final class SelectionReadTests: XCTestCase {
         XCTAssertEqual(operation.wait(), "first")
     }
 
+    func testDefaultOperationTimeoutIsFiveSeconds() {
+        XCTAssertEqual(SelectionRead.defaultOperationTimeout, 5)
+    }
+
     func testDefaultDeadlineBoundsWaitAndAbandonsLateCapture() {
-        let operation = SelectionReadOperation<String>()
+        let timeout: TimeInterval = 0.2
+        let operation = SelectionReadOperation<String>(timeout: timeout)
         let start = DispatchTime.now().uptimeNanoseconds
         XCTAssertNil(operation.wait())
         let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9
-        XCTAssertGreaterThanOrEqual(elapsed, 4.9)
-        XCTAssertLessThan(elapsed, 6)
+        XCTAssertGreaterThanOrEqual(elapsed, timeout * 0.9)
+        XCTAssertLessThan(elapsed, timeout + 0.5)
         XCTAssertFalse(operation.beginCapture())
         XCTAssertFalse(operation.complete("late"))
         XCTAssertFalse(operation.canPublish)

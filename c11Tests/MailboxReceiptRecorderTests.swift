@@ -59,13 +59,18 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".\(ext)") }.sorted()
     }
 
-    private func makeRecorder(_ sink: Sink, startedAt: Date = Date().addingTimeInterval(-3600)) -> MailboxReceiptRecorder {
+    private func makeRecorder(
+        _ sink: Sink,
+        startedAt: Date = Date().addingTimeInterval(-3600),
+        retryDelay: TimeInterval = MailboxReceiptRecorder.defaultRetryDelay
+    ) -> MailboxReceiptRecorder {
         MailboxReceiptRecorder(
             startedAt: startedAt,
             emit: { sink.append(Emitted(workspace: $0, id: $1, recipient: $2, surface: $3)) },
             flush: { sink.lock.lock(); sink.flushes += 1; sink.lock.unlock() },
             confirmedDeliveries: { ids in ids.intersection(Set(sink.snapshot.map(\.id))) },
             isRecording: { sink.recording },
+            retryDelay: retryDelay,
             eventsDirectory: { [eventsDir] in eventsDir }
         )
     }
@@ -280,17 +285,26 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         XCTAssertEqual(sink.snapshot.map(\.id), [idA])
     }
 
+    func testDefaultRetryDelayIsTwoSeconds() {
+        XCTAssertEqual(MailboxReceiptRecorder.defaultRetryDelay, 2.0)
+    }
+
     func testNothingIsDeletedUntilTheEventLogRecords() throws {
         let sink = Sink()
         sink.recording = false
-        let recorder = makeRecorder(sink)
+        let shortRetryDelay: TimeInterval = 0.2
+        let recorder = makeRecorder(sink, retryDelay: shortRetryDelay)
         writeReceipt([idA])
         sweep(recorder)
         XCTAssertEqual(sink.snapshot, [])
         XCTAssertEqual(names(spool(workspace)).count, 1)
 
         sink.recording = true
-        XCTAssertTrue(waitUntil(timeout: 8) { !sink.snapshot.isEmpty }, "the retry records the receipt")
+        let retryBegan = ProcessInfo.processInfo.systemUptime
+        XCTAssertTrue(waitUntil(timeout: 2) { !sink.snapshot.isEmpty }, "the retry records the receipt")
+        let retryElapsed = ProcessInfo.processInfo.systemUptime - retryBegan
+        XCTAssertGreaterThanOrEqual(retryElapsed, shortRetryDelay * 0.75)
+        XCTAssertLessThan(retryElapsed, 0.8)
         XCTAssertEqual(sink.snapshot.map(\.id), [idA])
         recorder.sync()
         XCTAssertEqual(names(spool(workspace)), [])

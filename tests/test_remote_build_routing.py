@@ -630,7 +630,7 @@ class QuarantineInventoryTests(unittest.TestCase):
             if (fields := line.split("\t", 3))
         }
         self.assertEqual(actions[
-            "c11Tests/AppDelegateShortcutRoutingTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel"
+            "c11Tests/WindowCloseShortcutTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel"
         ], "run")
         self.assertEqual(actions[
             "c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach"

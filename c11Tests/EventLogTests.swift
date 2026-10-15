@@ -1328,15 +1328,22 @@ extension EventLogTests {
         XCTAssertEqual(log.confirmedDrainDeliveryIDs(["lost", "kept"]), ["kept"])
     }
 
+    func testDefaultQueueWaitTimeoutIsTwoSeconds() {
+        XCTAssertEqual(EventLog.defaultQueueWaitTimeout, 2.0)
+    }
+
     func testShutdownBarrierIsBoundedWhenWriterIsStalled() {
         let gate = DispatchSemaphore(value: 0), entered = DispatchSemaphore(value: 0)
-        let log = EventLog(url: logURL(), instance: "stalled-shutdown")
+        let shortWaitTimeout: TimeInterval = 0.2
+        let log = EventLog(url: logURL(), instance: "stalled-shutdown", queueWaitTimeout: shortWaitTimeout)
         log.onQueueBeforeWrite = { entered.signal(); gate.wait() }
         log.append(EventEnvelope(type: .surfaceCreated, instance: "stalled-shutdown", ts: Date()))
         XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
-        let began = Date()
+        let began = ProcessInfo.processInfo.systemUptime
         log.finishSampling { nil }
-        XCTAssertLessThan(Date().timeIntervalSince(began), 3)
+        let elapsed = ProcessInfo.processInfo.systemUptime - began
+        XCTAssertGreaterThanOrEqual(elapsed, shortWaitTimeout * 0.75)
+        XCTAssertLessThan(elapsed, 0.8)
         gate.signal()
         log.flush()
     }

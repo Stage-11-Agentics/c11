@@ -4369,7 +4369,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var inputTransactionActive = false
     private var isRunningInputTransactionBody = false
     private var isDrainingInputTransactions = false
-    private var pendingInputTransactions: [(_ finish: @escaping () -> Void) -> Void] = []
+    private var pendingInputTransactions: [(body: (_ finish: @escaping () -> Void) -> Void, watchdogTimeout: TimeInterval)] = []
     private var nextPendingInputTransaction = 0
     /// Bumped when a transaction starts. The mailbox push compares it across
     /// its claim hop: any other writer in between means requeue.
@@ -4382,23 +4382,29 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Run `body` as the tab's next input transaction: now if the slot is
     /// free, else after the transactions ahead of it. `body` must call
     /// `finish` once its last byte (or its Return) is out.
-    func performInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
+    func performInputTransaction(
+        _ body: @escaping (_ finish: @escaping () -> Void) -> Void,
+        watchdogTimeout: TimeInterval = TerminalSurface.inputTransactionWatchdog
+    ) {
         if inputTransactionActive || isRunningInputTransactionBody {
-            pendingInputTransactions.append(body)
+            pendingInputTransactions.append((body, watchdogTimeout))
             return
         }
-        beginInputTransaction(body)
+        beginInputTransaction(body, watchdogTimeout: watchdogTimeout)
     }
 
     /// Run `body` only if the slot is free right now. Returns whether it ran.
     @discardableResult
     func tryInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) -> Bool {
         guard !inputTransactionActive, !isRunningInputTransactionBody else { return false }
-        beginInputTransaction(body)
+        beginInputTransaction(body, watchdogTimeout: Self.inputTransactionWatchdog)
         return true
     }
 
-    private func beginInputTransaction(_ body: @escaping (_ finish: @escaping () -> Void) -> Void) {
+    private func beginInputTransaction(
+        _ body: @escaping (_ finish: @escaping () -> Void) -> Void,
+        watchdogTimeout: TimeInterval
+    ) {
         inputTransactionActive = true
         inputTransactionEpoch &+= 1
         let epoch = inputTransactionEpoch
@@ -4408,7 +4414,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             finished = true
             self?.endInputTransaction(epoch: epoch)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputTransactionWatchdog) { finish() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + watchdogTimeout) { finish() }
         let wasRunning = isRunningInputTransactionBody
         isRunningInputTransactionBody = true
         body(finish)
@@ -4440,7 +4446,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         while !inputTransactionActive, nextPendingInputTransaction < pendingInputTransactions.count {
             let next = pendingInputTransactions[nextPendingInputTransaction]
             nextPendingInputTransaction += 1
-            beginInputTransaction(next)
+            beginInputTransaction(next.body, watchdogTimeout: next.watchdogTimeout)
         }
     }
 

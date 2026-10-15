@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stage11.c11-perf-lane</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>@HOME@/c11-perf-lane/worktree/scripts/c11-perf-lane.py</string>
+    <string>run</string>
+    <string>--root</string>
+    <string>@HOME@/c11-perf-lane</string>
+    <string>--ref</string>
+    <string>main</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>@HOME@/c11-perf-lane/worktree</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DEVELOPER_DIR</key>
+    <string>/Applications/Xcode-26.3.app/Contents/Developer</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>@HOME@/c11-perf-lane/logs/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/c11-perf-lane/logs/launchd.err</string>
+</dict>
+</plist>

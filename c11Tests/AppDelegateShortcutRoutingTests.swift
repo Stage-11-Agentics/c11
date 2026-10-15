@@ -347,10 +347,20 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             return
         }
 
+        let liveWindowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: liveWindowId) }
+
+        guard let liveManager = appDelegate.workspaceManagerFor(windowId: liveWindowId),
+              let liveWindow = window(withId: liveWindowId) else {
+            XCTFail("Expected a live test-owned window")
+            return
+        }
+
         let orphanWindowId = UUID()
         let orphanManager = WorkspaceManager()
         let orphanSidebarState = SidebarState()
         let orphanSidebarSelectionState = SidebarSelectionState()
+        defer { discardOrphanedMainWindowContext(appDelegate: appDelegate, windowId: orphanWindowId) }
 
         autoreleasepool {
             var orphanWindow: NSWindow? = NSWindow(
@@ -374,13 +384,24 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 
         XCTAssertNil(appDelegate.mainWindow(for: orphanWindowId), "Test precondition: orphaned context should not have a live window")
 
+        liveWindow.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         let orphanCount = orphanManager.workspaces.count
-        XCTAssertNil(
-            appDelegate.addWorkspaceInPreferredMainWindow(),
-            "Workspace creation should refuse orphaned contexts with no live window"
+        let liveCount = liveManager.workspaces.count
+        let createdId = appDelegate.addWorkspaceInPreferredMainWindow()
+        XCTAssertNotNil(
+            createdId,
+            "Workspace creation should skip the orphan and use the test-owned live window"
         )
         XCTAssertEqual(orphanManager.workspaces.count, orphanCount, "Orphaned manager must not receive a new workspace")
-        XCTAssertNil(appDelegate.workspaceManagerFor(windowId: orphanWindowId), "Orphaned context should be pruned after failed resolution")
+        XCTAssertEqual(liveManager.workspaces.count, liveCount + 1, "Workspace creation should use the live test-owned window")
+        XCTAssertNil(appDelegate.workspaceManagerFor(windowId: orphanWindowId), "Orphaned context should be pruned during routing")
+        if let createdId {
+            XCTAssertTrue(
+                appDelegate.mainWindowContainingWorkspace(createdId) === liveWindow,
+                "Created workspace must belong to the test-owned live window"
+            )
+        }
     }
 
     func testCustomCmdTNewWorkspacePrunesOrphanedContextWithoutLiveWindow() {
@@ -1038,7 +1059,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTAssertNotEqual(workspace.focusedPanelId, initialPanelId)
     }
 
-    func testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel() throws {
+    func testCmdWAddressedToAuxiliaryWindowPassesThrough() throws {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -1074,9 +1095,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
 
         // An event addressed to a non-main window has no main-window context, so
-        // the app-level handler returns it to AppKit's normal dispatch
-        // (handleCustomShortcut's unresolved-event-window bypass). It must not
-        // fall back to closing a terminal panel in some other window.
+        // the app-level handler returns it to AppKit's normal dispatch. It must
+        // not fall back to closing a terminal panel in another window.
         guard let addressedEvent = makeKeyDownEvent(
             key: "w",
             modifiers: [.command],
@@ -1098,6 +1118,40 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         XCTAssertEqual(manager.workspaces.count, mainWorkspaceCount, "Pass-through Cmd+W must not close a terminal panel")
         XCTAssertNotNil(self.window(withId: windowId), "Pass-through Cmd+W must not close the main window")
+    }
+
+    func testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel() throws {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+
+        guard let manager = appDelegate.workspaceManagerFor(windowId: windowId) else {
+            XCTFail("Expected test manager")
+            return
+        }
+
+        let mainWorkspaceCount = manager.workspaces.count
+        let auxiliaryWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        auxiliaryWindow.isReleasedWhenClosed = false
+        auxiliaryWindow.identifier = NSUserInterfaceItemIdentifier("cmux.about")
+        auxiliaryWindow.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        defer {
+            if auxiliaryWindow.isVisible {
+                auxiliaryWindow.performClose(nil)
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            }
+        }
 
         // An event with no window (responder-chain paths) is routed by the key
         // window; the handler owns the close for a key auxiliary window.

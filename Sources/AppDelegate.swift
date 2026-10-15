@@ -6830,6 +6830,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Workspace routing can skip a context whose window has already gone
+    /// away, leaving its manager retained indefinitely. Prune those entries
+    /// before choosing a live context so every workspace-creation route also
+    /// repairs stale registrations.
+    private func pruneOrphanedMainWindowContexts() {
+        var seen = Set<ObjectIdentifier>()
+        let contexts = Array(mainWindowContexts.values)
+        for context in contexts where seen.insert(ObjectIdentifier(context)).inserted {
+            guard resolvedWindow(for: context) == nil else { continue }
+            discardOrphanedMainWindowContext(context)
+        }
+    }
+
     private func mainWindowId(for window: NSWindow) -> UUID? {
         if let context = mainWindowContexts[ObjectIdentifier(window)] {
             return context.windowId
@@ -7477,6 +7490,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         event: NSEvent? = nil,
         debugSource: String = "unspecified"
     ) -> MainWindowContext? {
+        pruneOrphanedMainWindowContexts()
+
         if let context = mainWindowContext(forShortcutEvent: event, debugSource: debugSource) {
             return context
         }

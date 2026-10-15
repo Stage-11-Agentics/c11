@@ -66,6 +66,7 @@ YIELD_INTERVAL_S = 5
 TERM_GRACE_S = 10
 KILL_BUDGET_S = 60
 BUDGET_S = 120
+ARMED_TESTS = ("HealthFlagsTests", "PanelLivenessDeriverTests")
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
@@ -445,7 +446,7 @@ def xcodebuild_argv(worktree, derived, result_path):
         "-derivedDataPath", str(derived),
         "-resultBundlePath", str(result_path),
         "test",
-        "-only-testing:c11LogicTests/HealthFlagsTests",
+        *["-only-testing:c11LogicTests/%s" % name for name in ARMED_TESTS],
         "-test-timeouts-enabled", "YES",
         "-default-test-execution-time-allowance", "60",
         "-maximum-test-execution-time-allowance", "60",
@@ -469,7 +470,7 @@ def classify_result(log_text, build_seconds):
     seconds = int(build_seconds)
     matched = re.search(r"Executed ([1-9][0-9]*) tests?", log_text or "")
     passed = (
-        "HealthFlagsTests" in (log_text or "")
+        all(armed_test_ran(log_text, name) for name in ARMED_TESTS)
         and "** TEST SUCCEEDED **" in (log_text or "")
         and matched is not None
     )
@@ -478,6 +479,15 @@ def classify_result(log_text, build_seconds):
     if build_seconds > BUDGET_S:
         return "failure", "budget %ss" % seconds
     return "success", "%ss" % seconds
+
+
+def armed_test_ran(log_text, name):
+    """Require XCTest output for the armed class, not just its command-line selector."""
+    return re.search(
+        r"^Test (?:Suite|Case) '[^']*\b%s\b" % re.escape(name),
+        log_text or "",
+        re.MULTILINE,
+    ) is not None
 
 
 def link_ghosttykit(cache_root, sha, worktree):
@@ -534,6 +544,51 @@ def group_alive(pgid):
     return True
 
 
+def _process_snapshot():
+    """Return pid -> (ppid, state) rows from the local process table."""
+    listed = subprocess.run(
+        ["ps", "-axo", "pid=,ppid=,state="], capture_output=True, text=True
+    )
+    if listed.returncode != 0:
+        raise RuntimeError("cannot inspect the process table while recovering a build")
+    processes = {}
+    for line in listed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        processes[pid] = (ppid, parts[2])
+    return processes
+
+
+def _process_descendants(roots, processes):
+    """Return live descendants of roots, deepest first, across process groups."""
+    children = {}
+    for pid, (ppid, state) in processes.items():
+        if not state.startswith("Z"):
+            children.setdefault(ppid, []).append(pid)
+    depths = {}
+    pending = [(root, 0) for root in roots]
+    while pending:
+        parent, depth = pending.pop()
+        for child in children.get(parent, ()):
+            if child not in depths:
+                depths[child] = depth + 1
+                pending.append((child, depth + 1))
+    deepest_first = sorted(depths.items(), key=lambda item: item[1], reverse=True)
+    return [pid for pid, _depth in deepest_first]
+
+
+def _signal_pid(pid, sig):
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _pgid_live(pgid):
     """True when ps shows a non-zombie member of this process group."""
     listed = subprocess.run(["ps", "-axo", "pgid=,state="], capture_output=True, text=True)
@@ -572,20 +627,51 @@ def lock_is_free(path):
         os.close(fd)
 
 
-def kill_until_esrch(pgid, alive, kill, sleep, monotonic, term_grace, budget):
-    """TERM, then KILL after term_grace, until ESRCH or budget. Returns True on ESRCH."""
+def kill_until_esrch(pgid, alive, kill, sleep, monotonic, term_grace, budget, track_tree=False):
+    """Terminate the recorded process group and all live descendants, then wait."""
     started = monotonic()
     deadline = started + budget
-    kill(pgid, signal.SIGTERM)
+    members = {pgid}
+    if track_tree:
+        members.update(_process_descendants({pgid}, _process_snapshot()))
+
+    def discover_and_signal(sig):
+        if track_tree:
+            processes = _process_snapshot()
+            descendants = _process_descendants(members, processes)
+            members.update(descendants)
+            for pid in descendants:
+                _signal_pid(pid, sig)
+        kill(pgid, sig)
+
+    def has_live_members():
+        if track_tree:
+            processes = _process_snapshot()
+            descendants = _process_descendants(members, processes)
+            new_members = set(descendants) - members
+            members.update(new_members)
+            new_signal = signal.SIGKILL if killed else signal.SIGTERM
+            for pid in new_members:
+                _signal_pid(pid, new_signal)
+        if alive(pgid):
+            return True
+        if not track_tree:
+            return False
+        return any(
+            pid in processes and not processes[pid][1].startswith("Z")
+            for pid in members
+        )
+
+    discover_and_signal(signal.SIGTERM)
     killed = False
     while True:
-        if not alive(pgid):
+        if not has_live_members():
             return True
         now = monotonic()
         if now >= deadline:
-            return not alive(pgid)
+            return not has_live_members()
         if not killed and now >= started + term_grace:
-            kill(pgid, signal.SIGKILL)
+            discover_and_signal(signal.SIGKILL)
             killed = True
         sleep(min(0.2, deadline - now))
 
@@ -604,12 +690,14 @@ def append_event(root, event):
         handle.write(json.dumps(event) + "\n")
 
 
-def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=TERM_GRACE_S, budget=KILL_BUDGET_S):
+def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=TERM_GRACE_S, budget=KILL_BUDGET_S, track_tree=None):
     """R2 plus the amendment. Returns 'ready' or 'stuck'.
 
     A free lock does not clear running.json while the recorded group exists.
     running.json is removed only after killpg confirms ESRCH.
     """
+    if track_tree is None:
+        track_tree = alive is None
     alive = alive or group_alive
     kill = kill or _signal_group
     sleep = sleep or time.sleep
@@ -621,7 +709,10 @@ def recover(root, alive=None, kill=None, sleep=None, monotonic=None, term_grace=
     pgid = None if recorded is None else recorded.get("pgid")
     if pgid is not None and alive(pgid):
         append_event(root, {"event": "probe-alive", "pgid": pgid})
-        gone = kill_until_esrch(pgid, alive, kill, sleep, monotonic, term_grace, budget)
+        gone = kill_until_esrch(
+            pgid, alive, kill, sleep, monotonic, term_grace, budget,
+            track_tree=track_tree,
+        )
         if not gone or alive(pgid):
             append_event(root, {"event": "stuck", "reason": "group"})
             return "stuck"
@@ -1214,12 +1305,21 @@ class Supervisor:
         self.credential_skipped = False
         self.awaiting_kit = {}
         self.status_owed = {}
+        self.cold_retries = set()
         self.derived = self.root / "cache" / "DerivedData"
 
     def state(self):
         path = self.root / "state"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def _remember_cold_retry(self, item):
+        self.cold_retries.add((item["pr"], item["sha"]))
+
+    def _clear_cold_retry(self, number, sha=None):
+        self.cold_retries.difference_update({
+            key for key in self.cold_retries if key[0] == number and (sha is None or key[1] == sha)
+        })
 
     def log(self, **fields):
         forbidden = ("authorization", "token", "pem", "private")
@@ -1268,7 +1368,8 @@ class Supervisor:
         if self.disarmed:
             return "disarmed"
         if recover(self.root, alive=self.world.group_alive, kill=self.world.killpg,
-                   sleep=self.world.sleep, monotonic=self.world.monotonic) == "stuck":
+                   sleep=self.world.sleep, monotonic=self.world.monotonic,
+                   track_tree=True) == "stuck":
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
@@ -1422,6 +1523,9 @@ class Supervisor:
         """
         for captured in admitted:
             number = captured["pr"]
+            for recorded_number, recorded_sha in list(self.cold_retries):
+                if recorded_number == number and recorded_sha != captured["sha"]:
+                    self._clear_cold_retry(number, sha=recorded_sha)
             index = next((i for i, item in enumerate(self.queue) if item["pr"] == number), None)
             done = self.reported.get(number) == captured["sha"] or (number, captured["sha"]) in self.status_owed
             if index is not None and (self.queue[index]["sha"] != captured["sha"] or self.queue[index]["ref"] != captured["ref"]):
@@ -1442,6 +1546,7 @@ class Supervisor:
             if self._post(sha, owed["state"], owed["description"], pr=number, deps=owed.get("deps")):
                 del self.status_owed[key]
                 self.reported[number] = sha
+                self._clear_cold_retry(number, sha=sha)
 
     def _resolve_absent(self, body):
         present = set()
@@ -1468,11 +1573,38 @@ class Supervisor:
                 self.log(decision="revoked", pr=item["pr"], reason=reason)
                 continue
             if fresh["sha"] != item["sha"] or fresh["ref"] != item["ref"]:
+                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.log(decision="superseded", pr=item["pr"])
                 kept.append(fresh)
                 continue
             kept.append(item)
         self.queue = kept
+
+        admitted_by_number = {item["pr"]: item for item in self.queue}
+        body_by_number = {obj["number"]: obj for obj in body
+                          if type(obj) is dict and type(obj.get("number")) is int}
+        for number, sha in list(self.cold_retries):
+            current = admitted_by_number.get(number)
+            if current is not None:
+                if current["sha"] != sha:
+                    self._clear_cold_retry(number, sha=sha)
+                continue
+            if number in body_by_number and (number, sha) in self.status_owed:
+                continue
+            if number in body_by_number:
+                self._clear_cold_retry(number, sha=sha)
+                continue
+            try:
+                looked = self.world.pull(number)
+            except CredentialUnavailable:
+                continue
+            if looked is None or (type(looked) is dict and looked.get("status") == 404):
+                self._clear_cold_retry(number, sha=sha)
+                continue
+            payload = looked.get("body", looked) if type(looked) is dict and "body" in looked else looked
+            ok, _reason, fresh = admit(payload)
+            if not ok or fresh["sha"] != sha:
+                self._clear_cold_retry(number, sha=sha)
 
     def _next_item(self):
         """The first queued head that still revalidates and has no terminal status.
@@ -1507,6 +1639,7 @@ class Supervisor:
                 return self._credential_skip(item)
             if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
+                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
                 self.queue.remove(item)
                 continue
@@ -1528,7 +1661,8 @@ class Supervisor:
     def maybe_start(self):
         """Before every start, recover again. A live recorded group admits nothing."""
         if recover(self.root, alive=self.world.group_alive, kill=self.world.killpg,
-                   sleep=self.world.sleep, monotonic=self.world.monotonic) != "ready":
+                   sleep=self.world.sleep, monotonic=self.world.monotonic,
+                   track_tree=True) != "ready":
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
@@ -1629,7 +1763,25 @@ class Supervisor:
             removed.append(path.name)
         if removed:
             self.log(decision="cache-pruned", removed=removed, kept=[path.name for path in keep])
+            warm = self.state() / "warmed-dependencies"
+            for name in removed:
+                if name.startswith("DerivedData-"):
+                    (warm / name.removeprefix("DerivedData-")).unlink(missing_ok=True)
         return current
+
+    def _mark_dependency_warm(self, key):
+        """Remember a completed passing build while its dependency cache is retained."""
+        directory = self.state() / "warmed-dependencies"
+        directory.mkdir(parents=True, exist_ok=True)
+        marker = directory / key
+        temporary = directory / (key + ".tmp-" + uuid.uuid4().hex)
+        temporary.write_text("warm\n")
+        os.replace(temporary, marker)
+
+    def _dependency_is_warm(self, key):
+        marker = self.state() / "warmed-dependencies" / key
+        derived = self.root / "cache" / ("DerivedData-" + key)
+        return marker.is_file() and (derived / "Build").is_dir()
 
     def _spawn(self, item):
         """One attempt: a fresh attempt id, then at most one cache retry.
@@ -1646,7 +1798,10 @@ class Supervisor:
         self._drop(item)
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
+        cold_cache = not self._dependency_is_warm(item["deps"])
+        cold_retry_used = (item["pr"], item["sha"]) in self.cold_retries
         self.derived = self._derived_data(item["deps"])
+        cold_retry_queued = False
         for invocation in (1, 2):
             code = self._spawn_one(item, invocation)
             self.build_end = self.world.time()
@@ -1656,9 +1811,25 @@ class Supervisor:
             if self.stopped:
                 return "stopped"
             if self.world.last_exit == 0:
+                log = self.world.build_log or ""
+                if all(armed_test_ran(log, name) for name in ARMED_TESTS) and "** TEST SUCCEEDED **" in log:
+                    self._mark_dependency_warm(item["deps"])
+                    if (invocation == 1 and cold_cache and not cold_retry_used
+                            and self.build_seconds() > BUDGET_S):
+                        self._remember_cold_retry(item)
+                        cold_retry_queued = True
                 break
             if STALE_MODULE in (self.world.build_log or ""):
                 return self._cache_fault(item, invocation)
+        if cold_retry_queued:
+            seconds = self.build_seconds()
+            self.log(decision="cold-cache-retry", pr=item["pr"], sha=item["sha"],
+                     deps=item["deps"], build_seconds=round(seconds, 3))
+            self.delivered = self._post(
+                item["sha"], "pending", "cold cache exceeded budget; warm retry queued",
+                pr=item["pr"], build_seconds=round(seconds, 3), deps=item["deps"],
+            )
+            return "started"
         self._finish(item, self.world.last_exit)
         return "started"
 
@@ -1671,6 +1842,7 @@ class Supervisor:
         self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
         self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
         if self.delivered:
+            self._clear_cold_retry(item["pr"], sha=item["sha"])
             self.reported[item["pr"]] = item["sha"]
         else:
             self.status_owed[(item["pr"], item["sha"])] = {
@@ -1730,6 +1902,7 @@ class Supervisor:
         self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
                                     build_seconds=round(seconds, 3), deps=item.get("deps"))
         if self.delivered:
+            self._clear_cold_retry(item["pr"], sha=item["sha"])
             self.reported[item["pr"]] = item["sha"]
 
     def _post(self, sha, state, description, pr=None, **fields):
@@ -1787,6 +1960,7 @@ class Supervisor:
             self.world.monotonic,
             TERM_GRACE_S,
             KILL_BUDGET_S,
+            track_tree=True,
         )
 
     def _watch_reason(self, record):
@@ -1817,7 +1991,7 @@ class Supervisor:
         self._stop_group(record)
         sha = record.get("sha") or ""
         if reason in ("guest", "slot"):
-            self.delivered = self._post(sha, "error", "yielded to Atlas work", pr=record.get("pr"))
+            self.delivered = self._post(sha, "pending", "yielded to Atlas work", pr=record.get("pr"))
             self.log(decision="yielded", reason=reason, pr=record.get("pr"))
         elif reason == "superseded":
             self.delivered = self._post(sha, "failure", "superseded", pr=record.get("pr"))

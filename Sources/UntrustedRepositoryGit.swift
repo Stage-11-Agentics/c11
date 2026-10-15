@@ -149,6 +149,7 @@ enum UntrustedRepositoryGit {
         arguments command: [String],
         input: Data? = nil,
         timeout: TimeInterval = defaultTimeout,
+        onTimeout: (() -> Void)? = nil,
         discovery: Discovery = .topLevel,
         readsFileContent: Bool = false
     ) -> Result? {
@@ -161,7 +162,7 @@ enum UntrustedRepositoryGit {
             extraConfig = overrides
         }
         return execute(in: directory, arguments: command, input: input, deadline: deadline,
-                       discovery: discovery, extraConfig: extraConfig)
+                       discovery: discovery, extraConfig: extraConfig, onTimeout: onTimeout)
     }
 
     /// `key=value` settings that switch off every filter driver key defined
@@ -261,7 +262,8 @@ enum UntrustedRepositoryGit {
         input: Data? = nil,
         deadline: DispatchTime,
         discovery: Discovery = .topLevel,
-        extraConfig: [String] = []
+        extraConfig: [String] = [],
+        onTimeout: (() -> Void)? = nil
     ) -> Result? {
         guard DispatchTime.now() < deadline else { return nil }
         let process = process(in: directory, arguments: command, discovery: discovery, extraConfig: extraConfig)
@@ -300,6 +302,7 @@ enum UntrustedRepositoryGit {
         }
 
         guard exited.wait(timeout: deadline) == .success else {
+            onTimeout?()
             process.terminate()
             if exited.wait(timeout: .now() + 1) == .timedOut, process.isRunning {
                 kill(process.processIdentifier, SIGKILL)

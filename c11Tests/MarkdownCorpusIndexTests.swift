@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import XCTest
 #if canImport(c11_DEV)
@@ -5,6 +6,142 @@ import XCTest
 #elseif canImport(c11)
 @testable import c11
 #endif
+
+private final class FakeFSEventStreamDriver: @unchecked Sendable {
+    private final class Registration: @unchecked Sendable {
+        let callback: FSEventStreamCallback
+        let info: UnsafeMutableRawPointer
+        let stream: FSEventStreamRef
+        var dispatchQueue: DispatchQueue?
+        var started = false
+
+        init(callback: FSEventStreamCallback, info: UnsafeMutableRawPointer, stream: FSEventStreamRef) {
+            self.callback = callback
+            self.info = info
+            self.stream = stream
+        }
+    }
+
+    private struct PendingDelivery: @unchecked Sendable {
+        let callback: FSEventStreamCallback
+        let info: UnsafeMutableRawPointer
+        let stream: FSEventStreamRef
+        let dispatchQueue: DispatchQueue
+        let paths: [String]
+        let flags: [FSEventStreamEventFlags]
+        let onConfiguredQueue: @Sendable () -> Void
+
+        func deliver() {
+            dispatchPrecondition(condition: .onQueue(dispatchQueue))
+            onConfiguredQueue()
+            let cfPaths = paths as CFArray
+            let rawPaths = unsafeBitCast(cfPaths, to: UnsafeMutableRawPointer.self)
+            let eventIDs = Array(repeating: FSEventStreamEventId(0), count: flags.count)
+            flags.withUnsafeBufferPointer { flagsBuffer in
+                eventIDs.withUnsafeBufferPointer { eventIDsBuffer in
+                    callback(
+                        stream,
+                        info,
+                        flags.count,
+                        rawPaths,
+                        flagsBuffer.baseAddress!,
+                        eventIDsBuffer.baseAddress!
+                    )
+                }
+            }
+        }
+    }
+
+    private let lock = NSLock()
+    private var registration: Registration?
+    private var streamStorage: UnsafeMutableRawPointer?
+    private var configuredQueueBeforeStart = false
+    private var callbackDeliveredOnConfiguredQueue = false
+    private let onStop: @Sendable () -> Void
+
+    init(onStop: @escaping @Sendable () -> Void = {}) {
+        self.onStop = onStop
+    }
+
+    var driver: MarkdownCorpusFSEventStreamDriver {
+        MarkdownCorpusFSEventStreamDriver(
+            create: { [self] callback, context, _ in
+                guard let info = context.pointee.info else { return nil }
+                let storage = UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1)
+                let stream = OpaquePointer(storage)
+                let registration = Registration(callback: callback, info: info, stream: stream)
+                lock.lock()
+                self.registration = registration
+                streamStorage = storage
+                lock.unlock()
+                return stream
+            },
+            setDispatchQueue: { [self] stream, queue in
+                lock.lock()
+                if let registration, registration.stream == stream {
+                    registration.dispatchQueue = queue
+                }
+                lock.unlock()
+            },
+            start: { [self] stream in
+                lock.lock()
+                defer { lock.unlock() }
+                guard let registration, registration.stream == stream,
+                      registration.dispatchQueue != nil else { return false }
+                configuredQueueBeforeStart = true
+                registration.started = true
+                return true
+            },
+            stop: { [self] _ in onStop() },
+            invalidate: { _ in },
+            release: { [self] _ in
+                lock.lock()
+                let storage = streamStorage
+                streamStorage = nil
+                registration = nil
+                lock.unlock()
+                storage?.deallocate()
+            }
+        )
+    }
+
+    var configuredQueueBeforeStartWasUsed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return configuredQueueBeforeStart
+    }
+
+    var callbackWasDeliveredOnConfiguredQueue: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return callbackDeliveredOnConfiguredQueue
+    }
+
+    func send(paths: [String], flags: [FSEventStreamEventFlags]) -> Bool {
+        lock.lock()
+        guard let registration, registration.started, let dispatchQueue = registration.dispatchQueue else {
+            lock.unlock()
+            return false
+        }
+        let delivery = PendingDelivery(
+            callback: registration.callback,
+            info: registration.info,
+            stream: registration.stream,
+            dispatchQueue: dispatchQueue,
+            paths: paths,
+            flags: flags,
+            onConfiguredQueue: { [weak self] in
+                guard let self else { return }
+                self.lock.lock()
+                self.callbackDeliveredOnConfiguredQueue = true
+                self.lock.unlock()
+            }
+        )
+        lock.unlock()
+        dispatchQueue.async { delivery.deliver() }
+        return true
+    }
+}
 
 final class MarkdownCorpusIndexTests: XCTestCase {
     func testRepositoryRootFallsBackToDocumentDirectory() throws {
@@ -329,7 +466,7 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertTrue(noBoard.tickets.isEmpty)
     }
 
-    func testFSEventsRefreshAddAndDeleteMarkdown() async throws {
+    func testFSEventCallbackRefreshesAddAndDeleteMarkdown() async throws {
         let temp = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temp) }
         let root = temp.appendingPathComponent("repo", isDirectory: true)
@@ -338,20 +475,110 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         let added = root.appendingPathComponent("added.md")
         try Data("# Reader".utf8).write(to: initial)
 
-        let initialPublished = expectation(description: "initial corpus scan completes before the write")
-        let appeared = expectation(description: "FSEvents indexes the added document")
-        let disappeared = expectation(description: "FSEvents removes the deleted document")
-        let indexer = MarkdownCorpusIndexer(fileURL: initial) { snapshot in
+        let streamStopped = expectation(description: "FSEvent stream is stopped during teardown")
+        let driver = FakeFSEventStreamDriver(onStop: { streamStopped.fulfill() })
+        let initialPublished = expectation(description: "initial snapshot after stream start")
+        let streamStarted = expectation(description: "stream starts after its dispatch queue is configured")
+        let appeared = expectation(description: "FSEvent callback indexes the added document")
+        let disappeared = expectation(description: "FSEvent callback removes the deleted document")
+        let indexer = MarkdownCorpusIndexer(
+            rootURL: root,
+            priorityFileURLs: [initial],
+            streamDriver: driver.driver
+        ) { snapshot in
             if snapshot.revision == 1 { initialPublished.fulfill() }
             if snapshot.containsDocument(path: added.path) { appeared.fulfill() }
             if snapshot.revision > 1 && !snapshot.containsDocument(path: added.path) { disappeared.fulfill() }
         }
-        indexer.start()
-        await fulfillment(of: [initialPublished], timeout: 10)
+        indexer.start { started in
+            if started { streamStarted.fulfill() }
+        }
+        await fulfillment(of: [initialPublished, streamStarted], timeout: 5)
+        XCTAssertTrue(driver.configuredQueueBeforeStartWasUsed)
+
         try Data("# Added".utf8).write(to: added)
+        XCTAssertTrue(driver.send(
+            paths: [added.path],
+            flags: [FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemIsFile)]
+        ))
         await fulfillment(of: [appeared], timeout: 10)
+
         try FileManager.default.removeItem(at: added)
+        XCTAssertTrue(driver.send(
+            paths: [added.path],
+            flags: [FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemIsFile)]
+        ))
         await fulfillment(of: [disappeared], timeout: 10)
+        XCTAssertTrue(driver.callbackWasDeliveredOnConfiguredQueue)
+        indexer.stop()
+        await fulfillment(of: [streamStopped], timeout: 5)
+    }
+
+    func testDroppedFSEventRescansWhenPathDoesNotNameRoot() async throws {
+        let droppedFlags: [FSEventStreamEventFlags] = [
+            FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs),
+            FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped),
+            FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped),
+        ]
+
+        for (index, droppedFlag) in droppedFlags.enumerated() {
+            let temp = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: temp) }
+            let root = temp.appendingPathComponent("repo", isDirectory: true)
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            let initial = root.appendingPathComponent("reader.md")
+            let added = root.appendingPathComponent("added-\(index).md")
+            try Data("# Reader".utf8).write(to: initial)
+
+            let driver = FakeFSEventStreamDriver()
+            let initialPublished = expectation(description: "initial snapshot for dropped-event case \(index)")
+            let streamStarted = expectation(description: "fake stream starts for dropped-event case \(index)")
+            let appeared = expectation(description: "full rescan indexes file after lost event flag \(index)")
+            let indexer = MarkdownCorpusIndexer(
+                rootURL: root,
+                priorityFileURLs: [initial],
+                streamDriver: driver.driver
+            ) { snapshot in
+                if snapshot.revision == 1 { initialPublished.fulfill() }
+                if snapshot.containsDocument(path: added.path) { appeared.fulfill() }
+            }
+            indexer.start { started in
+                if started { streamStarted.fulfill() }
+            }
+            await fulfillment(of: [initialPublished, streamStarted], timeout: 5)
+            try Data("# Added".utf8).write(to: added)
+
+            // A dropped-event notification can name a subdirectory rather than
+            // the stream root. Its path is intentionally outside the corpus so
+            // only the loss flag can trigger the full rescan.
+            let unrelatedPath = temp.appendingPathComponent("unrelated-\(index).txt").path
+            XCTAssertTrue(driver.send(
+                paths: [unrelatedPath],
+                flags: [droppedFlag]
+            ))
+            await fulfillment(of: [appeared], timeout: 2)
+            indexer.stop()
+        }
+    }
+
+    func testLiveFSEventsStreamStartsAndPublishesInitialSnapshot() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let initial = root.appendingPathComponent("reader.md")
+        try Data("# Reader".utf8).write(to: initial)
+
+        let initialSnapshotPublished = expectation(description: "initial live-stream scan completes")
+        let streamStarted = expectation(description: "real FSEvents stream starts")
+        let indexer = MarkdownCorpusIndexer(fileURL: initial) { snapshot in
+            if snapshot.revision == 1 { initialSnapshotPublished.fulfill() }
+        }
+        indexer.start { started in
+            if started { streamStarted.fulfill() }
+        }
+        await fulfillment(of: [initialSnapshotPublished], timeout: 5)
+        await fulfillment(of: [streamStarted], timeout: 5)
         indexer.stop()
     }
 

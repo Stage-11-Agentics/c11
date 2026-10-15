@@ -1369,6 +1369,36 @@ final class WorkspaceManagerAreaInteractionScopeTests: XCTestCase {
     }
 }
 
+private final class LockedSocketResponseList: @unchecked Sendable {
+    private let lock = NSLock()
+    private var responses: [String] = []
+    private var cancelled = false
+
+    func append(_ response: String) {
+        lock.lock()
+        responses.append(response)
+        lock.unlock()
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return responses
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+}
+
 @MainActor
 final class TerminalControllerRefLifecycleTests: XCTestCase {
     func testKnownRefsSeedOnlyOnceAndOnlyAfterInitialRestoreIsReady() throws {
@@ -1382,31 +1412,45 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
         controller.setInitialSessionRestoreReady(true)
         controller.v2RefreshKnownRefs()
         XCTAssertEqual(controller.debugKnownRefSeedCount, 1)
-        for _ in 0..<100 {
-            for method in ["system.ping", "system.capabilities"] {
-                let response: String
-                if method == "system.capabilities" {
-                    let responseBox = TerminalControllerRefLifecycleResponseBox()
-                    let completed = expectation(description: "\(method) socket-worker response")
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        responseBox.store(
-                            controller.socketWorkerV2Response(
-                                TerminalController.V2SocketRequest(id: 297, method: method, params: [:])
-                            )
-                        )
-                        completed.fulfill()
-                    }
-                    wait(for: [completed], timeout: 2)
-                    response = try XCTUnwrap(responseBox.value)
-                } else {
-                    response = controller.processV2Command("{\"id\":297,\"method\":\"\(method)\"}")
-                }
-                let result = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
-                XCTAssertEqual(result["ok"] as? Bool, true)
+        let capabilitiesRequest = #"{"id":297,"method":"system.capabilities"}"#
+        let capabilityResponses = LockedSocketResponseList()
+        let workerFinished = DispatchSemaphore(value: 0)
+        let workerStopped = expectation(description: "socket-worker capability loop stopped")
+        DispatchQueue(label: "c11-known-ref-capability-worker").async {
+            defer {
+                workerFinished.signal()
+                workerStopped.fulfill()
             }
-            // Repeated fallback refreshes must not repeat the startup graph walk.
+            for _ in 0..<100 {
+                guard !capabilityResponses.isCancelled else { return }
+                // Socket-worker methods enter through the same execution-policy
+                // router as a real socket request; processV2Command is main-actor only.
+                capabilityResponses.append(
+                    controller.processCommandUsingSocketExecutionPolicy(capabilitiesRequest)
+                )
+            }
+        }
+        for _ in 0..<100 {
+            let pingResponse = controller.processV2Command(#"{"id":297,"method":"system.ping"}"#)
+            let pingResult = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(pingResponse.utf8)) as? [String: Any])
+            XCTAssertEqual(pingResult["ok"] as? Bool, true)
             controller.v2RefreshKnownRefs()
         }
+        let workerWaitResult = workerFinished.wait(timeout: .now() + 5)
+        if workerWaitResult != .success {
+            capabilityResponses.cancel()
+            // Let a request already waiting on main.sync finish, then join the
+            // worker after its cancellation check stops the remaining requests.
+            XCTAssertEqual(XCTWaiter.wait(for: [workerStopped], timeout: 2), .completed)
+            XCTFail("socket-worker capabilities requests must finish without a main-actor hop")
+            return
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [workerStopped], timeout: 1), .completed)
+        for response in capabilityResponses.snapshot() {
+            let result = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+            XCTAssertEqual(result["ok"] as? Bool, true)
+        }
+        XCTAssertEqual(capabilityResponses.snapshot().count, 100)
         XCTAssertEqual(controller.debugKnownRefSeedCount, 1,
                        "Worker requests must not repeat the startup graph walk")
     }
@@ -1506,23 +1550,6 @@ final class TerminalControllerRefLifecycleTests: XCTestCase {
             XCTAssertEqual(controller.v2RefByUUID[.surface]?[id], ref)
         }
         XCTAssertEqual(controller.debugKnownRefSeedCount, seedCount)
-    }
-}
-
-private final class TerminalControllerRefLifecycleResponseBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storedValue: String?
-
-    var value: String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return storedValue
-    }
-
-    func store(_ value: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        storedValue = value
     }
 }
 

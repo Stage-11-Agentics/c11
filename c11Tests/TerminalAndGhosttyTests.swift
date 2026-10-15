@@ -3441,11 +3441,12 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
         XCTAssertEqual(log, ["A", "out-of-band", "idle write"])
     }
 
-    /// A transaction that never finishes cannot wedge the tab's input.
+    /// The default watchdog deadline is three seconds.
     func testDefaultInputTransactionWatchdogIsThreeSeconds() {
         XCTAssertEqual(TerminalSurface.inputTransactionWatchdog, 3)
     }
 
+    /// A transaction that never finishes cannot wedge the tab's input.
     func testWatchdogReleasesAStuckTransaction() {
         let surface = makeSurface()
         let watchdogTimeout: TimeInterval = 0.2

@@ -262,7 +262,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
         XCTAssertEqual(result.outcome, .timeout)
     }
 
-    /// The 100 ms timeout on `StdinMailboxHandler.deliver` is a *reporting*
+    /// The injected 100 ms timeout on `StdinMailboxHandler.deliver` is a *reporting*
     /// bound — the dispatcher logs `.timeout` and moves on even when the
     /// writer closure is still executing. This test proves that explicitly:
     /// a writer block longer than the accepted elapsed time must not delay
@@ -273,7 +273,7 @@ final class StdinHandlerFormattingTests: XCTestCase {
     /// and the plan's "Risks and unknowns" section.
     ///
     /// Regression lock for review cycle 1 P0 #5.
-    func testDeliverReturnsTimeoutWhenWriterBlocksPastInjectedDeadline() async throws {
+    func testDeliverReturnsTimeoutEvenWhenWriterBlocksMultipleSeconds() async throws {
         let envelope = try MailboxEnvelope.build(
             from: "builder",
             to: "watcher",

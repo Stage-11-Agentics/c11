@@ -3875,6 +3875,33 @@ final class ShortcutLayoutTests: ShortcutRoutingTestSupport {
         XCTAssertFalse(WorkspacePresentationModeSettings.ignoresTopSafeArea(for: .standard))
     }
 
+    func testMainWindowHostingViewSuppressesTitlebarSafeArea() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        let hostingView = MainWindowHostingView(rootView: EmptyView())
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(hostingView.safeAreaInsets.top, 0, accuracy: 0.5)
+        XCTAssertEqual(hostingView.safeAreaRect, hostingView.bounds)
+
+        let plainWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        let plainHostingView = NSHostingView(rootView: EmptyView())
+        plainWindow.contentView = plainHostingView
+        plainHostingView.layoutSubtreeIfNeeded()
+
+        XCTAssertGreaterThan(plainHostingView.safeAreaInsets.top, 0)
+    }
+
 }
 
 private final class CommandPaletteMarkedTextFieldEditor: NSTextView {

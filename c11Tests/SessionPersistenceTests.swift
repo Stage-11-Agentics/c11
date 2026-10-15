@@ -2401,7 +2401,7 @@ final class SocketResponseWriteTests: XCTestCase {
         XCTAssertEqual(TerminalController.defaultSocketResponseWriteTimeout, 5)
     }
 
-    func testIncrementalProgressDoesNotRestartFiveSecondDeadline() {
+    func testIncrementalProgressDoesNotRestartInjectedWriteDeadline() {
         let timeout: TimeInterval = 0.3
         let response = String(repeating: "x", count: 1_048_576)
         let (state, done) = startWriter(response, timeout: timeout)

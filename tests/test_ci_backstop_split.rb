@@ -162,6 +162,7 @@ abort "Python job must run CLI and shell checks" unless
 record = jobs.fetch("record-green")
 record_needs = record.fetch("needs")
 abort "green status must wait for every test job" unless (test_jobs + ["build", "target"]).all? { |name| record_needs.include?(name) }
+abort "record-green must retain implicit success gating" if record.fetch("if", "").include?("always()")
 record_step = record.fetch("steps").find { |step| step["name"] == "Record green for the tested commit" }
 abort "green status must remain success-only" unless record_step && record_step.fetch("run").include?("state=success")
 

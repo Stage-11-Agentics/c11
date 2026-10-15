@@ -1950,6 +1950,11 @@ class RuntimeHarness(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.poller_bin = self.root / "c11-poller" / "bin"
+        self.poller_bin.mkdir(parents=True)
+        for name in ("c11-pr-swift-poller.py", "atlas_build_slots.py"):
+            staged = self.poller_bin / name
+            staged.write_bytes((ROOT / name).read_bytes())
         self.slots = self.root / "slots"
         self.slots.mkdir()
         self.work = self.root / "work"
@@ -2053,7 +2058,7 @@ class RuntimeHarness(unittest.TestCase):
         return env
 
     def _argv(self, cycles):
-        argv = [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)]
+        argv = [sys.executable, str(self.poller_bin / "c11-pr-swift-poller.py"), "supervise", "--root", str(self.root)]
         if cycles is not None:
             argv += ["--cycles", str(cycles)]
         return argv
@@ -2072,7 +2077,7 @@ class RuntimeHarness(unittest.TestCase):
 
     def _teardown(self, **extra):
         return subprocess.run(
-            [sys.executable, str(ROOT / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
+            [sys.executable, str(self.poller_bin / "c11-pr-swift-poller.py"), "teardown", "--root", str(self.root)],
             env=self._env(**extra), capture_output=True, text=True, timeout=20,
         )
 
@@ -2085,6 +2090,29 @@ class RuntimeHarness(unittest.TestCase):
 
 class RuntimeIntegrationTests(RuntimeHarness):
     # B1: gates.
+
+    def test_runtime_harness_uses_only_documented_bin_files(self):
+        self.assertEqual(
+            {path.name for path in self.poller_bin.iterdir()},
+            {"c11-pr-swift-poller.py", "atlas_build_slots.py"},
+        )
+        self.assertEqual(Path(self._argv(1)[1]).parent, self.poller_bin)
+
+    def test_malformed_quarantine_posts_error_without_crashing(self):
+        self._enable()
+        (self.work / "scripts" / "host-test-quarantine.tsv").write_text(
+            "c11LogicTests/BadSelector\tatlas\tbroken inventory\n"
+        )
+
+        result = self._supervise()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.github.statuses(), [("error", "quarantine unreadable")])
+        self.assertFalse((self.root / "argv.jsonl").exists())
+        self.assertNotIn("spawn", _events(self.root))
+        decided = self._results()[-1]
+        self.assertEqual(decided["state"], "error")
+        self.assertEqual(decided["description"], "quarantine unreadable")
 
     def test_disabled_file_still_exits_2(self):
         state = self.root / "state"
@@ -2099,7 +2127,9 @@ class RuntimeIntegrationTests(RuntimeHarness):
     def test_layout_inside_the_worktree_exits_2(self):
         state = self.root / "state"
         state.mkdir()
-        (state / "enabled.json").write_text(json.dumps({"enabled": True, "worktree": str(ROOT.parent)}) + "\n")
+        (state / "enabled.json").write_text(
+            json.dumps({"enabled": True, "worktree": str(self.poller_bin.parent)}) + "\n"
+        )
         result = self._supervise()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("worktree", result.stderr)
@@ -2459,8 +2489,8 @@ class GhModeTests(RuntimeHarness):
         self.github.put("GET", "/repos/Stage-11-Agentics/c11", {"status": 200, "body": {
             "id": poller.REPO_ID, "full_name": poller.REPO_NAME, "permissions": {"push": True},
         }}, suffix=True)
-        self.bin = self.root / "bin"
-        self.bin.mkdir()
+        self.gh_bin = self.root / "bin"
+        self.gh_bin.mkdir()
         self.gh_calls = self.root / "gh-calls"
         self.fake_gh(ok_calls=None)
         self.gh_login = self.root / ".config" / "gh" / "hosts.yml"
@@ -2469,7 +2499,7 @@ class GhModeTests(RuntimeHarness):
 
     def fake_gh(self, ok_calls):
         """Answers `gh auth token` with the fixture token; after ok_calls answers, fails."""
-        _write_exec(self.bin / "gh", """
+        _write_exec(self.gh_bin / "gh", """
             #!/usr/bin/env python3
             import os, sys
             calls = %r
@@ -2485,7 +2515,7 @@ class GhModeTests(RuntimeHarness):
 
     def _env(self, **extra):
         env = super()._env(**extra)
-        env["PATH"] = str(self.bin) + os.pathsep + env.get("PATH", "")
+        env["PATH"] = str(self.gh_bin) + os.pathsep + env.get("PATH", "")
         env["GH_TOKEN"] = "env-token-must-not-be-used"
         return env
 
@@ -2552,7 +2582,7 @@ class GhModeTests(RuntimeHarness):
 
     def fail_gh_when(self, condition):
         """Add a failure condition to the fake gh only; no production code is patched."""
-        path = self.bin / "gh"
+        path = self.gh_bin / "gh"
         text = path.read_text()
         path.write_text(text.replace("used = sum(1 for _ in open(calls))",
                                      "used = sum(1 for _ in open(calls))\n" + condition))

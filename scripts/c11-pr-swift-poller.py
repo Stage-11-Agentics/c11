@@ -28,7 +28,6 @@ from __future__ import annotations
 import base64
 import fcntl
 import hashlib
-import importlib.util
 import json
 import os
 import re
@@ -61,6 +60,7 @@ LIST_URL = (
 )
 API = "https://api.github.com"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+HOST_TEST_ID = re.compile(r"c11(?:Logic)?Tests/[A-Za-z0-9_]+/test[A-Za-z0-9_]+\Z")
 USER_AGENT = "c11-pr-swift-poller"
 CADENCE_S = 25
 YIELD_INTERVAL_S = 5
@@ -100,6 +100,10 @@ _LOCK_FDS = []
 
 class OriginRefused(Exception):
     pass
+
+
+class QuarantineUnreadable(Exception):
+    """The captured head's quarantine inventory cannot be read or validated."""
 
 
 class ScopeStop(Exception):
@@ -438,17 +442,37 @@ def result_directory(state, attempt_id, invocation):
 
 def logic_quarantine_ids(worktree):
     """Read all logic-test quarantine rows from the captured PR worktree."""
-    helper_path = Path(__file__).resolve().parent / "host_test_quarantine.py"
-    spec = importlib.util.spec_from_file_location("c11_host_test_quarantine", helper_path)
-    if spec is None or spec.loader is None:
-        raise ValueError("cannot load host_test_quarantine.py")
-    helper = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(helper)
-    rows = helper.read_host_test_quarantine(Path(worktree) / "scripts" / "host-test-quarantine.tsv")
-    return [row["test_id"] for row in rows if row["test_id"].startswith("c11LogicTests/")]
+    path = Path(worktree) / "scripts" / "host-test-quarantine.tsv"
+    test_ids = []
+    seen = set()
+    for line_number, line in enumerate(path.read_text().splitlines(), 1):
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) != 3 or any(not field for field in fields):
+            raise ValueError("%s:%s: expected selector, scope, and one-line reason" % (path, line_number))
+        test_id, scope, reason = fields
+        if not reason.strip() or reason != reason.strip():
+            raise ValueError("%s:%s: expected selector and one-line reason" % (path, line_number))
+        if not HOST_TEST_ID.fullmatch(test_id):
+            raise ValueError("%s:%s: expected one exact c11Tests or c11LogicTests method selector" %
+                             (path, line_number))
+        if scope not in ("all", "atlas"):
+            raise ValueError("%s:%s: scope must be all or atlas" % (path, line_number))
+        if test_id in seen:
+            raise ValueError("%s:%s: duplicate host quarantine selector %s" %
+                             (path, line_number, test_id))
+        seen.add(test_id)
+        if test_id.startswith("c11LogicTests/"):
+            test_ids.append(test_id)
+    return test_ids
 
 
 def xcodebuild_argv(worktree, derived, result_path):
+    try:
+        skipped_test_ids = logic_quarantine_ids(worktree)
+    except (OSError, ValueError) as error:
+        raise QuarantineUnreadable(str(error)) from error
     return [
         os.environ.get("C11_POLLER_XCODEBUILD") or XCODEBUILD,
         "-project", str(Path(worktree) / "GhosttyTabs.xcodeproj"),
@@ -458,7 +482,7 @@ def xcodebuild_argv(worktree, derived, result_path):
         "-derivedDataPath", str(derived),
         "-resultBundlePath", str(result_path),
         "test",
-        *("-skip-testing:" + test_id for test_id in logic_quarantine_ids(worktree)),
+        *("-skip-testing:" + test_id for test_id in skipped_test_ids),
         "-parallel-testing-enabled", "YES",
         "-parallel-testing-worker-count", "8",
         "-test-timeouts-enabled", "YES",
@@ -1845,6 +1869,8 @@ class Supervisor:
             self._note_acquired()
             if code == "rejected":
                 return "rejected"
+            if code == "quarantine-unreadable":
+                return code
             if self.stopped:
                 return "stopped"
             if self.world.last_exit == 0:
@@ -1909,8 +1935,23 @@ class Supervisor:
             "result": str(result),
             "log": str(log_path),
         }
+        try:
+            argv = self.world.build_argv(self.world.worktree, self.derived, result)
+        except QuarantineUnreadable as error:
+            self.log(decision="quarantine-unreadable", pr=item["pr"], sha=item["sha"],
+                     invocation=invocation, reason=str(error))
+            description = "quarantine unreadable"
+            self.delivered = self._post(item["sha"], "error", description, pr=item["pr"],
+                                        invocation=invocation, reason=str(error))
+            if self.delivered:
+                self._clear_cold_retry(item["pr"], sha=item["sha"])
+                self.reported[item["pr"]] = item["sha"]
+            else:
+                self.status_owed[(item["pr"], item["sha"])] = {
+                    "state": "error", "description": description,
+                }
+            return "quarantine-unreadable"
         (self.state() / "current.json").write_text(json.dumps(current) + "\n")
-        argv = self.world.build_argv(self.world.worktree, self.derived, result)
         skipped_test_ids = [argument[len("-skip-testing:"):]
                             for argument in argv if argument.startswith("-skip-testing:")]
         self.log(decision="xcodebuild-command", pr=item["pr"], sha=item["sha"],

@@ -2123,6 +2123,8 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertIn("** TEST SUCCEEDED **", (bundle.parent / (bundle.name + ".log")).read_text())
         self.assertIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
         self.assertIn("-only-testing:c11LogicTests/PanelLivenessDeriverTests", argv)
+        self.assertEqual(argv[argv.index("-parallel-testing-enabled") + 1], "YES")
+        self.assertEqual(argv[argv.index("-parallel-testing-worker-count") + 1], "8")
         key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
         self.assertEqual(Path(argv[argv.index("-derivedDataPath") + 1]), self.root / "cache" / ("DerivedData-" + key))
         self.assertEqual(decided["deps"], key)

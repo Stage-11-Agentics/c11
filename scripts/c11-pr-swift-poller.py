@@ -766,11 +766,9 @@ def running_guests(tart_list):
     return names
 
 
-def yield_reason(guests, our_slot, other_held):
+def yield_reason(guests):
     if guests:
         return "guest"
-    if other_held:
-        return "slot"
     return None
 
 
@@ -1671,7 +1669,7 @@ class Supervisor:
         if self.world.guests():
             self.log(decision="no-start", reason="guest")
             return "no-start"
-        if self.world.slot_held(1) or self.world.slot_held(2):
+        if self.world.slot_held(1):
             self.log(decision="no-start", reason="slot")
             return "no-start"
         self.credential_skipped = False
@@ -1685,7 +1683,7 @@ class Supervisor:
             self._rotate(item)
             return "residue"
         item["deps"] = self._dependency_key(item)
-        if self.world.guests() or self.world.slot_held(1) or self.world.slot_held(2):
+        if self.world.guests() or self.world.slot_held(1):
             self.log(decision="no-start", reason="raced")
             return "no-start"
         return self._spawn(item)
@@ -1975,12 +1973,7 @@ class Supervisor:
                 self.log(decision=CREDENTIAL_UNAVAILABLE, pr=record["pr"], sha=record["sha"], during="watch")
             elif not ok:
                 return reason
-        our = record.get("slot")
-        other = None
-        if our in (1, 2):
-            other = 1 if our == 2 else 2
-        other_held = False if other is None else self.world.slot_held(other)
-        return yield_reason(self.world.guests(), our, other_held)
+        return yield_reason(self.world.guests())
 
     def watch(self, record):
         """Every 5s while a build runs. Revalidate, then kill until the group is gone."""
@@ -2025,7 +2018,7 @@ def slot_command(root, build_argv):
     poller = str(Path(__file__).resolve())
     slots = str(Path(__file__).resolve().parent / "atlas_build_slots.py")
     return [
-        sys.executable, slots, SLUG,
+        sys.executable, slots, SLUG, "--poller",
         sys.executable, poller, "child", "--root", str(root),
         "--exec", *build_argv,
     ]

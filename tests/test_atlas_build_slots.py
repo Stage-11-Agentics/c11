@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise real process admission/nested locks with tiny fixture commands."""
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -26,15 +27,17 @@ class SlotsTests(unittest.TestCase):
         self.command = [sys.executable, "-c", "import os,time,json; "
                         f"p={str(self.log)!r}; "
                         "f=open(p,'a'); f.write(json.dumps({'edge':'start','slot':os.environ.get('C11_ATLAS_BUILD_SLOT'),"
-                        "'time':time.time()})+'\\n'); f.flush(); time.sleep(.25); "
+                        "'wait':os.environ.get('C11_ATLAS_SLOT_WAIT_SECONDS'),'time':time.time()})+'\\n'); f.flush(); time.sleep(.25); "
                         "f.write(json.dumps({'edge':'end','time':time.time()})+'\\n'); f.close()"]
 
-    def start(self, tag, nested=False):
+    def start(self, tag, poller=False, nested=False):
         command = self.command
         if nested:
             command = [str(ROOT / "scripts/with-build-lock.sh"), *command]
-        return subprocess.Popen([sys.executable, str(ROOT / "scripts/atlas_build_slots.py"), tag,
-                                 str(ROOT / "scripts/with-build-lock.sh"), *command], env=self.env,
+        admission = [sys.executable, str(ROOT / "scripts/atlas_build_slots.py"), tag]
+        if poller:
+            admission.append("--poller")
+        return subprocess.Popen([*admission, str(ROOT / "scripts/with-build-lock.sh"), *command], env=self.env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
     def finish(self, processes):
@@ -48,23 +51,62 @@ class SlotsTests(unittest.TestCase):
         return peak
 
     def test_two_slots_and_third_waits(self):
-        self.assertEqual(self.finish([self.start(t) for t in ("a", "b", "c")]), 2)
+        self.assertEqual(self.finish([
+            self.start("poller", poller=True), self.start("owner-a"), self.start("owner-b"),
+        ]), 2)
+        starts = [json.loads(line) for line in self.log.read_text().splitlines() if '"edge": "start"' in line]
+        self.assertEqual(sorted(event["slot"] for event in starts), ["1", "2", "2"])
 
     def test_same_tag_serializes_even_with_two_slots(self):
-        self.assertEqual(self.finish([self.start("same"), self.start("same")]), 1)
+        self.assertEqual(self.finish([self.start("same", poller=True), self.start("same")]), 1)
 
     def test_sustained_high_load_one_slot_then_recovers(self):
         self.assertEqual(self.finish([self.start("control")]), 1)
         self.log.unlink()
         self.load.write_text("45")
         self.env["C11_ATLAS_HIGH_LOAD_SECONDS"] = "0"
-        self.assertEqual(self.finish([self.start("a"), self.start("b")]), 1)
-        self.log.unlink()
-        self.load.write_text("20")
-        self.assertEqual(self.finish([self.start("a"), self.start("b")]), 2)
+        poller = self.start("poller", poller=True)
+        owner = self.start("owner")
+        try:
+            _, error = poller.communicate(timeout=10)
+            self.assertEqual(poller.returncode, 0, error.decode())
+            self.assertIsNone(owner.poll(), "fleet owner should wait while only the poller slot is available")
+            self.log.unlink()
+            self.load.write_text("20")
+            self.assertEqual(self.finish([owner]), 1)
+            starts = [json.loads(line) for line in self.log.read_text().splitlines() if '"edge": "start"' in line]
+            self.assertEqual([event["slot"] for event in starts], ["2"])
+        finally:
+            for process in (poller, owner):
+                if process.poll() is None:
+                    process.terminate()
+                    process.communicate(timeout=5)
 
     def test_nested_lock_does_not_deadlock(self):
         self.assertEqual(self.finish([self.start("nested", nested=True)]), 1)
+
+    def test_slot_wait_seconds_are_forwarded_to_the_build(self):
+        root = Path(self.env["C11_ATLAS_SLOTS_DIR"])
+        root.mkdir()
+        held = []
+        for number in (1, 2):
+            lock = (root / ("slot-%d.lock" % number)).open("a+")
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            held.append(lock)
+        process = subprocess.Popen(
+            [sys.executable, str(ROOT / "scripts/atlas_build_slots.py"), "wait",
+             str(ROOT / "scripts/with-build-lock.sh"), *self.command],
+            env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            self.assertIn(b"[atlas-slots] waiting", process.stdout.readline())
+        finally:
+            for lock in held:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                lock.close()
+        self.finish([process])
+        event = json.loads(self.log.read_text().splitlines()[0])
+        self.assertGreater(float(event["wait"]), 0.0)
 
     def test_default_local_lock_remains_single_slot(self):
         env = dict(self.env, C11_BUILD_LOCK_DIR=str(self.base / "local-lock"))

@@ -92,7 +92,7 @@ class World:
             "result": "Passed", "passedTests": 2, "failedTests": 0,
             "skippedTests": 0, "totalTestCount": 2,
         }
-        self.worktree = "/work"
+        self.worktree = str(ROOT.parent)
         self.statuses = {}
         self.kill_log = []
         self.alive = {}
@@ -1424,6 +1424,24 @@ class ReviewRegressionTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_poller_argv_skips_all_logic_quarantine_rows_from_head_worktree(self):
+        worktree = self.root / "head"
+        inventory = worktree / "scripts" / "host-test-quarantine.tsv"
+        inventory.parent.mkdir(parents=True)
+        inventory.write_text(
+            "c11LogicTests/LogicBudgetTests/testAllScope\tall\tshared runner budget\n"
+            "c11Tests/HostBudgetTests/testAtlasScope\tatlas\tAtlas-only host test\n"
+            "c11LogicTests/LogicBudgetTests/testAtlasScope\tatlas\tAtlas load budget\n"
+        )
+
+        argv = poller.xcodebuild_argv(worktree, self.root / "DerivedData", self.root / "test.xcresult")
+        skips = [argument for argument in argv if argument.startswith("-skip-testing:")]
+
+        self.assertEqual(skips, [
+            "-skip-testing:c11LogicTests/LogicBudgetTests/testAllScope",
+            "-skip-testing:c11LogicTests/LogicBudgetTests/testAtlasScope",
+        ])
+
     def test_queue_advances_after_success(self):
         world = World(body=[pr(), pr(number=8)])
         supervisor = poller.Supervisor(self.root, world)
@@ -1937,6 +1955,13 @@ class RuntimeHarness(unittest.TestCase):
         self.work = self.root / "work"
         (self.work / "ghostty").mkdir(parents=True)
         (self.work / "vendor" / "bonsplit").mkdir(parents=True)
+        quarantine = self.work / "scripts" / "host-test-quarantine.tsv"
+        quarantine.parent.mkdir(parents=True)
+        quarantine.write_text(
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture\tatlas\twall-clock budget\n"
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture\tatlas\twall-clock budget\n"
+            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry\tatlas\twall-clock budget\n"
+        )
         self.kit = self.root / "kit" / GITLINK / "GhosttyKit.xcframework"
         self.kit.mkdir(parents=True)
         self.load = self.root / "load.txt"
@@ -2147,6 +2172,13 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertFalse(any(argument.startswith("-only-testing:") for argument in argv))
         self.assertEqual(argv[argv.index("-parallel-testing-enabled") + 1], "YES")
         self.assertEqual(argv[argv.index("-parallel-testing-worker-count") + 1], "8")
+        command_record = next(item for item in _decisions(self.root)
+                              if item.get("decision") == "xcodebuild-command")
+        self.assertEqual(command_record["skipped_test_ids"], [
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture",
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture",
+            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry",
+        ])
         summary_argv = json.loads((self.root / "xcresult-argv.jsonl").read_text().splitlines()[0])
         self.assertEqual(summary_argv[:5], ["xcresulttool", "get", "test-results", "summary", "--path"])
         self.assertEqual(summary_argv[5], str(bundle))

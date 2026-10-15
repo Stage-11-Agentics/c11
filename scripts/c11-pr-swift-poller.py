@@ -28,6 +28,7 @@ from __future__ import annotations
 import base64
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -435,6 +436,18 @@ def result_directory(state, attempt_id, invocation):
     return path
 
 
+def logic_quarantine_ids(worktree):
+    """Read all logic-test quarantine rows from the captured PR worktree."""
+    helper_path = Path(__file__).resolve().parent / "host_test_quarantine.py"
+    spec = importlib.util.spec_from_file_location("c11_host_test_quarantine", helper_path)
+    if spec is None or spec.loader is None:
+        raise ValueError("cannot load host_test_quarantine.py")
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    rows = helper.read_host_test_quarantine(Path(worktree) / "scripts" / "host-test-quarantine.tsv")
+    return [row["test_id"] for row in rows if row["test_id"].startswith("c11LogicTests/")]
+
+
 def xcodebuild_argv(worktree, derived, result_path):
     return [
         os.environ.get("C11_POLLER_XCODEBUILD") or XCODEBUILD,
@@ -445,6 +458,7 @@ def xcodebuild_argv(worktree, derived, result_path):
         "-derivedDataPath", str(derived),
         "-resultBundlePath", str(result_path),
         "test",
+        *("-skip-testing:" + test_id for test_id in logic_quarantine_ids(worktree)),
         "-parallel-testing-enabled", "YES",
         "-parallel-testing-worker-count", "8",
         "-test-timeouts-enabled", "YES",
@@ -1897,6 +1911,10 @@ class Supervisor:
         }
         (self.state() / "current.json").write_text(json.dumps(current) + "\n")
         argv = self.world.build_argv(self.world.worktree, self.derived, result)
+        skipped_test_ids = [argument[len("-skip-testing:"):]
+                            for argument in argv if argument.startswith("-skip-testing:")]
+        self.log(decision="xcodebuild-command", pr=item["pr"], sha=item["sha"],
+                 invocation=invocation, skipped_test_ids=skipped_test_ids)
         command = slot_command(self.root, argv)
         self.spawns.append({"command": command, "sha": item["sha"], "result": str(result), "invocation": invocation})
         append_event(self.root, {"event": "spawn", "sha": item["sha"], "invocation": invocation, "result": str(result)})

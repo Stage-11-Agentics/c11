@@ -8,8 +8,7 @@ cd "$ROOT"
   for input in \
     Package.resolved \
     GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
-    Package.swift \
-    GhosttyTabs.xcodeproj/project.pbxproj; do
+    Package.swift; do
     [[ -f "$input" ]] || { echo "missing DerivedData cache input: $input" >&2; exit 1; }
     shasum -a 256 "$input"
   done

@@ -81,6 +81,7 @@ jobs:
           key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
           restore-keys: |
             c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-
+            c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-
 
       - name: Build app
         shell: bash
@@ -174,6 +175,15 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             test-without-building
 
+      - name: Upload logic xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-logic-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
   host-a:
     needs: [target, build]
     if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
@@ -234,6 +244,15 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             test-without-building
 
+      - name: Upload host A xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-host-a-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
   host-b:
     needs: [target, build]
     if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
@@ -292,6 +311,15 @@ jobs:
             -maximum-test-execution-time-allowance 60 \
             COMPILER_INDEX_STORE_ENABLE=NO \
             test-without-building
+
+      - name: Upload host B xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: c11-host-b-xcresult
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
 
   python:
     needs: [target, build]

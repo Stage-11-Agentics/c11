@@ -1,8 +1,8 @@
 name: Prepare c11 macOS backstop runner
-description: Select Xcode and restore the native build caches used by each backstop job.
+description: Select Xcode and prepare the native build tools used by each backstop job.
 inputs:
   use-build-cache:
-    description: Restore GhosttyKit, Zig, and the general DerivedData cache for a build job.
+    description: Restore GhosttyKit and Zig caches for the build job.
     required: false
     default: "true"
 outputs:
@@ -65,15 +65,6 @@ runs:
         echo "$ZIG_DIR" >> "$GITHUB_PATH"
         export PATH="$ZIG_DIR:$PATH"
         zig version
-
-    - name: Cache DerivedData
-      if: ${{ inputs.use-build-cache != 'false' }}
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
-      with:
-        path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-        key: deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ steps.select-xcode.outputs.dependency-key }}-${{ github.sha }}
-        restore-keys: |
-          deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ steps.select-xcode.outputs.dependency-key }}-
 
     - name: Cache Swift packages
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4

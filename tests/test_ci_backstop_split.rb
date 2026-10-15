@@ -24,14 +24,19 @@ setup = "./.github/actions/c11-macos-backstop-setup"
   abort "#{name} must wait for the target and build jobs" unless
     job.fetch("needs").include?("target") && (name == "build" || job.fetch("needs").include?("build"))
   uses_setup = job.fetch("steps").any? { |step| step["uses"] == setup }
-  abort "#{name} must restore the shared DerivedData cache" unless uses_setup
+  abort "#{name} must prepare the macOS backstop toolchain" unless uses_setup
 end
 
 build_steps = jobs.fetch("build").fetch("steps")
 previous_cache = build_steps.find { |step| step["name"] == "Restore the closest backstop DerivedData" }
+restore_keys = previous_cache && previous_cache.fetch("with").fetch("restore-keys").lines.map(&:strip)
+broad_restore_key = "c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-"
 abort "build job must reuse the closest exact-head DerivedData cache" unless
   previous_cache && previous_cache.fetch("uses").start_with?("actions/cache/restore@") &&
-    previous_cache.fetch("with").fetch("restore-keys").include?("steps.runner-setup.outputs.dependency-key")
+    restore_keys.include?(broad_restore_key)
+abort "build job must restore and save DerivedData once" unless
+  build_steps.count { |step| step.fetch("uses", "").start_with?("actions/cache/restore@") } == 1 &&
+    build_steps.count { |step| step.fetch("uses", "").start_with?("actions/cache/save@") } == 1
 %w[logic host].each do |suite|
   step = build_steps.find { |candidate| candidate["name"] == "Build #{suite} test products" }
   abort "build job must prebuild #{suite} test products" unless
@@ -64,12 +69,7 @@ dependency_script = select_xcode.fetch("run")
 abort "runner setup must calculate the dependency key with the shared helper" unless
   dependency_script.include?("scripts/ci-deriveddata-dependency-key.sh")
 cache = setup_action.fetch("runs").fetch("steps").find { |step| step["name"] == "Cache DerivedData" }
-abort "general DerivedData key must include its dependency set and commit" unless
-  cache && cache.fetch("with").fetch("key").include?("steps.select-xcode.outputs.dependency-key") &&
-    cache.fetch("with").fetch("key").include?("github.sha")
-restore_keys = cache.fetch("with").fetch("restore-keys").lines.map(&:strip)
-abort "general DerivedData fallback must stay within the same dependency set" unless
-  restore_keys.length == 1 && restore_keys.first.include?("steps.select-xcode.outputs.dependency-key")
+abort "the composite must not restore or save a second DerivedData cache" if cache
 
 dependency_helper = File.join(root, "scripts/ci-deriveddata-dependency-key.sh")
 Dir.mktmpdir("c11-dependency-key-") do |fixture|
@@ -111,13 +111,16 @@ Dir.mktmpdir("c11-dependency-key-") do |fixture|
   end
 
   previous_key = key_for.call
-  inputs.each_key do |relative_path|
+  inputs.keys.reject { |relative_path| relative_path == "GhosttyTabs.xcodeproj/project.pbxproj" }.each do |relative_path|
     path = File.join(fixture, relative_path)
     File.write(path, File.read(path) + " changed")
     current_key = key_for.call
     abort "DerivedData dependency key ignored #{relative_path}" if current_key == previous_key
     previous_key = current_key
   end
+  project_file = File.join(fixture, "GhosttyTabs.xcodeproj/project.pbxproj")
+  File.write(project_file, File.read(project_file) + " changed")
+  abort "DerivedData dependency key should not change with project.pbxproj" unless key_for.call == previous_key
   %w[C11_TEST_GHOSTTY_SHA C11_TEST_BONSPLIT_SHA].each_with_index do |name, index|
     fake_env[name] = (index == 0 ? "c" : "d") * 40
     current_key = key_for.call
@@ -138,6 +141,16 @@ abort "host B must run the shortcut-routing group alone" unless
 { "logic" => logic, "host-a" => host_a, "host-b" => host_b }.each do |name, step|
   abort "#{name} must execute the exact-head prebuilt test products" unless
     step && step.fetch("run").include?("test-without-building")
+end
+
+{ "logic" => "c11-logic", "host-a" => "c11-host-a", "host-b" => "c11-host-b" }.each do |name, artifact_name|
+  artifact = jobs.fetch(name).fetch("steps").find do |step|
+    step.fetch("uses", "").start_with?("actions/upload-artifact@")
+  end
+  abort "#{name} must upload its xcresult after failure" unless
+    artifact && artifact.fetch("if").include?("failure()") &&
+      artifact.fetch("with").fetch("name") == "#{artifact_name}-xcresult" &&
+      artifact.fetch("with").fetch("path").include?("Logs/Test/*.xcresult")
 end
 
 python_steps = jobs.fetch("python").fetch("steps").map { |step| step["name"] }

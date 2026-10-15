@@ -8,7 +8,7 @@ c11Tests/PanelLifecycleTests/testTerminalPIDResolverResolvesOwnControllingTTY	al
 c11Tests/WindowBrowserHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed	all	The standalone host remaps posted pointer coordinates; guest scenario 9 covers divider reopening.
 c11Tests/WindowTerminalHostViewTests/testHostViewPassesThroughDividerWhenAdjacentPaneIsCollapsed	all	The standalone host remaps posted pointer coordinates; guest scenario 10 covers divider reopening.
 c11Tests/ThemeResolverBenchmarks/testResolverP95PerformanceBudget	all	This wall-clock budget varies on the shared 3-core macos-15 runner; time it on a quiet host.
-c11Tests/AppDelegateShortcutRoutingTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel	atlas	Atlas cannot reliably make the synthetic auxiliary NSWindow key, so the key-window Cmd+W assertion is unavailable there.
+c11Tests/WindowCloseShortcutTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel	atlas	Atlas cannot reliably make the synthetic auxiliary NSWindow key, so the key-window Cmd+W assertion is unavailable there.
 c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach	atlas	Atlas cannot make the synthetic NSWindow key or first responder for this focus assertion; macos-15 CI covers the test.
 c11Tests/GhosttySurfaceOverlayTests/testWorkspaceSelectionReleasesExistingEditorButPreservesEditorOpenedAfterSelection	atlas	Atlas cannot make the synthetic NSWindow key or first responder for this focus assertion; macos-15 CI covers the test.
 c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture	atlas	wall-clock budget, load-sensitive on the shared Atlas host

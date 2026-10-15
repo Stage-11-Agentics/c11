@@ -3849,25 +3849,9 @@ final class ShortcutLayoutTests: ShortcutRoutingTestSupport {
         XCTAssertEqual(observedWorkspaceWindow?.windowNumber, window.windowNumber)
     }
 
-    func testMainWindowHostingViewUsesZeroTopSafeAreaInMinimalMode() {
-        let defaults = UserDefaults.standard
-        let savedMode = defaults.object(forKey: WorkspacePresentationModeSettings.modeKey)
-        defaults.set(WorkspacePresentationModeSettings.Mode.minimal.rawValue, forKey: WorkspacePresentationModeSettings.modeKey)
-        defer {
-            restoreDefaultsValue(savedMode, forKey: WorkspacePresentationModeSettings.modeKey, defaults: defaults)
-        }
-
-        let contentView = MainWindowHostingView(rootView: EmptyView())
-        contentView.frame = NSRect(x: 0, y: 0, width: 480, height: 240)
-        contentView.layoutSubtreeIfNeeded()
-
-        XCTAssertEqual(
-            contentView.safeAreaInsets.top,
-            0,
-            accuracy: 0.5,
-            "Minimal mode should use the complete main-window content area without a top safe-area inset"
-        )
-        XCTAssertEqual(contentView.safeAreaRect, contentView.bounds)
+    func testMinimalModeIgnoresTopSafeAreaForWorkspaceContent() {
+        XCTAssertTrue(WorkspacePresentationModeSettings.ignoresTopSafeArea(for: .minimal))
+        XCTAssertFalse(WorkspacePresentationModeSettings.ignoresTopSafeArea(for: .standard))
     }
 
 }

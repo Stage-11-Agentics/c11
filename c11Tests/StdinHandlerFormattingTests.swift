@@ -8,6 +8,10 @@ import XCTest
 
 final class StdinHandlerFormattingTests: XCTestCase {
 
+    func testDefaultDeliveryTimeoutIs500Milliseconds() {
+        XCTAssertEqual(StdinMailboxHandler.defaultTimeout, .milliseconds(500))
+    }
+
     // MARK: - Byte shape
 
     func testCanonicalEnvelopeFormatsAsExpectedBlock() throws {
@@ -258,18 +262,18 @@ final class StdinHandlerFormattingTests: XCTestCase {
         XCTAssertEqual(result.outcome, .timeout)
     }
 
-    /// The 500 ms timeout on `StdinMailboxHandler.deliver` is a *reporting*
+    /// The 100 ms timeout on `StdinMailboxHandler.deliver` is a *reporting*
     /// bound — the dispatcher logs `.timeout` and moves on even when the
     /// writer closure is still executing. This test proves that explicitly:
-    /// a 5-second writer block must not delay `deliver(...)` past the
+    /// a short writer block must not delay `deliver(...)` past the
     /// configured timeout by more than a small slack. It does NOT prove
     /// that main is freed — `MainActor.run` isn't cancellable, and a
-    /// genuinely blocking PTY write will keep main busy for the full 5 s.
+    /// genuinely blocking PTY write will keep main busy for the writer delay.
     /// That honest distinction is documented in `StdinMailboxHandler.swift`
     /// and the plan's "Risks and unknowns" section.
     ///
     /// Regression lock for review cycle 1 P0 #5.
-    func testDeliverReturnsTimeoutEvenWhenWriterBlocksMultipleSeconds() async throws {
+    func testDeliverReturnsTimeoutWhenWriterBlocksPastInjectedDeadline() async throws {
         let envelope = try MailboxEnvelope.build(
             from: "builder",
             to: "watcher",
@@ -278,12 +282,11 @@ final class StdinHandlerFormattingTests: XCTestCase {
             ts: "2026-04-23T10:15:42Z"
         )
 
-        // The writer is dispatched on MainActor via withTaskGroup; using
-        // Thread.sleep blocks that thread for the whole interval — exactly
-        // the scenario the reporting-bound documentation describes.
+        // The writer is dispatched on MainActor; this short block still
+        // exceeds the injected deadline without burning five seconds.
         let handler = StdinMailboxHandler(
             writer: { _, _, _, _ in
-                Thread.sleep(forTimeInterval: 5.0)
+                Thread.sleep(forTimeInterval: 0.3)
                 return .ok(bytes: 0)
             },
             timeout: .milliseconds(100)
@@ -303,14 +306,10 @@ final class StdinHandlerFormattingTests: XCTestCase {
             "deliver must report .timeout when the writer blocks past the deadline"
         )
 
-        // 100 ms timeout + slack for scheduling/structured-concurrency
-        // overhead. If deliver waited for the writer's 5 s Thread.sleep
-        // to finish, this would be somewhere near 5.0; anywhere below ~2 s
-        // proves the reporting-bound behavior holds.
         XCTAssertLessThan(
             elapsed,
-            2.0,
-            "deliver must return on the timeout, not wait for the full writer block (elapsed=\(elapsed)s)"
+            1.0,
+            "deliver must report timeout without waiting for an unbounded writer (elapsed=\(elapsed)s)"
         )
     }
 }

@@ -3442,12 +3442,17 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
     }
 
     /// A transaction that never finishes cannot wedge the tab's input.
+    func testDefaultInputTransactionWatchdogIsThreeSeconds() {
+        XCTAssertEqual(TerminalSurface.inputTransactionWatchdog, 3)
+    }
+
     func testWatchdogReleasesAStuckTransaction() {
         let surface = makeSurface()
-        surface.performInputTransaction { _ in }
+        let watchdogTimeout: TimeInterval = 0.2
+        surface.performInputTransaction({ _ in }, watchdogTimeout: watchdogTimeout)
         let next = expectation(description: "queued transaction runs after the watchdog")
         surface.performInputTransaction { finish in finish(); next.fulfill() }
-        wait(for: [next], timeout: TerminalSurface.inputTransactionWatchdog + 2)
+        wait(for: [next], timeout: watchdogTimeout + 0.5)
         XCTAssertFalse(surface.isInputTransactionActive)
     }
 
@@ -3872,6 +3877,10 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
 
 @MainActor
 final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
+    func testDefaultLayoutFollowUpTimeoutIsTwoSeconds() {
+        XCTAssertEqual(Workspace.defaultLayoutFollowUpTimeout, 2)
+    }
+
     func testDeferredLayoutCountsTheImmediatelyConvergedFlush() async throws {
         let workspace = Workspace(title: "Deferred flush fixture", workingDirectory: nil, portOrdinal: 0)
         workspace.teardownAllPanels()
@@ -3893,11 +3902,12 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
         terminal.hostedView.removeFromSuperview()
         terminal.hostedView.frame = .zero
         let before = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
-        workspace.debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: true)
+        let followUpTimeout: TimeInterval = 0.3
+        workspace.debugBeginDeferredLayoutFollowUpForTesting(includeGeometry: true, timeout: followUpTimeout)
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertGreaterThan(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before + 1,
                              "A stalled episode must retry without a window-update notification")
-        try await Task.sleep(nanoseconds: 2_100_000_000)
+        try await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
         let expired = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
         try await Task.sleep(nanoseconds: 300_000_000)

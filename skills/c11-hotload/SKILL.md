@@ -21,7 +21,7 @@ Staging uploads only the commits Atlas lacks: Atlas keeps one mirror per reposit
 
 Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Developer`) and Zig 0.15.2 (`~/zig-0.15.2`). `C11_REMOTE_HOST` defaults to `atlas`; `--host` overrides it. `C11_REMOTE_DEVELOPER_DIR` and `C11_REMOTE_ZIG_DIR` override paths but the versions are checked. No global Xcode selection or credential provisioning happens.
 
-The Atlas route admits at most two builds with separate per-tag caches. After one-minute load stays above 40 for 60 seconds it admits only one until load returns to 40 or below. Active builds finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
+The Atlas route has two slots with separate per-tag caches: slot 1 is reserved for the PR Swift poller; owner gates and all other Atlas builds share slot 2, one at a time. At normal load, one poller build and one fleet build may overlap. After one-minute load stays above 40 for 60 seconds, starts serialize: a fleet build takes slot 2 only while slot 1 is idle, then holds slot 1 as a guard; a poller build takes slot 1 only while slot 2 is idle, then holds slot 2 as a guard. Both slots stay held through the build, so new builds wait; builds admitted before load rises may finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
 
 GitHub's native CI for main runs on the free GitHub-hosted `macos-15` runner.
 PRs keep the cheap Ubuntu lane. `ci-hourly.yml` ("CI main (macOS)") runs on

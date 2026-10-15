@@ -145,21 +145,56 @@ jobs:
             -destination "platform=macOS" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
+          CLI_CANDIDATES=( "$HOME"/Library/Developer/Xcode/DerivedData/GhosttyTabs-*/Build/Products/Debug/c11 )
+          if [[ ${#CLI_CANDIDATES[@]} -ne 1 || ! -x "${CLI_CANDIDATES[0]}" ]]; then
+            printf 'expected one built CLI binary, found %s candidates\n' "${#CLI_CANDIDATES[@]}" >&2
+            exit 1
+          fi
+          printf 'CLI_BINARY=%s\n' "${CLI_CANDIDATES[0]}" >> "$GITHUB_ENV"
 
-      - name: SSH shell command availability
+      - name: CLI tests against the built binary
+        shell: bash
         run: |
           set -euo pipefail
-          "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
-            -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
-            -clonedSourcePackagesDirPath "$PWD/.ci-source-packages" \
-            -disableAutomaticPackageResolution -destination "platform=macOS" \
-            -showBuildSettings -json > "$RUNNER_TEMP/c11-build-settings.json"
-          CLI_BINARY="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1])); settings=next(row["buildSettings"] for row in rows if row["target"] == "c11"); print(settings["BUILT_PRODUCTS_DIR"] + "/c11")' "$RUNNER_TEMP/c11-build-settings.json")"
           test -x "$CLI_BINARY"
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
-          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py
+          LOG_DIR="$RUNNER_TEMP/c11-cli-tests"
+          mkdir -p "$LOG_DIR"
+          pids=()
+          names=()
+          logs=()
+          statuses=()
+          launch_cli_test() {
+            local name="$1"
+            shift
+            local log="$LOG_DIR/$name.log"
+            names+=("$name")
+            logs+=("$log")
+            "$@" > "$log" 2>&1 &
+            pids+=("$!")
+          }
+          launch_cli_test ssh-shell env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
+          launch_cli_test focus-history env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
+          launch_cli_test window-scope env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
+          launch_cli_test activity-analysis env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py
+          launch_cli_test mailbox-body env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_mailbox_body_cli.py "$CLI_BINARY"
+          launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline
+          failures=0
+          for i in "${!pids[@]}"; do
+            if wait "${pids[$i]}"; then
+              statuses[$i]=0
+            else
+              statuses[$i]=$?
+              failures=$((failures + 1))
+            fi
+          done
+          for i in "${!pids[@]}"; do
+            printf '\n===== %s (exit %s) =====\n' "${names[$i]}" "${statuses[$i]}"
+            cat "${logs[$i]}"
+          done
+          if (( failures > 0 )); then
+            printf '%s CLI test script(s) failed\n' "$failures" >&2
+            exit 1
+          fi
 
       - name: Shell helper lifetime and git reporting
         run: bash tests/test_shell_git_watchers.sh

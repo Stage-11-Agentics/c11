@@ -74,6 +74,14 @@ jobs:
         id: runner-setup
         uses: ./.github/actions/c11-macos-backstop-setup
 
+      - name: Restore the closest backstop DerivedData
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
+          restore-keys: |
+            c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-
+
       - name: Build app
         shell: bash
         run: |
@@ -120,7 +128,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ env.TARGET_SHA }}
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
 
   logic:
     needs: [target, build]
@@ -146,7 +154,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ env.TARGET_SHA }}
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
           fail-on-cache-miss: true
 
       - name: Logic tests (gate)
@@ -190,7 +198,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ env.TARGET_SHA }}
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
           fail-on-cache-miss: true
 
       - name: Host A unit tests (gate)
@@ -250,7 +258,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ env.TARGET_SHA }}
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
           fail-on-cache-miss: true
 
       - name: Host B shortcut-routing tests (gate)
@@ -309,7 +317,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ env.TARGET_SHA }}
+          key: c11-backstop-deriveddata-${{ runner.os }}-${{ steps.runner-setup.outputs.xcode-version }}-${{ steps.runner-setup.outputs.dependency-key }}-${{ env.TARGET_SHA }}
           fail-on-cache-miss: true
 
       - name: Locate CLI binary from exact-head build

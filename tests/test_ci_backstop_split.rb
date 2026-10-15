@@ -1,5 +1,8 @@
 #!/usr/bin/env ruby
 require "yaml"
+require "fileutils"
+require "open3"
+require "tmpdir"
 
 root = File.expand_path("..", __dir__)
 workflow = YAML.load_file(File.join(root, ".github/workflows/ci-hourly.yml"))
@@ -25,6 +28,10 @@ setup = "./.github/actions/c11-macos-backstop-setup"
 end
 
 build_steps = jobs.fetch("build").fetch("steps")
+previous_cache = build_steps.find { |step| step["name"] == "Restore the closest backstop DerivedData" }
+abort "build job must reuse the closest exact-head DerivedData cache" unless
+  previous_cache && previous_cache.fetch("uses").start_with?("actions/cache/restore@") &&
+    previous_cache.fetch("with").fetch("restore-keys").include?("steps.runner-setup.outputs.dependency-key")
 %w[logic host].each do |suite|
   step = build_steps.find { |candidate| candidate["name"] == "Build #{suite} test products" }
   abort "build job must prebuild #{suite} test products" unless
@@ -33,7 +40,8 @@ end
 save = build_steps.find { |step| step["name"] == "Save exact-head DerivedData for test jobs" }
 abort "build job must save exact-head DerivedData" unless
   save && save.fetch("uses").start_with?("actions/cache/save@") &&
-    save.fetch("with").fetch("key").include?("env.TARGET_SHA")
+    save.fetch("with").fetch("key").include?("env.TARGET_SHA") &&
+    save.fetch("with").fetch("key").include?("steps.runner-setup.outputs.dependency-key")
 
 test_jobs.each do |name|
   setup_step = jobs.fetch(name).fetch("steps").find { |step| step["uses"] == setup }
@@ -43,7 +51,79 @@ test_jobs.each do |name|
   abort "#{name} must require the exact-head DerivedData cache" unless
     restore && restore.fetch("uses").start_with?("actions/cache/restore@") &&
       restore.fetch("with").fetch("fail-on-cache-miss") == true &&
-      restore.fetch("with").fetch("key").include?("env.TARGET_SHA")
+      restore.fetch("with").fetch("key").include?("env.TARGET_SHA") &&
+      restore.fetch("with").fetch("key").include?("steps.runner-setup.outputs.dependency-key")
+end
+
+setup_action = YAML.load_file(File.join(root, ".github/actions/c11-macos-backstop-setup/action.yml"))
+dependency_output = setup_action.fetch("outputs").fetch("dependency-key")
+abort "runner setup must expose its dependency-scoped cache key" unless
+  dependency_output.fetch("value").include?("steps.select-xcode.outputs.dependency-key")
+select_xcode = setup_action.fetch("runs").fetch("steps").find { |step| step["id"] == "select-xcode" }
+dependency_script = select_xcode.fetch("run")
+abort "runner setup must calculate the dependency key with the shared helper" unless
+  dependency_script.include?("scripts/ci-deriveddata-dependency-key.sh")
+cache = setup_action.fetch("runs").fetch("steps").find { |step| step["name"] == "Cache DerivedData" }
+abort "general DerivedData key must include its dependency set and commit" unless
+  cache && cache.fetch("with").fetch("key").include?("steps.select-xcode.outputs.dependency-key") &&
+    cache.fetch("with").fetch("key").include?("github.sha")
+restore_keys = cache.fetch("with").fetch("restore-keys").lines.map(&:strip)
+abort "general DerivedData fallback must stay within the same dependency set" unless
+  restore_keys.length == 1 && restore_keys.first.include?("steps.select-xcode.outputs.dependency-key")
+
+dependency_helper = File.join(root, "scripts/ci-deriveddata-dependency-key.sh")
+Dir.mktmpdir("c11-dependency-key-") do |fixture|
+  inputs = {
+    "Package.resolved" => "root package pins",
+    "GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" => "workspace package pins",
+    "Package.swift" => "package manifest",
+    "GhosttyTabs.xcodeproj/project.pbxproj" => "project build settings"
+  }
+  inputs.each do |relative_path, contents|
+    path = File.join(fixture, relative_path)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, contents)
+  end
+
+  fake_bin = File.join(fixture, "bin")
+  FileUtils.mkdir_p(fake_bin)
+  fake_git = File.join(fake_bin, "git")
+  File.write(fake_git, <<~SH)
+    #!/bin/sh
+    case "$2" in
+      HEAD:ghostty) printf '%s\\n' "$C11_TEST_GHOSTTY_SHA" ;;
+      HEAD:vendor/bonsplit) printf '%s\\n' "$C11_TEST_BONSPLIT_SHA" ;;
+      *) echo "unexpected git invocation: $*" >&2; exit 2 ;;
+    esac
+  SH
+  FileUtils.chmod(0o755, fake_git)
+  fake_env = {
+    "PATH" => "#{fake_bin}:#{ENV.fetch('PATH')}",
+    "C11_TEST_GHOSTTY_SHA" => "a" * 40,
+    "C11_TEST_BONSPLIT_SHA" => "b" * 40
+  }
+  key_for = lambda do
+    stdout, stderr, status = Open3.capture3(fake_env, dependency_helper, fixture)
+    abort "dependency-key helper failed: #{stderr}" unless status.success?
+    key = stdout.strip
+    abort "dependency-key helper returned an invalid digest" unless key.match?(/\A[0-9a-f]{64}\z/)
+    key
+  end
+
+  previous_key = key_for.call
+  inputs.each_key do |relative_path|
+    path = File.join(fixture, relative_path)
+    File.write(path, File.read(path) + " changed")
+    current_key = key_for.call
+    abort "DerivedData dependency key ignored #{relative_path}" if current_key == previous_key
+    previous_key = current_key
+  end
+  %w[C11_TEST_GHOSTTY_SHA C11_TEST_BONSPLIT_SHA].each_with_index do |name, index|
+    fake_env[name] = (index == 0 ? "c" : "d") * 40
+    current_key = key_for.call
+    abort "DerivedData dependency key ignored #{name}" if current_key == previous_key
+    previous_key = current_key
+  end
 end
 
 abort "expected exactly four test jobs" unless test_jobs.length == 4

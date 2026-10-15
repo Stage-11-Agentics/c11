@@ -9,6 +9,9 @@ outputs:
   xcode-version:
     description: The selected Xcode version used to scope the DerivedData cache.
     value: ${{ steps.select-xcode.outputs.version }}
+  dependency-key:
+    description: Dependency and project inputs used to scope the DerivedData cache.
+    value: ${{ steps.select-xcode.outputs.dependency-key }}
 runs:
   using: composite
   steps:
@@ -29,6 +32,8 @@ runs:
         XCODE_VER="${XCODE_VERSION_OUTPUT%%$'\n'*}"
         echo "XCODE_VER=$XCODE_VER" >> "$GITHUB_ENV"
         echo "version=$XCODE_VER" >> "$GITHUB_OUTPUT"
+        DEPENDENCY_KEY="$("$GITHUB_WORKSPACE/scripts/ci-deriveddata-dependency-key.sh" "$GITHUB_WORKSPACE")"
+        echo "dependency-key=$DEPENDENCY_KEY" >> "$GITHUB_OUTPUT"
         echo "$XCODE_VERSION_OUTPUT"
 
     - name: Cache GhosttyKit.xcframework
@@ -66,11 +71,9 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
       with:
         path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
-        key: deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.pbxproj') }}
+        key: deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ steps.select-xcode.outputs.dependency-key }}-${{ github.sha }}
         restore-keys: |
-          deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-          deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-
-          deriveddata-build-${{ runner.os }}-
+          deriveddata-build-${{ runner.os }}-${{ env.XCODE_VER }}-${{ steps.select-xcode.outputs.dependency-key }}-
 
     - name: Cache Swift packages
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4

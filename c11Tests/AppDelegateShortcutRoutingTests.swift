@@ -1412,6 +1412,15 @@ final class WindowRoutingShortcutTests: ShortcutRoutingTestSupport {
         secondWindow.makeKeyAndOrderFront(nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 
+        // Close a picker immediately before Cmd+N so this covers a close
+        // notification still queued while the next request arrives.
+        appDelegate.presentCreateWorkspaceSheet()
+        guard let picker = createWorkspacePickerWindows().first else {
+            XCTFail("Expected the New Workspace picker before exercising reopen")
+            return
+        }
+        picker.close()
+
 #if DEBUG
         XCTAssertTrue(appDelegate.debugInjectWindowContextKeyMismatch(windowId: secondWindowId))
 #else

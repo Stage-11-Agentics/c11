@@ -7891,9 +7891,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         if let existing = createWorkspaceSheetWindow {
-            existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
+            if existing.isVisible {
+                existing.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                return
+            }
+            // A close notification can still be queued on the main operation
+            // queue after `close()` has removed the window from AppKit.
+            // Discard that stale reference so this request can create a new one.
+            createWorkspaceSheetWindow = nil
+            if let observer = createWorkspaceSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            createWorkspaceSheetCloseObserver = nil
         }
         let initialDirectory = focusedWorkspaceWorkingDirectory()
             ?? FileManager.default.homeDirectoryForCurrentUser.path
@@ -7983,8 +7993,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
+        ) { [weak self, weak window] _ in
+            guard let self, let window, self.createWorkspaceSheetWindow === window else { return }
             if let observer = self.createWorkspaceSheetCloseObserver {
                 NotificationCenter.default.removeObserver(observer)
             }

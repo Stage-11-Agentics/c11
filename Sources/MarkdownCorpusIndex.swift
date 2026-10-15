@@ -210,15 +210,15 @@ struct MarkdownCorpusFSEventStreamDriver {
 /// snapshots. FSEvents drives refreshes and unchanged files reuse parsed data.
 final class MarkdownCorpusIndexer: @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.stage11.c11", category: "markdown.corpus")
-    private static let fullRescanEventFlagMask = Int(
-        kFSEventStreamEventFlagMustScanSubDirs
-            | kFSEventStreamEventFlagUserDropped
-            | kFSEventStreamEventFlagKernelDropped
+    private static let mustScanSubDirsFlag = Int(kFSEventStreamEventFlagMustScanSubDirs)
+    private static let unrecoverableEventLossFlags = Int(
+        kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped
     )
+    private static let fullRescanEventFlagMask = mustScanSubDirsFlag | unrecoverableEventLossFlags
     private static let fseventCallback: FSEventStreamCallback = { _, info, eventCount, rawPaths, eventFlags, _ in
         guard let info else { return }
         let indexer = Unmanaged<MarkdownCorpusIndexer>.fromOpaque(info).takeUnretainedValue()
-        MarkdownCorpusIndexer.logger.info("FSEvents callback received root=\(indexer.rootURL.path, privacy: .private) event_count=\(eventCount, privacy: .public)")
+        MarkdownCorpusIndexer.logger.debug("FSEvents callback received root=\(indexer.rootURL.path, privacy: .private) event_count=\(eventCount, privacy: .public)")
         let cfPaths = unsafeBitCast(rawPaths, to: CFArray.self)
         let paths = (cfPaths as NSArray).compactMap { $0 as? String }
         let flags = (0..<eventCount).map { index in eventFlags[index] }
@@ -269,7 +269,6 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     let rootURL: URL
     private let rootAccess: MarkdownAssetRoot?
     private let queue = DispatchQueue(label: "com.stage11.c11.markdown-corpus", qos: .utility)
-    private let eventQueue = DispatchQueue(label: "com.stage11.c11.markdown-corpus.fsevents", qos: .userInitiated)
     private let limits: Limits
     private let streamDriver: MarkdownCorpusFSEventStreamDriver
     private let onUpdate: @Sendable (MarkdownCorpusSnapshot) -> Void
@@ -387,8 +386,19 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             let lostEventFlags = eventFlags.reduce(into: 0) { combined, flags in
                 combined |= Int(flags) & Self.fullRescanEventFlagMask
             }
-            if lostEventFlags != 0 {
-                Self.logger.error("FSEvents reported incomplete path coverage; scheduling full rescan root=\(self.rootURL.path, privacy: .private) flags=\(lostEventFlags, privacy: .public)")
+            let hasUnrecoverableLoss = eventFlags.contains {
+                Int($0) & Self.unrecoverableEventLossFlags != 0
+            }
+            let mustScanPathsRequireRescan = paths.enumerated().contains { index, path in
+                guard index < eventFlags.count,
+                      Int(eventFlags[index]) & Self.mustScanSubDirsFlag != 0 else { return false }
+                return !self.isInSkippedDirectory(path)
+            }
+            let mustScanWithoutPath = eventFlags.indices.contains { index in
+                index >= paths.count && Int(eventFlags[index]) & Self.mustScanSubDirsFlag != 0
+            }
+            if hasUnrecoverableLoss || mustScanPathsRequireRescan || mustScanWithoutPath {
+                Self.logger.notice("FSEvents reported incomplete path coverage; scheduling full rescan root=\(self.rootURL.path, privacy: .private) flags=\(lostEventFlags, privacy: .public)")
                 self.enqueueRescanOnQueue()
                 return
             }
@@ -421,7 +431,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 let relative = event.0.hasPrefix(rootPrefix) ? String(event.0.dropFirst(rootPrefix.count)) : ""
                 let eligible = Self.isBoardEventPath(relative, isDirectory: event.1) || !ignored.contains(event.0)
                 if !eligible {
-                    Self.logger.info("FSEvents filtered ignored event path=\(event.0, privacy: .private)")
+                    Self.logger.debug("FSEvents filtered ignored event path=\(event.0, privacy: .private)")
                     ignoredFilterDropCount += 1
                 }
                 return eligible
@@ -462,7 +472,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             Self.logger.error("FSEvents stream create failed root=\(self.rootURL.path, privacy: .private)")
             return
         }
-        streamDriver.setDispatchQueue(stream, eventQueue)
+        streamDriver.setDispatchQueue(stream, queue)
         guard streamDriver.start(stream) else {
             Self.logger.error("FSEvents stream start failed root=\(self.rootURL.path, privacy: .private)")
             streamDriver.invalidate(stream)
@@ -481,6 +491,16 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         guard path.hasPrefix(prefix) else { return false }
         let relative = String(path.dropFirst(prefix.count))
         return Self.shouldRescan(relativePath: relative, isDirectory: isDirectory)
+    }
+
+    private func isInSkippedDirectory(_ eventPath: String) -> Bool {
+        let path = Self.resolvedPathAllowingMissingTail(eventPath)
+        let rootPath = rootURL.path
+        guard path != rootPath else { return false }
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard path.hasPrefix(prefix) else { return false }
+        let relative = String(path.dropFirst(prefix.count))
+        return !Self.shouldRescan(relativePath: relative, isDirectory: true)
     }
 
     static func shouldRescan(relativePath: String, isDirectory: Bool) -> Bool {

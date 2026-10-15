@@ -514,26 +514,32 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         await fulfillment(of: [streamStopped], timeout: 5)
     }
 
-    func testDroppedFSEventRescansWhenPathDoesNotNameRoot() async throws {
-        let droppedFlags: [FSEventStreamEventFlags] = [
-            FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs),
-            FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped),
-            FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped),
+    func testDroppedFSEventSkipsMustScanUnderSkippedSubtreeButRescansOnUserOrKernelDrop() async throws {
+        let cases: [(name: String, relativePath: String, flag: FSEventStreamEventFlags, shouldRescan: Bool)] = [
+            ("MustScanSubDirs in skipped subtree", "node_modules", FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs), false),
+            ("MustScanSubDirs in indexed subtree", "docs", FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs), true),
+            ("UserDropped in skipped subtree", "node_modules", FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped), true),
+            ("KernelDropped in skipped subtree", "node_modules", FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped), true),
         ]
 
-        for (index, droppedFlag) in droppedFlags.enumerated() {
+        for (index, testCase) in cases.enumerated() {
             let temp = try temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: temp) }
             let root = temp.appendingPathComponent("repo", isDirectory: true)
             try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            let eventDirectory = root.appendingPathComponent(testCase.relativePath, isDirectory: true)
+            try FileManager.default.createDirectory(at: eventDirectory, withIntermediateDirectories: true)
             let initial = root.appendingPathComponent("reader.md")
             let added = root.appendingPathComponent("added-\(index).md")
+            let eventPath = eventDirectory.appendingPathComponent("dependency.md")
             try Data("# Reader".utf8).write(to: initial)
+            try Data("# Dependency".utf8).write(to: eventPath)
 
             let driver = FakeFSEventStreamDriver()
-            let initialPublished = expectation(description: "initial snapshot for dropped-event case \(index)")
-            let streamStarted = expectation(description: "fake stream starts for dropped-event case \(index)")
-            let appeared = expectation(description: "full rescan indexes file after lost event flag \(index)")
+            let initialPublished = expectation(description: "initial snapshot: \(testCase.name)")
+            let streamStarted = expectation(description: "fake stream starts: \(testCase.name)")
+            let appeared = expectation(description: "expected rescan after \(testCase.name)")
+            appeared.isInverted = !testCase.shouldRescan
             let indexer = MarkdownCorpusIndexer(
                 rootURL: root,
                 priorityFileURLs: [initial],
@@ -548,37 +554,43 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             await fulfillment(of: [initialPublished, streamStarted], timeout: 5)
             try Data("# Added".utf8).write(to: added)
 
-            // A dropped-event notification can name a subdirectory rather than
-            // the stream root. Its path is intentionally outside the corpus so
-            // only the loss flag can trigger the full rescan.
-            let unrelatedPath = temp.appendingPathComponent("unrelated-\(index).txt").path
             XCTAssertTrue(driver.send(
-                paths: [unrelatedPath],
-                flags: [droppedFlag]
+                paths: [eventDirectory.path],
+                flags: [testCase.flag]
             ))
-            await fulfillment(of: [appeared], timeout: 2)
+            if testCase.shouldRescan {
+                await fulfillment(of: [appeared], timeout: 2)
+            } else {
+                await fulfillment(of: [appeared], timeout: 1)
+            }
             indexer.stop()
         }
     }
 
-    func testLiveFSEventsStreamStartsAndPublishesInitialSnapshot() async throws {
+    func testLiveFSEventsStreamRefreshesAddedMarkdown() async throws {
         let temp = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temp) }
         let root = temp.appendingPathComponent("repo", isDirectory: true)
-        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // Keep this small root outside Git so repository metadata writes do
+        // not compete with the live Markdown event under test.
         let initial = root.appendingPathComponent("reader.md")
+        let added = root.appendingPathComponent("added.md")
         try Data("# Reader".utf8).write(to: initial)
 
         let initialSnapshotPublished = expectation(description: "initial live-stream scan completes")
         let streamStarted = expectation(description: "real FSEvents stream starts")
+        let addedSnapshotPublished = expectation(description: "real FSEvents delivery indexes the added document")
         let indexer = MarkdownCorpusIndexer(fileURL: initial) { snapshot in
             if snapshot.revision == 1 { initialSnapshotPublished.fulfill() }
+            if snapshot.containsDocument(path: added.path) { addedSnapshotPublished.fulfill() }
         }
         indexer.start { started in
             if started { streamStarted.fulfill() }
         }
-        await fulfillment(of: [initialSnapshotPublished], timeout: 5)
-        await fulfillment(of: [streamStarted], timeout: 5)
+        await fulfillment(of: [initialSnapshotPublished, streamStarted], timeout: 15)
+        try Data("# Added\n".utf8).write(to: added)
+        await fulfillment(of: [addedSnapshotPublished], timeout: 30)
         indexer.stop()
     }
 

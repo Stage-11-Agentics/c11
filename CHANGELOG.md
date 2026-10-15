@@ -4,6 +4,30 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [1.1.3] - 2026-10-15
+
+Headline: **c11 1.1.3. A mail doorbell never presses Return on text you just typed, more mail reaches Grok and Codex, and New Workspace works after a window closes.**
+
+### Fixed
+
+- **A mail doorbell never presses Return on text you just typed.** c11 checks the prompt again right before it presses Return. It holds back if you typed into the panel since the doorbell started, or if the prompt now shows a draft. ([#690](https://github.com/Stage-11-Agentics/c11/pull/690))
+- **Mail reaches Grok in a wide panel.** c11 reads Grok's prompt from the bottom of the panel, so a panel wider than 256 columns no longer hides an empty prompt and holds the mail. ([#690](https://github.com/Stage-11-Agentics/c11/pull/690))
+- **Mail reaches Codex after you interrupt a turn.** c11 waits for Codex to settle after an interrupt before it rings, so the doorbell is not lost between turns. ([#690](https://github.com/Stage-11-Agentics/c11/pull/690))
+- **A send to a terminal that is still attaching is kept.** `c11 send` to a panel whose terminal has not attached yet is queued and typed once it attaches, instead of being dropped. A guarded send to such a panel still refuses. ([#690](https://github.com/Stage-11-Agentics/c11/pull/690))
+- **Mail counts drop a closed window's panels.** Closing a window no longer leaves its panels' unread mail in the counts. ([#690](https://github.com/Stage-11-Agentics/c11/pull/690))
+- **A captured workspace plan leaves out flags and delegate state.** Saving a workspace as a plan no longer copies a panel's attention state into it. ([#690](https://github.com/Stage-11-Agentics/c11/pull/690))
+- **New Workspace works after a window closes.** c11 forgets closed windows before it chooses where a new workspace goes, and the New Workspace sheet opens again after a quick close and reopen. ([#689](https://github.com/Stage-11-Agentics/c11/pull/689), [#701](https://github.com/Stage-11-Agentics/c11/pull/701))
+- **⌘N and ⌘P follow the window you are in.** A browser address bar focused in another window no longer turns these shortcuts into address-bar navigation. ([#701](https://github.com/Stage-11-Agentics/c11/pull/701))
+- **The markdown reader's search and backlinks keep up when macOS drops file events.** c11 rescans the folder when macOS reports lost events, so ⌘K search and Referenced by no longer miss new or deleted files. ([#698](https://github.com/Stage-11-Agentics/c11/pull/698))
+
+### Changed
+
+- **The bundled c11 skill opens new agents and panels in the current workspace.** It tells agents to create a new workspace only when you ask for one or name a different project. ([#694](https://github.com/Stage-11-Agentics/c11/pull/694))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.1.2] - 2026-10-14
 
 Headline: **c11 1.1.2. Agents keep working when c11 is covered, mail reaches Claude Code without a hook error, and the markdown reader's renderers carry current security fixes.**

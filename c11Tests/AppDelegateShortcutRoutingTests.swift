@@ -1598,6 +1598,18 @@ final class WindowRoutingShortcutTests: ShortcutRoutingTestSupport {
             return
         }
 
+        let workspacePickerWindows = {
+            NSApp.windows.filter { $0.contentViewController is NSHostingController<CreateWorkspaceSheet> }
+        }
+        let existingPickerIDs = Set(workspacePickerWindows().map(ObjectIdentifier.init))
+        appDelegate.presentCreateWorkspaceSheet()
+        defer {
+            for window in workspacePickerWindows() where !existingPickerIDs.contains(ObjectIdentifier(window)) {
+                window.close()
+            }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+
         let existingWindowIds = mainWindowIds()
         let orphanWindowId = UUID()
         let orphanManager = WorkspaceManager()

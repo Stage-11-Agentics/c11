@@ -7883,6 +7883,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// the new workspace into otherwise.
     @MainActor
     func presentCreateWorkspaceSheet() {
+        // Prune stale registrations even when this request reuses an already
+        // open picker and returns before resolving the preferred window.
+        pruneOrphanedMainWindowContexts()
         if mainWindowContexts.isEmpty {
             openNewMainWindow(nil)
             return

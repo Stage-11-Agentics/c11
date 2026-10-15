@@ -71,6 +71,13 @@ class PerfLaneTests(unittest.TestCase):
         self.assertEqual(perf.xcresult_state(failed)[0], "failure")
         self.assertEqual(perf.xcresult_state(None)[0], "error")
 
+    def test_missing_xcrun_can_be_recorded_as_an_error(self):
+        summary, error = perf.read_xcresult_summary(
+            Path("/missing/xcrun"), Path("result.xcresult"), {}
+        )
+        self.assertIsNone(summary)
+        self.assertIsNotNone(error)
+
     def test_appends_each_measurement_as_one_json_line(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "records" / "perf.jsonl"

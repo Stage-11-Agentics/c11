@@ -25,12 +25,12 @@ ARTIFACT_RETENTION_S = 30 * 24 * 60 * 60
 BENCHMARKS = (
     (
         "command-search",
-        "c11Tests/CommandPaletteSearchEngineTests/testCommandSearchBenchmarkBeatsLegacyPipeline",
+        "c11LogicTests/CommandPaletteSearchEngineTests/testCommandSearchBenchmarkBeatsLegacyPipeline",
         re.compile(r"BENCH cmd\+shift\+p reference=([0-9.]+)ms optimized=([0-9.]+)ms"),
     ),
     (
         "switcher-search",
-        "c11Tests/CommandPaletteSearchEngineTests/testSwitcherSearchBenchmarkBeatsLegacyPipeline",
+        "c11LogicTests/CommandPaletteSearchEngineTests/testSwitcherSearchBenchmarkBeatsLegacyPipeline",
         re.compile(r"BENCH cmd\+p reference=([0-9.]+)ms optimized=([0-9.]+)ms"),
     ),
     (
@@ -144,6 +144,25 @@ def xcresult_state(report: object) -> tuple[str, str]:
     return "error", f"unrecognized xcresult result {report.get('result')!r}"
 
 
+def read_xcresult_summary(
+    xcrun: Path, result_bundle: Path, env: dict[str, str]
+) -> tuple[object, str | None]:
+    try:
+        result = subprocess.run(
+            [str(xcrun), "xcresulttool", "get", "test-results", "summary",
+             "--path", str(result_bundle), "--compact"],
+            capture_output=True, text=True, timeout=30, env=env,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, str(error)
+    if result.returncode != 0:
+        return None, f"xcresulttool exited {result.returncode}: {result.stderr.strip()}"
+    try:
+        return json.loads(result.stdout), None
+    except ValueError as error:
+        return None, f"xcresult summary is not JSON: {error}"
+
+
 def append_records(path: Path, records: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as output:
@@ -211,7 +230,7 @@ def run_once(root: Path, ref: str) -> int:
         source_packages = root / "SourcePackages"
         source_packages.mkdir(exist_ok=True)
         xcodebuild = Path(DEVELOPER_DIR) / "usr" / "bin" / "xcodebuild"
-        xcrun = Path(DEVELOPER_DIR) / "usr" / "bin" / "xcrun"
+        xcrun = Path("/usr/bin/xcrun")
         selectors = [f"-only-testing:{selector}" for _name, selector, _pattern in BENCHMARKS]
         argv = [
             str(SLOT_RUNNER), "c11-perf-lane", str(xcodebuild),
@@ -248,18 +267,12 @@ def run_once(root: Path, ref: str) -> int:
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
         metrics = parse_metrics(log_text)
         summary: object = None
+        summary_error = None
         if result_bundle.exists():
-            summary_result = subprocess.run(
-                [str(xcrun), "xcresulttool", "get", "test-results", "summary",
-                 "--path", str(result_bundle), "--compact"],
-                capture_output=True, text=True, timeout=30, env=env,
-            )
-            if summary_result.returncode == 0:
-                try:
-                    summary = json.loads(summary_result.stdout)
-                except ValueError:
-                    summary = None
+            summary, summary_error = read_xcresult_summary(xcrun, result_bundle, env)
         state_value, reason = xcresult_state(summary)
+        if summary_error is not None:
+            state_value, reason = "error", f"xcresult summary unavailable: {summary_error}"
         if exit_code != 0:
             state_value, reason = "failure", f"xcodebuild exited {exit_code}"
         elif state_value == "success" and len(metrics) != len(BENCHMARKS):

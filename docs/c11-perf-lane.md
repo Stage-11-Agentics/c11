@@ -1,6 +1,6 @@
 # Atlas c11 performance lane
 
-The lane measures three named host tests from `c11Tests` on the current `main` tip once an hour. It runs on Atlas under the existing user, uses the shared fleet build slot, writes one JSONL record per benchmark, and posts no GitHub status. A failed or unavailable measurement never blocks `main`.
+The lane measures two command-search tests from `c11LogicTests` and one Markdown corpus bridge test from `c11Tests` on the current `main` tip once an hour. It runs on Atlas under the existing user, uses the shared fleet build slot, writes one JSONL record per benchmark, and posts no GitHub status. A failed or unavailable measurement never blocks `main`.
 
 The script owns a separate checkout at `~/c11-perf-lane/worktree` and a separate DerivedData directory. It fetches the requested ref, refuses a dirty checkout, updates the pinned submodules, and invokes `xcodebuild` only through `~/c11-poller/bin/atlas_build_slots.py`. It sets `C11_PERF_LANE=1` and runs these selectors serially:
 

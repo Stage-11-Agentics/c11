@@ -7,7 +7,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>@HOME@/c11-perf-lane/worktree/scripts/c11-perf-lane.py</string>
+    <string>@HOME@/c11-perf-lane/bin/c11-perf-lane.py</string>
     <string>run</string>
     <string>--root</string>
     <string>@HOME@/c11-perf-lane</string>
@@ -27,8 +27,6 @@
   <false/>
   <key>StartInterval</key>
   <integer>3600</integer>
-  <key>ProcessType</key>
-  <string>Background</string>
   <key>StandardOutPath</key>
   <string>@HOME@/c11-perf-lane/logs/launchd.out</string>
   <key>StandardErrorPath</key>

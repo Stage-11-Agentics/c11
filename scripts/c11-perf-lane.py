@@ -21,7 +21,9 @@ REPO_URL = "https://github.com/Stage-11-Agentics/c11.git"
 SLOT_RUNNER = Path.home() / "c11-poller" / "bin" / "atlas_build_slots.py"
 DEVELOPER_DIR = "/Applications/Xcode-26.3.app/Contents/Developer"
 TIMEOUT_S = 1800
+MAX_FAILED_ATTEMPTS_PER_HEAD = 3
 ARTIFACT_RETENTION_S = 30 * 24 * 60 * 60
+ACQUIRED_SLOT = re.compile(r"\[atlas-slots\] acquired slot=([0-9]+)\b")
 BENCHMARKS = (
     (
         "command-search",
@@ -144,6 +146,24 @@ def xcresult_state(report: object) -> tuple[str, str]:
     return "error", f"unrecognized xcresult result {report.get('result')!r}"
 
 
+def classify_run_result(
+    exit_code: int, lane_timed_out: bool, log_text: str, summary: object,
+    summary_error: str | None, metrics: dict[str, dict[str, object]],
+) -> tuple[str, str]:
+    state_value, reason = xcresult_state(summary)
+    if summary_error is not None:
+        state_value, reason = "error", f"xcresult summary unavailable: {summary_error}"
+    if exit_code == 75 and "[atlas-slots] admission timed out" in log_text:
+        return "unavailable", "slot admission timed out"
+    if lane_timed_out:
+        return "error", f"lane timed out after {TIMEOUT_S} seconds"
+    if exit_code != 0:
+        return "failure", f"xcodebuild exited {exit_code}"
+    if state_value == "success" and len(metrics) != len(BENCHMARKS):
+        return "error", "one or more benchmark metrics were not emitted"
+    return state_value, reason
+
+
 def read_xcresult_summary(
     xcrun: Path, result_bundle: Path, env: dict[str, str]
 ) -> tuple[object, str | None]:
@@ -170,6 +190,71 @@ def append_records(path: Path, records: list[dict[str, object]]) -> None:
         for record in records:
             output.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
         output.flush()
+
+
+def head_measurements(path: Path, head: str) -> tuple[bool, set[str]]:
+    """Return whether this head passed and the unique failed run ids already recorded."""
+    succeeded = False
+    failed_runs: set[str] = set()
+    try:
+        records = path.open("r", encoding="utf-8")
+    except FileNotFoundError:
+        return False, failed_runs
+    with records:
+        for line in records:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if type(record) is not dict or record.get("head") != head:
+                continue
+            if record.get("state") == "success":
+                succeeded = True
+            elif record.get("state") == "failure" and isinstance(record.get("run_id"), str):
+                failed_runs.add(record["run_id"])
+    return succeeded, failed_runs
+
+
+def load_average() -> list[float] | None:
+    try:
+        return [round(float(value), 2) for value in os.getloadavg()]
+    except OSError:
+        return None
+
+
+def wait_for_slot_process(
+    process: subprocess.Popen[bytes], slot_record: Path, timeout_s: float,
+) -> tuple[int, float | None, float | None, list[float] | None, bool, float]:
+    """Wait without spending the build/test budget before the fleet slot is acquired."""
+    admission_started = time.monotonic()
+    build_started = None
+    slot_wait_seconds = None
+    load = None
+    while True:
+        if slot_record.exists():
+            if build_started is None:
+                build_started = time.monotonic()
+                load = load_average()
+            try:
+                row = json.loads(slot_record.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                row = {}
+            value = row.get("slot_wait_seconds") if type(row) is dict else None
+            if type(value) in (int, float):
+                slot_wait_seconds = float(value)
+
+        exit_code = process.poll()
+        if exit_code is not None:
+            return exit_code, build_started, slot_wait_seconds, load, False, admission_started
+        if build_started is not None and time.monotonic() - build_started >= timeout_s:
+            terminate_group(process)
+            return 124, build_started, slot_wait_seconds, load, True, admission_started
+        time.sleep(0.05)
+
+
+def acquired_slot(log_text: str) -> int | None:
+    match = ACQUIRED_SLOT.search(log_text)
+    return int(match.group(1)) if match else None
 
 
 def prune_artifacts(root: Path) -> None:
@@ -204,7 +289,7 @@ def terminate_group(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=10)
 
 
-def run_once(root: Path, ref: str) -> int:
+def run_once(root: Path, ref: str, force: bool = False) -> int:
     root = root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     state = root / "state"
@@ -217,6 +302,14 @@ def run_once(root: Path, ref: str) -> int:
             return 0
 
         worktree, head = prepare_worktree(root, ref)
+        records_path = root / "records" / "perf.jsonl"
+        succeeded, failed_runs = head_measurements(records_path, head)
+        if not force and succeeded:
+            print(f"perf run skipped: {head} already measured")
+            return 0
+        if not force and len(failed_runs) >= MAX_FAILED_ATTEMPTS_PER_HEAD:
+            print(f"perf run skipped: {head} failed {len(failed_runs)} times")
+            return 0
         prepare_ghosttykit(worktree)
         results = root / "results"
         logs = root / "logs"
@@ -226,6 +319,7 @@ def run_once(root: Path, ref: str) -> int:
         run_id = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z") + "-" + uuid.uuid4().hex[:8]
         result_bundle = results / (run_id + ".xcresult")
         log_path = logs / (run_id + ".log")
+        slot_record = state / (run_id + ".slot.json")
         derived = root / "DerivedData"
         source_packages = root / "SourcePackages"
         source_packages.mkdir(exist_ok=True)
@@ -250,33 +344,33 @@ def run_once(root: Path, ref: str) -> int:
         env = os.environ.copy()
         env["DEVELOPER_DIR"] = DEVELOPER_DIR
         env["C11_PERF_LANE"] = "1"
+        env["C11_ATLAS_SLOT_RECORD_PATH"] = str(slot_record)
         env["PATH"] = ":".join((str(Path.home() / "zig-0.15.2"), "/opt/homebrew/bin", "/usr/bin", "/bin"))
         env.pop("C11_BUILD_LOCK", None)
-        started = time.monotonic()
+        admission_started = time.monotonic()
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
                 argv, cwd=worktree, env=env, stdout=log, stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-            try:
-                exit_code = process.wait(timeout=TIMEOUT_S)
-            except subprocess.TimeoutExpired:
-                terminate_group(process)
-                exit_code = 124
-        elapsed_seconds = round(time.monotonic() - started, 3)
+            exit_code, build_started, slot_wait_seconds, load, lane_timed_out, admission_started = \
+                wait_for_slot_process(process, slot_record, TIMEOUT_S)
+        finished = time.monotonic()
+        elapsed_seconds = round(finished - build_started, 3) if build_started is not None else None
+        if slot_wait_seconds is None:
+            slot_wait_seconds = round(finished - admission_started, 3)
+        if load is None:
+            load = load_average()
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
+        slot = acquired_slot(log_text)
         metrics = parse_metrics(log_text)
         summary: object = None
         summary_error = None
         if result_bundle.exists():
             summary, summary_error = read_xcresult_summary(xcrun, result_bundle, env)
-        state_value, reason = xcresult_state(summary)
-        if summary_error is not None:
-            state_value, reason = "error", f"xcresult summary unavailable: {summary_error}"
-        if exit_code != 0:
-            state_value, reason = "failure", f"xcodebuild exited {exit_code}"
-        elif state_value == "success" and len(metrics) != len(BENCHMARKS):
-            state_value, reason = "error", "one or more benchmark metrics were not emitted"
+        state_value, reason = classify_run_result(
+            exit_code, lane_timed_out, log_text, summary, summary_error, metrics
+        )
         if state_value == "success" and result_bundle.exists():
             shutil.rmtree(result_bundle)
         timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -291,6 +385,9 @@ def run_once(root: Path, ref: str) -> int:
                 "state": state_value,
                 "reason": reason,
                 "elapsed_seconds": elapsed_seconds,
+                "slot_wait_seconds": slot_wait_seconds,
+                "slot": slot,
+                "load_average": load,
                 "log": str(log_path),
                 "result_bundle": str(result_bundle) if result_bundle.exists() else None,
             }
@@ -304,10 +401,11 @@ def run_once(root: Path, ref: str) -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[1] != "run":
-        print("usage: c11-perf-lane.py run --root <directory> [--ref main]", file=sys.stderr)
+        print("usage: c11-perf-lane.py run --root <directory> [--ref main] [--force]", file=sys.stderr)
         return 2
     root = None
     ref = "main"
+    force = False
     args = iter(argv[2:])
     for arg in args:
         if arg == "--root":
@@ -322,6 +420,8 @@ def main(argv: list[str]) -> int:
             except StopIteration:
                 print("--ref requires a ref", file=sys.stderr)
                 return 2
+        elif arg == "--force":
+            force = True
         else:
             print(f"unknown argument: {arg}", file=sys.stderr)
             return 2
@@ -329,7 +429,7 @@ def main(argv: list[str]) -> int:
         print("--root is required", file=sys.stderr)
         return 2
     try:
-        return run_once(root, ref)
+        return run_once(root, ref, force=force)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
         print(f"perf lane error: {error}", file=sys.stderr)
         return 1

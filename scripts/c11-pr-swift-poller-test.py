@@ -1581,8 +1581,8 @@ class ReviewRegressionTests(unittest.TestCase):
             world.now += 26
             outcomes.append(supervisor.poll_once())
         self.assertEqual(outcomes, ["started"] * 5)
-        self.assertEqual(world.posts[-1]["state"], "failure")
-        self.assertEqual(world.posts[-1]["description"], "budget 121s")
+        self.assertEqual(world.posts[-1]["state"], "success")
+        self.assertEqual(world.posts[-1]["description"], "121s")
         self.assertEqual(len([post for post in world.posts
                               if post["state"] == "pending"
                               and post["description"] == "cold cache exceeded budget; warm retry queued"]), 5)

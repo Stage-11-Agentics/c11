@@ -1412,6 +1412,20 @@ final class WindowRoutingShortcutTests: ShortcutRoutingTestSupport {
             return
         }
 
+        guard let firstWorkspace = firstManager.selectedWorkspace,
+              let terminalPanelId = firstWorkspace.focusedPanelId,
+              let paneId = firstWorkspace.paneId(forPanelId: terminalPanelId),
+              let browserPanel = firstWorkspace.newBrowserSurface(inPane: paneId, focus: false) else {
+            XCTFail("Expected a browser panel in the other window")
+            return
+        }
+        XCTAssertTrue(appDelegate.focusMainWindow(windowId: firstWindowId))
+        XCTAssertTrue(appDelegate.requestBrowserAddressBarFocus(panelId: browserPanel.id))
+        // A focused omnibar in another window must not consume this Cmd+N.
+        defer {
+            NotificationCenter.default.post(name: .browserDidBlurAddressBar, object: browserPanel.id)
+        }
+
         secondWindow.makeKeyAndOrderFront(nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
 

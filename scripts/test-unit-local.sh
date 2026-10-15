@@ -58,6 +58,18 @@ for arg in "$@"; do
   esac
 done
 
+# The logic suite is process-isolated and runs in parallel on Atlas. Keep the
+# host-bound c11-unit scheme serial because its tests launch an app process.
+if [[ "$SCHEME" == "c11-logic" && -n "${C11_TEST_PARALLEL_WORKERS:-}" ]]; then
+  PARALLEL_WORKERS="$C11_TEST_PARALLEL_WORKERS"
+  if ! [[ "$PARALLEL_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[test-unit-local] invalid C11_TEST_PARALLEL_WORKERS: $PARALLEL_WORKERS" >&2
+    exit 2
+  fi
+  echo "[test-unit-local] parallelTestingWorkers=$PARALLEL_WORKERS"
+  set -- -parallel-testing-enabled YES -parallel-testing-worker-count "$PARALLEL_WORKERS" "$@"
+fi
+
 echo "[test-unit-local] C11_TAG=$C11_TAG"
 echo "[test-unit-local] C11_SOCKET_PATH=$C11_SOCKET_PATH"
 echo "[test-unit-local] derivedDataPath=$DERIVED_DATA"

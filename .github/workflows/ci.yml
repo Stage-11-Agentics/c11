@@ -34,6 +34,9 @@ jobs:
       - name: Validate the backstop CLI test step
         run: ruby tests/test_ci_python_cli_step.rb
 
+      - name: Validate the parallel logic lane
+        run: ruby tests/test_ci_logic_parallelism.rb
+
       - name: Validate GhosttyKit checksum verification
         run: ./tests/test_ci_ghosttykit_checksum_verification.sh
 

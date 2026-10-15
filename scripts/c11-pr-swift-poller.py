@@ -446,6 +446,8 @@ def xcodebuild_argv(worktree, derived, result_path):
         "-derivedDataPath", str(derived),
         "-resultBundlePath", str(result_path),
         "test",
+        "-parallel-testing-enabled", "YES",
+        "-parallel-testing-worker-count", "8",
         *["-only-testing:c11LogicTests/%s" % name for name in ARMED_TESTS],
         "-test-timeouts-enabled", "YES",
         "-default-test-execution-time-allowance", "60",

@@ -551,19 +551,20 @@ def read_running(root):
 def group_alive(pgid):
     """True when the recorded group still has a live member.
 
-    killpg(pgid, 0) is the probe. On macOS it can return ESRCH for an
-    orphaned group that ps still lists, so a live process-table hit keeps
-    the group alive. The same call returns EPERM when the only member is an
-    unreaped zombie; a zombie is not a running build. A free lock is never
-    enough on its own.
+    killpg(pgid, 0) is only a permission/existence probe: Linux can report
+    success when the group contains only zombies, and macOS can report ESRCH
+    for an orphaned group that ps still lists. The process table distinguishes
+    live members from zombies. If that inspection fails, treat the group as
+    alive so recovery cannot mistake an unknown state for a clean exit. A free
+    lock is never enough on its own.
     """
     if type(pgid) is not int or pgid <= 1:
         return False
     try:
         os.killpg(pgid, 0)
     except (ProcessLookupError, PermissionError):
-        return _pgid_live(pgid)
-    return True
+        pass
+    return _pgid_live(pgid)
 
 
 def _process_snapshot():
@@ -612,10 +613,10 @@ def _signal_pid(pid, sig):
 
 
 def _pgid_live(pgid):
-    """True when ps shows a non-zombie member of this process group."""
+    """True unless ps proves this group has no non-zombie member."""
     listed = subprocess.run(["ps", "-axo", "pgid=,state="], capture_output=True, text=True)
     if listed.returncode != 0:
-        return False
+        return True
     wanted = str(pgid)
     for line in listed.stdout.splitlines():
         parts = line.split()

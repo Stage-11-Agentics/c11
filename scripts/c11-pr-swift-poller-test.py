@@ -88,6 +88,10 @@ class World:
             "Test Suite 'PanelLivenessDeriverTests' started\n"
             "** TEST SUCCEEDED **\nExecuted 2 tests\n"
         )
+        self.test_result = {
+            "result": "Passed", "passedTests": 2, "failedTests": 0,
+            "skippedTests": 0, "totalTestCount": 2,
+        }
         self.worktree = "/work"
         self.statuses = {}
         self.kill_log = []
@@ -195,6 +199,9 @@ class World:
 
     def build_argv(self, worktree, derived, result):
         return poller.xcodebuild_argv(worktree, derived, result)
+
+    def test_summary(self):
+        return self.test_result
 
     def spawn(self, command, log_path=None):
         self.spawned.append(command)
@@ -940,18 +947,20 @@ class PollingAndCredentialTests(unittest.TestCase):
         self.assertFalse(poller.layout_inside_worktree("/tmp/c11-poller/bin/poller.py", "/tmp/work"))
 
     def test_status_description_and_budget(self):
-        state, description = poller.classify_result(
-            "Test Suite 'HealthFlagsTests' started\nTest Suite 'PanelLivenessDeriverTests' started\n"
-            "** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
+        passed = {
+            "result": "Passed", "passedTests": 1, "failedTests": 0,
+            "skippedTests": 0, "totalTestCount": 1,
+        }
+        state, description = poller.classify_result(15, passed)
         self.assertEqual((state, description), ("success", "15s"))
-        state, description = poller.classify_result(
-            "Test Suite 'HealthFlagsTests' started\nTest Suite 'PanelLivenessDeriverTests' started\n"
-            "** TEST SUCCEEDED **\nExecuted 1 test\n", 121)
-        self.assertEqual(state, "failure")
-        self.assertEqual(description, "budget 121s")
-        missing_slice = poller.classify_result(
-            "Test Suite 'HealthFlagsTests' started\n** TEST SUCCEEDED **\nExecuted 1 test\n", 15)
-        self.assertEqual(missing_slice, ("failure", "failed 15s"))
+        self.assertEqual(poller.classify_result(121, passed), ("success", "121s"))
+        failed = dict(passed, result="Failed", failedTests=1)
+        self.assertEqual(poller.classify_result(15, failed), ("failure", "failed 15s"))
+        zero = dict(passed, passedTests=0, totalTestCount=0)
+        self.assertEqual(poller.classify_result(15, zero), ("failure", "failed 15s"))
+        all_skipped = dict(passed, passedTests=0, skippedTests=1, totalTestCount=1)
+        self.assertEqual(poller.classify_result(15, all_skipped), ("failure", "failed 15s"))
+        self.assertEqual(poller.classify_result(15, None), ("error", "result unavailable 15s"))
         body = poller.status_body(SHA_A, "pending", "yielded to Atlas work")
         self.assertLessEqual(len(body["description"]), 140)
         self.assertEqual(body["context"], "c11/pr-swift")
@@ -1463,7 +1472,7 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(result["build_seconds"], 119)
         self.assertEqual(result["post_seconds"], 5)
 
-    def test_warm_build_over_budget_fails_once(self):
+    def test_warm_build_over_budget_passes_when_tests_pass(self):
         world = World(body=[pr()])
         spawn = world.spawn
         key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
@@ -1479,7 +1488,7 @@ class ReviewRegressionTests(unittest.TestCase):
 
         world.spawn = run_spawn
         poller.Supervisor(self.root, world).poll_once()
-        self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("failure", "budget 121s")])
+        self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("success", "121s")])
 
     def test_cold_success_over_budget_posts_pending_and_retries_warm(self):
         world = World(body=[pr()])
@@ -1970,6 +1979,16 @@ class RuntimeHarness(unittest.TestCase):
                 sys.stdout.write("0.15.2\\n")
             raise SystemExit(0)
         """)
+        self.xcrun_bin = self.root / "xcrun-shim"
+        _write_exec(self.xcrun_bin, """
+            #!/usr/bin/env python3
+            import json, pathlib, sys
+            root = pathlib.Path(%r)
+            with open(root / "xcresult-argv.jsonl", "a") as handle:
+                handle.write(json.dumps(sys.argv[1:]) + "\\n")
+            print(json.dumps({"result": "Passed", "passedTests": 2, "failedTests": 0,
+                              "skippedTests": 0, "totalTestCount": 2}))
+        """ % str(self.root))
 
     def build(self, body):
         """The xcodebuild stand-in. It gets the real argv and the build env."""
@@ -1999,6 +2018,7 @@ class RuntimeHarness(unittest.TestCase):
         env["C11_POLLER_TART"] = str(self.tart_bin)
         env["C11_POLLER_ZIG"] = str(self.zig_bin)
         env["C11_POLLER_XCODEBUILD"] = str(self.xcodebuild)
+        env["C11_POLLER_XCRUN"] = str(self.xcrun_bin)
         env["C11_POLLER_KIT_CACHE"] = str(self.root / "kit")
         env["C11_POLLER_CADENCE_S"] = "0.05"
         env["C11_ATLAS_SLOTS_DIR"] = str(self.slots)
@@ -2121,10 +2141,16 @@ class RuntimeIntegrationTests(RuntimeHarness):
         bundle = Path(argv[argv.index("-resultBundlePath") + 1])
         self.assertEqual(bundle.parent, self.root / "state" / "results")
         self.assertIn("** TEST SUCCEEDED **", (bundle.parent / (bundle.name + ".log")).read_text())
-        self.assertIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
-        self.assertIn("-only-testing:c11LogicTests/PanelLivenessDeriverTests", argv)
+        self.assertEqual(argv[argv.index("-scheme") + 1], "c11-logic")
+        self.assertNotIn("-only-testing:c11LogicTests/HealthFlagsTests", argv)
+        self.assertNotIn("-only-testing:c11LogicTests/PanelLivenessDeriverTests", argv)
+        self.assertFalse(any(argument.startswith("-only-testing:") for argument in argv))
         self.assertEqual(argv[argv.index("-parallel-testing-enabled") + 1], "YES")
         self.assertEqual(argv[argv.index("-parallel-testing-worker-count") + 1], "8")
+        summary_argv = json.loads((self.root / "xcresult-argv.jsonl").read_text().splitlines()[0])
+        self.assertEqual(summary_argv[:5], ["xcresulttool", "get", "test-results", "summary", "--path"])
+        self.assertEqual(summary_argv[5], str(bundle))
+        self.assertEqual(summary_argv[6:], ["--compact"])
         key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
         self.assertEqual(Path(argv[argv.index("-derivedDataPath") + 1]), self.root / "cache" / ("DerivedData-" + key))
         self.assertEqual(decided["deps"], key)

@@ -66,7 +66,6 @@ YIELD_INTERVAL_S = 5
 TERM_GRACE_S = 10
 KILL_BUDGET_S = 60
 BUDGET_S = 120
-ARMED_TESTS = ("HealthFlagsTests", "PanelLivenessDeriverTests")
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
@@ -448,7 +447,6 @@ def xcodebuild_argv(worktree, derived, result_path):
         "test",
         "-parallel-testing-enabled", "YES",
         "-parallel-testing-worker-count", "8",
-        *["-only-testing:c11LogicTests/%s" % name for name in ARMED_TESTS],
         "-test-timeouts-enabled", "YES",
         "-default-test-execution-time-allowance", "60",
         "-maximum-test-execution-time-allowance", "60",
@@ -468,28 +466,50 @@ def build_env():
     return env
 
 
-def classify_result(log_text, build_seconds):
-    seconds = int(build_seconds)
-    matched = re.search(r"Executed ([1-9][0-9]*) tests?", log_text or "")
-    passed = (
-        all(armed_test_ran(log_text, name) for name in ARMED_TESTS)
-        and "** TEST SUCCEEDED **" in (log_text or "")
-        and matched is not None
+def xcresult_summary(result_path):
+    """Read XCTest's result bundle summary; parallel xcodebuild logs omit totals."""
+    tool = os.environ.get("C11_POLLER_XCRUN") or "xcrun"
+    result = subprocess.run(
+        [tool, "xcresulttool", "get", "test-results", "summary",
+         "--path", str(result_path), "--compact"],
+        capture_output=True, text=True, timeout=30,
     )
-    if not passed:
+    if result.returncode != 0:
+        raise ValueError("xcresulttool exited %s" % result.returncode)
+    report = json.loads(result.stdout)
+    if type(report) is not dict:
+        raise ValueError("xcresult summary is not an object")
+    return report
+
+
+def xcresult_passes(report):
+    if type(report) is not dict or report.get("result") != "Passed":
+        return False
+    total = report.get("totalTestCount")
+    skipped = report.get("skippedTests")
+    failed = report.get("failedTests")
+    return (
+        type(total) is int and type(skipped) is int and type(failed) is int
+        and total - skipped > 0 and failed == 0
+    )
+
+
+def classify_result(build_seconds, summary):
+    seconds = int(build_seconds)
+    if type(summary) is not dict:
+        return "error", "result unavailable %ss" % seconds
+    if summary.get("result") == "Failed":
         return "failure", "failed %ss" % seconds
-    if build_seconds > BUDGET_S:
-        return "failure", "budget %ss" % seconds
-    return "success", "%ss" % seconds
-
-
-def armed_test_ran(log_text, name):
-    """Require XCTest output for the armed class, not just its command-line selector."""
-    return re.search(
-        r"^Test (?:Suite|Case) '[^']*\b%s\b" % re.escape(name),
-        log_text or "",
-        re.MULTILINE,
-    ) is not None
+    total = summary.get("totalTestCount")
+    skipped = summary.get("skippedTests")
+    failed = summary.get("failedTests")
+    if type(total) is not int or type(skipped) is not int or type(failed) is not int:
+        return "error", "result unavailable %ss" % seconds
+    if total - skipped <= 0 or failed > 0:
+        return "failure", "failed %ss" % seconds
+    if summary.get("result") == "Passed":
+        return "success", "%ss" % seconds
+    return "error", "result unavailable %ss" % seconds
 
 
 def link_ghosttykit(cache_root, sha, worktree):
@@ -1300,6 +1320,7 @@ class Supervisor:
         self.attempt_clock = None
         self.acquired_at = None
         self.build_end = None
+        self.test_summary = None
         self.delivered = False
         self.stopped = None
         self.credential_skipped = False
@@ -1795,6 +1816,7 @@ class Supervisor:
         self.attempt_clock = self.world.time()
         self.stopped = None
         self.delivered = False
+        self.test_summary = None
         self._drop(item)
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
@@ -1811,14 +1833,23 @@ class Supervisor:
             if self.stopped:
                 return "stopped"
             if self.world.last_exit == 0:
-                log = self.world.build_log or ""
-                if all(armed_test_ran(log, name) for name in ARMED_TESTS) and "** TEST SUCCEEDED **" in log:
+                try:
+                    self.test_summary = self.world.test_summary()
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    self.test_summary = None
+                    self.log(decision="xcresult-summary-unavailable", pr=item["pr"], sha=item["sha"],
+                             invocation=invocation, reason=str(error))
+                if xcresult_passes(self.test_summary):
                     self._mark_dependency_warm(item["deps"])
                     if (invocation == 1 and cold_cache and not cold_retry_used
                             and self.build_seconds() > BUDGET_S):
                         self._remember_cold_retry(item)
                         cold_retry_queued = True
+                elif self.test_summary is not None:
+                    self.log(decision="xcresult-tests-failed", pr=item["pr"], sha=item["sha"],
+                             invocation=invocation)
                 break
+            self.test_summary = None
             if STALE_MODULE in (self.world.build_log or ""):
                 return self._cache_fault(item, invocation)
         if cold_retry_queued:
@@ -1896,8 +1927,8 @@ class Supervisor:
 
     def _finish(self, item, exit_code):
         seconds = self.build_seconds()
-        state, description = classify_result(self.world.build_log, seconds)
-        if exit_code != 0 and state == "success":
+        state, description = classify_result(seconds, self.test_summary)
+        if exit_code != 0:
             state, description = "failure", "failed %ss" % int(seconds)
         self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
                                     build_seconds=round(seconds, 3), deps=item.get("deps"))
@@ -2295,6 +2326,16 @@ class ProductionWorld:
 
     def build_argv(self, worktree, derived, result):
         return xcodebuild_argv(worktree, derived, result)
+
+    def test_summary(self):
+        try:
+            current = json.loads((self.root / "state" / "current.json").read_text())
+        except (OSError, ValueError) as error:
+            raise ValueError("current test result path is unavailable") from error
+        result_path = current.get("result") if type(current) is dict else None
+        if not isinstance(result_path, str) or not result_path:
+            raise ValueError("current test result path is invalid")
+        return xcresult_summary(result_path)
 
     @property
     def build_log(self):

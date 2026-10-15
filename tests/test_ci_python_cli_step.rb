@@ -1,18 +1,19 @@
 #!/usr/bin/env ruby
-# Keep the backstop's measured CLI test step tied to the built binary.
+# Keep the parallel CLI checks tied to the binary rebuilt by their own job.
 require "yaml"
 
 root = File.expand_path("..", __dir__)
 workflow_path = File.join(root, ".github/workflows/ci-hourly.yml")
 workflow = YAML.load_file(workflow_path)
-steps = workflow.fetch("jobs").values.flat_map { |job| job.fetch("steps", []) }
-build_step = steps.find { |candidate| candidate["name"] == "Build app" }
-abort "FAIL: missing app build step" unless build_step
+python_job = workflow.fetch("jobs").fetch("python")
+steps = python_job.fetch("steps")
+build_step = steps.find { |candidate| candidate["name"] == "Build CLI" }
+abort "FAIL: missing CLI build step in the Python job" unless build_step
 step = steps.find { |candidate| candidate["name"] == "CLI tests against the built binary" }
 abort "FAIL: missing CLI tests against the built binary step" unless step
 
 build_run = build_step.fetch("run", "")
-abort "FAIL: build step must export CLI_BINARY for following steps" unless
+abort "FAIL: CLI build must export CLI_BINARY for following steps" unless
   build_run.include?('CLI_BINARY=') && build_run.include?('"$GITHUB_ENV"')
 
 run = step.fetch("run", "")
@@ -33,4 +34,4 @@ abort "FAIL: CLI step must wait for every process and collect all exit statuses"
 abort "FAIL: CLI step must print every script log" unless run.include?('cat "${logs[$i]}"')
 abort "FAIL: CLI step must not re-query Xcode build settings" if run.include?("-showBuildSettings")
 
-puts "PASS: backstop runs all six CLI scripts concurrently against the built binary"
+puts "PASS: Python job builds the CLI once and runs all six scripts concurrently against it"

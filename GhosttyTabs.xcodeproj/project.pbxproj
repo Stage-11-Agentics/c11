@@ -1816,6 +1816,7 @@
 				B09C007F42697761B5F1A2AB /* OmnibarAndToolsTests.swift */,
 				D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */,
 				C11263000000000000000002 /* NotificationCommandEnvironmentTests.swift */,
+				C46400000000000000000001 /* C11LogicTestsBundleBootstrap.swift */,
 				42092CDB2109E250F7F2A76E /* WorkspaceManagerUnitTests.swift */,
 				A5C102B0 /* AreaInteractionRuntimeTests.swift */,
 				14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */,

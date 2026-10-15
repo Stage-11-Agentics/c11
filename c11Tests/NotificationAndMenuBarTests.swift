@@ -107,6 +107,25 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertTrue(NotificationAreaFlashSettings.isEnabled(defaults: defaults))
     }
 
+    func testDefaultSystemNotificationsEnabledUsesProcessShape() {
+        let xctestEnvironment = ["XCTestConfigurationFilePath": "/tmp/c11.xctestconfiguration"]
+        let hostlessTestBundle = URL(fileURLWithPath: "/tmp/c11LogicTests.xctest")
+        let hostedAppBundle = URL(fileURLWithPath: "/tmp/c11.app")
+
+        XCTAssertFalse(TerminalNotificationStore.defaultSystemNotificationsEnabled(
+            environment: xctestEnvironment,
+            bundleURL: hostlessTestBundle
+        ))
+        XCTAssertTrue(TerminalNotificationStore.defaultSystemNotificationsEnabled(
+            environment: xctestEnvironment,
+            bundleURL: hostedAppBundle
+        ))
+        XCTAssertTrue(TerminalNotificationStore.defaultSystemNotificationsEnabled(
+            environment: [:],
+            bundleURL: hostedAppBundle
+        ))
+    }
+
     func testMenuBarExtraPreferenceDefaultsToHidden() {
         let suiteName = "MenuBarExtraVisibilityTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {

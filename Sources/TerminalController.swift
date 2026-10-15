@@ -1872,8 +1872,14 @@ class TerminalController {
 
     /// The caller owns the socket and must end the connection on failure: some
     /// bytes may already have been sent, so another reply would corrupt framing.
-    nonisolated static func writeSocketResponse(_ response: String, to socket: Int32) -> Bool {
-        let deadline = DispatchTime.now() + .seconds(5)
+    nonisolated static let defaultSocketResponseWriteTimeout: TimeInterval = 5
+
+    nonisolated static func writeSocketResponse(
+        _ response: String,
+        to socket: Int32,
+        timeout: TimeInterval = defaultSocketResponseWriteTimeout
+    ) -> Bool {
+        let deadline = DispatchTime.now() + timeout
         let payload = Array((response + "\n").utf8)
         // Darwin's sosendcheck tests SS_NBIO for buffer-space waits;
         // MSG_DONTWAIT alone only prevents waiting for the send-buffer lock.

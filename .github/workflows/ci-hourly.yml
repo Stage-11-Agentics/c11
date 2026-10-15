@@ -146,7 +146,7 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
 
-      - name: SSH shell command availability
+      - name: CLI tests against the built binary
         run: |
           set -euo pipefail
           "$GITHUB_WORKSPACE/scripts/with-build-lock.sh" xcodebuild \
@@ -160,6 +160,8 @@ jobs:
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
           C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py
+          C11_CLI_BIN="$CLI_BINARY" python3 tests/test_mailbox_body_cli.py "$CLI_BINARY"
+          C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline
 
       - name: Shell helper lifetime and git reporting
         run: bash tests/test_shell_git_watchers.sh

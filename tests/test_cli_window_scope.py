@@ -5,10 +5,13 @@ Run with C11_CLI_BIN set to the CLI built from the change under test (for the
 1.0 run, retrieved from Atlas). No app, GUI, or operator session is used.
 The fake server intentionally defaults to key window A; only explicit routing
 can reach B. Both windows use the same local numeric indexes and distinct refs.
+Independent case groups run in a thread pool, each with its own fake server;
+multi-command stateful cases stay together within one group.
 """
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import json
 import os
@@ -471,12 +474,9 @@ class Server(socketserver.ThreadingUnixStreamServer):
         raise RPCError("method_not_found", f"Unexpected method: {method}")
 
 
-def main() -> int:
-    explicit = os.environ.get("C11_CLI_BIN")
-    if not explicit or not Path(explicit).is_file() or not os.access(explicit, os.X_OK):
-        raise SystemExit("Set C11_CLI_BIN to the CLI built from this change; no bundled-CLI fallback.")
-    cli = resolve_c11_cli()
-    with tempfile.TemporaryDirectory(prefix="c11scope-") as directory:
+def run_worker(worker: int, cli: str) -> int:
+    """Run one isolated set of cases against this worker's fake server."""
+    with tempfile.TemporaryDirectory(prefix=f"c11scope-{worker}-") as directory:
         path = str(Path(directory) / "fake.sock")
         server = Server(path)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -528,429 +528,451 @@ def main() -> int:
             assert not server.mutations and server.windows == fixture(), server.mutations
 
         try:
-            # UUID, global ref, and 0-based window index all resolve B without focus.
-            for token in (b["id"], "window:2", "1"):
-                payload = json.loads(run("read-screen", "--panel", b_tab["ref"], window=token).stdout)
-                assert payload["text"] == b_tab["text"] and payload["window_id"] == b["id"], payload
-                routed("panel.read_text")
-                assert any(method == "window.list" for method, _ in server.calls), server.calls
-                unchanged()
-
-            # V2 window methods also need UUIDs when the CLI receives a ref.
-            run("resize-window", "--window", "window:2", "900", "600", window=None)
-            resize_calls = [params for method, params in server.calls if method == "window.resize"]
-            assert resize_calls == [{"window_id": b["id"], "width": 900.0, "height": 600.0}], resize_calls
-            assert server.windows[0]["key"] and not server.windows[1]["key"], server.windows
-
-            # Ambient A caller identities cannot override B for fleet reads/create.
-            payload = json.loads(run("read-screen", env=caller).stdout)
-            assert payload["text"] == b_tab["text"], payload
-            assert "panel_id" not in routed("panel.read_text"), server.calls
-            unchanged()
-            payload = json.loads(run("list-workspaces", env=caller).stdout)
-            assert [item["ref"] for item in payload["workspaces"]] == [item["ref"] for item in b["workspaces"]]
-            routed("workspace.list")
-            unchanged()
-            payload = json.loads(run("current-workspace", env=caller).stdout)
-            assert payload["workspace_id"] == b_ws["id"], payload
-            routed("workspace.current")
-            unchanged()
-            payload = json.loads(run("identify", env=caller).stdout)
-            assert payload["focused"]["window_id"] == b["id"], payload
-            assert "caller" not in routed("system.identify"), server.calls
-            unchanged()
-
-            # Numeric workspace 1 exists in both windows: resolve exclusively B.
-            for command in ("read-screen", "select-workspace"):
-                args = [command, "--workspace", "1"]
-                if command == "read-screen":
-                    args += ["--panel", "0"]
-                payload = json.loads(run(*args).stdout)
-                assert payload["workspace_id"] == b["workspaces"][1]["id"], payload
-                routed("workspace.list")
-                params = routed("panel.read_text" if command == "read-screen" else "workspace.select")
-                assert matches(b["workspaces"][1], params["workspace_id"]), params
-                if command == "read-screen":
-                    routed("panel.list")
+            if worker == 0:
+                # UUID, global ref, and 0-based window index all resolve B without focus.
+                for token in (b["id"], "window:2", "1"):
+                    payload = json.loads(run("read-screen", "--panel", b_tab["ref"], window=token).stdout)
+                    assert payload["text"] == b_tab["text"] and payload["window_id"] == b["id"], payload
+                    routed("panel.read_text")
+                    assert any(method == "window.list" for method, _ in server.calls), server.calls
                     unchanged()
-                else:
-                    assert server.windows[1]["workspaces"][1]["selected"], server.windows
-                    assert server.windows[0] == a, server.windows[0]
 
-            # Bare tab/area indexes must resolve in B even without --workspace.
-            payload = json.loads(run("read-screen", "--panel", "1").stdout)
-            assert payload["text"] == b_ws["panels"][1]["text"], payload
-            routed("panel.list")
-            routed("panel.read_text")
-            unchanged()
-            payload = json.loads(run("list-area-panels", "--area", "1").stdout)
-            assert [item["ref"] for item in payload["panels"]] == [b_ws["panels"][1]["ref"]], payload
-            routed("area.list")
-            routed("area.panels")
-            unchanged()
-            for command, key, expected in (("list-areas", "areas", b_ws["areas"]),
-                                           ("list-panels", "panels", b_ws["panels"])):
-                payload = json.loads(run(command).stdout)
-                assert [item["ref"] for item in payload[key]] == [item["ref"] for item in expected], payload
-                routed("area.list" if key == "areas" else "panel.list")
+                # V2 window methods also need UUIDs when the CLI receives a ref.
+                run("resize-window", "--window", "window:2", "900", "600", window=None)
+                resize_calls = [params for method, params in server.calls if method == "window.resize"]
+                assert resize_calls == [{"window_id": b["id"], "width": 900.0, "height": 600.0}], resize_calls
+                assert server.windows[0]["key"] and not server.windows[1]["key"], server.windows
+
+                # Ambient A caller identities cannot override B for fleet reads/create.
+                payload = json.loads(run("read-screen", env=caller).stdout)
+                assert payload["text"] == b_tab["text"], payload
+                assert "panel_id" not in routed("panel.read_text"), server.calls
+                unchanged()
+                payload = json.loads(run("list-workspaces", env=caller).stdout)
+                assert [item["ref"] for item in payload["workspaces"]] == [item["ref"] for item in b["workspaces"]]
+                routed("workspace.list")
+                unchanged()
+                payload = json.loads(run("current-workspace", env=caller).stdout)
+                assert payload["workspace_id"] == b_ws["id"], payload
+                routed("workspace.current")
+                unchanged()
+                payload = json.loads(run("identify", env=caller).stdout)
+                assert payload["focused"]["window_id"] == b["id"], payload
+                assert "caller" not in routed("system.identify"), server.calls
                 unchanged()
 
-            for args, method in ((["new-panel", "--area", "1", "--no-focus"], "panel.create"),
-                                 (["new-split", "right", "--panel", "1"], "panel.split"),
-                                 (["new-area", "--direction", "down"], "area.create")):
-                payload = json.loads(run(*args, env=caller).stdout)
-                assert payload["window_id"] == b["id"] and payload["workspace_id"] == b_ws["id"], payload
-                routed(method)
-                if method == "panel.create":
-                    assert matches(b_ws["areas"][1], routed(method)["area_id"])
-                    routed("area.list")
-                elif method == "panel.split":
-                    assert matches(b_ws["panels"][1], routed(method)["panel_id"])
-                    routed("panel.list")
-                assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                # Numeric workspace 1 exists in both windows: resolve exclusively B.
+                for command in ("read-screen", "select-workspace"):
+                    args = [command, "--workspace", "1"]
+                    if command == "read-screen":
+                        args += ["--panel", "0"]
+                    payload = json.loads(run(*args).stdout)
+                    assert payload["workspace_id"] == b["workspaces"][1]["id"], payload
+                    routed("workspace.list")
+                    params = routed("panel.read_text" if command == "read-screen" else "workspace.select")
+                    assert matches(b["workspaces"][1], params["workspace_id"]), params
+                    if command == "read-screen":
+                        routed("panel.list")
+                        unchanged()
+                    else:
+                        assert server.windows[1]["workspaces"][1]["selected"], server.windows
+                        assert server.windows[0] == a, server.windows[0]
 
-            for command, content, method in (("send", "B-only-sentinel", "panel.send_text"),
-                                             ("send-key", "enter", "panel.send_key")):
-                run(command, "--panel", "1", content, env=caller)
-                params = routed(method)
+            if worker == 1:
+                # Bare tab/area indexes must resolve in B even without --workspace.
+                payload = json.loads(run("read-screen", "--panel", "1").stdout)
+                assert payload["text"] == b_ws["panels"][1]["text"], payload
                 routed("panel.list")
-                assert matches(b_ws["panels"][1], params["panel_id"]), params
-                changed_tab = server.windows[1]["workspaces"][0]["panels"][1]
-                assert content in (changed_tab["text"] if command == "send" else changed_tab["keys"])
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-
-                # Suppression of caller env IDs must also suppress their admission.
-                out = run(command, content, env=caller, success=False)
-                assert "requires --panel" in out.stderr, out.stderr
-                assert not any(name == method for name, _ in server.calls), server.calls
+                routed("panel.read_text")
                 unchanged()
-                out = run(command, "--panel", a_tab["ref"], content, success=False)
-                assert "not_found" in out.stderr, out.stderr
-                routed(method)
+                payload = json.loads(run("list-area-panels", "--area", "1").stdout)
+                assert [item["ref"] for item in payload["panels"]] == [b_ws["panels"][1]["ref"]], payload
+                routed("area.list")
+                routed("area.panels")
                 unchanged()
+                for command, key, expected in (("list-areas", "areas", b_ws["areas"]),
+                                               ("list-panels", "panels", b_ws["panels"])):
+                    payload = json.loads(run(command).stdout)
+                    assert [item["ref"] for item in payload[key]] == [item["ref"] for item in expected], payload
+                    routed("area.list" if key == "areas" else "panel.list")
+                    unchanged()
 
-            # Merged send parsing must preserve window admission for aliases
-            # and raw sends while retaining the new payload semantics.
-            for command, flags, content, expected in (
-                    ("send-panel", [], r"B-alias\n", "B-alias\r"),
-                    ("paste", ["--no-submit"], r"B-paste\n", r"B-paste\n"),
-                    ("send", ["--raw", "--no-submit"], r"B-raw\n", r"B-raw\n")):
-                run(command, *flags, "--panel", "1", content, env=caller)
-                params = routed("panel.send_text")
-                assert matches(b_ws["panels"][1], params["panel_id"]), params
-                assert params["text"] == expected, params
-                if command == "paste" or "--raw" in flags:
-                    assert params["preserve_newlines"] and not params["submit"], params
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                assert server.windows[0]["key"] and not server.windows[1]["key"]
-                out = run(command, *flags, content, env=caller, success=False)
-                assert "requires --panel" in out.stderr, out.stderr
-                assert not any(name == "panel.send_text" for name, _ in server.calls), server.calls
-                unchanged()
-                out = run(command, *flags, "--panel", a_tab["ref"], content, env=caller, success=False)
-                assert "not_found" in out.stderr, out.stderr
-                unchanged()
+                for args, method in ((["new-panel", "--area", "1", "--no-focus"], "panel.create"),
+                                     (["new-split", "right", "--panel", "1"], "panel.split"),
+                                     (["new-area", "--direction", "down"], "area.create")):
+                    payload = json.loads(run(*args, env=caller).stdout)
+                    assert payload["window_id"] == b["id"] and payload["workspace_id"] == b_ws["id"], payload
+                    routed(method)
+                    if method == "panel.create":
+                        assert matches(b_ws["areas"][1], routed(method)["area_id"])
+                        routed("area.list")
+                    elif method == "panel.split":
+                        assert matches(b_ws["panels"][1], routed(method)["panel_id"])
+                        routed("panel.list")
+                    assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
 
-            # Metadata helpers must carry scope through target resolution and dispatch.
-            run("set-metadata", "--panel", "1", "--key", "scope-test", "--value", "B-only")
-            routed("panel.list")
-            routed("panel.set_metadata")
-            assert server.windows[1]["workspaces"][0]["panels"][1]["metadata"] == {"scope-test": "B-only"}
-            assert server.windows[0] == a, server.windows[0]
-            payload = json.loads(run("get-metadata", "--panel", "1", reset=False).stdout)
-            assert payload["metadata"] == {"scope-test": "B-only"}, payload
-            routed("panel.get_metadata")
+                for command, content, method in (("send", "B-only-sentinel", "panel.send_text"),
+                                                 ("send-key", "enter", "panel.send_key")):
+                    run(command, "--panel", "1", content, env=caller)
+                    params = routed(method)
+                    routed("panel.list")
+                    assert matches(b_ws["panels"][1], params["panel_id"]), params
+                    changed_tab = server.windows[1]["workspaces"][0]["panels"][1]
+                    assert content in (changed_tab["text"] if command == "send" else changed_tab["keys"])
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
 
-            # Title helpers ignore A caller workspace when an explicit B tab
-            # is supplied; get-titlebar-state reads those same applied values.
-            for command, key, value, reset in (("set-title", "title", "Scoped title", True),
-                                                ("set-description", "description", "Scoped description", False)):
-                run(command, "--panel", b_tab["id"], value, env=caller, reset=reset)
+                    # Suppression of caller env IDs must also suppress their admission.
+                    out = run(command, content, env=caller, success=False)
+                    assert "requires --panel" in out.stderr, out.stderr
+                    assert not any(name == method for name, _ in server.calls), server.calls
+                    unchanged()
+                    out = run(command, "--panel", a_tab["ref"], content, success=False)
+                    assert "not_found" in out.stderr, out.stderr
+                    routed(method)
+                    unchanged()
+
+            if worker == 2:
+                # Merged send parsing must preserve window admission for aliases
+                # and raw sends while retaining the new payload semantics.
+                for command, flags, content, expected in (
+                        ("send-panel", [], r"B-alias\n", "B-alias\r"),
+                        ("paste", ["--no-submit"], r"B-paste\n", r"B-paste\n"),
+                        ("send", ["--raw", "--no-submit"], r"B-raw\n", r"B-raw\n")):
+                    run(command, *flags, "--panel", "1", content, env=caller)
+                    params = routed("panel.send_text")
+                    assert matches(b_ws["panels"][1], params["panel_id"]), params
+                    assert params["text"] == expected, params
+                    if command == "paste" or "--raw" in flags:
+                        assert params["preserve_newlines"] and not params["submit"], params
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    assert server.windows[0]["key"] and not server.windows[1]["key"]
+                    out = run(command, *flags, content, env=caller, success=False)
+                    assert "requires --panel" in out.stderr, out.stderr
+                    assert not any(name == "panel.send_text" for name, _ in server.calls), server.calls
+                    unchanged()
+                    out = run(command, *flags, "--panel", a_tab["ref"], content, env=caller, success=False)
+                    assert "not_found" in out.stderr, out.stderr
+                    unchanged()
+
+                # Metadata helpers must carry scope through target resolution and dispatch.
+                run("set-metadata", "--panel", "1", "--key", "scope-test", "--value", "B-only")
+                routed("panel.list")
                 routed("panel.set_metadata")
-                assert server.windows[1]["workspaces"][0]["panels"][0]["metadata"][key] == value
+                assert server.windows[1]["workspaces"][0]["panels"][1]["metadata"] == {"scope-test": "B-only"}
                 assert server.windows[0] == a, server.windows[0]
-            payload = json.loads(run("get-titlebar-state", "--panel", b_tab["id"], env=caller, reset=False).stdout)
-            assert payload["title"] == "Scoped title" and payload["description"] == "Scoped description", payload
-            routed("panel.get_titlebar_state")
-            assert len(server.mutations) == 2 and server.windows[0] == a, server.mutations
+                payload = json.loads(run("get-metadata", "--panel", "1", reset=False).stdout)
+                assert payload["metadata"] == {"scope-test": "B-only"}, payload
+                routed("panel.get_metadata")
 
-            # v1 notification clearing and sidebar writes need an explicit
-            # selected-workspace UUID because their wire protocol has no window.
-            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
-                run("clear-notifications", *extra, env=caller)
-                assert server.windows[0] == a, server.windows[0]
-                assert len(server.mutations) == 1 and server.mutations[0][2] == expected_ws["ref"], server.mutations
-                assert not server.windows[1]["workspaces"][expected_ws["index"]]["notifications"]
-                commands = [name for name, _ in server.calls if name.startswith("clear_notifications")]
-                assert len(commands) == 1 and f"--tab={expected_ws['id']}" in commands[0], commands
-            # A global --window scopes the lookup; it does not replace the
-            # caller's workspace. Reject A under B without dispatching a write.
-            out = run("set-status", "scope-test", "B-only", env=caller, success=False)
-            assert "not_found" in out.stderr, out.stderr
-            assert not any(name.startswith("set_status") for name, _ in server.calls), server.calls
-            unchanged()
-            # An explicit B workspace is valid and overrides the A caller env.
-            run("set-status", "scope-test", "B-only", "--workspace", b_ws["id"], env=caller)
-            assert server.windows[1]["workspaces"][0]["status"] == {"set_status": ["scope-test", "B-only"]}
-            assert server.windows[0] == a and server.mutations == [
-                ("set_status", b["ref"], b_ws["ref"])
-            ], server.mutations
-            for args in (("--workspace", a_ws["id"]), ("--workspace", a_ws["ref"]),
-                         ("--tab", a_ws["id"]), ("--tab", a_ws["ref"]),
-                         ("--tab", a_tab["id"]), ("--tab", a_tab["ref"])):
-                run("set-status", "scope-test", "foreign", *args, env=caller, success=False)
+                # Title helpers ignore A caller workspace when an explicit B tab
+                # is supplied; get-titlebar-state reads those same applied values.
+                for command, key, value, reset in (("set-title", "title", "Scoped title", True),
+                                                    ("set-description", "description", "Scoped description", False)):
+                    run(command, "--panel", b_tab["id"], value, env=caller, reset=reset)
+                    routed("panel.set_metadata")
+                    assert server.windows[1]["workspaces"][0]["panels"][0]["metadata"][key] == value
+                    assert server.windows[0] == a, server.windows[0]
+                payload = json.loads(run("get-titlebar-state", "--panel", b_tab["id"], env=caller, reset=False).stdout)
+                assert payload["title"] == "Scoped title" and payload["description"] == "Scoped description", payload
+                routed("panel.get_titlebar_state")
+                assert len(server.mutations) == 2 and server.windows[0] == a, server.mutations
+
+            if worker == 3:
+                # v1 notification clearing and sidebar writes need an explicit
+                # selected-workspace UUID because their wire protocol has no window.
+                for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+                    run("clear-notifications", *extra, env=caller)
+                    assert server.windows[0] == a, server.windows[0]
+                    assert len(server.mutations) == 1 and server.mutations[0][2] == expected_ws["ref"], server.mutations
+                    assert not server.windows[1]["workspaces"][expected_ws["index"]]["notifications"]
+                    commands = [name for name, _ in server.calls if name.startswith("clear_notifications")]
+                    assert len(commands) == 1 and f"--tab={expected_ws['id']}" in commands[0], commands
+                # A global --window scopes the lookup; it does not replace the
+                # caller's workspace. Reject A under B without dispatching a write.
+                out = run("set-status", "scope-test", "B-only", env=caller, success=False)
+                assert "not_found" in out.stderr, out.stderr
                 assert not any(name.startswith("set_status") for name, _ in server.calls), server.calls
                 unchanged()
-            run("clear-notifications", "--workspace", a_ws["id"], success=False)
-            assert not any(name.startswith("clear_notifications") for name, _ in server.calls), server.calls
-            unchanged()
-
-            out = run("sidebar-state", env=caller, success=False)
-            assert "not_found" in out.stderr, out.stderr
-            assert not any(name == "sidebar.state" for name, _ in server.calls), server.calls
-            unchanged()
-            for extra, expected_ws in ((["--workspace", b_ws["id"]], b_ws),
-                                       (["--workspace", "1"], b["workspaces"][1])):
-                payload = json.loads(run("sidebar-state", *extra, env=caller).stdout)
-                assert payload["workspace_id"] == expected_ws["id"], payload
-                routed("sidebar.state")
-                unchanged()
-            for extra, method in (([], "notification.create"),
-                                  (["--panel", "1"], "notification.create_for_panel")):
-                payload = json.loads(run("notify", "--title", "B-only", *extra, env=caller).stdout)
-                assert payload["workspace_id"] == b_ws["id"], payload
-                routed(method)
-                if extra:
-                    assert payload["panel_id"] == b_ws["panels"][1]["id"], payload
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                assert server.windows[1]["workspaces"][0]["notifications"][-1] == "B-only"
-            run("notify", "--title", "foreign", "--panel", a_tab["ref"], success=False)
-            unchanged()
-
-            for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
-                                    ("delegate", "flag.delegate"), ("undelegate", "flag.undelegate"),
-                                    ("suppress", "flag.delegate"), ("unsuppress", "flag.undelegate")):
-                args = [command, "--panel", "1", "--by", "operator"]
-                if command == "raise-flag":
-                    args.append("Synthetic reason")
-                payload = json.loads(run(*args, env=caller).stdout)
-                assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
-                routed(method)
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                args[2] = a_tab["ref"]
-                run(*args, env=caller, success=False)
-                unchanged()
-
-            # A newer CLI first tries the canonical method, then retries only
-            # the legacy attention name when an older app reports method_not_found.
-            server.reset()
-            server.reject_methods = {"flag.delegate"}
-            payload = json.loads(run("delegate", "--panel", "1", "--by", "operator", reset=False).stdout)
-            assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
-            assert [name for name, _ in server.calls if name in ("flag.delegate", "flag.suppress")] == [
-                "flag.delegate", "flag.suppress"
-            ], server.calls
-            fallback_request = routed("flag.suppress")
-            assert matches(b_ws["panels"][1], fallback_request["panel_id"]), fallback_request
-            assert server.mutations == [("flag.suppress", b["ref"], b_ws["ref"], b_ws["panels"][1]["ref"])], server.mutations
-
-            for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
-                payload = json.loads(run("snapshot", *extra, env=caller).stdout)
-                assert payload["workspace_id"] == expected_ws["id"], payload
-                routed("snapshot.create")
-                assert server.mutations == [("snapshot.create", b["ref"], expected_ws["ref"])], server.mutations
-                assert server.windows == fixture(), server.windows
-            run("snapshot", "--workspace", a_ws["id"], success=False)
-            assert not any(name == "snapshot.create" for name, _ in server.calls), server.calls
-            unchanged()
-            for extra in ([], ["--in-place"]):
-                payload = json.loads(run("restore", "synthetic-snapshot", *extra, env=caller).stdout)
-                assert payload["window_id"] == b["id"], payload
-                params = routed("snapshot.restore")
-                if extra:
-                    routed("workspace.current")
-                    assert params["target_workspace_id"] == b_ws["id"], params
-                    assert server.windows[1]["workspaces"][0]["panels"][0]["text"] == "Synthetic restored content"
-                else:
-                    assert len(server.windows[1]["workspaces"]) == 3
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-
-            for command, method in (("swap-pane", "area.swap"), ("join-pane", "area.join")):
-                args = [command, "--pane", b_ws["areas"][0]["ref"],
-                        "--target-pane", b_ws["areas"][1]["ref"]]
-                if command == "join-pane":
-                    args += ["--panel", b_tab["ref"], "--no-focus"]
-                payload = json.loads(run(*args, env=caller).stdout)
-                assert payload["window_id"] == b["id"], payload
-                routed(method)
-                assert server.windows[1]["workspaces"][0]["panels"][0]["area_ref"] == b_ws["areas"][1]["ref"]
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                for position in (2, 4):
-                    foreign_args = list(args)
-                    foreign_args[position] = a_ws["areas"][0]["ref"]
-                    run(*foreign_args, env=caller, success=False)
-                    assert not any(name == method for name, _ in server.calls), server.calls
+                # An explicit B workspace is valid and overrides the A caller env.
+                run("set-status", "scope-test", "B-only", "--workspace", b_ws["id"], env=caller)
+                assert server.windows[1]["workspaces"][0]["status"] == {"set_status": ["scope-test", "B-only"]}
+                assert server.windows[0] == a and server.mutations == [
+                    ("set_status", b["ref"], b_ws["ref"])
+                ], server.mutations
+                for args in (("--workspace", a_ws["id"]), ("--workspace", a_ws["ref"]),
+                             ("--tab", a_ws["id"]), ("--tab", a_ws["ref"]),
+                             ("--tab", a_tab["id"]), ("--tab", a_tab["ref"])):
+                    run("set-status", "scope-test", "foreign", *args, env=caller, success=False)
+                    assert not any(name.startswith("set_status") for name, _ in server.calls), server.calls
                     unchanged()
-                if command == "join-pane":
-                    args[6] = a_tab["id"]
+                run("clear-notifications", "--workspace", a_ws["id"], success=False)
+                assert not any(name.startswith("clear_notifications") for name, _ in server.calls), server.calls
+                unchanged()
+
+                out = run("sidebar-state", env=caller, success=False)
+                assert "not_found" in out.stderr, out.stderr
+                assert not any(name == "sidebar.state" for name, _ in server.calls), server.calls
+                unchanged()
+                for extra, expected_ws in ((["--workspace", b_ws["id"]], b_ws),
+                                           (["--workspace", "1"], b["workspaces"][1])):
+                    payload = json.loads(run("sidebar-state", *extra, env=caller).stdout)
+                    assert payload["workspace_id"] == expected_ws["id"], payload
+                    routed("sidebar.state")
+                    unchanged()
+                for extra, method in (([], "notification.create"),
+                                      (["--panel", "1"], "notification.create_for_panel")):
+                    payload = json.loads(run("notify", "--title", "B-only", *extra, env=caller).stdout)
+                    assert payload["workspace_id"] == b_ws["id"], payload
+                    routed(method)
+                    if extra:
+                        assert payload["panel_id"] == b_ws["panels"][1]["id"], payload
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    assert server.windows[1]["workspaces"][0]["notifications"][-1] == "B-only"
+                run("notify", "--title", "foreign", "--panel", a_tab["ref"], success=False)
+                unchanged()
+
+                for command, method in (("raise-flag", "flag.raise"), ("lower-flag", "flag.lower"),
+                                        ("delegate", "flag.delegate"), ("undelegate", "flag.undelegate"),
+                                        ("suppress", "flag.delegate"), ("unsuppress", "flag.undelegate")):
+                    args = [command, "--panel", "1", "--by", "operator"]
+                    if command == "raise-flag":
+                        args.append("Synthetic reason")
+                    payload = json.loads(run(*args, env=caller).stdout)
+                    assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
+                    routed(method)
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    args[2] = a_tab["ref"]
                     run(*args, env=caller, success=False)
+                    unchanged()
+
+            if worker == 4:
+                # A newer CLI first tries the canonical method, then retries only
+                # the legacy attention name when an older app reports method_not_found.
+                server.reset()
+                server.reject_methods = {"flag.delegate"}
+                payload = json.loads(run("delegate", "--panel", "1", "--by", "operator", reset=False).stdout)
+                assert payload["window_id"] == b["id"] and payload["panel_id"] == b_ws["panels"][1]["id"], payload
+                assert [name for name, _ in server.calls if name in ("flag.delegate", "flag.suppress")] == [
+                    "flag.delegate", "flag.suppress"
+                ], server.calls
+                fallback_request = routed("flag.suppress")
+                assert matches(b_ws["panels"][1], fallback_request["panel_id"]), fallback_request
+                assert server.mutations == [("flag.suppress", b["ref"], b_ws["ref"], b_ws["panels"][1]["ref"])], server.mutations
+
+                for extra, expected_ws in (([], b_ws), (["--workspace", "1"], b["workspaces"][1])):
+                    payload = json.loads(run("snapshot", *extra, env=caller).stdout)
+                    assert payload["workspace_id"] == expected_ws["id"], payload
+                    routed("snapshot.create")
+                    assert server.mutations == [("snapshot.create", b["ref"], expected_ws["ref"])], server.mutations
+                    assert server.windows == fixture(), server.windows
+                run("snapshot", "--workspace", a_ws["id"], success=False)
+                assert not any(name == "snapshot.create" for name, _ in server.calls), server.calls
+                unchanged()
+                for extra in ([], ["--in-place"]):
+                    payload = json.loads(run("restore", "synthetic-snapshot", *extra, env=caller).stdout)
+                    assert payload["window_id"] == b["id"], payload
+                    params = routed("snapshot.restore")
+                    if extra:
+                        routed("workspace.current")
+                        assert params["target_workspace_id"] == b_ws["id"], params
+                        assert server.windows[1]["workspaces"][0]["panels"][0]["text"] == "Synthetic restored content"
+                    else:
+                        assert len(server.windows[1]["workspaces"]) == 3
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+
+                for command, method in (("swap-pane", "area.swap"), ("join-pane", "area.join")):
+                    args = [command, "--pane", b_ws["areas"][0]["ref"],
+                            "--target-pane", b_ws["areas"][1]["ref"]]
+                    if command == "join-pane":
+                        args += ["--panel", b_tab["ref"], "--no-focus"]
+                    payload = json.loads(run(*args, env=caller).stdout)
+                    assert payload["window_id"] == b["id"], payload
+                    routed(method)
+                    assert server.windows[1]["workspaces"][0]["panels"][0]["area_ref"] == b_ws["areas"][1]["ref"]
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    for position in (2, 4):
+                        foreign_args = list(args)
+                        foreign_args[position] = a_ws["areas"][0]["ref"]
+                        run(*foreign_args, env=caller, success=False)
+                        assert not any(name == method for name, _ in server.calls), server.calls
+                        unchanged()
+                    if command == "join-pane":
+                        args[6] = a_tab["id"]
+                        run(*args, env=caller, success=False)
+                        assert not any(name == method for name, _ in server.calls), server.calls
+                        unchanged()
+
+            if worker == 5:
+                # Global source lookup in move/reorder requires client membership
+                # checks for the source, destination workspace/area, and anchor.
+                for command, extra, method in (("move-panel", ["--area", b_ws["areas"][1]["ref"]], "panel.move"),
+                                               ("reorder-panel", ["--index", "0"], "panel.reorder")):
+                    payload = json.loads(run(command, "--panel", b_ws["panels"][1]["ref"], *extra).stdout)
+                    assert payload["window_id"] == b["id"], payload
+                    routed(method)
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    run(command, "--panel", a_tab["ref"], *extra, success=False)
                     assert not any(name == method for name, _ in server.calls), server.calls
                     unchanged()
+                for command, extra, method in (("move-panel", ["--workspace", a_ws["id"]], "panel.move"),
+                                               ("move-panel", ["--area", a_ws["areas"][0]["ref"]], "panel.move"),
+                                               ("move-panel", ["--before", a_tab["ref"]], "panel.move"),
+                                               ("reorder-panel", ["--after", a_tab["ref"]], "panel.reorder")):
+                    run(command, "--panel", b_tab["ref"], *extra, success=False)
+                    assert not any(name == method for name, _ in server.calls), server.calls
+                    unchanged()
+                source_ws = b["workspaces"][1]
+                source_tab = source_ws["panels"][1]
+                payload = json.loads(run("move-panel", "--panel", source_tab["ref"], "--index", "0").stdout)
+                assert payload["workspace_id"] == source_ws["id"] and payload["area_id"] == source_tab["area_id"], payload
+                routed("panel.move")
+                assert server.mutations == [("panel.move", b["ref"], source_ws["ref"], source_tab["ref"])], server.mutations
+                assert server.windows[0] == a and server.windows[1]["workspaces"][0] == b_ws
+                assert len(server.windows[1]["workspaces"][1]["panels"]) == 2
 
-            # Global source lookup in move/reorder requires client membership
-            # checks for the source, destination workspace/area, and anchor.
-            for command, extra, method in (("move-panel", ["--area", b_ws["areas"][1]["ref"]], "panel.move"),
-                                           ("reorder-panel", ["--index", "0"], "panel.reorder")):
-                payload = json.loads(run(command, "--panel", b_ws["panels"][1]["ref"], *extra).stdout)
-                assert payload["window_id"] == b["id"], payload
-                routed(method)
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                run(command, "--panel", a_tab["ref"], *extra, success=False)
-                assert not any(name == method for name, _ in server.calls), server.calls
-                unchanged()
-            for command, extra, method in (("move-panel", ["--workspace", a_ws["id"]], "panel.move"),
-                                           ("move-panel", ["--area", a_ws["areas"][0]["ref"]], "panel.move"),
-                                           ("move-panel", ["--before", a_tab["ref"]], "panel.move"),
-                                           ("reorder-panel", ["--after", a_tab["ref"]], "panel.reorder")):
-                run(command, "--panel", b_tab["ref"], *extra, success=False)
-                assert not any(name == method for name, _ in server.calls), server.calls
-                unchanged()
-            source_ws = b["workspaces"][1]
-            source_tab = source_ws["panels"][1]
-            payload = json.loads(run("move-panel", "--panel", source_tab["ref"], "--index", "0").stdout)
-            assert payload["workspace_id"] == source_ws["id"] and payload["area_id"] == source_tab["area_id"], payload
-            routed("panel.move")
-            assert server.mutations == [("panel.move", b["ref"], source_ws["ref"], source_tab["ref"])], server.mutations
-            assert server.windows[0] == a and server.windows[1]["workspaces"][0] == b_ws
-            assert len(server.windows[1]["workspaces"][1]["panels"]) == 2
+                payload = json.loads(run("move-panel", "--panel", b_tab["ref"], "--window", a["ref"],
+                                         "--workspace", a_ws["ref"]).stdout)
+                assert payload["window_id"] == a["id"] and payload["workspace_id"] == a_ws["id"], payload
+                routed("panel.move", destination=a)
+                assert server.mutations == [("panel.move", a["ref"], a_ws["ref"], b_tab["ref"])], server.mutations
+                assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
+                assert len(server.windows[1]["workspaces"][0]["panels"]) == 1
+                assert any(tab["id"] == b_tab["id"] for tab in server.windows[0]["workspaces"][0]["panels"])
+                assert not any(tab["id"] == b_tab["id"] for tab in server.windows[1]["workspaces"][0]["panels"])
 
-            payload = json.loads(run("move-panel", "--panel", b_tab["ref"], "--window", a["ref"],
-                                     "--workspace", a_ws["ref"]).stdout)
-            assert payload["window_id"] == a["id"] and payload["workspace_id"] == a_ws["id"], payload
-            routed("panel.move", destination=a)
-            assert server.mutations == [("panel.move", a["ref"], a_ws["ref"], b_tab["ref"])], server.mutations
-            assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
-            assert len(server.windows[1]["workspaces"][0]["panels"]) == 1
-            assert any(tab["id"] == b_tab["id"] for tab in server.windows[0]["workspaces"][0]["panels"])
-            assert not any(tab["id"] == b_tab["id"] for tab in server.windows[1]["workspaces"][0]["panels"])
-
-            # Legacy routes need selected B's workspace on their v1 wire;
-            # otherwise these same endpoints mutate the key window A.
-            legacy_cases = ((["drag-panel-to-split", "--panel", "0", "right"], "drag_surface_to_split"),
-                            (["refresh-panels"], "refresh_surfaces"),
-                            (["default-agent", "launch"], "default_agent"))
-            for args, command in legacy_cases:
-                run(*args, env=caller)
-                assert server.mutations == [(command, b["ref"], b_ws["ref"])], server.mutations
-                assert server.windows[0] == a and server.windows[1]["workspaces"][1] == b["workspaces"][1]
-                wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
-                assert len(wires) == 1, server.calls
-                if command == "default_agent":
-                    assert wires[0][wires[0].index("--workspace") + 1] == b_ws["id"], wires
-                    assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
-                else:
-                    assert f"--workspace={b_ws['id']}" in wires[0], wires
-                    if command == "drag_surface_to_split":
-                        assert wires[0][1:3] == [b_tab["id"], "right"], wires
-                        assert server.windows[1]["workspaces"][0]["panels"][0]["splits"] == ["right"]
+            if worker == 6:
+                # Legacy routes need selected B's workspace on their v1 wire;
+                # otherwise these same endpoints mutate the key window A.
+                legacy_cases = ((["drag-panel-to-split", "--panel", "0", "right"], "drag_surface_to_split"),
+                                (["refresh-panels"], "refresh_surfaces"),
+                                (["default-agent", "launch"], "default_agent"))
+                for args, command in legacy_cases:
+                    run(*args, env=caller)
+                    assert server.mutations == [(command, b["ref"], b_ws["ref"])], server.mutations
+                    assert server.windows[0] == a and server.windows[1]["workspaces"][1] == b["workspaces"][1]
+                    wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
+                    assert len(wires) == 1, server.calls
+                    if command == "default_agent":
+                        assert wires[0][wires[0].index("--workspace") + 1] == b_ws["id"], wires
+                        assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
                     else:
-                        assert all(tab["refresh_count"] == 1 for tab in server.windows[1]["workspaces"][0]["panels"])
-                assert server.windows[0]["key"] and not server.windows[1]["key"]
-            for args, command in ((["drag-panel-to-split", "--panel", a_tab["id"], "right"], "drag_surface_to_split"),
-                                  (["default-agent", "launch", "--in-panel", a_tab["id"]], "default_agent"),
-                                  (["drag-panel-to-split", "--panel", "bogus", "right"], "drag_surface_to_split"),
-                                  (["default-agent", "launch", "--in-panel", "bogus"], "default_agent")):
-                run(*args, env=caller, success=False)
-                assert not any(name.startswith(command) for name, _ in server.calls), server.calls
-                unchanged()
-            for args, command in legacy_cases:
-                run(*args, window=None, env=caller)
-                assert server.mutations == [(command, a["ref"], a_ws["ref"])], server.mutations
-                assert server.windows[1] == b and server.windows[0]["key"]
-                wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
-                assert len(wires) == 1 and not any(arg.startswith("--workspace") for arg in wires[0]), wires
-                if command == "drag_surface_to_split":
-                    assert server.windows[0]["workspaces"][0]["panels"][0]["splits"] == ["right"]
-                elif command == "refresh_surfaces":
-                    assert all(tab["refresh_count"] == 1 for tab in server.windows[0]["workspaces"][0]["panels"])
-                else:
-                    assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
-
-            # config.launch carries scope even when requesting a new workspace.
-            for extra in ([], ["--new-workspace"]):
-                payload = json.loads(run("config", "launch", "synthetic-config", *extra, env=caller).stdout)
-                assert payload["window_id"] == b["id"], payload
-                routed("config.launch")
-                assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
-                assert len(server.windows[1]["workspaces"]) == (3 if extra else 2)
-            for extra in (["--workspace", a_ws["id"]], ["--area", a_ws["areas"][0]["ref"]]):
-                run("config", "launch", "synthetic-config", *extra, success=False)
-                assert not any(name == "config.launch" for name, _ in server.calls), server.calls
-                unchanged()
-
-            # Both modern response filtering and method-not-found fallback stay in B.
-            for mode in ("scoped", "ignores_scope", "unsupported"):
-                server.tree_mode = mode
-                for flags in ([], ["--all"], ["--window"]):
-                    payload = json.loads(run("tree", *flags, env=caller).stdout)
-                    assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
-                    expected_workspaces = b["workspaces"] if flags else [b_ws]
-                    assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [
-                        item["ref"] for item in expected_workspaces], payload
-                    routed("system.tree")
-                    if mode == "unsupported":
-                        routed("workspace.list")
+                        assert f"--workspace={b_ws['id']}" in wires[0], wires
+                        if command == "drag_surface_to_split":
+                            assert wires[0][1:3] == [b_tab["id"], "right"], wires
+                            assert server.windows[1]["workspaces"][0]["panels"][0]["splits"] == ["right"]
+                        else:
+                            assert all(tab["refresh_count"] == 1 for tab in server.windows[1]["workspaces"][0]["panels"])
+                    assert server.windows[0]["key"] and not server.windows[1]["key"]
+                for args, command in ((["drag-panel-to-split", "--panel", a_tab["id"], "right"], "drag_surface_to_split"),
+                                      (["default-agent", "launch", "--in-panel", a_tab["id"]], "default_agent"),
+                                      (["drag-panel-to-split", "--panel", "bogus", "right"], "drag_surface_to_split"),
+                                      (["default-agent", "launch", "--in-panel", "bogus"], "default_agent")):
+                    run(*args, env=caller, success=False)
+                    assert not any(name.startswith(command) for name, _ in server.calls), server.calls
                     unchanged()
-                for token in (b["workspaces"][1]["id"], b["workspaces"][1]["ref"]):
-                    payload = json.loads(run("tree", "--workspace", token, env=caller).stdout)
-                    assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
-                    assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [b["workspaces"][1]["ref"]], payload
-                    routed("system.tree")
-                    if mode == "unsupported":
-                        routed("workspace.list")
-                    unchanged()
-                for token in (a_ws["id"], a_ws["ref"]):
-                    out = run("tree", "--workspace", token, env=caller, success=False)
-                    assert token in out.stderr, out.stderr
-                    assert not any(name == "system.tree" for name, _ in server.calls), server.calls
-                    unchanged()
-            server.tree_mode = "ignores_scope"
+                for args, command in legacy_cases:
+                    run(*args, window=None, env=caller)
+                    assert server.mutations == [(command, a["ref"], a_ws["ref"])], server.mutations
+                    assert server.windows[1] == b and server.windows[0]["key"]
+                    wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
+                    assert len(wires) == 1 and not any(arg.startswith("--workspace") for arg in wires[0]), wires
+                    if command == "drag_surface_to_split":
+                        assert server.windows[0]["workspaces"][0]["panels"][0]["splits"] == ["right"]
+                    elif command == "refresh_surfaces":
+                        assert all(tab["refresh_count"] == 1 for tab in server.windows[0]["workspaces"][0]["panels"])
+                    else:
+                        assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
 
-            # A previously live handle must become invalid after closure, with
-            # no command dispatch or mutation in the surviving key window.
-            run("read-screen", "--panel", b_tab["ref"])
-            run("close-window", "--window", b["ref"], window=None, reset=False)
-            assert (f"close_window {b['id']}", {}) in server.calls, server.calls
-            closed_state, close_mutations = copy.deepcopy(server.windows), list(server.mutations)
-            assert len(closed_state) == 1 and closed_state[0]["key"]
-            out = run("read-screen", "--panel", a_tab["ref"], success=False, reset=False)
-            assert b["ref"] in out.stderr, out.stderr
-            assert not any(name == "panel.read_text" for name, _ in server.calls), server.calls
-            assert server.windows == closed_state and server.mutations == close_mutations
+                # config.launch carries scope even when requesting a new workspace.
+                for extra in ([], ["--new-workspace"]):
+                    payload = json.loads(run("config", "launch", "synthetic-config", *extra, env=caller).stdout)
+                    assert payload["window_id"] == b["id"], payload
+                    routed("config.launch")
+                    assert server.windows[0] == a and len(server.mutations) == 1, server.mutations
+                    assert len(server.windows[1]["workspaces"]) == (3 if extra else 2)
+                for extra in (["--workspace", a_ws["id"]], ["--area", a_ws["areas"][0]["ref"]]):
+                    run("config", "launch", "synthetic-config", *extra, success=False)
+                    assert not any(name == "config.launch" for name, _ in server.calls), server.calls
+                    unchanged()
 
-            for token in ("", "  ", "not-a-window", "window:999999", identifier("missing-window"), "999999", "-1"):
-                out = run("read-screen", "--panel", b_tab["ref"], window=token, success=False)
-                assert "window" in out.stderr.lower() and f"'{token}'" in out.stderr, (token, out.stderr)
-                assert all(name in ("window.list", "system.capabilities", "auth synthetic-password")
-                           for name, _ in server.calls), server.calls
+            if worker == 7:
+                # Both modern response filtering and method-not-found fallback stay in B.
+                for mode in ("scoped", "ignores_scope", "unsupported"):
+                    server.tree_mode = mode
+                    for flags in ([], ["--all"], ["--window"]):
+                        payload = json.loads(run("tree", *flags, env=caller).stdout)
+                        assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
+                        expected_workspaces = b["workspaces"] if flags else [b_ws]
+                        assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [
+                            item["ref"] for item in expected_workspaces], payload
+                        routed("system.tree")
+                        if mode == "unsupported":
+                            routed("workspace.list")
+                        unchanged()
+                    for token in (b["workspaces"][1]["id"], b["workspaces"][1]["ref"]):
+                        payload = json.loads(run("tree", "--workspace", token, env=caller).stdout)
+                        assert [item["ref"] for item in payload["windows"]] == [b["ref"]], payload
+                        assert [item["ref"] for item in payload["windows"][0]["workspaces"]] == [b["workspaces"][1]["ref"]], payload
+                        routed("system.tree")
+                        if mode == "unsupported":
+                            routed("workspace.list")
+                        unchanged()
+                    for token in (a_ws["id"], a_ws["ref"]):
+                        out = run("tree", "--workspace", token, env=caller, success=False)
+                        assert token in out.stderr, out.stderr
+                        assert not any(name == "system.tree" for name, _ in server.calls), server.calls
+                        unchanged()
+                server.tree_mode = "ignores_scope"
+
+                # A previously live handle must become invalid after closure, with
+                # no command dispatch or mutation in the surviving key window.
+                run("read-screen", "--panel", b_tab["ref"])
+                run("close-window", "--window", b["ref"], window=None, reset=False)
+                assert (f"close_window {b['id']}", {}) in server.calls, server.calls
+                closed_state, close_mutations = copy.deepcopy(server.windows), list(server.mutations)
+                assert len(closed_state) == 1 and closed_state[0]["key"]
+                out = run("read-screen", "--panel", a_tab["ref"], success=False, reset=False)
+                assert b["ref"] in out.stderr, out.stderr
+                assert not any(name == "panel.read_text" for name, _ in server.calls), server.calls
+                assert server.windows == closed_state and server.mutations == close_mutations
+
+                for token in ("", "  ", "not-a-window", "window:999999", identifier("missing-window"), "999999", "-1"):
+                    out = run("read-screen", "--panel", b_tab["ref"], window=token, success=False)
+                    assert "window" in out.stderr.lower() and f"'{token}'" in out.stderr, (token, out.stderr)
+                    assert all(name in ("window.list", "system.capabilities", "auth synthetic-password")
+                               for name, _ in server.calls), server.calls
+                    unchanged()
+
+                # Per-command focus-window remains the explicit v1 focus action.
+                for token in (b["id"], b["ref"], "1"):
+                    run("focus-window", "--window", token, window=None)
+                    assert (f"focus_window {b['id']}", {}) in server.calls, server.calls
+                    assert server.windows[1]["key"] and not server.windows[0]["key"], server.windows
+
+                # Without global scope, caller-local behavior is preserved.
+                payload = json.loads(run("read-screen", window=None, env=caller).stdout)
+                assert payload["text"] == a_tab["text"], payload
                 unchanged()
-
-            # Per-command focus-window remains the explicit v1 focus action.
-            for token in (b["id"], b["ref"], "1"):
-                run("focus-window", "--window", token, window=None)
-                assert (f"focus_window {b['id']}", {}) in server.calls, server.calls
-                assert server.windows[1]["key"] and not server.windows[0]["key"], server.windows
-
-            # Without global scope, caller-local behavior is preserved.
-            payload = json.loads(run("read-screen", window=None, env=caller).stdout)
-            assert payload["text"] == a_tab["text"], payload
-            unchanged()
         finally:
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
-    print(f"PASS: {cases} CLI fake-socket window-scope cases using the supplied CLI")
+    print(f"PASS: worker {worker}: {cases} CLI fake-socket window-scope cases")
+    return cases
+
+
+def main() -> int:
+    explicit = os.environ.get("C11_CLI_BIN")
+    if not explicit or not Path(explicit).is_file() or not os.access(explicit, os.X_OK):
+        raise SystemExit("Set C11_CLI_BIN to the CLI built from this change; no bundled-CLI fallback.")
+    cli = resolve_c11_cli()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        counts = list(pool.map(lambda worker: run_worker(worker, cli), range(8)))
+    total = sum(counts)
+    if total != 138:
+        raise AssertionError(f"expected 138 window-scope CLI cases, got {total}")
+    print(f"PASS: {total} CLI fake-socket window-scope cases across 8 isolated workers")
     return 0
 
 

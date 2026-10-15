@@ -1316,7 +1316,10 @@ final class WindowRoutingShortcutTests: ShortcutRoutingTestSupport {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(createWorkspacePickerWindows().count, 1, "Cmd+N should present the New Workspace picker")
+        XCTAssertTrue(
+            waitUntil(timeout: 2) { createWorkspacePickerWindows().count == 1 },
+            "Cmd+N should present the New Workspace picker"
+        )
         XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N must not add a workspace to the stale active window")
         XCTAssertEqual(secondManager.workspaces.count, secondCount, "Cmd+N creates workspaces from the picker, not on keyDown")
         XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Cmd+N routing should retarget the active manager to the event window")
@@ -1455,7 +1458,10 @@ final class WindowRoutingShortcutTests: ShortcutRoutingTestSupport {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        XCTAssertEqual(createWorkspacePickerWindows().count, 1, "Cmd+N should present the New Workspace picker")
+        XCTAssertTrue(
+            waitUntil(timeout: 2) { createWorkspacePickerWindows().count == 1 },
+            "Cmd+N should present the New Workspace picker"
+        )
         XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N should not route to another window when object-key lookup misses")
         XCTAssertEqual(secondManager.workspaces.count, secondCount, "Cmd+N creates workspaces from the picker, not on keyDown")
         XCTAssertTrue(

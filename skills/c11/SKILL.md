@@ -59,6 +59,16 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 - **Icon + color = optional at-a-glance marker.** `c11 set-panel-icon --panel "$C11_PANEL_ID" "🧪"` pins a glyph left of the panel's close X; `c11 set-panel-color --panel "$C11_PANEL_ID" teal` tints it (`--clear` removes either). Use them to mark a set or a role family across panels, not as status.
 - **Lineage is the LAST line**: `Lineage: <parent> → <role>`. Arrow, never `::`. Ancestry is static; the line that survives truncation must be the live one. Preserve it on every update.
 
+### The report: what the operator reads on arrival
+
+The operator reaches your panel cold, from another agent's panel, often through Feed, and reads your last message to decide whether to act. Write it for that reader.
+
+- **First line says whether they must act.** `Needs you: nothing`, or numbered questions, each with one line on what hangs on the answer and your recommendation.
+- **Aim under 100 words.** A target, not a rule: a report they asked for, or a decision with real options, can run longer. "Needs you: nothing" ends the message within a few lines.
+- **State, not story.** A change made is one line. The reasoning lives in the file, ticket or run-state, and the message points there.
+- **Never restate what another panel, PR or doc already holds.** Point at it.
+- The long version is one ask away; the transcript holds it.
+
 ## Flags and delegates (the attention model)
 
 Your panel's mark shows your lifecycle — working, needs attention (waiting), idle, cold.

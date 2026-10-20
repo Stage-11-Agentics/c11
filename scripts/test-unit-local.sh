@@ -36,9 +36,16 @@ CONFIGURATION="${C11_TEST_CONFIGURATION:-${CMUX_TEST_CONFIGURATION:-Debug}}"
 DESTINATION="${C11_TEST_DESTINATION:-${CMUX_TEST_DESTINATION:-platform=macOS}}"
 DERIVED_DATA="${C11_TEST_DERIVED_DATA:-build-test-local}"
 
-# Default to `test` when no explicit xcodebuild action is provided.
-if [ "$#" -eq 0 ]; then
-  set -- test
+# Default to `test` when no explicit xcodebuild action is provided. Without
+# this, a bare `-only-testing:` slice runs xcodebuild's default action, a build.
+has_action=0
+for arg in "$@"; do
+  case "$arg" in
+    build|test|test-without-building|build-for-testing|analyze|archive|clean) has_action=1 ;;
+  esac
+done
+if [ "$has_action" -eq 0 ]; then
+  set -- "$@" test
 fi
 
 # C11-371: a hung case fails at 60s and the run continues. XCTest rounds the

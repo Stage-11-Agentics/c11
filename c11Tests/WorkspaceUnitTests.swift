@@ -330,6 +330,22 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
         XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(restoredSecond.displayOrdinal))
     }
 
+    func testRestoreReusesTheLaunchPlaceholderNumber() throws {
+        var snapshot = WorkspaceManager().sessionSnapshot(includeScrollback: false)
+        // Fresh UUIDs, as at launch, where no restored workspace has a ref yet.
+        for index in snapshot.workspaces.indices {
+            snapshot.workspaces[index].id = UUID()
+        }
+
+        let restored = WorkspaceManager()
+        let placeholderOrdinal = restored.workspaces[0].displayOrdinal
+        restored.restoreSessionSnapshot(snapshot)
+        let first = try XCTUnwrap(restored.workspaces.first)
+
+        XCTAssertEqual(first.displayOrdinal, placeholderOrdinal)
+        XCTAssertEqual(first.title, expectedDefaultWorkspaceTitle(placeholderOrdinal))
+    }
+
     func testRestoredDefaultTitleIsRederivedFromCurrentRef() throws {
         let manager = WorkspaceManager()
         let second = manager.addWorkspace()

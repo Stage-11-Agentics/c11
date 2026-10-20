@@ -6045,6 +6045,12 @@ extension WorkspaceManager {
         var orphanMembershipCount = 0
         let workspaceSnapshots = snapshot.workspaces
             .prefix(SessionPersistencePolicy.maxWorkspacesPerWindow)
+        // The displaced workspaces (at launch, the placeholder) give back
+        // their numbers, so the first restored workspace is `workspace:1`.
+        let restoredIds = Set(workspaceSnapshots.map(\.id))
+        TerminalController.shared.releaseNewestWorkspaceRefs(
+            forWorkspaceUUIDs: displacedWorkspaces.map(\.id).filter { !restoredIds.contains($0) }
+        )
         // Mint `workspace:N` refs in sidebar order (pinned first, as below)
         // before restore derives numbered default titles from them.
         for workspaceSnapshot in workspaceSnapshots.filter(\.isPinned) + workspaceSnapshots.filter({ !$0.isPinned }) {

@@ -4884,7 +4884,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         .fileURL,
         .URL
     ]
-    private static let panelTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    private static let panelTransferPasteboardType = DragOverlayRoutingPolicy.bonsplitTabTransferType
     private static let sidebarWorkspaceReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
     private static let shellEscapeCharacters = "\\ ()[]{}<>\"'`!#$&;|*?\t"
 
@@ -7699,7 +7699,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var lastDropZoneOverlayLogSignature: String?
     private var lastDragGeometryLogSignature: String?
     private var dragLayoutLogSequence: UInt64 = 0
-    private static let panelTransferPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    private static let panelTransferPasteboardType = DragOverlayRoutingPolicy.bonsplitTabTransferType
     private static let sidebarWorkspaceReorderPasteboardType = NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder")
     private static var flashCounts: [UUID: Int] = [:]
     private static var drawCounts: [UUID: Int] = [:]

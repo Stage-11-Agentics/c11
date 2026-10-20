@@ -5884,7 +5884,7 @@ class TerminalController {
         switch normalized {
         case "fileurl", "file-url", "public.file-url":
             return .fileURL
-        case "tabtransfer", "tab-transfer", "com.stage11.c11.tabtransfer":
+        case "tabtransfer", "tab-transfer", BonsplitDragTypes.tabTransferIdentifier:
             return DragOverlayRoutingPolicy.bonsplitTabTransferType
         case "sidebarreorder", "sidebar-reorder", "sidebar_tab_reorder",
             "com.stage11.c11.sidebar-tab-reorder":

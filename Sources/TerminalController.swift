@@ -3171,6 +3171,28 @@ class TerminalController {
         return Int(ref.dropFirst("\(V2HandleKind.workspace.rawValue):".count)) ?? 0
     }
 
+    /// Releases the refs of workspaces a session restore displaced, newest
+    /// first and only while nothing newer was minted, so restore reuses the
+    /// launch placeholder's `workspace:1`. A caller that read the placeholder's
+    /// ref before restore will find it naming the first restored workspace.
+    func releaseNewestWorkspaceRefs(forWorkspaceUUIDs workspaceIds: [UUID]) {
+        let kind = V2HandleKind.workspace
+        var byUUID = v2RefByUUID[kind] ?? [:]
+        var byRef = v2UUIDByRef[kind] ?? [:]
+        var next = v2NextHandleOrdinal[kind] ?? 1
+        let releasable = Set(workspaceIds)
+        while next > 1,
+              let uuid = byRef["\(kind.rawValue):\(next - 1)"],
+              releasable.contains(uuid) {
+            byRef.removeValue(forKey: "\(kind.rawValue):\(next - 1)")
+            byUUID.removeValue(forKey: uuid)
+            next -= 1
+        }
+        v2RefByUUID[kind] = byUUID
+        v2UUIDByRef[kind] = byRef
+        v2NextHandleOrdinal[kind] = next
+    }
+
     /// UI-facing handle lookup for the Surface Details panel.
     ///
     /// Mints (or returns) the friendly `surface:N` / `tab:N` / `pane:M` /
@@ -5884,7 +5906,7 @@ class TerminalController {
         switch normalized {
         case "fileurl", "file-url", "public.file-url":
             return .fileURL
-        case "tabtransfer", "tab-transfer", "com.stage11.c11.tabtransfer":
+        case "tabtransfer", "tab-transfer", BonsplitDragTypes.tabTransferIdentifier:
             return DragOverlayRoutingPolicy.bonsplitTabTransferType
         case "sidebarreorder", "sidebar-reorder", "sidebar_tab_reorder",
             "com.stage11.c11.sidebar-tab-reorder":

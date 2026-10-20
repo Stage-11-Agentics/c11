@@ -383,7 +383,9 @@ enum DragOverlayRoutingPolicy {
         return types.filter { !blocked.contains($0) }
     }
 
-    static let bonsplitTabTransferType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
+    /// Bonsplit's own id for a panel drag, read from Bonsplit so a c11
+    /// rename can't drift from what Bonsplit writes.
+    static let bonsplitTabTransferType = NSPasteboard.PasteboardType(BonsplitTabDragPayload.typeIdentifier)
     static let sidebarWorkspaceReorderType = NSPasteboard.PasteboardType(SidebarWorkspaceDragPayload.typeIdentifier)
 
     static func hasBonsplitTabTransfer(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
@@ -14676,7 +14678,7 @@ private enum SidebarGroupDragPayload {
 }
 
 private enum BonsplitTabDragPayload {
-    static let typeIdentifier = "com.stage11.c11.tabtransfer"
+    static let typeIdentifier = BonsplitDragTypes.tabTransferIdentifier
     static let dropContentType = UTType(exportedAs: typeIdentifier)
     static let dropContentTypes: [UTType] = [dropContentType]
     private static let currentProcessId = Int32(ProcessInfo.processInfo.processIdentifier)

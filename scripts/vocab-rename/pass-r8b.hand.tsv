@@ -380,7 +380,7 @@ otherTab	otherPanel	c11Tests/FeedProjectorTests.swift		ev:X
 askTab	askPanel	c11Tests/FeedProjectorTests.swift,c11Tests/LifecycleFixtureCatalog.swift		ev:X
 # shouldFocusNewTab: Local in newTerminalSurface/newBrowserSurface/newMarkdownSurface: whether the newly created panel takes focus
 shouldFocusNewTab	shouldFocusNewPanel	Sources/Workspace.swift		ev:X
-# tabTransferPasteboardType: Private static let pasteboard type for dragging a panel (tab) between areas; string "com.stage11.c11.tabtransfer" is explicit and unchanged
+# tabTransferPasteboardType: Private static let pasteboard type for dragging a panel (tab) between areas; its value is Bonsplit's own UTType id (BonsplitDragTypes.tabTransferIdentifier), never renamed
 tabTransferPasteboardType	panelTransferPasteboardType	Sources/GhosttyTerminalView.swift		ev:X
 # tabDetailReplacingTitle: Workspace extension helper building the panel sheet detail with a replaced title (tab sheet -> panel sheet)
 tabDetailReplacingTitle	panelDetailReplacingTitle	Sources/Workspace.swift,Sources/TabSheetDetail.swift		ev:X

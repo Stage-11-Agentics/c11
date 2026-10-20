@@ -496,7 +496,7 @@ final class InternalPanelDragBundleDeclarationTests: XCTestCase {
         let exported = exportedTypeIdentifiers(bundle: Bundle(for: AppDelegate.self))
 
         XCTAssertTrue(
-            exported.contains("com.stage11.c11.tabtransfer"),
+            exported.contains(BonsplitDragTypes.tabTransferIdentifier),
             "Expected app bundle to export bonsplit tab-transfer type, got \(exported)"
         )
         XCTAssertTrue(

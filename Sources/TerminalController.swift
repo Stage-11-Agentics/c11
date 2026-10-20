@@ -3171,11 +3171,10 @@ class TerminalController {
         return Int(ref.dropFirst("\(V2HandleKind.workspace.rawValue):".count)) ?? 0
     }
 
-    /// Releases the refs of workspaces a session restore displaced, but only
-    /// the newest ones, so restore reuses numbers nothing minted after (the
-    /// launch placeholder's `workspace:1`). A ref with a later one still live
-    /// is kept, so no number an agent may hold is ever handed to another
-    /// workspace while a newer ref exists.
+    /// Releases the refs of workspaces a session restore displaced, newest
+    /// first and only while nothing newer was minted, so restore reuses the
+    /// launch placeholder's `workspace:1`. A caller that read the placeholder's
+    /// ref before restore will find it naming the first restored workspace.
     func releaseNewestWorkspaceRefs(forWorkspaceUUIDs workspaceIds: [UUID]) {
         let kind = V2HandleKind.workspace
         var byUUID = v2RefByUUID[kind] ?? [:]

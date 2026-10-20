@@ -313,8 +313,10 @@ extension Workspace {
 
         applySessionDividerPositions(snapshotNode: snapshot.layout, liveNode: bonsplitController.treeSnapshot())
 
+        // A numbered default follows this process's `workspace:N` ref, which
+        // restarts at launch, so the saved number is re-derived, not restored.
         let restoredStableDefaultTitle = snapshot.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        stableDefaultTitle = restoredStableDefaultTitle.isEmpty ? nil : restoredStableDefaultTitle
+        stableDefaultTitle = restoredStableDefaultTitle.isEmpty ? nil : Self.numberedDefaultTitle(ordinal: displayOrdinal)
         applyProcessTitle(snapshot.processTitle)
         setCustomTitle(snapshot.customTitle, recordRename: false)
         setCustomColor(snapshot.customColor)
@@ -7972,6 +7974,15 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     // MARK: - Title Management
+
+    /// The name an unnamed workspace shows: "Workspace N", where N is its
+    /// `workspace:N` ref, the same number as "WS N" on its sidebar card.
+    static func numberedDefaultTitle(ordinal: Int) -> String {
+        String.localizedStringWithFormat(
+            String(localized: "workspace.defaultTitle", defaultValue: "Workspace %lld"),
+            Int64(ordinal)
+        )
+    }
 
     var hasCustomTitle: Bool {
         let trimmed = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

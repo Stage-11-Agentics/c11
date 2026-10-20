@@ -801,13 +801,6 @@ class WorkspaceManager: ObservableObject {
         let executionError: String?
     }
 
-    private static func defaultWorkspaceTitle(number: Int) -> String {
-        String.localizedStringWithFormat(
-            String(localized: "workspace.defaultTitle", defaultValue: "Workspace %lld"),
-            Int64(number)
-        )
-    }
-
     private struct WorkspaceGitProbeKey: Hashable {
         let workspaceId: UUID
         let panelId: UUID
@@ -1555,7 +1548,10 @@ class WorkspaceManager: ObservableObject {
         // bounce through Combine-backed accessors while we're preparing the new workspace.
         let snapshot = workspaceCreationSnapshot()
         let nextTabCount = snapshot.workspaces.count + 1
-        let defaultTitle = Self.defaultWorkspaceTitle(number: nextTabCount)
+        let workspaceId = UUID()
+        let defaultTitle = Workspace.numberedDefaultTitle(
+            ordinal: TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: workspaceId)
+        )
         sentryBreadcrumb("workspace.create", data: surfaceShapeSummary(tabCount: nextTabCount))
         let explicitWorkingDirectory = normalizedWorkingDirectory(overrideWorkingDirectory)
         let explicitRootDirectory = normalizedWorkingDirectory(overrideRootDirectory)
@@ -1570,6 +1566,7 @@ class WorkspaceManager: ObservableObject {
         let ordinal = Self.nextPortOrdinal
         Self.nextPortOrdinal += 1
         let newWorkspace = Workspace(
+            id: workspaceId,
             title: defaultTitle,
             stableDefaultTitle: defaultTitle,
             workingDirectory: workingDirectory,
@@ -6048,6 +6045,11 @@ extension WorkspaceManager {
         var orphanMembershipCount = 0
         let workspaceSnapshots = snapshot.workspaces
             .prefix(SessionPersistencePolicy.maxWorkspacesPerWindow)
+        // Mint `workspace:N` refs in sidebar order (pinned first, as below)
+        // before restore derives numbered default titles from them.
+        for workspaceSnapshot in workspaceSnapshots.filter(\.isPinned) + workspaceSnapshots.filter({ !$0.isPinned }) {
+            _ = TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: workspaceSnapshot.id)
+        }
         for workspaceSnapshot in workspaceSnapshots {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
@@ -6078,8 +6080,11 @@ extension WorkspaceManager {
         if newTabs.isEmpty {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
-            let defaultTitle = Self.defaultWorkspaceTitle(number: 1)
-            let fallback = Workspace(title: defaultTitle, stableDefaultTitle: defaultTitle, portOrdinal: ordinal)
+            let fallbackId = UUID()
+            let defaultTitle = Workspace.numberedDefaultTitle(
+                ordinal: TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: fallbackId)
+            )
+            let fallback = Workspace(id: fallbackId, title: defaultTitle, stableDefaultTitle: defaultTitle, portOrdinal: ordinal)
             fallback.owningWorkspaceManager = self
             wireClosedBrowserTracking(for: fallback)
             fallback.startMailboxDispatcher()

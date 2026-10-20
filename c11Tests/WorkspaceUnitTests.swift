@@ -276,17 +276,31 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
         let first = manager.workspaces[0]
         let second = manager.addWorkspace()
 
-        XCTAssertEqual(first.title, expectedDefaultWorkspaceTitle(1))
-        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(2))
+        XCTAssertEqual(first.title, expectedDefaultWorkspaceTitle(first.displayOrdinal))
+        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(second.displayOrdinal))
 
         second.applyProcessTitle("codex-agent-title")
-        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(2))
+        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(second.displayOrdinal))
 
         second.setCustomTitle("Research")
         XCTAssertEqual(second.title, "Research")
 
         second.setCustomTitle(nil)
-        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(2))
+        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(second.displayOrdinal))
+    }
+
+    func testDefaultTitleFollowsWorkspaceRefNotWorkspaceCount() {
+        let manager = WorkspaceManager()
+        let second = manager.addWorkspace()
+        let third = manager.addWorkspace()
+        manager.closeWorkspace(second)
+
+        let fourth = manager.addWorkspace()
+
+        XCTAssertEqual(manager.workspaces.count, 3)
+        XCTAssertGreaterThan(fourth.displayOrdinal, third.displayOrdinal)
+        XCTAssertEqual(fourth.title, expectedDefaultWorkspaceTitle(fourth.displayOrdinal))
+        XCTAssertNotEqual(fourth.title, expectedDefaultWorkspaceTitle(manager.workspaces.count))
     }
 
     func testLegacyProcessDrivenWorkspaceTitlesStillUpdate() {
@@ -305,15 +319,30 @@ final class WorkspaceDefaultTitleTests: XCTestCase {
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
         let secondSnapshot = try XCTUnwrap(snapshot.workspaces.first { $0.id == second.id })
         XCTAssertEqual(secondSnapshot.processTitle, "agent-title")
-        XCTAssertEqual(secondSnapshot.stableDefaultTitle, expectedDefaultWorkspaceTitle(2))
+        XCTAssertEqual(secondSnapshot.stableDefaultTitle, expectedDefaultWorkspaceTitle(second.displayOrdinal))
 
         let restored = WorkspaceManager()
         restored.restoreSessionSnapshot(snapshot)
         let restoredSecond = try XCTUnwrap(restored.workspaces.first { $0.id == second.id })
-        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(2))
+        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(restoredSecond.displayOrdinal))
 
         restoredSecond.applyProcessTitle("later-agent-title")
-        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(2))
+        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(restoredSecond.displayOrdinal))
+    }
+
+    func testRestoredDefaultTitleIsRederivedFromCurrentRef() throws {
+        let manager = WorkspaceManager()
+        let second = manager.addWorkspace()
+        var snapshot = manager.sessionSnapshot(includeScrollback: false)
+        let index = try XCTUnwrap(snapshot.workspaces.firstIndex { $0.id == second.id })
+        // A number saved by an earlier launch, whose refs started over.
+        snapshot.workspaces[index].stableDefaultTitle = expectedDefaultWorkspaceTitle(9_999)
+
+        let restored = WorkspaceManager()
+        restored.restoreSessionSnapshot(snapshot)
+        let restoredSecond = try XCTUnwrap(restored.workspaces.first { $0.id == second.id })
+
+        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(restoredSecond.displayOrdinal))
     }
 }
 

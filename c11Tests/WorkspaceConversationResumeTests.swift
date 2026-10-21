@@ -141,10 +141,14 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             conversation: ref
         )
 
+        let before = terminal.surface.pendingInitialInputForTests
         await workspace.submitResume(plan, idleShellRequired: false)
         XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed)
+        let afterFirst = terminal.surface.pendingInitialInputForTests
+        XCTAssertNotEqual(afterFirst, before, "the first submission types the command")
         await workspace.submitResume(plan, idleShellRequired: false)
-        XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed, "a second submission is refused, not retyped")
+        XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed)
+        XCTAssertEqual(terminal.surface.pendingInitialInputForTests, afterFirst, "a second submission types nothing")
 
         let other = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
         other.surface.lastOperatorKeyAt = Date()

@@ -569,7 +569,9 @@ extension TerminalController {
                 } else if dryRun {
                     row["outcome"] = "would_resume"
                 } else if let ref {
-                    row["outcome"] = "resumed"
+                    // Typed after the stagger, through the guarded submission,
+                    // which can still refuse; the launch outcome records it.
+                    row["outcome"] = "scheduled"
                     workspace.recordLaunchResumeDecision(
                         panelId: panelId,
                         kind: ref.kind,

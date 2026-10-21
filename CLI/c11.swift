@@ -15418,7 +15418,7 @@ struct CMUXCLI {
             var line = "\(outcome) panel=\(panelId) kind=\(kind)"
             if let code = row["skip_code"] as? String { line += " code=\(code)" }
             if let reason = row["reason"] as? String { line += " reason=\(reason)" }
-            if let command = row["command"] as? String, outcome != "resumed" {
+            if let command = row["command"] as? String, outcome != "scheduled" {
                 line += " command=\(command)"
             }
             print(line)

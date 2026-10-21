@@ -5045,8 +5045,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // main on the semaphore. Synchronous callers (termination, power-off,
         // window unregister) pass nil and keep the sync bridge — blocking is
         // acceptable there (rare, one-shot, correct when the app is dying).
-        let conversationsByPanelId = injectedConversations
-            ?? Workspace.readConversationsByPanelIdSync()
+        // C11-468: a read that did not complete skips this save; persisting an
+        // empty map would erase every panel's ref.
+        guard let conversationsByPanelId = injectedConversations
+            ?? Workspace.readConversationsByPanelIdSyncIfCompleted() else {
+#if DEBUG
+            dlog("session.save.skipped reason=conversation_store_read_timeout")
+#endif
+            return nil
+        }
 
         let windows: [SessionWindowSnapshot] = contexts
             .prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)

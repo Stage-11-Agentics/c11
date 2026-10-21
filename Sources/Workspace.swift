@@ -469,17 +469,23 @@ extension Workspace {
     nonisolated static func readConversationsByPanelIdSync(
         timeout: TimeInterval = 2.0
     ) -> [String: PanelConversations] {
+        readConversationsByPanelIdSyncIfCompleted(timeout: timeout) ?? [:]
+    }
+
+    /// The same read, but nil when it did not complete in time. A caller that
+    /// persists the result must skip the write on nil: an empty map would
+    /// erase every panel's ref (C11-468).
+    nonisolated static func readConversationsByPanelIdSyncIfCompleted(
+        timeout: TimeInterval = 2.0
+    ) -> [String: PanelConversations]? {
         guard !ConversationStorePolicy.isDisabled else { return [:] }
-        let sema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var captured: [String: PanelConversations] = [:]
-        Task.detached(priority: .userInitiated) {
+        let outcome = BoundedLifecycleWait.run(timeout: timeout) {
             // Never hand a persistence boundary an unseeded store.
             await StartupConversationAudit.shared.awaitSeeded()
-            captured = await ConversationStore.shared.snapshot()
-            sema.signal()
+            return await ConversationStore.shared.snapshot()
         }
-        _ = sema.wait(timeout: .now() + timeout)
-        return captured
+        guard case .completed(let conversations) = outcome else { return nil }
+        return conversations
     }
 
     typealias RestartCommand = (panelId: UUID, action: ResumeAction, conversation: ConversationRef)
@@ -647,7 +653,11 @@ extension Workspace {
     /// command queues until it does, as at restore). Only such a panel may
     /// receive a resume decided after restore (a late scrape,
     /// `c11 conversation resume`).
-    func isUntouchedShell(_ panelId: UUID) -> Bool {
+    ///
+    /// The restore-time resume (typed `agentRestartDelay` after restore, while
+    /// shells may still be starting) passes `idleShellRequired: false`, which
+    /// also accepts an attached shell that has not reported its state yet.
+    func isUntouchedShell(_ panelId: UUID, idleShellRequired: Bool = true) -> Bool {
         guard let panel = panels[panelId] as? TerminalPanel,
               panel.surface.lastOperatorKeyAt == nil else { return false }
         switch panelShellActivityStates[panelId] ?? .unknown {
@@ -656,7 +666,7 @@ extension Workspace {
         case .commandRunning:
             return false
         case .unknown:
-            return panel.surface.surface == nil
+            return !idleShellRequired || panel.surface.surface == nil
         }
     }
 
@@ -781,7 +791,11 @@ extension Workspace {
                 conversations: conversations,
                 awaitingScrape: Set(classification.scrapeKindBySurface.keys)
             )
-            self.dispatchRestartCommands(plan.commands, notBefore: restoredAt, requireUntouched: false)
+            self.dispatchRestartCommands(
+                plan.commands,
+                firstAt: max(restoredAt + SessionPersistencePolicy.agentRestartDelay, .now()),
+                idleShellRequired: false
+            )
 
             let awaitingByKind = Dictionary(grouping: plan.awaitingScrape) {
                 classification.scrapeKindBySurface[$0.uuidString] ?? ""
@@ -798,7 +812,7 @@ extension Workspace {
                         mode: classification.mode,
                         conversations: conversations,
                         scrape: result.outcome,
-                        notBefore: restoredAt
+                        firstAt: max(restoredAt + SessionPersistencePolicy.agentRestartDelay, .now())
                     )
                 }
             }
@@ -814,7 +828,7 @@ extension Workspace {
         mode: ResumeRecoveryMode,
         conversations: [String: PanelConversations],
         scrape: StartupConversationAudit.ScrapeOutcome,
-        notBefore: DispatchTime
+        firstAt: DispatchTime
     ) {
         let panelsById = Dictionary(
             snapshot.panels.map { ($0.id, $0) },
@@ -854,49 +868,56 @@ extension Workspace {
                 conversation: ref
             ))
         }
-        dispatchRestartCommands(commands, notBefore: notBefore, requireUntouched: true)
+        dispatchRestartCommands(commands, firstAt: firstAt, idleShellRequired: true)
     }
 
     /// C11-156: stagger the resumes so N agents don't all boot in the same
     /// main-queue turn and fire their SessionStart hooks at once (the
     /// mass-resume thundering herd that beachballs the app). Each agent
-    /// resumes one `agentRestartStagger` after the previous, and none before
-    /// `agentRestartDelay` after restore.
-    private func dispatchRestartCommands(
+    /// resumes one `agentRestartStagger` after the previous.
+    func dispatchRestartCommands(
         _ commands: [RestartCommand],
-        notBefore restoredAt: DispatchTime,
-        requireUntouched: Bool
+        firstAt: DispatchTime,
+        idleShellRequired: Bool
     ) {
-        guard !commands.isEmpty else { return }
-        let base = SessionPersistencePolicy.agentRestartDelay
         let stagger = SessionPersistencePolicy.agentRestartStagger
-        let earliest = max(restoredAt + base, DispatchTime.now())
         for (index, plan) in commands.enumerated() {
             DispatchQueue.main.asyncAfter(
-                deadline: earliest + Double(index) * stagger
+                deadline: firstAt + Double(index) * stagger
             ) { [weak self] in
                 Task { @MainActor [weak self] in
-                    let conversationsBySurface = await ConversationStore.shared.snapshot()
-                    guard let self else { return }
-                    let liveWriterSurfaceIds = AppDelegate.shared?.liveAttributedAgentSurfaceIds(
-                        matching: plan.conversation,
-                        excluding: plan.panelId,
-                        conversationsBySurface: conversationsBySurface
-                    ) ?? []
-                    var action = Self.resumeActionBeforeSubmission(
-                        plan.action,
-                        conversation: plan.conversation,
-                        targetSurfaceId: plan.panelId,
-                        conversationsBySurface: conversationsBySurface,
-                        liveAttributedAgentSurfaceIds: liveWriterSurfaceIds
-                    )
-                    if requireUntouched, case .typeCommand = action, !self.isUntouchedShell(plan.panelId) {
-                        action = .skip(reason: "panel was used before its resume was typed")
-                    }
-                    self.executeResumeAction(action, on: plan.panelId)
+                    await self?.submitResume(plan, idleShellRequired: idleShellRequired)
                 }
             }
         }
+    }
+
+    /// The one submission point for a resume decided this launch, rechecked
+    /// at the moment of typing: another live c11 panel already running the
+    /// conversation, a panel this launch already resumed, or a panel someone
+    /// has used since launch each turn the command into a skip.
+    func submitResume(_ plan: RestartCommand, idleShellRequired: Bool) async {
+        let conversationsBySurface = await ConversationStore.shared.snapshot()
+        let liveWriterSurfaceIds = AppDelegate.shared?.liveAttributedAgentSurfaceIds(
+            matching: plan.conversation,
+            excluding: plan.panelId,
+            conversationsBySurface: conversationsBySurface
+        ) ?? []
+        var action = Self.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: plan.panelId,
+            conversationsBySurface: conversationsBySurface,
+            liveAttributedAgentSurfaceIds: liveWriterSurfaceIds
+        )
+        if case .typeCommand = action {
+            if launchResumeOutcomes[plan.panelId] == .resumed {
+                action = .skip(reason: "already resumed this launch")
+            } else if !isUntouchedShell(plan.panelId, idleShellRequired: idleShellRequired) {
+                action = .skip(reason: "panel was used before its resume was typed")
+            }
+        }
+        executeResumeAction(action, on: plan.panelId)
     }
 
     /// Execute a `ResumeAction` against a live terminal panel. Logs `.skip`
@@ -918,7 +939,9 @@ extension Workspace {
                 terminalPanel.surface.sendText(text)
             }
         case .skip(let reason):
-            launchResumeOutcomes[panelId] = .skipped(code: .panelInUse, reason: reason)
+            if launchResumeOutcomes[panelId] != .resumed {
+                launchResumeOutcomes[panelId] = .skipped(code: .panelInUse, reason: reason)
+            }
             #if DEBUG
             dlog("conversation.resume.skipped panel=\(panelId.uuidString.prefix(8)) reason=\(reason)")
             #endif

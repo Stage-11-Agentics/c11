@@ -122,6 +122,39 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(text.contains(claudeSessionId))
     }
 
+    /// C11-468: every resume decided this launch goes through one guarded
+    /// submission. A panel already resumed (by restore or the recovery verb)
+    /// is never typed into twice, and a panel the operator typed in is left
+    /// alone.
+    func testGuardedSubmissionRefusesAResumedOrTouchedPanel() async throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let panelId = terminal.id
+        let ref = ConversationRef(
+            kind: "claude-code", id: claudeSessionId, cwd: "/tmp",
+            capturedVia: .hook, state: .suspended
+        )
+        let plan: Workspace.RestartCommand = (
+            panelId: panelId,
+            action: .typeCommand(text: "true", submitWithReturn: false),
+            conversation: ref
+        )
+
+        await workspace.submitResume(plan, idleShellRequired: false)
+        XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed)
+        await workspace.submitResume(plan, idleShellRequired: false)
+        XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed, "a second submission is refused, not retyped")
+
+        let other = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
+        other.surface.lastOperatorKeyAt = Date()
+        await workspace.submitResume((panelId: other.id, action: plan.action, conversation: ref), idleShellRequired: false)
+        guard case .skipped(let code, _)? = workspace.launchResumeOutcomes[other.id] else {
+            return XCTFail("a panel with an operator keystroke must not receive a resume")
+        }
+        XCTAssertEqual(code, .panelInUse)
+    }
+
     func testDeferredResumeSubmissionSkipsOnlyForLiveAttributedSameConversationWriter() async throws {
         let workspace = Workspace()
         let targetSurfaceId = UUID()

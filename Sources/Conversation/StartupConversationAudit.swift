@@ -115,9 +115,30 @@ final class StartupConversationAudit: @unchecked Sendable {
             _ = await env.store.applyCodexLaunchBoundaries(markers)
             let markersMs = Self.elapsedMs(since: markersStart)
             let classifyStart = DispatchTime.now().uptimeNanoseconds
+
+            // Which panels wait on a scrape is fixed before any policy runs.
+            let seededConversations = await env.store.snapshot()
+            let scoped = mode == .noResume
+                ? [:]
+                : ScrapeCaptureContext.scoped(scope.scrapeContexts, to: seededConversations)
+                    .filter { env.pipeline.scrapers.contains(kind: $0.key) }
+            var scrapeKindBySurface: [String: String] = [:]
+            for (kind, contexts) in scoped {
+                for context in contexts
+                where ScrapeCaptureContext.needsScrape(seededConversations[context.surfaceId]?.active) {
+                    scrapeKindBySurface[context.surfaceId] = kind
+                }
+            }
+
             switch mode {
             case .dirty:
-                await Self.verifyTranscripts(env: env, surfaceIds: nil)
+                // A scrape-dependent ref is checked after its scrape: stamping
+                // it now would make it look newer than the session the scrape
+                // finds.
+                await Self.verifyTranscripts(
+                    env: env,
+                    surfaceIds: Set(seededConversations.keys).subtracting(scrapeKindBySurface.keys)
+                )
             case .noResume:
                 await env.store.markAllUnknown(reason: "app restart --no-resume")
             case .clean:
@@ -128,21 +149,11 @@ final class StartupConversationAudit: @unchecked Sendable {
             let classifyMs = Self.elapsedMs(since: classifyStart)
             env.classificationReady()
 
-            let scoped = mode == .noResume
-                ? [:]
-                : ScrapeCaptureContext.scoped(scope.scrapeContexts, to: conversations)
-                    .filter { env.pipeline.scrapers.contains(kind: $0.key) }
-            var scrapeKindBySurface: [String: String] = [:]
-            for (kind, contexts) in scoped {
-                for context in contexts
-                where ScrapeCaptureContext.needsScrape(conversations[context.surfaceId]?.active) {
-                    scrapeKindBySurface[context.surfaceId] = kind
-                }
-            }
             var scrapes: [String: Task<ScrapeResult, Never>] = [:]
             for (kind, contexts) in scoped {
+                let dependents = Set(scrapeKindBySurface.filter { $0.value == kind }.keys)
                 scrapes[kind] = Task.detached(priority: .utility) {
-                    await Self.scrape(kind: kind, contexts: contexts, mode: mode, env: env)
+                    await Self.scrape(kind: kind, contexts: contexts, dependents: dependents, mode: mode, env: env)
                 }
             }
             let tiers = Self.tierCounts(
@@ -233,42 +244,42 @@ final class StartupConversationAudit: @unchecked Sendable {
         return await task?.value
     }
 
+    /// Collect and commit one kind, then (dirty launches) check the
+    /// transcripts of the panels that waited on it, whether or not the scrape
+    /// succeeded: a failed scrape leaves their refs as they were.
     private static func scrape(
         kind: String,
         contexts: [ScrapeCaptureContext],
+        dependents: Set<String>,
         mode: ResumeRecoveryMode,
         env: Environment
     ) async -> ScrapeResult {
         let collectStart = DispatchTime.now().uptimeNanoseconds
+        var failure: String?
+        var batch: ScrapeCandidateBatch?
         if env.injectedScrapeDelay > 0 {
             try? await Task.sleep(nanoseconds: UInt64(env.injectedScrapeDelay * 1_000_000_000))
         }
-        if let failure = env.injectedScrapeFailure {
-            return ScrapeResult(
-                outcome: .failed("startup scrape for \(kind) failed: \(failure)"),
-                collectMs: elapsedMs(since: collectStart),
-                commitMs: 0
-            )
-        }
-        let batch: ScrapeCandidateBatch
-        do {
-            batch = try await env.pipeline.collectCandidateBatch(contexts: contexts)
-        } catch {
-            return ScrapeResult(
-                outcome: .failed("startup scrape for \(kind) failed: \(error)"),
-                collectMs: elapsedMs(since: collectStart),
-                commitMs: 0
-            )
+        if let injected = env.injectedScrapeFailure {
+            failure = "startup scrape for \(kind) failed: \(injected)"
+        } else {
+            do {
+                batch = try await env.pipeline.collectCandidateBatch(contexts: contexts)
+            } catch {
+                failure = "startup scrape for \(kind) failed: \(error)"
+            }
         }
         let collectMs = elapsedMs(since: collectStart)
         let commitStart = DispatchTime.now().uptimeNanoseconds
-        let commit = await env.store.applyScrapeBatch(batch, pipeline: env.pipeline)
-        if mode == .dirty, !commit.applied.isEmpty {
-            await verifyTranscripts(env: env, surfaceIds: Set(commit.applied.map(\.surfaceId)))
+        if let batch {
+            _ = await env.store.applyScrapeBatch(batch, pipeline: env.pipeline)
+        }
+        if mode == .dirty, !dependents.isEmpty {
+            await verifyTranscripts(env: env, surfaceIds: dependents)
         }
         _ = await env.store.auditGlobalOwnership()
         return ScrapeResult(
-            outcome: .applied,
+            outcome: failure.map { .failed($0) } ?? .applied,
             collectMs: collectMs,
             commitMs: elapsedMs(since: commitStart)
         )

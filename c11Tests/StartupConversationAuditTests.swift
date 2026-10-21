@@ -359,6 +359,36 @@ final class StartupConversationAuditTests: XCTestCase {
         }
     }
 
+    /// A persisted inferred ref A and a newer session B in the same cwd: the
+    /// scrape must still be able to replace A on a dirty restore, so A is
+    /// not checked (and restamped) before its scrape lands.
+    func testDirtyRestoreLetsTheScrapeReplaceAStaleInferredRef() async {
+        let cwd = "/work/inferred"
+        let staleId = uuid(0xA, 1)
+        let freshId = uuid(0xB, 2)
+        let stale = Panel(kind: "codex", cwd: cwd, ref: ConversationRef(
+            kind: "codex", id: staleId, cwd: cwd,
+            capturedAt: Date().addingTimeInterval(-600),
+            capturedVia: .scrape, state: .alive
+        ))
+        let fs = filesystem(for: [stale], extraCodexIds: [freshId])
+        let scraper = SlowScraper(kind: "codex", delay: 0.2, preset: [
+            ScrapeCandidate(id: freshId, filePath: "/Users/test/.codex/sessions/2026/10/21/x-\(freshId).jsonl",
+                            mtime: Date().addingTimeInterval(-60), size: 4096, cwd: cwd),
+        ])
+        let store = ConversationStore()
+        let audit = StartupConversationAudit()
+        audit.begin(mode: .dirty, snapshot: snapshot([stale]), environment: environment(
+            store: store, scrapers: [scraper], filesystem: fs, report: ReportBox()
+        ))
+        let classification = await audit.awaitClassification()
+        XCTAssertEqual(Set(classification.scrapeKindBySurface.keys), [stale.id.uuidString])
+        _ = await audit.awaitReport()
+        let settled = await store.snapshot()
+        XCTAssertEqual(settled[stale.id.uuidString]?.active?.id, freshId, "the newer scraped session wins")
+        XCTAssertTrue(isCommand(decision(stale, in: settled, mode: .dirty)))
+    }
+
     func testCrashVerdictsNeverOverwriteARefThatChangedMeanwhile() async {
         let store = ConversationStore()
         let stale = uuid(0xE, 1)

@@ -568,27 +568,27 @@ extension TerminalController {
                     row["reason"] = refusal
                 } else if dryRun {
                     row["outcome"] = "would_resume"
-                } else {
+                } else if let ref {
                     row["outcome"] = "resumed"
-                    let action = ResumeAction.typeCommand(
-                        text: command.text,
-                        submitWithReturn: command.submitWithReturn
-                    )
-                    let delay = Double(scheduled) * SessionPersistencePolicy.agentRestartStagger
-                    scheduled += 1
                     workspace.recordLaunchResumeDecision(
                         panelId: panelId,
-                        kind: ref?.kind ?? "",
-                        conversationId: ref?.id,
+                        kind: ref.kind,
+                        conversationId: ref.id,
                         mode: mode,
                         decision: decision
                     )
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak workspace] in
-                        MainActor.assumeIsolated {
-                            guard let workspace, workspace.isUntouchedShell(panelId) else { return }
-                            workspace.executeResumeAction(action, on: panelId)
-                        }
-                    }
+                    // Staggered like restore, through the same guarded
+                    // submission, which rechecks everything at typing time.
+                    workspace.dispatchRestartCommands(
+                        [(
+                            panelId: panelId,
+                            action: .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
+                            conversation: ref
+                        )],
+                        firstAt: .now() + Double(scheduled) * SessionPersistencePolicy.agentRestartStagger,
+                        idleShellRequired: true
+                    )
+                    scheduled += 1
                 }
             }
             rows.append(row)

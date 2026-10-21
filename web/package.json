@@ -14,17 +14,17 @@
   "dependencies": {
     "@t3-oss/env-nextjs": "^0.13.11",
     "@vercel/firewall": "^1.2.6",
-    "next": "16.4.0",
+    "next": "16.4.2",
     "next-intl": "^4.14.9",
     "next-themes": "^0.4.6",
-    "posthog-js": "^1.438.7",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "posthog-js": "^1.438.12",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-tweet": "^3.3.1",
     "react-wrap-balancer": "^1.1.1",
-    "resend": "^6.32.1",
+    "resend": "^6.33.0",
     "shiki": "^4.5.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -32,7 +32,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
     "typescript": "^6"
   },

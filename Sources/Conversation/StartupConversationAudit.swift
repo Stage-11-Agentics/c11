@@ -5,11 +5,11 @@ import Foundation
 /// exact causal ref on another.
 ///
 /// Phases run as one chain of detached tasks:
-/// - `seeded`: store seed, journal owners, Codex launch-boundary markers, and
-///   the ownership audit. In memory apart from the marker directory.
-/// - `classified`: the recovery policy (dirty: stat each transcript; no-resume:
-///   mark refs not resumable; clean: nothing) and the set of panels whose
-///   decision still depends on a scrape.
+/// - `seeded`: store seed, ownership audit and journal owners, in memory only.
+/// - `classified`: Codex launch-boundary markers, the recovery policy (dirty:
+///   check each transcript off the actor; no-resume: mark refs not
+///   resumable; clean: nothing), and the panels whose decision still depends
+///   on a scrape.
 /// - one scrape per kind, collecting only the panels that need it, then its
 ///   commit and, in dirty mode, the transcript check of what it applied.
 ///
@@ -100,26 +100,24 @@ final class StartupConversationAudit: @unchecked Sendable {
         let records = WorkspaceSnapshotConversationBridge.records(from: snapshot)
         let startedAt = DispatchTime.now().uptimeNanoseconds
 
-        let seeded = Task.detached(priority: .userInitiated) { () -> (seedMs: Int, markersMs: Int) in
+        // In memory only: launch blocks main on this phase.
+        let seeded = Task.detached(priority: .userInitiated) { () -> Int in
             let seedStart = DispatchTime.now().uptimeNanoseconds
             _ = await env.store.seed(from: records)
             env.refreshOwners()
-            let seedMs = Self.elapsedMs(since: seedStart)
+            return Self.elapsedMs(since: seedStart)
+        }
+
+        let classified = Task.detached(priority: .userInitiated) { () -> (Classification, markersMs: Int, classifyMs: Int, tiers: [String: Int]) in
+            _ = await seeded.value
             let markersStart = DispatchTime.now().uptimeNanoseconds
             let markers = env.loadLaunchBoundaries(scope.markerSurfaceIds)
             _ = await env.store.applyCodexLaunchBoundaries(markers)
-            return (seedMs, Self.elapsedMs(since: markersStart))
-        }
-
-        let classified = Task.detached(priority: .userInitiated) { () -> (Classification, classifyMs: Int, tiers: [String: Int]) in
-            _ = await seeded.value
+            let markersMs = Self.elapsedMs(since: markersStart)
             let classifyStart = DispatchTime.now().uptimeNanoseconds
             switch mode {
             case .dirty:
-                await env.store.reclassifyAfterCrash(
-                    registry: env.registry,
-                    filesystem: env.filesystem
-                )
+                await Self.verifyTranscripts(env: env, surfaceIds: nil)
             case .noResume:
                 await env.store.markAllUnknown(reason: "app restart --no-resume")
             case .clean:
@@ -153,14 +151,15 @@ final class StartupConversationAudit: @unchecked Sendable {
             )
             return (
                 Classification(mode: mode, scrapeKindBySurface: scrapeKindBySurface, scrapes: scrapes),
+                markersMs,
                 classifyMs,
                 tiers
             )
         }
 
         let completed = Task.detached(priority: .utility) { () -> StartupConversationAuditReport in
-            let seedTimes = await seeded.value
-            let (classification, classifyMs, tiers) = await classified.value
+            let seedMs = await seeded.value
+            let (classification, markersMs, classifyMs, tiers) = await classified.value
             var collectMs: [String: Int] = [:]
             var commitMs: [String: Int] = [:]
             var failures: [String: String] = [:]
@@ -174,8 +173,8 @@ final class StartupConversationAudit: @unchecked Sendable {
             }
             let report = StartupConversationAuditReport(
                 mode: mode,
-                seedMs: seedTimes.seedMs,
-                markersMs: seedTimes.markersMs,
+                seedMs: seedMs,
+                markersMs: markersMs,
                 classifyMs: classifyMs,
                 collectMsByKind: collectMs,
                 commitMsByKind: commitMs,
@@ -265,11 +264,7 @@ final class StartupConversationAudit: @unchecked Sendable {
         let commitStart = DispatchTime.now().uptimeNanoseconds
         let commit = await env.store.applyScrapeBatch(batch, pipeline: env.pipeline)
         if mode == .dirty, !commit.applied.isEmpty {
-            await env.store.reclassifyAfterCrash(
-                registry: env.registry,
-                filesystem: env.filesystem,
-                surfaceIds: Set(commit.applied.map(\.surfaceId))
-            )
+            await verifyTranscripts(env: env, surfaceIds: Set(commit.applied.map(\.surfaceId)))
         }
         _ = await env.store.auditGlobalOwnership()
         return ScrapeResult(
@@ -277,6 +272,18 @@ final class StartupConversationAudit: @unchecked Sendable {
             collectMs: collectMs,
             commitMs: elapsedMs(since: commitStart)
         )
+    }
+
+    /// Dirty-launch transcript check: stat off the actor, one walk per
+    /// recursive store, then commit in one actor turn.
+    private static func verifyTranscripts(env: Environment, surfaceIds: Set<String>?) async {
+        let verdicts = ConversationStore.crashTranscriptVerdicts(
+            for: await env.store.snapshot(),
+            registry: env.registry,
+            filesystem: SessionNameIndexFilesystem(base: env.filesystem),
+            surfaceIds: surfaceIds
+        )
+        await env.store.applyCrashTranscriptVerdicts(verdicts)
     }
 
     private static func tierCounts(

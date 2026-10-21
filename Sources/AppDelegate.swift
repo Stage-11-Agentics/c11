@@ -3574,7 +3574,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             JournalCoordinator.shared.startupSeedReady()
             JournalCoordinator.shared.startupPanelsReady()
             recordResolvedResumeRecoveryMode(.noResume)
-            StartupConversationAudit.shared.beginWithoutAudit(mode: .noResume)
             return
         }
         let snapshot = SessionPersistenceStore.load(
@@ -3651,11 +3650,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         audit.begin(mode: mode, snapshot: snapshot, environment: auditEnvironment)
-        // Rare startup seam: a bounded wait so restored terminals start on a
-        // seeded store. A timeout is harmless: resume and autosave both await
-        // the seed themselves.
+        // Rare startup seam: the seed is in memory only, and every store read
+        // that feeds a snapshot or a resume decision awaits it. Waiting here
+        // keeps restored terminals, early pushes and saves behind it; the
+        // bound only guards against a wedged actor.
         let seedWaitStart = DispatchTime.now().uptimeNanoseconds
-        let seedWait = BoundedLifecycleWait.run(timeout: 1.0) {
+        let seedWait = BoundedLifecycleWait.run(timeout: 5.0) {
             await audit.awaitSeeded()
         }
         startupConversationSeedWaitMs = Int(

@@ -473,6 +473,8 @@ extension Workspace {
         let sema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var captured: [String: PanelConversations] = [:]
         Task.detached(priority: .userInitiated) {
+            // Never hand a persistence boundary an unseeded store.
+            await StartupConversationAudit.shared.awaitSeeded()
             captured = await ConversationStore.shared.snapshot()
             sema.signal()
         }
@@ -640,13 +642,22 @@ extension Workspace {
         )
     }
 
-    /// A panel nobody has used since launch: no operator keystroke, and its
-    /// shell is not running a command. Only such a panel may receive a resume
-    /// decided after restore (a late scrape, `c11 conversation resume`).
+    /// A panel nobody has used since launch: no operator keystroke, and a
+    /// shell idle at its prompt, or a terminal that has not started yet (the
+    /// command queues until it does, as at restore). Only such a panel may
+    /// receive a resume decided after restore (a late scrape,
+    /// `c11 conversation resume`).
     func isUntouchedShell(_ panelId: UUID) -> Bool {
-        guard let panel = panels[panelId] as? TerminalPanel else { return false }
-        return panel.surface.lastOperatorKeyAt == nil
-            && panelShellActivityStates[panelId] != .commandRunning
+        guard let panel = panels[panelId] as? TerminalPanel,
+              panel.surface.lastOperatorKeyAt == nil else { return false }
+        switch panelShellActivityStates[panelId] ?? .unknown {
+        case .promptIdle:
+            return true
+        case .commandRunning:
+            return false
+        case .unknown:
+            return panel.surface.surface == nil
+        }
     }
 
     /// Recheck the process-local writer evidence immediately before a delayed

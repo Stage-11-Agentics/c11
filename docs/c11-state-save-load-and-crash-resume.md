@@ -109,6 +109,10 @@ sequenceDiagram
 
 ---
 
+### 1d. Startup audit phases (C11-468)
+
+The steps above run as the startup conversation audit (`StartupConversationAudit`), and each restored panel waits only for the phase its own decision needs. Seeding is in memory and is the only step launch blocks main on. Classification applies Codex launch-boundary markers and, on a dirty launch, checks transcripts off the store actor (one walk of `~/.codex/sessions` for all Codex refs). Exact causal refs decide there. Only panels whose ref is missing, a placeholder, or inferred wait for their kind's scrape, and a resume decided after restore is typed only into a panel nobody has used since launch. A failed or slow phase writes no state: it shows in the panel's skip reason and in the `conversation.startup_audit` event. `c11 conversation resume` reruns the decision for panels a launch skipped. The contract agents read is `skills/c11/references/conversation.md`.
+
 ## 2. Explicit state save / load CLI
 
 Motivating scenario: c11 is getting laggy after a long run. The operator wants to checkpoint everything, restart the app, and land back exactly where they were, with every Claude conversation resumed. Today the only way to get that is a clean Quit from the menu and a manual relaunch.

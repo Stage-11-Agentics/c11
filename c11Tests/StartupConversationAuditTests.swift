@@ -283,7 +283,7 @@ final class StartupConversationAuditTests: XCTestCase {
         let (dirtyStore, _) = await launch(panels, mode: .dirty)
         let persisted = await dirtyStore.snapshot()
         XCTAssertFalse(persisted.values.contains {
-            $0.active?.diagnosticReason?.hasPrefix(ConversationStore.startupAuditDamagePrefix) == true
+            $0.active?.diagnosticReason?.hasPrefix("startup audit failed") == true
         })
         // Relaunch from exactly what autosave would persist, failing again.
         let relaunched = panels.map { panel in
@@ -359,29 +359,49 @@ final class StartupConversationAuditTests: XCTestCase {
         }
     }
 
-    func testSeedHealsOnlyCausalRefsDemotedByAStartupAuditFailure() async {
-        let damaged = ConversationRef(
-            kind: "claude-code", id: uuid(0xD, 1), cwd: "/work/a", capturedVia: .hook, state: .unknown,
-            diagnosticReason: "startup audit failed: epoch expired before scrape commit"
-        )
-        let exited = ConversationRef(
-            kind: "claude-code", id: uuid(0xD, 2), cwd: "/work/b", capturedVia: .hook, state: .unknown,
-            diagnosticReason: "crash recovery: transcript not found"
-        )
-        let inferred = ConversationRef(
-            kind: "codex", id: uuid(0xD, 3), cwd: "/work/c", capturedVia: .scrape, state: .unknown,
-            diagnosticReason: "startup audit failed: timeout"
-        )
+    func testCrashVerdictsNeverOverwriteARefThatChangedMeanwhile() async {
         let store = ConversationStore()
-        await store.seed(from: [
-            "A": PanelConversations(active: damaged),
-            "B": PanelConversations(active: exited),
-            "C": PanelConversations(active: inferred),
-        ])
-        let seeded = await store.snapshot()
-        XCTAssertEqual(seeded["A"]?.active?.state, .alive)
-        XCTAssertEqual(seeded["B"]?.active, exited)
-        XCTAssertEqual(seeded["C"]?.active, inferred)
+        let stale = uuid(0xE, 1)
+        let fresh = uuid(0xE, 2)
+        _ = await store.push(surfaceId: "A", kind: "claude-code", id: stale, source: .hook, cwd: "/work/a")
+        _ = await store.push(surfaceId: "B", kind: "claude-code", id: uuid(0xE, 3), source: .hook, cwd: "/work/b")
+        let verdicts = ConversationStore.crashTranscriptVerdicts(
+            for: await store.snapshot(), registry: .v1, filesystem: MockFS()
+        )
+        // A new causal report lands on A while the verdicts were computed.
+        _ = await store.push(surfaceId: "A", kind: "claude-code", id: fresh, source: .hook, cwd: "/work/a",
+                             capturedAt: Date().addingTimeInterval(1))
+        await store.applyCrashTranscriptVerdicts(verdicts)
+        let after = await store.snapshot()
+        XCTAssertEqual(after["A"]?.active?.id, fresh)
+        XCTAssertEqual(after["A"]?.active?.state, .alive, "a newer ref keeps its state")
+        XCTAssertEqual(after["B"]?.active?.state, .unknown, "an unchanged ref takes its verdict")
+    }
+
+    func testOneCodexWalkAnswersEveryCodexRef() {
+        final class CountingFS: ConversationFilesystem, @unchecked Sendable {
+            let inner: MockFS
+            var walks = 0
+            init(_ inner: MockFS) { self.inner = inner }
+            var homeDirectory: URL? { inner.homeDirectory }
+            func fileExists(atPath path: String) -> Bool { inner.fileExists(atPath: path) }
+            func listDirectoryByMtime(_ d: URL, max: Int) -> [ConversationFilesystemEntry] { [] }
+            func listSessionsRecursivelyByMtime(_ r: URL, extensionFilter: String, max: Int) -> [ConversationFilesystemEntry] {
+                walks += 1
+                return inner.listSessionsRecursivelyByMtime(r, extensionFilter: extensionFilter, max: max)
+            }
+        }
+        let panels = (0..<8).map { codexPanel($0) }
+        let counting = CountingFS(filesystem(for: panels))
+        let records = Dictionary(uniqueKeysWithValues: panels.map {
+            ($0.id.uuidString, PanelConversations(active: $0.ref))
+        })
+        let verdicts = ConversationStore.crashTranscriptVerdicts(
+            for: records, registry: .v1, filesystem: SessionNameIndexFilesystem(base: counting)
+        )
+        XCTAssertEqual(verdicts.count, 8)
+        XCTAssertTrue(verdicts.values.allSatisfy { $0.exists == true })
+        XCTAssertEqual(counting.walks, 1)
     }
 
     func testScrapeScopeSkipsKindsWhoseRefsAreAllCausal() {

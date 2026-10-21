@@ -225,6 +225,13 @@ enum CodexLaunchBoundaryMarkerStore {
     }
 }
 
+/// Whether a ref's transcript exists (`nil`: its kind cannot verify), and the
+/// id it was computed for.
+struct CrashTranscriptVerdict: Sendable, Equatable {
+    let id: String
+    let exists: Bool?
+}
+
 struct RuntimeEnvCaptureResult: Sendable, Equatable {
     enum Outcome: String, Sendable {
         case accepted
@@ -385,34 +392,9 @@ extension ConversationStore {
     /// snapshot restore to seed from `SessionPanelSnapshot.surfaceConversations`.
     @discardableResult
     func seed(from records: [String: PanelConversations]) -> OwnershipAuditResult {
-        bySurface = Self.healingStartupAuditDamage(records)
+        bySurface = records
         return auditGlobalOwnership()
     }
-
-    /// c11 1.1.3 demoted every ref to `.unknown` when its startup audit timed
-    /// out (C11-468) and persisted that. Exact causal refs carrying that
-    /// diagnostic lost nothing but the state, so they return to `.alive` and
-    /// go through the normal recovery checks. Every other `.unknown` ref, a
-    /// `/exit` tombstone included, is untouched.
-    static func healingStartupAuditDamage(
-        _ records: [String: PanelConversations]
-    ) -> [String: PanelConversations] {
-        records.mapValues { conversations in
-            guard var active = conversations.active,
-                  active.state == .unknown,
-                  active.isEligibleCausalOwner,
-                  active.diagnosticReason?.hasPrefix(startupAuditDamagePrefix) == true else {
-                return conversations
-            }
-            active.state = .alive
-            active.diagnosticReason = "restored after a startup audit failure"
-            var healed = conversations
-            healed.active = active
-            return healed
-        }
-    }
-
-    static let startupAuditDamagePrefix = "startup audit failed"
 
     // MARK: - Write
 
@@ -785,22 +767,58 @@ extension ConversationStore {
         at: Date = Date(),
         surfaceIds: Set<String>? = nil
     ) {
-        for (key, var snap) in bySurface {
+        applyCrashTranscriptVerdicts(
+            Self.crashTranscriptVerdicts(
+                for: bySurface,
+                registry: registry,
+                filesystem: filesystem,
+                surfaceIds: surfaceIds
+            ),
+            at: at
+        )
+    }
+
+    /// The disk half of `reclassifyAfterCrash`, pure and nonisolated so
+    /// startup stats transcripts off the actor (a Codex check walks
+    /// `~/.codex/sessions`) while socket calls keep reaching the store.
+    nonisolated static func crashTranscriptVerdicts(
+        for records: [String: PanelConversations],
+        registry: ConversationStrategyRegistry,
+        filesystem: ConversationFilesystem,
+        surfaceIds: Set<String>? = nil
+    ) -> [String: CrashTranscriptVerdict] {
+        var verdicts: [String: CrashTranscriptVerdict] = [:]
+        for (key, conversations) in records {
             if let surfaceIds, !surfaceIds.contains(key) { continue }
-            guard var active = snap.active else { continue }
-            guard active.state == .alive || active.state == .suspended else { continue }
-            let verification = registry
-                .strategy(forKind: active.kind)?
-                .transcriptExists(for: active, filesystem: filesystem)
-            switch verification {
-            case .some(let exists):
-                if exists {
-                    active.state = .suspended
-                    active.diagnosticReason = "crash recovery: transcript verified on disk"
-                } else {
-                    active.state = .unknown
-                    active.diagnosticReason = "crash recovery: transcript not found"
-                }
+            guard let active = conversations.active,
+                  active.state == .alive || active.state == .suspended else { continue }
+            verdicts[key] = CrashTranscriptVerdict(
+                id: active.id,
+                exists: registry.strategy(forKind: active.kind)?
+                    .transcriptExists(for: active, filesystem: filesystem)
+            )
+        }
+        return verdicts
+    }
+
+    /// Commit verdicts in one actor turn. A ref that changed while they were
+    /// computed (another id, or no longer `.alive`/`.suspended`) keeps its
+    /// newer state.
+    func applyCrashTranscriptVerdicts(
+        _ verdicts: [String: CrashTranscriptVerdict],
+        at: Date = Date()
+    ) {
+        for (key, verdict) in verdicts {
+            guard var snap = bySurface[key], var active = snap.active,
+                  active.id == verdict.id,
+                  active.state == .alive || active.state == .suspended else { continue }
+            switch verdict.exists {
+            case .some(true):
+                active.state = .suspended
+                active.diagnosticReason = "crash recovery: transcript verified on disk"
+            case .some(false):
+                active.state = .unknown
+                active.diagnosticReason = "crash recovery: transcript not found"
             case .none:
                 active.state = .unknown
                 active.diagnosticReason = "crash recovery: transcript verification unavailable"

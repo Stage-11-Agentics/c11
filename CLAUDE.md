@@ -133,6 +133,7 @@ Non-trivial tickets run through **`lattice-hosted-orchestrator`**, because the c
 - **CLI says `Socket not found` while c11 is still running:** the socket file was unlinked under a live listener. Run **Restart CLI Listener** from the command palette (Cmd+Shift+P); it rebinds without touching workspaces or PTYs. `tools/socket-watcher/` and `docs/c11-socket-unlink-diagnostic.md` catch any new unlink source.
 - **Attention state stays simple.** A ticket that reaches for launch epochs, crash-durable markers, or transactional launch coordinators to track attention has hit the C11-188 failure signature (`docs/aar-c11-188-attention-loop.md`): stop and escalate.
 - **Sidebar analytics are getting dense.** Before stacking more onto the workspace cards, raise a dedicated analytics screen with Atin.
+- **`scripts/rebuild.sh` runs `pkill -9 -f c11`: it kills the running c11 and every agent and workspace in it.** Never run it during a live session. To validate CLI changes without bouncing the app, build only the `c11-cli` scheme (`xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-cli -configuration Debug -derivedDataPath <dir> build`) and run the fresh binary against the still-running app; app-side socket changes need an app restart the operator opts into. Worktrees need `git submodule update --init vendor/bonsplit` or the build fails.
 - **Portal lifecycle debugging:** `C11_PORTAL_DEBUG=1` logs bind/detach/sync events to `/tmp/c11-portal.log` (override with `C11_PORTAL_LOG`; truncated per process). Drive churn with `scripts/repro-c11-18.sh`.
 
 ## Localization

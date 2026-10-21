@@ -63,6 +63,7 @@ c11 conversation tombstone --kind <k> --id <id> [--reason <text>]
 c11 conversation list [--panel <id>] [--json]
 c11 conversation get [--panel <id>] [--json]
 c11 conversation clear [--panel <id>]
+c11 conversation resume (--panel <id> | --all-skipped) [--dry-run] [--json]
 ```
 
 | Verb | Use |
@@ -74,8 +75,9 @@ c11 conversation clear [--panel <id>]
 | `list` | List captured conversations (process-wide; v1 has no per-workspace partitioning). Filter with `--panel`. `--json` for structured output. |
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a panel. The debugging entry point. |
 | `clear` | Wipe the panel's conversations. Forces a fresh launch on next workspace open. |
+| `resume` | Recover panels this launch did not resume. Reruns the shared resume decision for every panel the launch skipped (`--all-skipped`) or for one named panel, and types the resume command only into a panel nobody has used since launch (no operator keystroke, shell not running a command). `--dry-run` reports without typing. Each JSON row carries `outcome` (`resumed`, `would_resume`, `refused`, `skipped`), `skip_code`, `reason`, and the `command`, so a refused panel can still be resumed deliberately with `c11 send`. |
 
-**Panel resolution.** Every verb resolves `--panel` from `C11_PANEL_ID` if unset. **No focused-panel fallback** (the silent-misroute footgun the architecture exists to avoid). If the env var is missing and no flag was given, the command errors out with `missing_surface`.
+**Panel resolution.** Every verb except `resume` resolves `--panel` from `C11_PANEL_ID` if unset; `resume` needs `--panel` or `--all-skipped` explicitly. **No focused-panel fallback** (the silent-misroute footgun the architecture exists to avoid). If the env var is missing and no flag was given, the command errors out with `missing_surface`.
 
 **`--payload`** accepts inline JSON or `@<path>` to read JSON from a file (mirrors the `HOOKS_FILE` ergonomics in `Resources/bin/claude` so hook authors writing bash do not have to shell-quote JSON).
 
@@ -122,11 +124,13 @@ Every resume line carries its agent's auto-approve flag, the same one its launch
 
 ## Crash recovery — what it guarantees per kind
 
-The forced-kill (`kill -9`) path is a first-class, tested guarantee as of the Truth & Stability cycle (C11-164), not a v1.1 aspiration. On launch c11 reads a per-bundle dirty/clean **shutdown sentinel** (`~/.c11/runtime/shutdown.<bundle>.{dirty,clean}`); `.dirty` (or missing) means the last run crashed. The dirty-launch restore ordering is:
+On launch c11 reads a per-bundle dirty/clean **shutdown sentinel** (`~/.c11/runtime/shutdown.<bundle>.{dirty,clean}`); `.dirty` (or missing) means the last run did not shut down cleanly (a crash, `kill -9`, a reboot). The startup audit then runs in phases, and **each restored panel waits only for the phase its own decision needs**:
 
-1. **Seed** the store from the last snapshot (`seedFromSnapshot`), and seed the per-panel **activity floor** (persisted on each panel as `last_activity_at`).
-2. **Scrape-capture** (`runScrapeCapture`): for every restored terminal panel, run its kind's scraper and resolve any placeholder to the real on-disk session id.
-3. **Reclassify** (`reclassifyAfterCrash`): for each `.alive`/`.suspended` ref, `transcriptExists` stats the on-disk transcript (stat only — bytes never read). Verified → `.suspended` with `diagnostic_reason = "crash recovery: transcript verified on disk"` (resume fires); missing → `.unknown` with `"crash recovery: transcript not found"` (honest skip). Refs already `.unknown`/`.tombstoned` are untouched, so `/exit`-ended sessions never auto-resume.
+1. **Seed** the store from the last snapshot and seed the per-panel **activity floor** (`last_activity_at`). Launch blocks main for this in-memory step alone, bounded at one second; autosave waits for it too, so an unseeded store is never persisted.
+2. **Classify.** Dirty launches run `reclassifyAfterCrash`: each `.alive`/`.suspended` ref's transcript is statted (bytes never read). Verified → `.suspended` with `diagnostic_reason = "crash recovery: transcript verified on disk"`; missing → `.unknown` with `"crash recovery: transcript not found"`. Refs already `.unknown`/`.tombstoned` are untouched, so `/exit`-ended sessions never auto-resume. `app restart --no-resume` marks every ref `.unknown` with reason `app restart --no-resume`, a policy decision that persists. Panels with exact causal refs (hook or runtime capture) decide here and resume; they never wait on a scrape.
+3. **Scrape only what needs it.** Only panels whose ref is missing, a placeholder, or inferred depend on the scraper, and only their kinds are collected (Codex keeps its causal panels in the batch so their ids stay reserved and the same-cwd rule still applies). Each kind scrapes and commits on its own. When a panel's scrape lands, its decision is rerun and the command is typed only if nobody has used the panel since launch; otherwise it skips with `panel-in-use`.
+
+**A failed or slow phase writes nothing.** Persisted refs keep their state for the next launch; the failure shows in the skip reason and in the `conversation.startup_audit` event (one per launch: per-phase milliseconds, the main-thread seed wait, panels by evidence tier, scrape failures by kind). A same-id causal report (`capture-runtime`, a SessionStart hook push) on a ref that is not `alive` returns it to `alive`.
 
 The contract: after a crash, **every conversation either resumes exactly per its kind's tier, or the panel carries an honest, specific `diagnostic_reason`.** There are no silent fresh-launches presented as resumes.
 
@@ -188,6 +192,14 @@ c11 conversation clear
 # (v1 stores process-wide; no per-workspace partitioning)
 c11 conversation list --json | jq '.conversations[] | {kind, id, state, panel_id}'
 
+# After a relaunch: which panels did not resume, and why? Then recover them.
+c11 conversation resume --all-skipped --dry-run --json | jq -r '.panels[]
+  | "\(.outcome)\t\(.kind)\t\(.skip_code // "-")\t\(.reason // "-")"'
+c11 conversation resume --all-skipped
+
+# Where did the startup audit spend its time?
+c11 events tail --filter type=conversation.startup_audit
+
 # After a crash + relaunch: which panels resumed vs carry a diagnostic?
 c11 conversation list --json | jq -r '.conversations[]
   | "\(.kind)\t\(.state)\t\(.diagnostic_reason // "-")"'
@@ -200,7 +212,7 @@ c11 state verify --mode dirty
 
 ## Landed (Truth & Stability cycle, C11-131 + C11-151..154 + C11-164)
 
-- **Live scrape-capture on restore** (`runScrapeCapture`) — resolves Claude/Codex/pi/omp placeholder refs from disk before the resume pass runs. Superseded the snapshot-only restore.
+- **Live scrape-capture on restore** — resolves Claude/Codex/pi/omp placeholder refs from disk for the panels that need it.
 - **Crash reclassification** (`reclassifyAfterCrash`) replacing the old blanket `markAllUnknown` — verified-transcript refs resume, missing ones carry an honest diagnostic.
 - **`SurfaceActivityTracker` snapshot persistence** — the activity floor now persists per panel (`last_activity_at`) and is seeded at restore, so codex/pi/omp disambiguation survives a reboot.
 - **Codex real-cwd recovery** via a bounded, allowlisted first-line read of the rollout header — the cwd filter now discriminates across workspaces.

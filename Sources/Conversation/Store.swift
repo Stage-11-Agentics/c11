@@ -385,9 +385,34 @@ extension ConversationStore {
     /// snapshot restore to seed from `SessionPanelSnapshot.surfaceConversations`.
     @discardableResult
     func seed(from records: [String: PanelConversations]) -> OwnershipAuditResult {
-        bySurface = records
+        bySurface = Self.healingStartupAuditDamage(records)
         return auditGlobalOwnership()
     }
+
+    /// c11 1.1.3 demoted every ref to `.unknown` when its startup audit timed
+    /// out (C11-468) and persisted that. Exact causal refs carrying that
+    /// diagnostic lost nothing but the state, so they return to `.alive` and
+    /// go through the normal recovery checks. Every other `.unknown` ref, a
+    /// `/exit` tombstone included, is untouched.
+    static func healingStartupAuditDamage(
+        _ records: [String: PanelConversations]
+    ) -> [String: PanelConversations] {
+        records.mapValues { conversations in
+            guard var active = conversations.active,
+                  active.state == .unknown,
+                  active.isEligibleCausalOwner,
+                  active.diagnosticReason?.hasPrefix(startupAuditDamagePrefix) == true else {
+                return conversations
+            }
+            active.state = .alive
+            active.diagnosticReason = "restored after a startup audit failure"
+            var healed = conversations
+            healed.active = active
+            return healed
+        }
+    }
+
+    static let startupAuditDamagePrefix = "startup audit failed"
 
     // MARK: - Write
 
@@ -563,10 +588,13 @@ extension ConversationStore {
         capturedAt: Date = Date()
     ) -> RuntimeEnvCaptureResult {
         let existing = bySurface[surfaceId]?.active
+        // A same-id report on a ref that is not `.alive` is the live agent
+        // proving its identity again; it heals rather than no-ops.
         let isIdempotent = existing?.kind == "codex"
             && existing?.id == id
             && existing?.capturedVia == .runtimeEnv
             && existing?.quarantineReason == nil
+            && existing?.state == .alive
 
         if isIdempotent, let existing {
             return RuntimeEnvCaptureResult(
@@ -710,10 +738,10 @@ extension ConversationStore {
         }
     }
 
-    /// Bulk-transition all active refs to `.unknown`. A blunt primitive
-    /// retained for tests that model "no on-disk evidence available."
-    /// Production crash recovery uses `reclassifyAfterCrash`, which verifies
-    /// each ref against its transcript before deciding.
+    /// Bulk-transition all active refs to `.unknown`. Production uses it only
+    /// for the `app restart --no-resume` policy, so the restarted layout's
+    /// old conversations stay down on later launches too. A failed or slow
+    /// audit never calls it: failure is reported, never written.
     func markAllUnknown(at: Date = Date(), reason: String = "crash recovery (dirty sentinel)") {
         for (key, var snap) in bySurface {
             if var active = snap.active {
@@ -749,13 +777,16 @@ extension ConversationStore {
     /// (`ConversationStrategy.transcriptExists`) so other TUI kinds can add
     /// their own checks later. The filesystem is injectable for tests;
     /// production passes `DefaultConversationFilesystem`. Stat only — never
-    /// opens transcript bytes.
+    /// opens transcript bytes. `surfaceIds` limits the pass to those
+    /// surfaces (refs a late scrape just applied).
     func reclassifyAfterCrash(
         registry: ConversationStrategyRegistry,
         filesystem: ConversationFilesystem = DefaultConversationFilesystem(),
-        at: Date = Date()
+        at: Date = Date(),
+        surfaceIds: Set<String>? = nil
     ) {
         for (key, var snap) in bySurface {
+            if let surfaceIds, !surfaceIds.contains(key) { continue }
             guard var active = snap.active else { continue }
             guard active.state == .alive || active.state == .suspended else { continue }
             let verification = registry

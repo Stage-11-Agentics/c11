@@ -418,6 +418,188 @@ extension TerminalController {
         return .ok(out)
     }
 
+    /// `conversation.resume` (C11-468): rerun this launch's resume decision
+    /// for the panels it skipped, or for one named panel, and type the command
+    /// only into a panel nobody has used since launch. Runs on the socket
+    /// worker: the store read and any transcript stat stay off main; one main
+    /// hop resolves targets, decides, and schedules the staggered typing.
+    nonisolated func v2ConversationResume(params: [String: Any]) -> V2CallResult {
+        if ConversationStorePolicy.isDisabled {
+            return .ok(["disabled": true, "kill_switch": "CMUX_DISABLE_CONVERSATION_STORE"])
+        }
+        let allSkipped = v2Bool(params, "all_skipped") ?? false
+        let dryRun = v2Bool(params, "dry_run") ?? false
+        let namesPanel = params["surface_id"] != nil
+        guard allSkipped != namesPanel else {
+            return .err(
+                code: "invalid_params",
+                message: "pass exactly one of --panel <ref> or --all-skipped",
+                data: nil
+            )
+        }
+
+        let mode = StartupConversationAudit.shared.mode
+        let registry = ConversationStrategyRegistry.v1
+        let storeRead = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var conversations: [String: PanelConversations]?
+        Task.detached(priority: .userInitiated) {
+            conversations = await ConversationStore.shared.snapshot()
+            storeRead.signal()
+        }
+        guard storeRead.wait(timeout: .now() + 2.0) == .success, let conversations else {
+            return .err(code: "internal_error", message: "store timeout", data: nil)
+        }
+        // A dirty launch needs transcript evidence. Refs whose crash-recovery
+        // diagnostic no longer says (a later push replaced it) are statted
+        // here, off main.
+        var evidence: [String: ResumeTranscriptEvidence] = [:]
+        if mode == .dirty {
+            let filesystem = DefaultConversationFilesystem()
+            for (surfaceId, panel) in conversations {
+                guard let ref = panel.active,
+                      Workspace.transcriptEvidence(for: ref, mode: mode) == .unavailable,
+                      let exists = registry.strategy(forKind: ref.kind)?
+                        .transcriptExists(for: ref, filesystem: filesystem) else { continue }
+                evidence[surfaceId] = exists ? .verified : .missing
+            }
+        }
+
+        let main = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "resume", data: nil)
+        Task { @MainActor in
+            defer { main.signal() }
+            result = self.conversationResumeOnMain(
+                params: params,
+                allSkipped: allSkipped,
+                dryRun: dryRun,
+                mode: mode,
+                registry: registry,
+                conversations: conversations,
+                evidence: evidence
+            )
+        }
+        main.wait()
+        return result
+    }
+
+    private func conversationResumeOnMain(
+        params: [String: Any],
+        allSkipped: Bool,
+        dryRun: Bool,
+        mode: ResumeRecoveryMode,
+        registry: ConversationStrategyRegistry,
+        conversations: [String: PanelConversations],
+        evidence: [String: ResumeTranscriptEvidence]
+    ) -> V2CallResult {
+        guard let app = AppDelegate.shared else {
+            return .err(code: "unavailable", message: "app not ready", data: nil)
+        }
+        var targets: [(workspace: Workspace, panelId: UUID)] = []
+        if allSkipped {
+            for workspace in app.allMainWindowWorkspaces() {
+                for (panelId, outcome) in workspace.launchResumeOutcomes.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+                    if case .skipped = outcome { targets.append((workspace, panelId)) }
+                }
+            }
+        } else {
+            if let rejected = v2RejectUnresolvedTargetRefs(params) { return rejected }
+            guard let panelId = v2UUID(params, "surface_id"),
+                  let workspace = app.allMainWindowWorkspaces().first(where: { $0.panels[panelId] != nil }) else {
+                return .err(code: "not_found", message: "panel is not present in this c11 instance", data: nil)
+            }
+            guard workspace.panels[panelId] is TerminalPanel else {
+                return .err(code: "invalid_panel", message: "conversation resume targets terminal panels", data: nil)
+            }
+            targets.append((workspace, panelId))
+        }
+
+        var rows: [[String: Any]] = []
+        var scheduled = 0
+        for (workspace, panelId) in targets {
+            let key = panelId.uuidString
+            let ref = conversations[key]?.active
+            var row: [String: Any] = [
+                "panel_id": key,
+                "workspace_id": workspace.id.uuidString,
+                "kind": ref?.kind ?? NSNull(),
+                "conversation_id": ref?.id ?? NSNull(),
+            ]
+            let decision: ResumeDecision = ref.map {
+                Workspace.resumeDecision(
+                    for: $0,
+                    registry: registry,
+                    mode: mode,
+                    transcriptEvidence: evidence[key]
+                )
+            } ?? .skip(code: .conversationUnavailable, reason: "no active conversation in the store")
+            switch decision {
+            case .skip(let code, let reason):
+                row["outcome"] = "skipped"
+                row["skip_code"] = code.rawValue
+                row["reason"] = reason
+            case .command(let command):
+                row["command"] = command.text
+                let liveWriters = ref.map {
+                    app.liveAttributedAgentSurfaceIds(
+                        matching: $0,
+                        excluding: panelId,
+                        conversationsBySurface: conversations
+                    )
+                } ?? []
+                let refusal: String?
+                if workspace.launchResumeOutcomes[panelId] == .resumed {
+                    refusal = "already resumed this launch"
+                } else if !workspace.isUntouchedShell(panelId) {
+                    refusal = "panel was used since launch; type the command yourself if it is still wanted"
+                } else if let ref, case .skip(let reason) = Workspace.resumeActionBeforeSubmission(
+                    .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
+                    conversation: ref,
+                    targetSurfaceId: panelId,
+                    conversationsBySurface: conversations,
+                    liveAttributedAgentSurfaceIds: liveWriters
+                ) {
+                    refusal = reason
+                } else {
+                    refusal = nil
+                }
+                if let refusal {
+                    row["outcome"] = "refused"
+                    row["skip_code"] = ResumeSkipCode.panelInUse.rawValue
+                    row["reason"] = refusal
+                } else if dryRun {
+                    row["outcome"] = "would_resume"
+                } else {
+                    row["outcome"] = "resumed"
+                    let action = ResumeAction.typeCommand(
+                        text: command.text,
+                        submitWithReturn: command.submitWithReturn
+                    )
+                    let delay = Double(scheduled) * SessionPersistencePolicy.agentRestartStagger
+                    scheduled += 1
+                    workspace.recordLaunchResumeDecision(
+                        panelId: panelId,
+                        kind: ref?.kind ?? "",
+                        conversationId: ref?.id,
+                        mode: mode,
+                        decision: decision
+                    )
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak workspace] in
+                        MainActor.assumeIsolated {
+                            guard let workspace, workspace.isUntouchedShell(panelId) else { return }
+                            workspace.executeResumeAction(action, on: panelId)
+                        }
+                    }
+                }
+            }
+            rows.append(row)
+        }
+        return .ok([
+            "mode": mode.rawValue,
+            "dry_run": dryRun,
+            "panels": rows,
+        ])
+    }
+
     private func v2ConversationClear(params: [String: Any]) -> V2CallResult {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {

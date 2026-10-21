@@ -646,6 +646,26 @@ final class EventEmitter {
         )
     }
 
+    /// One per launch, when the startup conversation audit has finished every
+    /// phase (C11-468). Durations are milliseconds.
+    @discardableResult
+    func emitConversationStartupAudit(_ report: StartupConversationAuditReport) -> Bool {
+        emit(.conversationStartupAudit, payload: [
+            "mode": report.mode.rawValue,
+            "outcome": report.outcome,
+            "seed_ms": report.seedMs,
+            "markers_ms": report.markersMs,
+            "classify_ms": report.classifyMs,
+            "collect_ms_by_kind": report.collectMsByKind,
+            "commit_ms_by_kind": report.commitMsByKind,
+            "total_ms": report.totalMs,
+            "main_seed_wait_ms": report.mainSeedWaitMs ?? NSNull(),
+            "panels_by_tier": report.panelsByTier,
+            "scrape_dependent_panels": report.scrapeDependentPanels,
+            "scrape_failures_by_kind": report.scrapeFailuresByKind,
+        ])
+    }
+
     /// A run of same-fingerprint main-thread stalls the watchdog judged to be
     /// the leading edge of a wedge (C11-221). Process-level, so it carries no
     /// subject refs. Emitted from the watchdog thread; `emit` is any-thread.

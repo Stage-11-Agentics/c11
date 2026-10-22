@@ -63,6 +63,10 @@ def main():
     panels.append(sender)
     address = args.kind + '-live-' + nonce
 
+    def flat(text):
+        # The terminal wraps lines and boxes them; compare letters and digits only.
+        return ''.join(ch for ch in text if ch.isalnum())
+
     def screen(panel):
         return c11('read-screen', '--workspace', workspace, '--panel', panel, '--lines', '80')
 
@@ -101,8 +105,8 @@ print(json.dumps(dict(dispatch=lines(root/'_dispatch.log'),unread=[p.stem for p 
         observations['dispatch'] = rows
         c11('focus-panel', '--workspace', workspace, '--panel', panel)
         guest('import pathlib,subprocess,sys;app=next((pathlib.Path.home()/"c11-sandbox/apps"/sys.argv[1]).glob("*.app"));subprocess.run(["/usr/bin/osascript","-e","tell application " + chr(34) + str(app) + chr(34) + " to activate"],check=True)', args.run_id)
-        shown = wait('doorbell visible in the session', lambda: (lambda s: s if DOORBELL in s else None)(screen(panel)), 20)
-        assert draft in shown, 'the unsent draft must still be in the composer'
+        shown = wait('doorbell visible in the session', lambda: (lambda s: s if flat(DOORBELL) in flat(s) else None)(screen(panel)), 20)
+        assert flat(draft) in flat(shown), 'the unsent draft must still be in the composer'
         observations['screen_after_doorbell'] = shown
         command('sandbox-shot.sh', out / 'live-doorbell.png')
         # Whether a real model acts on the invitation: it should claim the envelope.

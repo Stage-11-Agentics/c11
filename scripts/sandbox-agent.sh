@@ -350,9 +350,12 @@ cat > "$tmp/omp-live" <<'SH'
 #!/bin/sh
 # A real model through OpenRouter, from a mode 600 key file. State stays under a private HOME.
 f="$HOME/.c11-sandbox-secrets/openrouter-key"
-[ -r "$f" ] || { echo "omp: $f missing; run scripts/sandbox-agent.sh <run-id> stage omp-live" >&2; exit 1; }
-OPENROUTER_API_KEY="$(cat "$f")"
-export OPENROUTER_API_KEY
+# stage runs `omp --version` before it writes the key, so a version query needs none.
+if [ "${1:-}" != "--version" ]; then
+  [ -r "$f" ] || { echo "omp: $f missing; run scripts/sandbox-agent.sh <run-id> stage omp-live" >&2; exit 1; }
+  OPENROUTER_API_KEY="$(cat "$f")"
+  export OPENROUTER_API_KEY
+fi
 export HOME="$HOME/c11-sandbox/agents/omp-home"
 mkdir -p "$HOME/.omp/agent"
 [ -f "$HOME/.omp/agent/config.yml" ] || printf 'setupVersion: 1\nstartup:\n  setupWizard: false\n' > "$HOME/.omp/agent/config.yml"
@@ -517,7 +520,7 @@ typeset -A versions payload
 bases=(\${(u)\${kinds%-live}})
 for k in \$bases; do
   case "\$k" in
-    omp) b="\$(command -v omp)" ;;
+    omp) b="\$HOME/.bun/bin/omp"; [[ -e "\$b" ]] || b="\$(command -v omp)" ;;
     claude) b="\$HOME/.local/bin/claude"; [[ -e "\$b" ]] || b="\$(command -v claude)" ;;
     codex) b="\$(command -v codex)" ;;
     grok) b="\$HOME/.local/bin/grok"; [[ -e "\$b" ]] || b="\$(command -v grok)" ;;

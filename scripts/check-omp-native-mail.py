@@ -74,7 +74,8 @@ def main():
             c11('set-metadata', '--workspace', workspace, '--panel', panel, '--key', key, '--value', value, '--type', 'string')
         target = dict(panel=panel, address=address, proof_log=proof_log)
         targets.append(target)
-        wait('omp ready: ' + label, lambda: any(e.get('event') == 'session_start' for e in inspect(target)['events']), 90)
+        wait('omp ready: ' + label, lambda: any(e.get('event') == 'agent_end' for e in inspect(target)['events']), 90)
+        time.sleep(2)  # the idle edge reaches c11 before the first mail
         return target
 
     def inspect(target):

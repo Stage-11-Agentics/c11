@@ -12,7 +12,7 @@
 #   4. loads bundled runtime extensions by launch flag: omp-prompt-cache.ts
 #      reports each model request's prompt cache use, never text, and
 #      omp-native-mail.ts reports working/idle edges and delivers c11's mailbox
-#      doorbell as a user message at idle. Nothing is written to omp's config.
+#      doorbell as a message that starts a turn at idle. Nothing is written to omp's config.
 #
 # Outside c11 (or when the socket is unreachable), it passes through to the
 # real omp binary unchanged.

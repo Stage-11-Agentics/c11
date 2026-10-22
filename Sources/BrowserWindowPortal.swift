@@ -3998,6 +3998,40 @@ final class WindowBrowserPortal: NSObject {
         return webView.isKeepLive && !entry.visibleInUI && !containerView.isHidden
     }
 
+    /// Hosts a web view that has no portal entry yet (its workspace is not mounted, so
+    /// SwiftUI never bound it) as an anchor-less keep-live entry in this window. A later
+    /// bind from a mounted workspace adopts the entry like any other.
+    func hostKeepLive(webView: WKWebView) {
+        guard ensureInstalled() else { return }
+        let webViewId = ObjectIdentifier(webView)
+        guard entriesByWebViewId[webViewId] == nil else { return }
+        var entry = Entry(
+            webView: webView,
+            containerView: nil,
+            anchorView: nil,
+            visibleInUI: false,
+            zPriority: 0,
+            dropZone: nil,
+            paneDropContext: nil,
+            searchOverlay: nil,
+            companion: nil,
+            paneInteraction: nil,
+            workspaceFrameStyle: nil,
+            paneTopChromeHeight: 0,
+            transientRecoveryReason: nil,
+            transientRecoveryRetriesRemaining: 0
+        )
+        entry.containerView = ensureContainerView(for: entry, webView: webView)
+        entriesByWebViewId[webViewId] = entry
+        synchronizeWebView(withId: webViewId, source: "keepLive.host")
+    }
+
+    /// True for an entry that exists only to keep a web view live (never bound to an anchor).
+    func isAnchorless(webViewId: ObjectIdentifier) -> Bool {
+        guard let entry = entriesByWebViewId[webViewId] else { return false }
+        return entry.anchorView == nil
+    }
+
     /// Applies a keep-live change to an existing entry. Turning it off while hidden
     /// finishes the hide the parked slot skipped, so WebKit sees the view leave the window.
     func setKeepLive(forWebViewId webViewId: ObjectIdentifier, enabled: Bool) {
@@ -4768,16 +4802,36 @@ enum BrowserWindowPortalRegistry {
 
     /// Turns keep-live on or off for a web view (C11-324). Safe before the web view has a
     /// portal entry: the flag is read when the entry first syncs while hidden.
-    static func setKeepLive(for webView: WKWebView, enabled: Bool) {
+    ///
+    /// With no portal mapping yet and `hostWindow` given (the window that owns the panel's
+    /// workspace), enabling creates an anchor-less host there so the page is live without the
+    /// operator visiting the workspace. Disabling releases such a host entirely.
+    static func setKeepLive(for webView: WKWebView, enabled: Bool, hostWindow: NSWindow? = nil) {
         let webViewId = ObjectIdentifier(webView)
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else {
             webView.isKeepLive = enabled
+            guard enabled, let hostWindow else { return }
+            let hostId = ObjectIdentifier(hostWindow)
+            let hostPortal = portal(for: hostWindow)
+            webViewToWindowId[webViewId] = hostId
+            hostPortal.hostKeepLive(webView: webView)
+            postRegistryDidChange(for: webView)
             return
         }
         portal.setKeepLive(forWebViewId: webViewId, enabled: enabled)
+        if !enabled, portal.isAnchorless(webViewId: webViewId) {
+            detach(webView: webView)
+            return
+        }
         postRegistryDidChange(for: webView)
     }
+
+#if DEBUG
+    static func debugEntryCount() -> Int {
+        portalsByWindowId.values.reduce(0) { $0 + $1.debugEntryCount() }
+    }
+#endif
 
     static func updateDropZoneOverlay(for webView: WKWebView, zone: DropZone?) {
         let webViewId = ObjectIdentifier(webView)

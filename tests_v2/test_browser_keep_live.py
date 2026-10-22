@@ -95,116 +95,135 @@ def _selected_events() -> int | None:
         return sum(1 for line in handle if '"type":"workspace.selected"' in line)
 
 
+def _wait_page(client: cmux, panel: str) -> None:
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        try:
+            if _probe(client, panel)["ticks"] > 0:
+                return
+        except Exception:
+            pass
+        time.sleep(0.25)
+    raise cmuxError("probe page never started")
+
+
+def _current(client: cmux) -> str:
+    return str((client._call("workspace.current") or {}).get("workspace_id") or "")
+
+
+def _scenario(client: cmux, cli: str, url: str, operator_ws: str, *, name: str, cold: bool, replace: bool,
+              close_workspace_directly: bool) -> None:
+    """One background workspace: keep-live off, on, (replaced), off; selection never moves.
+
+    cold: the workspace's creation-time background mount has expired before the browser is created,
+    so the web view has no portal host until keep-live creates one.
+    """
+    print(f"-- {name}")
+    ws = str((client._call("workspace.create") or {}).get("workspace_id") or "")
+    _must(bool(ws), "workspace.create returned no workspace_id")
+    try:
+        if cold:
+            time.sleep(10)
+        panel = str((client._call("browser.panel.new", {"workspace_id": ws, "url": url}) or {}).get("panel_id") or "")
+        other = str((client._call("browser.panel.new", {"workspace_id": ws, "url": url}) or {}).get("panel_id") or "")
+        _must(bool(panel) and bool(other), "browser.panel.new returned no panel_id")
+        current = _current(client)
+        _must(current != ws, f"{name}: the browser workspace is the selected one")
+        _wait_page(client, panel)
+        _wait_page(client, other)
+        selected_before = _selected_events()
+
+        status = client._call("browser.keep_live", {"panel_id": panel}) or {}
+        _must(status.get("keep_live") is False, f"keep-live must default off: {status}")
+        off = _measure(client, panel)
+        print("off  :", off)
+        _must(off["hidden"] is True and off["vis"] == "hidden", f"{name}: keep-live off must be hidden: {off}")
+
+        on_res = client._call("browser.keep_live", {"panel_id": panel, "enabled": True}) or {}
+        _must(on_res.get("keep_live") is True, f"enable failed: {on_res}")
+        time.sleep(1.0)
+        on = _measure(client, panel)
+        print("on   :", on)
+        _must(on["hidden"] is False and on["vis"] == "visible", f"{name}: keep-live on: document.hidden must be false: {on}")
+        _must(on["tick_delta"] >= 20, f"{name}: keep-live on: timers must run (~30 ticks in 3 s): {on}")
+        _must(on["videoError"] is None and on["paused"] is False and on["video_delta"] > 1.0,
+              f"{name}: keep-live on: video must play: {on}")
+
+        # A second browser in the same workspace that did not opt in stays hidden.
+        bystander = _probe(client, other)
+        _must(bystander["hidden"] is True, f"{name}: a non-opted browser must stay hidden: {bystander}")
+
+        snap = client._call("browser.snapshot", {"panel_id": panel}) or {}
+        _must("keep-live-probe" in str(snap.get("snapshot") or ""), f"{name}: snapshot is blank while kept live: {snap}")
+
+        if replace:
+            time.sleep(6)
+            result = client._call("debug.browser.simulate_web_content_termination", {"panel_id": panel}) or {}
+            _must(result.get("scheduled") is True, f"replacement not scheduled: {result}")
+            time.sleep(3)
+            recovered = _measure(client, panel)
+            print("after hidden replacement:", recovered)
+            _must(recovered["hidden"] is False and recovered["tick_delta"] >= 20,
+                  f"{name}: keep-live lost its host after replacement: {recovered}")
+
+        _must(_current(client) == current, f"{name}: the operator's selected workspace changed")
+
+        if close_workspace_directly:
+            entries_with = (client._call("debug.portal.stats") or {}).get("browser_portal_entries")
+            client._call("workspace.close", {"workspace_id": ws})
+            time.sleep(1.5)
+            entries_after = (client._call("debug.portal.stats") or {}).get("browser_portal_entries")
+            print("browser portal entries:", entries_with, "->", entries_after)
+            _must(entries_with is not None and entries_after is not None and entries_after <= entries_with - 1,
+                  f"{name}: closing the workspace must release the kept-live host: {entries_with} -> {entries_after}")
+            return
+
+        cli_off = subprocess.run([cli, "--socket", SOCKET_PATH, "browser", panel, "keep-live", "off"],
+                                 capture_output=True, text=True, check=False)
+        _must(cli_off.returncode == 0 and cli_off.stdout.strip() == "off", f"CLI off: {cli_off}")
+        time.sleep(1.0)
+        back = _measure(client, panel)
+        print("off2 :", back)
+        _must(back["hidden"] is True and back["vis"] == "hidden", f"{name}: off again must be hidden: {back}")
+
+        _must(_current(client) == current, f"{name}: the operator's selected workspace changed")
+        selected_after = _selected_events()
+        print("workspace.selected events:", selected_before, "->", selected_after)
+        if selected_before is not None and selected_after is not None:
+            _must(selected_after == selected_before, f"workspace.selected events appeared: {selected_before} -> {selected_after}")
+
+        # Closing the panel while kept live tears the host down.
+        client._call("browser.keep_live", {"panel_id": panel, "enabled": True})
+        time.sleep(0.5)
+        client._call("browser.panel.close", {"workspace_id": ws, "target_panel_id": panel})
+        time.sleep(0.5)
+        left = [row.get("id") for row in (client._call("browser.panel.list", {"workspace_id": ws}) or {}).get("panels") or []]
+        _must(panel not in [str(x) for x in left], f"panel did not close: {left}")
+    finally:
+        try:
+            client._call("workspace.close", {"workspace_id": ws})
+        except Exception:
+            pass
+
+
 def main() -> int:
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     cli = find_cli_binary()
-    created: list[str] = []
     try:
         with cmux(SOCKET_PATH) as client:
-            operator_ws = str((client._call("workspace.current") or {}).get("workspace_id") or "")
+            operator_ws = _current(client)
             _must(bool(operator_ws), "no current workspace")
-
-            ws = str((client._call("workspace.create") or {}).get("workspace_id") or "")
-            created.append(ws)
-            panel = str((client._call("browser.panel.new", {"workspace_id": ws, "url": url}) or {}).get("panel_id") or "")
-            _must(bool(panel), "browser.panel.new returned no panel_id")
-
-            # The new workspace must be in the background for the rest of the run.
-            current = str((client._call("workspace.current") or {}).get("workspace_id") or "")
-            if current != operator_ws:
-                _must(current != ws, f"workspace.create selected the new workspace: {current}")
-            background_ws = ws
-            _must(current != background_ws, "setup: the browser workspace is the selected one")
-
-            # Wait for the page to load.
-            deadline = time.time() + 30
-            while time.time() < deadline:
-                try:
-                    if _probe(client, panel)["ticks"] > 0:
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.25)
-            else:
-                raise cmuxError("probe page never started")
-
-            selected_before = _selected_events()
-
-            # Default: off.
-            status = client._call("browser.keep_live", {"panel_id": panel}) or {}
-            _must(status.get("keep_live") is False, f"keep-live must default off: {status}")
-
-            off = _measure(client, panel)
-            print("off  :", off)
-            _must(off["hidden"] is True and off["vis"] == "hidden",
-                  f"keep-live off: a hidden workspace's page must report hidden: {off}")
-
-            # On.
-            on_res = client._call("browser.keep_live", {"panel_id": panel, "enabled": True}) or {}
-            _must(on_res.get("keep_live") is True, f"enable failed: {on_res}")
-            time.sleep(1.0)
-            on = _measure(client, panel)
-            print("on   :", on)
-            _must(on["hidden"] is False and on["vis"] == "visible",
-                  f"keep-live on: document.hidden must be false: {on}")
-            _must(on["tick_delta"] >= 20, f"keep-live on: timers must run (~30 ticks in 3 s): {on}")
-            _must(on["videoError"] is None and on["paused"] is False and on["video_delta"] > 1.0,
-                  f"keep-live on: video must play: {on}")
-
-            snap = client._call("browser.snapshot", {"panel_id": panel}) or {}
-            _must("keep-live-probe" in str(snap.get("snapshot") or ""), f"snapshot is blank while kept live: {snap}")
-            shot = client._call("browser.screenshot", {"panel_id": panel}) or {}
-            _must(bool(shot.get("png_base64") or shot.get("path") or shot.get("url")), f"screenshot returned nothing: {list(shot)}")
-
-            cli_status = subprocess.run([cli, "--socket", SOCKET_PATH, "browser", panel, "keep-live", "status"],
-                                        capture_output=True, text=True, check=False)
-            _must(cli_status.returncode == 0 and cli_status.stdout.strip() == "on", f"CLI status: {cli_status}")
-
-            _must(str((client._call("workspace.current") or {}).get("workspace_id") or "") == current,
-                  "the operator's selected workspace changed")
-
-            # Off again (through the CLI).
-            cli_off = subprocess.run([cli, "--socket", SOCKET_PATH, "browser", panel, "keep-live", "off"],
-                                     capture_output=True, text=True, check=False)
-            _must(cli_off.returncode == 0 and cli_off.stdout.strip() == "off", f"CLI off: {cli_off}")
-            time.sleep(1.0)
-            back = _measure(client, panel)
-            print("off2 :", back)
-            _must(back["hidden"] is True and back["vis"] == "hidden",
-                  f"keep-live off again: the page must be hidden again: {back}")
-
-            # Selection never moved, and no workspace.selected event was emitted.
-            _must(str((client._call("workspace.current") or {}).get("workspace_id") or "") == current,
-                  "the operator's selected workspace changed")
-            selected_after = _selected_events()
-            print("workspace.selected events:", selected_before, "->", selected_after)
-            if selected_before is not None and selected_after is not None:
-                _must(selected_after == selected_before,
-                      f"workspace.selected events appeared: {selected_before} -> {selected_after}")
-
-            # Closing the panel while kept live tears the parked slot down.
-            client._call("browser.keep_live", {"panel_id": panel, "enabled": True})
-            time.sleep(0.5)
-            client._call("browser.panel.close", {"workspace_id": ws, "target_panel_id": panel})
-            time.sleep(0.5)
-            gone = client._call("browser.panel.list", {"workspace_id": ws}) or {}
-            _must(not (gone.get("panels") or []), f"panel did not close: {gone}")
-
-            client._call("workspace.close", {"workspace_id": ws})
-            created.clear()
+            _scenario(client, cli, url, operator_ws, name="immediate", cold=False, replace=False, close_workspace_directly=False)
+            _scenario(client, cli, url, operator_ws, name="cold-workspace", cold=True, replace=False, close_workspace_directly=False)
+            _scenario(client, cli, url, operator_ws, name="hidden-replacement", cold=True, replace=True, close_workspace_directly=False)
+            _scenario(client, cli, url, operator_ws, name="workspace-close", cold=True, replace=False, close_workspace_directly=True)
+            _must(_current(client) == operator_ws, "the operator's selected workspace changed")
         print("PASS test_browser_keep_live")
         return 0
     finally:
         server.shutdown()
-        if created:
-            try:
-                with cmux(SOCKET_PATH) as cleanup:
-                    for ws in created:
-                        cleanup._call("workspace.close", {"workspace_id": ws})
-            except Exception:
-                pass
 
 
 if __name__ == "__main__":

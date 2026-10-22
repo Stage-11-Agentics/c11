@@ -2378,6 +2378,11 @@ final class BrowserPanel: Panel, ObservableObject {
             guard oldValue !== webView else { return }
             oldValue.isKeepLive = false
             webView.isKeepLive = keepLive
+            // The replacement has no host yet; once the swap settles, host it again if the
+            // workspace is not mounted to bind it.
+            if keepLive {
+                DispatchQueue.main.async { [weak self] in self?.applyKeepLiveHosting() }
+            }
         }
     }
 
@@ -2388,7 +2393,15 @@ final class BrowserPanel: Panel, ObservableObject {
 
     func setKeepLive(_ enabled: Bool) {
         keepLive = enabled
-        BrowserWindowPortalRegistry.setKeepLive(for: webView, enabled: enabled)
+        applyKeepLiveHosting()
+    }
+
+    private func applyKeepLiveHosting() {
+        BrowserWindowPortalRegistry.setKeepLive(
+            for: webView,
+            enabled: keepLive,
+            hostWindow: keepLive ? AppDelegate.shared?.mainWindowContainingWorkspace(workspaceId) : nil
+        )
     }
     private var websiteDataStore: WKWebsiteDataStore
 

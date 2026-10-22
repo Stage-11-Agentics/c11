@@ -916,9 +916,10 @@ extension TerminalController {
     }
 
     private func v2DebugPortalStats() -> V2CallResult {
-        let payload: [String: Any] = v2MainSync {
+        var payload: [String: Any] = v2MainSync {
             TerminalWindowPortalRegistry.debugPortalStats()
         }
+        payload["browser_portal_entries"] = v2MainSync { BrowserWindowPortalRegistry.debugEntryCount() }
         return .ok(payload)
     }
 

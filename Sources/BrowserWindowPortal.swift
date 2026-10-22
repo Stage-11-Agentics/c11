@@ -9,6 +9,25 @@ private var cmuxWindowBrowserPortalKey: UInt8 = 0
 private var cmuxWindowBrowserPortalCloseObserverKey: UInt8 = 0
 private var cmuxBrowserSearchOverlayPanelIdAssociationKey: UInt8 = 0
 private var cmuxBrowserPortalNeedsRenderingStateReattachKey: UInt8 = 0
+private var cmuxBrowserPortalKeepLiveKey: UInt8 = 0
+
+extension WKWebView {
+    /// Per-panel keep-live (C11-324). While set, the portal keeps this web view
+    /// in-window and unhidden, parked outside the host bounds, when its workspace
+    /// is hidden, so WebKit reports the page visible and timers, media and rAF run.
+    /// Stored on the web view so a portal rebind or window move cannot lose it.
+    var isKeepLive: Bool {
+        get { (objc_getAssociatedObject(self, &cmuxBrowserPortalKeepLiveKey) as? NSNumber)?.boolValue ?? false }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &cmuxBrowserPortalKeepLiveKey,
+                newValue ? NSNumber(value: true) : nil,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+}
 
 #if DEBUG
 private func browserPortalDebugToken(_ view: NSView?) -> String {
@@ -2901,6 +2920,11 @@ final class WindowBrowserPortal: NSObject {
 
             entry.visibleInUI = false
             entriesByWebViewId[webViewId] = entry
+            if entry.webView?.isKeepLive == true {
+                // C11-324: keep-live parks the slot instead of hiding it.
+                synchronizeWebView(withId: webViewId, source: "orphanKeepLive")
+                continue
+            }
             entry.containerView?.isHidden = true
             didHide = true
             let anchorWindowDesc: String
@@ -3900,6 +3924,128 @@ final class WindowBrowserPortal: NSObject {
         return true
     }
 
+    /// Frame size used when a keep-live slot has no real size yet.
+    private static let keepLiveFallbackSize = NSSize(width: 1280, height: 800)
+
+    /// Parks a keep-live web view's slot beside the host, never hidden: no
+    /// `isHidden`, no `viewDidHide`/`_exitInWindow`, so WebKit keeps the page visible.
+    /// The slot sits left of the host bounds, which clip it (no pixels, no hit-testing),
+    /// and keeps its last real size so the page layout does not change when the
+    /// workspace is hidden.
+    private func parkKeepLive(webView: WKWebView, containerView: WindowBrowserSlotView, source: String) {
+        _ = synchronizeHostFrameToReference()
+        if containerView.superview !== hostView {
+            hostView.addSubview(containerView, positioned: .above, relativeTo: nil)
+        }
+        if webView.superview !== containerView {
+            if let sourceSuperview = webView.superview {
+                moveWebKitRelatedSubviewsIfNeeded(
+                    from: sourceSuperview,
+                    to: containerView,
+                    primaryWebView: webView,
+                    reason: "keepLive.attachContainer"
+                )
+            } else {
+                containerView.addSubview(webView, positioned: .above, relativeTo: nil)
+            }
+        }
+        containerView.pinHostedWebView(webView)
+
+        let current = containerView.frame.size
+        let size = current.width > 1 && current.height > 1 ? current : Self.keepLiveFallbackSize
+        let hostBounds = hostView.bounds
+        let parkedFrame = NSRect(
+            x: hostBounds.minX - size.width - 64,
+            y: hostBounds.minY,
+            width: size.width,
+            height: size.height
+        )
+        if !Self.rectApproximatelyEqual(containerView.frame, parkedFrame) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            containerView.frame = parkedFrame
+            containerView.bounds = NSRect(origin: .zero, size: parkedFrame.size)
+            webView.frame = containerView.bounds
+            CATransaction.commit()
+        }
+
+        containerView.setPaneTopChromeHeight(0)
+        containerView.setSearchOverlay(nil)
+        containerView.setCompanion(nil)
+        containerView.setPaneInteraction(nil)
+        containerView.setPaneDropContext(nil)
+        containerView.setPortalDragDropZone(nil)
+        containerView.setDropZoneOverlay(zone: nil)
+
+        if containerView.isHidden {
+            containerView.isHidden = false
+            webView.browserPortalReattachRenderingState(reason: "keepLive.\(source)")
+        }
+        ensureChromeOverlayOnTop()
+#if DEBUG
+        dlog(
+            "browser.portal.keepLive.park web=\(browserPortalDebugToken(webView)) " +
+            "source=\(source) frame=\(browserPortalDebugFrame(parkedFrame))"
+        )
+#endif
+    }
+
+    /// True while a keep-live web view's slot is parked beside the host (C11-324).
+    func isKeepLiveParked(forWebViewId webViewId: ObjectIdentifier) -> Bool {
+        guard let entry = entriesByWebViewId[webViewId],
+              let webView = entry.webView,
+              let containerView = entry.containerView else { return false }
+        return webView.isKeepLive && !entry.visibleInUI && !containerView.isHidden
+    }
+
+    /// Hosts a web view that has no portal entry yet (its workspace is not mounted, so
+    /// SwiftUI never bound it) as an anchor-less keep-live entry in this window. A later
+    /// bind from a mounted workspace adopts the entry like any other.
+    func hostKeepLive(webView: WKWebView) {
+        guard ensureInstalled() else { return }
+        let webViewId = ObjectIdentifier(webView)
+        guard entriesByWebViewId[webViewId] == nil else { return }
+        var entry = Entry(
+            webView: webView,
+            containerView: nil,
+            anchorView: nil,
+            visibleInUI: false,
+            zPriority: 0,
+            dropZone: nil,
+            paneDropContext: nil,
+            searchOverlay: nil,
+            companion: nil,
+            paneInteraction: nil,
+            workspaceFrameStyle: nil,
+            paneTopChromeHeight: 0,
+            transientRecoveryReason: nil,
+            transientRecoveryRetriesRemaining: 0
+        )
+        entry.containerView = ensureContainerView(for: entry, webView: webView)
+        entriesByWebViewId[webViewId] = entry
+        synchronizeWebView(withId: webViewId, source: "keepLive.host")
+    }
+
+    /// True for an entry that exists only to keep a web view live (never bound to an anchor).
+    func isAnchorless(webViewId: ObjectIdentifier) -> Bool {
+        guard let entry = entriesByWebViewId[webViewId] else { return false }
+        return entry.anchorView == nil
+    }
+
+    /// Applies a keep-live change to an existing entry. Turning it off while hidden
+    /// finishes the hide the parked slot skipped, so WebKit sees the view leave the window.
+    func setKeepLive(forWebViewId webViewId: ObjectIdentifier, enabled: Bool) {
+        guard let entry = entriesByWebViewId[webViewId], let webView = entry.webView else { return }
+        let wasParked = isKeepLiveParked(forWebViewId: webViewId)
+        webView.isKeepLive = enabled
+        if enabled {
+            if !entry.visibleInUI { synchronizeWebView(withId: webViewId, source: "keepLive.on") }
+        } else if wasParked {
+            webView.browserPortalNotifyHidden(reason: "keepLive.off")
+            synchronizeWebView(withId: webViewId, source: "keepLive.off")
+        }
+    }
+
     private func synchronizeWebView(
         withId webViewId: ObjectIdentifier,
         source: String,
@@ -3963,6 +4109,15 @@ final class WindowBrowserPortal: NSObject {
             containerView.setPortalDragDropZone(nil)
             containerView.setDropZoneOverlay(zone: nil)
             return true
+        }
+        // C11-324: a keep-live web view whose workspace is hidden stays in-window and
+        // unhidden, parked outside the host bounds, instead of taking the hide paths below.
+        if webView.isKeepLive,
+           !entry.visibleInUI,
+           window != nil,
+           webView.superview === containerView || webView.superview == nil {
+            parkKeepLive(webView: webView, containerView: containerView, source: source)
+            return
         }
         guard let anchorView = entry.anchorView, let window else {
             if preserveVisibleDuringTransientDetach(reason: "missingAnchorOrWindow") {
@@ -4493,6 +4648,7 @@ final class WindowBrowserPortal: NSObject {
         return BrowserWindowPortalRegistry.DebugSnapshot(
             visibleInUI: entry.visibleInUI,
             containerHidden: entry.containerView?.isHidden ?? true,
+            keepLiveParked: isKeepLiveParked(forWebViewId: webViewId),
             frameInWindow: frameInWindow
         )
     }
@@ -4519,6 +4675,8 @@ enum BrowserWindowPortalRegistry {
     struct DebugSnapshot {
         let visibleInUI: Bool
         let containerHidden: Bool
+        /// A keep-live slot parked beside the host: unhidden on purpose (C11-324).
+        let keepLiveParked: Bool
         let frameInWindow: CGRect
     }
 
@@ -4641,6 +4799,39 @@ enum BrowserWindowPortalRegistry {
         portal.hideWebView(withId: webViewId, source: source)
         postRegistryDidChange(for: webView)
     }
+
+    /// Turns keep-live on or off for a web view (C11-324). Safe before the web view has a
+    /// portal entry: the flag is read when the entry first syncs while hidden.
+    ///
+    /// With no portal mapping yet and `hostWindow` given (the window that owns the panel's
+    /// workspace), enabling creates an anchor-less host there so the page is live without the
+    /// operator visiting the workspace. Disabling releases such a host entirely.
+    static func setKeepLive(for webView: WKWebView, enabled: Bool, hostWindow: NSWindow? = nil) {
+        let webViewId = ObjectIdentifier(webView)
+        guard let windowId = webViewToWindowId[webViewId],
+              let portal = portalsByWindowId[windowId] else {
+            webView.isKeepLive = enabled
+            guard enabled, let hostWindow else { return }
+            let hostId = ObjectIdentifier(hostWindow)
+            let hostPortal = portal(for: hostWindow)
+            webViewToWindowId[webViewId] = hostId
+            hostPortal.hostKeepLive(webView: webView)
+            postRegistryDidChange(for: webView)
+            return
+        }
+        portal.setKeepLive(forWebViewId: webViewId, enabled: enabled)
+        if !enabled, portal.isAnchorless(webViewId: webViewId) {
+            detach(webView: webView)
+            return
+        }
+        postRegistryDidChange(for: webView)
+    }
+
+#if DEBUG
+    static func debugEntryCount() -> Int {
+        portalsByWindowId.values.reduce(0) { $0 + $1.debugEntryCount() }
+    }
+#endif
 
     static func updateDropZoneOverlay(for webView: WKWebView, zone: DropZone?) {
         let webViewId = ObjectIdentifier(webView)

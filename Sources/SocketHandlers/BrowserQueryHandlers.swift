@@ -317,6 +317,38 @@ extension TerminalController {
         return .ok(["focused": focused])
     }
 
+    /// `browser.keep_live`: with `enabled`, turns keep-live on or off for the panel; without
+    /// it, reports the current state. Runs on main because it moves an AppKit slot, but it
+    /// only touches the panel's own portal entry: no workspace selection, focus or window
+    /// order changes (C11-324).
+    func v2BrowserKeepLive(params: [String: Any]) -> V2CallResult {
+        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let surfaceId = v2UUID(params, "surface_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
+        }
+        if params["enabled"] != nil, v2Bool(params, "enabled") == nil {
+            return .err(code: "invalid_params", message: "enabled must be a boolean", data: nil)
+        }
+        let requested = v2Bool(params, "enabled")
+
+        var result: V2CallResult = .err(code: "not_found", message: "Panel not found or not a browser", data: ["surface_id": surfaceId.uuidString])
+        v2MainSync {
+            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
+                  let browserPanel = ws.browserPanel(for: surfaceId) else { return }
+            if let requested {
+                browserPanel.setKeepLive(requested)
+            }
+            result = .ok([
+                "panel_id": surfaceId.uuidString,
+                "workspace_id": ws.id.uuidString,
+                "keep_live": browserPanel.keepLive,
+            ])
+        }
+        return result
+    }
+
     nonisolated func v2BrowserFindWithScript(
         params: [String: Any],
         actionName: String,

@@ -9903,6 +9903,28 @@ struct CMUXCLI {
             return
         }
 
+        if ["keep-live", "keep_live"].contains(subcommand) {
+            let sid = try requireSurface()
+            var params: [String: Any] = ["panel_id": sid]
+            switch subArgs.first?.lowercased() {
+            case "on", "true":
+                params["enabled"] = true
+            case "off", "false":
+                params["enabled"] = false
+            case "status", nil:
+                break
+            default:
+                throw CLIError(message: "browser keep-live requires on|off|status")
+            }
+            let payload = try client.sendV2(method: "browser.keep_live", params: params)
+            if effectiveJSONOutput {
+                print(jsonString(formatIDs(payload, mode: effectiveIDFormat)))
+            } else {
+                print((payload["keep_live"] as? Bool) == true ? "on" : "off")
+            }
+            return
+        }
+
         if subcommand == "offline" {
             let sid = try requireSurface()
             guard let raw = subArgs.first,
@@ -12355,6 +12377,8 @@ struct CMUXCLI {
               back|forward|reload [--snapshot-after]
               url|get-url
               focus-webview | is-webview-focused
+              keep-live [on|off|status]
+                keep a page running (visible, timers and media live) while its workspace is hidden
               snapshot [--interactive|-i] [--cursor] [--compact] [--max-depth <n>] [--selector <css>]
               eval [--script <js> | <js>]
               wait [--selector <css>] [--text <text>] [--url-contains <text>|--url <text>] [--load-state <interactive|complete>] [--function <js>] [--timeout-ms <ms>|--timeout <seconds>]

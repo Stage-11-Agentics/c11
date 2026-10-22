@@ -12636,9 +12636,10 @@ final class Workspace: Identifiable, ObservableObject {
                     didChange = true
                 }
             } else {
+                // A keep-live slot is parked unhidden on purpose (C11-324).
                 let portalNeedsHide =
                     snapshot?.visibleInUI == true ||
-                    snapshot?.containerHidden == false
+                    (snapshot?.containerHidden == false && snapshot?.keepLiveParked != true)
                 if portalNeedsHide {
                     if snapshot?.visibleInUI == true {
                         BrowserWindowPortalRegistry.updateEntryVisibility(

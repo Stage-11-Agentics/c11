@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Logged-in agent tabs (Claude Code, Codex, Grok) inside a sandbox guest's c11.
+# Agent panels (Claude Code, Codex, Grok, Pi) inside a sandbox guest's c11.
 # Usage: scripts/sandbox-agent.sh <run-id> <stage|launch|screen|c11|wipe|verify-clean> [args...]
 set -euo pipefail
 
@@ -15,14 +15,17 @@ Agents run inside the guest that sandbox-up.sh started. Every command below
 reaches the guest over SSH through the Tart host. Nothing runs on, or takes
 focus on, the machine where this script is invoked.
 
-  stage [claude,codex,grok]
+  stage [claude,codex,grok,pi]
       Copy the Tart host's installed agent CLIs into the guest and stage one
       access credential per kind, exported on the Tart host by the Overwatch
       seat launcher (seat.sh export-cred). Default: all three. Run it again to
       refresh credentials (Grok tokens last about 6 hours).
       sandbox-up.sh --agents runs this for you.
+      Pi stages the host's Pi package and Bun runtime with a controlled
+      provider fixture. It stages no credential or tenant configuration;
+      real model-provider authentication is not exercised in this mode.
 
-  launch <claude|codex|grok> <brief-file> [--title T] [--model M] [--effort E]
+  launch <claude|codex|grok|pi> <brief-file> [--title T] [--model M] [--effort E]
          [--workspace REF] [--address A] [--no-push] [--no-wait] [--timeout S]
       Copy the brief into the guest and launch a typed agent tab in the guest
       c11 with `c11 launch-agent --prompt-file`, so the agent is told to read
@@ -70,8 +73,8 @@ sandbox_validate_kinds() {
   local IFS=,
   for k in $list; do
     case "$k" in
-      claude|codex|grok) ;;
-      *) sandbox_die "unknown agent kind '$k'. Kinds: claude, codex, grok." ;;
+      claude|codex|grok|pi) ;;
+      *) sandbox_die "unknown agent kind '$k'. Kinds: claude, codex, grok, pi." ;;
     esac
   done
 }
@@ -91,6 +94,10 @@ lib_dir=/usr/local/libexec/c11-sandbox
 # callers keep it in a variable or a pipe, never a file or argv.
 export_cred() {
   local kind="$1"
+  if [[ "$kind" == pi ]]; then
+    print -r -- '{"agent":"pi","env":{},"account":"controlled-provider"}'
+    return
+  fi
   [[ -x "$seat_sh" || -f "$seat_sh" ]] || die "Overwatch seat launcher not found at $seat_sh (set C11_SANDBOX_SEAT_SH)"
   local -a extra
   extra=()
@@ -225,6 +232,8 @@ for line in sys.stdin:
         vals = [t["access_token"]] + ([t["id_token"]] if t.get("id_token") else [])
     elif kind == "grok":
         vals = [json.loads(env["GROK_ACCESS_TOKEN_JSON"])["access_token"]]
+    elif kind == "pi":
+        vals = []  # Controlled provider; no credential is staged.
     else:
         sys.exit("unknown kind " + kind)
     if mode == "summary":
@@ -287,6 +296,16 @@ if not tok or left < 60:
     print("grok-auth: token expired; run scripts/sandbox-agent.sh <run-id> stage grok", file=sys.stderr); sys.exit(1)
 print(json.dumps({"access_token": tok, "expires_in": left}))
 PY
+SH
+cat > "$tmp/pi" <<'SH'
+#!/bin/sh
+# An isolated delivery fixture; the wrapper's explicit launch extension loads.
+export PI_CODING_AGENT_DIR="$HOME/c11-sandbox/agents/pi-config"
+export PI_TELEMETRY=0
+exec /usr/local/libexec/c11-sandbox/pi/runtime /usr/local/libexec/c11-sandbox/pi/package/dist/cli.js \
+  --provider c11-spike --model fixture --offline --no-session --no-extensions \
+  --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve \
+  --extension "$HOME/c11-sandbox/agents/pi-provider.ts" "$@"
 SH
 cat > "$tmp/stage.py" <<'PY'
 # c11 sandbox credential stager. stdin: one JSON line per kind from seat.sh export-cred.
@@ -354,6 +373,8 @@ for line in sys.stdin:
             "[analytics]",
             "enabled = false",
             ""]))
+    elif kind == "pi":
+        print("pi controlled provider: no credentials staged")
     elif kind == "grok":
         write_secret(os.path.join(secrets, "grok-token"), env["GROK_ACCESS_TOKEN_JSON"].encode())
         write_text(os.path.join(home, ".grok", "config.toml"), "\n".join([
@@ -384,6 +405,7 @@ for line in sys.stdin:
 PY
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/claude" "$lib/claude-shim"
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/grok-auth" "$lib/grok-auth"
+/usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/pi" "$lib/pi-shim"
 mkdir -p "$HOME/c11-sandbox/agents"
 /usr/bin/install -m 644 "$tmp/stage.py" "$HOME/c11-sandbox/agents/stage.py"
 rm -rf "$tmp"
@@ -392,6 +414,7 @@ for k in ${=kinds}; do
     claude) /usr/bin/sudo -n /bin/ln -sfn "$lib/claude-shim" /usr/local/bin/claude ;;
     codex) /usr/bin/sudo -n /bin/ln -sfn "$lib/codex/bin/codex" /usr/local/bin/codex ;;
     grok) /usr/bin/sudo -n /bin/ln -sfn "$lib/grok/grok" /usr/local/bin/grok ;;
+    pi) /usr/bin/sudo -n /bin/ln -sfn "$lib/pi-shim" /usr/local/bin/pi ;;
   esac
   v="$(/usr/local/bin/$k --version </dev/null 2>/dev/null | head -n 1 || true)"
   [[ -n "$v" ]] || { print -u2 -- "$k does not run in the guest"; exit 1 }
@@ -404,7 +427,8 @@ cmd_stage() {
   local kinds="${1:-claude,codex,grok}"
   [[ $# -le 1 ]] || sandbox_die "stage takes one comma-separated kind list"
   sandbox_validate_kinds "$kinds"
-  local installer_b64
+  local installer_b64 pi_fixture_b64
+  pi_fixture_b64="$(base64 < "$SCRIPT_DIR/fixtures/pi-mailbox-provider.ts" | tr -d '\n')"
   installer_b64="$(sandbox_agent_guest_installer | base64 | tr -d '\n')"
   sandbox_on_host <<EOF
 set -eu
@@ -430,14 +454,15 @@ for k in \$kinds; do
     claude) b="\$HOME/.local/bin/claude"; [[ -e "\$b" ]] || b="\$(command -v claude)" ;;
     codex) b="\$(command -v codex)" ;;
     grok) b="\$HOME/.local/bin/grok"; [[ -e "\$b" ]] || b="\$(command -v grok)" ;;
+    pi) b="\$HOME/.local/bin/pi"; [[ -e "\$b" ]] || b="\$(command -v pi)" ;;
   esac
   b="\${b:A}"
-  /usr/bin/file -b "\$b" | grep -q 'Mach-O' || die "\$k on this host is not a native binary (\$b)"
+  [[ "\$k" == pi ]] || /usr/bin/file -b "\$b" | grep -q 'Mach-O' || die "\$k on this host is not a native binary (\$b)"
   versions[\$k]="\$(agent_version "\$k" "\$b")"
   [[ -n "\${versions[\$k]}" ]] || die "\$k --version did not answer on this host (\$b)"
   payload[\$k]="\$b"
 done
-guest_has="\$(print -r -- 'for k in claude codex grok; do print -r -- "\$k=\$(cat /usr/local/libexec/c11-sandbox/\$k/VERSION 2>/dev/null)"; done' | guest_ssh "\$ip")"
+guest_has="\$(print -r -- 'for k in claude codex grok pi; do print -r -- "\$k=\$(cat /usr/local/libexec/c11-sandbox/\$k/VERSION 2>/dev/null)"; done' | guest_ssh "\$ip")"
 copied=()
 for k in \$kinds; do
   have="\$(print -r -- "\$guest_has" | sed -n "s/^\$k=//p")"
@@ -445,7 +470,16 @@ for k in \$kinds; do
   b="\${payload[\$k]}"
   inc="c11-sandbox/agents/incoming"
   print -r -- "rm -rf \\"\\\$HOME/\$inc/\$k\\"" | guest_ssh "\$ip" >/dev/null
-  if [[ "\$k" == codex && -d "\${b:h:h}/codex-resources" ]]; then
+  if [[ "\$k" == pi ]]; then
+    runtime="\$HOME/.bun/bin/bun"
+    [[ -x "\$runtime" ]] || runtime="\$(command -v bun)"
+    runtime="\${runtime:A}"
+    /usr/bin/file -b "\$runtime" | grep -q 'Mach-O' || die "Pi staging needs a standalone Bun runtime"
+    package="\${b:h:h}"
+    [[ -f "\$package/package.json" ]] || die "Pi package root missing"
+    COPYFILE_DISABLE=1 /usr/bin/tar -C "\${package:h}" -s ",^\${package:t},pi/package," -cf - "\${package:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
+    COPYFILE_DISABLE=1 /usr/bin/tar -C "\${runtime:h}" -s ",^\${runtime:t}\$,pi/runtime," -cf - "\${runtime:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
+  elif [[ "\$k" == codex && -d "\${b:h:h}/codex-resources" ]]; then
     # The Homebrew cask keeps resources beside bin/; ship the whole version directory.
     COPYFILE_DISABLE=1 /usr/bin/tar -C "\${b:h:h:h}" -s ",^\${b:h:h:t},codex," -cf - "\${b:h:h:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
   else
@@ -466,6 +500,7 @@ done
   for k in \$kinds; do printf 'versions[%s]=%q\n' "\$k" "\${versions[\$k]}"; done
   print -r -- '${installer_b64}' | /usr/bin/base64 -D
 } | guest_ssh "\$ip"
+print -r -- 'mkdir -p "\$HOME/c11-sandbox/agents"; printf %s ${pi_fixture_b64} | /usr/bin/base64 -D > "\$HOME/c11-sandbox/agents/pi-provider.ts"' | guest_ssh "\$ip"
 # 4. Secrets: on SSH stdin, written in the guest as mode 600 files.
 for k in \$kinds; do print -r -- "\${cred[\$k]}"; done \
   | guest_ssh_run "\$ip" '/usr/bin/python3 "\$HOME/c11-sandbox/agents/stage.py"'
@@ -484,7 +519,7 @@ if (( \${+cred[claude]} )); then
   accounts+=("\$acct")
 fi
 new_fps="\$(for k in \$kinds; do print -r -- "\${cred[\$k]}"; done | secret_tool fingerprints | tr '\n' ' ')"
-[[ -n "\${new_fps// /}" ]] || die "could not fingerprint the staged credentials"
+[[ "\$kinds_csv" == pi || -n "\${new_fps// /}" ]] || die "could not fingerprint the staged credentials"
 fps="\$FINGERPRINTS \$new_fps"
 {
   printf 'KINDS=%q\n' "\${(j:,:)\${(@u)all_kinds}}"
@@ -527,7 +562,7 @@ EOF
 
 cmd_launch() {
   local kind="${1:-}" brief="${2:-}"
-  [[ -n "$kind" && -n "$brief" ]] || sandbox_die "launch needs <claude|codex|grok> <brief-file>"
+  [[ -n "$kind" && -n "$brief" ]] || sandbox_die "launch needs <claude|codex|grok|pi> <brief-file>"
   shift 2
   sandbox_validate_kinds "$kind"
   [[ -f "$brief" ]] || sandbox_die "brief not found: $brief"
@@ -597,6 +632,10 @@ if [[ "\$push" == 1 ]]; then
   c set-metadata --workspace "\$workspace_ref" --tab "\$tab_ref" --key mailbox.delivery --value stdin --type string >/dev/null
 fi
 case "\$kind" in
+  pi)
+    ready='fixture|Controlled protocol fixture'
+    fail='Failed to load extension|No API key found|No model found|Cannot find module'
+    ;;
   claude)
     ready='bypass permissions on'
     fail='Select login method|Not logged in|Invalid API key|cannot be used with root'
@@ -667,7 +706,7 @@ cmd_wipe() {
   sandbox_guest_script "$run_id" <<'EOF'
 set -eu
 removed=()
-for f in "$HOME/.c11-sandbox-secrets" "$HOME/.codex/auth.json"; do
+for f in "$HOME/.c11-sandbox-secrets" "$HOME/.codex/auth.json" "$HOME/c11-sandbox/agents/pi-config"; do
   if [[ -e "$f" ]]; then
     /bin/rm -rf "$f"
     removed+=("$f")
@@ -703,6 +742,19 @@ if [[ "\$control" == 1 ]]; then
 else
   if [[ -n "\$state" ]]; then print -r -- "clone=present (\$state)"; bad=1; else print -r -- "clone=absent"; fi
   if [[ -e "\$HOME/.tart/vms/\$vm" ]]; then print -r -- "clone_dir=present"; bad=1; else print -r -- "clone_dir=absent"; fi
+fi
+if [[ "\$KINDS" == pi && -z "\${FINGERPRINTS// /}" ]]; then
+  print -r -- "credentials=none (controlled Pi provider; no token exported or staged)"
+  golden_disk="\$HOME/.tart/vms/\$golden/disk.img"
+  [[ -f "\$golden_disk" && "\$(stat -f %m "\$golden_disk")" == "\$GOLDEN_DISK_MTIME" ]] || die "golden disk changed or is missing"
+  print -r -- "golden_disk_mtime=unchanged since stage"
+  if [[ "\$control" == 1 ]]; then
+    print -r -- "control=not_applicable_no_credentials"
+  else
+    (( bad == 0 )) || die "Pi fixture clone cleanup failed"
+    print -r -- "verify_clean=pass"
+  fi
+  exit 0
 fi
 creds=()
 for k in \${(s:,:)KINDS}; do

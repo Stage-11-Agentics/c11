@@ -174,7 +174,10 @@ final class MailboxDispatcher {
         recipient: String,
         outcome: MailboxDispatchLog.HandlerOutcome,
         bytes: Int? = nil,
-        reason: String? = nil
+        reason: String? = nil,
+        route: String? = nil,
+        nativeRoute: String? = nil,
+        nativeFailure: String? = nil
     ) {
         log.append(
             .handler(
@@ -184,7 +187,10 @@ final class MailboxDispatcher {
                 outcome: outcome,
                 bytes: bytes,
                 elapsedMs: nil,
-                reason: reason
+                reason: reason,
+                route: route,
+                nativeRoute: nativeRoute,
+                nativeFailure: nativeFailure
             )
         )
     }

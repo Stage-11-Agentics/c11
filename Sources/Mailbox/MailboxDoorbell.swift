@@ -39,6 +39,8 @@ enum MailboxDoorbell {
         var stdinDelivery: Bool = true
         var optedOut: Bool = false
         var inFlight: Bool = false
+        /// Native routes never inspect or edit the composer.
+        var nativeRoute: Bool = false
         var flagged: Bool = false
         /// Read by callers. Suppression is never a skip: a parent is waiting.
         var suppressed: Bool = false
@@ -175,6 +177,7 @@ enum MailboxDoorbell {
         ) {
             return .skip(reason: "already_covered")
         }
+        if input.nativeRoute { return .ring }
         if input.textBoxUnsent { return .skip(reason: "draft") }
         if input.focused, let age = input.operatorKeyAge, age < quietWindow {
             let remaining = age >= 0 ? (quietWindow - age) : quietWindow
@@ -206,7 +209,7 @@ enum MailboxDoorbell {
     /// True when every check except the prompt would ring, and the prompt
     /// has not been read yet. Callers skip the screen read otherwise.
     static func needsPrompt(_ input: Input) -> Bool {
-        guard input.prompt == nil else { return false }
+        guard !input.nativeRoute, input.prompt == nil else { return false }
         var probe = input
         probe.prompt = .empty
         if case .ring = decide(probe) { return true }
@@ -534,7 +537,7 @@ enum MailboxDoorbellSequence {
     /// A look in the idle period whose ring was refused, while the line may
     /// still be in the composer. Once-per-idle would end it with no later look.
     static func isStrandedLook(_ input: MailboxDoorbell.Input) -> Bool {
-        input.rungThisEpoch && input.strandedPending
+        !input.nativeRoute && input.rungThisEpoch && input.strandedPending
     }
 
     /// True when a stranded look should read the prompt: every other ring
@@ -548,7 +551,7 @@ enum MailboxDoorbellSequence {
     /// back exactly, qualifies; a prefix or an edit stays held. Every other
     /// ring check applies, including the quiet window and the rate cap.
     static func submitsStranded(_ input: MailboxDoorbell.Input, composer: FeedAnswerComposerCheck?) -> Bool {
-        guard composer == .matches else { return false }
+        guard !input.nativeRoute, composer == .matches else { return false }
         return MailboxDoorbell.decide(strandedProbe(input)) == .ring
     }
 

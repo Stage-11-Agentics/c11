@@ -54,6 +54,7 @@ extension TerminalController {
         var methods: [String] = [
             "agent.event.append",
             "agent.prompt_cache.report",
+            "mailbox.native.subscribe",
             "agents.list",
             "journal.clear",
             "journal.status",

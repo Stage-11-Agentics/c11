@@ -340,6 +340,8 @@ final class MailboxStdinBufferStore {
 enum MailboxStdinDelivery {
     struct Gate: Equatable {
         var panelPresent: Bool = true
+        var nativeRoute: Bool = false
+        var nativeCanQueue: Bool = false
         var isAgentKind: Bool = true
         var ownsTerminal: Bool = false
         var lastOperatorKeyAt: Date? = nil
@@ -420,11 +422,11 @@ enum MailboxStdinDelivery {
         if promptGate == .closed, let deadline = heldUntil(state: state, surfaceId: surfaceId, gate: gate) {
             noteHeldUntil?(deadline)
         }
-        if gate.inputTransactionActive {
+        if gate.inputTransactionActive && !gate.nativeRoute {
             noteInputTransactionHeld?()
             return .buffered(bytes: bytes)
         }
-        guard promptGate != .closed, let ringInput else {
+        guard (promptGate != .closed || (gate.nativeRoute && gate.nativeCanQueue && gate.ownsTerminal)), let ringInput else {
             return .buffered(bytes: bytes)
         }
         var input = ringInput(false)

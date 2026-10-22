@@ -2370,8 +2370,8 @@ class TerminalController {
             },
             stream: { command, streamSocket, shouldContinue in
                 guard let request = self.parseV2SocketRequest(command),
-                      request.method == "markdown.visible",
-                      request.params["watch"] as? Bool == true else { return false }
+                      (request.method == "mailbox.native.subscribe" ||
+                       (request.method == "markdown.visible" && request.params["watch"] as? Bool == true)) else { return false }
                 if let authResponse = self.authResponseIfNeeded(for: command, authenticated: &authenticated) {
                     _ = Self.writeSocketResponse(authResponse, to: streamSocket)
                     return true
@@ -2387,6 +2387,11 @@ class TerminalController {
                         self.v2Error(id: request.id, code: rejection.code, message: rejection.message),
                         to: streamSocket
                     )
+                    return true
+                }
+                if request.method == "mailbox.native.subscribe" {
+                    self.v2StreamNativeMailbox(id: request.id, params: request.params, socket: streamSocket,
+                                               callerTTYDevice: callerTTYDevice, shouldContinue: shouldContinue)
                     return true
                 }
                 let context = SocketCommandContext(
@@ -2541,6 +2546,7 @@ class TerminalController {
         // Cache telemetry: validated and folded into a lock-guarded store on
         // the worker; the liveness sweep reads it, so no main-thread hop.
         "agent.prompt_cache.report",
+        "mailbox.native.subscribe",
         "agents.list",
         "journal.clear",
         "journal.status",

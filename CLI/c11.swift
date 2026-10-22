@@ -19244,7 +19244,10 @@ struct CMUXCLI {
         if let native = optionValue(commandArgs, name: "--native-event"), ["agent_start", "agent_settled"].contains(native) {
             let ref = try? client.sendV2(method: "conversation.get", params: ["panel_id": surfaceId])
             let active = (ref?["active"] as? [String: Any]) ?? ((ref?["conversation"] as? [String: Any])?["active"] as? [String: Any])
-            let sessionID = (active?["kind"] as? String) == "pi" ? active?["id"] as? String : nil
+            let claimedID = (active?["kind"] as? String) == "pi" ? active?["id"] as? String : nil
+            // A wrapper placeholder is not a confirmed journal owner. Keep
+            // reporting the live PID's turn edges until Pi has a real session.
+            let sessionID = claimedID.flatMap { $0.hasPrefix("wrapper-claim:") ? nil : $0 }
             let draft = JournalDraft(kind: native == "agent_start" ? .turnStarted : .turnCompleted,
                 emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000), panelID: UUID(uuidString: surfaceId),
                 workspaceID: UUID(uuidString: workspaceId), sessionID: sessionID, agentKind: "pi",

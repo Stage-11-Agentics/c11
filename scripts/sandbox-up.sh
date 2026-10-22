@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Clone the golden Tart image on the sandbox host, boot it headless, and launch a c11 .app inside it.
-# Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]
+# Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok,pi]
 #        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second] [--agents ...]
 set -euo pipefail
 
@@ -22,7 +22,7 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok]
+Usage: scripts/sandbox-up.sh <run-id> <path-to.app> [--allow-second] [--agents claude,codex,grok,pi]
        scripts/sandbox-up.sh <run-id> --app-source <name> [--allow-second] [--agents ...]
 
 Clone c11-sandbox-golden on C11_SANDBOX_HOST (default: atlas), boot that
@@ -133,7 +133,7 @@ fi
 [[ -n "$run_id" ]] || { usage >&2; exit 1; }
 sandbox_validate_run_id "$run_id"
 if [[ -n "$agents" ]]; then
-  [[ "$agents" =~ ^(claude|codex|grok)(,(claude|codex|grok))*$ ]] || sandbox_die "--agents takes a comma-separated list of claude, codex, grok"
+  [[ "$agents" =~ ^(claude|codex|grok|pi)(,(claude|codex|grok|pi))*$ ]] || sandbox_die "--agents takes a comma-separated list of claude, codex, grok, pi"
 fi
 rel=".c11-sandbox/apps/${run_id}"
 

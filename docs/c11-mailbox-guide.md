@@ -273,6 +273,50 @@ sequenceDiagram
     end
 ```
 
+### Pi native delivery
+
+Interactive Pi launched through c11's bundled wrapper registers an event-driven
+`mailbox.native.subscribe` stream. When opted into `mailbox.delivery=stdin`, it
+receives the same invitation through Pi's `sendUserMessage` API. It waits for the
+idle edge; Pi 0.81.1's queued API returns no acceptance receipt while busy. The
+extension confirms acceptance only when Pi emits the invitation's user
+`message_start` event. It never reads, clears or types into the composer, so an
+operator draft and the typing quiet window do not hold a native invitation.
+Unread mail, opt-in, self-raised flags, `mailbox.doorbell=off`, covered envelope
+IDs and the 20-attempt cap still apply. Native delivery never claims mail.
+
+An absent extension uses the existing typed route. A rejected request, broken
+stream or missing acknowledgement after two seconds passes the same envelopes
+back through the typed turn, composer, quiet-window, coverage and rate checks.
+Delivery is at least once: a late acknowledgement covers only the originally
+dispatched IDs and logs `native_late_accept`. It can coincide with a typed
+fallback. A new Pi session or connection revalidates process identity and can
+ring still-unread mail again. No configuration is written under `~/.pi`.
+
+The stream binds a panel UUID, live foreground agent PID and kernel start time,
+and a per-session ID. Its request parameters are `panel_id`, `agent_pid`,
+`session_id`, `route` and `can_queue`. The initial success returns
+`subscription_id`; subsequent JSONL frames are `{type:"deliver", delivery_id,
+text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
+Only positive in-harness acceptance may produce `accepted`. Pi uses
+`route:"pi_extension", can_queue:false`; `codex_queue` and `claude_inbox` are
+reserved consumer route names. Authentication follows the existing socket
+policy, and IO runs off the main thread. Established idle streams do not poll.
+
+`_dispatch.log` names `route:"pi_extension"` or `route:"typed"` on each ring.
+After a native failure, the typed entry also names `native_route` and
+`native_failure` (`native_timeout`, `native_rejected`, `native_disconnected`,
+`native_replaced`, `native_unavailable` or `native_write_failed`). To compare the
+typed route diagnostically, launch Pi with `C11_PI_NATIVE_MAIL_DISABLED=1`.
+The wrapper's lifecycle observations remain active.
+
+For repeatable guest proof, stage `--agents pi` with `sandbox-up.sh`, then run
+`scripts/check-pi-native-mail.py <run-id>`. Staging copies the host's Pi package
+and standalone Bun runtime, plus a controlled provider fixture. It uses the
+real Pi TUI and extension API, exports no credentials, and does not exercise a
+real model provider. Install Pi 0.81.1 and Bun on the Tart host first. omp's
+different extension API is tracked separately in C11-473.
+
 ### When the doorbell line arrives
 
 If your `mailbox.delivery` includes `stdin` and c11 recognizes your composer, you will see one submitted line:
@@ -530,7 +574,7 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | `gc`        | `temp_files_removed`                                                |
 | `replayed`  | `id` (declared in the event enum; not emitted in Stage 2)           |
 
-Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecycle `buffered`, `expired`, `evicted`, `skipped`, and the doorbell outcomes `doorbell`, `doorbell_skipped`, `doorbell_capped`, `doorbell_failed`, `doorbell_recheck` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). A doorbell line carries `reason`. (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it. `flushed` and `claim_failed` remain in the log vocabulary and are not emitted by the doorbell.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecycle `buffered`, `expired`, `evicted`, `skipped`, and the doorbell outcomes `doorbell`, `doorbell_skipped`, `doorbell_capped`, `doorbell_failed`, `doorbell_recheck` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). A doorbell line carries `reason` and `route`. A typed fallback after a native failure also carries `native_route` and `native_failure`. (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it. `flushed` and `claim_failed` remain in the log vocabulary and are not emitted by the doorbell.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
 
 | stdin outcome | Meaning |
 |---------------|---------|

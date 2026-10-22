@@ -50,7 +50,10 @@ final class MailboxDispatchLog {
             outcome: HandlerOutcome,
             bytes: Int?,
             elapsedMs: Int?,
-            reason: String?
+            reason: String?,
+            route: String? = nil,
+            nativeRoute: String? = nil,
+            nativeFailure: String? = nil
         )
         case rejected(id: String?, reason: String)
         case cleaned(id: String)
@@ -171,7 +174,7 @@ final class MailboxDispatchLog {
             payload["event"] = "copied"
             payload["id"] = id
             payload["recipient"] = recipient
-        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason):
+        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -180,6 +183,10 @@ final class MailboxDispatchLog {
             if let bytes { payload["bytes"] = bytes }
             if let elapsedMs { payload["elapsed_ms"] = elapsedMs }
             if let reason { payload["reason"] = reason }
+            if let route { payload["route"] = route }
+            else if outcome == .doorbell { payload["route"] = "typed" }
+            if let nativeRoute { payload["native_route"] = nativeRoute }
+            if let nativeFailure { payload["native_failure"] = nativeFailure }
         case .rejected(let id, let reason):
             payload["event"] = "rejected"
             if let id { payload["id"] = id }

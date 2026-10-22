@@ -183,4 +183,17 @@ final class MailboxDispatchLogTests: XCTestCase {
         XCTAssertEqual(obj?["outcome"] as? String, "claim_failed")
         XCTAssertEqual(obj?["errno"] as? Int, Int(EACCES))
     }
+
+    /// A lost native route names its panel and route and no envelope.
+    func testNativeRouteLostSerializesPanelAndRoute() throws {
+        let str = MailboxDispatchLog.serialize(
+            event: .nativeRouteLost(panel: "A8E54891-82FA-4338-BD9A-F869531D995D", route: "codex_queue"),
+            at: Date(timeIntervalSince1970: 0)
+        )
+        let obj = try JSONSerialization.jsonObject(with: Data(str.dropLast().utf8)) as? [String: Any]
+        XCTAssertEqual(obj?["event"] as? String, "native_route_lost")
+        XCTAssertEqual(obj?["panel"] as? String, "A8E54891-82FA-4338-BD9A-F869531D995D")
+        XCTAssertEqual(obj?["route"] as? String, "codex_queue")
+        XCTAssertNil(obj?["id"])
+    }
 }

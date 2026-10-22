@@ -4,6 +4,12 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [Unreleased]
+
+### Changed
+
+- **Layout commands require a workspace target.** `drag-panel-to-split` and `refresh-panels` use `--workspace` or the caller's `C11_WORKSPACE_ID`. A bare shell must pass `--workspace`; `--window` alone no longer chooses that window's selected workspace. ([#717](https://github.com/Stage-11-Agentics/c11/pull/717))
+
 ## [1.2.0] - 2026-10-21
 
 Headline: **c11 1.2.0. Drag a panel onto a sidebar workspace to move it there, agents resume per panel after a crash or reboot, and a mail doorbell no longer gets left unsent in an agent's prompt.**

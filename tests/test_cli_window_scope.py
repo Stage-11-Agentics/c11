@@ -263,7 +263,8 @@ class Server(socketserver.ThreadingUnixStreamServer):
                                 "flag.suppress", "flag.unsuppress",
                                 "snapshot.create", "snapshot.restore", "snapshot.restore_set",
                                 "panel.get_titlebar_state", "area.swap", "area.join",
-                                "panel.move", "panel.reorder", "config.launch"],
+                                "panel.move", "panel.reorder", "panel.drag_to_split", "panel.refresh",
+                                "config.launch"],
                     "features_version": 1,
                     "features": [{"id": name, "version": 1} for name in
                                  ("vocabulary.workspace_area_panel", "send.explicit_panel",
@@ -376,6 +377,22 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 for item in window["workspaces"]]}
         workspace = self.workspace(window, params)
         context = self.context(window, workspace)
+        if method in ("panel.drag_to_split", "panel.refresh"):
+            if method == "panel.drag_to_split":
+                tab = self.target(workspace, "panel", params)
+                area = {"id": identifier(f"drag/{len(self.mutations)}/area"),
+                        "ref": "area:9000", "index": len(workspace["areas"]),
+                        "focused": False, "panel_count": 1}
+                workspace["areas"].append(area)
+                tab["area_id"], tab["area_ref"] = area["id"], area["ref"]
+                tab.setdefault("splits", []).append(params["direction"])
+                result = self.context(window, workspace, tab)
+            else:
+                for tab in workspace["panels"]:
+                    tab["refresh_count"] = tab.get("refresh_count", 0) + 1
+                result = {**context, "refreshed": len(workspace["panels"])}
+            self.mutations.append((method, window["ref"], workspace["ref"]))
+            return result
         if method == "config.launch":
             # The CLI test models a server preserving scope through config ->
             # agent.launch. Real server forwarding requires a separate gate.
@@ -488,7 +505,8 @@ def run_worker(worker: int, cli: str) -> int:
         cases = 0
 
         def run(*args: str, window: str | None = b["ref"], success: bool = True,
-                env: dict | None = None, reset: bool = True) -> subprocess.CompletedProcess:
+                env: dict | None = None, reset: bool = True, global_json: bool = True,
+                id_format: str = "both") -> subprocess.CompletedProcess:
             nonlocal cases
             if reset:
                 server.reset()
@@ -496,7 +514,9 @@ def run_worker(worker: int, cli: str) -> int:
                 server.calls.clear()
             child_env = fake_server_env(path)
             child_env.update(env or {})
-            prefix = [cli, "--socket", path, "--password", "synthetic-password", "--json", "--id-format", "both"]
+            prefix = [cli, "--socket", path, "--password", "synthetic-password", "--id-format", id_format]
+            if global_json:
+                prefix += ["--json"]
             if window is not None:
                 prefix += ["--window", window]
             proc = subprocess.run(prefix + list(args), env=child_env, text=True,
@@ -900,47 +920,83 @@ def run_worker(worker: int, cli: str) -> int:
                             ("unsuppress", "flag.undelegate")))
 
             if worker == 6:
-                # Legacy routes need selected B's workspace on their v1 wire;
-                # otherwise these same endpoints mutate the key window A.
-                legacy_cases = ((["drag-panel-to-split", "--panel", "0", "right"], "drag_surface_to_split"),
-                                (["refresh-panels"], "refresh_surfaces"),
-                                (["default-agent", "launch"], "default_agent"))
-                for args, command in legacy_cases:
-                    run(*args, env=caller)
-                    assert server.mutations == [(command, b["ref"], b_ws["ref"])], server.mutations
-                    assert server.windows[0] == a and server.windows[1]["workspaces"][1] == b["workspaces"][1]
-                    wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
-                    assert len(wires) == 1, server.calls
-                    if command == "default_agent":
-                        assert wires[0][wires[0].index("--workspace") + 1] == b_ws["id"], wires
-                        assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
+                layout_caller = {"C11_WORKSPACE_ID": a_ws["id"], "C11_PANEL_ID": a_tab["id"]}
+                layout_cases = ((["drag-panel-to-split", "--panel", "0", "right"], "panel.drag_to_split"),
+                                (["refresh-panels"], "panel.refresh"))
+
+                def layout_routed(method: str, window: dict, workspace: dict, tab: dict) -> None:
+                    calls = [params for name, params in server.calls if name == method]
+                    assert len(calls) == 1, server.calls
+                    assert calls[0]["workspace_id"] == workspace["id"], calls
+                    assert server.mutations == [(method, window["ref"], workspace["ref"])], server.mutations
+                    actual = server.windows[window["index"]]["workspaces"][workspace["index"]]
+                    if method == "panel.drag_to_split":
+                        assert calls[0]["panel_id"] == tab["id"] and calls[0]["direction"] == "right", calls
+                        assert actual["panels"][0]["splits"] == ["right"]
+                        assert len(actual["areas"]) == len(workspace["areas"]) + 1
                     else:
-                        assert f"--workspace={b_ws['id']}" in wires[0], wires
-                        if command == "drag_surface_to_split":
-                            assert wires[0][1:3] == [b_tab["id"], "right"], wires
-                            assert server.windows[1]["workspaces"][0]["panels"][0]["splits"] == ["right"]
-                        else:
-                            assert all(tab["refresh_count"] == 1 for tab in server.windows[1]["workspaces"][0]["panels"])
+                        assert all(panel["refresh_count"] == 1 for panel in actual["panels"])
+                    assert server.windows[1 - window["index"]] == (a if window is b else b)
+                    assert server.windows[window["index"]]["workspaces"][1] == window["workspaces"][1]
                     assert server.windows[0]["key"] and not server.windows[1]["key"]
-                for args, command in ((["drag-panel-to-split", "--panel", a_tab["id"], "right"], "drag_surface_to_split"),
-                                      (["default-agent", "launch", "--in-panel", a_tab["id"]], "default_agent"),
-                                      (["drag-panel-to-split", "--panel", "bogus", "right"], "drag_surface_to_split"),
-                                      (["default-agent", "launch", "--in-panel", "bogus"], "default_agent")):
-                    run(*args, env=caller, success=False)
-                    assert not any(name.startswith(command) for name, _ in server.calls), server.calls
+
+                # A window scope must not replace the caller's workspace with B's selected one.
+                for args, method in layout_cases:
+                    run(*args, env=layout_caller, success=False)
+                    assert not any(name == method for name, _ in server.calls), server.calls
                     unchanged()
-                for args, command in legacy_cases:
-                    run(*args, window=None, env=caller)
-                    assert server.mutations == [(command, a["ref"], a_ws["ref"])], server.mutations
-                    assert server.windows[1] == b and server.windows[0]["key"]
-                    wires = [shlex.split(name) for name, _ in server.calls if name.startswith(command)]
-                    assert len(wires) == 1 and not any(arg.startswith("--workspace") for arg in wires[0]), wires
-                    if command == "drag_surface_to_split":
-                        assert server.windows[0]["workspaces"][0]["panels"][0]["splits"] == ["right"]
-                    elif command == "refresh_surfaces":
-                        assert all(tab["refresh_count"] == 1 for tab in server.windows[0]["workspaces"][0]["panels"])
+                for panel in ("0", b_tab["ref"]):
+                    run("drag-panel-to-split", "--workspace", b_ws["id"], "--panel", panel, "right", env=layout_caller)
+                    layout_routed("panel.drag_to_split", b, b_ws, b_tab)
+                run("refresh-panels", "--workspace", b_ws["id"], env=layout_caller)
+                layout_routed("panel.refresh", b, b_ws, b_tab)
+                for args, method in layout_cases:
+                    run(*args, window=None, env=layout_caller)
+                    layout_routed(method, a, a_ws, a_tab)
+                for panel in ("bogus", a_tab["id"]):
+                    run("drag-panel-to-split", "--workspace", b_ws["id"], "--panel", panel, "right",
+                        env=layout_caller, success=False)
+                    assert not any(name == "panel.drag_to_split" for name, _ in server.calls), server.calls
+                    unchanged()
+
+                # These invocations deliberately omit the global --json prefix.
+                for args, method in ((["drag-panel-to-split", "--panel", b_tab["id"], "right"], "panel.drag_to_split"),
+                                     (["refresh-panels"], "panel.refresh")):
+                    payload = json.loads(run(*args, "--workspace", b_ws["id"], "--json",
+                                             env=layout_caller, global_json=False).stdout)
+                    layout_routed(method, b, b_ws, b_tab)
+                    assert payload["workspace_id"] == b_ws["id"], payload
+                    if method == "panel.drag_to_split":
+                        assert payload["panel_id"] == b_tab["id"] and payload["area_ref"] == "area:9000", payload
+                        assert payload["area_id"] == identifier("drag/0/area"), payload
                     else:
-                        assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
+                        assert payload["refreshed"] == len(b_ws["panels"]), payload
+                area_id = identifier("drag/0/area")
+                for mode, expected in (("refs", "area:9000"), ("uuids", area_id), ("both", f"area:9000 ({area_id})")):
+                    out = run("drag-panel-to-split", "--workspace", b_ws["id"], "--panel", "0", "right",
+                              env=layout_caller, global_json=False, id_format=mode)
+                    assert out.stdout.strip() == f"OK {expected}", out.stdout
+                    layout_routed("panel.drag_to_split", b, b_ws, b_tab)
+
+                # default-agent retains its legacy selected-workspace routing.
+                run("default-agent", "launch", env=caller)
+                assert server.mutations == [("default_agent", b["ref"], b_ws["ref"])], server.mutations
+                assert server.windows[0] == a and server.windows[1]["workspaces"][1] == b["workspaces"][1]
+                wires = [shlex.split(name) for name, _ in server.calls if name.startswith("default_agent")]
+                assert len(wires) == 1, server.calls
+                assert wires[0][wires[0].index("--workspace") + 1] == b_ws["id"], wires
+                assert len(server.windows[1]["workspaces"][0]["panels"]) == 3
+                assert server.windows[0]["key"] and not server.windows[1]["key"]
+                for panel in (a_tab["id"], "bogus"):
+                    run("default-agent", "launch", "--in-panel", panel, env=caller, success=False)
+                    assert not any(name.startswith("default_agent") for name, _ in server.calls), server.calls
+                    unchanged()
+                run("default-agent", "launch", window=None, env=caller)
+                assert server.mutations == [("default_agent", a["ref"], a_ws["ref"])], server.mutations
+                assert server.windows[1] == b and server.windows[0]["key"]
+                wires = [shlex.split(name) for name, _ in server.calls if name.startswith("default_agent")]
+                assert len(wires) == 1 and not any(arg.startswith("--workspace") for arg in wires[0]), wires
+                assert len(server.windows[0]["workspaces"][0]["panels"]) == 3
 
                 # config.launch carries scope even when requesting a new workspace.
                 for extra in ([], ["--new-workspace"]):
@@ -995,8 +1051,8 @@ def main() -> int:
         )
         raise AssertionError(f"{len(failures)} window-scope worker(s) failed:\n{details}")
     total = sum(counts.values())
-    if total != 138:
-        raise AssertionError(f"expected 138 window-scope CLI cases, got {total}")
+    if total != 146:
+        raise AssertionError(f"expected 146 window-scope CLI cases, got {total}")
     print(f"PASS: {total} CLI fake-socket window-scope cases across 8 isolated workers")
     return 0
 

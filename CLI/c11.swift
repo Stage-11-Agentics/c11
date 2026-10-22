@@ -3505,7 +3505,9 @@ struct CMUXCLI {
             guard let panelArg else {
                 throw CLIError(message: "drag-panel-to-split requires --panel <id|index>")
             }
-            let (workspaceArg, directionArgs) = parseOption(rem1, name: "--workspace")
+            let (workspaceArg, remaining) = parseOption(rem1, name: "--workspace")
+            let json = jsonOutput || remaining.contains("--json")
+            let directionArgs = remaining.filter { $0 != "--json" }
             guard directionArgs.count == 1, let direction = directionArgs.first else {
                 throw CLIError(message: "drag-panel-to-split requires a direction")
             }
@@ -3514,20 +3516,21 @@ struct CMUXCLI {
             let payload = try client.sendV2(method: "panel.drag_to_split", params: [
                 "workspace_id": workspaceId, "panel_id": panelId, "direction": direction
             ])
-            if jsonOutput {
+            if json {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
-                print("OK \(payload["area_id"] as? String ?? "")")
+                print("OK \(formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown")")
             }
 
         case "refresh-panels":
             let (workspaceArg, remaining) = parseOption(commandArgs, name: "--workspace")
-            guard remaining.isEmpty else {
+            let json = jsonOutput || remaining.contains("--json")
+            guard remaining.filter({ $0 != "--json" }).isEmpty else {
                 throw CLIError(message: String(localized: "cli.layout.arguments.invalid", defaultValue: "Unexpected layout arguments; pass --workspace followed by a workspace handle."))
             }
             let workspaceId = try resolveLayoutWorkspaceId(workspaceArg, client: client)
             let payload = try client.sendV2(method: "panel.refresh", params: ["workspace_id": workspaceId])
-            if jsonOutput {
+            if json {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
                 print("OK Refreshed \(intFromAny(payload["refreshed"]) ?? 0) panels")

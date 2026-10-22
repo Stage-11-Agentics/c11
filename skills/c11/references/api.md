@@ -299,7 +299,7 @@ c11 new-split down --panel panel:10
 
 ```bash
 c11 drag-panel-to-split --panel panel:10 down
-c11 drag-panel-to-split --workspace workspace:3 --panel panel:10 right
+c11 drag-panel-to-split --workspace workspace:3 --panel panel:10 right --json
 c11 refresh-panels --workspace workspace:3
 ```
 
@@ -312,8 +312,9 @@ the selected workspace. Empty, invalid, stale, or mismatched targets fail.
 The move preserves the focused panel and area in the target workspace. If the
 focused panel itself moves, focus follows that same panel into its new area.
 The selected workspace and other workspaces' focus remain unchanged. There is
-no focus flag. `--json` returns the v2 result with workspace, panel and new area
-IDs and refs. Socket clients use `panel.drag_to_split` with `workspace_id`,
+no focus flag. `--json` before or after the command returns the v2 result with
+workspace, panel and new area IDs and refs. Text output respects `--id-format`.
+Socket clients use `panel.drag_to_split` with `workspace_id`,
 `panel_id`, and `direction` (`left`, `right`, `up`, `down`); `panel.refresh`
 takes `workspace_id` and returns `refreshed`.
 

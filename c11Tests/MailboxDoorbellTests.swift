@@ -1607,6 +1607,74 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         broker.disconnect(reg)
     }
 
+    /// Each consumer reason the log names is distinct from a timeout; unknown
+    /// or absent reasons stay `native_rejected`.
+    func testConsumerRejectionReasonsNameTheNativeFailure() throws {
+        let cases: [(String?, String)] = [
+            ("transcript_unavailable", "native_transcript_unavailable"),
+            ("inbox_unavailable", "native_inbox_unavailable"),
+            ("inbox_write_failed", "native_inbox_write_failed"),
+            ("unconfirmed", "native_unconfirmed"),
+            ("unsupported_invitation", "native_unsupported_invitation"),
+            (nil, "native_rejected"),
+            ("anything else", "native_rejected"),
+        ]
+        for (reason, expected) in cases {
+            let broker = MailboxNativeDoorbell(), reg = registration()
+            let offered = offerNatively(broker, reg)
+            let failed = expectation(description: expected)
+            offered.reply = { result in XCTAssertEqual(result, .failed(expected)); failed.fulfill() }
+            var frame: [String: Any] = ["type": "rejected", "delivery_id": try offered.deliveryID()]
+            if let reason { frame["reason"] = reason }
+            broker.consume(try JSONSerialization.data(withJSONObject: frame), registration: reg)
+            wait(for: [failed], timeout: 1)
+            broker.disconnect(reg)
+        }
+    }
+
+    func testAcceptanceAfterNamedRejectionIsLate() throws {
+        let broker = MailboxNativeDoorbell(), reg = registration()
+        let offered = offerNatively(broker, reg)
+        let failed = expectation(description: "unconfirmed"), accepted = expectation(description: "late")
+        offered.reply = { result in
+            if result == .failed("native_unconfirmed") { failed.fulfill() }
+            if result == .accepted(late: true) { accepted.fulfill() }
+        }
+        let id = try offered.deliveryID()
+        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "rejected", "delivery_id": id, "reason": "unconfirmed"]), registration: reg)
+        wait(for: [failed], timeout: 1)
+        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "accepted", "delivery_id": id]), registration: reg)
+        wait(for: [accepted], timeout: 1)
+        broker.disconnect(reg)
+    }
+
+    private final class NativeOffer {
+        private let lock = NSLock()
+        private var id: String?
+        private var handler: ((MailboxNativeDoorbell.Result) -> Void)?
+        let sent: XCTestExpectation
+        init(_ sent: XCTestExpectation) { self.sent = sent }
+        func record(_ value: String?) { lock.lock(); id = value; lock.unlock(); sent.fulfill() }
+        func deliveryID() throws -> String { lock.lock(); defer { lock.unlock() }; return try XCTUnwrap(id) }
+        var reply: ((MailboxNativeDoorbell.Result) -> Void)? {
+            get { lock.lock(); defer { lock.unlock() }; return handler }
+            set { lock.lock(); handler = newValue; lock.unlock() }
+        }
+    }
+
+    /// Registers a listener, offers once with a long deadline, and waits for the
+    /// deliver frame so its delivery ID is known.
+    private func offerNatively(_ broker: MailboxNativeDoorbell, _ reg: MailboxNativeDoorbell.Registration) -> NativeOffer {
+        let offer = NativeOffer(expectation(description: "deliver frame"))
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" { offer.record(frame["delivery_id"] as? String) }
+            return true
+        }, close: {})
+        broker.deliver(reg, timeout: 30) { result in offer.reply?(result) }
+        wait(for: [offer.sent], timeout: 1)
+        return offer
+    }
+
     func testDeadlineDoesNotWaitForAnotherPanelSocketWrite() {
         let broker = MailboxNativeDoorbell(), first = registration(), second = registration()
         let writing = expectation(description: "first socket blocked")

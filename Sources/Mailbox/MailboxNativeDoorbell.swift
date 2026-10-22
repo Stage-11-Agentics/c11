@@ -184,6 +184,27 @@ final class MailboxNativeDoorbell {
         lock.unlock()
         pending.reply(resolved)
     }
+
+    /// Reasons a consumer may give that the log names on their own. Any other
+    /// rejection, including one with no reason (Pi), stays `native_rejected`,
+    /// so a consumer cannot write arbitrary text into `_dispatch.log`.
+    static let namedRejections: Set<String> = [
+        "transcript_unavailable", "inbox_unavailable", "inbox_write_failed", "unconfirmed", "unsupported_invitation",
+    ]
+
+    /// One consumer frame from the stream: an acceptance or a rejection.
+    func consume(_ line: Data, registration: Registration) {
+        guard let frame = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+              let rawID = frame["delivery_id"] as? String, let requestID = UUID(uuidString: rawID) else { return }
+        switch frame["type"] as? String {
+        case "accepted":
+            resolve(registration, requestID: requestID, result: .accepted(late: false))
+        case "rejected":
+            let reason = (frame["reason"] as? String).flatMap { Self.namedRejections.contains($0) ? "native_\($0)" : nil }
+            resolve(registration, requestID: requestID, result: .failed(reason ?? "native_rejected"))
+        default: break
+        }
+    }
 }
 
 extension TerminalController {
@@ -231,13 +252,7 @@ extension TerminalController {
                 while let end = pending.firstIndex(of: 10) {
                     let line = pending[..<end]
                     pending.removeSubrange(...end)
-                    guard let frame = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
-                          let rawID = frame["delivery_id"] as? String, let requestID = UUID(uuidString: rawID) else { continue }
-                    switch frame["type"] as? String {
-                    case "accepted": MailboxNativeDoorbell.shared.resolve(registration, requestID: requestID, result: .accepted(late: false))
-                    case "rejected": MailboxNativeDoorbell.shared.resolve(registration, requestID: requestID, result: .failed("native_rejected"))
-                    default: break
-                    }
+                    MailboxNativeDoorbell.shared.consume(Data(line), registration: registration)
                 }
                 return true
             }

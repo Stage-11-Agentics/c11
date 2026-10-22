@@ -478,6 +478,7 @@
 		C11C245B01B2C3D4E5F60702 /* PanelRailTipCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C245B01B2C3D4E5F60701 /* PanelRailTipCenter.swift */; };
 		C11C245C01B2C3D4E5F60702 /* PanelRailTipPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C245C01B2C3D4E5F60701 /* PanelRailTipPolicyTests.swift */; };
 		C11C249A01B2C3D4E5F60702 /* PanelRailTipCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11C249A01B2C3D4E5F60701 /* PanelRailTipCenterTests.swift */; };
+		C11471000000000000000002 /* MailboxNativeDoorbell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11471000000000000000001 /* MailboxNativeDoorbell.swift */; };
 		C11D3940A1B2C3D4E5F60702 /* MailboxDoorbell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11D3940A1B2C3D4E5F60701 /* MailboxDoorbell.swift */; };
 		C11D3940A1B2C3D4E5F60704 /* MailboxDoorbellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11D3940A1B2C3D4E5F60703 /* MailboxDoorbellTests.swift */; };
 		C1382000000000000000A002 /* PromptCacheReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A001 /* PromptCacheReports.swift */; };
@@ -486,6 +487,7 @@
 		C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1ADE00001A1B2C3D4E5F719 /* claude */; };
 		C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1CDE00001A1B2C3D4E5F719 /* codex */; };
 		C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00001A1B2C3D4E5F719 /* pi */; };
+		C11471000000000000000004 /* mailbox-native.mjs in Copy CLI */ = {isa = PBXBuildFile; fileRef = C11471000000000000000003 /* mailbox-native.mjs */; };
 		C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */; };
 		C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F2E00001A1B2C3D4E5F719 /* omp */; };
 		C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F3E00001A1B2C3D4E5F719 /* grok */; };
@@ -686,6 +688,7 @@
 				C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */,
 				C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */,
 				C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */,
+				C11471000000000000000004 /* mailbox-native.mjs in Copy CLI */,
 				C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */,
 				C1382000000000000000A006 /* omp-prompt-cache.ts in Copy CLI */,
 				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
@@ -1096,6 +1099,7 @@
 		C11C245B01B2C3D4E5F60701 /* PanelRailTipCenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelRailTipCenter.swift; sourceTree = "<group>"; };
 		C11C245C01B2C3D4E5F60701 /* PanelRailTipPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelRailTipPolicyTests.swift; sourceTree = "<group>"; };
 		C11C249A01B2C3D4E5F60701 /* PanelRailTipCenterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PanelRailTipCenterTests.swift; sourceTree = "<group>"; };
+		C11471000000000000000001 /* MailboxNativeDoorbell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxNativeDoorbell.swift; sourceTree = "<group>"; };
 		C11D3940A1B2C3D4E5F60701 /* MailboxDoorbell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxDoorbell.swift; sourceTree = "<group>"; };
 		C11D3940A1B2C3D4E5F60703 /* MailboxDoorbellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDoorbellTests.swift; sourceTree = "<group>"; };
 		C1382000000000000000A001 /* PromptCacheReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCacheReports.swift; sourceTree = "<group>"; };
@@ -1104,6 +1108,7 @@
 		C1ADE00001A1B2C3D4E5F719 /* claude */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/claude; sourceTree = SOURCE_ROOT; };
 		C1CDE00001A1B2C3D4E5F719 /* codex */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/codex; sourceTree = SOURCE_ROOT; };
 		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
+		C11471000000000000000003 /* mailbox-native.mjs */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "Resources/bin/mailbox-native.mjs"; sourceTree = SOURCE_ROOT; };
 		C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.typescript; path = "Resources/bin/pi-lifecycle.ts"; sourceTree = SOURCE_ROOT; };
 		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
 		C1F3E00001A1B2C3D4E5F719 /* grok */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/grok; sourceTree = SOURCE_ROOT; };
@@ -1335,6 +1340,7 @@
 				C1ADE00001A1B2C3D4E5F719 /* claude */,
 				C1CDE00001A1B2C3D4E5F719 /* codex */,
 				C1F1E00001A1B2C3D4E5F719 /* pi */,
+				C11471000000000000000003 /* mailbox-native.mjs */,
 				C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */,
 				C1382000000000000000A005 /* omp-prompt-cache.ts */,
 				C1F2E00001A1B2C3D4E5F719 /* omp */,
@@ -1536,6 +1542,7 @@
 				C2570002A1B2C3D4E5F60718 /* MailboxFraming.swift */,
 				C2570004A1B2C3D4E5F60718 /* MailboxReceiptRecorder.swift */,
 				C11144A0B0C0D0E0F0010001 /* MailboxStdinBuffer.swift */,
+				C11471000000000000000001 /* MailboxNativeDoorbell.swift */,
 				C11D3940A1B2C3D4E5F60701 /* MailboxDoorbell.swift */,
 				A5008F12 /* PanelTitleBarView.swift */,
 				C9A3B2A7D755BCA0666E041D /* WorkspaceRootEditor.swift */,
@@ -2529,6 +2536,7 @@
 				D7110BF0A1B2C3D4E5F60718 /* MailboxHandler.swift in Sources */,
 				D7111BF0A1B2C3D4E5F60718 /* StdinMailboxHandler.swift in Sources */,
 				C11144A0B0C0D0E0F0010002 /* MailboxStdinBuffer.swift in Sources */,
+				C11471000000000000000002 /* MailboxNativeDoorbell.swift in Sources */,
 				C11D3940A1B2C3D4E5F60702 /* MailboxDoorbell.swift in Sources */,
 				A5008F11 /* PanelTitleBarView.swift in Sources */,
 				DD488C60E0F13C57E4D9F0D8 /* WorkspaceRootEditor.swift in Sources */,

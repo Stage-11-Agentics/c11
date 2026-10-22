@@ -1432,3 +1432,194 @@ final class HeldComposerSeriesTests: XCTestCase {
         XCTAssertNil(covered.draftWatch)
     }
 }
+
+final class MailboxNativeDoorbellTests: XCTestCase {
+    private func nativeProcess(_ parent: pid_t, start: UInt64, tty: dev_t = -1) -> MailboxAgentForeground.ProcessTerminalInfo {
+        .init(processGroup: 10, terminalForegroundGroup: 10, terminalDevice: tty,
+              isZombie: false, startTime: start, parentPID: parent)
+    }
+
+    func testNativeSubscriberAcceptsDetachedDescendantWithoutTTY() {
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(10, start: 200),
+            30: nativeProcess(20, start: 300)
+        ]
+        // The kernel peer is the no-TTY hook's child; agent_pid names its
+        // foreground harness. The direct in-process Pi listener also works.
+        for (pid, start): (pid_t, UInt64) in [(30, 300), (10, 100)] {
+            XCTAssertEqual(MailboxNativeDoorbell.verifiedAgent(peer: .init(pid: pid, startTime: start),
+                agentPID: 10, readProcess: { processes[$0] }), processes[10])
+        }
+    }
+
+    func testNativeSubscriberRejectsUnrelatedCallerEvenOnSameTTY() {
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(1, start: 200, tty: 7)
+        ]
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: .init(pid: 20, startTime: 200),
+            agentPID: 10, readProcess: { processes[$0] }))
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: nil,
+            agentPID: 10, readProcess: { processes[$0] }))
+    }
+
+    func testNativeSubscriberRejectsReusedProcessIdentities() {
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(10, start: 200),
+            30: nativeProcess(20, start: 300)
+        ]
+        let peer = MailboxStdinBuffer.AgentProcess(pid: 30, startTime: 300)
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: .init(pid: 30, startTime: 299),
+            agentPID: 10, readProcess: { processes[$0] }), "peer replaced since socket acceptance")
+        var replacedParent = processes
+        replacedParent[20] = nativeProcess(10, start: 400)
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: 10,
+            readProcess: { replacedParent[$0] }), "replacement parent cannot be younger than child")
+        for changedPID: pid_t in [10, 20, 30] {
+            var reads: [pid_t: Int] = [:]
+            XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: 10, readProcess: { pid in
+                reads[pid, default: 0] += 1
+                guard var info = processes[pid] else { return nil }
+                if pid == changedPID && reads[pid, default: 0] > 1 { info.startTime += 1 }
+                return info
+            }), "PID \(changedPID) changed identity during ancestry walk")
+        }
+    }
+
+    private func registration(panel: UUID = UUID(), pid: pid_t = 123, start: UInt64 = 456) -> MailboxNativeDoorbell.Registration {
+        .init(id: UUID(), panelID: panel, agentPID: pid, processStart: start,
+              sessionID: UUID().uuidString, route: .piExtension, canQueue: false)
+    }
+
+    func testNativeDeliveryUsesCommonGuardsWithoutReadingDraft() {
+        let panel = UUID()
+        let state = MailboxStdinBufferStore()
+        state.buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: Date())
+        let entry = MailboxStdinBuffer.Entry(id: "mail", recipientName: "pi", block: "body", bufferedAt: Date())
+        var captures = 0
+        let gate = MailboxStdinDelivery.Gate(nativeRoute: true, ownsTerminal: true, inputTransactionActive: true)
+        let result = MailboxStdinDelivery.deliver(state: state, surfaceId: panel, entry: entry, gate: gate,
+            logEvicted: { _ in }, ringInput: { capture in
+                if capture { captures += 1 }
+                return MailboxDoorbell.Input(nativeRoute: true, focused: true, operatorKeyAge: 0, textBoxUnsent: true, prompt: nil)
+            })
+        XCTAssertEqual(result, .doorbell(bytes: 4, effect: .ring))
+        XCTAssertEqual(captures, 0)
+        let stranded = MailboxDoorbell.Input(nativeRoute: true, rungThisEpoch: true, prompt: nil, strandedPending: true)
+        XCTAssertFalse(MailboxDoorbellSequence.needsStrandedLook(stranded))
+        XCTAssertFalse(MailboxDoorbellSequence.submitsStranded(stranded, composer: .matches))
+        var input = MailboxDoorbell.Input(nativeRoute: true, prompt: nil)
+        input.flagged = true; XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "flagged"))
+        input.flagged = false; input.optedOut = true; XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "opted_out"))
+        input.optedOut = false; input.stdinDelivery = false; XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "not_stdin"))
+        input.stdinDelivery = true; input.recentAttempts = MailboxDoorbell.rateCap
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "rate_capped"))
+        input.recentAttempts = 0; input.unreadIds = ["mail"]; input.coveredIds = ["mail"]
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "already_covered"))
+    }
+
+    func testIdleOnlyNativeWaitsThroughTurnAndThenRingsWithoutCapture() {
+        let panel = UUID(), state = MailboxStdinBufferStore()
+        state.buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: Date())
+        let entry = MailboxStdinBuffer.Entry(id: "mail", recipientName: "pi", block: "body", bufferedAt: Date())
+        var reads = 0
+        let input: (Bool) -> MailboxDoorbell.Input = { capture in
+            if capture { reads += 1 }; return .init(nativeRoute: true, prompt: nil)
+        }
+        let busy = MailboxStdinDelivery.Gate(nativeRoute: true, ownsTerminal: true, journalTurnOpen: true)
+        XCTAssertEqual(MailboxStdinDelivery.deliver(state: state, surfaceId: panel, entry: entry, gate: busy,
+            logEvicted: { _ in }, ringInput: input), .buffered(bytes: 4))
+        state.buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: Date().addingTimeInterval(1))
+        XCTAssertEqual(MailboxStdinDelivery.deliver(state: state, surfaceId: panel, entry: entry,
+            gate: .init(nativeRoute: true, ownsTerminal: true), logEvicted: { _ in }, ringInput: input), .doorbell(bytes: 4, effect: .ring))
+        XCTAssertEqual(reads, 0)
+    }
+
+    func testTimeoutFallsThroughTypedTurnGateAndLateAcceptanceIsReportedOnce() {
+        let broker = MailboxNativeDoorbell(), reg = registration()
+        let dispatched = expectation(description: "native dispatched")
+        let failed = expectation(description: "timeout enters typed gate")
+        let accepted = expectation(description: "late acceptance")
+        let state = MailboxStdinBufferStore()
+        state.buffer.noteAgentTurn(surfaceId: reg.panelID, atPrompt: false, at: Date())
+        broker.register(reg, write: { frame in
+            XCTAssertEqual(frame["text"] as? String, MailboxDoorbell.text)
+            dispatched.fulfill(); return true
+        }, close: {})
+        let request = broker.deliver(reg, timeout: 0.03) { result in
+            switch result {
+            case .failed(let reason):
+                XCTAssertEqual(reason, "native_timeout")
+                // Native acceptance already started a turn, but its ack is late.
+                // The production typed admission path must buffer without capture.
+                let entry = MailboxStdinBuffer.Entry(id: "mail", recipientName: "pi", block: "body", bufferedAt: Date())
+                let outcome = MailboxStdinDelivery.deliver(state: state, surfaceId: reg.panelID, entry: entry,
+                    gate: .init(ownsTerminal: true, journalTurnOpen: true), logEvicted: { _ in },
+                    ringInput: { _ in XCTFail("typed fallback read a running turn"); return .init() })
+                XCTAssertEqual(outcome, .buffered(bytes: 4)); failed.fulfill()
+            case .accepted(let late): XCTAssertTrue(late); accepted.fulfill()
+            }
+        }
+        wait(for: [dispatched, failed], timeout: 2)
+        broker.resolve(reg, requestID: request, result: .accepted(late: false))
+        broker.resolve(reg, requestID: request, result: .accepted(late: false))
+        wait(for: [accepted], timeout: 1)
+        broker.disconnect(reg)
+    }
+
+    func testDeadlineDoesNotWaitForAnotherPanelSocketWrite() {
+        let broker = MailboxNativeDoorbell(), first = registration(), second = registration()
+        let writing = expectation(description: "first socket blocked")
+        let deadline = expectation(description: "second deadline is independent of writer")
+        let release = DispatchSemaphore(value: 0)
+        broker.register(first, write: { _ in
+            writing.fulfill(); _ = release.wait(timeout: .now() + 2); return true
+        }, close: {})
+        broker.register(second, write: { _ in true }, close: {})
+        broker.deliver(first, timeout: 5) { _ in }
+        wait(for: [writing], timeout: 1)
+        broker.deliver(second, timeout: 0.03) { result in
+            XCTAssertEqual(result, .failed("native_timeout")); deadline.fulfill()
+        }
+        wait(for: [deadline], timeout: 0.3)
+        release.signal()
+        broker.disconnect(first)
+        broker.disconnect(second)
+    }
+
+    func testReplacementRejectsOldInFlightAndOldDisconnectCannotRemoveNewSession() {
+        let broker = MailboxNativeDoorbell(), old = registration()
+        let sent = expectation(description: "old sent"), failed = expectation(description: "old failed")
+        broker.register(old, write: { _ in sent.fulfill(); return true }, close: {})
+        let request = broker.deliver(old) { result in XCTAssertEqual(result, .failed("native_replaced")); failed.fulfill() }
+        wait(for: [sent], timeout: 1)
+        let next = registration(panel: old.panelID)
+        broker.register(next, write: { _ in true }, close: {})
+        broker.disconnect(old)
+        broker.resolve(old, requestID: request, result: .accepted(late: false))
+        XCTAssertEqual(broker.registration(panelID: old.panelID), next)
+        wait(for: [failed], timeout: 1)
+        broker.disconnect(next)
+    }
+
+    func testProcessIdentityRejectsPIDReuseAndOtherHarness() {
+        let reg = registration()
+        XCTAssertTrue(reg.matches(process: .init(pid: 123, startTime: 456), kind: "pi"))
+        XCTAssertFalse(reg.matches(process: .init(pid: 123, startTime: 457), kind: "pi"))
+        XCTAssertFalse(reg.matches(process: .init(pid: 124, startTime: 456), kind: "pi"))
+        XCTAssertFalse(reg.matches(process: .init(pid: 123, startTime: 456), kind: "codex"))
+        XCTAssertFalse(reg.matches(process: nil, kind: "pi"))
+    }
+
+    func testNativeAndFallbackLogsNameTheirRoutes() throws {
+        let line = MailboxDispatchLog.serialize(event: .handler(id: "mail", recipient: "pi", handler: "stdin", outcome: .doorbell,
+            bytes: 5, elapsedMs: nil, reason: "submitted", route: "typed", nativeRoute: "pi_extension", nativeFailure: "native_timeout"), at: Date())
+        let data = try XCTUnwrap(line.data(using: .utf8))
+        let event = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(event["route"] as? String, "typed")
+        XCTAssertEqual(event["native_route"] as? String, "pi_extension")
+        XCTAssertEqual(event["native_failure"] as? String, "native_timeout")
+    }
+}

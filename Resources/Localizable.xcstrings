@@ -2,6 +2,18 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "mailbox.native.error.liveProcess": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Native mailbox requires the live agent process and its terminal."}}
+      }
+    },
+    "mailbox.native.error.streamRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Open a persistent socket stream for native mailbox delivery."}}
+      }
+    },
     "titlebar.description.placeholder": {
       "extractionState": "manual",
       "localizations": {

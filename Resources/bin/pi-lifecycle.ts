@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { subscribeNativeMailbox, doorbellText } from './mailbox-native.mjs';
+
 // c11-scoped Pi lifecycle bridge.
 //
 // Loaded only by Resources/bin/pi for an interactive Pi process inside a live
@@ -9,10 +12,11 @@
 // model and token counts, never text) so the cold mark can follow the cache.
 // Pi's session files are never opened.
 
-type Handler = (event: any) => unknown;
+type Handler = (event: any, ctx?: any) => unknown;
 
 export default function c11Lifecycle(pi: {
   on: (event: string, handler: Handler) => void;
+  sendUserMessage?: (text: string, options?: { deliverAs: "followUp" }) => void;
   exec: (
     command: string,
     args: string[],
@@ -20,7 +24,7 @@ export default function c11Lifecycle(pi: {
   ) => Promise<unknown>;
 }) {
   const c11 = process.env.C11_AGENT_HOOK_CLI;
-  const socket = process.env.CMUX_SOCKET_PATH;
+  const socket = process.env.C11_SOCKET_PATH || process.env.CMUX_SOCKET_PATH;
   if (!c11 || !socket) return;
 
   const report = async (activity: "working" | "idle") => {
@@ -37,10 +41,58 @@ export default function c11Lifecycle(pi: {
   };
 
   pi.on("agent_start", async () => report("working"));
-  pi.on("agent_settled", async () => report("idle"));
 
   // Prompt cache reports are fire-and-forget: Pi never waits on c11.
   const panel = process.env.C11_PANEL_ID || process.env.C11_TAB_ID || process.env.CMUX_SURFACE_ID;
+  let stopMailbox: (() => void) | undefined;
+  let nativeAccepted: (() => void) | undefined;
+  let nativeContext: any;
+  const stopNative = () => {
+    stopMailbox?.(); stopMailbox = undefined;
+    nativeAccepted = undefined;
+  };
+  pi.on("session_start", async (_event, ctx) => {
+    stopNative();
+    nativeContext = ctx;
+    const agentPID = Number(process.env.C11_AGENT_INTERACTIVE_PID);
+    if (!panel || !ctx?.hasUI || agentPID !== process.pid) return;
+    if (process.env.C11_PI_NATIVE_MAIL_DISABLED !== "1" && pi.sendUserMessage) {
+      stopMailbox = subscribeNativeMailbox({
+        socketPath: socket, panelID: panel, agentPID, sessionID: randomUUID(), route: "pi_extension", canQueue: false,
+        deliver: (text: string) => {
+          if (!nativeContext?.isIdle() || nativeAccepted) return Promise.reject(new Error("busy"));
+          return new Promise<void>((resolve) => {
+            nativeAccepted = () => { nativeAccepted = undefined; resolve(); };
+            // Pi's API returns void. Only message_start below acknowledges it.
+            // Failure after calling is uncertain: let c11's bounded timeout use
+            // the existing typed gate, rather than asserting a safe rejection.
+            try { pi.sendUserMessage!(text, { deliverAs: "followUp" }); } catch { nativeAccepted = undefined; }
+          });
+        },
+      });
+    }
+    // /new ends at an idle prompt without running an agent turn. Its Return
+    // otherwise leaves c11 waiting for a settled event Pi will never emit.
+    if (ctx.isIdle()) await report("idle");
+  });
+  pi.on("session_shutdown", stopNative);
+  pi.on("message_start", (event, ctx) => {
+    nativeContext = ctx;
+    if (event?.message?.role !== "user") return;
+    const content = event.message.content;
+    const text = typeof content === "string" ? content : content?.map((part: any) => part.type === "text" ? part.text : "").join("");
+    if (text === doorbellText) nativeAccepted?.();
+  });
+  // A failed preflight has no user message. Release the local slot at idle;
+  // c11 still owns timeout/fallback and inbox state.
+  pi.on("agent_settled", async (_event, ctx) => {
+    nativeContext = ctx;
+    nativeAccepted = undefined;
+    // Publishing idle can immediately deliver the next invitation. Clear the
+    // prior slot first, never after awaiting a report that opened that gate.
+    await report("idle");
+  });
+
   const reportCache = (payload: Record<string, unknown>) => {
     if (panel) payload.panel_id = panel;
     try {

@@ -340,6 +340,8 @@ final class MailboxStdinBufferStore {
 enum MailboxStdinDelivery {
     struct Gate: Equatable {
         var panelPresent: Bool = true
+        var nativeRoute: Bool = false
+        var nativeCanQueue: Bool = false
         var isAgentKind: Bool = true
         var ownsTerminal: Bool = false
         var lastOperatorKeyAt: Date? = nil
@@ -420,11 +422,11 @@ enum MailboxStdinDelivery {
         if promptGate == .closed, let deadline = heldUntil(state: state, surfaceId: surfaceId, gate: gate) {
             noteHeldUntil?(deadline)
         }
-        if gate.inputTransactionActive {
+        if gate.inputTransactionActive && !gate.nativeRoute {
             noteInputTransactionHeld?()
             return .buffered(bytes: bytes)
         }
-        guard promptGate != .closed, let ringInput else {
+        guard (promptGate != .closed || (gate.nativeRoute && gate.nativeCanQueue && gate.ownsTerminal)), let ringInput else {
             return .buffered(bytes: bytes)
         }
         var input = ringInput(false)
@@ -491,6 +493,8 @@ enum MailboxAgentForeground {
         let isZombie: Bool
         /// Process start time in microseconds since the epoch.
         var startTime: UInt64 = 0
+        /// Kernel parent PID, used to authenticate native mailbox sidecars.
+        var parentPID: pid_t = 0
     }
 
     /// Pure decision. Fails closed on a missing process, a different process
@@ -545,7 +549,8 @@ enum MailboxAgentForeground {
             terminalDevice: info.kp_eproc.e_tdev,
             isZombie: Int32(info.kp_proc.p_stat) == SZOMB,
             startTime: UInt64(info.kp_proc.p_starttime.tv_sec) * 1_000_000
-                + UInt64(info.kp_proc.p_starttime.tv_usec)
+                + UInt64(info.kp_proc.p_starttime.tv_usec),
+            parentPID: info.kp_eproc.e_ppid
         )
     }
 

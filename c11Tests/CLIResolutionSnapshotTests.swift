@@ -1734,6 +1734,64 @@ extension CLIResolutionSnapshotTests {
         XCTAssertTrue(text?.hasSuffix("ls -la\n") ?? false, String(describing: text))
     }
 
+    /// Declared options reach the request with their values in every position
+    /// a parser reads them: inline targets before a verb, inline options in
+    /// browser text verbs, and trailing-command options. Literal text keeps
+    /// its words (PR #737 r3).
+    func testDeclaredOptionsReachRequestPayloadsWithTheirValues() {
+        let p = Self.declPanelID
+        let cases: [(argv: [String], method: String, expected: [String: String])] = [
+            (["respawn-pane", "--panel=\(p)", "--command=echo hello"], "panel.send_text", ["panel_id": p, "text": "echo hello\n"]),
+            (["respawn-pane", "--panel", p, "ls", "-la"], "panel.send_text", ["text": "ls -la\n"]),
+            (["respawn-pane", "ls", "-la"], "panel.send_text", ["text": "ls -la\n"]),
+            (["browser", "--panel=\(p)", "click", "--selector", "#x"], "browser.click", ["panel_id": p, "selector": "#x"]),
+            (["browser", "--tab=\(p)", "click", "--selector", "#x"], "browser.click", ["panel_id": p, "selector": "#x"]),
+            (["browser", "--surface=\(p)", "click", "--selector", "#x"], "browser.click", ["panel_id": p, "selector": "#x"]),
+            (["markdown", "--panel=\(p)", "scroll", "--heading=Intro"], "markdown.scroll", ["panel_id": p, "heading": "Intro"]),
+            (["browser", p, "type", "--selector=#x", "--text=hello"], "browser.type", ["selector": "#x", "text": "hello"]),
+            (["browser", p, "fill", "--selector=#x", "--text=hello"], "browser.fill", ["selector": "#x", "text": "hello"]),
+            (["browser", p, "fill", "--selector", "#x", "--text=hello"], "browser.fill", ["text": "hello"]),
+            (["browser", p, "type", "#x", "--", "--text=hello"], "browser.type", ["selector": "#x", "text": "--text=hello"]),
+            (["browser", p, "type", "#x", "--verbose"], "browser.type", ["text": "--verbose"]),
+            (["browser", p, "fill", "#x", "hello", "--world"], "browser.fill", ["text": "hello --world"]),
+            (["browser", p, "eval", "--script=1+1"], "browser.eval", ["script": "1+1"]),
+            (["browser", p, "addinitscript", "--script=window.x=1"], "browser.addinitscript", ["script": "window.x=1"]),
+            (["browser", p, "addscript", "--script=window.x=1"], "browser.addscript", ["script": "window.x=1"]),
+            (["browser", p, "addstyle", "--css=body{color:red}"], "browser.addstyle", ["css": "body{color:red}"]),
+        ]
+        for (argv, method, expected) in cases {
+            guard let socket = try? CapturedCLISocket(),
+                  let result = runCLI(argv, socketPath: socket.path) else { return }
+            XCTAssertEqual(result.status, 0, "\(argv): \(result.stderr)")
+            _ = socket.waitUntilFinished()
+            guard let params = socket.requests.first(where: { $0["method"] as? String == method })?["params"] as? [String: Any] else {
+                XCTFail("\(argv): expected \(method), got \(socket.requests)")
+                continue
+            }
+            for (key, value) in expected {
+                XCTAssertEqual(params[key] as? String, value, "\(argv): \(key)")
+            }
+        }
+    }
+
+    /// An unknown option beside a trailing-command parser's own options fails
+    /// before the CLI connects; words after the first positional stay text.
+    func testTrailingCommandParsersRejectUnknownOptionsBeforeConnecting() {
+        let cases: [[String]] = [
+            ["respawn-pane", "--command", "true", "--not-a-real-flag"],
+            ["pipe-pane", "--command", "cat", "--not-a-real-flag"],
+            ["set-hook", "--list", "--not-a-real-flag"],
+        ]
+        for argv in cases {
+            guard let socket = try? CapturedCLISocket(),
+                  let result = runCLI(argv, socketPath: socket.path) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(argv)")
+            XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unknown flag"), "\(argv): \(result.stderr)")
+            XCTAssertTrue(socket.requests.isEmpty, "\(argv) reached the socket: \(socket.requests)")
+            XCTAssertTrue(socket.legacyCommands.isEmpty, "\(argv) reached the socket: \(socket.legacyCommands)")
+        }
+    }
+
     /// One argv per command path. A parser queries every option name on the
     /// path it takes, present or not, so one run checks the whole path.
     private static let declarationPaths: [[String]] = {

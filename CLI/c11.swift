@@ -6614,6 +6614,11 @@ struct CMUXCLI {
         var valueOptions: Set<String>
         var literalFlagArgumentIndices: Set<Int>
         var literalTailStart: Int?
+        /// From this index the parser takes words it does not recognize as
+        /// text, but still reads its own options there (browser `type`).
+        /// Declared options are checked and rewritten; other flag-shaped words
+        /// pass as text; `--` makes the rest literal.
+        var textStart: Int?
         var honorsEndOfOptions: Bool
 
         init(
@@ -6621,12 +6626,14 @@ struct CMUXCLI {
             valueOptions: Set<String> = [],
             literalFlagArgumentIndices: Set<Int> = [],
             literalTailStart: Int? = nil,
+            textStart: Int? = nil,
             honorsEndOfOptions: Bool = false
         ) {
             self.flags = flags.union(valueOptions)
             self.valueOptions = valueOptions
             self.literalFlagArgumentIndices = literalFlagArgumentIndices
             self.literalTailStart = literalTailStart
+            self.textStart = textStart
             self.honorsEndOfOptions = honorsEndOfOptions
         }
     }
@@ -6651,8 +6658,14 @@ struct CMUXCLI {
             let commandName = command == "state" ? "state save" : command
             throw CLIError(message: unexpectedArgumentMessage(command: commandName, argument: unexpected))
         }
+        // Target options before the first word choose nothing, but a verb
+        // after them selects the declaration: split their `=` form first so
+        // `browser --panel=<ref> click` selects `click`.
+        // A command with no declaration (claude-teams) forwards argv untouched.
+        let originalArgs = args
+        let args = splittingLeadingTargetOptions(args)
         guard var spec = commandFlagPreflightSpec(command: command, args: args) else {
-            return CLIFlagPreflightResult(args: args, requestsJSON: false)
+            return CLIFlagPreflightResult(args: originalArgs, requestsJSON: false)
         }
         for flag in Array(spec.flags) {
             let spellings = Self.flagSpellings(flag)
@@ -6672,8 +6685,9 @@ struct CMUXCLI {
                 index += 1
                 continue
             }
+            let inText = spec.textStart.map { index >= $0 } ?? false
             if args[index] == "--" {
-                if spec.honorsEndOfOptions {
+                if spec.honorsEndOfOptions || inText {
                     normalized.append(contentsOf: args[index...])
                     break
                 }
@@ -6724,9 +6738,39 @@ struct CMUXCLI {
                 index += 1
                 continue
             }
+            if inText {
+                normalized.append(argument)
+                index += 1
+                continue
+            }
             throw CLIError(message: unknownFlagMessage(command: command, flag: argument))
         }
         return CLIFlagPreflightResult(args: normalized, requestsJSON: requestsJSON)
+    }
+
+    /// Rewrites `--panel=<ref>` (any spelling), `--area=`, `--workspace=` and
+    /// `--window=` into separated form up to the first word or `--`.
+    private func splittingLeadingTargetOptions(_ args: [String]) -> [String] {
+        let targets = Set(["--panel", "--area", "--workspace", "--window"].flatMap(Self.flagSpellings))
+        var result: [String] = []
+        var index = 0
+        while index < args.count {
+            let argument = args[index]
+            guard argument.hasPrefix("-"), argument != "--" else { break }
+            if targets.contains(argument), index + 1 < args.count {
+                result.append(contentsOf: args[index...(index + 1)])
+                index += 2
+                continue
+            }
+            if let equals = argument.firstIndex(of: "="), targets.contains(String(argument[..<equals])) {
+                result.append(String(argument[..<equals]))
+                result.append(String(argument[argument.index(after: equals)...]))
+            } else {
+                result.append(argument)
+            }
+            index += 1
+        }
+        return result + args[index...]
     }
 
     private func unknownFlagMessage(command: String, flag: String) -> String {
@@ -6853,7 +6897,7 @@ struct CMUXCLI {
                 valueOptions: ["--panel", "--workspace", "--window", "--by"]
             )
         default:
-            return declaredCommandFlagPreflightSpec(command)
+            return declaredCommandFlagPreflightSpec(command, args: args)
         }
     }
 
@@ -6945,7 +6989,7 @@ struct CMUXCLI {
     /// Accepted command options are declared here beside the preflight parser.
     /// Keep these lists aligned with the command's argv parser; help text is a
     /// user-facing description and is never parsed as an option schema.
-    private func declaredCommandFlagPreflightSpec(_ command: String) -> CLIFlagPreflightSpec {
+    private func declaredCommandFlagPreflightSpec(_ command: String, args: [String]) -> CLIFlagPreflightSpec {
         let panelAndWorkspace: Set<String> = ["--workspace", "--panel"]
         switch command {
         case "agents":
@@ -7616,7 +7660,8 @@ struct CMUXCLI {
             flags: flags,
             valueOptions: values,
             literalFlagArgumentIndices: verb == "state" ? browserPositionalStatePathIndex(commandArgs).map { Set([$0]) } ?? [] : [],
-            literalTailStart: browserLiteralTailStart(commandArgs, verb: verb, verbIndex: located.index, subArgs: subArgs),
+            literalTailStart: verb == "dialog" && subArgs.first?.lowercased() == "accept" ? located.index + 2 : nil,
+            textStart: ["type", "fill", "eval", "addinitscript", "addscript", "addstyle"].contains(verb) ? located.index + 1 : nil,
             honorsEndOfOptions: verb == "type" || verb == "fill"
         )
     }
@@ -7660,23 +7705,6 @@ struct CMUXCLI {
         "geolocation", "geo", "keep-live", "keep_live", "offline", "trace", "network", "screencast", "input",
         "input_mouse", "input_keyboard", "input_touch", "dom", "locator",
     ]
-
-    /// Verbs whose parser joins the words after the verb into text: type and
-    /// fill type every word their own options do not take, `dialog accept`
-    /// and the add-script verbs join the rest, and `eval` takes a positional
-    /// script.
-    private func browserLiteralTailStart(_ commandArgs: [String], verb: String, verbIndex: Int, subArgs: [String]) -> Int? {
-        switch verb {
-        case "type", "fill", "addinitscript", "addscript", "addstyle":
-            return verbIndex + 1
-        case "dialog" where subArgs.first?.lowercased() == "accept":
-            return verbIndex + 2
-        case "eval":
-            return browserPositionalEvalScriptTailStart(commandArgs)
-        default:
-            return nil
-        }
-    }
 
     /// Validate panel target flags for readers before socket discovery/connect.
     /// Value boundaries are specific to the command parser: a value option from
@@ -20585,7 +20613,11 @@ struct CMUXCLI {
         case "pipe-pane":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
             let surfaceArg = optionValue(commandArgs, name: "--surface")
-            let (cmdOpt, rem0) = parseOption(commandArgs, name: "--command")
+            // The target options are not part of the shell command.
+            let (cmdOpt, rem0) = parseOption(
+                parseOption(parseOption(commandArgs, name: "--workspace").1, name: "--panel").1,
+                name: "--command"
+            )
             let commandText: String = {
                 if let cmdOpt { return cmdOpt }
                 let trimmed = rem0.dropFirst(rem0.first == "--" ? 1 : 0).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -20860,7 +20892,11 @@ struct CMUXCLI {
         case "respawn-pane":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
             let surfaceArg = optionValue(commandArgs, name: "--surface")
-            let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
+            // The target options are not part of the command line.
+            let (commandOpt, rem0) = parseOption(
+                parseOption(parseOption(commandArgs, name: "--workspace").1, name: "--panel").1,
+                name: "--command"
+            )
             let commandText = (commandOpt ?? rem0.dropFirst(rem0.first == "--" ? 1 : 0).joined(separator: " ")).trimmingCharacters(in: .whitespacesAndNewlines)
             let finalCommand = commandText.isEmpty ? "exec ${SHELL:-/bin/zsh} -l" : commandText
             var params: [String: Any] = ["text": finalCommand + "\n"]

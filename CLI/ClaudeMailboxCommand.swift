@@ -62,20 +62,23 @@ enum ClaudeMailboxCommand {
               reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
 
         while binding.isAlive {
-            try autoreleasepool {
+            let shouldContinue = try autoreleasepool { () throws -> Bool in
                 // No idle transcript or mailbox polling. The timeout only checks
                 // the harness lifetime, including PID reuse and orphaned hooks.
-                guard let frame = try stream.read(deadline: uptime + 1) else { return }
-                guard frame["type"] as? String == "deliver",
-                      let deliveryID = frame["delivery_id"] as? String,
+                guard let frame = try stream.read(deadline: uptime + 1) else { return true }
+                if frame["type"] as? String == "replaced" { return false }
+                guard frame["type"] as? String == "deliver" else { return true }
+                guard let deliveryID = frame["delivery_id"] as? String,
                       UUID(uuidString: deliveryID) != nil else { throw Failure.invalidFrame }
                 guard frame["text"] as? String == ClaudeMailboxAcceptance.invitation else {
                     try stream.write(["type": "rejected", "delivery_id": deliveryID,
                                       "reason": "unsupported_invitation"], deadline: uptime + 0.2)
-                    return
+                    return true
                 }
                 try deliver(binding: binding, stream: stream, deliveryID: deliveryID)
+                return true
             }
+            if !shouldContinue { return }
         }
     }
 
@@ -196,7 +199,8 @@ private final class ClaudeMailboxStream {
             if descriptor.revents & Int16(POLLHUP | POLLERR | POLLNVAL) != 0 {
                 throw ClaudeMailboxCommand.Failure.closed
             }
-            if result == 0 { return false }
+            // A poll slice can expire while the caller's deadline still has time.
+            if result == 0 { continue }
         }
     }
 

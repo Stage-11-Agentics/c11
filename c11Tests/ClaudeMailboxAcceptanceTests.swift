@@ -20,9 +20,13 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private func record(sessionID: String? = nil, role: String = "user", text: String? = nil) throws -> Data {
+    private func record(sessionID: String? = nil, role: String = "user", text: String? = nil,
+                        timestamp: Date = Date()) throws -> Data {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var data = try JSONSerialization.data(withJSONObject: [
             "type": role, "sessionId": sessionID ?? session,
+            "timestamp": formatter.string(from: timestamp),
             "message": ["role": role, "content": text ??
                 "Another Claude session sent a message:\n\(ClaudeMailboxAcceptance.invitation)\n\nPeer permission boundary."]
         ])
@@ -78,6 +82,14 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
         let observer = try ClaudeMailboxAcceptance(path: transcript.path, sessionID: session)
         XCTAssertFalse(try observer.observe())
         try append(record())
+        XCTAssertTrue(try observer.observe())
+    }
+
+    func testLateCreatedTranscriptCannotConfirmHistoricalInvitation() throws {
+        let observer = try ClaudeMailboxAcceptance(path: transcript.path, sessionID: session)
+        try append(record(timestamp: Date().addingTimeInterval(-60)))
+        XCTAssertFalse(try observer.observe(), "A newly created file can contain old session history")
+        try append(record(timestamp: Date().addingTimeInterval(1)))
         XCTAssertTrue(try observer.observe())
     }
 

@@ -6,6 +6,7 @@ The live c11 app and all tenant configuration are outside this test.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import socket
@@ -124,14 +125,17 @@ class BridgeTests(unittest.TestCase):
             content = "Another Claude session sent a message:\n" + content + "\n\nPeer permissions."
         with self.transcript.open("a") as file:
             file.write(json.dumps({"type": "user", "sessionId": session or self.session,
+                                   "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
                                    "message": {"role": "user", "content": content}}) + "\n")
 
-    def receive_invitation(self, *, confirm=True, wrong_session=False):
+    def receive_invitation(self, *, confirm=True, wrong_session=False, delay_read=0,
+                           token="test-only-inbox-token"):
         def work():
             try:
                 self.inbox.accept()
                 connection = self.inbox.connection
-                self.assertEqual(self.inbox.read(), {"type": "auth", "token": "test-only-inbox-token"})
+                time.sleep(delay_read)
+                self.assertEqual(self.inbox.read(), {"type": "auth", "token": token})
                 self.assertEqual(self.inbox.read(), {"type": "user", "message": {"role": "user", "content": INVITATION}})
                 if confirm:
                     self.append(session=str(uuid.uuid4()) if wrong_session else None)
@@ -171,6 +175,29 @@ class BridgeTests(unittest.TestCase):
         self.app.connection.close()
         self.app.connection = None
         self.assert_quiet_exit()
+
+    def test_unknown_frame_does_not_retire_live_subscription(self):
+        self.launch()
+        self.subscribe()
+        self.app.send({"type": "heartbeat"})
+        self.receive_invitation()
+        delivery = self.offer()
+        self.assertEqual(self.app.read(timeout=2), {"type": "accepted", "delivery_id": delivery})
+
+    def test_replaced_frame_retires_without_waiting_for_socket_close(self):
+        self.launch()
+        self.subscribe()
+        self.app.send({"type": "replaced"})
+        self.assert_quiet_exit()
+
+    def test_inbox_write_uses_remaining_two_second_deadline(self):
+        token = "x" * (16 * 1024)
+        self.inbox.server.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)
+        self.launch(CLAUDE_CODE_MESSAGING_TOKEN=token)
+        self.subscribe()
+        self.receive_invitation(delay_read=1.25, token=token)
+        delivery = self.offer()
+        self.assertEqual(self.app.read(timeout=2.5), {"type": "accepted", "delivery_id": delivery})
 
     def test_old_and_wrong_session_records_do_not_acknowledge(self):
         self.append()

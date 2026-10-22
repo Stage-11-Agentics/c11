@@ -6,6 +6,7 @@ final class ClaudeMailboxAcceptance {
     static let invitation = "You have mail: run c11 mailbox recv --ack when you want to receive it."
     private let path: String
     private let sessionID: String
+    private let earliestNewFileRecord: Date?
     private var handle: FileHandle?
     private var pending = Data()
     private var discardingLine = false
@@ -14,7 +15,12 @@ final class ClaudeMailboxAcceptance {
     init(path: String, sessionID: String) throws {
         self.path = path
         self.sessionID = sessionID
-        if FileManager.default.fileExists(atPath: path) {
+        let existed = FileManager.default.fileExists(atPath: path)
+        // Claude records milliseconds. A file that appears after this offer
+        // may contain restored history, so byte zero alone is not freshness.
+        earliestNewFileRecord = existed ? nil : Date(timeIntervalSince1970:
+            floor(Date().timeIntervalSince1970 * 1_000) / 1_000)
+        if existed {
             let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
             _ = try file.seekToEnd()
             handle = file
@@ -35,7 +41,7 @@ final class ClaudeMailboxAcceptance {
             let line = Data(pending[..<newline])
             pending.removeSubrange(...newline)
             if discardingLine { discardingLine = false; continue }
-            if Self.confirms(line, sessionID: sessionID) { return true }
+            if Self.confirms(line, sessionID: sessionID, notBefore: earliestNewFileRecord) { return true }
         }
         if pending.count > Self.lineLimit {
             pending.removeAll(keepingCapacity: false)
@@ -44,12 +50,18 @@ final class ClaudeMailboxAcceptance {
         return false
     }
 
-    static func confirms(_ line: Data, sessionID: String) -> Bool {
+    static func confirms(_ line: Data, sessionID: String, notBefore: Date? = nil) -> Bool {
         guard let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               record["type"] as? String == "user",
               record["sessionId"] as? String == sessionID,
               let message = record["message"] as? [String: Any],
               message["role"] as? String == "user" else { return false }
+        if let notBefore {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let timestamp = record["timestamp"] as? String,
+                  let created = formatter.date(from: timestamp), created >= notBefore else { return false }
+        }
         let text: String
         if let content = message["content"] as? String {
             text = content

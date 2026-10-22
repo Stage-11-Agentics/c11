@@ -14555,6 +14555,12 @@
         }
       }
     },
+    "cli.command.unknownFlag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%@: unknown flag '%@'"}}
+      }
+    },
     "cli.claude-teams.usage": {
       "extractionState": "manual",
       "localizations": {

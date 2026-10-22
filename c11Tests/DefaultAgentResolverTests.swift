@@ -1244,4 +1244,20 @@ final class AgentLaunchPlannerTests: XCTestCase {
         XCTAssertEqual(DefaultAgentResolver.shellQuoteIfNeeded("x;rm -rf"), "'x;rm -rf'")
         XCTAssertEqual(DefaultAgentResolver.shellQuoteIfNeeded(""), "''")
     }
+
+    func testAgentLaunchBinaryWarningSkipsShellBuiltins() {
+        for command in ["cd /tmp", "source ~/.zshrc", "export MODE=test", "exec codex"] {
+            XCTAssertNil(
+                TerminalController.agentLaunchBinaryWarning(launchLine: command),
+                "shell builtin should not be reported as a missing executable: \(command)"
+            )
+        }
+    }
+
+    func testAgentLaunchBinaryWarningStillReportsMissingExternalCommand() {
+        let warning = TerminalController.agentLaunchBinaryWarning(
+            launchLine: "/definitely/not/a/real/c11-agent-binary"
+        )
+        XCTAssertEqual(warning, "launch binary not found: /definitely/not/a/real/c11-agent-binary")
+    }
 }

@@ -65,6 +65,7 @@ final class AgentConfigEditorModelTests: XCTestCase {
         RawCatalogRecord(harness: "grok", rawID: "grok-4.6", providerHint: "xai"),
         RawCatalogRecord(harness: "grok", rawID: "grok-4.7", providerHint: "xai"),
         RawCatalogRecord(harness: "grok", rawID: "grok-4.7-build-fast", providerHint: "xai"),
+        RawCatalogRecord(harness: "opencode", rawID: "openrouter/x-ai/grok-3"),
         RawCatalogRecord(harness: "opencode", rawID: "openrouter/x-ai/grok-4.7"),
         RawCatalogRecord(harness: "opencode", rawID: "openrouter/~x-ai/grok-latest"),
         RawCatalogRecord(harness: "pi", rawID: "openrouter/~x-ai/grok-latest"),
@@ -100,6 +101,10 @@ final class AgentConfigEditorModelTests: XCTestCase {
     /// The committed captures exercise the same parser + merge path as the
     /// shipping catalog, without invoking any harness CLI from the test.
     private func fixtureCatalog(includeGrok: Bool = true) throws -> StubModelCatalog {
+        StubModelCatalog(try fixtureRecords(includeGrok: includeGrok))
+    }
+
+    private func fixtureRecords(includeGrok: Bool = true) throws -> [RawCatalogRecord] {
         let fixturesURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures")
@@ -116,7 +121,7 @@ final class AgentConfigEditorModelTests: XCTestCase {
             "grok": includeGrok ? GrokModelsParser.parse(try fixture("grok-models.txt")) : [],
             "codex": CodexModelsCacheParser.parse(try fixture("codex-models-cache.json")),
         ]
-        return StubModelCatalog(ModelCatalogEnumerator.merged(live: live, previous: []))
+        return ModelCatalogEnumerator.merged(live: live, previous: [])
     }
 
     // MARK: Provider axis
@@ -533,15 +538,29 @@ final class AgentConfigEditorModelTests: XCTestCase {
         let routed = catalogOrder.filter { $0.harness != AgentConfigAxes.grokHarnessKey }
 
         XCTAssertEqual(native.map(\.id), ["grok-4.5", "grok-4.6", "grok-4.7", "grok-4.7-build-fast"])
+        XCTAssertEqual(catalogOrder.first?.id, "grok-3", "the fixture must require a partition")
+        let options = AgentConfigAxes.modelOptions(provider: "xai", query: "", catalog: catalog)
+        XCTAssertEqual(options.first?.id, "grok-4.5")
         XCTAssertEqual(
-            AgentConfigAxes.modelOptions(provider: "xai", query: "", catalog: catalog),
+            options,
             native + routed
         )
     }
 
     func testNonEmptyXAISearchKeepsTheFixtureCatalogRanking() throws {
-        let fixtureCatalogForTest = try fixtureCatalog()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-463-models-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixtureCatalogForTest = ModelCatalogStore(
+            directory: directory, runner: nil, snapshot: try fixtureRecords(),
+            loadCacheAsynchronously: false
+        )
         let expected = fixtureCatalogForTest.search("grok-4", provider: "xai", limit: 200)
+        XCTAssertEqual(expected.first?.id, "grok-4", "the real search ranks this routed row first")
+        XCTAssertNotEqual(expected.first?.harness, AgentConfigAxes.grokHarnessKey)
+        XCTAssertTrue(expected.contains { $0.harness == AgentConfigAxes.grokHarnessKey },
+                      "the fixture must detect a native-first partition leaking into search")
 
         XCTAssertEqual(
             AgentConfigAxes.modelOptions(provider: "xai", query: "grok-4", catalog: fixtureCatalogForTest),

@@ -63,7 +63,7 @@ struct AppNapActivityPolicy {
 }
 
 /// Owns one ProcessInfo assertion for the whole app. Calls from the socket
-/// accept/client threads and terminal renderer are coalesced onto one queue;
+/// accept/client threads are coalesced onto one queue;
 /// beginActivity and endActivity therefore never race across source threads
 /// and never block a socket message or typing path.
 final class AppNapActivityCoordinator: @unchecked Sendable {

@@ -198,6 +198,7 @@ extension TerminalController {
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = parseV2SocketRequest(command)
         let method = request?.method ?? command.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
         let context = SocketCommandContext(

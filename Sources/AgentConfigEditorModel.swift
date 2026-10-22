@@ -171,6 +171,7 @@ enum AgentConfigAxes {
     /// Search is not a nicety here: OpenAI alone publishes 176 models through
     /// the five catalogs, so an unfiltered list is unusable. An empty xAI query
     /// leads with Grok Build's native rows; each group retains catalog order.
+    /// Other providers keep catalog order for an empty query.
     static func modelOptions(
         provider: String?,
         query: String,

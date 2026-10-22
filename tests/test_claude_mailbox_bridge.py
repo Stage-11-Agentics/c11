@@ -71,6 +71,8 @@ class BridgeTests(unittest.TestCase):
         self.workers = []
 
     def tearDown(self):
+        for worker in self.workers:
+            worker.join(timeout=3)
         self.app.close()
         self.inbox.close()
         for process in [self.process, self.harness]:
@@ -128,12 +130,14 @@ class BridgeTests(unittest.TestCase):
         def work():
             try:
                 self.inbox.accept()
+                connection = self.inbox.connection
                 self.assertEqual(self.inbox.read(), {"type": "auth", "token": "test-only-inbox-token"})
                 self.assertEqual(self.inbox.read(), {"type": "user", "message": {"role": "user", "content": INVITATION}})
                 if confirm:
                     self.append(session=str(uuid.uuid4()) if wrong_session else None)
-                self.inbox.connection.close()
-                self.inbox.connection = None
+                connection.close()
+                if self.inbox.connection is connection:
+                    self.inbox.connection = None
             except Exception as error:
                 self.errors.append(repr(error))
         worker = threading.Thread(target=work)

@@ -253,7 +253,7 @@ c11_conversation_claim_bg() {
 # without the exported messaging socket/token simply leave typed mail enabled.
 # It shares this launch's settings file; no MCP or tenant configuration is used.
 SESSION_START_HOOKS='{"type":"command","command":"c11 claude-hook session-start","timeout":10}'
-if [[ "$claude_interactive" == "1" ]]; then
+if [[ "$claude_interactive" == "1" && "${C11_CLAUDE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
     SESSION_START_HOOKS+=',{"type":"command","command":"c11 claude-mailbox","timeout":5,"async":true}'
 fi
 

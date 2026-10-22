@@ -39,7 +39,7 @@ def parse_settings_arg(argv: list[str]) -> dict:
     return json.loads(argv[index + 1])
 
 
-def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True, interactive: bool = False) -> tuple[int, list[str], list[str], str, str]:
+def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True, interactive: bool = False, native_disabled: bool = False) -> tuple[int, list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-test-") as td:
         tmp = Path(td)
         home = tmp / "home"
@@ -111,6 +111,7 @@ exit 0
         env["FAKE_CMUX_LOG"] = str(cmux_log)
         env["FAKE_CMUX_PING_OK"] = "1" if socket_state == "live" else "0"
         env["CLAUDECODE"] = "nested-session-sentinel"
+        env["C11_CLAUDE_NATIVE_MAIL_DISABLED"] = "1" if native_disabled else "0"
 
         terminal = pty.openpty() if interactive else None
         try:
@@ -280,6 +281,11 @@ def test_native_inbox_hook_is_interactive_only(failures: list[str]) -> None:
         expect(not hooks, f"noninteractive/passthrough launch gained inbox hook: {arguments}", failures)
     hooks, _ = native_hooks(["hello"], interactive=False)
     expect(not hooks, "piped launch gained an inbox hook", failures)
+    code, forwarded, _, stderr, _ = run_wrapper(socket_state="live", argv=["hello"], interactive=True, native_disabled=True)
+    settings = parse_settings_arg(forwarded).get("hooks", {})
+    expect(code == 0 and "Stop" in settings, f"native diagnostic opt-out changed lifecycle hooks: {stderr}", failures)
+    expect(not any(h["command"] == "c11 claude-mailbox" for group in settings.get("SessionStart", []) for h in group["hooks"]),
+           "native diagnostic opt-out still installed the bridge", failures)
 
 
 def main() -> int:

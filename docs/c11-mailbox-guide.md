@@ -304,8 +304,8 @@ The initial success returns
 `subscription_id`; subsequent JSONL frames are `{type:"deliver", delivery_id,
 text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
 Only positive in-harness acceptance may produce `accepted`. Pi uses
-`route:"pi_extension", can_queue:false`; `codex_queue` and `claude_inbox` are
-reserved consumer route names. Authentication follows the existing socket
+`route:"pi_extension", can_queue:false`; Claude uses `claude_inbox` with the
+same idle-only contract, and `codex_queue` remains reserved. Authentication follows the existing socket
 policy, and IO runs off the main thread. Established idle streams do not poll.
 A new subscriber replaces the previous listener for that panel, including an
 in-process listener replaced by a sidecar. The old stream receives
@@ -339,7 +339,9 @@ The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, 
 
 Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt. Delivery is at-least-once: a late confirmation is logged as `native_late_accept`, so a duplicate invitation is possible.
 
-`--resume` and `/clear` create a fresh subscription bound to that launch's session transcript. The bridge stays armed across repeated wakes and long idle, and exits when its Claude process exits or its c11 connection closes. If c11 restarts while Claude stays running, that session uses typed fallback until its next SessionStart. Print, background, and passthrough commands do not gain the bridge. Other MCP flags remain the operator's own.
+`--resume` and `/clear` create a fresh subscription bound to that launch's session transcript. The bridge stays armed across repeated wakes and long idle, and exits when its Claude process exits or its c11 connection closes. If c11 restarts while Claude stays running, that session uses typed fallback until its next SessionStart. Print, background, and passthrough commands do not gain the bridge. Other MCP flags remain the operator's own. For a typed-route comparison, launch with `C11_CLAUDE_NATIVE_MAIL_DISABLED=1`; lifecycle and Stop-drain hooks remain active.
+
+For a repeatable Claude guest proof, stage `--agents claude` with `sandbox-up.sh`, then run `scripts/check-claude-native-mail.py <run-id>`. It uses real Claude sessions in isolated scratch configuration, checks native draft/repeat, `/clear`, `--resume`, hook-absent fallback, explicit inbound refusal, and unchanged default tenant files. `--disable-native-control` removes the bridge and must fail the native-with-draft assertion. The caller owns the guest and credential cleanup.
 
 ### When the doorbell line arrives
 

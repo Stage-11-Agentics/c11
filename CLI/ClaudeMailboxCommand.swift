@@ -62,18 +62,20 @@ enum ClaudeMailboxCommand {
               reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
 
         while binding.isAlive {
-            // No idle transcript or mailbox polling. The timeout only checks
-            // the harness lifetime, including PID reuse and orphaned hooks.
-            guard let frame = try stream.read(deadline: uptime + 1) else { continue }
-            guard frame["type"] as? String == "deliver",
-                  let deliveryID = frame["delivery_id"] as? String,
-                  UUID(uuidString: deliveryID) != nil else { throw Failure.invalidFrame }
-            guard frame["text"] as? String == ClaudeMailboxAcceptance.invitation else {
-                try stream.write(["type": "rejected", "delivery_id": deliveryID,
-                                  "reason": "unsupported_invitation"], deadline: uptime + 0.2)
-                continue
+            try autoreleasepool {
+                // No idle transcript or mailbox polling. The timeout only checks
+                // the harness lifetime, including PID reuse and orphaned hooks.
+                guard let frame = try stream.read(deadline: uptime + 1) else { return }
+                guard frame["type"] as? String == "deliver",
+                      let deliveryID = frame["delivery_id"] as? String,
+                      UUID(uuidString: deliveryID) != nil else { throw Failure.invalidFrame }
+                guard frame["text"] as? String == ClaudeMailboxAcceptance.invitation else {
+                    try stream.write(["type": "rejected", "delivery_id": deliveryID,
+                                      "reason": "unsupported_invitation"], deadline: uptime + 0.2)
+                    return
+                }
+                try deliver(binding: binding, stream: stream, deliveryID: deliveryID)
             }
-            try deliver(binding: binding, stream: stream, deliveryID: deliveryID)
         }
     }
 

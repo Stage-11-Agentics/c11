@@ -25,12 +25,14 @@ The Atlas route has two slots with separate per-tag caches: slot 1 is reserved f
 
 GitHub's native CI for main runs on the free GitHub-hosted `macos-15` runner.
 PRs keep the cheap Ubuntu lane. `ci-hourly.yml` ("CI main (macOS)") runs on
-each push to main and by dispatch. One build runs at a time, never cancelled,
-with one pending run that each newer push replaces. An admitted run tests the
-ref's tip at that moment, not its trigger, so every push is followed by a run
-that tests a main containing it. A pass posts a `CI main (macOS)` commit status
+an hourly schedule and by dispatch. One build runs at a time, never cancelled,
+with one pending run that each newer request replaces. An admitted run tests the
+ref's tip at that moment, not its trigger. A pass posts a `CI main (macOS)` commit status
 on the tested commit; a run whose tip already has one skips. A failed tip
-lookup fails the run; a failed green-record lookup builds.
+lookup fails the run; a failed green-record lookup builds. The independent
+Atlas main backstop posts `c11/main-atlas`, shares slot 1 with the PR poller,
+and yields to PR work. See `docs/c11-main-backstop.md` for its gated install
+and lifecycle commands.
 `ci-macos-compat.yml` and `build-ghosttykit.yml` run hourly/manual against main.
 Each heavy workflow command uses
 `scripts/with-build-lock.sh`; the process-scoped Xcode/Zig setup does not install

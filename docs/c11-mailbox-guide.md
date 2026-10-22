@@ -437,6 +437,10 @@ changes every 250 ms because this API has no navigation event. Plugin disposal
 and process exit close the stream. Unexpected c11 connection loss uses the shared
 client's bounded reconnect; a replaced stream stays retired.
 
+OpenCode does not emit `session.created` on resume. Its first real prompt restores
+the lifecycle conversation owner after the SDK confirms a root session, before
+publishing the turn. Child sessions and failed lookups cannot claim that owner.
+
 No tenant configuration is written. An explicit `OPENCODE_TUI_CONFIG`, missing
 plugin support, a noninteractive launch, or `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`
 keeps typed fallback. Both server-config slots being occupied also keeps typed

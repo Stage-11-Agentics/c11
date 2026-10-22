@@ -19,12 +19,13 @@ import { randomUUID } from "node:crypto";
 // The plugin is dependency-free and silently no-ops when c11 is not on
 // PATH or the socket is unavailable (e.g. OpenCode running outside c11).
 
-export const C11NotifyPlugin = async ({ $ }) => {
+export const C11NotifyPlugin = async ({ $, client }) => {
   const loadedKey = Symbol.for("com.stage11.c11.opencode-notify.loaded");
   if (globalThis[loadedKey]) return {};
   globalThis[loadedKey] = true;
 
   const childSessions = new Set();
+  let activeRootSession;
   const c11Bin = process.env.C11_AGENT_HOOK_CLI || "c11";
 
   const c11 = async (args) => {
@@ -175,9 +176,29 @@ export const C11NotifyPlugin = async ({ $ }) => {
     return { eventID, ...delivery };
   };
 
+  const bindRootSession = async (info, nativeEvent) => {
+    const args = ["conversation", "push", "--kind", "opencode", "--id", info.id,
+      "--source", "hook", "--state", "alive"];
+    if (info.directory) args.push("--cwd", info.directory);
+    await c11(args);
+    await append("agent.session.started", nativeEvent, info.id);
+    activeRootSession = info.id;
+  };
+
   return {
     "chat.message": async ({ sessionID }) => {
       if (!sessionID || !childSessions.has(sessionID)) {
+        // Resume does not emit session.created. Before the first prompt in a
+        // different session, verify it is a root and restore the conversation
+        // owner so its lifecycle events can open the ordinary delivery gate.
+        if (sessionID && sessionID !== activeRootSession) {
+          let info;
+          try { info = (await client?.session.get({ path: { id: sessionID } }))?.data; }
+          catch { return; }
+          if (!info || info.id !== sessionID) return;
+          if (info.parentID) { childSessions.add(sessionID); return; }
+          await bindRootSession(info, "chat.message");
+        }
         await append("agent.turn.started", "chat.message", sessionID, {}, "working");
       }
     },
@@ -203,18 +224,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
           // session ids are `ses_` + 26-char base62; the c11 CLI
           // revalidates the grammar before storing.
           if (info?.id && !info.parentID) {
-            const args = [
-              "conversation", "push",
-              "--kind", "opencode",
-              "--id", info.id,
-              "--source", "hook",
-              "--state", "alive",
-            ];
-            if (info.directory) {
-              args.push("--cwd", info.directory);
-            }
-            await c11(args);
-            await append("agent.session.started", "session.created", info.id);
+            await bindRootSession(info, "session.created");
           }
           break;
         }

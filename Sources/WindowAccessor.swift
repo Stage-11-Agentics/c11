@@ -45,8 +45,10 @@ extension WindowAccessor {
 final class WindowObservingView: NSView {
     var onWindow: ((NSWindow) -> Void)?
 
-    // Observes the window only; never the target of a click or drag.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    // Stays out of a panel drag's path to the sidebar drop view.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        DragOverlayRoutingPolicy.isPanelDragInFlight() ? nil : super.hitTest(point)
+    }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)

@@ -217,7 +217,7 @@ with exact counts in accessibility labels and tooltips.
 Use the header menu for Rename, Color, Icon, Pin/Unpin, Ungroup or Delete Group;
 name/icon popovers accept Escape to cancel. New Group is in the sidebar menu.
 Workspace menus offer Move to Group and Ungrouped. Drag onto a header to join,
-onto member edges to position, or onto the Ungrouped lane to leave. Dragging a panel from a panel strip onto a workspace card moves the panel into that workspace. Folder drags
+onto member edges to position, or onto the Ungrouped lane to leave. Dragging a panel from a panel strip onto a workspace card moves the panel into that workspace's focused area; the card turns gold while targeted, and the selected workspace does not change. Folder drags
 reorder folders within their pin segment. Cancelled/invalid drops do not commit.
 These controls organize existing work; deleting a group never closes its members.
 

@@ -393,6 +393,22 @@ enum DragOverlayRoutingPolicy {
         return pasteboardTypes.contains(bonsplitTabTransferType)
     }
 
+    /// True while a panel drag is carrying the pointer. Hit tests call this on
+    /// every event, keystrokes included, so the event type is checked first.
+    /// The drag pasteboard keeps the last drag's types after it ends, so the
+    /// held mouse button is what says a drag is live.
+    @MainActor static func isPanelDragInFlight() -> Bool {
+        switch NSApp.currentEvent?.type {
+        case nil, .leftMouseDragged?, .rightMouseDragged?, .otherMouseDragged?,
+             .mouseMoved?, .cursorUpdate?, .flagsChanged?, .periodic?:
+            break
+        default:
+            return false
+        }
+        guard NSEvent.pressedMouseButtons != 0 else { return false }
+        return hasBonsplitTabTransfer(NSPasteboard(name: .drag).types)
+    }
+
     static func hasSidebarWorkspaceReorder(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
         guard let pasteboardTypes else { return false }
         return pasteboardTypes.contains(sidebarWorkspaceReorderType)
@@ -14808,21 +14824,13 @@ private final class SidebarPanelDropView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isPanelDragInFlight() else { return nil }
+        guard DragOverlayRoutingPolicy.isPanelDragInFlight() else { return nil }
         return super.hitTest(point)
     }
 
-    private func isPanelDragInFlight() -> Bool {
-        // The drag pasteboard keeps the last drag's types after it ends, so
-        // also require the mouse button that is carrying the drag.
-        guard NSEvent.pressedMouseButtons != 0 else { return false }
-        switch NSApp.currentEvent?.type {
-        case nil, .leftMouseDragged?, .rightMouseDragged?, .otherMouseDragged?, .mouseMoved?, .cursorUpdate?:
-            break
-        default:
-            return false
-        }
-        return DragOverlayRoutingPolicy.hasBonsplitTabTransfer(NSPasteboard(name: .drag).types)
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { setTargetWorkspaceId(nil) }
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -14857,14 +14865,24 @@ private final class SidebarPanelDropView: NSView {
 #endif
             return false
         }
+        // The operator stays put, unless the panel is the last one in the
+        // workspace they are on: that workspace closes, so they follow the panel.
+        let source = app.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id)
+        let followsPanel = source.map { source in
+            source.workspaceManager.selectedWorkspaceId == source.workspaceId
+                && source.workspaceManager.workspaces.first { $0.id == source.workspaceId }?.panels.count == 1
+        } ?? false
         let moved = app.moveBonsplitTab(
             bonsplitTabId: transfer.bonsplitTab.id,
             toWorkspace: workspaceId,
-            focus: false,
-            focusWindow: false
+            focus: followsPanel,
+            focusWindow: followsPanel
         )
 #if DEBUG
-        dlog("sidebar.panelDrop.perform moved=\(moved ? 1 : 0) targetWs=\(workspaceId.uuidString.prefix(5))")
+        dlog(
+            "sidebar.panelDrop.perform moved=\(moved ? 1 : 0) targetWs=\(workspaceId.uuidString.prefix(5)) " +
+            "follow=\(followsPanel ? 1 : 0)"
+        )
 #endif
         return moved
     }
@@ -14888,15 +14906,30 @@ private final class SidebarPanelDropView: NSView {
     private var lastLoggedTargetId: UUID?
 #endif
 
+    /// The drag's panel and its workspace, read once per drag session rather
+    /// than on every pointer move.
+    private var currentDrag: (sequence: Int, transfer: BonsplitTabDragPayload.Transfer, sourceWorkspaceId: UUID?)?
+
+    /// Half the sidebar's row spacing, so the target holds across the gap
+    /// between two cards instead of flickering off.
+    private static let rowHitSlop: CGFloat = 2
+
     /// The workspace under the cursor and the drag's panel, or nil when the
     /// drag is foreign or the card is the panel's own workspace.
     private func target(for sender: any NSDraggingInfo) -> (workspaceId: UUID, transfer: BonsplitTabDragPayload.Transfer)? {
-        guard let transfer = BonsplitTabDragPayload.currentTransfer() else { return nil }
+        if currentDrag?.sequence != sender.draggingSequenceNumber {
+            currentDrag = BonsplitTabDragPayload.currentTransfer().map { transfer in
+                let source = AppDelegate.shared?.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id)
+                return (sender.draggingSequenceNumber, transfer, source?.workspaceId)
+            }
+        }
+        guard let drag = currentDrag else { return nil }
         let point = convert(sender.draggingLocation, from: nil)
-        guard let row = rows.first(where: { $0.frame.contains(point) }) else { return nil }
-        let sourceWorkspaceId = AppDelegate.shared?.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id)?.workspaceId
-        guard sourceWorkspaceId != row.workspaceId else { return nil }
-        return (row.workspaceId, transfer)
+        guard let row = rows.first(where: { $0.frame.insetBy(dx: 0, dy: -Self.rowHitSlop).contains(point) }) else {
+            return nil
+        }
+        guard drag.sourceWorkspaceId != row.workspaceId else { return nil }
+        return (row.workspaceId, drag.transfer)
     }
 }
 

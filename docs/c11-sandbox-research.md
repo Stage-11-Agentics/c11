@@ -238,6 +238,22 @@ Then Accessibility already lists `sshd-keygen-wrapper`, `osascript` and `tart-gu
 - The `out` share can serve a stale copy of a file you just replaced. Stage probes under a new directory name and compare the guest `md5` with the host.
 - A relaunched tagged app can open 48 px off the display; place it with System Events (`position {0, 30}`, `size {1024, 680}`) before a probe that checks window bounds.
 - `sandbox_guest_script` and the helpers need `bash`; `zsh` fails on `BASH_SOURCE`.
+- `sandbox-up` launches with `C11_QA_LAUNCH=fresh`, which skips session restore. A restore or resume probe relaunches the guest app itself with `C11_QA_LAUNCH=resume`.
+- Terminals in restored workspaces that are not selected start lazily. A resume typed at restore waits in the panel's queue until the terminal attaches, so read every panel once, wait a few seconds, and read again before judging what it shows. `conversation.resume.decision` events are the oracle for whether a resume fired.
+- A released c11 (1.1.3 from `/Applications`) launched in a guest activates and binds its socket but opens no window, and every command returns `not_ready: Session restoration is still in progress`. For a before/after baseline, build `origin/main` under the seat's own tag instead: both apps then share one bundle id, session file and sentinel, so swapping them in one guest is a real upgrade.
+
+## Crash-resume e2e driver
+
+`scripts/sandbox-resume-e2e/` drives dirty-restart resume end to end in a guest, with no agent credentials: fake `claude`/`codex` binaries receive the resume commands through c11's own wrappers. Run it on the Tart host from a checkout or build source (`C11_SANDBOX_HOST=local`), after `sandbox-up.sh`:
+
+```bash
+D=scripts/sandbox-resume-e2e; A="/Users/admin/c11-sandbox/apps/<run>/<App>.app"
+$D/run.sh <run> setup "$A/Contents/Resources/bin/c11" /tmp/c11-sandbox-<run>.sock "$A" claude=24 codex=6 corpus_claude=15000 corpus_codex=40000 size=16384
+$D/run.sh <run> crash && $D/run.sh <run> relaunch && $D/run.sh <run> collect wait=15 settle=8 > out.json
+$D/summarize.py out.json
+```
+
+`relaunch delay=20` and `relaunch fail=1` use the DEBUG startup-scrape seams; `crash nosave=1` proves a relaunch from what autosave persisted. Measured 2026-10-21 for C11-468 (32 agent panels, 55k-file cold corpus): baseline `origin/main` with 8 s injected latency resumed 0/32, and the fix resumed 31/32 with a 1 ms main-thread seed wait.
 
 ## Agents in the guest
 

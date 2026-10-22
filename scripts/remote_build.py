@@ -2,6 +2,7 @@
 """SSH transport for a self-contained worktree snapshot and existing c11 build scripts."""
 import argparse
 import contextlib
+from datetime import datetime
 import fcntl
 import hashlib
 import importlib.util
@@ -293,6 +294,7 @@ def observe_test_phase(process, log_path):
     started = None
     finished = None
     position = 0
+    pending = ""
     start_markers = ("Test Suite 'All tests' started at", "Testing started")
     end_markers = (
         "Test Suite 'All tests' passed at",
@@ -303,17 +305,19 @@ def observe_test_phase(process, log_path):
     with log_path.open("r", encoding="utf-8", errors="replace") as log:
         while process.poll() is None:
             log.seek(position)
-            chunk = log.read()
+            chunk = pending + log.read()
             position = log.tell()
+            lines = chunk.splitlines(keepends=True)
+            pending = lines.pop() if lines and not lines[-1].endswith(("\n", "\r")) else ""
             observed_at = time.monotonic()
-            for line in chunk.splitlines():
+            for line in lines:
                 if started is None and any(marker in line for marker in start_markers):
                     started = observed_at
                 if started is not None and any(marker in line for marker in end_markers):
                     finished = observed_at
             time.sleep(0.05)
         log.seek(position)
-        chunk = log.read()
+        chunk = pending + log.read()
         observed_at = time.monotonic()
         for line in chunk.splitlines():
             if started is None and any(marker in line for marker in start_markers):
@@ -362,7 +366,7 @@ def require_test_success(build_log, source, env):
     raise ValueError("test action did not report a passing xcresult or nonzero test summary")
 
 
-def append_gate_record(manifest, result):
+def append_gate_record(manifest, result, *, started):
     """Append one serialized owner-gate measurement on the build host."""
     record = {
         "tag": manifest["tag"],
@@ -373,6 +377,8 @@ def append_gate_record(manifest, result):
         "test_seconds": result.get("test_seconds", 0.0),
         "result": "success" if result.get("ok") else "failure",
         "invocation_id": manifest["invocation"],
+        "started": started,
+        "test_args": manifest["test_args"],
     }
     path = Path.home() / "c11-builds" / "gates.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -384,6 +390,7 @@ def append_gate_record(manifest, result):
 
 def remote(payload, locked=False):
     invocation_started = time.monotonic()
+    invocation_started_at = datetime.now().astimezone().isoformat()
     manifest = json.loads((payload / "identity.json").read_text())
     base = Path.home() / "c11-builds" / manifest["slug"]
     artifacts = base / "artifacts" / manifest["invocation"]
@@ -420,7 +427,7 @@ def remote(payload, locked=False):
         except OSError:
             pass
         try:
-            append_gate_record(manifest, result)
+            append_gate_record(manifest, result, started=invocation_started_at)
         except OSError as error:
             # Measurement must never change the app or test result.
             print(f"[remote-build] could not append gate record: {error}", file=sys.stderr)

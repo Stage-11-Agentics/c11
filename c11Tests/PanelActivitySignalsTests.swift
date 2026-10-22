@@ -325,6 +325,10 @@ final class AppNapActivityCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(recorder.beginCount, 1, "a churn burst should acquire one coalesced activity")
         XCTAssertEqual(recorder.options.count, 1)
+        XCTAssertTrue(
+            recorder.options[0].contains(.userInitiatedAllowingIdleSystemSleep),
+            "agent activity must prevent App Nap while allowing system idle sleep"
+        )
         XCTAssertFalse(
             recorder.options[0].contains(.idleSystemSleepDisabled),
             "agent activity must not disable system idle sleep"

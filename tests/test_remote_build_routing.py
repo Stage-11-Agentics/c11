@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Behavioral transport/overlay/result tests. Run on Atlas; no Xcode required."""
 import argparse
+from datetime import datetime
 import importlib.util
 import json
 import os
@@ -445,6 +446,7 @@ class RoutingTests(unittest.TestCase):
                            "# Parallel xcodebuild output has no Executed N tests summary.\n")
         wrapper.chmod(0o755)
         self.args.mode = "test"
+        self.args.extra = ["-only-testing:c11LogicTests/FixtureTests"]
         manifest = remote.snapshot(self.worktree, self.payload, self.args)
 
         fake = self.base / "tools"
@@ -476,8 +478,10 @@ class RoutingTests(unittest.TestCase):
             "C11_ATLAS_SLOT_POLL_SECONDS": "0.02",
             "C11_BUILD_LOCK_TIMEOUT": "3",
         }
+        started_before = datetime.now().astimezone()
         with patch.dict(os.environ, env):
             self.assertEqual(remote.remote(self.payload), 0)
+        finished_after = datetime.now().astimezone()
 
         artifacts = home / "c11-builds/fixture/artifacts" / manifest["invocation"]
         result = json.loads((artifacts / "result.json").read_text())
@@ -489,7 +493,13 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(set(gate), {
             "tag", "mode", "head", "slot_wait_seconds", "build_seconds",
             "test_seconds", "result", "invocation_id",
+            "started", "test_args",
         })
+        started = datetime.fromisoformat(gate["started"])
+        self.assertIsNotNone(started.utcoffset())
+        self.assertLessEqual(started_before, started)
+        self.assertLessEqual(started, finished_after)
+        self.assertEqual(gate["test_args"], ["-only-testing:c11LogicTests/FixtureTests"])
         self.assertEqual(gate["tag"], "fixture")
         self.assertEqual(gate["mode"], "test")
         self.assertEqual(gate["head"], manifest["head"])
@@ -667,6 +677,31 @@ class QuarantineInventoryTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "duplicate host quarantine selector"):
             remote.read_host_test_quarantine(self.root)
+
+
+class TestPhaseObservationTests(unittest.TestCase):
+    def test_markers_split_between_reads_include_the_final_flush(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "build.log"
+            log.touch()
+            chunks = iter([
+                ("Test Suite 'All te", None),
+                ("sts' started at now\n", None),
+                ("test body\n", None),
+                ("** TEST SUC", None),
+                ("CEEDED **\n", 0),
+            ])
+
+            class Process:
+                def poll(self):
+                    chunk, status = next(chunks)
+                    with log.open("a") as output:
+                        output.write(chunk)
+                    return status
+
+            with patch.object(remote.time, "monotonic", side_effect=[10, 11, 12, 13, 14]), \
+                    patch.object(remote.time, "sleep"):
+                self.assertEqual(remote.observe_test_phase(Process(), log), 3.0)
 
 
 if __name__ == "__main__":

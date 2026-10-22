@@ -8,6 +8,59 @@ import Foundation
 #endif
 
 final class CapabilityFeaturesTests: XCTestCase {
+    @MainActor
+    func testWhitespaceWrappedCapabilitiesKeepsSocketWorkerRouting() throws {
+        let controller = TerminalController.makeForTesting()
+        for whitespace in [" ", "\t", "\r\n"] {
+            let reply = try workerReply(
+                controller,
+                command: whitespace + #"{"id":463,"method":"system.capabilities","params":{}}"# + whitespace
+            )
+            let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+            XCTAssertEqual(envelope["id"] as? Int, 463)
+            XCTAssertEqual(envelope["ok"] as? Bool, true)
+            XCTAssertNotNil((envelope["result"] as? [String: Any])?["methods"])
+        }
+    }
+
+    @MainActor
+    func testCapabilitiesTracksAccessModeChangesOnTheWorker() throws {
+        let controller = TerminalController.makeForTesting()
+        // Exercise the same property writer used by start() and listener restarts,
+        // without opening a listener or constructing a workspace graph.
+        for mode in [SocketControlMode.password, .allowAll, .c11Only] {
+            controller.accessMode = mode
+            let reply = try workerReply(
+                controller,
+                command: #"{"id":463,"method":"system.capabilities","params":{}}"#
+            )
+            let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+            let result = try XCTUnwrap(envelope["result"] as? [String: Any])
+            XCTAssertEqual(result["access_mode"] as? String, mode.rawValue)
+            XCTAssertEqual(result["access_mode"] as? String, controller.accessMode.rawValue)
+        }
+    }
+
+    @MainActor
+    private func workerReply(_ controller: TerminalController, command: String) throws -> String {
+        let replies = LockedSocketReplies()
+        let finished = DispatchSemaphore(value: 0)
+        DispatchQueue(label: "c11-463-capability-worker").async {
+            replies.store("response", controller.processCommandUsingSocketExecutionPolicy(command))
+            finished.signal()
+        }
+        // Hold main so a successful response proves the real policy router
+        // kept the command on its worker. Always join before leaving the test.
+        let completedOffMain = finished.wait(timeout: .now() + .seconds(1)) == .success
+        if !completedOffMain {
+            while finished.wait(timeout: .now()) != .success {
+                _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            }
+        }
+        XCTAssertTrue(completedOffMain, "capabilities must finish while main is stalled")
+        return try XCTUnwrap(replies.snapshot()["response"])
+    }
+
     func testCurrentAdvertisesBrowserProfilesFeedAsksAndTerminalInputState() {
         let featureIDs = Set(CapabilityFeatures.current.payload.compactMap { $0["id"] as? String })
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.browserProfiles.rawValue))

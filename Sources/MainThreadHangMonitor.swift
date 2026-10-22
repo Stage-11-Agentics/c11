@@ -104,7 +104,7 @@ enum MainThreadHangSignature {
 
     /// Main parked at the top of the app's **outermost** event loop. Named
     /// because the reporting path treats it differently from every other cause:
-    /// it is a late heartbeat, not a wedged thread.
+    /// short episodes are late heartbeats; long ones need investigation.
     ///
     /// The `-[NSApplication run]` requirement in `cause` is what makes that
     /// claim true. Without it the bucket also swallows every *nested* run loop
@@ -231,7 +231,7 @@ enum MainThreadHangSignature {
 ///
 /// Split out from `MainThreadHangMonitor` so the stall/recovery state machine
 /// can be unit-tested with injected timestamps — no real threads, no wall clock.
-/// `evaluate(nowUptime:lastAckUptime:)` is called once per watchdog tick and
+/// `evaluate(nowUptime:pingPostedUptime:lastAckUptime:)` is called once per watchdog tick and
 /// returns what the live monitor should do.
 struct MainThreadHangDetector {
     /// A stall must persist at least this long before it counts as a hang worth
@@ -263,15 +263,19 @@ struct MainThreadHangDetector {
     /// Drive the state machine one tick.
     /// - Parameters:
     ///   - nowUptime: current `ProcessInfo.processInfo.systemUptime`.
-    ///   - lastAckUptime: uptime at which the main thread last acknowledged a
-    ///     heartbeat. While main is wedged this stops advancing, so the gap grows.
-    mutating func evaluate(nowUptime: Double, lastAckUptime: Double) -> Decision {
-        let gapMs = max(0, (nowUptime - lastAckUptime) * 1000.0)
+    ///   - pingPostedUptime: when the outstanding ping was posted, or nil once
+    ///     acknowledged. Time when the watchdog posted no ping is never a stall.
+    ///   - lastAckUptime: used only to end an episode at main's actual reply,
+    ///     even if the watchdog does not get CPU again until much later.
+    mutating func evaluate(
+        nowUptime: Double, pingPostedUptime: Double?, lastAckUptime: Double
+    ) -> Decision {
+        let gapMs = pingPostedUptime.map { max(0, (nowUptime - $0) * 1000.0) } ?? 0
 
         if gapMs >= stallThresholdMs {
             if !inEpisode {
                 inEpisode = true
-                episodeStartUptime = lastAckUptime
+                episodeStartUptime = pingPostedUptime!
                 lastCaptureUptime = nowUptime
                 return .capture(gapMs: gapMs, recapture: false)
             }
@@ -284,7 +288,7 @@ struct MainThreadHangDetector {
 
         if inEpisode {
             inEpisode = false
-            let durationMs = max(0, (nowUptime - episodeStartUptime) * 1000.0)
+            let durationMs = max(0, (lastAckUptime - episodeStartUptime) * 1000.0)
             return .recovered(durationMs: durationMs)
         }
         return .none
@@ -292,6 +296,65 @@ struct MainThreadHangDetector {
 
     /// Test-only introspection into episode state.
     var isInEpisode: Bool { inEpisode }
+}
+
+/// Watchdog-thread-only rate limiter. A starving watchdog can wake late on
+/// every tick; preserve a count and maximum without writing a line per wakeup.
+struct MainThreadWatchdogLateness {
+    private var lastLogUptime: Double?
+    private var count = 0
+    private var maximumMs: Double = 0
+
+    mutating func record(nowUptime: Double, lateMs: Double) -> String? {
+        guard lateMs > 1000 else { return nil }
+        count += 1
+        maximumMs = max(maximumMs, lateMs)
+        if let lastLogUptime, nowUptime - lastLogUptime < 60 { return nil }
+        let line = "watchdog.late lateMs=\(Int(lateMs)) count=\(count) maxLateMs=\(Int(maximumMs))"
+        lastLogUptime = nowUptime
+        count = 0
+        maximumMs = 0
+        return line
+    }
+}
+
+/// Everything with main suspended runs at interactive QoS. The buffer borrow
+/// and all closure construction happen before this call. No allocation, logging
+/// or symbolication is permitted in `read`; the production reader is the C
+/// unwinder. Operations are injectable so failure exits exercise this same scope.
+enum MainThreadHangCapture {
+    static func capture(
+        thread: thread_t,
+        buffer: UnsafeMutableBufferPointer<UInt>,
+        suspend: (thread_t) -> kern_return_t = thread_suspend,
+        resume: (thread_t) -> kern_return_t = thread_resume,
+        read: (thread_t, UnsafeMutablePointer<UInt>?, Int32) -> Int32 = c11_capture_thread_backtrace
+    ) -> Int {
+        // Failure to promote must never lead to suspending main at background QoS.
+        guard pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) == 0 else { return -2 }
+        defer { pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0) }
+        guard suspend(thread) == KERN_SUCCESS else { return -1 }
+        // LIFO: main resumes before the watchdog gives up its priority, even
+        // when thread_get_state fails and the reader returns zero frames.
+        defer { _ = resume(thread) }
+        return Int(read(thread, buffer.baseAddress, Int32(buffer.count)))
+    }
+}
+
+/// One report per episode. Idle stacks only qualify after 30 seconds; ordinary
+/// hangs retain the existing five-second threshold. Recovery uses the same gate
+/// so a 31-second episode ending between captures is not lost or sent twice.
+struct MainThreadHangReportGate {
+    private(set) var reported = false
+
+    mutating func shouldReport(durationMs: Double, cause: String) -> Bool {
+        guard !reported else { return false }
+        let eligible = cause == MainThreadHangSignature.runLoopIdleCause
+            ? durationMs > 30_000 : durationMs >= 5_000
+        guard eligible else { return false }
+        reported = true
+        return true
+    }
 }
 
 /// Whether a human was in a position to see a stall.
@@ -327,12 +390,13 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     private let tickIntervalMs: Double = 250
     private let maxFrames = 96
-    /// A stall must reach this before it is worth an outbound Sentry event.
-    /// Detection (and the local log) still start at the detector's 2s threshold.
-    private let sentryReportThresholdMs: Double = 5000
     private var detector = MainThreadHangDetector()
     /// Watchdog-thread-only: has this episode already produced a Sentry event?
-    private var reportedCurrentEpisode = false
+    private var reportGate = MainThreadHangReportGate()
+    /// Retain an idle capture until recovery so the >30s rule also covers a
+    /// recovery between recaptures. Allocated only after main has resumed.
+    private var idleCapture: (stack: [String], signature: MainThreadHangDescriptor, visibility: AppVisibility)?
+    private var lateness = MainThreadWatchdogLateness()
     /// Watchdog-thread-only: cross-episode memory, so a run of short stalls
     /// sharing one cause is reported before the wedge it predicts arrives.
     private var precursorTracker = HangPrecursorTracker()
@@ -342,7 +406,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     private let lock = NSLock()
     private var lastAckUptime: TimeInterval = 0
-    private var pingOutstanding = false
+    private var pingPostedUptime: TimeInterval?
     /// Written on main from AppKit notifications, read by the watchdog thread.
     private var visibility: AppVisibility = .unwatched
 
@@ -444,21 +508,44 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     private func runLoop() {
         let tick = tickIntervalMs / 1000.0
+        #if DEBUG
+        // Explicit test launch only. A normal Debug launch and every Release
+        // launch ignore this seam. Delay tick two so main first acks a real ping.
+        let env = ProcessInfo.processInfo.environment
+        var oversleep = env["C11_HANG_TEST_OVERSLEEP_SECONDS"].flatMap(Double.init) ?? 0
+        if env["C11_HANG_TESTING"] != "1" || !oversleep.isFinite || !(1...300).contains(oversleep) {
+            oversleep = 0
+        }
+        var ticks = 0
+        #endif
         while true {
+            let expectedWake = ProcessInfo.processInfo.systemUptime + tick
             Thread.sleep(forTimeInterval: tick)
+            #if DEBUG
+            ticks += 1
+            if ticks == 2, oversleep > 0 { Thread.sleep(forTimeInterval: oversleep) }
+            #endif
             // This thread never exits, so its root pool never drains; each hang
             // capture symbolicates and writes the log from here (C11-211).
             autoreleasepool {
+                let wake = ProcessInfo.processInfo.systemUptime
+                let lateMs = max(0, (wake - expectedWake) * 1000)
+                if let line = lateness.record(nowUptime: wake, lateMs: lateMs) {
+                    appendToLog("=== c11 \(line) \(Self.timestamp()) pid=\(getpid()) ===\n")
+                }
                 sendHeartbeat()
 
                 let now = ProcessInfo.processInfo.systemUptime
-                lock.lock(); let ack = lastAckUptime; lock.unlock()
+                lock.lock()
+                let ping = pingPostedUptime
+                let ack = lastAckUptime
+                lock.unlock()
 
-                switch detector.evaluate(nowUptime: now, lastAckUptime: ack) {
+                switch detector.evaluate(nowUptime: now, pingPostedUptime: ping, lastAckUptime: ack) {
                 case .none:
                     break
                 case .capture(let gapMs, let recapture):
-                    handleHang(gapMs: gapMs, recapture: recapture)
+                    handleHang(gapMs: gapMs, recapture: recapture, watchdogLateMs: lateMs)
                 case .recovered(let durationMs):
                     handleRecovery(durationMs: durationMs)
                 }
@@ -467,12 +554,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     }
 
     /// Post a heartbeat the main thread will acknowledge. While main is wedged the
-    /// previous ping stays queued (`pingOutstanding`), so we stop posting new ones
-    /// and `lastAckUptime` simply stops advancing — exactly the signal we want.
+    /// previous ping's posting time stays fixed. When the watchdog oversleeps
+    /// after an ack, its next ping starts at age zero, not at the old ack time.
     private func sendHeartbeat() {
         lock.lock()
-        if pingOutstanding { lock.unlock(); return }
-        pingOutstanding = true
+        if pingPostedUptime != nil { lock.unlock(); return }
+        pingPostedUptime = ProcessInfo.processInfo.systemUptime
         lock.unlock()
 
         DispatchQueue.main.async { [weak self] in
@@ -480,16 +567,17 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             let now = ProcessInfo.processInfo.systemUptime
             self.lock.lock()
             self.lastAckUptime = now
-            self.pingOutstanding = false
+            self.pingPostedUptime = nil
             self.lock.unlock()
         }
     }
 
     // MARK: Hang handling
 
-    private func handleHang(gapMs: Double, recapture: Bool) {
+    private func handleHang(gapMs: Double, recapture: Bool, watchdogLateMs: Double) {
         if !recapture {
-            reportedCurrentEpisode = false
+            reportGate = MainThreadHangReportGate()
+            idleCapture = nil
             currentEpisodeSignature = nil
         }
         let stack = captureMainBacktrace()
@@ -510,13 +598,17 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         if !recapture { currentEpisodeSignature = signature }
         lock.lock(); let visibility = self.visibility; lock.unlock()
 
+        if signature.cause == MainThreadHangSignature.runLoopIdleCause {
+            idleCapture = (stack, signature, visibility)
+        }
+
         var lines: [String] = []
         // The header carries the classification so a forensic pass over months of
         // log does not have to re-derive it from the frames.
         lines.append(
             "=== c11 \(kind) \(Self.timestamp()) stalledMs=\(Int(gapMs)) pid=\(getpid()) "
                 + "cause=\(signature.label) active=\(visibility.appIsActive ? 1 : 0) "
-                + "visible=\(visibility.hasVisibleWindow ? 1 : 0) ==="
+                + "visible=\(visibility.hasVisibleWindow ? 1 : 0) watchdogLateMs=\(Int(watchdogLateMs)) ==="
         )
         if stack.isEmpty {
             lines.append("  <no backtrace captured>")
@@ -538,7 +630,14 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     }
 
     private func handleRecovery(durationMs: Double) {
-        reportedCurrentEpisode = false
+        if let idleCapture {
+            reportHangToSentry(
+                gapMs: durationMs, recapture: false, stack: idleCapture.stack,
+                signature: idleCapture.signature, visibility: idleCapture.visibility
+            )
+        }
+        idleCapture = nil
+        reportGate = MainThreadHangReportGate()
         let dropped = SentryEventBudgetGate.shared.dropped
         // `hang.end` closes an episode, so it is the cheapest place to rotate a
         // log that has grown past the soft cap without splitting a timeline.
@@ -637,13 +736,11 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         // lock: if main is suspended while holding (e.g.) the malloc lock, any
         // allocation here would block forever and wedge the process. The buffer
         // is preallocated; the C unwinder only reads memory via mach_vm calls.
-        guard thread_suspend(mainThread) == KERN_SUCCESS else {
-            return ["<thread_suspend failed>"]
+        let frameCount = frameBuffer.withUnsafeMutableBufferPointer { buffer in
+            MainThreadHangCapture.capture(thread: mainThread, buffer: buffer)
         }
-        let frameCount = frameBuffer.withUnsafeMutableBufferPointer { buffer -> Int in
-            Int(c11_capture_thread_backtrace(mainThread, buffer.baseAddress!, Int32(maxFrames)))
-        }
-        thread_resume(mainThread)
+        if frameCount == -2 { return ["<watchdog QoS promotion failed>"] }
+        if frameCount == -1 { return ["<thread_suspend failed>"] }
 
         guard frameCount > 0 else { return ["<no frames captured>"] }
         // Symbolication (which allocates and can take locks the suspended thread
@@ -677,7 +774,22 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         signature: MainThreadHangDescriptor,
         visibility: AppVisibility
     ) {
-        if shouldReportHangToSentry(gapMs: gapMs, cause: signature.cause) {
+        reportHangToSentry(
+            gapMs: gapMs, recapture: recapture, stack: stack, signature: signature, visibility: visibility
+        )
+        PostHogAnalytics.shared.captureMainThreadHang(
+            stalledMs: gapMs,
+            recapture: recapture,
+            topFrame: stack.first ?? "",
+            cause: signature.label
+        )
+    }
+
+    private func reportHangToSentry(
+        gapMs: Double, recapture: Bool, stack: [String],
+        signature: MainThreadHangDescriptor, visibility: AppVisibility
+    ) {
+        if reportGate.shouldReport(durationMs: gapMs, cause: signature.cause) {
             let top = MainThreadHangSignature
                 .reportedStack(stack, ownModule: ProcessInfo.processInfo.processName)
                 .joined(separator: "\n")
@@ -706,58 +818,10 @@ final class MainThreadHangMonitor: @unchecked Sendable {
                 tags: tags
             )
         }
-        PostHogAnalytics.shared.captureMainThreadHang(
-            stalledMs: gapMs,
-            recapture: recapture,
-            topFrame: stack.first ?? "",
-            cause: signature.label
-        )
     }
 
-    /// At most one Sentry event per hang episode, and only for episodes that
-    /// actually reach `sentryReportThresholdMs`.
-    ///
-    /// The local hang log still records every capture — it never leaves the
-    /// machine and it is where a full episode timeline is read. Sentry only
-    /// needs to know the episode happened, to whom, and with what stack:
-    /// re-sending the same wedge every 5s for the length of a beachball was
-    /// ~98% of c11's entire event volume and bought nothing, because Sentry
-    /// groups them into a single issue anyway.
-    ///
-    /// This is a shape filter, not the budget. The outbound ceiling is applied
-    /// once, in `beforeSend`, which classifies the event by its `category` tag;
-    /// charging it here as well would spend two slots of the global allowance
-    /// on every hang report.
-    ///
-    /// `runloop-idle` never reports, whoever was looking. The stack it is
-    /// classified from is main sitting in `-[NSApplication run]` → `_DPSNextEvent`,
-    /// blocked on the event port: an app *ready to dequeue the next user event*.
-    /// Whatever delayed the heartbeat (the background-QoS watchdog thread losing
-    /// the CPU, App Nap, timer coalescing), it was not main being unavailable to
-    /// anyone, so "was the window watched" does not change the verdict.
-    ///
-    /// It is also unactionable by construction: the capture carries no frame of
-    /// ours below `main`, no phase and no culprit, and every event is byte-for-byte
-    /// the same 21 frames. An issue that can only ever say "main was idle" cannot
-    /// drive a fix, and under the global `SentryEventBudgetGate` ceiling it spends
-    /// budget a real wedge needed. It was **46.5% of 5,311 local episodes**, the
-    /// single largest slice of what made the aggregate hang issue c11's
-    /// highest-volume report.
-    ///
-    /// The population is not lost: every capture still lands in the local hang log
-    /// and in PostHog, which carries the same `cause` label.
-    ///
-    /// Called only from the watchdog thread, which captures serially.
-    private func shouldReportHangToSentry(gapMs: Double, cause: String) -> Bool {
-        guard gapMs >= sentryReportThresholdMs else { return false }
-        guard Self.isWorthReporting(cause: cause) else { return false }
-        guard !reportedCurrentEpisode else { return false }
-        reportedCurrentEpisode = true
-        return true
-    }
-
-    /// Pure half of the rule above, so it can be tested without a watchdog.
-    /// Every cause but `runloop-idle` reports.
+    /// Precursor eligibility is unchanged: repeated short idle heartbeats do
+    /// not predict a wedge. Long idle episodes use MainThreadHangReportGate.
     static func isWorthReporting(cause: String) -> Bool {
         cause != MainThreadHangSignature.runLoopIdleCause
     }

@@ -750,6 +750,256 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         XCTAssertEqual(result.stderr, "Error: --panel requires a value\n")
     }
 
+    func testUnknownFlagsFailBeforeSocketDiscovery() {
+        let cases: [[String]] = [
+            ["new-workspace", "--title", "C11-334 probe", "--not-a-real-flag"],
+            ["new-split", "right", "--not-a-real-flag"],
+            ["launch-agent", "--type", "codex", "--not-a-real-flag"],
+            ["browser", "open", "https://example.invalid", "--not-a-real-flag"],
+            ["browser", "open", "https://example.invalid", "--selector", ".ready"],
+            ["guide", "--not-a-real-flag"],
+            ["usage", "--not-a-real-flag"],
+            ["report", "--not-a-real-flag"],
+            ["journal", "query", "--not-a-real-flag"],
+            ["agent-event", "append", "--not-a-real-flag"],
+            ["themes", "clear", "--json"],
+            ["model-costs", "rm", "claude-opus-4-7", "--in", "1"],
+            ["history", "back", "--limit", "5"],
+            ["history", "--limit", "5", "back"],
+            ["feed", "list", "--workspace", "workspace:1"],
+            ["feed", "open", "panel:1", "--scope", "all"],
+            ["workspace", "recents", "unpin", "~/Projects/site", "--at", "1"],
+            ["state", "save", "--scrollback", "--", "--bogus"],
+            ["__tmux-compat", "new-window", "--not-a-real-flag"],
+            ["claude-mailbox", "--not-a-real-flag"],
+        ]
+
+        for command in cases {
+            guard let result = runCLI(command) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(command)")
+            XCTAssertEqual(result.stdout, "", "\(command)")
+            XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+            XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("socket not found"), result.stderr)
+        }
+    }
+
+    func testUnknownCreateFlagDoesNotReachMutationHandler() {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let result = runCLI(
+            ["new-split", "right", "--not-a-real-flag"],
+            socketPath: socket.path
+        ) else { return }
+        XCTAssertNotEqual(result.status, 0, result.stderr)
+        XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertFalse(
+            socket.requests.contains(where: { $0["method"] as? String == "panel.split" }),
+            "unknown option reached panel.split: \(socket.requests)"
+        )
+    }
+
+    func testKnownFlagsAndHiddenAliasesStillReachTheirHandlers() {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let cases: [(command: [String], method: String)] = [
+            (["new-workspace", "--title", "C11-334 documented flag"], "workspace.create"),
+            (["focus-tab", "--tab", panelID], "panel.focus"),
+            (["focus-tab", "--surface", panelID], "panel.focus"),
+            (["focus-area", "--pane", panelID], "area.focus"),
+            (["conversation", "list", "--tab", panelID], "conversation.list"),
+            (["workspace-color", "set", "--workspace", "workspace:1", "teal"], "workspace.set_custom_color"),
+            (["panel-color", "get", "--workspace", "workspace:1", "--panel", panelID], "panel.list"),
+            (["feed", "list", "--scope", "all", "--json"], "feed.list"),
+            (["workspace", "recents", "list", "--pinned", "--json"], "workspace.recents.list"),
+            (["history", "--limit", "5", "--json"], "history.list"),
+            (["app", "restart", "--no-resume"], "app.restart"),
+        ]
+
+        for item in cases {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(item.command, socketPath: socket.path) else { return }
+            XCTAssertEqual(result.status, 0, "\(item.command): \(result.stderr)")
+            XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(item.command)")
+            XCTAssertTrue(
+                socket.requests.contains(where: { $0["method"] as? String == item.method }),
+                "Expected \(item.method) for \(item.command), got \(socket.requests)"
+            )
+        }
+    }
+
+    func testBrowserScriptAndStyleOptionsReachHandlers() {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let cases: [([String], String)] = [
+            (["browser", "--panel", panelID, "addscript", "--script", "console.log(1)"], "browser.addscript"),
+            (["browser", "--panel", panelID, "addstyle", "--css", "body{}"], "browser.addstyle"),
+        ]
+
+        for (command, method) in cases {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(command, socketPath: socket.path) else { return }
+            XCTAssertEqual(result.status, 0, "\(command): \(result.stderr)")
+            XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(command)")
+            XCTAssertTrue(
+                socket.requests.contains(where: { $0["method"] as? String == method }),
+                "Expected \(method) for \(command), got \(socket.requests)"
+            )
+        }
+    }
+
+    func testPreviouslyAcceptedFlagsAcrossSpecializedParsersPassPreflight() throws {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let laterErrorsAreNotPreflightRejections: [[String]] = [
+            ["feed", "open", "--tab", panelID, "--workspace", "workspace:1"],
+            ["navigate", "https://example.invalid", "--allow-insecure-http"],
+            ["browser-reload", "--snapshot-after"],
+            ["mailbox", "inbox-dir", "--tab", panelID],
+            ["agent-hook", "working", "--native-event", "agent_start"],
+        ]
+        for command in laterErrorsAreNotPreflightRejections {
+            guard let result = runCLI(command) else { return }
+            XCTAssertNotEqual(result.status, 0, "These probes need runtime state: \(command)")
+            XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), "\(command): \(result.stderr)")
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-cli-preflight-\(UUID().uuidString)", isDirectory: true)
+        let state = root.appendingPathComponent("state", isDirectory: true)
+        let claude = root.appendingPathComponent("claude", isDirectory: true)
+        let codex = root.appendingPathComponent("codex", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        for command in [
+            ["usage", "--journal", state.appendingPathComponent("journal.sqlite3").path,
+             "--state-root", state.path, "--claude-root", claude.path, "--codex-root", codex.path,
+             "--since", "all", "--utc", "--json"],
+            ["report", "--state-root", state.path, "--claude-root", claude.path, "--codex-root", codex.path,
+             "--instance", "test-instance", "--by", "panel", "--format", "json"],
+        ] {
+            guard let result = runCLI(command) else { return }
+            XCTAssertEqual(result.status, 0, "\(command): \(result.stderr)")
+            XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), "\(command): \(result.stderr)")
+        }
+
+        guard let skillPath = runCLI(["skill", "path", "--json"]) else { return }
+        XCTAssertEqual(skillPath.status, 0, skillPath.stderr)
+        XCTAssertTrue(skillPath.stdout.contains("\"path\""), skillPath.stdout)
+
+        guard let journalQuery = runCLI([
+            "journal", "query", "--bundle-id", "com.stage11.c11", "--agent", "codex",
+            "--model", "codex", "--workspace", "00000000-0000-0000-0000-000000000001",
+            "--from", "0", "--to", "1", "--stall-ms", "1000",
+        ]) else { return }
+        XCTAssertFalse(journalQuery.stderr.localizedCaseInsensitiveContains("unknown option"), journalQuery.stderr)
+        XCTAssertFalse(journalQuery.stderr.localizedCaseInsensitiveContains("unknown flag"), journalQuery.stderr)
+
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex", isDirectory: true), withIntermediateDirectories: true)
+        guard let skillInstall = runCLI(
+            ["skill", "install", "--tool", "codex", "--home", home.path, "--dry-run"],
+            environmentOverrides: ["HOME": home.path]
+        ) else { return }
+        XCTAssertEqual(skillInstall.status, 0, skillInstall.stderr)
+        XCTAssertFalse(skillInstall.stderr.localizedCaseInsensitiveContains("unknown flag"), skillInstall.stderr)
+    }
+
+    func testClaudeTeamsForwardsChildFlagsWithoutC11Preflight() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-cli-claude-teams-\(UUID().uuidString)", isDirectory: true)
+        let bin = root.appendingPathComponent("bin", isDirectory: true)
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let received = root.appendingPathComponent("claude-args.txt")
+        let claude = bin.appendingPathComponent("claude")
+        try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$C11_CLI_TEST_CLAUDE_ARGS\"\nexit 17\n"
+            .write(to: claude, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claude.path)
+
+        guard let result = runCLI(
+            ["claude-teams", "--continue", "--model", "sonnet"],
+            environmentOverrides: [
+                "PATH": bin.path,
+                "HOME": home.path,
+                "C11_CLI_TEST_CLAUDE_ARGS": received.path,
+            ]
+        ) else { return }
+        XCTAssertEqual(result.status, 17, result.stderr)
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertEqual(
+            try String(contentsOf: received, encoding: .utf8),
+            "--teammate-mode\nauto\n--continue\n--model\nsonnet\n"
+        )
+    }
+
+    func testCustomFlagSpecsRecognizeHiddenAliasesBeforeLaterUnknownFlags() {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let cases: [([String], String)] = [
+            (["conversation", "list", "--tab", panelID, "--not-a-real-flag"], "--not-a-real-flag"),
+            (["default-agent", "launch", "--agent", "codex", "--in-tab", panelID, "--not-a-real-flag"], "--not-a-real-flag"),
+        ]
+
+        for (command, expectedFlag) in cases {
+            guard let result = runCLI(command) else { return }
+            XCTAssertEqual(result.status, 1, "\(command): \(result.stderr)")
+            XCTAssertTrue(result.stderr.contains("unknown flag '\(expectedFlag)'"), result.stderr)
+            XCTAssertFalse(result.stderr.contains("unknown flag '--tab'"), result.stderr)
+            XCTAssertFalse(result.stderr.contains("unknown flag '--in-tab'"), result.stderr)
+        }
+    }
+
+    func testTmuxCompatValueFlagPassesPreflight() {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let result = runCLI(
+            ["__tmux-compat", "new-window", "-n", "C11-334 probe"],
+            socketPath: socket.path
+        ) else { return }
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving tmux compatibility request")
+        XCTAssertTrue(
+            socket.requests.contains(where: { $0["method"] as? String == "workspace.create" }),
+            "Expected tmux new-window to reach workspace.create, got \(socket.requests)"
+        )
+    }
+
+    func testMailboxSendKeepsFlagShapedBodyAfterTerminator() {
+        guard let result = runCLI(["mailbox", "send", "--to", "watcher", "--", "--nope"]) else { return }
+        XCTAssertNotEqual(result.status, 0, "A runtime socket is required to send mailbox content")
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown option"), result.stderr)
+    }
+
+    func testFocusTabRejectsUnknownWorkspaceBeforeFocusMutation() {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let result = runCLI(
+            ["focus-tab", "--tab", socket.panelIDForAssertions, "--workspace", "workspace:9999"],
+            socketPath: socket.path
+        ) else { return }
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.stderr.contains("not_found"), result.stderr)
+        XCTAssertFalse(
+            socket.requests.contains(where: { $0["method"] as? String == "panel.focus" }),
+            "invalid workspace reached panel.focus: \(socket.requests)"
+        )
+    }
+
     private func assertPanelTargetRejected(
         expected: String,
         command: [String],

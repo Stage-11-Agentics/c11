@@ -52,6 +52,8 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 
 > **Panel reads validate explicit targets before defaulting.** On a panel-targeted read, `--panel` (or the hidden aliases `--surface` / `--tab`) needs a value. A flag with no value reports `--panel requires a value`; an explicitly empty value (including `--panel=` with nothing after it) is rejected as `empty_ref` before the command can fall back to the caller's panel. A stale explicit target on `get-metadata`, `get-titlebar-state`, `read-screen`, `read-selection`, or `input-state` returns `not_found` before reading any panel; it never reads the focused panel instead. Omitting the flag keeps that command's documented default. This covers `identify`, `read-screen`, `capture-pane`, `pipe-pane`, `read-selection`, `input-state`, `get-metadata`, `get-titlebar-state`, `family`, `panel-color get`, markdown reads, browser reads including `browser eval`, URL and webview reads, conversation reads, and `mailbox recv` / `mailbox inbox-dir`.
 
+> **CLI options fail closed.** c11 rejects unrecognized flags before socket discovery while preserving documented options and hidden aliases. `claude-teams` passes its remaining options to Claude Code.
+
 ### Title vs description: identity and the live subtitle
 
 - **Title = stable identity.** 2–3 words, role-first, DISTINCT from siblings — make the first word differ; the leading characters are all that survive sidebar truncation. A ticket ID is welcome (`C11-184 Attention`). No `Parent :: Child` chains, no shared prefixes. Rename only when your role or mission changes; check `c11 get-titlebar-state` first.

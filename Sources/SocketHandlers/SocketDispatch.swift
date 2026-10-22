@@ -1755,6 +1755,7 @@ extension TerminalController {
     nonisolated static func agentLaunchBinaryWarning(launchLine: String) -> String? {
         guard let binary = launchLine.split(separator: " ").first.map(String.init),
               !binary.isEmpty else { return nil }
+        guard !isShellBuiltin(binary) else { return nil }
         let fm = FileManager.default
         if binary.contains("/") {
             return fm.isExecutableFile(atPath: (binary as NSString).expandingTildeInPath)
@@ -1777,5 +1778,27 @@ extension TerminalController {
             return nil
         }
         return "binary '\(binary)' not found on the app PATH or common install dirs; the panel's login shell may still resolve it"
+    }
+
+    nonisolated private static func isShellBuiltin(_ name: String) -> Bool {
+        switch name {
+        case ":", "!", ".", "[", "[[", "]]", "{", "}", "time",
+             "alias", "autoload", "bg", "bindkey", "break", "builtin", "bye", "cap", "cd", "chdir",
+             "command", "comparguments", "compcall", "compctl", "compdescribe", "compfiles", "compgroups",
+             "compquote", "comptags", "comptry", "compvalues", "continue", "declare", "dirs", "disable",
+             "disown", "do", "done", "echo", "echotc", "echoti", "elif", "else", "emulate", "enable",
+             "esac", "eval", "exec", "exit", "export", "false", "fc", "fg", "fi", "float", "for",
+             "foreach", "function", "functions", "getcap", "getln", "getopts", "hash", "history", "if",
+             "integer", "jobs", "kill", "let", "limit", "local", "log", "logout", "noglob", "popd",
+             "print", "printf", "pushd", "pwd", "read", "readonly", "rehash", "repeat", "return", "sched",
+             "select", "set", "setopt", "shift", "source", "stat", "suspend", "test", "then",
+             "times", "trap", "true", "ttyctl", "type", "typeset", "ulimit", "umask", "unalias", "unfunction",
+             "unhash", "unlimit", "unset", "unsetopt", "until", "vared", "wait", "while", "whence", "where",
+             "which", "zcompile", "zformat", "zle", "zmodload", "zparseopts", "zprof", "zpty", "zregexparse",
+             "zsocket", "zstyle", "ztcp":
+            return true
+        default:
+            return false
+        }
     }
 }

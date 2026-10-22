@@ -2250,6 +2250,9 @@ struct CMUXCLI {
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
         if command == "claude-mailbox" {
+            if let flag = commandArgs.first(where: { $0.hasPrefix("-") && $0 != "-" }) {
+                throw CLIError(message: String(localized: "cli.command.unknownFlag", defaultValue: "\(command): unknown flag '\(flag)'"))
+            }
             // Internal, launch-scoped hook. Do not run discovery, telemetry,
             // journal capture, or a generic request timeout on this stream.
             // An unavailable hook is silent and leaves typed delivery intact.
@@ -2288,11 +2291,17 @@ struct CMUXCLI {
         // Guide (including its help) is bundled, offline content. Socket
         // discovery probes listeners, so return before resolving any path.
         if command == "guide" {
+            if !commandArgs.contains("--help"), !commandArgs.contains("-h") {
+                try validateKnownCommandFlags(command: command, args: commandArgs)
+            }
             try runGuide(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
         // Offline analytics read local files in this CLI process only, even with the app down.
         if command == "usage" || command == "report" {
+            if !commandArgs.contains("--help"), !commandArgs.contains("-h") {
+                try validateKnownCommandFlags(command: command, args: commandArgs)
+            }
             try ActivityAnalysisCommand.run(command: command, args: commandArgs, json: jsonOutput)
             return
         }
@@ -2327,6 +2336,7 @@ struct CMUXCLI {
         )
         if !hasSubcommandHelp {
             try validatePanelTargetArguments(command: command, args: commandArgs)
+            try validateKnownCommandFlags(command: command, args: commandArgs)
         }
         var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
@@ -3642,7 +3652,12 @@ struct CMUXCLI {
                 throw CLIError(message: "focus-panel requires --panel")
             }
             var params: [String: Any] = [:]
-            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            let wsId: String?
+            if let explicitWorkspace = optionValue(commandArgs, name: "--workspace") {
+                wsId = try resolveWorkspaceId(explicitWorkspace, client: client)
+            } else {
+                wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            }
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelRaw, client: client, workspaceHandle: wsId)
             if let sfId { params["panel_id"] = sfId }
@@ -6488,6 +6503,668 @@ struct CMUXCLI {
             self.literalEvalScriptTailStart = literalEvalScriptTailStart
             self.literalPanelFlagArgumentIndices = literalPanelFlagArgumentIndices
         }
+    }
+
+    /// Command-local accepted options for the pre-connect unknown-flag check.
+    /// The regular command specs come from the command's own help contract;
+    /// parser aliases are expanded from `flagSpellings`, the same table used
+    /// by `parseOption`/`optionValue`. Commands whose help is a family overview
+    /// (browser, config, and a few nested CLI surfaces) provide a leaf spec.
+    private struct CLIFlagPreflightSpec {
+        var flags: Set<String>
+        var valueOptions: Set<String>
+        var literalFlagArgumentIndices: Set<Int>
+        var literalTailStart: Int?
+        var honorsEndOfOptions: Bool
+
+        init(
+            flags: Set<String> = [],
+            valueOptions: Set<String> = [],
+            literalFlagArgumentIndices: Set<Int> = [],
+            literalTailStart: Int? = nil,
+            honorsEndOfOptions: Bool = false
+        ) {
+            self.flags = flags.union(valueOptions)
+            self.valueOptions = valueOptions
+            self.literalFlagArgumentIndices = literalFlagArgumentIndices
+            self.literalTailStart = literalTailStart
+            self.honorsEndOfOptions = honorsEndOfOptions
+        }
+    }
+
+    private func validateKnownCommandFlags(command: String, args: [String]) throws {
+        if command == "__tmux-compat" {
+            try validateClaudeTeamsTmuxFlags(args)
+            return
+        }
+        guard var spec = commandFlagPreflightSpec(command: command, args: args) else { return }
+        for flag in Array(spec.flags) {
+            let spellings = Self.flagSpellings(flag)
+            spec.flags.formUnion(spellings)
+            if spec.valueOptions.contains(flag) { spec.valueOptions.formUnion(spellings) }
+        }
+        var index = 0
+        while index < args.count {
+            if spec.literalFlagArgumentIndices.contains(index)
+                || (spec.literalTailStart.map { index >= $0 } ?? false) {
+                index += 1
+                continue
+            }
+            if args[index] == "--" {
+                if spec.honorsEndOfOptions { return }
+                index += 1
+                continue
+            }
+            let argument = args[index]
+            guard argument.hasPrefix("-"), argument != "-" else {
+                index += 1
+                continue
+            }
+            let equalsIndex = argument.firstIndex(of: "=")
+            let name = equalsIndex.map { String(argument[..<$0]) } ?? argument
+            guard spec.flags.contains(name) else {
+                throw CLIError(message: String(localized: "cli.command.unknownFlag", defaultValue: "\(command): unknown flag '\(name)'"))
+            }
+            if equalsIndex == nil, spec.valueOptions.contains(name), index + 1 < args.count {
+                // Match the CLI's existing permissive value helpers: a token
+                // after a value option is that value even when it starts with
+                // dashes (for example a shell command or a title).
+                index += 2
+            } else {
+                index += 1
+            }
+        }
+    }
+
+    private func commandFlagPreflightSpec(command: String, args: [String]) -> CLIFlagPreflightSpec? {
+        switch command {
+        case "browser":
+            return browserFlagPreflightSpec(args)
+        case "open-browser":
+            return browserFlagPreflightSpec(["open"] + args)
+        case "navigate":
+            return browserFlagPreflightSpec(["navigate"] + args)
+        case "browser-back":
+            return browserFlagPreflightSpec(["back"] + args)
+        case "browser-forward":
+            return browserFlagPreflightSpec(["forward"] + args)
+        case "browser-reload":
+            return browserFlagPreflightSpec(["reload"] + args)
+        case "get-url":
+            return browserFlagPreflightSpec(["get-url"] + args)
+        case "focus-webview":
+            return browserFlagPreflightSpec(["focus-webview"] + args)
+        case "is-webview-focused":
+            return browserFlagPreflightSpec(["is-webview-focused"] + args)
+        case "feed":
+            return feedFlagPreflightSpec(args)
+        case "workspace":
+            if args.first?.lowercased() == "recents" {
+                let recentsArgs = Array(args.dropFirst())
+                return workspaceRecentsFlagPreflightSpec(recentsArgs)
+            }
+            return helpDerivedFlagPreflightSpec(command: command, args: args)
+        case "themes":
+            return themesFlagPreflightSpec(args, allowInherit: false)
+        case "ui":
+            let themeArgs = args.first?.lowercased() == "themes" ? Array(args.dropFirst()) : []
+            return themesFlagPreflightSpec(themeArgs, allowInherit: true)
+        case "workspace-color":
+            return colorFlagPreflightSpec(args, panel: false)
+        case "panel-color":
+            return colorFlagPreflightSpec(args, panel: true)
+        case "history":
+            return historyFlagPreflightSpec(args)
+        case "usage", "report":
+            return activityAnalysisFlagPreflightSpec()
+        case "journal":
+            return journalFlagPreflightSpec(args)
+        case "agent-event":
+            return CLIFlagPreflightSpec(flags: ["--stdin"])
+        case "app":
+            if firstCommandWord(args, valueOptions: []) == "restart" {
+                return CLIFlagPreflightSpec(flags: ["--no-resume", "--json"])
+            }
+            return CLIFlagPreflightSpec()
+        case "skill":
+            return skillFlagPreflightSpec(args)
+        case "agent-hook", "codex-hook":
+            return CLIFlagPreflightSpec(valueOptions: ["--native-event"])
+        case "claude-teams":
+            // This command forwards its remaining argv verbatim to Claude Code.
+            // Those flags belong to the child CLI, not c11's parser.
+            return nil
+        case "terminal-theme":
+            return terminalThemeFlagPreflightSpec(args)
+        case "model-costs":
+            return modelCostsFlagPreflightSpec(args)
+        case "workspace-group":
+            return workspaceGroupFlagPreflightSpec(args)
+        case "markdown":
+            return markdownFlagPreflightSpec(args)
+        case "config":
+            return configFlagPreflightSpec(args)
+        case "default-agent":
+            return defaultAgentFlagPreflightSpec(args)
+        case "conversation":
+            return conversationFlagPreflightSpec(args)
+        case "state":
+            return stateFlagPreflightSpec(args)
+        case "events":
+            return eventsFlagPreflightSpec(args)
+        case "messages":
+            return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
+        case "mailbox":
+            return mailboxFlagPreflightSpec(args)
+        default:
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            if ["send", "send-panel", "paste", "send-key", "send-key-panel", "pipe-pane", "set-buffer", "respawn-pane", "rename-panel", "log", "ssh"].contains(command) {
+                spec.honorsEndOfOptions = true
+            }
+            return spec
+        }
+    }
+
+    private func helpDerivedFlagPreflightSpec(command: String, args: [String]) -> CLIFlagPreflightSpec? {
+        guard let help = subcommandUsage(command, commandArgs: args) else { return nil }
+        let expression = try! NSRegularExpression(
+            pattern: #"(?<![A-Za-z0-9_-])(?:--[A-Za-z0-9][A-Za-z0-9-]*|-[A-Za-z])"#
+        )
+        let acceptedHelpLines = relevantFlagHelpLines(help)
+        let source = acceptedHelpLines as NSString
+        let matches = expression.matches(in: acceptedHelpLines, range: NSRange(location: 0, length: source.length))
+        var flags = Set<String>()
+        var values = Set<String>()
+        for match in matches {
+            let flag = source.substring(with: match.range)
+            flags.insert(flag)
+            let suffixStart = match.range.location + match.range.length
+            let lineEndRange = source.range(of: "\n", range: NSRange(location: suffixStart, length: source.length - suffixStart))
+            let lineEnd = lineEndRange.location == NSNotFound ? source.length : lineEndRange.location
+            let suffix = source.substring(with: NSRange(location: suffixStart, length: lineEnd - suffixStart))
+                .trimmingCharacters(in: .whitespaces)
+            let startsWithPlaceholder = suffix.hasPrefix("<") || suffix.hasPrefix("=<")
+            let hasNamedValue = suffix.range(of: #"^[A-Z][A-Z0-9_-]*="#, options: .regularExpression) != nil
+            if startsWithPlaceholder || hasNamedValue { values.insert(flag) }
+        }
+
+        // Help strings name canonical options. The parser itself accepts every
+        // spelling in a flag alias group, even though those spellings stay out
+        // of public help.
+        for flag in Array(flags) {
+            let spellings = Self.flagSpellings(flag)
+            flags.formUnion(spellings)
+            if values.contains(flag) { values.formUnion(spellings) }
+        }
+        return CLIFlagPreflightSpec(flags: flags, valueOptions: values)
+    }
+
+    private func relevantFlagHelpLines(_ help: String) -> String {
+        var selected: [String] = []
+        var readingUsage = false
+        var readingFlags = false
+        for line in help.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                readingUsage = false
+                readingFlags = false
+                continue
+            }
+            if trimmed.hasPrefix("Usage:") {
+                readingUsage = true
+                readingFlags = false
+                selected.append(line)
+            } else if trimmed == "Flags:" || trimmed.hasPrefix("Flags:") || trimmed.hasPrefix("Options:") {
+                readingUsage = false
+                readingFlags = true
+                selected.append(line)
+            } else if readingUsage || readingFlags {
+                selected.append(line)
+            }
+        }
+        return selected.joined(separator: "\n")
+    }
+
+    private func themesFlagPreflightSpec(_ args: [String], allowInherit: Bool) -> CLIFlagPreflightSpec {
+        switch args.first?.lowercased() {
+        case "get": return CLIFlagPreflightSpec(valueOptions: ["--slot"])
+        case "set": return CLIFlagPreflightSpec(valueOptions: ["--slot"])
+        case "dump": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--color-scheme"])
+        case "inherit" where allowInherit:
+            return CLIFlagPreflightSpec(valueOptions: ["--as"])
+        default: return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func colorFlagPreflightSpec(_ args: [String], panel: Bool) -> CLIFlagPreflightSpec {
+        let workspace: Set<String> = ["--workspace"]
+        let flags: Set<String> = []
+        let values = panel ? workspace.union(["--panel"]) : workspace
+        switch args.first?.lowercased() {
+        case "set", "get", "clear": return CLIFlagPreflightSpec(flags: flags, valueOptions: values)
+        default: return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func historyFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        switch firstCommandWord(args, valueOptions: ["--limit"]) {
+        case "back", "forward": return CLIFlagPreflightSpec(flags: ["--json"])
+        default: return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--limit"])
+        }
+    }
+
+    private func firstCommandWord(_ args: [String], valueOptions: Set<String>) -> String? {
+        var index = 0
+        while index < args.count {
+            let argument = args[index]
+            let equalsIndex = argument.firstIndex(of: "=")
+            let name = equalsIndex.map { String(argument[..<$0]) } ?? argument
+            if valueOptions.contains(name) {
+                index += equalsIndex == nil ? 2 : 1
+                continue
+            }
+            if argument.hasPrefix("-") {
+                index += 1
+                continue
+            }
+            return argument.lowercased()
+        }
+        return nil
+    }
+
+    private func workspaceRecentsFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        switch args.first?.lowercased() {
+        case "list": return CLIFlagPreflightSpec(flags: ["--json", "--pinned"])
+        case "pin": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--at"])
+        case "unpin", "remove": return CLIFlagPreflightSpec(flags: ["--json"])
+        default: return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func feedFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        let verb = firstCommandWord(args, valueOptions: ["--workspace", "--panel", "--scope", "--text", "--by"])
+        switch verb {
+        case "list", "watch":
+            return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--scope"])
+        case "open":
+            return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--workspace", "--panel"])
+        case "answer":
+            return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--workspace", "--panel", "--text", "--by"])
+        default:
+            return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func activityAnalysisFlagPreflightSpec() -> CLIFlagPreflightSpec {
+        CLIFlagPreflightSpec(
+            flags: ["--json", "--utc", "--all-instances"],
+            valueOptions: ["--since", "--until", "--by", "--instance", "--format", "--state-root", "--claude-root", "--codex-root", "--journal"]
+        )
+    }
+
+    private func journalFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        var flags: Set<String> = ["--json"]
+        var values: Set<String> = ["--agent", "--model", "--workspace", "--from", "--to", "--stall-ms", "--bundle-id"]
+        switch args.first?.lowercased() {
+        case "export": values.insert("--output")
+        case "clear": flags.insert("--yes")
+        default: break
+        }
+        return CLIFlagPreflightSpec(flags: flags, valueOptions: values)
+    }
+
+    private func skillFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        switch args.first?.lowercased() {
+        case "path": return CLIFlagPreflightSpec(flags: ["--json"])
+        case "status", "list": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--tool", "--home"])
+        case "install": return CLIFlagPreflightSpec(flags: ["--json", "--force", "--dry-run"], valueOptions: ["--tool", "--home"])
+        case "remove", "uninstall": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--tool", "--home"])
+        default: return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func terminalThemeFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        guard args.first?.lowercased() == "set" else { return CLIFlagPreflightSpec() }
+        return CLIFlagPreflightSpec(valueOptions: ["--light", "--dark"])
+    }
+
+    private func modelCostsFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        switch args.first?.lowercased() {
+        case "list", "get": return CLIFlagPreflightSpec(flags: ["--json"])
+        case "set":
+            return CLIFlagPreflightSpec(valueOptions: ["--in", "--out", "--cache-read", "--cache-write", "--cache-write-1h", "--source", "--notes"])
+        case "import": return CLIFlagPreflightSpec(flags: ["--replace"])
+        default: return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func workspaceGroupFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec {
+        var values: Set<String> = ["--window"]
+        var flags: Set<String> = ["--json"]
+        switch args.first?.lowercased() {
+        case "list": break
+        case "create": values.insert("--name")
+        case "rename": values.formUnion(["--group", "--name"])
+        case "delete", "ungroup", "collapse", "expand", "pin", "unpin", "focus": values.insert("--group")
+        case "add", "remove": values.formUnion(["--group", "--workspaces"])
+        case "move": values.formUnion(["--group", "--workspace", "--to-group", "--before", "--after", "--index"])
+        case "set-color": values.formUnion(["--group", "--color"]); flags.insert("--clear")
+        case "set-icon": values.formUnion(["--group", "--icon"]); flags.insert("--clear")
+        default: break
+        }
+        return CLIFlagPreflightSpec(flags: flags, valueOptions: values)
+    }
+
+    private func markdownFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        var commandArgs = args
+        for name in ["--workspace", "--window", "--panel", "--area"] {
+            commandArgs = parseOption(commandArgs, name: name).1
+        }
+        let openTargetValues: Set<String> = ["--workspace", "--window", "--panel", "--area"]
+        let panelTargetValue: Set<String> = ["--panel"]
+        switch commandArgs.first?.lowercased() {
+        case "scroll": return CLIFlagPreflightSpec(valueOptions: panelTargetValue.union(["--heading"]))
+        case "visible": return CLIFlagPreflightSpec(flags: ["--json", "--watch"], valueOptions: panelTargetValue)
+        case "theme", "typeface": return CLIFlagPreflightSpec(flags: ["--list"], valueOptions: panelTargetValue.union(["--set"]))
+        case "font": return CLIFlagPreflightSpec(valueOptions: panelTargetValue.union(["--scale"]))
+        case "open-external": return CLIFlagPreflightSpec(valueOptions: panelTargetValue)
+        case "history": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: panelTargetValue)
+        case "links": return CLIFlagPreflightSpec(flags: ["--broken", "--json"], valueOptions: panelTargetValue)
+        case "backlinks": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: panelTargetValue)
+        case "open": return CLIFlagPreflightSpec(valueOptions: openTargetValues)
+        default:
+            if commandArgs.first.map({ !$0.hasPrefix("-") }) ?? false {
+                return CLIFlagPreflightSpec(valueOptions: openTargetValues)
+            }
+            return CLIFlagPreflightSpec(valueOptions: openTargetValues)
+        }
+    }
+
+    private struct TmuxFlagSpec {
+        var valueFlags: Set<String> = []
+        var booleanFlags: Set<String> = []
+        var valueLongFlags: Set<String> = []
+        var booleanLongFlags: Set<String> = []
+    }
+
+    private func validateClaudeTeamsTmuxFlags(_ commandArgs: [String]) throws {
+        let globalValues: Set<String> = ["-L", "-S", "-f"]
+        var index = 0
+        while index < commandArgs.count {
+            let argument = commandArgs[index]
+            guard argument.hasPrefix("-"), argument != "-" else { break }
+            if argument == "--" { break }
+            guard let flag = globalValues.first(where: { argument == $0 || argument.hasPrefix($0) }) else {
+                throw CLIError(message: "__tmux-compat: unknown flag '\(argument)'")
+            }
+            if argument == flag {
+                guard index + 1 < commandArgs.count else {
+                    throw CLIError(message: "__tmux-compat: \(flag) requires a value")
+                }
+                index += 2
+            } else {
+                index += 1
+            }
+        }
+
+        let (command, rawArgs) = try splitTmuxCommand(commandArgs)
+        guard let spec = claudeTeamsTmuxFlagSpec(command) else { return }
+
+        var cursor = 0
+        while cursor < rawArgs.count {
+            let argument = rawArgs[cursor]
+            if argument == "--" { return }
+            if argument.hasPrefix("--") {
+                let equals = argument.firstIndex(of: "=")
+                let name = equals.map { String(argument[..<$0]) } ?? argument
+                if spec.booleanLongFlags.contains(name) {
+                    guard equals == nil else { throw CLIError(message: "__tmux-compat: \(name) does not take a value") }
+                    cursor += 1
+                    continue
+                }
+                if spec.valueLongFlags.contains(name) {
+                    if equals != nil { cursor += 1 }
+                    else if cursor + 1 < rawArgs.count { cursor += 2 }
+                    else { throw CLIError(message: "__tmux-compat: \(name) requires a value") }
+                    continue
+                }
+                throw CLIError(message: "__tmux-compat: unknown flag '\(name)'")
+            }
+            guard argument.hasPrefix("-"), argument != "-" else {
+                cursor += 1
+                continue
+            }
+            let cluster = Array(argument.dropFirst())
+            var position = 0
+            while position < cluster.count {
+                let flag = "-" + String(cluster[position])
+                if spec.booleanFlags.contains(flag) {
+                    position += 1
+                    continue
+                }
+                if spec.valueFlags.contains(flag) {
+                    if position + 1 < cluster.count {
+                        break
+                    }
+                    guard cursor + 1 < rawArgs.count else {
+                        throw CLIError(message: "__tmux-compat: \(flag) requires a value")
+                    }
+                    cursor += 1
+                    break
+                }
+                throw CLIError(message: "__tmux-compat: unknown flag '\(flag)'")
+            }
+            cursor += 1
+        }
+    }
+
+    private func claudeTeamsTmuxFlagSpec(_ command: String) -> TmuxFlagSpec? {
+        switch command {
+        case "new-session", "new": return TmuxFlagSpec(valueFlags: ["-c", "-F", "-n", "-s"], booleanFlags: ["-A", "-d", "-P"])
+        case "new-window", "neww": return TmuxFlagSpec(valueFlags: ["-c", "-F", "-n", "-t"], booleanFlags: ["-d", "-P"])
+        case "split-window", "splitw": return TmuxFlagSpec(valueFlags: ["-c", "-F", "-l", "-t"], booleanFlags: ["-P", "-b", "-d", "-h", "-v"])
+        case "select-window", "selectw", "kill-window", "killw", "kill-pane", "killp", "last-pane", "has-session", "has":
+            return TmuxFlagSpec(valueFlags: ["-t"])
+        case "select-pane", "selectp": return TmuxFlagSpec(valueFlags: ["-P", "-T", "-t"])
+        case "send-keys", "send": return TmuxFlagSpec(valueFlags: ["-t"], booleanFlags: ["-l"])
+        case "capture-pane", "capturep": return TmuxFlagSpec(valueFlags: ["-E", "-S", "-t"], booleanFlags: ["-J", "-N", "-p"])
+        case "display-message", "display", "displayp": return TmuxFlagSpec(valueFlags: ["-F", "-t"], booleanFlags: ["-p"], booleanLongFlags: ["--print"])
+        case "list-windows", "lsw", "list-panes", "lsp": return TmuxFlagSpec(valueFlags: ["-F", "-t"])
+        case "rename-window", "renamew": return TmuxFlagSpec(valueFlags: ["-t"])
+        case "resize-pane", "resizep": return TmuxFlagSpec(valueFlags: ["-t", "-x", "-y"], booleanFlags: ["-D", "-L", "-R", "-U"])
+        case "wait-for": return TmuxFlagSpec(booleanFlags: ["-S"], valueLongFlags: ["--timeout"], booleanLongFlags: ["--signal"])
+        case "show-buffer", "showb", "save-buffer", "saveb": return TmuxFlagSpec(valueFlags: ["-b"])
+        case "set-hook": return TmuxFlagSpec(valueLongFlags: ["--unset"], booleanLongFlags: ["--list"])
+        case "set-buffer": return TmuxFlagSpec(valueLongFlags: ["--name"])
+        case "last-window", "next-window", "previous-window", "list-buffers", "popup", "bind-key", "unbind-key", "copy-mode",
+             "select-layout", "set-option", "set", "set-window-option", "setw", "source-file", "refresh-client", "attach-session", "detach-client":
+            return TmuxFlagSpec()
+        default: return nil
+        }
+    }
+
+    private func configFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        let json: Set<String> = ["--json"]
+        switch args.first?.lowercased() {
+        case "list", "recent": return CLIFlagPreflightSpec(flags: json)
+        case "stats": return CLIFlagPreflightSpec(flags: json, valueOptions: ["--window", "--by"])
+        case "save", "edit":
+            return CLIFlagPreflightSpec(
+                flags: json,
+                valueOptions: ["--harness", "--model", "--effort", "--system-prompt", "--system-prompt-file", "--system-prompt-mode", "--command", "--initial-prompt", "--env"]
+            )
+        case "rm": return CLIFlagPreflightSpec(flags: json)
+        case "reorder": return CLIFlagPreflightSpec(flags: json, valueOptions: ["--to"])
+        case "default": return CLIFlagPreflightSpec(flags: json.union(["--pin-current"]))
+        case "launch":
+            return CLIFlagPreflightSpec(
+                flags: json.union(["--new-workspace"]),
+                valueOptions: ["--prompt", "--prompt-file", "--area", "--pane", "--workspace", "--cwd"]
+            )
+        default: return nil
+        }
+    }
+
+    private func defaultAgentFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        guard args.first?.lowercased() == "launch" else { return CLIFlagPreflightSpec() }
+        return CLIFlagPreflightSpec(
+            flags: ["--json"],
+            valueOptions: ["--agent", "--in-panel", "--area", "--workspace", "--cwd", "--prompt", "--prompt-file"]
+        )
+    }
+
+    private func conversationFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        switch args.first?.lowercased() {
+        case "capture-runtime": return CLIFlagPreflightSpec()
+        case "claim": return CLIFlagPreflightSpec(valueOptions: ["--kind", "--cwd", "--id", "--expected-resume-id", "--ttl-ms"])
+        case "push": return CLIFlagPreflightSpec(valueOptions: ["--kind", "--id", "--source", "--state", "--cwd", "--reason", "--payload"])
+        case "tombstone": return CLIFlagPreflightSpec(valueOptions: ["--kind", "--id", "--reason"])
+        case "list", "get": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--panel"])
+        case "clear": return CLIFlagPreflightSpec(valueOptions: ["--panel"])
+        case "resume": return CLIFlagPreflightSpec(flags: ["--all-skipped", "--dry-run", "--json"], valueOptions: ["--panel"])
+        default: return nil
+        }
+    }
+
+    private func stateFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        switch args.first?.lowercased() {
+        case "save": return CLIFlagPreflightSpec(flags: ["--scrollback"], valueOptions: ["--out"])
+        case "verify": return CLIFlagPreflightSpec(valueOptions: ["--mode"])
+        default: return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func eventsFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        guard args.first?.lowercased() == "tail" else { return CLIFlagPreflightSpec() }
+        return CLIFlagPreflightSpec(flags: ["--follow", "-f"], valueOptions: ["--filter", "--since", "--instance"])
+    }
+
+    private func mailboxFlagPreflightSpec(_ args: [String]) -> CLIFlagPreflightSpec? {
+        switch args.first?.lowercased() {
+        case "send":
+            return CLIFlagPreflightSpec(
+                flags: ["--urgent", "--json", "--to-parent"],
+                valueOptions: MailboxSendArguments.valueFlags,
+                honorsEndOfOptions: true
+            )
+        case "recv":
+            return CLIFlagPreflightSpec(
+                flags: ["--drain", "--peek", "--ack"],
+                valueOptions: MailboxRecvArguments.valueFlags
+            )
+        case "view":
+            return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
+        case "inbox-dir":
+            return CLIFlagPreflightSpec(valueOptions: ["--panel"])
+        default:
+            return CLIFlagPreflightSpec()
+        }
+    }
+
+    private func browserFlagPreflightSpec(_ commandArgs: [String]) -> CLIFlagPreflightSpec? {
+        let (_, afterPanel) = parseOption(commandArgs, name: "--panel")
+        var args = afterPanel
+        let verbsWithoutPanel: Set<String> = ["open", "open-split", "new", "identify", "profiles"]
+        let browserVerbs: Set<String> = [
+            "open", "open-split", "new", "identify", "profiles", "goto", "navigate", "back", "forward", "reload",
+            "url", "get-url", "focus-webview", "is-webview-focused", "snapshot", "eval", "wait", "click", "dblclick",
+            "hover", "focus", "check", "uncheck", "scroll-into-view", "type", "fill", "press", "key", "keydown",
+            "keyup", "select", "scroll", "screenshot", "get", "is", "find", "frame", "dialog", "download", "cookies",
+            "storage", "panel", "tab", "console", "errors", "highlight", "state", "addinitscript", "addscript", "addstyle",
+            "viewport", "geolocation", "geo", "offline", "trace", "network", "screencast", "input", "input_mouse",
+            "input_keyboard", "input_touch", "dom", "locator",
+        ]
+        if let first = args.first,
+           !first.hasPrefix("-"),
+           !verbsWithoutPanel.contains(first.lowercased()),
+           !browserVerbs.contains(first.lowercased()) {
+            args.removeFirst()
+        }
+        guard let verb = args.first?.lowercased() else { return nil }
+        let subArgs = Array(args.dropFirst())
+        var flags: Set<String> = ["--json"]
+        var values: Set<String> = ["--id-format"]
+        values.insert("--panel")
+        switch verb {
+        case "open", "open-split", "new":
+            flags.insert("--allow-insecure-http")
+            values.formUnion(["--workspace", "--window", "--profile"])
+        case "profiles":
+            switch subArgs.first?.lowercased() {
+            case "add", "rename":
+                flags.insert("--yes")
+                values.formUnion(["--profile", "--name"])
+            case "clear", "delete":
+                flags.insert("--yes")
+                values.insert("--profile")
+            default: break
+            }
+        case "goto", "navigate": flags.formUnion(["--snapshot-after", "--allow-insecure-http"])
+        case "back", "forward", "reload": flags.insert("--snapshot-after")
+        case "snapshot":
+            flags.formUnion(["--interactive", "-i", "--cursor", "--compact"])
+            values.formUnion(["--max-depth", "--selector"])
+        case "eval": values.insert("--script")
+        case "wait": values.formUnion(["--selector", "--text", "--url-contains", "--url", "--load-state", "--function", "--timeout-ms", "--timeout"])
+        case "click", "dblclick", "hover", "focus", "check", "uncheck", "scroll-into-view":
+            flags.insert("--snapshot-after")
+            values.insert("--selector")
+        case "type", "fill":
+            flags.insert("--snapshot-after")
+            values.formUnion(["--selector", "--text"])
+        case "press", "key", "keydown", "keyup":
+            flags.insert("--snapshot-after")
+            values.insert("--key")
+        case "select":
+            flags.insert("--snapshot-after")
+            values.formUnion(["--selector", "--value"])
+        case "scroll": values.formUnion(["--selector", "--dx", "--dy"])
+        case "screenshot": values.insert("--out")
+        case "get":
+            switch subArgs.first?.lowercased() {
+            case "text", "html", "value", "count", "box": values.insert("--selector")
+            case "attr": values.formUnion(["--selector", "--attr"])
+            case "styles": values.formUnion(["--selector", "--property"])
+            default: break
+            }
+        case "is": values.insert("--selector")
+        case "find":
+            flags.insert("--exact")
+            switch subArgs.first?.lowercased() {
+            case "role": values.insert("--name")
+            case "first", "last": values.insert("--selector")
+            case "nth": values.formUnion(["--index", "--selector"])
+            default: break
+            }
+        case "frame": if subArgs.first?.lowercased() != "main" { values.insert("--selector") }
+        case "addinitscript", "addscript": values.insert("--script")
+        case "addstyle": values.insert("--css")
+        case "download": values.formUnion(["--path", "--timeout-ms", "--timeout"])
+        case "cookies":
+            flags.formUnion(["--secure", "--all"])
+            values.formUnion(["--name", "--value", "--url", "--domain", "--path", "--expires"])
+        case "highlight": values.insert("--selector")
+        case "network":
+            if subArgs.first?.lowercased() == "route" {
+                flags.insert("--abort")
+                values.insert("--body")
+            }
+        case "locator": values.formUnion(["--name", "--selector", "--index"])
+        case "dom": values.formUnion(["--selector", "--max-depth"])
+        default: break
+        }
+        for flag in Array(flags.union(values)) {
+            for spelling in Self.flagSpellings(flag) {
+                flags.insert(spelling)
+                if values.contains(flag) { values.insert(spelling) }
+            }
+        }
+        return CLIFlagPreflightSpec(
+            flags: flags,
+            valueOptions: values,
+            literalFlagArgumentIndices: verb == "state" ? browserPositionalStatePathIndex(commandArgs).map { Set([$0]) } ?? [] : [],
+            literalTailStart: verb == "eval" ? browserPositionalEvalScriptTailStart(commandArgs) : nil
+        )
     }
 
     /// Validate panel target flags for readers before socket discovery/connect.
@@ -10506,7 +11183,7 @@ struct CMUXCLI {
                     if let id = item["id"] as? String { return id }
                 }
             }
-            throw CLIError(message: "Workspace ref not found: \(raw)")
+            throw CLIError(message: "not_found: Workspace ref not found: \(raw)")
         }
 
         if let raw, let index = Int(raw) {

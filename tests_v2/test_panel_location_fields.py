@@ -67,10 +67,15 @@ def _metadata(c: cmux, ws_id: str, panel_id: str) -> Dict[str, Any]:
     }) or {}
 
 
-def _wait_for(pred, what: str, timeout: float = 15.0) -> Any:
+def _wait_for(pred, what: str, timeout: float = 30.0, resend=None) -> Any:
+    """Poll `pred`. `resend` re-announces the cwd each pass: the panel's own
+    shell integration reports its startup directory late and would otherwise
+    overwrite the one the test announced (a repeat of the same path is a no-op)."""
     deadline = time.time() + timeout
     last: Any = None
     while time.time() < deadline:
+        if resend:
+            resend()
         last = pred()
         if last:
             return last
@@ -111,6 +116,7 @@ def main() -> int:
             s = _wait_for(
                 lambda: (lambda t: t if t.get("branch") == "main" else None)(_tree_surface(c, ws_id, panel_id)),
                 "tree branch=main",
+                resend=lambda: _report_pwd(ws_id, panel_id, main_repo),
             )
             _must(s.get("cwd") == main_repo, f"cwd {s.get('cwd')!r} != {main_repo!r}")
             _must(s.get("worktree") is None, f"main checkout worktree should be null: {s}")
@@ -124,6 +130,7 @@ def main() -> int:
             s = _wait_for(
                 lambda: (lambda t: t if t.get("worktree") == "C11-229-demo" else None)(_tree_surface(c, ws_id, panel_id)),
                 "tree worktree=C11-229-demo",
+                resend=lambda: _report_pwd(ws_id, panel_id, linked),
             )
             _must(s.get("branch") == "C11-229-demo", f"linked branch: {s}")
             _must(s.get("cwd") == linked, f"linked cwd: {s}")
@@ -138,6 +145,7 @@ def main() -> int:
             s = _wait_for(
                 lambda: (lambda t: t if t.get("cwd") == plain and t.get("branch") is None else None)(_tree_surface(c, ws_id, panel_id)),
                 "tree non-repo",
+                resend=lambda: _report_pwd(ws_id, panel_id, plain),
             )
             _must(s.get("worktree") is None, f"non-repo worktree: {s}")
             print("PASS: non-repo")
@@ -150,8 +158,9 @@ def main() -> int:
             })
             time.sleep(0.5)
             rpanel = _first_panel(c, remote_ws)
-            _report_pwd(remote_ws, rpanel, linked)
-            time.sleep(3.0)  # past a local probe's round trip
+            for _ in range(8):  # outlast the probe's round trip; keep the path announced
+                _report_pwd(remote_ws, rpanel, linked)
+                time.sleep(0.5)
             s = _tree_surface(c, remote_ws, rpanel)
             for key in ("cwd", "branch", "worktree"):
                 _must(key in s and s[key] is None, f"remote panel {key} must be null: {s}")

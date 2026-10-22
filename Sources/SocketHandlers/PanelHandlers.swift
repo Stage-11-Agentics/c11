@@ -101,9 +101,9 @@ extension TerminalController {
         case "panel.reorder":
             return v2Result(id: id, self.v2PanelReorder(params: params))
         case "panel.drag_to_split":
-            return v2Result(id: id, self.v2PanelDragToSplit(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2PanelDragToSplit(params: params))
         case "panel.refresh":
-            return v2Result(id: id, self.v2PanelRefresh(params: params))
+            return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2PanelRefresh(params: params))
         case "panel.health":
             return v2Result(id: id, self.v2PanelHealth(params: params))
         case "panel.trigger_flash":
@@ -718,13 +718,14 @@ extension TerminalController {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            guard let bonsplitTabId = ws.bonsplitTabIdFromTabId(surfaceId) else {
+            guard ws.bonsplitTabIdFromTabId(surfaceId) != nil else {
                 result = .err(code: "not_found", message: "Panel not found", data: ["surface_id": surfaceId.uuidString])
                 return
             }
-            guard let newPaneId = ws.bonsplitController.splitPane(
+            // AppKit/Bonsplit layout and focus state belong on main.
+            guard let newPaneId = ws.movePanelToSplitPreservingFocus(
+                surfaceId,
                 orientation: orientation,
-                movingTab: bonsplitTabId,
                 insertFirst: insertFirst
             ) else {
                 result = .err(code: "internal_error", message: "Failed to split area", data: nil)

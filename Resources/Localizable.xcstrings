@@ -2,6 +2,24 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "cli.layout.arguments.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Unexpected layout arguments; pass --workspace followed by a workspace handle."}}
+      }
+    },
+    "cli.layout.workspace.required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Layout commands require --workspace or C11_WORKSPACE_ID; the selected workspace is never used."}}
+      }
+    },
+    "cli.panel.handle.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Invalid panel handle: %@ (expected UUID, ref like panel:1, or index)"}}
+      }
+    },
     "mailbox.native.error.liveProcess": {
       "extractionState": "manual",
       "localizations": {

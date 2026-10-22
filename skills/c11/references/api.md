@@ -295,6 +295,29 @@ c11 new-split down
 c11 new-split down --panel panel:10
 ```
 
+### Move a panel into a split
+
+```bash
+c11 drag-panel-to-split --panel panel:10 down
+c11 drag-panel-to-split --workspace workspace:3 --panel panel:10 right --json
+c11 refresh-panels --workspace workspace:3
+```
+
+`drag-panel-to-split` moves an existing panel into a new area. `--panel` is
+required. Panel and workspace arguments accept UUIDs, short refs, or zero-based
+indexes. Both layout commands default to `C11_WORKSPACE_ID`, including with
+`--window`; outside a c11 terminal, pass `--workspace`. They never default to
+the selected workspace. Empty, invalid, stale, or mismatched targets fail.
+
+The move preserves the focused panel and area in the target workspace. If the
+focused panel itself moves, focus follows that same panel into its new area.
+The selected workspace and other workspaces' focus remain unchanged. There is
+no focus flag. `--json` before or after the command returns the v2 result with
+workspace, panel and new area IDs and refs. Text output respects `--id-format`.
+Socket clients use `panel.drag_to_split` with `workspace_id`,
+`panel_id`, and `direction` (`left`, `right`, `up`, `down`); `panel.refresh`
+takes `workspace_id` and returns `refreshed`.
+
 ### Where a new terminal starts: the workspace root, then `--cwd`
 
 Every workspace has a **root directory**, and every new terminal in it starts there: a new panel, a split (keyboard, panel-bar button, or `new-split` / `new-area`), `new-panel`, the panel-bar agent button, `default-agent launch`, and `launch-agent`. Shells that `cd` elsewhere do not move the root, so an area that drifted into another repo never drags the next agent with it. One precedence applies on every rail:

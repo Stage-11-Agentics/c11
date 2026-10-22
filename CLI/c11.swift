@@ -3501,27 +3501,40 @@ struct CMUXCLI {
             }
 
         case "drag-panel-to-split":
-            let (surfaceArg, rem1) = parseOption(commandArgs, name: "--panel")
-            guard let surface = surfaceArg else {
+            let (panelArg, rem1) = parseOption(commandArgs, name: "--panel")
+            guard let panelArg else {
                 throw CLIError(message: "drag-panel-to-split requires --panel <id|index>")
             }
-            let (_, directionArgs) = parseOption(rem1, name: "--workspace")
-            guard let direction = directionArgs.first else {
+            let (workspaceArg, remaining) = parseOption(rem1, name: "--workspace")
+            let json = jsonOutput || remaining.contains("--json")
+            let directionArgs = remaining.filter { $0 != "--json" }
+            guard directionArgs.count == 1, let direction = directionArgs.first else {
                 throw CLIError(message: "drag-panel-to-split requires a direction")
             }
-            let scopedWorkspace = client.scopedWindow != nil
-                ? try resolveWorkspaceId(optionValue(commandArgs, name: "--workspace"), client: client) : nil
-            let target = try scopedWorkspace.map { try resolveSurfaceId(surface, workspaceId: $0, client: client) } ?? surface
-            let scope = scopedWorkspace.map { " --workspace=\($0)" } ?? ""
-            let response = try sendV1Command("drag_surface_to_split \(target) \(direction)\(scope)", client: client)
-            print(response)
+            let workspaceId = try resolveLayoutWorkspaceId(workspaceArg, client: client)
+            let panelId = try resolveSurfaceId(panelArg, workspaceId: workspaceId, client: client)
+            let payload = try client.sendV2(method: "panel.drag_to_split", params: [
+                "workspace_id": workspaceId, "panel_id": panelId, "direction": direction
+            ])
+            if json {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                print("OK \(formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown")")
+            }
 
         case "refresh-panels":
-            let scopedWorkspace = client.scopedWindow != nil
-                ? try resolveWorkspaceId(optionValue(commandArgs, name: "--workspace"), client: client) : nil
-            let scope = scopedWorkspace.map { " --workspace=\($0)" } ?? ""
-            let response = try sendV1Command("refresh_surfaces\(scope)", client: client)
-            print(response)
+            let (workspaceArg, remaining) = parseOption(commandArgs, name: "--workspace")
+            let json = jsonOutput || remaining.contains("--json")
+            guard remaining.filter({ $0 != "--json" }).isEmpty else {
+                throw CLIError(message: String(localized: "cli.layout.arguments.invalid", defaultValue: "Unexpected layout arguments; pass --workspace followed by a workspace handle."))
+            }
+            let workspaceId = try resolveLayoutWorkspaceId(workspaceArg, client: client)
+            let payload = try client.sendV2(method: "panel.refresh", params: ["workspace_id": workspaceId])
+            if json {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                print("OK Refreshed \(intFromAny(payload["refreshed"]) ?? 0) panels")
+            }
 
         case "panel-health":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
@@ -10142,6 +10155,16 @@ struct CMUXCLI {
         throw CLIError(message: "No workspace selected")
     }
 
+    /// Layout commands require caller scope even when --window is supplied:
+    /// a window's selected workspace is never an implicit mutation target.
+    private func resolveLayoutWorkspaceId(_ raw: String?, client: SocketClient) throws -> String {
+        let environment = ProcessInfo.processInfo.environment
+        guard let target = raw ?? environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"] else {
+            throw CLIError(message: String(localized: "cli.layout.workspace.required", defaultValue: "Layout commands require --workspace or C11_WORKSPACE_ID; the selected workspace is never used."))
+        }
+        return try resolveWorkspaceId(target, client: client)
+    }
+
     private func resolveSurfaceId(_ raw: String?, workspaceId: String, client: SocketClient) throws -> String {
         // See resolveWorkspaceId — same hazard. Empty string is a programming
         // error, not a request for "focused surface". Fall through to focused
@@ -10179,6 +10202,10 @@ struct CMUXCLI {
                 if let id = item["id"] as? String { return id }
             }
             throw CLIError(message: "Panel index not found")
+        }
+
+        if let raw {
+            throw CLIError(message: String(localized: "cli.panel.handle.invalid", defaultValue: "Invalid panel handle: \(raw) (expected UUID, ref like panel:1, or index)"))
         }
 
         if let focused = items.first(where: { ($0["focused"] as? Bool) == true }) {
@@ -11359,12 +11386,14 @@ struct CMUXCLI {
             """
         case "drag-panel-to-split", "drag-tab-to-split":
             return """
-            Usage: c11 drag-panel-to-split --panel <id|ref> <left|right|up|down>
+            Usage: c11 drag-panel-to-split --panel <id|ref|index> [--workspace <id|ref|index>] <left|right|up|down>
 
-            Drag a panel into a new split in the given direction.
+            Move a panel into a new split, preserving focus and workspace selection.
+            Workspace defaults to C11_WORKSPACE_ID; outside c11, pass --workspace.
 
             Flags:
-              --panel <id|ref>   Panel to drag (required)
+              --panel <id|ref|index>       Panel to drag (required)
+              --workspace <id|ref|index>   Target workspace
 
             Example:
               c11 drag-panel-to-split --panel panel:1 right
@@ -11372,9 +11401,9 @@ struct CMUXCLI {
             """
         case "refresh-panels", "refresh-tabs":
             return """
-            Usage: c11 refresh-panels
+            Usage: c11 refresh-panels [--workspace <id|ref|index>]
 
-            Refresh panel snapshots for the focused workspace.
+            Refresh panels in the caller's C11_WORKSPACE_ID or explicit --workspace.
             """
         case "panel-health", "tab-health":
             return """
@@ -20789,8 +20818,8 @@ struct CMUXCLI {
           set-panel-icon [--workspace <id|ref>] [--panel <id|ref>] (<icon> | --clear)
           set-panel-color [--workspace <id|ref>] [--panel <id|ref>] (<#RRGGBB|palette-name> | --clear)
           get-titlebar-state [--workspace <id|ref>] [--panel <id|ref>] [--json]
-          drag-panel-to-split --panel <id|ref> <left|right|up|down>
-          refresh-panels
+          drag-panel-to-split --panel <id|ref|index> [--workspace <id|ref|index>] <left|right|up|down>
+          refresh-panels [--workspace <id|ref|index>]
           panel-health [--workspace <id|ref>]
           health [--since <duration> | --since-boot] [--rail <name>] [--json]
           doctor [--json]

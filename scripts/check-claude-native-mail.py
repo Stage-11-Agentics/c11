@@ -125,14 +125,18 @@ if sys.argv[2]=='1':settings['crossSessionInbound']='refuse'
         c11('send', '--workspace', workspace, '--panel', sender, text)
         return wait('mail ID', lambda: guest('from pathlib import Path;import sys;p=Path(sys.argv[1]);print(p.read_text().strip() if p.exists() else "")', result))
 
-    def delivered(target, mail_id, route, native_failure=False):
+    def delivered(target, mail_id, route, native_failure=None):
         data = inspect(target)
         rows = [r for r in data['dispatch'] if r.get('id') == mail_id and r.get('outcome') == 'doorbell' and r.get('reason') == 'submitted']
         if not rows:
             return None
         assert rows[-1].get('route') == route, rows
         if native_failure:
-            assert rows[-1].get('native_route') == 'claude_inbox' and rows[-1].get('native_failure'), rows
+            # The failed native attempt and the typed row that follows it both
+            # name the bridge's reason, not a bare timeout.
+            failed = [r for r in data['dispatch'] if r.get('id') == mail_id and r.get('outcome') == 'doorbell_failed']
+            assert failed and failed[-1].get('route') == 'claude_inbox' and failed[-1].get('reason') == native_failure, data['dispatch']
+            assert rows[-1].get('native_route') == 'claude_inbox' and rows[-1].get('native_failure') == native_failure, rows
         return data
 
     def screenshot(label, target):
@@ -203,7 +207,7 @@ print(pids[0])''', args.run_id))
 
         refused = launch('refused', refuse=True)
         refused_id = mail(refused)
-        observations['refused'] = wait('policy refusal typed fallback', lambda: delivered(refused, refused_id, 'typed', native_failure=True))
+        observations['refused'] = wait('policy refusal typed fallback', lambda: delivered(refused, refused_id, 'typed', native_failure='native_unconfirmed'))
         assert not any(m['role'] == 'user' and m['text'].startswith('Another Claude session sent a message:\n' + DOORBELL) for m in inspect(refused)['messages'])
         observations['passed'] = True
         print('PASS: native draft/repeat, /clear, --resume, hook-absent typed fallback, policy refusal, Stop drain')

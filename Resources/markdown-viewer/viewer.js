@@ -904,16 +904,19 @@ function buildSource() {
     if(/^#{1,6}\s/.test(line))text.classList.add('s-h');row.append(num,text);frag.append(row);});
   source.replaceChildren(frag);
 }
-function configureMermaid(mathLabels=false) {
+function diagramContentWidth(stage) {
+  const style=getComputedStyle(stage);
+  return Math.max(600,Math.round(stage.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)));
+}
+function configureMermaid(mathLabels=false,ganttWidth) {
   const t=resolvedTheme(),c=t.mermaid;
   mermaid.initialize({startOnLoad:false,securityLevel:'strict',suppressErrorRendering:true,theme:'base',
     // Document directives cannot override this allowlist. HTML labels are enabled only for diagrams using math.
     secure:['secure','securityLevel','startOnLoad','maxTextSize','maxEdges','flowchart','htmlLabels','theme','themeVariables'],
     maxTextSize:50000,maxEdges:500,htmlLabels:mathLabels,
     fontFamily:'"JetBrains Mono Variable", monospace',flowchart:{htmlLabels:mathLabels,curve:'basis',padding:14,nodeSpacing:34,rankSpacing:46},
-    // In WKWebView, Mermaid 12's measured Gantt width made titles and axes disproportionate to the viewer.
-    // A fixed design width keeps SVG text scale stable; the viewer scales it to the panel.
-    gantt:{useWidth:1200,leftPadding:150,rightPadding:75},
+    // Mermaid 12 derives oversized text from the Gantt width. Match its coordinate space to this panel.
+    gantt:{useWidth:ganttWidth,leftPadding:150,rightPadding:75},
     sequence:{actorMargin:46,boxMargin:8,mirrorActors:false,messageFontSize:12,noteFontSize:12,actorFontSize:12},
     themeVariables:{darkMode:t.scheme==='dark',background:c.bg,fontSize:'12.5px',primaryColor:c.node,primaryTextColor:c.text,primaryBorderColor:c.border,
       secondaryColor:c.cluster,tertiaryColor:c.cluster,lineColor:c.line,textColor:c.text,mainBkg:c.node,nodeBorder:c.border,nodeTextColor:c.text,
@@ -1031,7 +1034,7 @@ async function diagrams(generation, coalesce=false) {
       if(generation!==S.generation)return;
       const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
       try {
-        const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels);
+        const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels,diagramContentWidth($('.diagram-stage',fig)));
         const {svg}=await mermaid.render(id,diagramSource(fig._mermaid,mathLabels));
         if(generation!==S.generation)return;
         rendered.push({fig,node:cleanSVG(svg,mathLabels)});
@@ -1057,7 +1060,7 @@ async function diagrams(generation, coalesce=false) {
     if(generation!==S.generation)return;
     const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
     try {
-      const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels);
+      const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels,diagramContentWidth($('.diagram-stage',fig)));
       const {svg}=await mermaid.render(id,diagramSource(fig._mermaid,mathLabels));
       if(generation!==S.generation)return;
       const a=capture();$('.diagram-stage',fig).replaceChildren(cleanSVG(svg,mathLabels));fig._theme=S.resolved;layoutAll();restore(a);

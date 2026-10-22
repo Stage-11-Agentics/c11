@@ -51,10 +51,23 @@ try {
     {attribute:'inline',style:'inline',computed:'inline'},{attribute:'inline',style:'inline',computed:'inline'}
   ],'math in Mermaid labels must use inline layout in the rendered DOM');
   const ganttSvg=page.locator('.diagram-stage svg').nth(4);
-  assert.equal((await ganttSvg.getAttribute('viewBox')).split(/\s+/)[2],'1200','Gantt must render against the stable viewer width');
-  const ganttTicks=await ganttSvg.locator('.grid text').evaluateAll(nodes=>nodes.map(node=>{const box=node.getBBox();return {x:box.x,right:box.x+box.width,text:node.textContent};}));
-  assert.ok(ganttTicks.length>=2&&ganttTicks.length<=4,'Gantt axis must use compact daily ticks');
-  for(let index=1;index<ganttTicks.length;index++)assert.ok(ganttTicks[index-1].right<=ganttTicks[index].x+1,`Gantt axis labels overlap: ${ganttTicks[index-1].text} / ${ganttTicks[index].text}`);
+  const assertGanttAxis=async()=>{
+    const metrics=await ganttSvg.evaluate(svg=>{
+      const stage=svg.closest('.diagram-stage'),style=getComputedStyle(stage);
+      return {
+        viewBoxWidth:svg.viewBox.baseVal.width,
+        contentWidth:Math.max(600,Math.round(stage.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight))),
+        ticks:[...svg.querySelectorAll('.grid text')].map(node=>{const box=node.getBoundingClientRect();return {x:box.left,right:box.right,text:node.textContent};})
+      };
+    });
+    assert.equal(metrics.viewBoxWidth,metrics.contentWidth,'Gantt must render against the available viewer width');
+    assert.deepEqual(metrics.ticks.map(tick=>tick.text),['Oct 22','Oct 23','Oct 24'],'Gantt must preserve the fixture daily date format');
+    for(let index=1;index<metrics.ticks.length;index++)assert.ok(metrics.ticks[index-1].right<=metrics.ticks[index].x+1,`Gantt axis labels overlap: ${metrics.ticks[index-1].text} / ${metrics.ticks[index].text}`);
+  };
+  await assertGanttAxis();
+  await page.setViewportSize({width:560,height:820});
+  await load(mermaid12,'/synthetic/mermaid-12-acceptance.md',2);
+  await assertGanttAxis();
   assert.equal(await page.locator('.diagram-err').count(),0);
   scenario('Mermaid acceptance matrix renders five diagram types and MathML labels');
   const messaging=await readFile(path.join(root,'docs/c11-messaging-primitive-design.md'),'utf8');

@@ -256,21 +256,24 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         # native after its relay was killed, cold after an ordinary exit.
         offered_re = re.compile(r'codex --remote (unix:///tmp/c11-\d+/codex-\d+\.sock) resume ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
         resumed = {}
-        for target, history in ((native, '• C11_READY_NEW_' + nonce), (cold, SHOWN)):
+        for target, history in ((native, '• C11_AWAKE_' + nonce), (cold, SHOWN)):
             text = screen(target, 30)
             match = offered_re.search(text) or offered_re.search(text.replace('\n', ''))
             assert match, ('no reconnect command offered', target['label'], text)
             offered, socket_url, thread = match.group(0), match.group(1), match.group(2)
+            if target is native:  # the thread B's ring was accepted into
+                assert thread == accepted[-1], (thread, accepted)
             old_socket = socket_url[len('unix://'):]
-            wait('old relay gone: ' + target['label'], lambda: not any(old_socket in cmd for _, cmd in processes())
-                 and guest('import os,sys;print("gone" if not os.path.exists(sys.argv[1]) else "")', old_socket), 15)
+            # A killed relay cannot unlink its socket; the next relay removes it.
+            wait('old relay gone: ' + target['label'], lambda: not any(old_socket in cmd for _, cmd in processes()), 15)
+            left = guest('import os,sys;print(os.path.exists(sys.argv[1]))', old_socket).strip()
             remote_before = remote_pids()
             c11('send', '--workspace', workspace, '--panel', target['panel'], offered)
             wait('resumed composer: ' + target['label'], lambda: 'for shortcuts' in screen(target) or 'context left' in screen(target), 90)
             wait('resumed history: ' + target['label'], lambda: history in screen(target, 200), 30)
             fresh = [cmd for pid, cmd in processes() if pid in remote_pids() - remote_before]
             assert fresh and all(old_socket not in cmd and ('resume ' + thread) in cmd for cmd in fresh), fresh
-            resumed[target['label']] = dict(offered=offered, thread=thread, history=history, launched=fresh)
+            resumed[target['label']] = dict(offered=offered, thread=thread, history=history, launched=fresh, old_socket_file_left=left)
             for _ in range(2):
                 c11('send-key', '--workspace', workspace, '--panel', target['panel'], 'ctrl+c')
                 time.sleep(.5)

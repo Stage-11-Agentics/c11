@@ -37,6 +37,10 @@ jobs:
       - name: Validate Atlas performance lane
         run: python3 scripts/c11-perf-lane-test.py
 
+      - name: Validate Atlas main backstop
+        timeout-minutes: 2
+        run: python3 scripts/c11-main-backstop-test.py
+
       - name: Validate parallel logic and backstop fan-out
         run: |
           set -euo pipefail

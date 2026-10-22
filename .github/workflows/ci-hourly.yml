@@ -1,20 +1,12 @@
 name: CI main (macOS)
 
-# Native backstop for main: one app and test-products build followed by four independent test
-# jobs. It runs when main changes, not on a clock. The concurrency group never
-# cancels a running backstop and holds at most one pending run, which each newer
-# push replaces. GitHub can admit an older push's run after a newer one, so a
-# run does not test its trigger: once admitted, it resolves the ref's tip once
-# and tests that commit. Every push is therefore followed by a run that starts
-# after it and tests a main that contains it. A pass posts a "CI main (macOS)"
-# success status on the tested commit; a run whose tip already has one skips the
-# build and all four test jobs. The build job shares its exact-head DerivedData
-# with the test jobs so each runner can execute tests without rebuilding. If
-# the tip cannot be resolved the run fails; if
-# the green record cannot be read the tip builds.
+# Clean-machine native backstop, independent of Atlas's c11/main-atlas status.
+# Hourly checks skip tips already green in this workflow's own status context.
+# Dispatch can force a rebuild. One run stays active and newer requests replace
+# the single pending run; each admitted run resolves its ref's current tip.
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       force:

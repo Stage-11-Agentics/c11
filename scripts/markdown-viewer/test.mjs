@@ -39,7 +39,16 @@ try {
       report.matrices.push({theme,width,file:path.relative(root,file),...result});
     }
   }
-  scenario('7 fixtures at 560/820/1200 px in light/dark',{loads:report.matrices.length});
+  scenario('8 fixtures at 560/820/1200 px in light/dark',{loads:report.matrices.length});
+  const mermaid12=await readFile(path.join(fixtures,'mermaid-12-acceptance.md'),'utf8');
+  await load(mermaid12,'/synthetic/mermaid-12-acceptance.md');
+  const mermaid12Labels=await page.locator('.diagram-stage svg').allTextContents();
+  assert.equal(mermaid12Labels.length,6,'flowchart, sequence, class, state, gantt, and math diagrams must render');
+  for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof']])
+    assert.ok(mermaid12Labels[index].includes(label),`diagram ${index+1} did not render its ${label} label`);
+  assert.equal(await page.locator('.diagram-stage math').count(),2,'both formulas must survive as MathML in the label');
+  assert.equal(await page.locator('.diagram-err').count(),0);
+  scenario('Mermaid acceptance matrix renders five diagram types and MathML labels');
   const messaging=await readFile(path.join(root,'docs/c11-messaging-primitive-design.md'),'utf8');
   await load(messaging);assert.equal(await page.locator('.diagram svg').count(),7);scenario('messaging document: all 7 diagrams, including entity-bearing sequences');
   const specimen='---\ntitle: Synthetic reader\n---\n# Reader\n\nA footnote[^note], **bold**, $E=mc^2$ and [jump](#tasks).\n\n> [!NOTE]\n> Keep the reader’s place.\n\n## Tasks\n\n- [x] Complete\n- [ ] Pending\n\n| Key | Value | Notes |\n| --- | --- | --- |\n| One | Two | Three |\n\n```javascript\nconst answer = 42;\n```\n\n$$\n\\sum_{i=1}^{n} i\n$$\n\n```mermaid\nflowchart LR\n  A[Input] --> B[Output]\n```\n\n[^note]: A margin note.\n';
@@ -523,6 +532,38 @@ try {
   assert.equal(await page.locator('.diagram-stage foreignObject,.diagram-stage image,.diagram-stage a,.diagram-stage script,.diagram-stage img,.diagram-stage [onerror],.diagram-stage [onload],.diagram-stage [href]').count(),0);
   assert.equal(await page.evaluate(()=>window.__owned),undefined);
   scenario('SVG sanitizer removes injected active elements, handlers, and external references');
+  await page.evaluate(()=>{
+    window.transientMathStyle=[];
+    window.transientMathRenderSources=[];
+    window.transientMathOriginalRender=mermaid.render;
+    mermaid.render=async(id,source)=>{
+      window.transientMathRenderSources.push(source);
+      return window.transientMathOriginalRender(id,source);
+    };
+    window.transientMathStyleObserver=new MutationObserver(()=>{
+      for(const node of document.querySelectorAll('foreignObject [style]')) {
+        const style=node.getAttribute('style')||'';
+        if(/position\s*:\s*fixed|inset\s*:|z-index\s*:\s*99999|background\s*:\s*red/i.test(style))window.transientMathStyle.push(style);
+      }
+    });
+    window.transientMathStyleObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+  });
+  const transientMathAttack='```mermaid\nflowchart LR\n  A["<div style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>OVERLAY</div><math-α style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>CUSTOM</math-α><div style=position:fixed;inset:0;z-index:99999;background:red;--x=a>UNQUOTED</div> $$x^2$$"] --> B\n```\n';
+  await load(transientMathAttack,'/synthetic/transient-math-style.md');
+  await page.evaluate(()=>{transientMathStyleObserver.disconnect();mermaid.render=transientMathOriginalRender;});
+  assert.equal(await page.evaluate(()=>transientMathRenderSources.some(source=>/<[^>]+\sstyle\s*=/i.test(source))),false,'author inline CSS reached Mermaid input');
+  assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'untrusted inline CSS reached Mermaid\'s attached temporary SVG');
+  assert.equal(await page.locator('.diagram-stage math').count(),1,'the math label stopped rendering');
+  scenario('math-label inline CSS is removed before Mermaid attaches its temporary SVG');
+  const unsafeMathSvg='<svg xmlns="http://www.w3.org/2000/svg"><foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml" style="position:fixed;inset:0;z-index:99999;width:9999px;background:url(https://example.invalid/x)"><span>Math <math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mn>1</mn><mn>2</mn></mfrac></math><img src="https://example.invalid/x" onerror="window.__owned=5"><script>window.__owned=6</script><a href="javascript:window.__owned=7">bad</a></span></div></foreignObject></svg>';
+  await page.evaluate(svg=>{window.originalMermaidRender=mermaid.render;mermaid.render=async()=>({svg});},unsafeMathSvg);
+  await load('```mermaid\nflowchart LR\n  A["$$x^2$$"] --> B\n```\n','/synthetic/math-label-sanitizer.md');
+  await page.evaluate(()=>{mermaid.render=window.originalMermaidRender;delete window.originalMermaidRender;});
+  assert.equal(await page.locator('.diagram-stage math').count(),1,'sanitized MathML was lost');
+  assert.equal(await page.locator('.diagram-stage img,.diagram-stage script,.diagram-stage a,.diagram-stage iframe,.diagram-stage [onerror],.diagram-stage [href]').count(),0);
+  assert.equal(await page.locator('.diagram-stage [style*="position"],.diagram-stage [style*="inset"],.diagram-stage [style*="background"],.diagram-stage [style*="9999"]').count(),0,'unsafe math-label styles survived');
+  assert.equal(await page.evaluate(()=>window.__owned),undefined);
+  scenario('Math labels preserve MathML while dropping active HTML and external references');
   // Async diagram replacement above an unchanged lower section holds its position.
   const graph='```mermaid\nflowchart TD\n A --> B\n```\n\n', above='# Async\n\n'+graph+long;
   await settings({scale:1,typeface:'serif'});await load(above,'/synthetic/async.md');await page.evaluate(()=>c11md.scrollToHeading('Section 30'));

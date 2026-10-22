@@ -904,13 +904,13 @@ function buildSource() {
     if(/^#{1,6}\s/.test(line))text.classList.add('s-h');row.append(num,text);frag.append(row);});
   source.replaceChildren(frag);
 }
-function configureMermaid() {
+function configureMermaid(mathLabels=false) {
   const t=resolvedTheme(),c=t.mermaid;
   mermaid.initialize({startOnLoad:false,securityLevel:'strict',suppressErrorRendering:true,theme:'base',
-    // Document directives cannot override this allowlist or enable HTML labels.
+    // Document directives cannot override this allowlist. HTML labels are enabled only for diagrams using math.
     secure:['secure','securityLevel','startOnLoad','maxTextSize','maxEdges','flowchart','htmlLabels','theme','themeVariables'],
-    maxTextSize:50000,maxEdges:500,htmlLabels:false,
-    fontFamily:'"JetBrains Mono Variable", monospace',flowchart:{htmlLabels:false,curve:'basis',padding:14,nodeSpacing:34,rankSpacing:46},
+    maxTextSize:50000,maxEdges:500,htmlLabels:mathLabels,
+    fontFamily:'"JetBrains Mono Variable", monospace',flowchart:{htmlLabels:mathLabels,curve:'basis',padding:14,nodeSpacing:34,rankSpacing:46},
     sequence:{actorMargin:46,boxMargin:8,mirrorActors:false,messageFontSize:12,noteFontSize:12,actorFontSize:12},
     themeVariables:{darkMode:t.scheme==='dark',background:c.bg,fontSize:'12.5px',primaryColor:c.node,primaryTextColor:c.text,primaryBorderColor:c.border,
       secondaryColor:c.cluster,tertiaryColor:c.cluster,lineColor:c.line,textColor:c.text,mainBkg:c.node,nodeBorder:c.border,nodeTextColor:c.text,
@@ -918,22 +918,93 @@ function configureMermaid() {
       signalColor:c.line,signalTextColor:c.text,labelBoxBkgColor:c.node,labelBoxBorderColor:c.border,labelTextColor:c.text,loopTextColor:c.text,
       noteBkgColor:c.note,noteTextColor:c.noteT,noteBorderColor:c.noteB,activationBkgColor:c.act,activationBorderColor:c.border}});
 }
-function diagramSource(raw) {
+function stripMathLabelInlineStyles(source) {
+  // Mermaid attaches temporary HTML labels to the document while rendering.
+  // Remove author CSS before that step; cleanSVG runs only after render returns.
+  let output='',cursor=0;
+  while(cursor<source.length) {
+    const start=source.indexOf('<',cursor);
+    if(start<0)return output+source.slice(cursor);
+    output+=source.slice(cursor,start);
+    let nameStart=start+1;if(source[nameStart]==='/')nameStart++;
+    if(!/[a-z]/i.test(source[nameStart]||'')){output+='<';cursor=start+1;continue;}
+    let nameEnd=nameStart+1;
+    while(nameEnd<source.length&&!/[\s/>="'<>`]/.test(source[nameEnd]))nameEnd++;
+    let quote='',end=nameEnd;
+    for(;end<source.length;end++) {
+      const ch=source[end];
+      if(quote){if(ch===quote)quote='';}
+      else if(ch==='"'||ch==="'")quote=ch;
+      else if(ch==='>')break;
+    }
+    if(end>=source.length)return output+source.slice(start);
+    const tag=source.slice(start,end+1),tagEnd=tag.length-1;let index=nameEnd-start;
+    let clean=tag.slice(0,index);
+    while(index<tagEnd) {
+      const whitespaceStart=index;
+      while(index<tagEnd&&/\s/.test(tag[index]))index++;
+      if(index>=tagEnd){clean+=tag.slice(whitespaceStart);break;}
+      if(tag[index]==='/'){clean+=tag.slice(whitespaceStart,tagEnd);break;}
+      const attrStart=index;
+      while(index<tagEnd&&!/[\s=/>]/.test(tag[index]))index++;
+      if(index===attrStart){clean+=tag.slice(whitespaceStart,index+1);index++;continue;}
+      const attrName=tag.slice(attrStart,index).toLowerCase();
+      while(index<tagEnd&&/\s/.test(tag[index]))index++;
+      if(tag[index]==='=') {
+        index++;while(index<tagEnd&&/\s/.test(tag[index]))index++;
+        const delimiter=tag[index];
+        if(delimiter==='"'||delimiter==="'") {
+          index++;while(index<tagEnd&&tag[index]!==delimiter)index++;
+          if(index<tagEnd)index++;
+        } else while(index<tagEnd&&!/\s/.test(tag[index]))index++;
+      }
+      if(attrName!=='style')clean+=tag.slice(whitespaceStart,index);
+    }
+    output+=clean+tag.slice(tagEnd);cursor=end+1;
+  }
+  return output;
+}
+function diagramSource(raw,mathLabels=false) {
+  const source=mathLabels?stripMathLabelInlineStyles(raw):raw;
   // Decode entities before Mermaid sees semicolons, especially in sequence messages.
   // Mermaid's native #name; form represents literal angle brackets safely in labels.
-  const decoded=raw.replace(/&(?:lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,m=>{
+  const decoded=source.replace(/&(?:lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,m=>{
     const el=document.createElement('textarea');el.innerHTML=m;return el.value;
   });
   const initDirective=/^\s*%%\s*\{\s*init\s*:/im.test(decoded);
   const frontmatter=/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(decoded);
   const configFrontmatter=!!frontmatter&&/^\s*config\s*:/im.test(frontmatter[1]);
   if(initDirective||configFrontmatter)throw new Error('Unsupported diagram directive');
-  return raw.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>name.startsWith('#x')?'#'+parseInt(name.slice(2),16)+';':name.startsWith('#')?name+';':'#'+name+';');
+  return source.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>name.startsWith('#x')?'#'+parseInt(name.slice(2),16)+';':name.startsWith('#')?name+';':'#'+name+';');
 }
-function cleanSVG(svg) {
-  const clean=DOMPurify.sanitize(svg,{USE_PROFILES:{svg:true,svgFilters:true},FORBID_TAGS:['foreignObject','image','a','script','iframe'],FORBID_ATTR:['href','xlink:href','src']});
+const mathLabelTags=['div','span','br','b','strong','i','em','u','s','sub','sup','p','math','semantics','annotation','mrow','mi','mn','mo','mfrac','msup','msub','msubsup','msqrt','mroot','mtext','mstyle','mspace','mpadded','mphantom','menclose','munder','mover','munderover','mtable','mtr','mtd','merror','maction'];
+const mathLabelAttrs=['xmlns','class','style','display','mathvariant','mathsize','scriptlevel','displaystyle','mathbackground','mathcolor','encoding','notation','rowspan','columnspan','rowalign','columnalign','columnlines','rowlines','columnspacing','rowspacing','linethickness','bevelled','stretchy','symmetric','fence','separator','form','lspace','rspace','minsize','maxsize','largeop','movablelimits','accent','accentunder'];
+function safeMathLabelStyle(property,value) {
+  if(property==='display')return ['table','table-cell','flex'].includes(value);
+  if(property==='white-space')return value==='nowrap';
+  if(property==='line-height')return /^\d+(?:\.\d+)?$/.test(value)&&Number(value)>=1&&Number(value)<=2;
+  if(property==='text-align'||property==='align-items'||property==='justify-content')return value==='center';
+  if(property==='width'||property==='max-width')return /^\d+(?:\.\d+)?px$/.test(value)&&parseFloat(value)<=400;
+  return false;
+}
+function cleanSVG(svg,mathLabels=false) {
+  const rawTemplate=document.createElement('template');rawTemplate.innerHTML=svg;
+  const rawForeignObjects=mathLabels?$$('foreignObject',rawTemplate.content):[];
+  const clean=DOMPurify.sanitize(svg,{USE_PROFILES:{svg:true,svgFilters:true},ADD_TAGS:mathLabels?['foreignObject']:[],FORBID_TAGS:mathLabels?['image','a','script','iframe']:['foreignObject','image','a','script','iframe'],FORBID_ATTR:['href','xlink:href','src']});
   const template=document.createElement('template');template.innerHTML=clean;
   const el=template.content.querySelector('svg');if(!el)throw new Error('Missing diagram');
+  if(mathLabels) {
+    const safeForeignObjects=$$('foreignObject',el);
+    if(safeForeignObjects.length!==rawForeignObjects.length)throw new Error('Unexpected Mermaid label structure');
+    for(let i=0;i<safeForeignObjects.length;i++) {
+      const safe=DOMPurify.sanitize(rawForeignObjects[i].innerHTML,{ALLOWED_TAGS:mathLabelTags,ALLOWED_ATTR:mathLabelAttrs,ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false});
+      safeForeignObjects[i].innerHTML=safe;
+      for(const node of $$('[style]',safeForeignObjects[i])) {
+        for(const property of [...node.style])if(!safeMathLabelStyle(property,node.style.getPropertyValue(property).trim().toLowerCase()))node.style.removeProperty(property);
+        if(!node.style.length)node.removeAttribute('style');
+      }
+    }
+  }
   // Mermaid emits CSS, but no CSS capable of reaching another resource may survive.
   for(const style of $$('style',el)) if(/\\|@import|url\s*\((?!\s*['"]?#)/i.test(style.textContent)) style.remove();
   for(const node of [el,...$$('*',el)]) for(const a of [...node.attributes]) {
@@ -942,7 +1013,6 @@ function cleanSVG(svg) {
   el.removeAttribute('height');el.style.width='100%';el.style.maxWidth='100%';return el;
 }
 async function diagrams(generation, coalesce=false) {
-  configureMermaid();
   if(coalesce) {
     // Theme swaps bake new SVG colours, but laying out after every figure is what
     // held the CSS colour change off the first frame. Draw them all, then anchor once.
@@ -953,9 +1023,10 @@ async function diagrams(generation, coalesce=false) {
       if(generation!==S.generation)return;
       const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
       try {
-        const {svg}=await mermaid.render(id,diagramSource(fig._mermaid));
+        const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels);
+        const {svg}=await mermaid.render(id,diagramSource(fig._mermaid,mathLabels));
         if(generation!==S.generation)return;
-        rendered.push({fig,node:cleanSVG(svg)});
+        rendered.push({fig,node:cleanSVG(svg,mathLabels)});
       } catch(e) {
         if(generation!==S.generation)return;
         const box=document.createElement('div');box.className='diagram-err';
@@ -978,9 +1049,10 @@ async function diagrams(generation, coalesce=false) {
     if(generation!==S.generation)return;
     const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
     try {
-      const {svg}=await mermaid.render(id,diagramSource(fig._mermaid));
+      const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels);
+      const {svg}=await mermaid.render(id,diagramSource(fig._mermaid,mathLabels));
       if(generation!==S.generation)return;
-      const a=capture();$('.diagram-stage',fig).replaceChildren(cleanSVG(svg));fig._theme=S.resolved;layoutAll();restore(a);
+      const a=capture();$('.diagram-stage',fig).replaceChildren(cleanSVG(svg,mathLabels));fig._theme=S.resolved;layoutAll();restore(a);
     } catch(e) {
       if(generation!==S.generation)return;
       const a=capture(), box=document.createElement('div');box.className='diagram-err';

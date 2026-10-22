@@ -21,9 +21,10 @@
       "license": "ISC"
     },
     "mermaid": {
-      "version": "11.16.1",
-      "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.16.1.tgz",
-      "license": "MIT"
+      "version": "12.2.0",
+      "source": "https://registry.npmjs.org/mermaid/-/mermaid-12.2.0.tgz",
+      "license": "MIT",
+      "embeddedKatex": "0.18.11"
     },
     "@highlightjs/cdn-assets": {
       "version": "11.12.0",
@@ -150,7 +151,7 @@
     "katex/katex.min.css": "d4ab5b8ee16989b070cdb0ea24bd6ad48fc8df1b787f280f29d3ae4f959f2c00",
     "katex/katex.min.js": "103a53763cc033bba8d175bf3f0ba597c3505c9b6747dd3f2c7bc2a6bfcc8ae7",
     "markdown.js": "4053c168b9f9c1da1e7a2c3ca9754dfc0af92a2516ae8fd2617824360d32a285",
-    "mermaid.min.js": "18327bef70d96fb505fe7287d9f6a7362ebf07ff6576ddfaffb1a06f3e1a2954",
+    "mermaid.min.js": "a8a6a6f805b074a8261a2825c86f99c8054acb3b35f50bb7e24a4f9f2c3c3b9f",
     "purify.min.js": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
   }
 }

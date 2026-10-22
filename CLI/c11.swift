@@ -3653,7 +3653,22 @@ struct CMUXCLI {
             }
             var params: [String: Any] = [:]
             let wsId: String?
-            if let explicitWorkspace = optionValue(commandArgs, name: "--workspace") {
+            let workspaceOptionIndex = commandArgs.firstIndex(where: {
+                $0 == "--workspace" || $0.hasPrefix("--workspace=")
+            })
+            if let workspaceOptionIndex {
+                let option = commandArgs[workspaceOptionIndex]
+                let explicitWorkspace: String?
+                if option == "--workspace" {
+                    explicitWorkspace = workspaceOptionIndex + 1 < commandArgs.count
+                        ? commandArgs[workspaceOptionIndex + 1]
+                        : nil
+                } else {
+                    explicitWorkspace = String(option.dropFirst("--workspace=".count))
+                }
+                guard let explicitWorkspace else {
+                    throw CLIError(message: String(localized: "cli.focus.workspace.requiresValue", defaultValue: "--workspace requires a value"))
+                }
                 wsId = try resolveWorkspaceId(explicitWorkspace, client: client)
             } else {
                 wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)

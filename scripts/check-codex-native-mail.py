@@ -72,10 +72,25 @@ print(plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleIdentifi
               bundle_id, 'true' if on else 'false')
 
     def tenant():
+        # Codex itself rewrites its [tui*] tables on every TUI launch (first-run
+        # flags, a model-notice counter), with or without the setting. Those
+        # are listed, not compared; every other line must stay unchanged.
         return json.loads(guest('''from pathlib import Path
 import hashlib,json
 home=Path.home()/'.codex'
-print(json.dumps({n:(hashlib.sha256((home/n).read_bytes()).hexdigest() if (home/n).exists() else None) for n in ['config.toml','hooks.json']}))'''))
+def split(text):
+ kept,tui,section=[],[],''
+ for line in text.splitlines():
+  if line.startswith('['):section=line
+  (tui if section.startswith('[tui') else kept).append(line)
+ return kept,tui
+out={}
+for n in ['config.toml','hooks.json']:
+ p=home/n
+ if not p.exists():out[n]=None;continue
+ kept,tui=split(p.read_text())
+ out[n]=hashlib.sha256('\\n'.join(kept).encode()).hexdigest();out[n+' codex-owned [tui]']=tui
+print(json.dumps(out))'''))
 
     def processes():
         return json.loads(guest('''import json,subprocess
@@ -217,8 +232,10 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
 
         # D. Relay killed under a live TUI: c11 logs the lost route.
         killed_pid = max(pid for pid, cmd in processes() if 'codex-mailbox-proxy' in cmd)
+        earlier = len([r for r in inspect(cold)['dispatch'] if r.get('event') == 'native_route_lost'])
         guest('import os,signal,sys;os.kill(int(sys.argv[1]),signal.SIGKILL)', killed_pid)
-        lost = wait('native_route_lost logged', lambda: [r for r in inspect(cold)['dispatch'] if r.get('event') == 'native_route_lost'], 15)
+        lost = wait('native_route_lost logged', lambda: [r for r in inspect(cold)['dispatch'] if r.get('event') == 'native_route_lost'][earlier:], 15)
+        assert lost[-1]['panel'].lower() in {native['panel'].lower(), cold['panel'].lower()}, lost
         time.sleep(2)
         note('D_relay_killed', dict(pid=killed_pid, lost=lost, screens={t['label']: screen(t, 8) for t in (native, cold)}))
 
@@ -261,7 +278,8 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
             except Exception as error:
                 observations['close_' + panel] = str(error)
         observations['tenant_after'] = tenant()
-        observations['tenant_unchanged'] = observations.get('tenant_before') == observations['tenant_after']
+        before, after = observations.get('tenant_before') or {}, observations['tenant_after']
+        observations['tenant_unchanged'] = all(before.get(n) == after.get(n) for n in ['config.toml', 'hooks.json'])
         observations['seconds'] = round(time.monotonic() - started, 3)
         (args.out / 'proof.json').write_text(json.dumps(observations, indent=2) + '\n')
         assert observations['tenant_unchanged'], 'Codex tenant config changed during the proof'

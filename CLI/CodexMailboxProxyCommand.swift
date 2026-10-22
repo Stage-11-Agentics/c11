@@ -417,14 +417,11 @@ private final class CodexMailboxProxy {
 // MARK: - Daemon resolution
 
 private enum CodexDaemon {
-    /// The socket the TUI would use itself. A CLI and daemon of different
-    /// versions keep Codex's own launch path, which can warn about them.
+    /// The socket the TUI would use itself. The relay never starts a daemon:
+    /// Codex's own launch path decides that (`features.daemon_auto_start`), and
+    /// a CLI and daemon of different versions keep that path, which can warn.
     static func socketPath(codex: String, log: CodexProxyLog) -> String? {
-        var status = version(codex)
-        if status?["status"] as? String != "running" {
-            _ = run(codex, ["app-server", "daemon", "start"], timeout: 8)
-            status = version(codex)
-        }
+        let status = version(codex)
         guard let status, status["status"] as? String == "running",
               let path = status["socketPath"] as? String, path.hasPrefix("/") else { return nil }
         guard let cli = status["cliVersion"] as? String, cli == status["appServerVersion"] as? String else {

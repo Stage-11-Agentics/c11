@@ -317,8 +317,8 @@ The initial success returns
 `subscription_id`; subsequent JSONL frames are `{type:"deliver", delivery_id,
 text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
 Only positive in-harness acceptance may produce `accepted`. Pi uses
-`route:"pi_extension"`, omp `route:"omp_extension"`, Claude `route:"claude_inbox"`
-and OpenCode `route:"opencode_plugin"`, all with `can_queue:false` (idle-only); `codex_queue` remains reserved. Authentication follows the existing socket
+`route:"pi_extension"`, omp `route:"omp_extension"`, Claude `route:"claude_inbox"`,
+OpenCode `route:"opencode_plugin"` and the opt-in Codex relay `route:"codex_queue"`, all with `can_queue:false` (idle-only). Authentication follows the existing socket
 policy, and IO runs off the main thread. Established idle streams do not poll.
 A new subscriber replaces the previous listener for that panel, including an
 in-process listener replaced by a sidecar. The old stream receives
@@ -328,7 +328,7 @@ transient `not_ready` response during session restore, which retries. A new
 harness session can try again after other refusals. Unexpected connection loss
 still retries with bounded backoff.
 
-`_dispatch.log` names `route:"pi_extension"`, `route:"omp_extension"`, `route:"claude_inbox"`, `route:"opencode_plugin"` or `route:"typed"` on each ring.
+`_dispatch.log` names `route:"pi_extension"`, `route:"omp_extension"`, `route:"claude_inbox"`, `route:"opencode_plugin"`, `route:"codex_queue"` or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and
 `native_failure` (`native_timeout`, `native_rejected`, `native_disconnected`,
 `native_replaced`, `native_unavailable` or `native_write_failed`; the Claude
@@ -479,6 +479,23 @@ fail the native-with-draft assertion. The check closes its panels and provider;
 the caller still runs `sandbox-down.sh`. No provider credentials are copied or
 real model calls made. Focused transport/acceptance guards run with
 `node --test tests/test_opencode_native_mail.mjs` on Atlas.
+
+### Codex native delivery (opt-in)
+
+Off by default. Turn on **Settings > Agent Integrations > Codex Native Mail Delivery**, or `defaults write <c11 bundle id> codexNativeMailbox -bool true`. The app exports `C11_CODEX_NATIVE_MAIL=1` to terminals it opens afterwards; terminals already open keep their launch-time value. With the setting off the `codex` wrapper launches exactly as before.
+
+With it on, an interactive `codex` launch (plain, a prompt, `resume`, `fork`) starts `c11 codex-mailbox-proxy` as a child of the Codex process. The relay listens on `/tmp/c11-<uid>/codex-<pid>.sock` (0600 in a 0700 directory), and the wrapper adds `--remote unix://<that socket>`. The relay forwards every byte between the TUI and the shared app-server daemon unchanged, and serves only the TUI's own process tree. It never starts a daemon. It is skipped when the daemon is not running, when the CLI and daemon versions differ, or when the operator passed `--remote` or `--no-daemon`. If it is not listening within three seconds, Codex launches without it.
+
+The relay reads the TUI's own traffic to learn which thread the TUI displays: the latest non-ephemeral `thread/start`, `thread/resume` or `thread/fork` it answered, until `thread/unsubscribe`. Title-generation helper threads are excluded. On an invitation it registers `codex_queue` and rings only when:
+
+- that thread is idle, and
+- it has completed a turn on this connection, since a thread's first turn can reach the TUI several seconds late.
+
+It sends `thread/queue/add` with the doorbell line and holds the TUI's thread switches (`/new`, resume, fork) until the ring resolves. It replies `accepted` only when the TUI's connection receives `turn/started` for that thread and the submission has left the queue. It replies `rejected` when nothing was delivered: no displayed thread, a switch in flight, a busy or cold thread, or a submission it withdrew. If the submission was consumed but not seen, the relay interrupts that turn and sends nothing, so the app's two-second deadline hands the IDs to the typed gate.
+
+The relay's diagnostics are in `/tmp/c11-<uid>/codex-<pid>.log`: thread IDs, outcomes and timings, never message text. A relay that dies under a live TUI cannot be replaced. Codex 0.163 then shows `Reconnecting to server…` and stops answering. Ctrl-C twice exits, and `codex resume <id>` in the panel continues the thread, which the daemon kept. c11 records `{"event":"native_route_lost","panel":…,"route":"codex_queue"}` in `_dispatch.log`, and later rings use typed delivery.
+
+Tests: `C11_TEST_CLI=<built c11> python3 tests/test_codex_mailbox_proxy.py` (fake app server and TUI) and `python3 tests/test_codex_wrapper_native_mail.py`, which compares against main's wrapper when `C11_MAIN_CODEX_WRAPPER` names it. For a guest proof, stage `--agents codex`, then run `scripts/check-codex-native-mail.py <run-id>`.
 
 ### When the doorbell line arrives
 
@@ -743,7 +760,7 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | `gc`        | `temp_files_removed`                                                |
 | `replayed`  | `id` (declared in the event enum; not emitted in Stage 2)           |
 
-Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecycle `buffered`, `expired`, `evicted`, `skipped`, and the doorbell outcomes `doorbell`, `doorbell_skipped`, `doorbell_capped`, `doorbell_failed`, `doorbell_recheck` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). A doorbell line carries `reason` and `route`. A typed fallback after a native failure also carries `native_route` and `native_failure`. (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it. `flushed` and `claim_failed` remain in the log vocabulary and are not emitted by the doorbell.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecycle `buffered`, `expired`, `evicted`, `skipped`, and the doorbell outcomes `doorbell`, `doorbell_skipped`, `doorbell_capped`, `doorbell_failed`, `doorbell_recheck` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). A `native_route_lost` event (`panel`, `route`) records a native listener that closed while its agent kept running. A doorbell line carries `reason` and `route`. A typed fallback after a native failure also carries `native_route` and `native_failure`. (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it. `flushed` and `claim_failed` remain in the log vocabulary and are not emitted by the doorbell.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
 
 | stdin outcome | Meaning |
 |---------------|---------|

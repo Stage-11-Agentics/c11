@@ -25,7 +25,9 @@ async function fixture(t, options = {}) {
   Object.assign(process.env, { C11_SOCKET_PATH: root + '/mail.sock', C11_PANEL_ID: 'fixture-panel',
     C11_AGENT_INTERACTIVE_PID: String(process.pid), ...options.env });
   const sockets = new Set(), subscriptions = [], frames = [], calls = [], disposers = [], handlers = new Map();
-  const state = { route: { name: 'session', params: { sessionID: 'session-a' } }, status: 'idle', permission: [], question: [] };
+  const state = { route: { name: 'session', params: { sessionID: 'session-a' } }, status: 'idle', permission: [], question: [],
+    sessions: new Map([['session-a', { id: 'session-a' }], ['session-b', { id: 'session-b' }],
+      ['session-child', { id: 'session-child', parentID: 'session-a' }]]) };
   const server = createServer(socket => {
     sockets.add(socket);
     socket.on('error', () => {});
@@ -55,7 +57,8 @@ async function fixture(t, options = {}) {
   });
   const api = {
     route: { get current() { return state.route; } },
-    state: { session: { status: () => ({ type: state.status }), permission: () => state.permission, question: () => state.question } },
+    state: { session: { get: options.missingSessionGet ? undefined : id => state.sessions.get(id),
+      status: () => ({ type: state.status }), permission: () => state.permission, question: () => state.question } },
     get ui() { assert.fail('mail must never read or edit the composer'); },
     client: { session: { promptAsync(input) { calls.push(input); return options.prompt?.(input) ?? Promise.resolve({ response: { status: 204 } }); } } },
     event: { on(type, fn) { handlers.set(type, fn); return () => handlers.delete(type); } },
@@ -161,6 +164,39 @@ test('an API error after invocation leaves acknowledgement to real events or tim
   f.accept(f.calls[0]);
   await until(() => f.reply('ambiguous'));
   assert.equal(f.reply('ambiguous').type, 'accepted');
+});
+
+test('child and unresolved session views retire delivery until the root returns', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  await until(() => f.subscriptions.length === 1);
+  const first = f.subscriptions[0];
+  f.state.route = { name: 'session', params: { sessionID: 'session-child' } };
+  f.deliver('child-before-monitor');
+  await until(() => f.reply('child-before-monitor') || f.sockets.size === 0);
+  assert.equal(f.calls.length, 0, 'a child view must reject before the SDK call');
+  await delay(350);
+  assert.equal(f.subscriptions.length, 1, 'a child view must not bind a native stream');
+  assert.equal(f.sockets.size, 0);
+  f.state.route = { name: 'session', params: { sessionID: 'session-unresolved' } };
+  await delay(300);
+  assert.equal(f.subscriptions.length, 1, 'unresolved session metadata must not bind');
+  assert.equal(f.calls.length, 0);
+  f.state.route = { name: 'session', params: { sessionID: 'session-a' } };
+  await until(() => f.subscriptions.length === 2);
+  assert.notEqual(first.frame.params.session_id, f.subscriptions[1].frame.params.session_id);
+  f.deliver('back-to-root');
+  await until(() => f.calls.length === 1);
+  assert.equal(f.calls[0].sessionID, 'session-a');
+  f.accept(f.calls[0]);
+  await until(() => f.reply('back-to-root'));
+  assert.equal(f.reply('back-to-root').type, 'accepted');
+});
+
+test('missing session metadata API keeps the native route disabled', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { missingSessionGet: true });
+  await delay(300);
+  assert.equal(f.subscriptions.length, 0);
+  assert.equal(f.calls.length, 0);
 });
 
 test('native opt-out and inherited interactive PID never register', { timeout: 5000 }, async t => {

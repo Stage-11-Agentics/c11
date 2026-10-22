@@ -431,7 +431,8 @@ acceptance can still be logged. Envelopes remain unread until explicit
 guards remain active. Dispatch uses `route: opencode_plugin`, or `typed` with
 the attempted native route and failure reason after a failed native attempt.
 
-Home retires the subscription; new and resumed sessions bind fresh generations.
+Home, child-session views and unresolved session metadata retire the subscription;
+only a displayed root session can bind. New and resumed roots bind fresh generations.
 The plugin reads the live route again before every SDK call and monitors route
 changes every 250 ms because this API has no navigation event. Plugin disposal
 and process exit close the stream. Unexpected c11 connection loss uses the shared

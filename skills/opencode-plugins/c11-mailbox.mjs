@@ -10,7 +10,7 @@ export default {
     const agentPID = Number(process.env.C11_AGENT_INTERACTIVE_PID);
     if (!socketPath || !panelID || agentPID !== process.pid ||
         process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED === '1' ||
-        !api.route || !api.state?.session?.status || !api.state.session.permission ||
+        !api.route || !api.state?.session?.get || !api.state.session.status || !api.state.session.permission ||
         !api.state.session.question || !api.client?.session?.promptAsync ||
         !api.event?.on || !api.lifecycle?.onDispose) return;
 
@@ -25,8 +25,11 @@ export default {
     let disposed = false;
     const currentSession = () => {
       const route = api.route.current;
-      return route?.name === 'session' && typeof route.params?.sessionID === 'string'
-        ? route.params.sessionID : undefined;
+      if (route?.name !== 'session' || typeof route.params?.sessionID !== 'string') return;
+      const session = api.state.session.get(route.params.sessionID);
+      // Child views have no composer. Until the displayed root is known, keep
+      // the same typed fallback policy as Home instead of starting a child turn.
+      return session && !session.parentID ? route.params.sessionID : undefined;
     };
     const retire = () => {
       stop?.();

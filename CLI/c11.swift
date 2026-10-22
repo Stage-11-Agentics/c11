@@ -6537,7 +6537,7 @@ struct CMUXCLI {
             valueOptions: Set<String> = [],
             literalFlagArgumentIndices: Set<Int> = [],
             literalTailStart: Int? = nil,
-            honorsEndOfOptions: Bool = false
+            honorsEndOfOptions: Bool = true
         ) {
             self.flags = flags.union(valueOptions)
             self.valueOptions = valueOptions
@@ -6552,7 +6552,18 @@ struct CMUXCLI {
             try validateClaudeTeamsTmuxFlags(args)
             return
         }
+        if let separator = args.firstIndex(of: "--"), args.index(after: separator) < args.endIndex,
+           command == "clear-notifications" || (command == "state" && args.first?.lowercased() == "save") {
+            let unexpected = args[args.index(after: separator)]
+            let commandName = command == "state" ? "state save" : command
+            throw CLIError(message: "\(commandName): unexpected argument '\(unexpected)'")
+        }
         guard var spec = commandFlagPreflightSpec(command: command, args: args) else { return }
+        // A trailing --json is accepted by command handlers as the c11 output
+        // option. Preserve the two legacy command parsers that reject it.
+        if command != "read-screen", !(command == "mailbox" && args.first?.lowercased() == "recv") {
+            spec.flags.insert("--json")
+        }
         for flag in Array(spec.flags) {
             let spellings = Self.flagSpellings(flag)
             spec.flags.formUnion(spellings)
@@ -6571,7 +6582,10 @@ struct CMUXCLI {
                 continue
             }
             let argument = args[index]
-            guard argument.hasPrefix("-"), argument != "-" else {
+            guard argument.range(
+                of: #"^--?[A-Za-z][A-Za-z0-9-]*(?:=.*)?$"#,
+                options: .regularExpression
+            ) != nil else {
                 index += 1
                 continue
             }
@@ -6675,6 +6689,34 @@ struct CMUXCLI {
             return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
         case "mailbox":
             return mailboxFlagPreflightSpec(args)
+        case "set-status", "clear-status", "list-status", "set-progress", "clear-progress", "log", "clear-log", "list-log", "sidebar-state":
+            return sidebarMetadataFlagPreflightSpec(command)
+        case "set-metadata":
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            spec.flags.formUnion(["--json-input", "--body"])
+            spec.valueOptions.formUnion(["--json-input", "--body"])
+            return spec
+        case "get-metadata":
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            spec.flags.insert("--include-sources")
+            return spec
+        case "get-workspace-metadata":
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            spec.flags.insert("--key")
+            spec.valueOptions.insert("--key")
+            return spec
+        case "set-workspace-description", "set-workspace-icon":
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            spec.flags.insert("--value")
+            spec.valueOptions.insert("--value")
+            return spec
+        case "clear-notifications":
+            return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
+        case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            spec.flags.formUnion(["--workspace", "--window"])
+            spec.valueOptions.formUnion(["--workspace", "--window"])
+            return spec
         default:
             guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
             if ["send", "send-panel", "paste", "send-key", "send-key-panel", "pipe-pane", "set-buffer", "respawn-pane", "rename-panel", "log", "ssh"].contains(command) {
@@ -6682,6 +6724,34 @@ struct CMUXCLI {
             }
             return spec
         }
+    }
+
+    private func sidebarMetadataFlagPreflightSpec(_ command: String) -> CLIFlagPreflightSpec {
+        var flags: Set<String> = []
+        var values: Set<String> = ["--workspace", "--panel"]
+        switch command {
+        case "set-status":
+            values.formUnion(["--icon", "--color", "--url", "--link", "--priority", "--format", "--pid"])
+        case "set-progress":
+            values.insert("--label")
+        case "log":
+            values.formUnion(["--level", "--source"])
+        case "list-log":
+            values.insert("--limit")
+        case "sidebar-state":
+            flags.insert("--json")
+        default:
+            break
+        }
+        for flag in Array(values) {
+            values.formUnion(Self.flagSpellings(flag))
+        }
+        flags.formUnion(values)
+        return CLIFlagPreflightSpec(
+            flags: flags,
+            valueOptions: values,
+            honorsEndOfOptions: true
+        )
     }
 
     private func helpDerivedFlagPreflightSpec(command: String, args: [String]) -> CLIFlagPreflightSpec? {
@@ -6737,7 +6807,15 @@ struct CMUXCLI {
                 readingUsage = false
                 readingFlags = true
                 selected.append(line)
-            } else if readingUsage || readingFlags {
+            } else if readingUsage {
+                selected.append(line)
+            } else if readingFlags,
+                      trimmed.range(
+                        of: #"^--?[A-Za-z][A-Za-z0-9-]*(?:=|\s|$)"#,
+                        options: .regularExpression
+                      ) != nil {
+                // Only option declarations count. Prose mentioning an option
+                // (for example "--window alone is not a target") is not one.
                 selected.append(line)
             }
         }
@@ -6995,8 +7073,10 @@ struct CMUXCLI {
         case "show-buffer", "showb", "save-buffer", "saveb": return TmuxFlagSpec(valueFlags: ["-b"])
         case "set-hook": return TmuxFlagSpec(valueLongFlags: ["--unset"], booleanLongFlags: ["--list"])
         case "set-buffer": return TmuxFlagSpec(valueLongFlags: ["--name"])
-        case "last-window", "next-window", "previous-window", "list-buffers", "popup", "bind-key", "unbind-key", "copy-mode",
-             "select-layout", "set-option", "set", "set-window-option", "setw", "source-file", "refresh-client", "attach-session", "detach-client":
+        case "select-layout", "set-option", "set", "set-window-option", "setw", "source-file", "refresh-client", "attach-session", "detach-client":
+            // These are deliberate successful no-ops in the tmux compatibility layer.
+            return nil
+        case "last-window", "next-window", "previous-window", "list-buffers", "popup", "bind-key", "unbind-key", "copy-mode":
             return TmuxFlagSpec()
         default: return nil
         }
@@ -7137,7 +7217,9 @@ struct CMUXCLI {
         case "select":
             flags.insert("--snapshot-after")
             values.formUnion(["--selector", "--value"])
-        case "scroll": values.formUnion(["--selector", "--dx", "--dy"])
+        case "scroll":
+            flags.insert("--snapshot-after")
+            values.formUnion(["--selector", "--dx", "--dy"])
         case "screenshot": values.insert("--out")
         case "get":
             switch subArgs.first?.lowercased() {
@@ -12984,6 +13066,7 @@ struct CMUXCLI {
             Set a sidebar status entry for a workspace. Status entries appear as
             pills in the sidebar workspace row. Use a unique key so different tools
             (e.g. "claude_code", "build") can manage their own entries.
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --icon <name>          Icon name (e.g. "sparkle", "hammer")
@@ -12999,10 +13082,10 @@ struct CMUXCLI {
             Usage: c11 clear-status <key> [flags]
 
             Remove a sidebar status entry by key.
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
-              --window alone is not a workspace target
 
             Example:
               c11 clear-status build --workspace workspace:2
@@ -13012,10 +13095,10 @@ struct CMUXCLI {
             Usage: c11 list-status [flags]
 
             List all sidebar status entries for a workspace.
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
-              --window alone is not a workspace target
 
             Example:
               c11 list-status --workspace workspace:2
@@ -13039,10 +13122,10 @@ struct CMUXCLI {
             Usage: c11 clear-progress [flags]
 
             Clear the sidebar progress bar for a workspace.
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
-              --window alone is not a workspace target
 
             Example:
               c11 clear-progress --workspace workspace:2
@@ -13068,10 +13151,10 @@ struct CMUXCLI {
             Usage: c11 clear-log [flags]
 
             Clear all sidebar log entries for a workspace.
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
-              --window alone is not a workspace target
 
             Example:
               c11 clear-log --workspace workspace:2
@@ -13081,11 +13164,11 @@ struct CMUXCLI {
             Usage: c11 list-log [flags]
 
             List sidebar log entries for a workspace.
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --limit <n>            Show only the last N entries
               --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
-              --window alone is not a workspace target
 
             Example:
               c11 list-log --workspace workspace:2
@@ -13097,10 +13180,10 @@ struct CMUXCLI {
 
             Dump all sidebar metadata for a workspace (cwd, git branch, ports,
             status entries, progress, log entries).
+            A standalone --window is not a workspace target for sidebar commands.
 
             Flags:
               --workspace <id|ref>   Required outside c11; defaults to $C11_WORKSPACE_ID
-              --window alone is not a workspace target
 
             Example:
               c11 sidebar-state --workspace workspace:2

@@ -911,6 +911,9 @@ function configureMermaid(mathLabels=false) {
     secure:['secure','securityLevel','startOnLoad','maxTextSize','maxEdges','flowchart','htmlLabels','theme','themeVariables'],
     maxTextSize:50000,maxEdges:500,htmlLabels:mathLabels,
     fontFamily:'"JetBrains Mono Variable", monospace',flowchart:{htmlLabels:mathLabels,curve:'basis',padding:14,nodeSpacing:34,rankSpacing:46},
+    // In WKWebView, Mermaid 12's measured Gantt width made titles and axes disproportionate to the viewer.
+    // A fixed design width keeps SVG text scale stable; the viewer scales it to the panel.
+    gantt:{useWidth:1200,leftPadding:150,rightPadding:75},
     sequence:{actorMargin:46,boxMargin:8,mirrorActors:false,messageFontSize:12,noteFontSize:12,actorFontSize:12},
     themeVariables:{darkMode:t.scheme==='dark',background:c.bg,fontSize:'12.5px',primaryColor:c.node,primaryTextColor:c.text,primaryBorderColor:c.border,
       secondaryColor:c.cluster,tertiaryColor:c.cluster,lineColor:c.line,textColor:c.text,mainBkg:c.node,nodeBorder:c.border,nodeTextColor:c.text,
@@ -980,7 +983,7 @@ function diagramSource(raw,mathLabels=false) {
 const mathLabelTags=['div','span','br','b','strong','i','em','u','s','sub','sup','p','math','semantics','annotation','mrow','mi','mn','mo','mfrac','msup','msub','msubsup','msqrt','mroot','mtext','mstyle','mspace','mpadded','mphantom','menclose','munder','mover','munderover','mtable','mtr','mtd','merror','maction'];
 const mathLabelAttrs=['xmlns','class','style','display','mathvariant','mathsize','scriptlevel','displaystyle','mathbackground','mathcolor','encoding','notation','rowspan','columnspan','rowalign','columnalign','columnlines','rowlines','columnspacing','rowspacing','linethickness','bevelled','stretchy','symmetric','fence','separator','form','lspace','rspace','minsize','maxsize','largeop','movablelimits','accent','accentunder'];
 function safeMathLabelStyle(property,value) {
-  if(property==='display')return ['table','table-cell','flex'].includes(value);
+  if(property==='display')return ['inline','table','table-cell','flex'].includes(value);
   if(property==='white-space')return value==='nowrap';
   if(property==='line-height')return /^\d+(?:\.\d+)?$/.test(value)&&Number(value)>=1&&Number(value)<=2;
   if(property==='text-align'||property==='align-items'||property==='justify-content')return value==='center';
@@ -999,10 +1002,14 @@ function cleanSVG(svg,mathLabels=false) {
     for(let i=0;i<safeForeignObjects.length;i++) {
       const safe=DOMPurify.sanitize(rawForeignObjects[i].innerHTML,{ALLOWED_TAGS:mathLabelTags,ALLOWED_ATTR:mathLabelAttrs,ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false});
       safeForeignObjects[i].innerHTML=safe;
-      for(const math of $$('math[display="block"]',safeForeignObjects[i]))math.setAttribute('display','inline');
       for(const node of $$('[style]',safeForeignObjects[i])) {
         for(const property of [...node.style])if(!safeMathLabelStyle(property,node.style.getPropertyValue(property).trim().toLowerCase()))node.style.removeProperty(property);
         if(!node.style.length)node.removeAttribute('style');
+      }
+      for(const math of $$('math[display="block"]',safeForeignObjects[i])) {
+        math.setAttribute('display','inline');
+        // WebKit still lays out display="block" MathML as a separate line; enforce inline flow in CSS too.
+        math.style.display='inline';
       }
     }
   }

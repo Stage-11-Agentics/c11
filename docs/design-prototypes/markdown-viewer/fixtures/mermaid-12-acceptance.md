@@ -59,6 +59,8 @@ stateDiagram-v2
 gantt
     title C11-456 validation
     dateFormat YYYY-MM-DD
+    axisFormat %b %d
+    tickInterval 1day
     section Viewer
     Baseline proof :done, baseline, 2026-10-22, 1d
     Mermaid 12 proof :active, upgrade, after baseline, 1d

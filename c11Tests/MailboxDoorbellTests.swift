@@ -1233,6 +1233,162 @@ final class HeldComposerSeriesTests: XCTestCase {
         XCTAssertNil(next.draftWatch)
     }
 
+    /// A Return refused mid-paste (a turn opened, the journal lagged) left the
+    /// whole line in the composer, and nothing ever pressed Return on it. The
+    /// next look at an idle prompt submits it, even in the same idle period.
+    func testStrandedLineIsSubmittedOnAnIdleLook() {
+        var input = MailboxDoorbell.Input()
+        input.unreadIds = ["a"]
+        input.rungThisEpoch = true
+        input.strandedPending = true
+        input.prompt = nil
+        XCTAssertFalse(MailboxDoorbell.needsPrompt(input))
+        XCTAssertTrue(MailboxDoorbellSequence.needsStrandedLook(input))
+
+        input.prompt = .draft
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "once_per_idle"))
+        XCTAssertEqual(MailboxDoorbellSequence.look(input, composer: .matches, busyExhausted: false), .submitStranded)
+
+        // A new idle period reads the prompt on the ordinary path.
+        input.rungThisEpoch = false
+        input.strandedPending = false
+        XCTAssertEqual(MailboxDoorbellSequence.look(input, composer: .matches, busyExhausted: false), .submitStranded)
+    }
+
+    /// Without a refused Return in this idle period, once-per-idle stands and
+    /// the prompt is not read.
+    func testOncePerIdleStandsWithoutAStrandedLine() {
+        var input = MailboxDoorbell.Input()
+        input.unreadIds = ["a"]
+        input.rungThisEpoch = true
+        input.prompt = nil
+        XCTAssertFalse(MailboxDoorbellSequence.needsStrandedLook(input))
+        XCTAssertEqual(
+            MailboxDoorbellSequence.look(input, composer: nil, busyExhausted: false),
+            .decide(.skip(reason: "once_per_idle"))
+        )
+    }
+
+    /// Only the whole line read back exactly is submitted. A prefix stays on
+    /// the held series; an edit or a cleared composer stops at once-per-idle.
+    func testStrandedSubmitNeedsTheWholeLine() {
+        var input = MailboxDoorbell.Input()
+        input.unreadIds = ["a"]
+        input.rungThisEpoch = true
+        input.strandedPending = true
+        input.prompt = .draft
+        let prefix = MailboxDoorbellSequence.look(input, composer: .notVisible, busyExhausted: false)
+        XCTAssertEqual(prefix, .decide(.skip(reason: "draft")))
+        XCTAssertEqual(
+            MailboxDoorbellSequence.look(input, composer: .changed, busyExhausted: false),
+            .decide(.skip(reason: "once_per_idle"))
+        )
+        input.prompt = .empty
+        XCTAssertEqual(
+            MailboxDoorbellSequence.look(input, composer: nil, busyExhausted: false),
+            .decide(.skip(reason: "once_per_idle"))
+        )
+    }
+
+    /// A stranded look that is held for any other reason plans from that
+    /// reason, so a defer, a cap, a busy read, or a held composer looks again
+    /// instead of ending at once-per-idle.
+    func testHeldStrandedLookLooksAgain() {
+        var base = MailboxDoorbell.Input()
+        base.unreadIds = ["a"]
+        base.rungThisEpoch = true
+        base.strandedPending = true
+        base.prompt = .draft
+
+        var quiet = base
+        quiet.focused = true
+        quiet.operatorKeyAge = 1
+        var settling = base
+        settling.journalInterruptionSettling = true
+        var capped = base
+        capped.recentAttempts = MailboxDoorbell.rateCap
+        var busy = base
+        busy.prompt = nil
+
+        let cases: [(String, MailboxDoorbell.Input, FeedAnswerComposerCheck?, Bool, MailboxDoorbellSequence.Rearm)] = [
+            ("quiet_window", quiet, .matches, false, .after(2)),
+            ("interruption", settling, .matches, false, .after(MailboxDoorbellSequence.shortRecheck)),
+            ("rate_capped", capped, .matches, false, .at(start.addingTimeInterval(MailboxDoorbell.rateWindow))),
+            ("busy", busy, nil, true, .after(MailboxDoorbellSequence.shortRecheck)),
+            ("prefix", base, .notVisible, false, .after(5)),
+        ]
+        for (name, input, composer, busyExhausted, rearm) in cases {
+            guard case .decide(let decision) = MailboxDoorbellSequence.look(
+                input,
+                composer: composer,
+                busyExhausted: busyExhausted
+            ) else {
+                XCTFail("\(name) submitted")
+                continue
+            }
+            let next = MailboxDoorbellSequence.plan(
+                decision: decision,
+                attempts: [start],
+                now: start,
+                busyExhausted: busyExhausted,
+                strandedDoorbell: composer == .notVisible
+            )
+            XCTAssertEqual(next.rearm, rearm, name)
+        }
+    }
+
+    /// Every other ring check still holds a stranded line.
+    func testStrandedSubmitKeepsEveryOtherRingCheck() {
+        var base = MailboxDoorbell.Input()
+        base.unreadIds = ["a"]
+        base.rungThisEpoch = true
+        base.strandedPending = true
+        base.prompt = .draft
+        let holds: [(String, (inout MailboxDoorbell.Input) -> Void)] = [
+            ("no_mail", { $0.hasUnread = false }),
+            ("not_stdin", { $0.stdinDelivery = false }),
+            ("opted_out", { $0.optedOut = true }),
+            ("in_flight", { $0.inFlight = true }),
+            ("flagged", { $0.flagged = true }),
+            ("rate_capped", { $0.recentAttempts = MailboxDoorbell.rateCap }),
+            ("covered", { $0.coveredIds = ["a"] }),
+            ("text_box", { $0.textBoxUnsent = true }),
+            ("quiet_window", { $0.focused = true; $0.operatorKeyAge = 1 }),
+            ("interruption", { $0.journalInterruptionSettling = true }),
+        ]
+        for (name, mutate) in holds {
+            var input = base
+            mutate(&input)
+            XCTAssertNotEqual(
+                MailboxDoorbellSequence.look(input, composer: .matches, busyExhausted: false),
+                .submitStranded,
+                name
+            )
+        }
+    }
+
+    /// A read that shows the composer without the line clears the belief; an
+    /// unreadable one keeps it. A Return pressed on the line counts toward
+    /// the cap, and a submit clears the belief.
+    func testStrandedBeliefAndCapAccounting() {
+        typealias S = MailboxDoorbellSequence
+        XCTAssertTrue(S.strandedPendingAfterRead(current: false, prompt: .draft, composer: .matches))
+        XCTAssertTrue(S.strandedPendingAfterRead(current: false, prompt: .draft, composer: .notVisible))
+        XCTAssertFalse(S.strandedPendingAfterRead(current: true, prompt: .draft, composer: .changed))
+        XCTAssertFalse(S.strandedPendingAfterRead(current: true, prompt: .empty, composer: nil))
+        XCTAssertTrue(S.strandedPendingAfterRead(current: true, prompt: nil, composer: nil))
+        XCTAssertTrue(S.strandedPendingAfterRead(current: true, prompt: .unknown, composer: nil))
+
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.strandedPending = true
+        ledger.recordStrandedReturn(at: start, epoch: "1|prompt")
+        XCTAssertEqual(ledger.rings(at: start), 1)
+        XCTAssertTrue(ledger.rung(in: "1|prompt"))
+        XCTAssertFalse(ledger.inFlight)
+        S.coverAfterSubmit(ledger: &ledger, unread: ["a"])
+        XCTAssertFalse(ledger.strandedPending)
+    }
+
     /// C11-400 M: each held look is named for its dispatch line. Other
     /// re-arms are not held looks.
     func testEveryHeldLookIsNamed() {

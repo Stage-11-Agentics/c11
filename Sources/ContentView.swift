@@ -393,6 +393,22 @@ enum DragOverlayRoutingPolicy {
         return pasteboardTypes.contains(bonsplitTabTransferType)
     }
 
+    /// True while a panel drag is carrying the pointer. Hit tests call this on
+    /// every event, keystrokes included, so the event type is checked first.
+    /// The drag pasteboard keeps the last drag's types after it ends, so the
+    /// held mouse button is what says a drag is live.
+    @MainActor static func isPanelDragInFlight() -> Bool {
+        switch NSApp.currentEvent?.type {
+        case nil, .leftMouseDragged?, .rightMouseDragged?, .otherMouseDragged?,
+             .mouseMoved?, .cursorUpdate?, .flagsChanged?, .periodic?:
+            break
+        default:
+            return false
+        }
+        guard NSEvent.pressedMouseButtons != 0 else { return false }
+        return hasBonsplitTabTransfer(NSPasteboard(name: .drag).types)
+    }
+
     static func hasSidebarWorkspaceReorder(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
         guard let pasteboardTypes else { return false }
         return pasteboardTypes.contains(sidebarWorkspaceReorderType)
@@ -8467,6 +8483,7 @@ struct WorkspaceSidebar: View {
     @State private var draggedGroupId: UUID?
     @State private var draggedWorkspaceId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
+    @State private var panelDropTargetWorkspaceId: UUID?
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
     private var sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
     @AppStorage(SidebarWorkspaceDetailSettings.showNotificationMessageKey)
@@ -8624,6 +8641,7 @@ struct WorkspaceSidebar: View {
                                     case .workspace(let item):
                                         if let ws = workspacesById[item.workspaceId] {
                                             workspaceRow(ws, item: item, chromeTokens: chromeTokens)
+                                                .anchorPreference(key: SidebarWorkspaceRowAnchorKey.self, value: .bounds) { [ws.id: $0] }
                                                 .padding(.leading, item.groupId == nil ? 0 : 12)
                                                 .overlay(alignment: .topLeading) {
                                                     groupColorBar(
@@ -8641,6 +8659,9 @@ struct WorkspaceSidebar: View {
                                         }
                                     }
                                 }
+                            }
+                            .overlayPreferenceValue(SidebarWorkspaceRowAnchorKey.self) { anchors in
+                                panelDropOverlay(rowAnchors: anchors)
                             }
                             .padding(.vertical, 8)
                             // Structural guarantee for the card metaphor.
@@ -8947,6 +8968,36 @@ struct WorkspaceSidebar: View {
                     dragAutoScrollController: dragAutoScrollController, dropIndicator: $dropIndicator
                 ))
         .padding(.horizontal, 6)
+    }
+
+    /// Drop target for a panel dragged out of a panel strip: the card under
+    /// the cursor turns gold, and releasing moves the panel into that
+    /// workspace's focused area. The operator stays where they are, so several
+    /// panels can be moved in a row.
+    private func panelDropOverlay(rowAnchors: [UUID: Anchor<CGRect>]) -> some View {
+        GeometryReader { proxy in
+            let rows = rowAnchors.map { SidebarPanelDropView.Row(workspaceId: $0.key, frame: proxy[$0.value]) }
+            ZStack {
+                if let targetId = panelDropTargetWorkspaceId,
+                   let row = rows.first(where: { $0.workspaceId == targetId }) {
+                    // The card sits inside the row's 6pt horizontal inset.
+                    let card = row.frame.insetBy(dx: 6, dy: 0)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(BrandColors.goldSwiftUI.opacity(0.16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(BrandColors.goldSwiftUI, lineWidth: 2)
+                        )
+                        .frame(width: card.width, height: card.height)
+                        .position(x: card.midX, y: card.midY)
+                        .allowsHitTesting(false)
+                }
+                SidebarPanelDropOverlay(
+                    rows: rows,
+                    targetWorkspaceId: $panelDropTargetWorkspaceId
+                )
+            }
+        }
     }
 
     private func workspaceRow(_ ws: Workspace, item: WorkspaceGroupSidebarWorkspaceRow, chromeTokens: ChromeScaleTokens) -> some View {
@@ -13069,12 +13120,6 @@ private struct WorkspaceRowView: View, Equatable {
             dragAutoScrollController: dragAutoScrollController,
             dropIndicator: $dropIndicator
         ))
-        .onDrop(of: BonsplitTabDragPayload.dropContentTypes, delegate: SidebarBonsplitTabDropDelegate(
-            targetWorkspaceId: workspace.id,
-            workspaceManager: workspaceManager,
-            selectedWorkspaceIds: $selectedWorkspaceIds,
-            lastSidebarSelectionIndex: $lastSidebarSelectionIndex
-        ))
         .onTapGesture {
             // CMUX-10: clicking the workspace row dismisses any persistent
             // flash inside it (across all panels). The operator clicked,
@@ -14679,8 +14724,6 @@ private enum SidebarGroupDragPayload {
 
 private enum BonsplitTabDragPayload {
     static let typeIdentifier = BonsplitDragTypes.tabTransferIdentifier
-    static let dropContentType = UTType(exportedAs: typeIdentifier)
-    static let dropContentTypes: [UTType] = [dropContentType]
     private static let currentProcessId = Int32(ProcessInfo.processInfo.processIdentifier)
 
     struct Transfer: Decodable {
@@ -14732,55 +14775,161 @@ private enum BonsplitTabDragPayload {
     }
 }
 
-private struct SidebarBonsplitTabDropDelegate: DropDelegate {
-    let targetWorkspaceId: UUID
-    let workspaceManager: WorkspaceManager
-    @Binding var selectedWorkspaceIds: Set<UUID>
-    @Binding var lastSidebarSelectionIndex: Int?
+/// Card frames of the sidebar's workspace rows, for the panel drop overlay.
+private struct SidebarWorkspaceRowAnchorKey: PreferenceKey {
+    static let defaultValue: [UUID: Anchor<CGRect>] = [:]
 
-    func validateDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [BonsplitTabDragPayload.typeIdentifier]) else { return false }
-        return BonsplitTabDragPayload.currentTransfer() != nil
+    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+private struct SidebarPanelDropOverlay: NSViewRepresentable {
+    let rows: [SidebarPanelDropView.Row]
+    @Binding var targetWorkspaceId: UUID?
+
+    func makeNSView(context: Context) -> SidebarPanelDropView {
+        SidebarPanelDropView()
     }
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard validateDrop(info: info) else { return nil }
-        return DropProposal(operation: .move)
+    func updateNSView(_ view: SidebarPanelDropView, context: Context) {
+        view.rows = rows
+        view.setTargetWorkspaceId = { id in
+            if targetWorkspaceId != id { targetWorkspaceId = id }
+        }
+    }
+}
+
+/// Receives Bonsplit's AppKit panel drag over the sidebar. SwiftUI's per-row
+/// `.onDrop` never sees that drag, so this view registers for it directly. It
+/// takes hit tests only while a panel drag is in flight, so clicks, hovers and
+/// workspace reorder drags reach the rows beneath it.
+private final class SidebarPanelDropView: NSView {
+    struct Row: Equatable {
+        let workspaceId: UUID
+        let frame: CGRect
     }
 
-    func performDrop(info: DropInfo) -> Bool {
-        guard validateDrop(info: info),
-              let transfer = BonsplitTabDragPayload.currentTransfer(),
+    var rows: [Row] = []
+    var setTargetWorkspaceId: (UUID?) -> Void = { _ in }
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([DragOverlayRoutingPolicy.bonsplitTabTransferType])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard DragOverlayRoutingPolicy.isPanelDragInFlight() else { return nil }
+        return super.hitTest(point)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { setTargetWorkspaceId(nil) }
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        updateTarget(sender, phase: "entered")
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        updateTarget(sender, phase: "updated")
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+#if DEBUG
+        dlog("sidebar.panelDrop.exited")
+#endif
+        setTargetWorkspaceId(nil)
+    }
+
+    override func draggingEnded(_ sender: any NSDraggingInfo) {
+        setTargetWorkspaceId(nil)
+    }
+
+    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        target(for: sender) != nil
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        defer { setTargetWorkspaceId(nil) }
+        guard let (workspaceId, transfer) = target(for: sender),
               let app = AppDelegate.shared else {
+#if DEBUG
+            dlog("sidebar.panelDrop.perform moved=0 reason=noTarget")
+#endif
             return false
         }
-
-        if let source = app.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id),
-           source.workspaceId == targetWorkspaceId {
-            syncSidebarSelection()
-            return true
-        }
-
-        guard app.moveBonsplitTab(
+        // The operator stays put, unless the panel is the last one in the
+        // workspace they are on: that workspace closes, so they follow the panel.
+        let source = app.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id)
+        let followsPanel = source.map { source in
+            source.workspaceManager.selectedWorkspaceId == source.workspaceId
+                && source.workspaceManager.workspaces.first { $0.id == source.workspaceId }?.panels.count == 1
+        } ?? false
+        let moved = app.moveBonsplitTab(
             bonsplitTabId: transfer.bonsplitTab.id,
-            toWorkspace: targetWorkspaceId,
-            focus: true,
-            focusWindow: true
-        ) else {
-            return false
-        }
-
-        selectedWorkspaceIds = [targetWorkspaceId]
-        syncSidebarSelection()
-        return true
+            toWorkspace: workspaceId,
+            focus: followsPanel,
+            focusWindow: followsPanel
+        )
+#if DEBUG
+        dlog(
+            "sidebar.panelDrop.perform moved=\(moved ? 1 : 0) targetWs=\(workspaceId.uuidString.prefix(5)) " +
+            "follow=\(followsPanel ? 1 : 0)"
+        )
+#endif
+        return moved
     }
 
-    private func syncSidebarSelection() {
-        if let selectedId = workspaceManager.selectedWorkspaceId {
-            lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selectedId }
-        } else {
-            lastSidebarSelectionIndex = nil
+    private func updateTarget(_ sender: any NSDraggingInfo, phase: String) -> NSDragOperation {
+        let workspaceId = target(for: sender)?.workspaceId
+#if DEBUG
+        if phase == "entered" || workspaceId != lastLoggedTargetId {
+            dlog(
+                "sidebar.panelDrop.\(phase) targetWs=\(workspaceId.map { String($0.uuidString.prefix(5)) } ?? "nil") " +
+                "rows=\(rows.count)"
+            )
         }
+        lastLoggedTargetId = workspaceId
+#endif
+        setTargetWorkspaceId(workspaceId)
+        return workspaceId == nil ? [] : .move
+    }
+
+#if DEBUG
+    private var lastLoggedTargetId: UUID?
+#endif
+
+    /// The drag's panel and its workspace, read once per drag session rather
+    /// than on every pointer move.
+    private var currentDrag: (sequence: Int, transfer: BonsplitTabDragPayload.Transfer, sourceWorkspaceId: UUID?)?
+
+    /// Half the sidebar's row spacing, so the target holds across the gap
+    /// between two cards instead of flickering off.
+    private static let rowHitSlop: CGFloat = 2
+
+    /// The workspace under the cursor and the drag's panel, or nil when the
+    /// drag is foreign or the card is the panel's own workspace.
+    private func target(for sender: any NSDraggingInfo) -> (workspaceId: UUID, transfer: BonsplitTabDragPayload.Transfer)? {
+        if currentDrag?.sequence != sender.draggingSequenceNumber {
+            currentDrag = BonsplitTabDragPayload.currentTransfer().map { transfer in
+                let source = AppDelegate.shared?.locateBonsplitSurface(bonsplitTabId: transfer.bonsplitTab.id)
+                return (sender.draggingSequenceNumber, transfer, source?.workspaceId)
+            }
+        }
+        guard let drag = currentDrag else { return nil }
+        let point = convert(sender.draggingLocation, from: nil)
+        guard let row = rows.first(where: { $0.frame.insetBy(dx: 0, dy: -Self.rowHitSlop).contains(point) }) else {
+            return nil
+        }
+        guard drag.sourceWorkspaceId != row.workspaceId else { return nil }
+        return (row.workspaceId, drag.transfer)
     }
 }
 

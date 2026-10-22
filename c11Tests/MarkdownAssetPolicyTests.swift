@@ -62,6 +62,50 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         }
     }
 
+    func testRetargetedPolicyFollowsTheCurrentDocumentFolderWithoutWidening() throws {
+        try fixture { root, policy in
+            let first = root.appendingPathComponent("doc"), second = root.appendingPathComponent("doc2")
+            try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+            let firstImage = Self.image, secondImage = Self.image + Data([0])
+            try firstImage.write(to: first.appendingPathComponent("pic.png"))
+            try firstImage.write(to: first.appendingPathComponent("only-first.png"))
+            try secondImage.write(to: second.appendingPathComponent("pic.png"))
+            try firstImage.write(to: root.appendingPathComponent("parent.png"))
+            let pic = URL(string: "c11md-asset://doc/pic.png")!
+
+            XCTAssertEqual(try policy.resource(for: pic).data, firstImage)
+
+            // Navigating to a document in another folder: the same relative name now means that folder's file.
+            let moved = policy.retargeted(documentDirectory: second)
+            XCTAssertEqual(try moved.resource(for: pic).data, secondImage)
+            // The first folder's files and anything wider stay out of reach.
+            for path in ["only-first.png", "../doc/pic.png", "../parent.png", "%2e%2e/parent.png"] {
+                XCTAssertThrowsError(try moved.resource(for: URL(string: "c11md-asset://doc/" + path)!), path)
+            }
+
+            // Back navigation retargets again.
+            let back = moved.retargeted(documentDirectory: first)
+            XCTAssertEqual(try back.resource(for: pic).data, firstImage)
+            XCTAssertEqual(try back.resource(for: URL(string: "c11md-asset://doc/only-first.png")!).data, firstImage)
+
+            // The same folder keeps its pinned handle; a document-less panel serves no images.
+            XCTAssertTrue(policy.retargeted(documentDirectory: first).document === policy.document)
+            XCTAssertThrowsError(try policy.retargeted(documentDirectory: nil).resource(for: pic))
+        }
+    }
+
+    func testImageURLQueryIsIgnoredAndNeverWidensScope() throws {
+        try fixture { root, policy in
+            try Self.image.write(to: root.appendingPathComponent("doc/pic.png"))
+            try Self.image.write(to: root.appendingPathComponent("outside.png"))
+            // The viewer appends ?e=<n> after navigating to another folder so WebKit refetches.
+            XCTAssertEqual(try policy.resource(for: URL(string: "c11md-asset://doc/pic.png?e=2")!).data, Self.image)
+            for path in ["../outside.png?e=2", "%2e%2e/outside.png?e=2", "pic.png/../../outside.png?e=2"] {
+                XCTAssertThrowsError(try policy.resource(for: URL(string: "c11md-asset://doc/" + path)!), path)
+            }
+        }
+    }
+
     func testOnlyBundleCanServeCodeAndEntryReceivesCSP() throws {
         try fixture { root, policy in
             try Data("<!doctype html><html><head></head><body></body></html>".utf8).write(to: root.appendingPathComponent("bundle/index.html"))

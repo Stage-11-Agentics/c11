@@ -82,6 +82,16 @@ struct MarkdownAssetPolicy: Sendable {
     let bundle: MarkdownAssetRoot?
     let document: MarkdownAssetRoot?
 
+    /// The same policy with the image scope following the current document's folder
+    /// (C11-387). Scope never widens: the new root is exactly that folder, pinned the
+    /// same way as the first. Retargeting to the folder already pinned keeps the
+    /// existing handle, so a directory swapped in underneath is still ignored.
+    func retargeted(documentDirectory: URL?) -> MarkdownAssetPolicy {
+        let wanted = documentDirectory.map { $0.resolvingSymlinksInPath().standardizedFileURL.path }
+        if wanted == document?.directory.path { return self }
+        return MarkdownAssetPolicy(bundle: bundle, document: documentDirectory.flatMap(MarkdownAssetRoot.init(directory:)))
+    }
+
     static func imageMIME(for path: String) -> String? {
         switch (path as NSString).pathExtension.lowercased() {
         case "png": return "image/png"

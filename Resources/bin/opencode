@@ -92,6 +92,7 @@ plugin_url="file://$plugin_path"
 plugin_url="${plugin_url//\\/\\\\}"
 plugin_url="${plugin_url//\"/\\\"}"
 c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
+c11_runtime_plugin=0
 
 # OpenCode merges its config sources. Prefer the in-memory content override;
 # if the operator already owns that slot, supply c11's plugin through a live
@@ -100,17 +101,19 @@ c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
 # prevents false-idle decay.
 if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
     export OPENCODE_CONFIG_CONTENT="$c11_runtime_config"
+    c11_runtime_plugin=1
 elif [[ -z "${OPENCODE_CONFIG:-}" ]]; then
     # OpenCode/Bun repurposes fd 3 during startup. Keep the inherited runtime
     # source on fd 8 (verified with the real OpenCode TUI, not just a fake CLI).
     exec 8<<<"$c11_runtime_config"
     export OPENCODE_CONFIG="/dev/fd/8"
+    c11_runtime_plugin=1
 fi
 
 # OpenCode 1.15's TUI plugins can identify the displayed session. Keep the
 # operator's explicit TUI config untouched; that case uses typed delivery.
 # Older versions ignore this runtime override and retain their existing route.
-if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" && -z "${OPENCODE_TUI_CONFIG:-}" &&
+if [[ "$c11_runtime_plugin" == "1" && -n "${C11_AGENT_INTERACTIVE_PID:-}" && -z "${OPENCODE_TUI_CONFIG:-}" &&
       "${C11_OPENCODE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
     tui_plugin_url="${plugin_url%/c11-notify.js}/c11-mailbox.mjs"
     if [[ -f "${plugin_path%/c11-notify.js}/c11-mailbox.mjs" ]]; then

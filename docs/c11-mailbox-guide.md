@@ -439,7 +439,8 @@ client's bounded reconnect; a replaced stream stays retired.
 
 No tenant configuration is written. An explicit `OPENCODE_TUI_CONFIG`, missing
 plugin support, a noninteractive launch, or `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`
-keeps typed fallback. Other runtime config sources remain the operator's own;
+keeps typed fallback. Both server-config slots being occupied also keeps typed
+delivery, because c11 cannot ensure its lifecycle plugin is loaded. Other runtime config sources remain the operator's own;
 the server lifecycle plugin uses a separate inherited descriptor when CONTENT
 is already occupied. Older OpenCode releases without the TUI plugin API are not
 native-capable. The existing lifecycle and prompt-cache plugin remains separate.

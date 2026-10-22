@@ -281,6 +281,10 @@ def test_native_tui_requires_interactive_launch_and_free_runtime_slot() -> None:
     assert code == 0, stderr
     assert state["tui_path"] == state["expected_tui_path"], state
     assert state["tui_content"] == existing, state
+    code, _, state, _, stderr = run_wrapper(live=True, argv=[], interactive=True,
+        existing_content='{"plugin":["operator-plugin"]}', existing_config='{"model":"operator/model"}')
+    assert code == 0, stderr
+    assert state["tui_path"] is None, "no native route without the bundled lifecycle plugin"
 
 
 if __name__ == "__main__":

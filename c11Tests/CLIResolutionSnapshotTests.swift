@@ -762,14 +762,15 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             ["report", "--not-a-real-flag"],
             ["journal", "query", "--not-a-real-flag"],
             ["agent-event", "append", "--not-a-real-flag"],
-            ["themes", "clear", "--json"],
+            ["themes", "clear", "--not-a-real-flag"],
+            ["read-screen", "--json"],
+            ["mailbox", "recv", "--json"],
             ["model-costs", "rm", "claude-opus-4-7", "--in", "1"],
             ["history", "back", "--limit", "5"],
             ["history", "--limit", "5", "back"],
             ["feed", "list", "--workspace", "workspace:1"],
             ["feed", "open", "panel:1", "--scope", "all"],
             ["workspace", "recents", "unpin", "~/Projects/site", "--at", "1"],
-            ["state", "save", "--scrollback", "--", "--bogus"],
             ["__tmux-compat", "new-window", "--not-a-real-flag"],
             ["claude-mailbox", "--not-a-real-flag"],
         ]
@@ -781,6 +782,42 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
             XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("socket not found"), result.stderr)
         }
+    }
+
+    func testStateSaveRejectsUnexpectedArgumentAfterEndOfOptionsBeforeMutation() {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let result = runCLI(
+            ["state", "save", "--scrollback", "--", "--bogus"],
+            socketPath: socket.path
+        ) else { return }
+        XCTAssertNotEqual(result.status, 0, result.stderr)
+        XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unexpected argument"), result.stderr)
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertFalse(
+            socket.requests.contains(where: { $0["method"] as? String == "session.save" }),
+            "unexpected state save argument reached mutation: \(socket.requests)"
+        )
+    }
+
+    func testClearNotificationsRejectsUnexpectedTextAfterEndOfOptionsBeforeMutation() {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let result = runCLI(
+            ["clear-notifications", "--", "--not-a-real-flag"],
+            socketPath: socket.path
+        ) else { return }
+        XCTAssertNotEqual(result.status, 0, result.stderr)
+        XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unexpected argument"), result.stderr)
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertFalse(
+            socket.requests.contains(where: { ($0["legacy_command"] as? String)?.hasPrefix("clear_notifications") == true }),
+            "unexpected clear-notifications text reached mutation: \(socket.requests)"
+        )
     }
 
     func testUnknownCreateFlagDoesNotReachMutationHandler() {
@@ -840,6 +877,157 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                     "--no-focus must reach \(item.method) as focus=false"
                 )
             }
+        }
+    }
+
+    func testReadSelectionJsonIsNotAnUnknownFlag() {
+        XCTAssertTrue(assertCommandReachesSocket(
+            ["read-selection", "--panel", "ddd11111-2222-3333-4444-555566667777", "--json"],
+            method: "panel.read_selection"
+        ))
+    }
+
+    func testSidebarStateJsonIsNotAnUnknownFlag() {
+        XCTAssertTrue(assertCommandReachesSocket(
+            ["sidebar-state", "--json", "--workspace", "11111111-2222-3333-4444-555566667777"],
+            method: "sidebar.state"
+        ))
+    }
+
+    func testDragPanelToSplitJsonIsNotAnUnknownFlag() {
+        XCTAssertTrue(assertCommandReachesSocket(
+            ["drag-panel-to-split", "--workspace", "11111111-2222-3333-4444-555566667777",
+             "--panel", "ddd11111-2222-3333-4444-555566667777", "right", "--json"],
+            method: "panel.drag_to_split"
+        ))
+    }
+
+    func testClearStatusRejectsWindowFlagBeforeMutation() {
+        guard let result = runCLI(["clear-status", "build", "--window", "window:1"]) else { return }
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertEqual(result.stdout, "")
+        XCTAssertTrue(result.stderr.contains("unknown flag '--window'"), result.stderr)
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("socket not found"), result.stderr)
+    }
+
+    func testBrowserScrollSnapshotAfterReachesHandler() {
+        XCTAssertTrue(assertCommandReachesSocket(
+            ["browser", "--panel", "ddd11111-2222-3333-4444-555566667777",
+             "scroll", "--dy", "100", "--snapshot-after"],
+            method: "browser.scroll"
+        ))
+    }
+
+    func testSidebarMetadataParserOptionsAndAliasesReachHandlers() {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let cases: [[String]] = [
+            ["set-status", "k", "v", "--panel", panelID, "--priority", "5", "--url", "http://x", "--format", "markdown"],
+            ["set-status", "k", "v", "--tab", "panel:1"],
+            ["set-status", "k", "v", "--panel=panel:1"],
+            ["set-progress", "0.5", "--panel", panelID, "--label", "build"],
+            ["log", "--level", "error", "--source", "build", "--panel", panelID, "--", "- literal"],
+            ["clear-status", "build", "--panel", panelID],
+        ]
+        for command in cases {
+            XCTAssertTrue(assertCommandReachesSocket(command), "Rejected or failed to reach socket: \(command)")
+        }
+    }
+
+    func testParserAcceptedMetadataAndAttentionOptionsReachHandlers() {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let workspaceID = "11111111-2222-3333-4444-555566667777"
+        let cases: [([String], String)] = [
+            (["set-metadata", "--panel", panelID, "--json-input", "{\"k\":\"v\"}"], "panel.set_metadata"),
+            (["set-metadata", "--panel", panelID, "--body", "{\"k\":\"v\"}"], "panel.set_metadata"),
+            (["get-metadata", "--panel", panelID, "--include-sources"], "panel.get_metadata"),
+            (["get-workspace-metadata", "--workspace", workspaceID, "--key", "description"], "workspace.get_metadata"),
+            (["set-workspace-description", "--workspace", workspaceID, "--value", "hello"], "workspace.set_metadata"),
+            (["set-workspace-icon", "--workspace", workspaceID, "--value", "sf:star.fill"], "workspace.set_metadata"),
+            (["raise-flag", "--workspace", workspaceID, "--panel", panelID, "--by", "operator", "--json", "reason"], "flag.raise"),
+            (["lower-flag", "--window", "window:1", "--panel", panelID, "--json"], "flag.lower"),
+        ]
+        for (command, method) in cases {
+            XCTAssertTrue(assertCommandReachesSocket(command, method: method), "Rejected or missed \(method): \(command)")
+        }
+        XCTAssertTrue(assertCommandReachesSocket(
+            ["clear-notifications", "--workspace", workspaceID]
+        ))
+    }
+
+    func testLeadingDashTextAndEndOfOptionsRemainLiteral() {
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let workspaceID = "11111111-2222-3333-4444-555566667777"
+        let cases: [([String], String?, String?)] = [
+            (["set-status", "k", "- item", "--panel", panelID], "- item", nil),
+            (["set-status", "k", "-3 failing", "--panel", panelID], "-3 failing", nil),
+            (["set-status", "k", "--", "-3 failing", "--panel", panelID], "-3 failing", nil),
+            (["set-progress", "-0.5", "--panel", panelID], "-0.5", nil),
+            (["log", "- bullet", "--panel", panelID], "- bullet", nil),
+            (["set-title", "--panel", panelID, "--", "-draft"], nil, "panel.set_metadata"),
+            (["notify", "--title", "t", "--", "-body"], nil, "notification.create_for_panel"),
+            (["browser", panelID, "type", "sel", "--", "--literal"], nil, "browser.type"),
+            (["browser", panelID, "fill", "sel", "--", "--x"], nil, "browser.fill"),
+        ]
+        for (command, legacyText, method) in cases {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(
+                command,
+                socketPath: socket.path,
+                environmentOverrides: ["C11_WORKSPACE_ID": workspaceID, "C11_PANEL_ID": panelID]
+            ) else { return }
+            XCTAssertEqual(result.status, 0, "\(command): \(result.stderr)")
+            XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+            XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(command)")
+            if let legacyText {
+                XCTAssertTrue(
+                    socket.legacyCommands.contains(where: { $0.contains(legacyText) }),
+                    "Expected literal text \(legacyText.debugDescription) in \(socket.legacyCommands)"
+                )
+            }
+            if let method {
+                guard let request = socket.requests.first(where: { $0["method"] as? String == method }) else {
+                    XCTFail("Expected \(method) for \(command), got \(socket.requests)")
+                    continue
+                }
+                let params = request["params"] as? [String: Any]
+                if command.first == "set-title" {
+                    XCTAssertEqual((params?["metadata"] as? [String: String])?["title"], "-draft")
+                } else if command.first == "notify" {
+                    XCTAssertEqual(params?["title"] as? String, "t")
+                } else {
+                    XCTAssertEqual(params?["text"] as? String, command.last == "--x" ? "--x" : "--literal")
+                }
+            }
+        }
+    }
+
+    func testClaudeTeamsTmuxConfigurationCommandsRemainNoOps() {
+        let cases: [[String]] = [
+            ["__tmux-compat", "select-layout", "-t", "@1", "tiled"],
+            ["__tmux-compat", "select-layout", "-t", "@1", "main-vertical"],
+            ["__tmux-compat", "set-option", "-p", "-t", "%1", "pane-border-style", "fg=blue"],
+            ["__tmux-compat", "set-option", "-w", "-t", "@1", "pane-border-status", "top"],
+            ["__tmux-compat", "set-option", "-p", "-t", "%1", "remain-on-exit", "failed"],
+            ["__tmux-compat", "set-window-option", "-t", "@1", "pane-base-index", "1"],
+            ["__tmux-compat", "setw", "-t", "@1", "pane-base-index", "1"],
+            ["__tmux-compat", "source-file", "-q", "~/.tmux.conf"],
+            ["__tmux-compat", "refresh-client", "-S"],
+            ["__tmux-compat", "attach-session", "-t", "@1"],
+            ["__tmux-compat", "detach-client", "-E"],
+        ]
+        for command in cases {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(command, socketPath: socket.path) else { return }
+            XCTAssertEqual(result.status, 0, "\(command): \(result.stderr)")
+            XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+            XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(command)")
+            XCTAssertTrue(socket.requests.isEmpty, "no-op issued a request: \(socket.requests)")
         }
     }
 
@@ -1040,6 +1228,50 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         return true
     }
 
+    @discardableResult
+    private func assertCommandReachesSocket(
+        _ command: [String],
+        method: String? = nil,
+        environmentOverrides: [String: String] = [:],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket", file: file, line: line)
+            return false
+        }
+        var environment = [
+            "C11_WORKSPACE_ID": "11111111-2222-3333-4444-555566667777",
+            "C11_PANEL_ID": socket.panelIDForAssertions,
+        ]
+        environment.merge(environmentOverrides) { _, new in new }
+        guard let result = runCLI(command, socketPath: socket.path, environmentOverrides: environment, file: file, line: line) else {
+            return false
+        }
+        guard result.status == 0 else {
+            XCTFail("Expected \(command) to succeed, got stderr=\(result.stderr.debugDescription)", file: file, line: line)
+            return false
+        }
+        guard !result.stderr.localizedCaseInsensitiveContains("unknown flag") else {
+            XCTFail("Preflight rejected \(command): \(result.stderr)", file: file, line: line)
+            return false
+        }
+        guard socket.waitUntilFinished() else {
+            XCTFail("Expected \(command) to reach the fake socket", file: file, line: line)
+            return false
+        }
+        guard !socket.requests.isEmpty else {
+            XCTFail("Expected a request for \(command)", file: file, line: line)
+            return false
+        }
+        if let method,
+           !socket.requests.contains(where: { $0["method"] as? String == method }) {
+            XCTFail("Expected \(method) for \(command), got \(socket.requests)", file: file, line: line)
+            return false
+        }
+        return true
+    }
+
     private func assertBrowserReadReachesSocket(
         _ command: [String],
         method: String,
@@ -1131,6 +1363,7 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         private let lock = NSLock()
         private let finished = DispatchSemaphore(value: 0)
         private var capturedRequests: [[String: Any]] = []
+        private var capturedLegacyCommands: [String] = []
         private let panelID = "ddd11111-2222-3333-4444-555566667777"
         var panelIDForAssertions: String { panelID }
 
@@ -1138,6 +1371,12 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             lock.lock()
             defer { lock.unlock() }
             return capturedRequests
+        }
+
+        var legacyCommands: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return capturedLegacyCommands
         }
 
         init() throws {
@@ -1203,13 +1442,16 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                     let line = Data(pending[..<newline])
                     pending.removeSubrange(...newline)
                     guard let request = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else {
-                        if String(data: line, encoding: .utf8)?.hasPrefix("auth ") == true {
+                        guard let legacyCommand = String(data: line, encoding: .utf8) else { continue }
+                        if legacyCommand.hasPrefix("auth ") {
                             respond("OK", on: clientFD)
                             continue
                         }
                         lock.lock()
-                        capturedRequests.append(["invalid_frame": true])
+                        capturedLegacyCommands.append(legacyCommand)
+                        capturedRequests.append(["legacy_command": legacyCommand])
                         lock.unlock()
+                        respond("OK", on: clientFD)
                         continue
                     }
                     lock.lock()
@@ -1232,6 +1474,8 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                 result = ["text": "captured"]
             case "browser.eval":
                 result = ["value": "evaluated"]
+            case "panel.set_metadata":
+                result = ["applied": ["title": true, "description": true], "reasons": [:]]
             default:
                 result = [:]
             }

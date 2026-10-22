@@ -237,6 +237,8 @@ def relaunch(argv):
         time.sleep(0.5)
     with open(os.path.join(STATE, "launched_at"), "w") as f:
         f.write(str(launched))
+    if not os.path.exists(meta["socket"]):
+        raise SystemExit(f"socket {meta['socket']} did not appear; see {STATE}/app.out")
     print(json.dumps({"socket_after_s": round(time.time() - launched, 2)}))
 
 
@@ -329,7 +331,7 @@ def collect(argv):
         rows.append({"name": p["name"], "resumed_on_screen": ok, "decision": d.get("decision"),
                      "screen_tail": p["screen_tail"],
                      "skip_code": d.get("skip_code"), "reason": d.get("reason"), "ts": d.get("ts")})
-    verify = c11(meta, "state", "verify", "--mode", "dirty", os.path.join(STATE, "last-snapshot.json"), "--json", check=False)
+    verify = c11(meta, "state", "verify", "--mode", "dirty", os.path.join(STATE, "last-snapshot.json"), check=False)
     summary = {
         "events_file": events_path,
         "mode": mode[-1] if mode else None,

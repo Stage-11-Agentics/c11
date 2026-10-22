@@ -2325,6 +2325,9 @@ struct CMUXCLI {
             valueOptions: helpValueOptions,
             stopAtEndOfOptions: mailboxHelp.stopAtEndOfOptions
         )
+        if !hasSubcommandHelp {
+            try validatePanelTargetArguments(command: command, args: commandArgs)
+        }
         var validatedCreateProfile: String?
         // Validate create input before socket discovery or any routing query.
         if isTerminalCreate, !createArgs.contains("--help"), !createArgs.contains("-h") {
@@ -6441,11 +6444,360 @@ struct CMUXCLI {
     /// the wrong target.
     private func requireNonEmptyHandle(_ raw: String?, flag: String, command: String) throws -> String? {
         guard let raw else { return nil }
+        if Self.isFlag(flag, "--panel") {
+            return try validatedPanelTargetValue(raw, wasProvided: true)
+        }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw CLIError(message: "\(command): \(flag) was empty. Pass an id, ref (e.g. panel:2), or index.")
         }
         return trimmed
+    }
+
+    /// One contract for every explicit panel target, before command dispatch can
+    /// turn an empty or missing option into the caller-panel default.
+    private func validatedPanelTargetValue(_ raw: String?, wasProvided: Bool) throws -> String? {
+        guard wasProvided else { return nil }
+        guard let raw else {
+            throw CLIError(message: String(localized: "cli.panel_ref.requires_value", defaultValue: "--panel requires a value"))
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw CLIError(message: String(localized: "cli.panel_ref.empty_ref", defaultValue: "empty_ref: --panel was provided but empty"))
+        }
+        return trimmed
+    }
+
+    private struct PanelTargetPreflightSpec {
+        let valueOptions: Set<String>
+        let valueOptionsRejectingLongFlags: Set<String>
+        let honorsEndOfOptions: Bool
+        let literalEvalScriptTailStart: Int?
+        let literalPanelFlagArgumentIndices: Set<Int>
+
+        init(
+            valueOptions: Set<String>,
+            valueOptionsRejectingLongFlags: Set<String> = [],
+            honorsEndOfOptions: Bool,
+            literalEvalScriptTailStart: Int? = nil,
+            literalPanelFlagArgumentIndices: Set<Int> = []
+        ) {
+            self.valueOptions = valueOptions
+            self.valueOptionsRejectingLongFlags = valueOptionsRejectingLongFlags
+            self.honorsEndOfOptions = honorsEndOfOptions
+            self.literalEvalScriptTailStart = literalEvalScriptTailStart
+            self.literalPanelFlagArgumentIndices = literalPanelFlagArgumentIndices
+        }
+    }
+
+    /// Validate panel target flags for readers before socket discovery/connect.
+    /// Value boundaries are specific to the command parser: a value option from
+    /// some unrelated command must not hide a dangling `--panel` here.
+    private func validatePanelTargetArguments(command: String, args: [String]) throws {
+        let arguments = command == "browser" ? browserArgsForPanelTargetPreflight(args) : args
+        guard let spec = panelTargetPreflightSpec(command: command, args: arguments) else { return }
+        let spellings = Set(Self.flagSpellings("--panel"))
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if spec.honorsEndOfOptions, argument == "--" { return }
+            if let equalsIndex = argument.firstIndex(of: "=") {
+                let name = String(argument[..<equalsIndex])
+                if spellings.contains(name) {
+                    if spec.literalPanelFlagArgumentIndices.contains(index) {
+                        index += 1
+                        continue
+                    }
+                    if let literalTailStart = spec.literalEvalScriptTailStart, index >= literalTailStart {
+                        index += 1
+                        continue
+                    }
+                    let raw = String(argument[argument.index(after: equalsIndex)...])
+                    _ = try validatedPanelTargetValue(raw, wasProvided: true)
+                    index += 1
+                    continue
+                }
+                if spec.valueOptions.contains(name) {
+                    index += 1
+                    continue
+                }
+            }
+            if spec.literalPanelFlagArgumentIndices.contains(index), spellings.contains(argument) {
+                index += 1
+                continue
+            }
+            if spec.valueOptions.contains(argument),
+               index + 1 < arguments.count,
+               !spec.valueOptionsRejectingLongFlags.contains(argument) || !arguments[index + 1].hasPrefix("--") {
+                index += 2
+                continue
+            }
+            if let literalTailStart = spec.literalEvalScriptTailStart,
+               index >= literalTailStart,
+               spellings.contains(argument),
+               index + 1 == arguments.count {
+                // browser's positional eval form joins the remaining tokens as
+                // JavaScript; a final flag-shaped token has no value to consume
+                // as a browser target, so it is script text.
+                index += 1
+                continue
+            }
+            guard spellings.contains(argument) else {
+                index += 1
+                continue
+            }
+            let nextIndex = index + 1
+            let raw = nextIndex < arguments.count && arguments[nextIndex] != "--" && !arguments[nextIndex].hasPrefix("-")
+                ? arguments[nextIndex]
+                : nil
+            _ = try validatedPanelTargetValue(raw, wasProvided: true)
+            index += raw == nil ? 1 : 2
+        }
+    }
+
+    private func browserArgsForPanelTargetPreflight(_ commandArgs: [String]) -> [String] {
+        var args = commandArgs
+        while !args.isEmpty, !args.contains("--") {
+            if args.last == "--json" {
+                args.removeLast()
+                continue
+            }
+            if args.count >= 2, args[args.count - 2] == "--id-format" {
+                args.removeLast(2)
+                continue
+            }
+            break
+        }
+        return args
+    }
+
+    private func panelTargetPreflightSpec(command: String, args: [String]) -> PanelTargetPreflightSpec? {
+        switch command {
+        case "identify":
+            // identify uses optionValue/hasFlag directly, both of which scan
+            // past `--` and only consume --workspace as a value.
+            return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: false)
+        case "read-screen", "capture-pane", "capturep":
+            return PanelTargetPreflightSpec(
+                valueOptions: ["--workspace", "--lines"],
+                valueOptionsRejectingLongFlags: ["--lines"],
+                honorsEndOfOptions: true
+            )
+        case "pipe-pane":
+            return PanelTargetPreflightSpec(
+                valueOptions: ["--command"],
+                valueOptionsRejectingLongFlags: ["--command"],
+                honorsEndOfOptions: true
+            )
+        case "read-selection", "input-state":
+            return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: true)
+        case "get-metadata":
+            // These values are extracted by optionValue/collectRepeatedOption.
+            return PanelTargetPreflightSpec(
+                valueOptions: ["--workspace", "--area", "--key"],
+                valueOptionsRejectingLongFlags: ["--key"],
+                honorsEndOfOptions: false
+            )
+        case "get-titlebar-state":
+            return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: true)
+        case "family", "markdown-content":
+            return PanelTargetPreflightSpec(valueOptions: [], honorsEndOfOptions: true)
+        case "panel-color":
+            guard args.first?.lowercased() == "get" else { return nil }
+            return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: true)
+        case "markdown":
+            var remaining = args
+            for name in ["--workspace", "--window", "--panel", "--area"] {
+                remaining = parseOption(remaining, name: name).1
+            }
+            var valueOptions: Set<String> = ["--workspace", "--window", "--area"]
+            switch remaining.first?.lowercased() {
+            case "scroll": valueOptions.insert("--heading")
+            case "theme", "typeface": valueOptions.insert("--set")
+            case "font": valueOptions.insert("--scale")
+            default: break
+            }
+            return PanelTargetPreflightSpec(valueOptions: valueOptions, honorsEndOfOptions: true)
+        case "browser":
+            return browserPanelTargetPreflightSpec(args)
+        case "get-url", "is-webview-focused":
+            return PanelTargetPreflightSpec(valueOptions: ["--id-format"], honorsEndOfOptions: true)
+        case "conversation":
+            switch args.first?.lowercased() {
+            case "list": return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: false)
+            case "get", "resume", "clear": return PanelTargetPreflightSpec(valueOptions: [], honorsEndOfOptions: false)
+            default: return nil
+            }
+        case "mailbox":
+            switch args.first?.lowercased() {
+            case "recv": return PanelTargetPreflightSpec(
+                valueOptions: ["--hook-format", "--event"],
+                valueOptionsRejectingLongFlags: ["--hook-format", "--event"],
+                honorsEndOfOptions: true
+            )
+            case "inbox-dir": return PanelTargetPreflightSpec(valueOptions: [], honorsEndOfOptions: false)
+            default: return nil
+            }
+        case "close-panel":
+            return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: false)
+        default:
+            return nil
+        }
+    }
+
+    private func browserPanelTargetPreflightSpec(_ commandArgs: [String]) -> PanelTargetPreflightSpec? {
+        let (surfaceOpt, afterPanel) = parseOption(commandArgs, name: "--panel")
+        var args = afterPanel
+        let verbsWithoutPanel: Set<String> = ["open", "open-split", "new", "identify", "profiles"]
+        let knownPanelVerbs: Set<String> = [
+            "snapshot", "url", "get-url", "is-webview-focused", "is_webview_focused",
+            "console", "errors", "storage", "screenshot", "get", "wait", "cookies",
+            "highlight", "locator", "download", "dom", "eval", "is", "find", "frame",
+            "panel", "tab", "state", "network",
+        ]
+        if surfaceOpt == nil,
+           let first = args.first,
+           !first.hasPrefix("-"),
+           !verbsWithoutPanel.contains(first.lowercased()),
+           !knownPanelVerbs.contains(first.lowercased()) {
+            args.removeFirst()
+        }
+        guard let subcommand = args.first?.lowercased() else { return nil }
+        var valueOptions: Set<String> = ["--id-format"]
+        switch subcommand {
+        case "identify", "url", "get-url", "is-webview-focused", "is_webview_focused", "console", "errors", "storage":
+            break
+        case "snapshot": valueOptions.formUnion(["--selector", "--max-depth"])
+        case "screenshot": valueOptions.insert("--out")
+        case "get":
+            switch args.dropFirst().first?.lowercased() {
+            case "text", "html", "value", "count", "box": valueOptions.insert("--selector")
+            case "attr": valueOptions.formUnion(["--selector", "--attr"])
+            case "styles": valueOptions.formUnion(["--selector", "--property"])
+            default: break
+            }
+        case "wait": valueOptions.formUnion(["--selector", "--text", "--url-contains", "--url", "--load-state", "--function", "--timeout-ms", "--timeout"])
+        case "cookies": valueOptions.formUnion(["--name", "--value", "--url", "--domain", "--path", "--expires"])
+        case "eval": valueOptions.insert("--script")
+        case "is": valueOptions.insert("--selector")
+        case "find":
+            switch args.dropFirst().first?.lowercased() {
+            case "role": valueOptions.insert("--name")
+            case "first", "last": valueOptions.insert("--selector")
+            case "nth": valueOptions.formUnion(["--index", "--selector"])
+            default: break
+            }
+        case "frame":
+            if args.dropFirst().first?.lowercased() != "main" {
+                valueOptions.insert("--selector")
+            }
+        case "network":
+            if args.dropFirst().first?.lowercased() == "route" {
+                valueOptions.insert("--body")
+            }
+        case "panel", "tab", "state": break
+        case "highlight": valueOptions.insert("--selector")
+        case "locator": valueOptions.formUnion(["--name", "--selector", "--index"])
+        case "download": valueOptions.formUnion(["--path", "--timeout-ms", "--timeout"])
+        case "dom": valueOptions.formUnion(["--selector", "--max-depth"])
+        default:
+            return nil
+        }
+        let literalEvalScriptTailStart = subcommand == "eval"
+            ? browserPositionalEvalScriptTailStart(commandArgs)
+            : nil
+        let literalPanelFlagArgumentIndices = subcommand == "state"
+            ? browserPositionalStatePathIndex(commandArgs).map { Set([$0]) } ?? []
+            : []
+        // Browser's panel selector parser stops at `--`; other reader flags
+        // in these subcommands use the same parseOption behavior.
+        return PanelTargetPreflightSpec(
+            valueOptions: valueOptions,
+            honorsEndOfOptions: true,
+            literalEvalScriptTailStart: literalEvalScriptTailStart,
+            literalPanelFlagArgumentIndices: literalPanelFlagArgumentIndices
+        )
+    }
+
+    private func browserPositionalStatePathIndex(_ commandArgs: [String]) -> Int? {
+        let panelSpellings = Set(Self.flagSpellings("--panel"))
+        let verbsWithoutSurface: Set<String> = ["open", "open-split", "new", "identify", "profiles"]
+        var remaining: [(index: Int, value: String)] = []
+        var surface: String?
+        var pastTerminator = false
+        var index = 0
+        while index < commandArgs.count {
+            let argument = commandArgs[index]
+            if argument == "--" {
+                pastTerminator = true
+                remaining.append((index, argument))
+                index += 1
+                continue
+            }
+            if !pastTerminator, panelSpellings.contains(argument), index + 1 < commandArgs.count {
+                surface = commandArgs[index + 1]
+                index += 2
+                continue
+            }
+            remaining.append((index, argument))
+            index += 1
+        }
+        if surface == nil,
+           let first = remaining.first,
+           !first.value.hasPrefix("-"),
+           !verbsWithoutSurface.contains(first.value.lowercased()) {
+            surface = first.value
+            remaining.removeFirst()
+        }
+        guard let surface,
+              !surface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let subcommand = remaining.first,
+              subcommand.value.lowercased() == "state",
+              remaining.count >= 3,
+              ["save", "load"].contains(remaining[1].value.lowercased()) else {
+            return nil
+        }
+        return remaining[2].index
+    }
+
+    private func browserPositionalEvalScriptTailStart(_ commandArgs: [String]) -> Int? {
+        let panelSpellings = Set(Self.flagSpellings("--panel"))
+        let verbsWithoutSurface: Set<String> = ["open", "open-split", "new", "identify", "profiles"]
+        var remaining: [(index: Int, value: String)] = []
+        var surface: String?
+        var pastTerminator = false
+        var index = 0
+        while index < commandArgs.count {
+            let argument = commandArgs[index]
+            if argument == "--" {
+                pastTerminator = true
+                remaining.append((index, argument))
+                index += 1
+                continue
+            }
+            if !pastTerminator, panelSpellings.contains(argument), index + 1 < commandArgs.count {
+                surface = commandArgs[index + 1]
+                index += 2
+                continue
+            }
+            remaining.append((index, argument))
+            index += 1
+        }
+        if surface == nil,
+           let first = remaining.first,
+           !first.value.hasPrefix("-"),
+           !verbsWithoutSurface.contains(first.value.lowercased()) {
+            surface = first.value
+            remaining.removeFirst()
+        }
+        guard surface != nil,
+              let subcommand = remaining.first,
+              subcommand.value.lowercased() == "eval" else {
+            return nil
+        }
+        let scriptArgs = remaining.dropFirst().map(\.value)
+        guard optionValue(scriptArgs, name: "--script") == nil else { return nil }
+        return subcommand.index + 1
     }
 
     /// C11-173: a bare `OK` used to mean only "bytes accepted by the socket".
@@ -14304,11 +14656,22 @@ struct CMUXCLI {
     /// focused target.
     private func rejectEmptyTargetFlags(_ args: [String]) throws {
         // Alias groups cover the hidden spellings (--pane, --tab, --surface).
-        for name in ["--window", "--workspace", "--area", "--panel"] {
+        for name in ["--window", "--workspace", "--area"] {
             if let value = optionValue(args, name: name),
                value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 throw CLIError(message: "\(name) received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
             }
+        }
+        let panelSpellings = Set(Self.flagSpellings("--panel"))
+        for argument in args {
+            guard let equalsIndex = argument.firstIndex(of: "=") else { continue }
+            let name = String(argument[..<equalsIndex])
+            guard panelSpellings.contains(name) else { continue }
+            _ = try validatedPanelTargetValue(String(argument[argument.index(after: equalsIndex)...]), wasProvided: true)
+        }
+        if let value = optionValue(args, name: "--panel"),
+           value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = try validatedPanelTargetValue(value, wasProvided: true)
         }
     }
 
@@ -15476,11 +15839,10 @@ struct CMUXCLI {
         jsonOutput: Bool
     ) throws {
         let allSkipped = hasFlag(subArgs, name: "--all-skipped")
-        let panel = optionValue(subArgs, name: "--panel")?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let panel, panel.isEmpty {
-            throw CLIError(message: "empty_ref: --panel was provided but empty")
-        }
+        let panel = try validatedPanelTargetValue(
+            optionValue(subArgs, name: "--panel"),
+            wasProvided: hasFlag(subArgs, name: "--panel")
+        )
         guard allSkipped != (panel != nil) else {
             throw CLIError(message: "conversation resume needs exactly one of --panel <ref> or --all-skipped")
         }

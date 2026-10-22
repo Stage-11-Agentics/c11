@@ -1434,6 +1434,44 @@ final class HeldComposerSeriesTests: XCTestCase {
 }
 
 final class MailboxNativeDoorbellTests: XCTestCase {
+    func testReplacementWritesRetirementFrameBeforeClosingOldStream() {
+        let broker = MailboxNativeDoorbell(), old = registration()
+        let retired = expectation(description: "old stream retired")
+        var frame: [String: Any]?
+        broker.register(old, write: { frame = $0; return true }, close: {
+            XCTAssertEqual(frame?["type"] as? String, "replaced")
+            retired.fulfill()
+        })
+        let next = registration(panel: old.panelID)
+        broker.register(next, write: { _ in true }, close: {})
+        wait(for: [retired], timeout: 1)
+        XCTAssertEqual(broker.registration(panelID: old.panelID), next)
+        broker.disconnect(next)
+    }
+
+    func testAcceptanceCoversOriginalIDsWhenListenerClosesBeforeMainHop() {
+        let broker = MailboxNativeDoorbell(), reg = registration()
+        let sent = expectation(description: "native sent")
+        var completion: MailboxNativeDoorbell.Result?
+        broker.register(reg, write: { _ in sent.fulfill(); return true }, close: {})
+        let request = broker.deliver(reg) { completion = $0 }
+        wait(for: [sent], timeout: 1)
+        broker.resolve(reg, requestID: request, result: .accepted(late: false))
+        broker.disconnect(reg) // Before the queued main-actor callback executes.
+        XCTAssertEqual(completion, .accepted(late: false))
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.beginAttempt(at: Date(), epoch: "idle")
+        ledger.endAttempt()
+        var covered: Set<String> = []
+        let shouldContinue = MailboxNativeDoorbell.recordAcceptance(["offered"], registrationID: reg.id,
+            currentRegistrationID: broker.registration(panelID: reg.panelID)?.id,
+            nativeCovered: &covered, ledger: &ledger)
+        XCTAssertFalse(shouldContinue, "stale acceptance must not trigger another ring")
+        XCTAssertEqual(covered, ["offered"])
+        XCTAssertEqual(ledger.coveredIds, ["offered"], "mail arriving during the attempt stays uncovered")
+        XCTAssertEqual(ledger.rungEpoch, "idle", "route-change handling owns clearing the epoch")
+    }
+
     private func nativeProcess(_ parent: pid_t, start: UInt64, tty: dev_t = -1) -> MailboxAgentForeground.ProcessTerminalInfo {
         .init(processGroup: 10, terminalForegroundGroup: 10, terminalDevice: tty,
               isZombie: false, startTime: start, parentPID: parent)
@@ -1592,7 +1630,10 @@ final class MailboxNativeDoorbellTests: XCTestCase {
     func testReplacementRejectsOldInFlightAndOldDisconnectCannotRemoveNewSession() {
         let broker = MailboxNativeDoorbell(), old = registration()
         let sent = expectation(description: "old sent"), failed = expectation(description: "old failed")
-        broker.register(old, write: { _ in sent.fulfill(); return true }, close: {})
+        broker.register(old, write: { frame in
+            if frame["type"] as? String == "deliver" { sent.fulfill() }
+            return true
+        }, close: {})
         let request = broker.deliver(old) { result in XCTAssertEqual(result, .failed("native_replaced")); failed.fulfill() }
         wait(for: [sent], timeout: 1)
         let next = registration(panel: old.panelID)

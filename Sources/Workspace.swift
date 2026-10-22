@@ -6906,12 +6906,15 @@ final class Workspace: Identifiable, ObservableObject {
                     }
                     switch result {
                     case .accepted(let late):
-                        guard MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id == registration.id else { return }
-                        self.mailboxNativeCovered[surfaceId, default: []].formUnion(ids)
+                        var covered = self.mailboxNativeCovered[surfaceId] ?? []
+                        var isCurrent = false
                         self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
-                            ledger.coveredIds.formUnion(ids)
-                            ledger.draftWatch = nil
+                            isCurrent = MailboxNativeDoorbell.recordAcceptance(ids, registrationID: registration.id,
+                                currentRegistrationID: MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id,
+                                nativeCovered: &covered, ledger: &ledger)
                         }
+                        self.mailboxNativeCovered[surfaceId] = covered
+                        guard isCurrent else { return }
                         self.logMailboxDoorbellEntries(queued, outcome: .doorbell,
                             reason: late ? "native_late_accept" : "submitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
                         if late { return }

@@ -608,6 +608,23 @@ final class MailboxDispatcherTests: XCTestCase {
 
     // MARK: - C11-144 stdin buffer/flush lifecycle logging
 
+    func testOnlyAttemptedDoorbellsLogRouteMetadata() throws {
+        let dispatcher = makeDispatcher(surfaces: [])
+        for outcome: MailboxDispatchLog.HandlerOutcome in [.doorbellSkipped, .doorbellCapped, .doorbell, .doorbellFailed] {
+            dispatcher.logStdinLifecycle(id: outcome.rawValue, recipient: "pi", outcome: outcome,
+                route: "typed", nativeRoute: "pi_extension", nativeFailure: "native_timeout")
+        }
+        dispatcher.log.flush()
+        let rows = try readLog()
+        XCTAssertEqual(rows.count, 4)
+        for row in rows {
+            let attempted = ["doorbell", "doorbell_failed"].contains(row["outcome"] as? String ?? "")
+            XCTAssertEqual(row["route"] as? String, attempted ? "typed" : nil)
+            XCTAssertEqual(row["native_route"] as? String, attempted ? "pi_extension" : nil)
+            XCTAssertEqual(row["native_failure"] as? String, attempted ? "native_timeout" : nil)
+        }
+    }
+
     /// `logStdinLifecycle` is what makes the "never a silent drop" story
     /// observable: blocks buffered while a recipient is busy, then flushed (or
     /// expired/evicted) from the main-actor path, must still surface in

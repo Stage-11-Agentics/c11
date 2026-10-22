@@ -179,6 +179,8 @@ final class MailboxDispatcher {
         nativeRoute: String? = nil,
         nativeFailure: String? = nil
     ) {
+        // A held/skipped envelope has not selected a delivery route yet.
+        let attempted = outcome == .doorbell || outcome == .doorbellFailed
         log.append(
             .handler(
                 id: id,
@@ -188,9 +190,9 @@ final class MailboxDispatcher {
                 bytes: bytes,
                 elapsedMs: nil,
                 reason: reason,
-                route: route,
-                nativeRoute: nativeRoute,
-                nativeFailure: nativeFailure
+                route: attempted ? route : nil,
+                nativeRoute: attempted ? nativeRoute : nil,
+                nativeFailure: attempted ? nativeFailure : nil
             )
         )
     }

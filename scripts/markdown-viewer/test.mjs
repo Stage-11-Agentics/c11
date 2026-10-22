@@ -548,10 +548,10 @@ try {
     });
     window.transientMathStyleObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
   });
-  const transientMathAttack='```mermaid\nflowchart LR\n  A["<div style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>OVERLAY</div><math-α style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>CUSTOM</math-α><div style=position:fixed;inset:0;z-index:99999;background:red;--x=a>UNQUOTED</div> $$x^2$$"] --> B\n```\n';
+  const transientMathAttack='```mermaid\nflowchart LR\n  A["<div style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>OVERLAY</div><math-α style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>CUSTOM</math-α><div style=position:fixed;inset:0;z-index:99999;background:red;--x=a>UNQUOTED</div><div/style=\'position:fixed;inset:0;z-index:99999;background:red\'>SLASH</div> $$x^2$$"] --> B\n```\n';
   await load(transientMathAttack,'/synthetic/transient-math-style.md');
   await page.evaluate(()=>{transientMathStyleObserver.disconnect();mermaid.render=transientMathOriginalRender;});
-  assert.equal(await page.evaluate(()=>transientMathRenderSources.some(source=>/<[^>]+\sstyle\s*=/i.test(source))),false,'author inline CSS reached Mermaid input');
+  assert.equal(await page.evaluate(()=>transientMathRenderSources.some(source=>/<[^>]+(?:\s|\/)style\s*=/i.test(source))),false,'author inline CSS reached Mermaid input');
   assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'untrusted inline CSS reached Mermaid\'s attached temporary SVG');
   assert.equal(await page.locator('.diagram-stage math').count(),1,'the math label stopped rendering');
   scenario('math-label inline CSS is removed before Mermaid attaches its temporary SVG');

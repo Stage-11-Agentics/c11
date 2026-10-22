@@ -944,7 +944,7 @@ function stripMathLabelInlineStyles(source) {
       const whitespaceStart=index;
       while(index<tagEnd&&/\s/.test(tag[index]))index++;
       if(index>=tagEnd){clean+=tag.slice(whitespaceStart);break;}
-      if(tag[index]==='/'){clean+=tag.slice(whitespaceStart,tagEnd);break;}
+      if(tag[index]==='/'&&!tag.slice(index+1,tagEnd).trim()){clean+=tag.slice(whitespaceStart,tagEnd);break;}
       const attrStart=index;
       while(index<tagEnd&&!/[\s=/>]/.test(tag[index]))index++;
       if(index===attrStart){clean+=tag.slice(whitespaceStart,index+1);index++;continue;}

@@ -4,7 +4,7 @@
 #
 # Needs a guest from scripts/sandbox-up.sh. Builds two documents in different folders, each
 # with a relative pic.png of a different solid color (A red, B blue), opens A in a markdown
-# panel, navigates the same panel to B, then back to A (Cmd-[) and forward (Cmd-]). A
+# panel, navigates the same panel to B, then back to A and forward. A
 # screenshot of the guest display is taken after each step and classified by dominant color.
 # Exit 0 only when the picture follows the document at every step.
 set -euo pipefail
@@ -58,14 +58,15 @@ shot() {
   "$SCRIPT_DIR/sandbox-shot.sh" "$run_id" "$out/$1.png" >/dev/null
   echo "shot $out/$1.png"
 }
-key() { exec_guest osascript -e "tell application \"System Events\" to keystroke \"$1\" using command down"; }
+# The panel's toolbar back and forward arrows, at their place in a fresh guest's layout.
+click() { exec_guest /opt/homebrew/bin/cliclick "c:$1"; }
 
 shot 1-a-before
 c11 markdown open /Users/admin/c11-387/b/doc.md --panel "$panel"
 shot 2-b-after-navigate
-key "["
+click 652,110
 shot 3-a-after-back
-key "]"
+click 677,110
 shot 4-b-after-forward
 
 echo "== classify =="

@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -43,7 +44,7 @@ final class MainThreadHangDetectorTests: XCTestCase {
         // Main acks ~250ms before each tick: gap stays ~250ms, well under threshold.
         var t = 100.0
         for _ in 0..<40 {
-            XCTAssertEqual(d.evaluate(nowUptime: t, lastAckUptime: t - 0.25), .none)
+            XCTAssertEqual(d.evaluate(nowUptime: t, pingPostedUptime: t - 0.25, lastAckUptime: t - 0.25), .none)
             t += 0.25
         }
         XCTAssertFalse(d.isInEpisode)
@@ -52,61 +53,80 @@ final class MainThreadHangDetectorTests: XCTestCase {
     func testGapBelowThresholdDoesNotFire() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
         // 1.9s gap — under the 2s threshold.
-        XCTAssertEqual(d.evaluate(nowUptime: 110.0, lastAckUptime: 108.1), .none)
+        XCTAssertEqual(d.evaluate(nowUptime: 110.0, pingPostedUptime: 108.1, lastAckUptime: 108.1), .none)
         XCTAssertFalse(d.isInEpisode)
+    }
+
+    func testWatchdogOversleepDoesNotCaptureAnAcknowledgedOrFreshPing() {
+        var detector = MainThreadHangDetector()
+        // Main promptly answered the last ping at 100. The background watchdog
+        // receives no CPU for 300 seconds, then posts a fresh ping at 400.
+        XCTAssertEqual(detector.evaluate(nowUptime: 400, pingPostedUptime: nil, lastAckUptime: 100), .none)
+        XCTAssertEqual(detector.evaluate(nowUptime: 400, pingPostedUptime: 400, lastAckUptime: 100), .none)
+        // A real three-second block with that ping still queued must capture.
+        assertCapture(detector.evaluate(nowUptime: 403, pingPostedUptime: 400, lastAckUptime: 100),
+                      gapMs: 3000, recapture: false)
+    }
+
+    func testRecoveryExcludesWatchdogOversleepAfterMainAcknowledges() {
+        var detector = MainThreadHangDetector()
+        _ = detector.evaluate(nowUptime: 103, pingPostedUptime: 100, lastAckUptime: 99)
+        // Main recovered at 104, but the watchdog did not wake until 400.
+        assertRecovered(detector.evaluate(nowUptime: 400, pingPostedUptime: 400, lastAckUptime: 104),
+                        durationMs: 4000)
     }
 
     // MARK: - Hang onset
 
     func testCrossingThresholdEmitsFirstCapture() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
-        // ack frozen at t=100; by t=102.2 the gap is 2200ms.
-        assertCapture(d.evaluate(nowUptime: 102.2, lastAckUptime: 100.0), gapMs: 2200, recapture: false)
+        // outstanding ping posted at t=100; by t=102.2 the gap is 2200ms.
+        assertCapture(d.evaluate(nowUptime: 102.2, pingPostedUptime: 100.0, lastAckUptime: 100.0), gapMs: 2200, recapture: false)
         XCTAssertTrue(d.isInEpisode)
     }
 
     func testFirstCaptureFiresExactlyOncePerEpisode() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
-        assertCapture(d.evaluate(nowUptime: 102.2, lastAckUptime: 100.0), gapMs: 2200, recapture: false)
+        assertCapture(d.evaluate(nowUptime: 102.2, pingPostedUptime: 100.0, lastAckUptime: 100.0), gapMs: 2200, recapture: false)
         // Still hung, but not yet time to re-snapshot (< 5s since last capture).
-        XCTAssertEqual(d.evaluate(nowUptime: 103.0, lastAckUptime: 100.0), .none)
-        XCTAssertEqual(d.evaluate(nowUptime: 105.0, lastAckUptime: 100.0), .none)
+        XCTAssertEqual(d.evaluate(nowUptime: 103.0, pingPostedUptime: 100.0, lastAckUptime: 100.0), .none)
+        XCTAssertEqual(d.evaluate(nowUptime: 105.0, pingPostedUptime: 100.0, lastAckUptime: 100.0), .none)
     }
 
     // MARK: - Recapture while still hung
 
     func testRecaptureAfterIntervalWhileStillHung() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
-        assertCapture(d.evaluate(nowUptime: 102.2, lastAckUptime: 100.0), gapMs: 2200, recapture: false)
+        assertCapture(d.evaluate(nowUptime: 102.2, pingPostedUptime: 100.0, lastAckUptime: 100.0), gapMs: 2200, recapture: false)
         // 5s after the first capture (t=107.2): re-snapshot.
-        assertCapture(d.evaluate(nowUptime: 107.2, lastAckUptime: 100.0), gapMs: 7200, recapture: true)
+        assertCapture(d.evaluate(nowUptime: 107.2, pingPostedUptime: 100.0, lastAckUptime: 100.0), gapMs: 7200, recapture: true)
     }
 
     // MARK: - Recovery
 
     func testRecoveryEmitsEpisodeDuration() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
-        // Episode starts: ack frozen at 100, detected at 102.2.
-        _ = d.evaluate(nowUptime: 102.2, lastAckUptime: 100.0)
+        // Episode starts: outstanding ping posted at 100, detected at 102.2.
+        _ = d.evaluate(nowUptime: 102.2, pingPostedUptime: 100.0, lastAckUptime: 100.0)
         XCTAssertTrue(d.isInEpisode)
         // Main recovers: ack jumps to 104.0 (it drained the queued ping). The
-        // episode lasted from 100.0 until now (104.05) ≈ 4050ms.
-        assertRecovered(d.evaluate(nowUptime: 104.05, lastAckUptime: 104.0), durationMs: 4050)
+        // episode lasted from 100.0 until its acknowledgement at 104.0 = 4000ms.
+        assertRecovered(d.evaluate(nowUptime: 104.05, pingPostedUptime: 104.0, lastAckUptime: 104.0), durationMs: 4000)
         XCTAssertFalse(d.isInEpisode)
     }
 
     func testRecoveryThenSecondHangIsANewEpisode() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
-        _ = d.evaluate(nowUptime: 102.2, lastAckUptime: 100.0)          // hang 1 begin
-        _ = d.evaluate(nowUptime: 104.05, lastAckUptime: 104.0)         // hang 1 recover
-        // New stall starting from a fresh frozen ack at 200.
-        assertCapture(d.evaluate(nowUptime: 202.5, lastAckUptime: 200.0), gapMs: 2500, recapture: false)
+        _ = d.evaluate(nowUptime: 102.2, pingPostedUptime: 100.0, lastAckUptime: 100.0)          // hang 1 begin
+        _ = d.evaluate(nowUptime: 104.05, pingPostedUptime: 104.0, lastAckUptime: 104.0)         // hang 1 recover
+        // New stall starting from a fresh ping at 200.
+        assertCapture(d.evaluate(nowUptime: 202.5, pingPostedUptime: 200.0, lastAckUptime: 200.0), gapMs: 2500, recapture: false)
     }
 
     func testNoRecoveredEventWithoutAPriorEpisode() {
         var d = MainThreadHangDetector(stallThresholdMs: 2000, recaptureIntervalMs: 5000)
         // Healthy from the start — a small gap must not be reported as recovery.
-        XCTAssertEqual(d.evaluate(nowUptime: 100.1, lastAckUptime: 100.0), .none)
+        XCTAssertEqual(d.evaluate(nowUptime: 100.1, pingPostedUptime: 100.0, lastAckUptime: 100.0), .none)
     }
 }
 
@@ -377,25 +397,119 @@ final class MainThreadHangSignatureTests: XCTestCase {
     }
 }
 
-/// The run-loop-idle reporting rule.
-///
-/// `runloop-idle` means main is parked in `-[NSApplication run]` waiting for the
-/// next event: an app ready to serve the user, not a wedge. It was 46.5% of 5,311
-/// local episodes and the largest single slice of the aggregate Sentry hang issue,
-/// and it carries no frame of ours, no phase and no culprit, so no report derived
-/// from it can name a cause. It never reports; the local hang log and PostHog keep
-/// the whole population.
+/// Reporting stays narrow: one event for long idle episodes, while short idle
+/// heartbeats remain local and cannot generate precursor events.
 final class MainThreadHangReportingRuleTests: XCTestCase {
-
-    func testAnIdleRunLoopIsNeverWorthReporting() {
-        XCTAssertFalse(MainThreadHangMonitor.isWorthReporting(
-            cause: MainThreadHangSignature.runLoopIdleCause
-        ))
+    func testIdleEpisodeMustExceedThirtySecondsAndReportsOnlyOnce() {
+        var gate = MainThreadHangReportGate()
+        let idle = MainThreadHangSignature.runLoopIdleCause
+        for duration in [2000.0, 5000, 29_000, 30_000] {
+            XCTAssertFalse(gate.shouldReport(durationMs: duration, cause: idle))
+        }
+        // Recovery at 31s, between the 27s and 32s recaptures, is eligible too.
+        XCTAssertTrue(gate.shouldReport(durationMs: 31_000, cause: idle))
+        XCTAssertFalse(gate.shouldReport(durationMs: 60_000, cause: idle))
     }
 
-    func testEveryOtherCauseReports() {
+    func testOtherCausesKeepFiveSecondThresholdAndShareEpisodeBudget() {
         for cause in ["swiftui-update", "appkit", "lock-wait", "xpc-sync-wait", "generic-metadata", "other", "unknown"] {
-            XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: cause), cause)
+            var gate = MainThreadHangReportGate()
+            XCTAssertFalse(gate.shouldReport(durationMs: 4999, cause: cause))
+            XCTAssertTrue(gate.shouldReport(durationMs: 5000, cause: cause))
+            XCTAssertFalse(gate.shouldReport(durationMs: 60_000, cause: MainThreadHangSignature.runLoopIdleCause))
+            XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: cause))
+        }
+    }
+
+    func testIdleEpisodesStillCannotGeneratePrecursors() {
+        XCTAssertFalse(MainThreadHangMonitor.isWorthReporting(cause: MainThreadHangSignature.runLoopIdleCause))
+    }
+}
+
+final class MainThreadWatchdogLatenessTests: XCTestCase {
+    func testSustainedStarvationLogsAtMostOncePerMinuteAndCountsSuppressedTicks() {
+        var lateness = MainThreadWatchdogLateness()
+        XCTAssertNil(lateness.record(nowUptime: 0, lateMs: 1000))
+        XCTAssertEqual(lateness.record(nowUptime: 2, lateMs: 1500),
+                       "watchdog.late lateMs=1500 count=1 maxLateMs=1500")
+        for second in 3..<62 {
+            XCTAssertNil(lateness.record(nowUptime: Double(second), lateMs: 2500))
+        }
+        XCTAssertEqual(lateness.record(nowUptime: 62, lateMs: 1200),
+                       "watchdog.late lateMs=1200 count=60 maxLateMs=2500")
+    }
+}
+
+final class MainThreadHangCaptureTests: XCTestCase {
+    private func onWatchdog(_ check: @escaping () -> Void) {
+        let finished = expectation(description: "watchdog capture returned")
+        let worker = Thread {
+            pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0)
+            check()
+            finished.fulfill()
+        }
+        worker.qualityOfService = .background
+        worker.start()
+        wait(for: [finished], timeout: 5)
+    }
+
+    func testPromotionCoversSuspendReadAndResumeThenRestoresBackground() {
+        onWatchdog {
+            var calls: [String] = []
+            var buffer = [UInt](repeating: 0, count: 4)
+            let result = buffer.withUnsafeMutableBufferPointer { buffer in
+                MainThreadHangCapture.capture(thread: 0, buffer: buffer, suspend: { _ in
+                    XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
+                    calls.append("suspend")
+                    return KERN_SUCCESS
+                }, resume: { _ in
+                    XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
+                    calls.append("resume")
+                    return KERN_SUCCESS
+                }, read: { _, _, _ in
+                    XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
+                    calls.append("read")
+                    return 2
+                })
+            }
+            XCTAssertEqual(result, 2)
+            XCTAssertEqual(calls, ["suspend", "read", "resume"])
+            XCTAssertEqual(qos_class_self(), QOS_CLASS_BACKGROUND)
+        }
+    }
+
+    func testFailedThreadGetStateStillResumesBeforeRestoringQoS() {
+        onWatchdog {
+            var resumed = false
+            var buffer = [UInt](repeating: 0, count: 4)
+            let result = buffer.withUnsafeMutableBufferPointer { buffer in
+                // The actual C unwinder gets an invalid port: thread_get_state
+                // fails. Only suspend/resume are replaced, so no live thread is stopped.
+                MainThreadHangCapture.capture(thread: mach_port_t(MACH_PORT_NULL), buffer: buffer,
+                    suspend: { _ in KERN_SUCCESS }, resume: { _ in
+                        XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
+                        resumed = true
+                        return KERN_SUCCESS
+                    })
+            }
+            XCTAssertEqual(result, 0)
+            XCTAssertTrue(resumed)
+            XCTAssertEqual(qos_class_self(), QOS_CLASS_BACKGROUND)
+        }
+    }
+
+    func testFailedSuspendRestoresQoSWithoutReadingOrResuming() {
+        onWatchdog {
+            var buffer = [UInt](repeating: 0, count: 4)
+            let result = buffer.withUnsafeMutableBufferPointer { buffer in
+                MainThreadHangCapture.capture(thread: 0, buffer: buffer,
+                    suspend: { _ in KERN_FAILURE }, resume: { _ in
+                        XCTFail("resume after failed suspend")
+                        return KERN_SUCCESS
+                    }, read: { _, _, _ in XCTFail("read after failed suspend"); return 0 })
+            }
+            XCTAssertEqual(result, -1)
+            XCTAssertEqual(qos_class_self(), QOS_CLASS_BACKGROUND)
         }
     }
 }

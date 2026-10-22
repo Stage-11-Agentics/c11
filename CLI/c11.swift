@@ -22942,9 +22942,11 @@ extension CMUXCLI {
 
         guard follow else { return }
 
-        while true {
-            Thread.sleep(forTimeInterval: 0.25)
-            guard FileManager.default.fileExists(atPath: logURL.path) else { continue }
+        // C11-385: this loop never returns, so its thread's root pool never
+        // drains. One pool per poll releases the FileManager/FileHandle/String
+        // temporaries each iteration instead of holding them for the process.
+        func pollOnce() {
+            guard FileManager.default.fileExists(atPath: logURL.path) else { return }
             let currentInode = eventsInode(of: logURL)
             // A follow that started before the log existed learns its inode
             // here, so a later roll can be matched against `.1`.
@@ -22974,12 +22976,17 @@ extension CMUXCLI {
                 lastSize = 0
                 if currentInode != 0 { lastInode = currentInode }
             }
-            guard let handle = try? FileHandle(forReadingFrom: logURL) else { continue }
+            guard let handle = try? FileHandle(forReadingFrom: logURL) else { return }
             try? handle.seek(toOffset: lastSize)
             let data = ((try? handle.readToEnd()) ?? nil) ?? Data()
             if let text = String(data: data, encoding: .utf8), !text.isEmpty { drainLines(text) }
             lastSize = (try? handle.offset()) ?? lastSize
             try? handle.close()
+        }
+
+        while true {
+            Thread.sleep(forTimeInterval: 0.25)
+            autoreleasepool { pollOnce() }
         }
     }
 
@@ -22987,7 +22994,7 @@ extension CMUXCLI {
     /// before the app opened its log.
     private func eventsWaitForLog(state: URL) throws -> URL {
         while true {
-            if let url = try? EventLogLayout.newestLogURL(state: state) { return url }
+            if let url = autoreleasepool(invoking: { try? EventLogLayout.newestLogURL(state: state) }) { return url }
             Thread.sleep(forTimeInterval: 0.25)
         }
     }

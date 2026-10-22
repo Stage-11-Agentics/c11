@@ -16,7 +16,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 
 ## File & format
 
-- **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>` (e.g. `com.stage11.c11-12345`) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
+- **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>-n<nonce>` (e.g. `com.stage11.c11-12345-n3fa09c1e`; the nonce is `n` plus eight hex digits, fresh each launch, so a reused pid never shares an id; logs from older builds are `<launch-tag-or-bundleid>-<pid>` and stay readable) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
 - **Owner-only.** Event files are `0600` and the `events/` directory `0700`, because `panel.input_sent`, `mailbox.accepted` and `flag.lowered` can carry sent text. Every retention checkpoint, starting at launch, tightens older files (1.0 wrote `0644`).
 - **Bounded history.** Generations whose last write is older than the retention age (14 days by default), or past the build's 64 MiB budget, are deleted, oldest first; see [retention](#local-activity-history-c11-349). Old instance logs disappear; the file a running c11 is writing never does, but it rolls daily so its text ages too.
 - **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`. When that instance's log no longer exists, a one-shot tail prints a `note:` on stderr and exits 0; `--follow` waits for it to appear.
@@ -249,13 +249,13 @@ It never adds a permission bit, so it is idempotent. Retention counts,
 ages and deletes regular files only (by `lstat`, with `unlink(2)`): a symlink or
 directory named like an event file is never followed, counted or removed.
 
-If the live file is deleted out from under a running c11, the next health or
-daily checkpoint, or the next size-cap roll, notices that the path no longer
-names the open file and starts a fresh current file with a `log.rotated`
-marker whose `rolled_to` is `null`. Records in the deleted file, including any
-written before c11 noticed, are lost. Only a missing path or a different inode
+If the live file is deleted or replaced out from under a running c11, the next
+record write (and any checkpoint or size-cap roll) notices that the path no
+longer names the open file and starts a fresh current file with a `log.rotated`
+marker whose `rolled_to` is `null`, so nothing written after the delete is lost.
+Records already in the deleted file are lost. Only a missing path or a different inode
 counts; any other stat error keeps the existing handle writing. New files are created `0600` and new
-directories `0700`. Instance ids end in the pid, so a launch can reuse a dead
+directories `0700`. Instance ids from older builds end in the pid, so such a launch can reuse a dead
 launch's current file name. At its first write, that launch rolls the inherited
 file into its numbered generations (a plain rename that keeps the file's mtime)
 instead of appending to it, so the inherited history keeps its age and is

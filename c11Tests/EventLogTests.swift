@@ -100,8 +100,41 @@ final class EventLogTests: XCTestCase {
     func testLayoutFilenameAndInstanceSanitize() {
         XCTAssertEqual(EventLogLayout.logFileName(instance: "abc-123"), "events-abc-123.ndjson")
         XCTAssertEqual(EventLogLayout.sanitizeInstance("a/b c:d"), "a_b_c_d")
-        let id = EventLogLayout.makeInstanceId(tag: "evt-post", bundleId: "x", pid: 99)
-        XCTAssertEqual(id, "evt-post-99")
+        let id = EventLogLayout.makeInstanceId(tag: "evt-post", bundleId: "x", pid: 99, nonce: "n0badf00d")
+        XCTAssertEqual(id, "evt-post-99-n0badf00d")
+    }
+
+    /// C11-384: a launch that reuses a dead launch's pid still gets its own id,
+    /// and so its own file, while both share one retention label.
+    func testReusedPidGetsDistinctInstanceIdAndSharedLabel() {
+        let first = EventLogLayout.makeInstanceId(tag: nil, bundleId: "com.stage11.c11", pid: 4242)
+        let second = EventLogLayout.makeInstanceId(tag: nil, bundleId: "com.stage11.c11", pid: 4242)
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(EventLogLayout.logFileName(instance: first), EventLogLayout.logFileName(instance: second))
+        for id in [first, second] {
+            XCTAssertTrue(id.hasPrefix("com.stage11.c11-4242-n"), id)
+            XCTAssertEqual(EventLogLayout.instanceLabel(id), "com.stage11.c11")
+        }
+        // Logs written before the nonce, and unrelated names, keep their old labels.
+        XCTAssertEqual(EventLogLayout.instanceLabel("com.stage11.c11-4242"), "com.stage11.c11")
+        XCTAssertEqual(EventLogLayout.instanceLabel("evt-post"), "evt-post")
+        XCTAssertEqual(EventLogLayout.instanceLabel("tag-n12-7"), "tag-n12")
+        XCTAssertEqual(EventLogLayout.instanceLabel("tag-7-n0badf00d"), "tag")
+        XCTAssertEqual(EventLogLayout.instanceLabel("tag-7-n0BADF00D"), "tag-7-n0BADF00D")
+    }
+
+    func testTwoLaunchesWithOnePidWriteSeparateFiles() {
+        let a = EventLogLayout.makeInstanceId(tag: "reuse", bundleId: nil, pid: 31337)
+        let b = EventLogLayout.makeInstanceId(tag: "reuse", bundleId: nil, pid: 31337)
+        let logA = EventLog(url: logURL(EventLogLayout.logFileName(instance: a)), instance: a)
+        let logB = EventLog(url: logURL(EventLogLayout.logFileName(instance: b)), instance: b)
+        for (log, id) in [(logA, a), (logB, b)] {
+            log.append(EventEnvelope(type: .surfaceCreated, instance: id, ts: Date()))
+            log.flush()
+            let lines = readLines(logURL(EventLogLayout.logFileName(instance: id))).map(parse)
+            XCTAssertEqual(lines.count, 1, "\(id) must hold only its own record: \(lines)")
+            XCTAssertEqual(lines.first?["seq"] as? Int, 1)
+        }
     }
 
     func testLayoutNewestByMtime() throws {
@@ -2066,6 +2099,21 @@ extension EventLogTests {
 extension EventLogTests {
     @MainActor
     func testSuccessfulTerminalRuntimeMakesEnrolledWorkspaceNonTransient() async {
+        await assertRuntimeSurfaceGraphIsNonTransient(injectingForeignTeardown: false)
+    }
+
+    /// C11-385: `EventEmitter.shared` is process-wide. A `Workspace` that an
+    /// earlier test left alive emits `panel.closed` + `workspace.closed` from
+    /// `deinit`, and the first main-run-loop turn that releases it lands those
+    /// records in whichever test's log is installed. This test's `await` is
+    /// such a turn, so its records must be judged by workspace, not by count.
+    @MainActor
+    func testForeignWorkspaceTeardownWhileAwaitingDoesNotChangeTheGraphUnderTest() async {
+        await assertRuntimeSurfaceGraphIsNonTransient(injectingForeignTeardown: true)
+    }
+
+    @MainActor
+    private func assertRuntimeSurfaceGraphIsNonTransient(injectingForeignTeardown: Bool) async {
         let log = EventLog(url: logURL(), instance: "synthetic-runtime-guard")
         let emitter = EventEmitter.shared
         emitter.startForTesting(log: log, instance: "synthetic-runtime-guard")
@@ -2080,17 +2128,31 @@ extension EventLogTests {
         // returns a real runtime. No Ghostty allocation occurs in this fixture.
         emitter.noteWorkspaceRuntimeSurfaceCreated(workspace)
         emitter.emitWorkspaceCreated(workspace: workspace, title: "Synthetic real graph", rootDirectory: nil)
+        let foreignWorkspace = UUID()
+        if injectingForeignTeardown {
+            // What a deinit of a leaked Workspace does once the run loop turns.
+            DispatchQueue.main.async {
+                EventEmitter.shared.emitWorkspaceClosed(workspace: foreignWorkspace, title: "Leaked by an earlier test",
+                                                        remainingPanels: [UUID()])
+            }
+        }
         await Task.detached {
             EventEmitter.shared.emitMetadataChanged(scope: "panel", workspace: workspace, surface: panel,
                                                     key: "status", value: "Synthetic later real runtime", prior: nil, source: "explicit")
         }.value
         emitter.emitWorkspaceClosed(workspace: workspace, title: "Synthetic real graph", remainingPanels: [panel])
         log.flush()
-        let events = readLines(logURL()).map(parse)
+        let all = readLines(logURL()).map(parse)
+        let events = all.filter { $0["workspace"] as? String == workspace.uuidString }
         XCTAssertEqual(events.compactMap { $0["type"] as? String },
-                       ["panel.created", "workspace.created", "metadata.changed", "panel.closed", "workspace.closed"])
+                       ["panel.created", "workspace.created", "metadata.changed", "panel.closed", "workspace.closed"],
+                       "records: \(readLines(logURL()))")
         XCTAssertTrue(events.dropFirst().allSatisfy { ($0["payload"] as? [String: Any])?["transient"] == nil },
                       "Real runtime allocation must preserve the graph even if construction assumptions change")
+        if injectingForeignTeardown {
+            XCTAssertEqual(all.filter { $0["workspace"] as? String == foreignWorkspace.uuidString }.count, 2,
+                           "The foreign teardown must have reached this log, or the test proves nothing")
+        }
     }
 
     @MainActor
@@ -2564,15 +2626,13 @@ extension EventLogTests {
         XCTAssertEqual(permissions(url), 0o600)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + ".1"))
 
-        // The size-cap roll recovers the same way, without a checkpoint.
+        // Without a checkpoint, the very next write recovers (next test), and
+        // a later size-cap roll is an ordinary roll of the fresh file.
         let capped = logURL("events-synthetic-deleted-7002.ndjson")
         let cappedLog = EventLog(url: capped, instance: "synthetic-deleted-7002", sizeCap: 400, totalSizeCap: 64 * 1024)
         cappedLog.open()
         cappedLog.flush()
         try FileManager.default.removeItem(at: capped)
-        // ~130-byte opener and marker, ~170-byte records: the second record
-        // crosses the 400-byte cap in the orphan and recovers; the third
-        // lands in the fresh file without another roll.
         for index in 0..<3 {
             cappedLog.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-deleted-7002", ts: Date(),
                                            payload: ["n": index, "text": String(repeating: "x", count: 30)]))
@@ -2581,7 +2641,31 @@ extension EventLogTests {
         let cappedTypes = readLines(capped).map(parse).compactMap { $0["type"] as? String }
         XCTAssertEqual(cappedTypes.first, "log.rotated")
         XCTAssertEqual(cappedTypes.last, "panel.input_sent")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: capped.path + ".1"))
+    }
+
+    /// C11-385: records written between an external delete and the next
+    /// checkpoint used to land in the unlinked inode and vanish.
+    func testRecordAfterExternalDeleteLandsInTheLivePathWithoutACheckpoint() throws {
+        let url = logURL("events-synthetic-orphan-7003.ndjson")
+        let log = EventLog(url: url, instance: "synthetic-orphan-7003")
+        log.open()
+        log.append(EventEnvelope(type: .surfaceCreated, instance: "synthetic-orphan-7003", ts: Date()))
+        log.flush()
+        try FileManager.default.removeItem(at: url)
+        log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-orphan-7003", ts: Date(), payload: ["text": "FIRST"]))
+        log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-orphan-7003", ts: Date(), payload: ["text": "SECOND"]))
+        log.flush()
+        let lines = readLines(url).map(parse)
+        XCTAssertEqual(lines.compactMap { $0["type"] as? String }, ["log.rotated", "panel.input_sent", "panel.input_sent"])
+        XCTAssertEqual(lines.compactMap { $0["seq"] as? Int }, [3, 4, 5], "seq continues across the recovery")
+
+        // A replacement file (different inode at the same path) is also orphaning.
+        try FileManager.default.removeItem(at: url)
+        FileManager.default.createFile(atPath: url.path, contents: Data())
+        log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-orphan-7003", ts: Date(), payload: ["text": "THIRD"]))
+        log.flush()
+        let replaced = readLines(url).map(parse)
+        XCTAssertEqual(replaced.compactMap { $0["type"] as? String }, ["log.rotated", "panel.input_sent"])
     }
 
     func testAStatErrorOnTheLivePathIsNotTreatedAsADeletion() throws {

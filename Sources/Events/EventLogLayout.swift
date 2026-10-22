@@ -14,7 +14,7 @@ import Foundation
 ///         events-<instance>.ndjson.2      (older generation, age/byte bounded)
 ///
 /// The log is **per-instance** (EVT-1): each running c11 process writes its own
-/// file, keyed by `<launch-tag-or-bundle>-<pid>`. This is deliberate — the state
+/// file, keyed by `<launch-tag-or-bundle>-<pid>-n<nonce>`. This is deliberate — the state
 /// dir is shared, and dogfooders run a tagged debug build alongside the prod
 /// build (see `StateDirectoryMigration`), so a single shared file would suffer
 /// non-atomic multi-writer append corruption. Per-instance files sidestep that
@@ -114,13 +114,17 @@ enum EventLogLayout {
 
     // MARK: - Instance id
 
-    /// Builds the per-instance discriminator `<tag-or-bundle>-<pid>`. `pid` is
-    /// the only guaranteed-unique component; the tag/bundle prefix keeps the
-    /// filename legible when a dogfooder eyeballs the events dir.
+    /// Builds the per-instance discriminator `<tag-or-bundle>-<pid>-n<nonce>`.
+    /// The pid distinguishes concurrent processes; the per-launch nonce (C11-384)
+    /// keeps a launch that reuses a dead launch's pid off that launch's file, so
+    /// two launches never share an instance id. The tag/bundle prefix keeps the
+    /// filename legible when a dogfooder eyeballs the events dir. Logs written
+    /// before the nonce existed (`<label>-<pid>`) stay readable and prunable.
     static func makeInstanceId(
         tag: String? = ProcessInfo.processInfo.environment["C11_TAG"],
         bundleId: String? = Bundle.main.bundleIdentifier,
-        pid: Int32 = ProcessInfo.processInfo.processIdentifier
+        pid: Int32 = ProcessInfo.processInfo.processIdentifier,
+        nonce: String = makeLaunchNonce()
     ) -> String {
         let label: String
         if let tag, !tag.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -130,7 +134,30 @@ enum EventLogLayout {
         } else {
             label = "c11"
         }
-        return sanitizeInstance("\(label)-\(pid)")
+        return sanitizeInstance("\(label)-\(pid)-\(nonce)")
+    }
+
+    /// `n` plus eight lowercase hex digits. The letter keeps a nonce from ever
+    /// parsing as a pid, so label extraction can strip both unambiguously.
+    static func makeLaunchNonce() -> String {
+        "n" + String(format: "%08x", UInt32.random(in: 0...UInt32.max))
+    }
+
+    /// The `<tag-or-bundle>` part of an instance id: drops a trailing launch
+    /// nonce and then a trailing numeric pid, so every launch of one build
+    /// shares a retention namespace. An id with neither is its own label.
+    static func instanceLabel(_ instance: String) -> String {
+        var label = Substring(instance)
+        if let dash = label.lastIndex(of: "-") {
+            let tail = label[label.index(after: dash)...]
+            if tail.count == 9, tail.first == "n", tail.dropFirst().allSatisfy({ $0.isHexDigit && !$0.isUppercase }) {
+                label = label[..<dash]
+            }
+        }
+        if let dash = label.lastIndex(of: "-"), Int32(label[label.index(after: dash)...]) != nil {
+            label = label[..<dash]
+        }
+        return String(label)
     }
 
     /// Restricts an instance component to filename-safe characters.

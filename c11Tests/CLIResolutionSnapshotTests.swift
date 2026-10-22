@@ -984,20 +984,22 @@ final class CLIResolutionSnapshotTests: XCTestCase {
     }
 
     func testFocusTabRejectsUnknownWorkspaceBeforeFocusMutation() {
-        guard let socket = try? CapturedCLISocket() else {
-            XCTFail("Could not create a fake CLI socket")
-            return
+        for workspaceOption in [["--workspace", "workspace:9999"], ["--workspace=workspace:9999"]] {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(
+                ["focus-tab", "--tab", socket.panelIDForAssertions] + workspaceOption,
+                socketPath: socket.path
+            ) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(workspaceOption): \(result.stderr)")
+            XCTAssertTrue(result.stderr.contains("not_found"), "\(workspaceOption): \(result.stderr)")
+            XCTAssertFalse(
+                socket.requests.contains(where: { $0["method"] as? String == "panel.focus" }),
+                "invalid workspace reached panel.focus: \(socket.requests)"
+            )
         }
-        guard let result = runCLI(
-            ["focus-tab", "--tab", socket.panelIDForAssertions, "--workspace", "workspace:9999"],
-            socketPath: socket.path
-        ) else { return }
-        XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.stderr.contains("not_found"), result.stderr)
-        XCTAssertFalse(
-            socket.requests.contains(where: { $0["method"] as? String == "panel.focus" }),
-            "invalid workspace reached panel.focus: \(socket.requests)"
-        )
     }
 
     private func assertPanelTargetRejected(

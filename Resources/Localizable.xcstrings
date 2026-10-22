@@ -14561,6 +14561,12 @@
         "en": {"stringUnit": {"state": "translated", "value": "%@: unknown flag '%@'"}}
       }
     },
+    "cli.focus.workspace.requiresValue": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "--workspace requires a value"}}
+      }
+    },
     "cli.claude-teams.usage": {
       "extractionState": "manual",
       "localizations": {

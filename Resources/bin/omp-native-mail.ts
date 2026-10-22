@@ -7,9 +7,10 @@ import { subscribeNativeMailbox, doorbellText } from './mailbox-native.mjs';
 // live c11 surface. It does two things and nothing else:
 //
 //  1. Reports omp's working/idle edges, so c11's turn gate reflects the agent
-//     loop. `agent_end` is emitted from omp's settled path (retries, compaction
-//     and queued continuations done), the same point Pi's `agent_settled` marks.
-//  2. Delivers c11's mailbox doorbell as a user message at idle. Only the
+//     loop. `agent_end` is not proof of rest: omp can start a continuation
+//     (empty-response recovery, auto-retry) before it emits the old one. Idle is
+//     published only once `isIdle()` is true and no newer turn has begun.
+//  2. Delivers c11's mailbox doorbell as a message that starts a turn at idle. Only the
 //     invitation travels; the envelope stays in the inbox until
 //     `c11 mailbox recv --ack`.
 //
@@ -54,6 +55,7 @@ export default function c11OmpNativeMail(omp: {
     }
   };
 
+  let turn = 0;
   let stopMailbox: (() => void) | undefined;
   let nativeAccepted: (() => void) | undefined;
   let nativeContext: any;
@@ -64,6 +66,7 @@ export default function c11OmpNativeMail(omp: {
   const isSubagent = (ctx: any) => ctx?.hasUI === false;
 
   const bind = async (_event: any, ctx: any) => {
+    turn += 1;
     stopNative();
     if (isSubagent(ctx)) return;
     nativeContext = ctx;
@@ -100,10 +103,15 @@ export default function c11OmpNativeMail(omp: {
   };
   omp.on("session_start", bind);
   omp.on("session_switch", bind);
-  omp.on("session_shutdown", async () => stopNative());
+  omp.on("session_shutdown", async () => { turn += 1; stopNative(); });
 
+  // A turn counter invalidates a pending end notification. omp's recovery
+  // paths (an empty response, auto-retry) schedule a continuation before they
+  // emit the old `agent_end`, so that handler can run while the next turn is
+  // already starting or running.
   omp.on("agent_start", async (_event, ctx) => {
     if (isSubagent(ctx)) return;
+    turn += 1;
     await report("working");
   });
   omp.on("message_start", (event, ctx) => {
@@ -114,18 +122,22 @@ export default function c11OmpNativeMail(omp: {
     const text = typeof content === "string" ? content : content?.map((part: any) => part.type === "text" ? part.text : "").join("");
     if (text === doorbellText) nativeAccepted?.();
   });
-  omp.on("agent_end", async (_event, ctx) => {
+  omp.on("agent_end", (_event, ctx) => {
     if (isSubagent(ctx)) return;
     nativeContext = ctx;
     // Publishing idle can immediately deliver the next invitation. Clear the
     // prior slot first, never after awaiting a report that opened that gate.
     nativeAccepted = undefined;
-    // isIdle() is still false inside this handler and turns true about 11 ms
-    // later. Report idle only once it is, so the invitation it releases is
-    // never rejected as busy (typed fallback has no omp composer reader).
-    for (let wait = 0; wait < 50 && ctx?.isIdle?.() === false; wait += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    await report("idle");
+    // Publish idle only when omp is actually idle: isIdle() turns true about
+    // 11 ms after this handler runs, or never if a continuation starts. Return
+    // at once (omp awaits handlers) and let a newer turn, session or shutdown
+    // supersede the wait, never a polling budget.
+    const mine = turn;
+    void (async () => {
+      while (turn === mine && ctx?.isIdle?.() === false) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      if (turn === mine) await report("idle");
+    })();
   });
 }

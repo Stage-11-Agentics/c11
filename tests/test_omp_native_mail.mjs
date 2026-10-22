@@ -199,9 +199,31 @@ try {
     omp.state.idle = false;
     setTimeout(() => { omp.state.idle = true; }, 30);
     await omp.emit("agent_end");
+    assert.deepEqual(omp.activity(), ["working"], "idle is not published while isIdle() is false");
+    await until(() => omp.activity().length === 2, "idle once settled");
     assert.deepEqual(omp.activity(), ["working", "idle"]);
     assert.equal(omp.state.idle, true, "idle was published only after isIdle() turned true");
     assert.deepEqual(omp.state.exec[0], { command: "/fake/c11", args: ["--socket", srv.socketPath, "agent-hook", "working"] });
+  });
+
+  // 4b. An automatic continuation (empty-response recovery, auto-retry) starts
+  //     after the old agent_end: no idle during it, however long it runs (past
+  //     the consumer's 1.5 s busy wait), then exactly one idle when it ends.
+  await withEnv(env(srv), async () => {
+    const omp = host();
+    extension(omp.api);
+    await omp.emit("agent_start");
+    omp.state.idle = false;
+    await omp.emit("agent_end");           // the superseded notification
+    await delay(300);
+    await omp.emit("agent_start");         // the continuation
+    await delay(1800);
+    assert.deepEqual(omp.activity(), ["working", "working"], "no idle during the continuation");
+    omp.state.idle = true;
+    await omp.emit("agent_end");
+    await until(() => omp.activity().length === 3, "final idle");
+    await delay(100);
+    assert.deepEqual(omp.activity(), ["working", "working", "idle"], "exactly one idle, after the continuation");
   });
 
   // 5. Task subagents (hasUI false) neither subscribe nor report lifecycle.

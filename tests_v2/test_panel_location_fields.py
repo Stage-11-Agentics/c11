@@ -168,6 +168,39 @@ def main() -> int:
             _must(md.get("branch") in (None, ""), f"remote derived branch must be empty: {md}")
             _must(md.get("worktree") in (None, ""), f"remote derived worktree must be empty: {md}")
             print("PASS: remote workspace reports null")
+
+            # 5. a resolved local workspace that turns remote drops its local
+            #    identity at once, even when the shell announces the same cwd.
+            flip_ws = str((c._call("workspace.create") or {}).get("workspace_id") or "")
+            _must(bool(flip_ws), "third workspace.create failed")
+            try:
+                time.sleep(0.5)
+                fpanel = _first_panel(c, flip_ws)
+                _wait_for(
+                    lambda: (lambda t: t if t.get("worktree") == "C11-229-demo" else None)(_tree_surface(c, flip_ws, fpanel)),
+                    "flip workspace resolved locally",
+                    resend=lambda: _report_pwd(flip_ws, fpanel, linked),
+                )
+                _must(_metadata(c, flip_ws, fpanel)["metadata"].get("branch") == "C11-229-demo", "seed metadata missing")
+                time.sleep(2.0)
+                c._call("workspace.remote.configure", {
+                    "workspace_id": flip_ws, "destination": "nobody@c11-229.invalid", "auto_connect": False,
+                })
+                for _ in range(8):
+                    _report_pwd(flip_ws, fpanel, linked)
+                    time.sleep(0.5)
+                s = _tree_surface(c, flip_ws, fpanel)
+                for key in ("cwd", "branch", "worktree"):
+                    _must(s.get(key) is None, f"flipped panel {key} must be null: {s}")
+                md = _metadata(c, flip_ws, fpanel)["metadata"]
+                _must(md.get("branch") in (None, ""), f"flipped derived branch must clear: {md}")
+                _must(md.get("worktree") in (None, ""), f"flipped derived worktree must clear: {md}")
+            finally:
+                try:
+                    c.close_workspace(flip_ws)
+                except Exception:
+                    pass
+            print("PASS: local-to-remote transition clears derived identity")
         finally:
             for w in (ws_id, remote_ws):
                 if w:

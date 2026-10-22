@@ -51,24 +51,29 @@ export default function c11Lifecycle(pi: {
     stopMailbox?.(); stopMailbox = undefined;
     nativeAccepted = undefined;
   };
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
     stopNative();
     nativeContext = ctx;
     const agentPID = Number(process.env.C11_AGENT_INTERACTIVE_PID);
-    if (process.env.C11_PI_NATIVE_MAIL_DISABLED === "1" || !panel || !ctx?.hasUI || !pi.sendUserMessage || agentPID !== process.pid) return;
-    stopMailbox = subscribeNativeMailbox({
-      socketPath: socket, panelID: panel, agentPID, sessionID: randomUUID(), route: "pi_extension", canQueue: false,
-      deliver: (text: string) => {
-        if (!nativeContext?.isIdle() || nativeAccepted) return Promise.reject(new Error("busy"));
-        return new Promise<void>((resolve) => {
-          nativeAccepted = () => { nativeAccepted = undefined; resolve(); };
-          // Pi's API returns void. Only message_start below acknowledges it.
-          // Failure after calling is uncertain: let c11's bounded timeout use
-          // the existing typed gate, rather than asserting a safe rejection.
-          try { pi.sendUserMessage!(text, { deliverAs: "followUp" }); } catch { nativeAccepted = undefined; }
-        });
-      },
-    });
+    if (!panel || !ctx?.hasUI || agentPID !== process.pid) return;
+    if (process.env.C11_PI_NATIVE_MAIL_DISABLED !== "1" && pi.sendUserMessage) {
+      stopMailbox = subscribeNativeMailbox({
+        socketPath: socket, panelID: panel, agentPID, sessionID: randomUUID(), route: "pi_extension", canQueue: false,
+        deliver: (text: string) => {
+          if (!nativeContext?.isIdle() || nativeAccepted) return Promise.reject(new Error("busy"));
+          return new Promise<void>((resolve) => {
+            nativeAccepted = () => { nativeAccepted = undefined; resolve(); };
+            // Pi's API returns void. Only message_start below acknowledges it.
+            // Failure after calling is uncertain: let c11's bounded timeout use
+            // the existing typed gate, rather than asserting a safe rejection.
+            try { pi.sendUserMessage!(text, { deliverAs: "followUp" }); } catch { nativeAccepted = undefined; }
+          });
+        },
+      });
+    }
+    // /new ends at an idle prompt without running an agent turn. Its Return
+    // otherwise leaves c11 waiting for a settled event Pi will never emit.
+    if (ctx.isIdle()) await report("idle");
   });
   pi.on("session_shutdown", stopNative);
   pi.on("message_start", (event, ctx) => {

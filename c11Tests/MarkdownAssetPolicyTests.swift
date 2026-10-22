@@ -94,6 +94,18 @@ final class MarkdownAssetPolicyTests: XCTestCase {
         }
     }
 
+    func testImageURLQueryIsIgnoredAndNeverWidensScope() throws {
+        try fixture { root, policy in
+            try Self.image.write(to: root.appendingPathComponent("doc/pic.png"))
+            try Self.image.write(to: root.appendingPathComponent("outside.png"))
+            // The viewer appends ?e=<n> after navigating to another folder so WebKit refetches.
+            XCTAssertEqual(try policy.resource(for: URL(string: "c11md-asset://doc/pic.png?e=2")!).data, Self.image)
+            for path in ["../outside.png?e=2", "%2e%2e/outside.png?e=2", "pic.png/../../outside.png?e=2"] {
+                XCTAssertThrowsError(try policy.resource(for: URL(string: "c11md-asset://doc/" + path)!), path)
+            }
+        }
+    }
+
     func testOnlyBundleCanServeCodeAndEntryReceivesCSP() throws {
         try fixture { root, policy in
             try Data("<!doctype html><html><head></head><body></body></html>".utf8).write(to: root.appendingPathComponent("bundle/index.html"))

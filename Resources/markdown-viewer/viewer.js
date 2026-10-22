@@ -15,7 +15,7 @@ const findPreviousButton = $('#findPrevious'), findNextButton = $('#findNext'), 
 const corpusScrim=$('#corpusScrim'), corpusSearch=$('#corpusSearch'), corpusResults=$('#corpusResults'), corpusCount=$('#corpusCount');
 let findDebounce=null;
 const defaults = {copy:'copy', copied:'copied', copyLink:'copy link to this section', expand:'expand ⤢', close:'close', diagram:'diagram', diagramError:'Diagram could not be rendered', imageBlocked:'Image unavailable', notes:'notes', back:'back to', source:'source', frontmatter:'frontmatter', outlineTitle:'Outline', outlineFilter:'Filter outline', outlineEmpty:'No headings', outlineNoMatches:'No headings match', outlineClearFilter:'Clear filter', outlineSummary:'%d min · %d words · %d lines', outlineTaskCount:'%d of %d tasks complete', findOpen:'Find (⌘F)', findPlaceholder:'Find in document', findPrevious:'Previous match', findNext:'Next match', findClose:'Close find', findCount:'%d / %d', brokenAnchorTitle:'Heading “%s” not found. Closest headings:', linkPeekTitle:'Preview', corpusOutline:'Outline', corpusBacklinks:'Referenced by', corpusFilter:'Filter references', corpusDocument:'This document', corpusSection:'This section', corpusNoReferences:'No references', corpusIndexing:'Indexing documents…', corpusSearch:'Search files and headings', corpusNoMatches:'No matching files or headings', corpusFile:'File', corpusHeading:'Heading', corpusHint:'Jump to a file or heading', corpusTicketStatus:'Status', corpusLine:'line', corpusMore:'%d more references'};
-const S = {markdown:'', file:'', baseURL:'', revision:null, mode:'read', scale:1,
+const S = {markdown:'', file:'', baseURL:'', assetEpoch:0, revision:null, mode:'read', scale:1,
   theme:'system', typeface:'theme', outlineChoice:'auto', os:null, resolved:'dark', face:'serif',
   heads:[], tree:[], outlineSections:new Map(), blocks:[], generation:0, renderQueue:Promise.resolve(),
   find:{query:'', draft:'', hits:[], index:-1}, findOpen:false, strings:{...defaults}, words:0, lines:1, diagram:null,
@@ -117,7 +117,9 @@ function assetURL(raw) {
     if(url.protocol!=='file:'||url.host!==dir.host||!url.pathname.startsWith(dir.pathname)) return null;
     const path=decodeURIComponent(url.pathname.slice(dir.pathname.length));
     if(!path||path.split('/').some(x=>x==='..'||x==='.'||!x)||/[\u0000-\u001f\\]/.test(path)) return null;
-    return 'c11md-asset://doc/'+path.split('/').map(encodeURIComponent).join('/');
+    // WebKit reuses a resource for an identical URL for the page's whole life, so a document in
+    // another folder with the same relative name would show the first document's image.
+    return 'c11md-asset://doc/'+path.split('/').map(encodeURIComponent).join('/')+(S.assetEpoch?'?e='+S.assetEpoch:'');
   } catch {return null;}
 }
 function linkInfo(href) {
@@ -1102,6 +1104,8 @@ async function load(input) {
     const same=S.file===doc.documentPath,a=same?capture():{atTop:true,line:1};
     if(!same){S.blocks=[];article.replaceChildren();closeDiagram();$('#note').hidden=true;$('#back').hidden=true;}
     const query=S.find.query;if(query)clearMarks();
+    const folderOf=(file,base)=>{try{return new URL('.',new URL(base||file,'file:///')).href;}catch{return '';}};
+    if((S.file||S.baseURL)&&folderOf(S.file,S.baseURL)!==folderOf(doc.documentPath,doc.baseURL)) S.assetEpoch++;
     S.markdown=doc.markdown.replace(/\r\n?/g,'\n');S.file=doc.documentPath;S.baseURL=doc.baseURL||'';S.revision=doc.revision??null;
     S.lines=S.markdown.split('\n').length;S.words=S.markdown.trim()?S.markdown.trim().split(/\s+/).length:0;
     const {body,fm}=prep(S.markdown),tokens=md.parse(body,{}),changed=reconcile(tokens,fm);

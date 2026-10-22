@@ -25,6 +25,9 @@ cli="$(exec_guest zsh -c "ls -d /Users/admin/c11-sandbox/apps/$run_id/*.app | he
 socket="/tmp/c11-sandbox-$run_id.sock"
 c11() { exec_guest "$cli" --socket "$socket" "$@"; }
 
+# A fresh guest can raise System Settings over the display; it would hide the panel in every screenshot.
+exec_guest osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1 || true
+
 echo "== fixtures =="
 fixture_code="$(cat <<'PY'
 import os, struct, zlib

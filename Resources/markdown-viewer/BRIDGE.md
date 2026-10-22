@@ -207,7 +207,7 @@ without trusting the page's `resolvedURL` or `kind`:
 
 Relative and `file:` image URLs inside the document directory tree render through
 `c11md-asset://doc/<URL-encoded path relative to the document directory>`. Encode
-each path component; keep `/` separators. Reject any decoded `..` component
+each path component; keep `/` separators. After a `load` into a document in a different folder, append `?e=<n>` (a counter that increases per such load) so WebKit, which reuses a resource for an identical URL for the page's lifetime, does not show the first document's image; the native handler ignores the query. Reject any decoded `..` component
 (including encoded traversal), remote/data/unknown schemes, and absolute paths
 outside that tree. The native asset handler independently validates decoded paths,
 symlinks and file types before serving bytes. The renderer never loads a raw file

@@ -441,76 +441,105 @@ final class MainThreadWatchdogLatenessTests: XCTestCase {
 }
 
 final class MainThreadHangCaptureTests: XCTestCase {
-    private func onWatchdog(_ check: @escaping () -> Void) {
-        let finished = expectation(description: "watchdog capture returned")
-        let worker = Thread {
-            pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0)
-            check()
-            finished.fulfill()
+    // Exercise the capture transaction synchronously. An expectation on a new
+    // background-QoS thread tests the scheduler's latency, not this ordering;
+    // on the three-worker CI runner it can expire before the thread runs.
+    // Production still uses pthread_set_qos_class_self_np as the default.
+    private final class QoSRecorder {
+        var current = QOS_CLASS_BACKGROUND
+        var calls: [String] = []
+
+        func set(_ qos: qos_class_t, _ relativePriority: Int32) -> Int32 {
+            XCTAssertEqual(relativePriority, 0)
+            calls.append(qos == QOS_CLASS_USER_INTERACTIVE ? "promote" : "restore")
+            current = qos
+            return 0
         }
-        worker.qualityOfService = .background
-        worker.start()
-        wait(for: [finished], timeout: 5)
     }
 
     func testPromotionCoversSuspendReadAndResumeThenRestoresBackground() {
-        onWatchdog {
-            var calls: [String] = []
-            var buffer = [UInt](repeating: 0, count: 4)
-            let result = buffer.withUnsafeMutableBufferPointer { buffer in
-                MainThreadHangCapture.capture(thread: 0, buffer: buffer, suspend: { _ in
-                    XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
-                    calls.append("suspend")
+        let qos = QoSRecorder()
+        var buffer = [UInt](repeating: 0, count: 4)
+        let result = buffer.withUnsafeMutableBufferPointer { buffer in
+            MainThreadHangCapture.capture(thread: 0, buffer: buffer, setQoS: qos.set,
+                suspend: { _ in
+                    XCTAssertEqual(qos.current, QOS_CLASS_USER_INTERACTIVE)
+                    qos.calls.append("suspend")
                     return KERN_SUCCESS
                 }, resume: { _ in
-                    XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
-                    calls.append("resume")
+                    XCTAssertEqual(qos.current, QOS_CLASS_USER_INTERACTIVE)
+                    qos.calls.append("resume")
                     return KERN_SUCCESS
                 }, read: { _, _, _ in
-                    XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
-                    calls.append("read")
+                    XCTAssertEqual(qos.current, QOS_CLASS_USER_INTERACTIVE)
+                    qos.calls.append("read")
                     return 2
                 })
-            }
-            XCTAssertEqual(result, 2)
-            XCTAssertEqual(calls, ["suspend", "read", "resume"])
-            XCTAssertEqual(qos_class_self(), QOS_CLASS_BACKGROUND)
         }
+        XCTAssertEqual(result, 2)
+        XCTAssertEqual(qos.calls, ["promote", "suspend", "read", "resume", "restore"])
+        XCTAssertEqual(qos.current, QOS_CLASS_BACKGROUND)
     }
 
     func testFailedThreadGetStateStillResumesBeforeRestoringQoS() {
-        onWatchdog {
-            var resumed = false
-            var buffer = [UInt](repeating: 0, count: 4)
-            let result = buffer.withUnsafeMutableBufferPointer { buffer in
-                // The actual C unwinder gets an invalid port: thread_get_state
-                // fails. Only suspend/resume are replaced, so no live thread is stopped.
-                MainThreadHangCapture.capture(thread: mach_port_t(MACH_PORT_NULL), buffer: buffer,
-                    suspend: { _ in KERN_SUCCESS }, resume: { _ in
-                        XCTAssertEqual(qos_class_self(), QOS_CLASS_USER_INTERACTIVE)
-                        resumed = true
-                        return KERN_SUCCESS
-                    })
-            }
-            XCTAssertEqual(result, 0)
-            XCTAssertTrue(resumed)
-            XCTAssertEqual(qos_class_self(), QOS_CLASS_BACKGROUND)
+        let qos = QoSRecorder()
+        var buffer = [UInt](repeating: 0, count: 4)
+        let result = buffer.withUnsafeMutableBufferPointer { buffer in
+            // The actual C unwinder gets an invalid port: thread_get_state
+            // fails. Only suspend/resume are replaced, so no live thread is stopped.
+            MainThreadHangCapture.capture(thread: mach_port_t(MACH_PORT_NULL), buffer: buffer,
+                setQoS: qos.set, suspend: { _ in
+                    XCTAssertEqual(qos.current, QOS_CLASS_USER_INTERACTIVE)
+                    qos.calls.append("suspend")
+                    return KERN_SUCCESS
+                }, resume: { _ in
+                    XCTAssertEqual(qos.current, QOS_CLASS_USER_INTERACTIVE)
+                    qos.calls.append("resume")
+                    return KERN_SUCCESS
+                })
         }
+        XCTAssertEqual(result, 0)
+        XCTAssertEqual(qos.calls, ["promote", "suspend", "resume", "restore"])
+        XCTAssertEqual(qos.current, QOS_CLASS_BACKGROUND)
     }
 
     func testFailedSuspendRestoresQoSWithoutReadingOrResuming() {
-        onWatchdog {
-            var buffer = [UInt](repeating: 0, count: 4)
-            let result = buffer.withUnsafeMutableBufferPointer { buffer in
-                MainThreadHangCapture.capture(thread: 0, buffer: buffer,
-                    suspend: { _ in KERN_FAILURE }, resume: { _ in
-                        XCTFail("resume after failed suspend")
-                        return KERN_SUCCESS
-                    }, read: { _, _, _ in XCTFail("read after failed suspend"); return 0 })
-            }
-            XCTAssertEqual(result, -1)
-            XCTAssertEqual(qos_class_self(), QOS_CLASS_BACKGROUND)
+        let qos = QoSRecorder()
+        var buffer = [UInt](repeating: 0, count: 4)
+        let result = buffer.withUnsafeMutableBufferPointer { buffer in
+            MainThreadHangCapture.capture(thread: 0, buffer: buffer, setQoS: qos.set,
+                suspend: { _ in
+                    XCTAssertEqual(qos.current, QOS_CLASS_USER_INTERACTIVE)
+                    qos.calls.append("suspend")
+                    return KERN_FAILURE
+                }, resume: { _ in
+                    XCTFail("resume after failed suspend")
+                    return KERN_SUCCESS
+                }, read: { _, _, _ in XCTFail("read after failed suspend"); return 0 })
         }
+        XCTAssertEqual(result, -1)
+        XCTAssertEqual(qos.calls, ["promote", "suspend", "restore"])
+        XCTAssertEqual(qos.current, QOS_CLASS_BACKGROUND)
+    }
+
+    func testFailedPromotionDoesNotSuspendReadOrResume() {
+        var requests: [qos_class_t] = []
+        var buffer = [UInt](repeating: 0, count: 4)
+        let result = buffer.withUnsafeMutableBufferPointer { buffer in
+            MainThreadHangCapture.capture(thread: 0, buffer: buffer, setQoS: { qos, relativePriority in
+                requests.append(qos)
+                XCTAssertEqual(relativePriority, 0)
+                return EPERM
+            }, suspend: { _ in
+                XCTFail("suspend after failed promotion")
+                return KERN_FAILURE
+            }, resume: { _ in
+                XCTFail("resume after failed promotion")
+                return KERN_SUCCESS
+            }, read: { _, _, _ in XCTFail("read after failed promotion"); return 0 })
+        }
+        XCTAssertEqual(result, -2)
+        XCTAssertEqual(requests, [QOS_CLASS_USER_INTERACTIVE])
     }
 }
 

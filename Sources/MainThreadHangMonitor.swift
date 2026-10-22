@@ -326,13 +326,14 @@ enum MainThreadHangCapture {
     static func capture(
         thread: thread_t,
         buffer: UnsafeMutableBufferPointer<UInt>,
+        setQoS: (qos_class_t, Int32) -> Int32 = pthread_set_qos_class_self_np,
         suspend: (thread_t) -> kern_return_t = thread_suspend,
         resume: (thread_t) -> kern_return_t = thread_resume,
         read: (thread_t, UnsafeMutablePointer<UInt>?, Int32) -> Int32 = c11_capture_thread_backtrace
     ) -> Int {
         // Failure to promote must never lead to suspending main at background QoS.
-        guard pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0) == 0 else { return -2 }
-        defer { pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0) }
+        guard setQoS(QOS_CLASS_USER_INTERACTIVE, 0) == 0 else { return -2 }
+        defer { _ = setQoS(QOS_CLASS_BACKGROUND, 0) }
         guard suspend(thread) == KERN_SUCCESS else { return -1 }
         // LIFO: main resumes before the watchdog gives up its priority, even
         // when thread_get_state fails and the reader returns zero frames.

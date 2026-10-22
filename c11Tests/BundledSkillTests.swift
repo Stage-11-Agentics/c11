@@ -66,23 +66,47 @@ final class BundledSkillTests: XCTestCase {
         }
     }
 
-    func testIdentityReadsBuiltC11StampAndDoesNotInferCheckoutIdentity() throws {
-        try withFixture { root in
-            let bundle = root.appendingPathComponent("Fixture.app")
-            let contents = bundle.appendingPathComponent("Contents")
-            try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
-            let info: [String: Any] = ["C11Commit": "ABCDEF0123456789", "CFBundleShortVersionString": "1.2", "CFBundleVersion": "42"]
-            let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
-            try data.write(to: contents.appendingPathComponent("Info.plist"))
-            let identity = C11BuildIdentity(bundleURL: bundle)
-            XCTAssertEqual(identity.commit, "abcdef0123456789")
-            XCTAssertEqual(identity.shortVersion, "1.2")
-            XCTAssertEqual(identity.build, "42")
-            XCTAssertNil(C11BuildIdentity(bundleURL: root).commit)
-            XCTAssertNil(C11BuildIdentity(info: [:]).commit)
-            XCTAssertEqual(C11BuildIdentity(info: ["CMUXCommit": "abcdef012"]).commit, "abcdef012")
-            XCTAssertEqual(C11BuildIdentity(info: ["C11Commit": "abcdef012", "CMUXCommit": "111111111"]).commit, "abcdef012")
-        }
+    func testIdentityUsesInjectedBundleMetadata() {
+        let info: [String: Any] = [
+            "C11Commit": "ABCDEF0123456789",
+            "CFBundleShortVersionString": "1.2",
+            "CFBundleVersion": "42",
+        ]
+        let identity = C11BuildIdentity(info: info)
+        XCTAssertEqual(identity.commit, "abcdef0123456789")
+        XCTAssertEqual(identity.shortVersion, "1.2")
+        XCTAssertEqual(identity.build, "42")
+        XCTAssertNil(C11BuildIdentity(info: [:]).commit)
+        XCTAssertEqual(C11BuildIdentity(info: ["CMUXCommit": "abcdef012"]).commit, "abcdef012")
+        XCTAssertEqual(C11BuildIdentity(info: ["C11Commit": "abcdef012", "CMUXCommit": "111111111"]).commit, "abcdef012")
+    }
+
+    func testCommitResolverUsesC11BundleStampBeforeLegacyAndEnvironment() {
+        let info: [String: Any] = ["C11Commit": "ABCDEF012", "CMUXCommit": "111111111"]
+        let environment = ["C11_COMMIT": "222222222", "CMUX_COMMIT": "333333333"]
+
+        XCTAssertEqual(C11BuildIdentity.resolveCommit(info: info, environment: environment), "abcdef012")
+        XCTAssertEqual(C11BuildIdentity.resolveCommit(info: ["CMUXCommit": "111111111"], environment: environment), "111111111")
+        XCTAssertEqual(C11BuildIdentity.resolveCommit(info: [:], environment: environment), "222222222")
+        XCTAssertEqual(C11BuildIdentity.resolveCommit(info: [:], environment: ["CMUX_COMMIT": "333333333"]), "333333333")
+    }
+
+    func testCommitResolverSkipsEmptyValuesAndReturnsNilWhenNoCommitExists() {
+        XCTAssertEqual(
+            C11BuildIdentity.resolveCommit(
+                info: ["C11Commit": "", "CMUXCommit": "444444444"],
+                environment: ["C11_COMMIT": "555555555", "CMUX_COMMIT": "666666666"]
+            ),
+            "444444444"
+        )
+        XCTAssertEqual(
+            C11BuildIdentity.resolveCommit(
+                info: ["C11Commit": "  ", "CMUXCommit": ""],
+                environment: ["C11_COMMIT": "", "CMUX_COMMIT": "777777777"]
+            ),
+            "777777777"
+        )
+        XCTAssertNil(C11BuildIdentity.resolveCommit(info: ["C11Commit": "", "CMUXCommit": ""], environment: [:]))
     }
 
     func testCommitComparisonUsesBothStamps() {

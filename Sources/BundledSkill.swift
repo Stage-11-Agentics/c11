@@ -1,6 +1,6 @@
 import Foundation
 
-/// Identity comes only from a built bundle. Never infer it from cwd, git or env.
+/// Projects build identity from bundle metadata; UI callers may pass an explicit environment fallback.
 struct C11BuildIdentity {
     let shortVersion: String?
     let build: String?
@@ -10,8 +10,7 @@ struct C11BuildIdentity {
     init(info: [String: Any]) {
         shortVersion = Self.string(info["CFBundleShortVersionString"])
         build = Self.string(info["CFBundleVersion"])
-        commit = Self.normalizeCommit(Self.string(info["C11Commit"]))
-            ?? Self.normalizeCommit(Self.string(info["CMUXCommit"]))
+        commit = Self.resolveCommit(info: info, environment: [:])
         bundleIdentifier = Self.string(info["CFBundleIdentifier"])
     }
 
@@ -45,6 +44,13 @@ struct C11BuildIdentity {
     static func commitsMatch(_ cli: String?, _ server: String?) -> Bool? {
         guard let cli = normalizeCommit(cli), let server = normalizeCommit(server) else { return nil }
         return cli.hasPrefix(server) || server.hasPrefix(cli)
+    }
+
+    static func resolveCommit(info: [String: Any], environment: [String: String]) -> String? {
+        normalizeCommit(string(info["C11Commit"]))
+            ?? normalizeCommit(string(info["CMUXCommit"]))
+            ?? normalizeCommit(environment["C11_COMMIT"])
+            ?? normalizeCommit(environment["CMUX_COMMIT"])
     }
 
     private static func string(_ value: Any?) -> String? {

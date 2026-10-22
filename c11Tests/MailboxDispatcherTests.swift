@@ -377,6 +377,151 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
     }
 
+    // MARK: - Sender stamp and Sent ledger (C11-399)
+
+    private func dispatch(_ envelope: MailboxEnvelope, with dispatcher: MailboxDispatcher) throws {
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        dispatcher.log.flush()
+    }
+
+    private func senderInbox(_ panel: UUID) -> URL {
+        MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: panel)
+    }
+
+    private func claim(_ panel: UUID, workspace: UUID? = nil) -> [String: Any] {
+        MailboxEnvelope.senderClaim(panel: panel, workspace: workspace ?? workspaceId)
+    }
+
+    private func setAddress(_ address: String, on panel: UUID) {
+        _ = try? PanelMetadataStore.shared.setMetadata(
+            workspaceId: workspaceId, surfaceId: panel,
+            partial: [MetadataKey.mailboxAddress: address], mode: .merge, source: .explicit
+        )
+    }
+
+    func testAcceptedEnvelopeIsStampedWithItsSendingPanelAndLedgered() throws {
+        let sender = seedSurface(name: "stamp-sender")
+        let one = seedSurface(name: "stamp-one")
+        let two = seedSurface(name: "stamp-two")
+        let dispatcher = makeDispatcher(surfaces: [sender, one, two])
+        var ids: [String] = []
+        for target in ["stamp-one", "stamp-two"] {
+            let envelope = try MailboxEnvelope.build(
+                from: "stamp-sender", to: target, topic: "stamp.t", body: "hi " + target, ext: claim(sender)
+            )
+            try dispatch(envelope, with: dispatcher)
+            ids.append(envelope.id)
+        }
+        for (panel, id) in zip([one, two], ids) {
+            let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: panel, id: id))
+            XCTAssertEqual(copy.senderPanelId, sender)
+            // The claim is consumed: recipients see only the stamp.
+            XCTAssertNil(copy.ext?[MailboxEnvelope.senderClaimKey])
+        }
+        let listed = MailboxSentLedger.entries(senderInbox: senderInbox(sender), limit: 10)
+        XCTAssertEqual(listed.total, 2)
+        XCTAssertEqual(Set(listed.entries.map(\.id)), Set(ids))
+        let byId = Dictionary(uniqueKeysWithValues: listed.entries.map { ($0.id, $0) })
+        XCTAssertEqual(byId[ids[0]]?.recipients, [.init(panel: one.uuidString.lowercased(), name: "stamp-one")])
+        XCTAssertEqual(byId[ids[1]]?.recipients, [.init(panel: two.uuidString.lowercased(), name: "stamp-two")])
+        XCTAssertEqual(byId[ids[0]]?.topic, "stamp.t")
+        // The ledger lives in the sender's directory, not the recipients'.
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(one), limit: 10).total, 0)
+    }
+
+    func testNoClaimOrAForeignOrClosedClaimIsNotStampedOrLedgered() throws {
+        let panel = seedSurface(name: "claimless")
+        let recipient = seedSurface(name: "stamp-recipient")
+        let dispatcher = makeDispatcher(surfaces: [panel, recipient])
+        let cases: [(String, [String: Any]?)] = [
+            ("no claim", nil),
+            ("claim from another workspace", claim(panel, workspace: UUID())),
+            ("claim of a panel that is not live here", claim(UUID())),
+        ]
+        for (label, ext) in cases {
+            // `from` names a live panel; that alone must not become the sender.
+            let envelope = try MailboxEnvelope.build(from: "claimless", to: "stamp-recipient", body: "x", ext: ext)
+            try dispatch(envelope, with: dispatcher)
+            let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: envelope.id))
+            XCTAssertNil(copy.senderPanelId, label)
+            XCTAssertNil(copy.ext?[MailboxEnvelope.senderClaimKey], label)
+            XCTAssertEqual(copy.body, "x", label)
+        }
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(panel), limit: 10).total, 0)
+    }
+
+    func testSenderCannotForgeTheReservedStamp() throws {
+        let real = seedSurface(name: "real-sender")
+        let victim = seedSurface(name: "victim")
+        let recipient = seedSurface(name: "forge-recipient")
+        let dispatcher = makeDispatcher(surfaces: [real, victim, recipient])
+        // A forged stamp naming another panel is replaced by the claimed sender.
+        let forged = try MailboxEnvelope.build(
+            from: "real-sender", to: "forge-recipient", body: "x",
+            ext: [MailboxEnvelope.senderPanelKey: victim.uuidString.lowercased(), "custom": "kept"]
+                .merging(claim(real)) { a, _ in a }
+        )
+        try dispatch(forged, with: dispatcher)
+        let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: forged.id))
+        XCTAssertEqual(copy.senderPanelId, real)
+        XCTAssertEqual(copy.ext?["custom"] as? String, "kept")
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(victim), limit: 10).total, 0)
+        // A forged stamp with no claim is dropped, not kept.
+        let unclaimed = try MailboxEnvelope.build(
+            from: "ghost", to: "forge-recipient", body: "y",
+            ext: [MailboxEnvelope.senderPanelKey: victim.uuidString.lowercased()]
+        )
+        try dispatch(unclaimed, with: dispatcher)
+        let dropped = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: unclaimed.id))
+        XCTAssertNil(dropped.senderPanelId)
+        XCTAssertNil(dropped.ext)
+        // A claim for a panel that is not the named one is honored only inside
+        // this workspace: claiming the victim here is a claim like any other.
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(victim), limit: 10).total, 0)
+    }
+
+    func testCrossWorkspaceTitleCollisionDoesNotAttributeSentMail() throws {
+        // Workspace A's panel, addressed "builder-a", sends to "Reviewer", which
+        // lives here in B. B also has its own, different panel with that same
+        // address, so the `from` string alone names the wrong panel here.
+        let lookalike = seedSurface(name: "Builder")
+        setAddress("builder-a", on: lookalike)
+        let reviewer = seedSurface(name: "Reviewer")
+        let dispatcher = makeDispatcher(surfaces: [lookalike, reviewer])
+        let otherWorkspace = UUID()
+        let senderInA = UUID()
+        let from = try XCTUnwrap(MailboxSenderFrom.defaultValue(title: "Builder", mailboxAddress: "builder-a", panelId: senderInA))
+        XCTAssertEqual(from, "builder-a")
+        let envelope = try MailboxEnvelope.build(
+            from: from, to: "Reviewer", body: "from workspace A",
+            ext: claim(senderInA, workspace: otherWorkspace)
+        )
+        try dispatch(envelope, with: dispatcher)
+        let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: reviewer, id: envelope.id))
+        XCTAssertEqual(copy.body, "from workspace A")
+        XCTAssertNil(copy.senderPanelId)
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(lookalike), limit: 10).total, 0)
+    }
+
+    func testSenderTitleAddressCollisionKeepsExactIdentity() throws {
+        // "orch" is the real sender's title; another panel's address is "orch",
+        // which wins a bare-name match.
+        let sender = seedSurface(name: "orch")
+        setAddress("orch-real", on: sender)
+        let other = seedSurface(name: "someone-else")
+        setAddress("orch", on: other)
+        let recipient = seedSurface(name: "third")
+        let dispatcher = makeDispatcher(surfaces: [sender, other, recipient])
+        let envelope = try MailboxEnvelope.build(from: "orch", to: "third", body: "x", ext: claim(sender))
+        try dispatch(envelope, with: dispatcher)
+        let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: envelope.id))
+        XCTAssertEqual(copy.senderPanelId, sender)
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(sender), limit: 10).total, 1)
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(other), limit: 10).total, 0)
+    }
+
     func testDispatchesToNamedRecipient() throws {
         let watcher = seedSurface(name: "watcher", delivery: "silent")
         let dispatcher = makeDispatcher(surfaces: [watcher])

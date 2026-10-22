@@ -399,14 +399,41 @@ final class MailboxDispatcher {
             return
         }
 
+        // Step 3b (C11-399): decide the reserved sender stamp from the caller
+        // identity the CLI attached, never from `from`, which is only a name
+        // that may match a different panel here (another workspace's lookalike,
+        // or a panel whose address equals the sender's title). The claim counts
+        // only for a panel that is live in THIS workspace; a sender-supplied
+        // stamp and the claim itself are always removed.
+        let senderPanel = resolveSender(envelope: envelope)
+        envelope = envelope.stampingSender(senderPanel)
+
         // Step 4: copy into each recipient inbox.
         let envelopeBytes = (try? envelope.encode()) ?? Data()
+        var landed: [MailboxPanelResolver.PanelMetadata] = []
         for recipient in recipients {
-            copyToInbox(
+            if copyToInbox(
                 envelope: envelope,
                 recipient: recipient,
                 envelopeBytes: envelopeBytes
+            ) { landed.append(recipient) }
+        }
+        if let senderPanel, !landed.isEmpty {
+            MailboxSentLedger.record(
+                MailboxSentLedger.Entry(
+                    id: envelope.id,
+                    ts: envelope.ts,
+                    to: envelope.to,
+                    topic: envelope.topic,
+                    recipients: landed.map {
+                        MailboxSentLedger.Recipient(panel: $0.surfaceId.uuidString.lowercased(), name: $0.displayName)
+                    }
+                ),
+                senderInbox: MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: senderPanel)
             )
+            // The sender's cell may now need to appear (a panel that has sent
+            // mail but received none): recount it off the hot path.
+            MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: senderPanel)
         }
 
         // Step 5: invoke handlers.
@@ -455,13 +482,24 @@ final class MailboxDispatcher {
         )
     }
 
+    /// The panel the CLI said ran the send, if it is live in this workspace.
+    /// No claim (raw writers, `--from` overrides, older CLIs), a claim from
+    /// another workspace, or a closed panel stamps nothing: Sent must never
+    /// attribute mail to the wrong panel.
+    private func resolveSender(envelope: MailboxEnvelope) -> UUID? {
+        guard let claim = envelope.senderClaim, claim.workspace == workspaceId,
+              resolver.livePanels().contains(claim.panel) else { return nil }
+        return claim.panel
+    }
+
     // MARK: - Inbox copy
 
+    @discardableResult
     private func copyToInbox(
         envelope: MailboxEnvelope,
         recipient: MailboxPanelResolver.PanelMetadata,
         envelopeBytes: Data
-    ) {
+    ) -> Bool {
         do {
             let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
@@ -486,6 +524,7 @@ final class MailboxDispatcher {
                 surface: recipient.surfaceId,
                 via: "inbox"
             )
+            return true
         } catch {
             // The `resolved` event already lists the recipient; failure to
             // copy is logged as a handler-style failure so the operator can
@@ -501,6 +540,7 @@ final class MailboxDispatcher {
                     reason: nil
                 )
             )
+            return false
         }
     }
 

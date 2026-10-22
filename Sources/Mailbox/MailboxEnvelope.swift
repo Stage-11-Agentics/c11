@@ -64,6 +64,55 @@ struct MailboxEnvelope: Equatable {
         (try? lhs.encode()) == (try? rhs.encode())
     }
 
+    /// Reserved `ext` key. The dispatcher stamps the sending panel's UUID here
+    /// on accepted envelopes (C11-399), only when `from` resolves to exactly one
+    /// live panel in the workspace. A sender cannot supply it: it is removed
+    /// from every envelope before the stamp is decided.
+    static let senderPanelKey = "c11_sender_panel_id"
+
+    /// Reserved `ext` key the `c11 mailbox send` CLI sets: the exact panel and
+    /// workspace the command ran in (`{"panel": uuid, "workspace": uuid}`). The
+    /// dispatcher consumes it to decide the stamp and removes it, so recipients
+    /// never see it. A name in `from` is never evidence of who sent.
+    static let senderClaimKey = "c11_sender_claim"
+
+    static func senderClaim(panel: UUID, workspace: UUID) -> [String: Any] {
+        [senderClaimKey: ["panel": panel.uuidString.lowercased(), "workspace": workspace.uuidString.lowercased()]]
+    }
+
+    /// The caller identity the CLI attached, when present and well formed.
+    var senderClaim: (panel: UUID, workspace: UUID)? {
+        guard let claim = ext?[Self.senderClaimKey] as? [String: Any],
+              let panel = (claim["panel"] as? String).flatMap(UUID.init(uuidString:)),
+              let workspace = (claim["workspace"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
+        return (panel, workspace)
+    }
+
+    /// The stamped sending panel, when the dispatcher recorded one.
+    var senderPanelId: UUID? {
+        (ext?[Self.senderPanelKey] as? String).flatMap(UUID.init(uuidString:))
+    }
+
+    /// This envelope with the reserved sender stamp decided by the dispatcher:
+    /// any sender-supplied stamp and the CLI's caller claim are dropped, then
+    /// `panel` is recorded if given.
+    /// Other `ext` fields are preserved; an `ext` that held only a stamp is removed.
+    func stampingSender(_ panel: UUID?) -> MailboxEnvelope {
+        var object = raw
+        var extensionFields = ext ?? [:]
+        extensionFields.removeValue(forKey: Self.senderPanelKey)
+        extensionFields.removeValue(forKey: Self.senderClaimKey)
+        if let panel { extensionFields[Self.senderPanelKey] = panel.uuidString.lowercased() }
+        if extensionFields.isEmpty {
+            // Remove an `ext` that held only a stamp or claim; keep one the sender
+            // sent empty, so an unstamped envelope stays byte-identical.
+            if !(ext?.isEmpty ?? true) { object.removeValue(forKey: "ext") }
+        } else {
+            object["ext"] = extensionFields
+        }
+        return MailboxEnvelope(raw: object)
+    }
+
     /// Delivery keeps its local body, while history consumers honor the durable
     /// opt-out even after the accepted event has aged out of the event log.
     func suppressActivityHistoryText() -> MailboxEnvelope {

@@ -16,7 +16,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 
 ## File & format
 
-- **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>-n<nonce>` (e.g. `com.stage11.c11-12345-n3fa09c1e`; the nonce is `n` plus eight hex digits, fresh each launch, so a reused pid never shares an id; logs from older builds are `<launch-tag-or-bundleid>-<pid>` and stay readable) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
+- **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<launch>` (e.g. `com.stage11.c11-1830211447`), where `<launch>` is a random positive integer minted per launch, so a reused pid never shares an id; the pid is in the `log.opened` payload. Logs from older builds end in the pid instead and stay readable — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
 - **Owner-only.** Event files are `0600` and the `events/` directory `0700`, because `panel.input_sent`, `mailbox.accepted` and `flag.lowered` can carry sent text. Every retention checkpoint, starting at launch, tightens older files (1.0 wrote `0644`).
 - **Bounded history.** Generations whose last write is older than the retention age (14 days by default), or past the build's 64 MiB budget, are deleted, oldest first; see [retention](#local-activity-history-c11-349). Old instance logs disappear; the file a running c11 is writing never does, but it rolls daily so its text ages too.
 - **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`. When that instance's log no longer exists, a one-shot tail prints a `note:` on stderr and exits 0; `--follow` waits for it to appear.
@@ -80,7 +80,7 @@ Five additional `type` values are **not taxonomy members** — they are structur
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `log.opened` | `{pid}` | First line of an instance's log. `seq` starts here. |
-| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). `rolled_to` is `null` when the live file was deleted or replaced out from under c11: nothing rolled, and every record in the deleted file (including any written after the deletion, until c11 noticed) is gone. If the path was replaced rather than deleted, the marker follows the replacement's content instead of opening the file. |
+| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). `rolled_to` is `null` when the live file was deleted or replaced out from under c11: nothing rolled, and every record in the deleted file is gone. c11 checks before each write, so only a write that races the check can be lost. If the path was replaced rather than deleted, the marker follows the replacement's content instead of opening the file. |
 | `log.dropped` | `{count}` | Backpressure or failed writes shed `count` events. This marks incomplete coverage. |
 | `log.policy` | `{enabled, analytics_enabled, keep_text, retention_days}` | Recording policy boundary; disabled spans have unknown coverage. |
 | `log.retention` | `{state, reason?}` | `degraded` begins a retention-coordination episode; `recovered` ends it. This softens the shared byte cap without implying lost events. Failed boundary writes remain pending for retry and do not increment `log.dropped`. |
@@ -255,8 +255,8 @@ longer names the open file and starts a fresh current file with a `log.rotated`
 marker whose `rolled_to` is `null`, so nothing written after the delete is lost.
 Records already in the deleted file are lost. Only a missing path or a different inode
 counts; any other stat error keeps the existing handle writing. New files are created `0600` and new
-directories `0700`. Instance ids from older builds end in the pid, so such a launch can reuse a dead
-launch's current file name. At its first write, that launch rolls the inherited
+directories `0700`. Instance ids from older builds end in the pid, so a launch can find a dead
+launch's current file at its own path. At its first write, that launch rolls the inherited
 file into its numbered generations (a plain rename that keeps the file's mtime)
 instead of appending to it, so the inherited history keeps its age and is
 pruned on schedule. If a live writer could still hold the file, it appends as

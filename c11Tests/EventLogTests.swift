@@ -100,32 +100,35 @@ final class EventLogTests: XCTestCase {
     func testLayoutFilenameAndInstanceSanitize() {
         XCTAssertEqual(EventLogLayout.logFileName(instance: "abc-123"), "events-abc-123.ndjson")
         XCTAssertEqual(EventLogLayout.sanitizeInstance("a/b c:d"), "a_b_c_d")
-        let id = EventLogLayout.makeInstanceId(tag: "evt-post", bundleId: "x", pid: 99, nonce: "n0badf00d")
-        XCTAssertEqual(id, "evt-post-99-n0badf00d")
+        let id = EventLogLayout.makeInstanceId(tag: "evt-post", bundleId: "x", launch: 99)
+        XCTAssertEqual(id, "evt-post-99")
     }
 
-    /// C11-384: a launch that reuses a dead launch's pid still gets its own id,
-    /// and so its own file, while both share one retention label.
-    func testReusedPidGetsDistinctInstanceIdAndSharedLabel() {
-        let first = EventLogLayout.makeInstanceId(tag: nil, bundleId: "com.stage11.c11", pid: 4242)
-        let second = EventLogLayout.makeInstanceId(tag: nil, bundleId: "com.stage11.c11", pid: 4242)
-        XCTAssertNotEqual(first, second)
-        XCTAssertNotEqual(EventLogLayout.logFileName(instance: first), EventLogLayout.logFileName(instance: second))
-        for id in [first, second] {
-            XCTAssertTrue(id.hasPrefix("com.stage11.c11-4242-n"), id)
-            XCTAssertEqual(EventLogLayout.instanceLabel(id), "com.stage11.c11")
+    /// C11-384: two launches of one build get distinct ids and files, and every
+    /// build ever shipped still derives the same retention label from them.
+    func testEachLaunchGetsItsOwnInstanceIdAndShippedBuildsReadTheSameLabel() {
+        /// The label rule of v1.2.0 and earlier (`EventLog.buildLabel`), frozen.
+        func shippedLabel(_ instance: String) -> String {
+            guard let dash = instance.lastIndex(of: "-"), Int32(instance[instance.index(after: dash)...]) != nil else { return instance }
+            return String(instance[..<dash])
         }
-        // Logs written before the nonce, and unrelated names, keep their old labels.
-        XCTAssertEqual(EventLogLayout.instanceLabel("com.stage11.c11-4242"), "com.stage11.c11")
+        for bundle in ["com.stage11.c11", "com.stage11.c11.nightly", "com.stage11.c11.debug.sonnet.385"] {
+            let first = EventLogLayout.makeInstanceId(tag: nil, bundleId: bundle)
+            let second = EventLogLayout.makeInstanceId(tag: nil, bundleId: bundle)
+            XCTAssertNotEqual(first, second)
+            XCTAssertNotEqual(EventLogLayout.logFileName(instance: first), EventLogLayout.logFileName(instance: second))
+            for id in [first, second, bundle + "-4242"] {
+                XCTAssertEqual(shippedLabel(id), bundle, id)
+                XCTAssertEqual(EventLogLayout.instanceLabel(id), bundle, id)
+            }
+        }
         XCTAssertEqual(EventLogLayout.instanceLabel("evt-post"), "evt-post")
         XCTAssertEqual(EventLogLayout.instanceLabel("tag-n12-7"), "tag-n12")
-        XCTAssertEqual(EventLogLayout.instanceLabel("tag-7-n0badf00d"), "tag")
-        XCTAssertEqual(EventLogLayout.instanceLabel("tag-7-n0BADF00D"), "tag-7-n0BADF00D")
     }
 
-    func testTwoLaunchesWithOnePidWriteSeparateFiles() {
-        let a = EventLogLayout.makeInstanceId(tag: "reuse", bundleId: nil, pid: 31337)
-        let b = EventLogLayout.makeInstanceId(tag: "reuse", bundleId: nil, pid: 31337)
+    func testTwoLaunchesOfOneBuildWriteSeparateFiles() {
+        let a = EventLogLayout.makeInstanceId(tag: "reuse", bundleId: nil)
+        let b = EventLogLayout.makeInstanceId(tag: "reuse", bundleId: nil)
         let logA = EventLog(url: logURL(EventLogLayout.logFileName(instance: a)), instance: a)
         let logB = EventLog(url: logURL(EventLogLayout.logFileName(instance: b)), instance: b)
         for (log, id) in [(logA, a), (logB, b)] {
@@ -2617,6 +2620,11 @@ extension EventLogTests {
         log.flush()
         try FileManager.default.removeItem(at: url)
         log.sampleForTesting()
+        log.flush()
+        // The checkpoint alone recovers: the marker is there before any append.
+        let atCheckpoint = readLines(url).map(parse)
+        XCTAssertEqual(atCheckpoint.compactMap { $0["type"] as? String }, ["log.rotated"])
+        XCTAssertTrue((atCheckpoint.first?["payload"] as? [String: Any])?["rolled_to"] is NSNull)
         log.append(EventEnvelope(type: .panelInputSent, instance: "synthetic-deleted-7001", ts: Date(), payload: ["text": "AFTER"]))
         log.flush()
         let lines = readLines(url).map(parse)

@@ -806,6 +806,8 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             (["new-workspace", "--title", "C11-334 documented flag"], "workspace.create"),
             (["new-panel", "--no-focus"], "panel.create"),
             (["launch-agent", "--type", "codex", "--no-focus"], "agent.launch"),
+            (["break-pane", "--no-focus"], "area.break"),
+            (["join-pane", "--target-pane", "area:1", "--no-focus"], "area.join"),
             (["focus-tab", "--tab", panelID], "panel.focus"),
             (["focus-tab", "--surface", panelID], "panel.focus"),
             (["focus-area", "--pane", panelID], "area.focus"),

@@ -171,6 +171,25 @@ try {
     await omp.emit("session_shutdown");
   });
 
+  // 3b. A delivery still waiting for its acknowledgement when the session
+  //     switches is stale: the new session's events cannot accept it.
+  await withEnv(env(srv), async () => {
+    const omp = host();
+    const before = srv.subscribes().length;
+    extension(omp.api);
+    await omp.emit("session_start");
+    await until(() => srv.subscribes().length === before + 1, "subscribed");
+    const count = before + 1;
+    srv.deliver("D3b");
+    await until(() => omp.state.sent.length === 1, "called omp");
+    await omp.emit("session_switch", { reason: "new" });
+    await until(() => srv.subscribes().length === count + 1, "rebound");
+    await omp.emit("message_start", doorbell());
+    await delay(80);
+    assert.equal(srv.answers("D3b").length, 0, "a stale delivery is never accepted by the next session");
+    await omp.emit("session_shutdown");
+  });
+
   // 4. Lifecycle edges: working at agent_start; idle only once omp's isIdle()
   //    is true, because agent_end fires before it flips.
   await withEnv(env(srv), async () => {

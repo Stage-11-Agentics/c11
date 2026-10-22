@@ -486,6 +486,10 @@ final class EventLog {
 
     @discardableResult
     private func writeAssigningSeq(_ envelope: EventEnvelope, countDrop: Bool = true, rotate: Bool = true) -> Bool {
+        // C11-385: an external delete or replace must not swallow records until
+        // the next checkpoint. One stat per queue-confined write; reattach
+        // drops the stale handle first, so the nested write sees none.
+        if recordingEnabled, liveFileDetached() { reattachDetachedLiveFile() }
         do { try ensureHandle() } catch {
             if countDrop { recordDrop() }
             return false
@@ -683,8 +687,8 @@ final class EventLog {
         }
     }
 
-    /// The instance id is `<label>-<pid>`, so a launch that reuses a dead
-    /// launch's pid finds that launch's current file at its own path.
+    /// Logs from before the launch nonce are named `<label>-<pid>`, so a launch
+    /// that reuses a dead launch's pid finds that launch's current file at its own path.
     /// Appending would put the old history under this launch's current-file
     /// protection, past its retention age. Roll it into the numbered
     /// generations instead: the rename keeps its mtime, so the first
@@ -876,8 +880,7 @@ final class EventLog {
     private static func buildLabel(for name: String) -> String? {
         guard EventLogLayout.isLogFileName(name), let suffix = name.range(of: ".ndjson", options: .backwards) else { return nil }
         let instance = String(name[name.index(name.startIndex, offsetBy: EventLogLayout.logFilePrefix.count)..<suffix.lowerBound])
-        guard let dash = instance.lastIndex(of: "-"), Int32(instance[instance.index(after: dash)...]) != nil else { return instance }
-        return String(instance[..<dash])
+        return EventLogLayout.instanceLabel(instance)
     }
 
     private func isOwnInstanceFile(_ name: String) -> Bool {

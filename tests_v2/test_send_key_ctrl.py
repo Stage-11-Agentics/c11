@@ -181,8 +181,17 @@ class Harness:
                                    capture_output=True, text=True, timeout=5)
         require('n' + self.args.socket in listeners.stdout.splitlines(), 'PID must own the exact socket')
         if not self.args.event_instance:
-            logs = list((Path.home() / 'Library/Application Support/c11/events').glob(
-                'events-*-' + str(self.args.pid) + '.ndjson'))
+            # The instance id no longer carries the pid; the current file whose
+            # first record is log.opened with this pid is the app's log.
+            logs = []
+            for path in (Path.home() / 'Library/Application Support/c11/events').glob('events-*.ndjson'):
+                try:
+                    with path.open() as handle:
+                        first = json.loads(handle.readline() or '{}')
+                except (OSError, ValueError):
+                    continue
+                if first.get('type') == 'log.opened' and first.get('payload', {}).get('pid') == self.args.pid:
+                    logs.append(path)
             require(len(logs) == 1, 'supply --event-instance for the exact app event log')
             self.args.event_instance = logs[0].name[len('events-'):-len('.ndjson')]
         events = self.events()

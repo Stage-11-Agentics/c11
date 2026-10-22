@@ -14,7 +14,7 @@ import Foundation
 ///         events-<instance>.ndjson.2      (older generation, age/byte bounded)
 ///
 /// The log is **per-instance** (EVT-1): each running c11 process writes its own
-/// file, keyed by `<launch-tag-or-bundle>-<pid>`. This is deliberate — the state
+/// file, keyed by `<launch-tag-or-bundle>-<launch>`. This is deliberate — the state
 /// dir is shared, and dogfooders run a tagged debug build alongside the prod
 /// build (see `StateDirectoryMigration`), so a single shared file would suffer
 /// non-atomic multi-writer append corruption. Per-instance files sidestep that
@@ -114,13 +114,18 @@ enum EventLogLayout {
 
     // MARK: - Instance id
 
-    /// Builds the per-instance discriminator `<tag-or-bundle>-<pid>`. `pid` is
-    /// the only guaranteed-unique component; the tag/bundle prefix keeps the
-    /// filename legible when a dogfooder eyeballs the events dir.
+    /// Builds the per-instance discriminator `<tag-or-bundle>-<launch>`, where
+    /// `<launch>` is a random positive Int32 minted once per launch (C11-384).
+    /// A launch that reuses a dead launch's pid still gets its own id and file;
+    /// the pid lives in the `log.opened` payload. The final segment stays an
+    /// Int32 on purpose: every shipped build derives a file's retention label by
+    /// stripping exactly that, so older builds read these files under the same
+    /// label as the new one. Logs written before this (`<label>-<pid>`) share
+    /// that shape and stay readable and prunable.
     static func makeInstanceId(
         tag: String? = ProcessInfo.processInfo.environment["C11_TAG"],
         bundleId: String? = Bundle.main.bundleIdentifier,
-        pid: Int32 = ProcessInfo.processInfo.processIdentifier
+        launch: Int32 = makeLaunchId()
     ) -> String {
         let label: String
         if let tag, !tag.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -130,7 +135,21 @@ enum EventLogLayout {
         } else {
             label = "c11"
         }
-        return sanitizeInstance("\(label)-\(pid)")
+        return sanitizeInstance("\(label)-\(launch)")
+    }
+
+    static func makeLaunchId() -> Int32 {
+        Int32.random(in: 1...Int32.max)
+    }
+
+    /// The `<tag-or-bundle>` part of an instance id: drops one trailing Int32
+    /// segment, so every launch of one build shares a retention namespace. This
+    /// is the rule shipped builds apply; keep it identical. An id without a
+    /// numeric tail is its own label.
+    static func instanceLabel(_ instance: String) -> String {
+        guard let dash = instance.lastIndex(of: "-"),
+              Int32(instance[instance.index(after: dash)...]) != nil else { return instance }
+        return String(instance[..<dash])
     }
 
     /// Restricts an instance component to filename-safe characters.

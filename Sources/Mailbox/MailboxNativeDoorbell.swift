@@ -136,7 +136,7 @@ extension TerminalController {
               !process.isZombie, process.terminalDevice != -1,
               process.processGroup == process.terminalForegroundGroup,
               let callerTTYDevice, UInt32(bitPattern: process.terminalDevice) == callerTTYDevice else {
-            _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: "Native mailbox requires the live agent process and its terminal."), to: socket)
+            _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
             return
         }
         let registration = MailboxNativeDoorbell.Registration(id: UUID(), panelID: panelID, agentPID: pidNumber.int32Value,

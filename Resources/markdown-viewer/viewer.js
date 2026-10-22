@@ -937,7 +937,7 @@ function stripMathLabelInlineStyles(source) {
       else if(ch==='"'||ch==="'")quote=ch;
       else if(ch==='>')break;
     }
-    if(end>=source.length)return output+source.slice(start);
+    if(end>=source.length)return output;
     const tag=source.slice(start,end+1),tagEnd=tag.length-1;let index=nameEnd-start;
     let clean=tag.slice(0,index);
     while(index<tagEnd) {

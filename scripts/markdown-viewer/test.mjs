@@ -555,6 +555,17 @@ try {
   assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'untrusted inline CSS reached Mermaid\'s attached temporary SVG');
   assert.equal(await page.locator('.diagram-stage math').count(),1,'the math label stopped rendering');
   scenario('math-label inline CSS is removed before Mermaid attaches its temporary SVG');
+  await page.evaluate(()=>{
+    window.transientMathStyle.length=0;
+    window.transientMathRenderSources.length=0;
+    window.transientMathStyleObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+  });
+  const unterminatedMathAttack='```mermaid\nflowchart LR\n  A["$$x^2$$<div style=position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red;"] --> B\n```\n';
+  await load(unterminatedMathAttack,'/synthetic/unterminated-math-style.md');
+  await page.evaluate(()=>window.transientMathStyleObserver.disconnect());
+  assert.equal(await page.evaluate(()=>transientMathRenderSources.some(source=>/<[^>]+(?:\s|\/)style\s*=/i.test(source))),false,'unterminated author inline CSS reached Mermaid input');
+  assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'unterminated author inline CSS reached Mermaid\'s attached temporary SVG');
+  scenario('unterminated math-label markup is dropped before Mermaid rendering');
   const unsafeMathSvg='<svg xmlns="http://www.w3.org/2000/svg"><foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml" style="position:fixed;inset:0;z-index:99999;width:9999px;background:url(https://example.invalid/x)"><span>Math <math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mn>1</mn><mn>2</mn></mfrac></math><img src="https://example.invalid/x" onerror="window.__owned=5"><script>window.__owned=6</script><a href="javascript:window.__owned=7">bad</a></span></div></foreignObject></svg>';
   await page.evaluate(svg=>{window.originalMermaidRender=mermaid.render;mermaid.render=async()=>({svg});},unsafeMathSvg);
   await load('```mermaid\nflowchart LR\n  A["$$x^2$$"] --> B\n```\n','/synthetic/math-label-sanitizer.md');

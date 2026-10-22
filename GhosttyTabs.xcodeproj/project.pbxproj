@@ -639,6 +639,7 @@
 		C11472000000000000000011 /* ClaudeMailboxAcceptance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */; };
 		C11472000000000000000012 /* ClaudeMailboxAcceptance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */; };
 		C11472000000000000000013 /* ClaudeMailboxCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000002 /* ClaudeMailboxCommand.swift */; };
+		C11470000000000000000013 /* CodexMailboxProxyCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11470000000000000000002 /* CodexMailboxProxyCommand.swift */; };
 		C11472000000000000000014 /* ClaudeMailboxAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -1296,6 +1297,7 @@
 		IC000002 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AppIcon.icon; sourceTree = "<group>"; };
 		C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxAcceptance.swift; sourceTree = "<group>"; };
 		C11472000000000000000002 /* ClaudeMailboxCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxCommand.swift; sourceTree = "<group>"; };
+		C11470000000000000000002 /* CodexMailboxProxyCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexMailboxProxyCommand.swift; sourceTree = "<group>"; };
 		C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxAcceptanceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -1767,6 +1769,7 @@
 				FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */,
 				C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */,
 				C11472000000000000000002 /* ClaudeMailboxCommand.swift */,
+				C11470000000000000000002 /* CodexMailboxProxyCommand.swift */,
 				B9000001A1B2C3D4E5F60719 /* c11.swift */,
 				DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */,
 				DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */,
@@ -2733,6 +2736,7 @@
 				AEBFCF000212C27520A056EF /* JournalCommand.swift in Sources */,
 				C1126400A1B2C3D4E5F6000B /* FeedCommand.swift in Sources */,
 				C11472000000000000000013 /* ClaudeMailboxCommand.swift in Sources */,
+				C11470000000000000000013 /* CodexMailboxProxyCommand.swift in Sources */,
 				C1126400A1B2C3D4E5F60003 /* FeedProjector.swift in Sources */,
 				C1126500A1B2C3D4E5F60003 /* AttentionOrder.swift in Sources */,
 				1E29B72EBDD94D393DE0DE90 /* JournalSpool.swift in Sources */,

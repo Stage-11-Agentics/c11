@@ -4128,6 +4128,18 @@ enum ClaudeCodeIntegrationSettings {
     }
 }
 
+/// Opt-in native mailbox route for Codex panels (`codex_queue`). Read when a
+/// terminal starts: `defaults write <c11 bundle id> codexNativeMailbox -bool true`
+/// applies to Codex launched in terminals opened afterwards.
+enum CodexNativeMailboxSettings {
+    static let enabledKey = "codexNativeMailbox"
+    static let defaultEnabled = false
+
+    static func enabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: enabledKey) == nil ? defaultEnabled : defaults.bool(forKey: enabledKey)
+    }
+}
+
 enum WelcomeSettings {
     static let shownKey = "cmuxWelcomeShown"
     static let spikeURL = "https://stage11.ai"
@@ -4461,6 +4473,8 @@ struct SettingsView: View {
     }
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
+    @AppStorage(CodexNativeMailboxSettings.enabledKey)
+    private var codexNativeMailboxEnabled = CodexNativeMailboxSettings.defaultEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
     @AppStorage(ActivityHistoryPolicy.analyticsEnabledKey)
@@ -6457,6 +6471,24 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardNote(String(localized: "settings.automation.claudeCode.note", defaultValue: "When enabled, c11 wraps the claude command to inject session tracking and notification hooks. Disable if you prefer to manage Claude Code hooks yourself."))
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.automation.codexNativeMail", defaultValue: "Codex Native Mail Delivery"),
+                subtitle: codexNativeMailboxEnabled
+                    ? String(localized: "settings.automation.codexNativeMail.subtitleOn", defaultValue: "New Codex sessions receive the mail doorbell as a message, not typed text.")
+                    : String(localized: "settings.automation.codexNativeMail.subtitleOff", defaultValue: "c11 types the mail doorbell into Codex.")
+            ) {
+                Toggle("", isOn: $codexNativeMailboxEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsCodexNativeMailToggle")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.automation.codexNativeMail.note", defaultValue: "Experimental. Codex connects to its shared background server through a c11 relay, so the doorbell reaches only the conversation on screen. Applies to terminals opened after the change."))
         }
     }
 
@@ -6657,6 +6689,7 @@ struct SettingsView: View {
         showWorkspaceIdsInSidebar = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
         panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
+        codexNativeMailboxEnabled = CodexNativeMailboxSettings.defaultEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         recordUsageAnalytics = true
         keepActivityText = true

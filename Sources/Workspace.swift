@@ -6856,6 +6856,10 @@ final class Workspace: Identifiable, ObservableObject {
         return registration
     }
 
+    func nativeMailboxRouteLost(surfaceId: UUID, route: MailboxNativeDoorbell.Route) {
+        mailboxDispatcher?.logNativeRouteLost(panel: surfaceId, route: route.rawValue)
+    }
+
     func nativeMailboxRouteChanged(surfaceId: UUID) {
         let current = MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id
         if mailboxNativeIdentity[surfaceId] != current {

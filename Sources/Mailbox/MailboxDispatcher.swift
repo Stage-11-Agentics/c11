@@ -162,6 +162,11 @@ final class MailboxDispatcher {
         gcTimer = nil
     }
 
+    /// A native mailbox route disappeared while its agent kept running.
+    func logNativeRouteLost(panel: UUID, route: String) {
+        log.append(.nativeRouteLost(panel: panel.uuidString, route: route))
+    }
+
     /// C11-144: append a `handler` event for a buffered-stdin lifecycle step
     /// (`flushed`/`expired`/`evicted`) that happens *outside* the normal
     /// handler-invocation path — i.e. when the recipient shell transitions back

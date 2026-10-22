@@ -266,6 +266,7 @@ extension TerminalController {
         defer {
             MailboxNativeDoorbell.shared.disconnect(registration)
             Self.nativeMailboxChanged(panelID)
+            if route == .codexQueue { Self.checkNativeRouteLost(registration) }
         }
         var pending = Data()
         var bytes = [UInt8](repeating: 0, count: 4096)
@@ -284,6 +285,26 @@ extension TerminalController {
                 return true
             }
             if !keep { break }
+        }
+    }
+
+    /// The Codex relay exits only after its TUI or agent has gone. A closed
+    /// listener with the same agent still running, and no newer listener,
+    /// means the relay died under a live TUI. Checked after a grace period so
+    /// a normal exit, where the agent finishes a moment later, stays quiet.
+    private nonisolated static func checkNativeRouteLost(_ registration: MailboxNativeDoorbell.Registration) {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.5) {
+            guard MailboxNativeDoorbell.shared.registration(panelID: registration.panelID) == nil,
+                  let process = MailboxAgentForeground.processTerminalInfo(pid: registration.agentPID),
+                  !process.isZombie, process.startTime == registration.processStart else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    for workspace in AppDelegate.shared?.allMainWindowWorkspaces() ?? []
+                    where workspace.panels[registration.panelID] != nil {
+                        workspace.nativeMailboxRouteLost(surfaceId: registration.panelID, route: registration.route)
+                    }
+                }
+            }
         }
     }
 

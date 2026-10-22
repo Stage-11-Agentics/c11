@@ -67,6 +67,10 @@ final class MailboxDispatchLog {
         /// look. Logged as a `handler` event (outcome `doorbell_recheck`)
         /// with `reason` and `next_ms`, one line per look.
         case doorbellRecheck(id: String, recipient: String, reason: String, nextMs: Int)
+        /// A native route's listener closed while its agent process still
+        /// runs (for `codex_queue`, the relay the Codex TUI talks through died).
+        /// No envelope is involved; later rings use the typed route.
+        case nativeRouteLost(panel: String, route: String)
     }
 
     /// Dispatcher-observable outcomes for a single handler invocation.
@@ -200,6 +204,10 @@ final class MailboxDispatchLog {
         case .gc(let removed):
             payload["event"] = "gc"
             payload["temp_files_removed"] = removed
+        case .nativeRouteLost(let panel, let route):
+            payload["event"] = "native_route_lost"
+            payload["panel"] = panel
+            payload["route"] = route
         case .claimFailed(let id, let recipient, let code):
             payload["event"] = "handler"
             payload["id"] = id

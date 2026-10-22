@@ -258,11 +258,56 @@ if [[ -n "$c11_bin" ]]; then
     codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\"]"
 fi
 
+# Opt-in native mailbox route (Settings > Agent Integrations > Codex Native
+# Mail Delivery; the app exports C11_CODEX_NATIVE_MAIL=1 to new terminals).
+# A c11 relay child of this process joins the TUI to the already running
+# shared app-server daemon through `--remote`, so c11 can see which thread the
+# TUI shows and queue the doorbell there alone. It writes only its socket and
+# log in a private /tmp/c11-<uid> directory. If it cannot start, or the
+# operator chose a transport (`--remote`, `--no-daemon`), Codex launches
+# exactly as without the setting.
+codex_remote_args=()
+codex_native_mail_eligible() {
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --remote|--remote=*|--no-daemon) return 1 ;;
+        esac
+    done
+    case "${1:-}" in
+        agents|queue|archive|delete|unarchive|migrate-rollouts|remote-control|doctor|update) return 1 ;;
+    esac
+    return 0
+}
+if [[ "${C11_CODEX_NATIVE_MAIL:-}" == "1" && -n "$c11_bin" && -n "${C11_AGENT_INTERACTIVE_PID:-}" ]] \
+    && codex_native_mail_eligible "$@"; then
+    proxy_dir="/tmp/c11-${UID}"
+    if (umask 077 && mkdir -p -- "$proxy_dir") 2>/dev/null; then
+        proxy_socket="${proxy_dir}/codex-$$.sock"
+        rm -f -- "$proxy_socket" 2>/dev/null
+        "$c11_bin" --socket "${CMUX_SOCKET_PATH}" codex-mailbox-proxy \
+            --listen "$proxy_socket" --codex "$REAL_CODEX" --log "${proxy_dir}/codex-$$.log" \
+            </dev/null >/dev/null 2>&1 &
+        proxy_pid=$!
+        proxy_wait=0
+        while [[ ! -S "$proxy_socket" && "$proxy_wait" -lt 60 ]] && kill -0 "$proxy_pid" 2>/dev/null; do
+            sleep 0.05
+            proxy_wait=$((proxy_wait + 1))
+        done
+        if [[ -S "$proxy_socket" ]]; then
+            codex_remote_args=(--remote "unix://${proxy_socket}")
+        else
+            kill "$proxy_pid" 2>/dev/null || true
+        fi
+    fi
+fi
+
 if [[ -n "$codex_notify_config" ]]; then
     # Trust isolation for Codex hooks is verified separately on Atlas. Until
     # that probe proves that a bypass trusts only c11-owned hooks, keep the
     # process rail to notify alone: no --enable hooks, hooks.* config, or
     # --dangerously-bypass-hook-trust.
-    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" -c "$codex_notify_config" \
+        ${codex_remote_args[@]+"${codex_remote_args[@]}"} "$@"
 fi
 C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"

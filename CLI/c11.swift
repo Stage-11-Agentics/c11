@@ -2275,6 +2275,29 @@ struct CMUXCLI {
             }
             return
         }
+        if command == "codex-mailbox-proxy" {
+            // Internal, launched only by the opt-in Codex wrapper. A nonzero
+            // exit before the socket appears makes the wrapper launch Codex
+            // unchanged; the relay never depends on the c11 socket.
+            guard envSocketPath != nil || socketPathSource == .explicitFlag,
+                  let options = CodexMailboxProxyCommand.Options(arguments: commandArgs, environment: processEnv) else {
+                exit(64)
+            }
+            let password = socketPasswordArg
+            let path = socketPath
+            let status = CodexMailboxProxyCommand.run(options) { [self] in
+                let priorDeadline = SocketClient.processDeadline
+                defer { SocketClient.processDeadline = priorDeadline }
+                SocketClient.processDeadline = Date().addingTimeInterval(1)
+                let client = SocketClient(path: path)
+                client.usesSingleLineResponses = true
+                defer { client.close() }
+                try client.connect()
+                try authenticateClientIfNeeded(client, explicitPassword: password, socketPath: path)
+                return try client.takeConnectedDescriptor()
+            }
+            exit(status)
+        }
         let isSendText = ["send", "send-panel", "paste"].contains(command)
         let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
             .contains(where: { $0 == "--help" || $0 == "-h" })

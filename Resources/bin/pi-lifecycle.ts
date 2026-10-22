@@ -41,7 +41,6 @@ export default function c11Lifecycle(pi: {
   };
 
   pi.on("agent_start", async () => report("working"));
-  pi.on("agent_settled", async () => report("idle"));
 
   // Prompt cache reports are fire-and-forget: Pi never waits on c11.
   const panel = process.env.C11_PANEL_ID || process.env.C11_TAB_ID || process.env.CMUX_SURFACE_ID;
@@ -81,7 +80,13 @@ export default function c11Lifecycle(pi: {
   });
   // A failed preflight has no user message. Release the local slot at idle;
   // c11 still owns timeout/fallback and inbox state.
-  pi.on("agent_settled", (_event, ctx) => { nativeContext = ctx; nativeAccepted = undefined; });
+  pi.on("agent_settled", async (_event, ctx) => {
+    nativeContext = ctx;
+    nativeAccepted = undefined;
+    // Publishing idle can immediately deliver the next invitation. Clear the
+    // prior slot first, never after awaiting a report that opened that gate.
+    await report("idle");
+  });
 
   const reportCache = (payload: Record<string, unknown>) => {
     if (panel) payload.panel_id = panel;

@@ -6645,6 +6645,10 @@ struct CMUXCLI {
             return skillFlagPreflightSpec(args)
         case "agent-hook", "codex-hook":
             return CLIFlagPreflightSpec(valueOptions: ["--native-event"])
+        case "new-panel", "launch-agent":
+            guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
+            spec.flags.insert("--no-focus")
+            return spec
         case "claude-teams":
             // This command forwards its remaining argv verbatim to Claude Code.
             // Those flags belong to the child CLI, not c11's parser.

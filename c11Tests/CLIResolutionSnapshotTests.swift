@@ -804,6 +804,8 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         let panelID = "ddd11111-2222-3333-4444-555566667777"
         let cases: [(command: [String], method: String)] = [
             (["new-workspace", "--title", "C11-334 documented flag"], "workspace.create"),
+            (["new-panel", "--no-focus"], "panel.create"),
+            (["launch-agent", "--type", "codex", "--no-focus"], "agent.launch"),
             (["focus-tab", "--tab", panelID], "panel.focus"),
             (["focus-tab", "--surface", panelID], "panel.focus"),
             (["focus-area", "--pane", panelID], "area.focus"),
@@ -828,6 +830,14 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                 socket.requests.contains(where: { $0["method"] as? String == item.method }),
                 "Expected \(item.method) for \(item.command), got \(socket.requests)"
             )
+            if item.command.contains("--no-focus"),
+               let request = socket.requests.first(where: { $0["method"] as? String == item.method }) {
+                XCTAssertEqual(
+                    (request["params"] as? [String: Any])?["focus"] as? Bool,
+                    false,
+                    "--no-focus must reach \(item.method) as focus=false"
+                )
+            }
         }
     }
 

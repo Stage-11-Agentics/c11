@@ -27,6 +27,18 @@ final class MailboxNativeDoorbell {
     }
     enum Result: Equatable { case accepted(late: Bool), failed(String) }
 
+    /// Apply an observed acceptance on the main hop. The return value says
+    /// whether the listener is still current and may trigger further work.
+    static func recordAcceptance(_ ids: Set<String>, registrationID: UUID, currentRegistrationID: UUID?,
+                                 nativeCovered: inout Set<String>, ledger: inout MailboxDoorbell.Ledger) -> Bool {
+        // Acceptance is an observed delivery even if the listener closed
+        // before this hop. Route-change handling must see these original IDs.
+        nativeCovered.formUnion(ids)
+        ledger.coveredIds.formUnion(ids)
+        ledger.draftWatch = nil
+        return currentRegistrationID == registrationID
+    }
+
     /// The peer identity is captured from the accepted socket, never JSON.
     /// A hook may have detached from the terminal while remaining a descendant
     /// of the interactive harness. Only the harness must own that terminal.
@@ -89,7 +101,13 @@ final class MailboxNativeDoorbell {
         lock.unlock()
         // Never call consumer closures or write a socket while holding the lock.
         if let old {
-            old.close()
+            // Serialize with deliveries so the frame cannot interleave with
+            // another write. The displaced consumer retires instead of
+            // reconnecting and repeatedly evicting the newer session.
+            io.async {
+                _ = old.write(["type": "replaced"])
+                old.close()
+            }
             for request in old.pending.values where !request.failed { request.reply(.failed("native_replaced")) }
         }
     }

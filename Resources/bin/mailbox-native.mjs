@@ -9,6 +9,7 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
   let socket;
   let retry;
   let failures = 0;
+  const stop = () => { stopped = true; clearTimeout(retry); socket?.destroy(); };
   const connect = () => {
     if (stopped) return;
     const current = createConnection(socketPath);
@@ -32,10 +33,14 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
         let frame;
         try { frame = JSON.parse(line); } catch { current.destroy(); return; }
         if (!registered) {
+          // An explicit refusal requires a new session/configuration, not a
+          // reconnect loop for the lifetime of this harness.
+          if (frame.ok === false) { stop(); return; }
           if (!frame.ok || !frame.result?.subscription_id) { current.destroy(); return; }
           registered = true; failures = 0; current.setTimeout(0);
           continue;
         }
+        if (frame.type === 'replaced') { stop(); return; }
         if (frame.type !== 'deliver' || typeof frame.delivery_id !== 'string' || frame.text !== doorbellText) continue;
         // A positive result means observed harness acceptance, never merely
         // invoking a void API. Rejections must precede any possible side effect.
@@ -57,5 +62,5 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
     });
   };
   connect();
-  return () => { stopped = true; clearTimeout(retry); socket?.destroy(); };
+  return stop;
 }

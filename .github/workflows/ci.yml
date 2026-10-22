@@ -91,6 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           node tests/test_opencode_plugin_lifecycle.mjs
+          node --test tests/test_mailbox_native.mjs
           bun tests/test_pi_omp_prompt_cache_extensions.mjs
           bash tests/test_statusline_prompt_cache_snippet.sh
 

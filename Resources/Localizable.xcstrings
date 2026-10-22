@@ -5,13 +5,25 @@
     "mailbox.native.error.liveProcess": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Native mailbox requires the live agent process and its terminal."}}
+        "en": {"stringUnit": {"state": "translated", "value": "Native mailbox requires the live agent process and its terminal."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ネイティブのメールボックス配信には、実行中のエージェントプロセスとそのターミナルが必要です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Нативна доставка поштової скриньки потребує запущеного процесу агента та його термінала."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "네이티브 메일박스 전달에는 실행 중인 에이전트 프로세스와 해당 터미널이 필요합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "原生邮箱投递需要正在运行的智能体进程及其终端。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "原生信箱投遞需要正在執行的代理程序及其終端機。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Для нативной доставки почтового ящика нужен запущенный процесс агента и его терминал."}}
       }
     },
     "mailbox.native.error.streamRequired": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Open a persistent socket stream for native mailbox delivery."}}
+        "en": {"stringUnit": {"state": "translated", "value": "Open a persistent socket stream for native mailbox delivery."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ネイティブのメールボックス配信には、永続的なソケットストリームを開いてください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Для нативної доставки поштової скриньки відкрийте постійний потік сокета."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "네이티브 메일박스 전달을 위해 지속적인 소켓 스트림을 여세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请为原生邮箱投递打开持久的套接字流。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請為原生信箱投遞開啟持續的通訊端串流。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Для нативной доставки почтового ящика откройте постоянный поток сокета."}}
       }
     },
     "titlebar.description.placeholder": {

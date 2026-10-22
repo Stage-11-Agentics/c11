@@ -307,6 +307,11 @@ Only positive in-harness acceptance may produce `accepted`. Pi uses
 `route:"pi_extension", can_queue:false`; `codex_queue` and `claude_inbox` are
 reserved consumer route names. Authentication follows the existing socket
 policy, and IO runs off the main thread. Established idle streams do not poll.
+A new subscriber replaces the previous listener for that panel, including an
+in-process listener replaced by a sidecar. The old stream receives
+`{type:"replaced"}` before closing and stops reconnecting. An explicit
+`ok:false` subscription reply also stops that subscriber; a new harness session
+can try again. Unexpected connection loss still retries with bounded backoff.
 
 `_dispatch.log` names `route:"pi_extension"` or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and
@@ -314,6 +319,8 @@ After a native failure, the typed entry also names `native_route` and
 `native_replaced`, `native_unavailable` or `native_write_failed`). To compare the
 typed route diagnostically, launch Pi with `C11_PI_NATIVE_MAIL_DISABLED=1`.
 The wrapper's lifecycle observations remain active.
+Route and native-failure metadata appear only on actual `doorbell` or
+`doorbell_failed` attempts. Skipped and capped rows leave those fields absent.
 
 For repeatable guest proof, stage `--agents pi` with `sandbox-up.sh`, then run
 `scripts/check-pi-native-mail.py <run-id>`. Staging copies the host's Pi package

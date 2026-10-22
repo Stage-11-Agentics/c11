@@ -6330,7 +6330,7 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             prompt = nil
         }
-        return MailboxDoorbellSequence.namingUnread(
+        var input = MailboxDoorbellSequence.namingUnread(
             MailboxDoorbell.Input(
                 hasUnread: mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0,
                 stdinDelivery: mailboxDeliveryIncludesStdin(surfaceId: surfaceId),
@@ -6362,6 +6362,8 @@ final class Workspace: Identifiable, ObservableObject {
             entries: mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
             coveredIds: ledger.coveredIds
         )
+        input.strandedPending = ledger.strandedPending
+        return input
     }
 
     private struct MailboxDoorbellScreen {
@@ -6533,7 +6535,8 @@ final class Workspace: Identifiable, ObservableObject {
         )
         var busyExhausted = false
         var stranded = false
-        if MailboxDoorbell.needsPrompt(input) {
+        var composerCheck: FeedAnswerComposerCheck?
+        if MailboxDoorbell.needsPrompt(input) || MailboxDoorbellSequence.needsStrandedLook(input) {
             if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
                 input.prompt = captured.state
                 if captured.state == .draft, let composer = captured.composer {
@@ -6542,6 +6545,7 @@ final class Workspace: Identifiable, ObservableObject {
                         composer: composer,
                         expected: MailboxDoorbell.text
                     )
+                    composerCheck = compared
                     stranded = compared == .matches || compared == .notVisible
                 }
             } else if MailboxDoorbellSequence.shouldRetryBusy(tryIndex: busyTry) {
@@ -6556,7 +6560,22 @@ final class Workspace: Identifiable, ObservableObject {
                 busyExhausted = true
             }
         }
-        let decision = MailboxDoorbell.decide(input)
+        if !busyExhausted {
+            let pending = MailboxDoorbellSequence.strandedPendingAfterRead(
+                current: input.strandedPending,
+                prompt: input.prompt,
+                composer: composerCheck
+            )
+            mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.strandedPending = pending }
+        }
+        let decision: MailboxDoorbell.Decision
+        switch MailboxDoorbellSequence.look(input, composer: composerCheck, busyExhausted: busyExhausted) {
+        case .submitStranded:
+            submitStrandedMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, epoch: input.epoch)
+            return
+        case .decide(let looked):
+            decision = looked
+        }
         let plan = mailboxDoorbellPlan(
             decision: decision,
             surfaceId: surfaceId,
@@ -6893,24 +6912,127 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// A refused Return left the doorbell line in the composer. Press Return
+    /// on it, with the same pre-Return checks; nothing is retyped. A pressed
+    /// Return counts toward the rate cap. One refused before the key typed
+    /// nothing, does not count, and looks again on the held series. A gate that closed
+    /// during the inbox check waits for the next prompt edge.
+    private func submitStrandedMailboxDoorbell(
+        surfaceId: UUID,
+        terminalPanel: TerminalPanel,
+        epoch: String
+    ) {
+        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+            ledger.reserve()
+        }
+        let operatorInputAt = terminalPanel.surface.lastOperatorInputAt
+        pruneMailboxDoorbellQueue(surfaceId: surfaceId) { [weak self] live in
+            guard let self else { return }
+            let holdStranded = {
+                guard !live.isEmpty else { return }
+                let plan = self.mailboxDoorbellPlan(
+                    decision: .skip(reason: "draft"),
+                    surfaceId: surfaceId,
+                    epoch: epoch,
+                    busyExhausted: false,
+                    strandedDoorbell: true
+                )
+                self.logMailboxDoorbellRelook(live, plan: plan)
+                self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
+            }
+            guard !live.isEmpty,
+                  let panel = self.panels[surfaceId] as? TerminalPanel,
+                  panel === terminalPanel,
+                  let native = panel.surface.surface,
+                  !panel.surface.isInputTransactionActive else {
+                self.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                holdStranded()
+                return
+            }
+            let gate = self.mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: panel)
+            guard self.mailboxPromptGate(surfaceId: surfaceId, gate: gate) != .closed else {
+                self.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                if let heldUntil = MailboxStdinDelivery.heldUntil(
+                    state: self.mailboxStdinState,
+                    surfaceId: surfaceId,
+                    gate: gate
+                ) {
+                    self.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: heldUntil)
+                }
+                return
+            }
+            guard FeedAnswerInFlight.begin(panelID: surfaceId) else {
+                self.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                holdStranded()
+                return
+            }
+            let outcome = self.completeMailboxDoorbell(
+                surfaceId: surfaceId,
+                terminalSurface: panel.surface,
+                nativeSurface: native,
+                surfaceLifetimeID: panel.surface.nativeSurfaceLifetimeID,
+                operatorInputAt: operatorInputAt,
+                attempted: live,
+                rearmOnFailure: false,
+                submittedReason: "stranded_return"
+            )
+            // `.submitUnconfirmed` may have pressed the key without a
+            // confirmed handoff. Count it: the cap errs toward holding.
+            switch outcome {
+            case .submitted:
+                self.mailboxDoorbellDeferTokens.removeValue(forKey: surfaceId)
+            case .submitUnconfirmed:
+                holdStranded()
+            case .targetLost, .pastedNotSubmitted:
+                holdStranded()
+                return
+            }
+            self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                ledger.recordStrandedReturn(at: Date(), epoch: epoch)
+            }
+        }
+    }
+
     /// Recheck the prompt, then submit with the feed-answer Return. The queue
     /// stays either way. A failed submit is logged and not retyped over a
     /// line that is still in the composer. This does not lower the agent's flag.
+    /// `rearmOnFailure` is false when the caller schedules its own next look;
+    /// its repeated failure reasons are logged once per envelope.
     private func completeMailboxDoorbell(
         surfaceId: UUID,
         terminalSurface: TerminalSurface,
         nativeSurface: ghostty_surface_t,
         surfaceLifetimeID: UUID,
         operatorInputAt: Date?,
-        attempted: [MailboxStdinBuffer.Entry]
+        attempted: [MailboxStdinBuffer.Entry],
+        rearmOnFailure: Bool = true,
+        submittedReason: String = "submitted"
     ) -> FeedAnswerSubmitOutcome {
         defer {
             mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
             FeedAnswerInFlight.end(panelID: surfaceId)
         }
+        var journalRefusal: String?
         let finish: (FeedAnswerSubmitOutcome, PromptInputState?, String?) -> FeedAnswerSubmitOutcome = { outcome, state, composer in
-            let reason = FeedAnswerFailureDisposition.make(for: outcome)?.code ?? "unavailable"
-            self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: reason)
+            // A journal turn that opened during the paste is the usual cause.
+            // Name it so the log says why the line was left in the composer.
+            let reason = outcome == .pastedNotSubmitted ? journalRefusal : nil
+            let logged = reason ?? FeedAnswerFailureDisposition.make(for: outcome)?.code ?? "unavailable"
+            if outcome == .pastedNotSubmitted || outcome == .submitUnconfirmed {
+                // A new stranded series logs its first refusal again.
+                if !self.mailboxStdinState.doorbell.ledger(for: surfaceId).strandedPending {
+                    for entry in attempted {
+                        self.mailboxDoorbellLastReason.removeValue(forKey: entry.id)
+                    }
+                }
+                self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.strandedPending = true }
+            }
+            if rearmOnFailure {
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: logged)
+            } else {
+                self.logMailboxDoorbellEntriesOnce(attempted, outcome: .doorbellFailed, reason: logged)
+                return outcome
+            }
             let rearm = MailboxDoorbellSequence.rearmAfterPasteFailure(
                 outcome: outcome,
                 state: state,
@@ -6950,6 +7072,7 @@ final class Workspace: Identifiable, ObservableObject {
             journalSnapshot,
             now: Date()
         )
+        journalRefusal = journalTurnOpen ? "turn_open" : journalInterruptionSettling ? "interruption_settling" : nil
         let owns = mailboxAgentOwnsTerminal(surfaceId: surfaceId)
         if let outcome = MailboxDoorbellSequence.preReturn(
             rowIsCurrent: true,
@@ -6983,7 +7106,7 @@ final class Workspace: Identifiable, ObservableObject {
         logMailboxDoorbellEntries(
             attempted,
             outcome: .doorbell,
-            reason: "submitted",
+            reason: submittedReason,
             bytes: MailboxDoorbell.text.utf8.count
         )
         return outcome

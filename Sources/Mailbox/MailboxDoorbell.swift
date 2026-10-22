@@ -60,6 +60,8 @@ enum MailboxDoorbell {
         var unreadIds: Set<String> = []
         /// Ids a submitted ring already covered.
         var coveredIds: Set<String> = []
+        /// A refused Return may have left the doorbell line in the composer.
+        var strandedPending: Bool = false
 
         static let absent = Input(hasUnread: false, prompt: nil)
     }
@@ -75,6 +77,9 @@ enum MailboxDoorbell {
         /// while every unread id is in this set.
         var coveredIds: Set<String> = []
         var draftWatch: MailboxDoorbellSequence.DraftWatch?
+        /// Set when a Return was refused after the line was typed. Cleared by
+        /// a submit, or by a look that finds the composer without the line.
+        var strandedPending = false
 
         func rung(in epoch: String) -> Bool { rungEpoch == epoch }
 
@@ -102,6 +107,15 @@ enum MailboxDoorbell {
 
         mutating func endAttempt() {
             inFlight = false
+        }
+
+        /// A Return pressed on a stranded line. It counts toward the cap like
+        /// a ring. A Return refused before the key typed nothing and does not.
+        mutating func recordStrandedReturn(at now: Date, epoch: String) {
+            self.epoch = epoch
+            rungEpoch = epoch
+            attempts.append(now)
+            attempts.removeAll { now.timeIntervalSince($0) >= MailboxDoorbell.rateWindow }
         }
     }
 
@@ -293,6 +307,7 @@ enum MailboxDoorbellSequence {
     static func coverAfterSubmit(ledger: inout MailboxDoorbell.Ledger, unread: Set<String>) {
         ledger.coveredIds = coveredIds(for: unread)
         ledger.draftWatch = nil
+        ledger.strandedPending = false
     }
 
     /// Nothing still unread ends the series. The next envelope must not
@@ -503,6 +518,79 @@ enum MailboxDoorbellSequence {
                 }
             }
             return .after(shortRecheck)
+        }
+    }
+
+    /// The ring checks for a doorbell line a refused Return left in the
+    /// composer. Once-per-idle guards retyping, and this types nothing, so it
+    /// is left out. The prompt read is what finds the line.
+    private static func strandedProbe(_ input: MailboxDoorbell.Input) -> MailboxDoorbell.Input {
+        var probe = input
+        probe.rungThisEpoch = false
+        probe.prompt = .empty
+        return probe
+    }
+
+    /// A look in the idle period whose ring was refused, while the line may
+    /// still be in the composer. Once-per-idle would end it with no later look.
+    static func isStrandedLook(_ input: MailboxDoorbell.Input) -> Bool {
+        input.rungThisEpoch && input.strandedPending
+    }
+
+    /// True when a stranded look should read the prompt: every other ring
+    /// check passes and the prompt has not been read yet.
+    static func needsStrandedLook(_ input: MailboxDoorbell.Input) -> Bool {
+        guard input.prompt == nil, isStrandedLook(input) else { return false }
+        return MailboxDoorbell.decide(strandedProbe(input)) == .ring
+    }
+
+    /// Press Return on a stranded doorbell line. Only the whole line, read
+    /// back exactly, qualifies; a prefix or an edit stays held. Every other
+    /// ring check applies, including the quiet window and the rate cap.
+    static func submitsStranded(_ input: MailboxDoorbell.Input, composer: FeedAnswerComposerCheck?) -> Bool {
+        guard composer == .matches else { return false }
+        return MailboxDoorbell.decide(strandedProbe(input)) == .ring
+    }
+
+    enum Look: Equatable {
+        /// Press Return on the line already in the composer.
+        case submitStranded
+        /// Plan from this decision, as any other look does.
+        case decide(MailboxDoorbell.Decision)
+    }
+
+    /// One look's decision. `composer` is the doorbell-line compare of a
+    /// draft (nil when there is no draft or it was not read). A stranded look
+    /// plans from its own checks: a defer, a cap, or a held composer looks
+    /// again instead of stopping at once-per-idle.
+    static func look(
+        _ input: MailboxDoorbell.Input,
+        composer: FeedAnswerComposerCheck?,
+        busyExhausted: Bool
+    ) -> Look {
+        if submitsStranded(input, composer: composer) { return .submitStranded }
+        guard isStrandedLook(input) else { return .decide(MailboxDoorbell.decide(input)) }
+        let probe = MailboxDoorbell.decide(strandedProbe(input))
+        guard probe == .ring else { return .decide(probe) }
+        if input.prompt == nil, busyExhausted { return .decide(.skip(reason: "unavailable")) }
+        if input.prompt == .draft, composer == .notVisible { return .decide(.skip(reason: "draft")) }
+        return .decide(MailboxDoorbell.decide(input))
+    }
+
+    /// Whether the line may still be in the composer after this read.
+    /// An unread or unreadable prompt keeps the current belief.
+    static func strandedPendingAfterRead(
+        current: Bool,
+        prompt: PromptInputState?,
+        composer: FeedAnswerComposerCheck?
+    ) -> Bool {
+        switch prompt {
+        case .draft:
+            return composer == .matches || composer == .notVisible
+        case .empty, .suggestion:
+            return false
+        case .dialog, .unknown, .unavailable, nil:
+            return current
         }
     }
 

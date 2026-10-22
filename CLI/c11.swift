@@ -22245,7 +22245,12 @@ extension CMUXCLI {
             urgent: urgent ? true : nil,
             ttlSeconds: ttlSeconds,
             bodyRef: bodyRef,
-            contentType: contentType
+            contentType: contentType,
+            // The exact calling panel, for the drawer's Sent view (C11-399).
+            // Not sent with a --from override: that names someone else.
+            ext: (fromOverride == nil) ? callerPanelId.map {
+                MailboxEnvelope.senderClaim(panel: $0, workspace: workspaceId)
+            } : nil
         )
 
         // Resolve which workspace actually hosts the recipient. The dispatcher

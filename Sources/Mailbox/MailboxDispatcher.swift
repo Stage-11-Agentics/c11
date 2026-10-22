@@ -399,9 +399,12 @@ final class MailboxDispatcher {
             return
         }
 
-        // Step 3b (C11-399): decide the reserved sender stamp. `from` is only
-        // a name, so the stamp is set only when it resolves to exactly one live
-        // panel here; a sender-supplied stamp is always dropped.
+        // Step 3b (C11-399): decide the reserved sender stamp from the caller
+        // identity the CLI attached, never from `from`, which is only a name
+        // that may match a different panel here (another workspace's lookalike,
+        // or a panel whose address equals the sender's title). The claim counts
+        // only for a panel that is live in THIS workspace; a sender-supplied
+        // stamp and the claim itself are always removed.
         let senderPanel = resolveSender(envelope: envelope)
         envelope = envelope.stampingSender(senderPanel)
 
@@ -428,6 +431,9 @@ final class MailboxDispatcher {
                 ),
                 senderInbox: MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: senderPanel)
             )
+            // The sender's cell may now need to appear (a panel that has sent
+            // mail but received none): recount it off the hot path.
+            MailboxBadgeStore.inboxChanged(workspaceId: workspaceId, panelId: senderPanel)
         }
 
         // Step 5: invoke handlers.
@@ -476,17 +482,14 @@ final class MailboxDispatcher {
         )
     }
 
-    /// The one live panel `from` names in this workspace, by the same matcher
-    /// recipients use. Zero or several matches stamp nothing: Sent must never
+    /// The panel the CLI said ran the send, if it is live in this workspace.
+    /// No claim (raw writers, `--from` overrides, older CLIs), a claim from
+    /// another workspace, or a closed panel stamps nothing: Sent must never
     /// attribute mail to the wrong panel.
     private func resolveSender(envelope: MailboxEnvelope) -> UUID? {
-        let all = resolver.panelsWithMailboxMetadata()
-        let matches = MailboxMatcher.select(
-            MailboxAddress.parse(envelope.from),
-            from: all,
-            identity: { $0.identity }
-        )
-        return matches.count == 1 ? matches[0].surfaceId : nil
+        guard let claim = envelope.senderClaim, claim.workspace == workspaceId,
+              resolver.livePanels().contains(claim.panel) else { return nil }
+        return claim.panel
     }
 
     // MARK: - Inbox copy

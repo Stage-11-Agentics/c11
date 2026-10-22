@@ -36,10 +36,15 @@ enum MailboxPanelMail {
         var newestUnreadAt: Date?
         /// Arrival time of the oldest unread envelope, when there is one.
         var oldestUnreadAt: Date?
+        /// The panel has a `_sent/` ledger (C11-399): it sent something the
+        /// dispatcher could attribute, so its Sent view has content even with
+        /// nothing received. One directory stat, no listing.
+        var hasSent = false
 
         static let empty = Summary()
 
-        var hasMail: Bool { received > 0 }
+        /// The mailbox cell shows once the panel has received or sent mail.
+        var hasMail: Bool { received > 0 || hasSent }
 
         /// The newest unread message landed within `freshWindow` of `now`.
         func isFresh(now: Date) -> Bool {
@@ -59,7 +64,7 @@ enum MailboxPanelMail {
         mailboxesRoot.appendingPathComponent(panelId.uuidString.lowercased(), isDirectory: true)
     }
 
-    /// Two directory listings and a stat per unread file; file contents are
+    /// Two directory listings, a stat of `_sent/` and a stat per unread file; file contents are
     /// never read. An unread message landed when it was written into the inbox
     /// (its modification time) or, if the clock says otherwise, when it was
     /// sent (its ULID), whichever is later: mail that waited in the outbox
@@ -68,6 +73,9 @@ enum MailboxPanelMail {
         let unread = envelopeFiles(in: inbox, fileManager: fileManager)
         let read = envelopeFiles(in: MailboxDrain.readURL(inbox: inbox), fileManager: fileManager)
         var result = Summary(unread: unread.count, received: unread.count + read.count)
+        var isDirectory: ObjCBool = false
+        result.hasSent = fileManager.fileExists(atPath: MailboxSentLedger.directory(inbox: inbox).path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
         for file in unread {
             guard let date = landingDate(of: file, fileManager: fileManager) else { continue }
             if result.newestUnreadAt.map({ date > $0 }) ?? true { result.newestUnreadAt = date }
@@ -315,13 +323,14 @@ enum MailboxPanelMail {
                 } else {
                     state = .gone; copy = nil
                 }
-                guard let copy else { return SentRecipient(panelId: panel, name: recipient.name, state: .gone) }
-                let found = message(at: copy, isUnread: state == .unread, arrivedAt: arrivalDate(of: copy, fileManager: fileManager), fileManager: fileManager)
-                // A copy this panel did not send is not shown, whatever the entry says.
-                guard sender != nil, found.senderPanelId == sender else {
+                // A copy this panel did not send is not shown, whatever the entry
+                // says, and its `body_ref` is not followed.
+                guard let copy, let sender, stampedSender(of: copy) == sender else {
                     return SentRecipient(panelId: panel, name: recipient.name, state: .gone)
                 }
-                if firstCopy == nil { firstCopy = found }
+                if firstCopy == nil {
+                    firstCopy = message(at: copy, isUnread: state == .unread, arrivedAt: arrivalDate(of: copy, fileManager: fileManager), fileManager: fileManager)
+                }
                 return SentRecipient(panelId: panel, name: recipient.name, state: state)
             }
             return SentMessage(
@@ -334,6 +343,15 @@ enum MailboxPanelMail {
             )
         }
         return SentListing(messages: messages, total: total)
+    }
+
+    /// The sender stamp in an envelope file, read without following `body_ref`.
+    static func stampedSender(of file: URL) -> UUID? {
+        guard case .success(let read) = readRegularFilePrefix(path: file.path, limit: maxEnvelopeBytes, followSymlinks: false),
+              !read.truncated,
+              let raw = (try? JSONSerialization.jsonObject(with: read.data)) as? [String: Any] else { return nil }
+        return ((raw["ext"] as? [String: Any])?[MailboxEnvelope.senderPanelKey] as? String)
+            .flatMap(UUID.init(uuidString:))
     }
 
     static let foldedLineLimit = 12

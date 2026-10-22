@@ -334,6 +334,34 @@ final class MailboxBadgeStoreTests: XCTestCase {
         XCTAssertEqual(store.cachedSummary(panelId: panelId).unread, count, file: file, line: line)
     }
 
+    /// C11-399: a panel that only sent mail still gets the mailbox cell.
+    func testSentOnlyPanelExposesMailbox() throws {
+        let workspace = UUID(), panel = UUID()
+        let inbox = try XCTUnwrap(store.inboxURL(workspaceId: workspace, panelId: panel))
+        XCTAssertFalse(MailboxPanelMail.summary(inbox: inbox).hasMail)
+        store.track(panelId: panel, workspaceId: workspace)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(store.cachedSummary(panelId: panel).hasMail)
+
+        // The dispatcher records a send, then reports the sender's inbox.
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        XCTAssertTrue(MailboxSentLedger.record(
+            .init(id: "01K3A2B7X8PQRTVWYZ0123456J", ts: nil, to: "x", topic: nil, recipients: []),
+            senderInbox: inbox
+        ))
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        let deadline = Date().addingTimeInterval(5)
+        while !store.cachedSummary(panelId: panel).hasMail, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        let summary = store.cachedSummary(panelId: panel)
+        XCTAssertTrue(summary.hasMail)
+        XCTAssertTrue(summary.hasSent)
+        // The counts keep their meaning: nothing was received.
+        XCTAssertEqual(summary.unread, 0)
+        XCTAssertEqual(summary.received, 0)
+    }
+
     func testDeliveryAfterCloseLeavesTheClosedPanelOffTheSweep() throws {
         let workspace = UUID(), panel = UUID()
         store.track(panelId: panel, workspaceId: workspace)
@@ -472,18 +500,74 @@ final class MailboxSentViewTests: XCTestCase {
         }
     }
 
+    /// Records every directory listing and existence probe the reader makes.
+    private final class RecordingFileManager: FileManager {
+        var listed: [String] = []
+        var probed: [String] = []
+        override func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?, options mask: FileManager.DirectoryEnumerationOptions = []) throws -> [URL] {
+            listed.append(url.path)
+            return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+        }
+        override func contentsOfDirectory(atPath path: String) throws -> [String] {
+            listed.append(path)
+            return try super.contentsOfDirectory(atPath: path)
+        }
+        override func subpathsOfDirectory(atPath path: String) throws -> [String] {
+            listed.append(path)
+            return try super.subpathsOfDirectory(atPath: path)
+        }
+        override func fileExists(atPath path: String) -> Bool {
+            probed.append(path)
+            return super.fileExists(atPath: path)
+        }
+        override func fileExists(atPath path: String, isDirectory: UnsafeMutablePointer<ObjCBool>?) -> Bool {
+            probed.append(path)
+            return super.fileExists(atPath: path, isDirectory: isDirectory)
+        }
+    }
+
     func testOnlyTheLedgersRecipientsAreTouched() throws {
-        // A bystander panel with a huge number of envelopes is never listed: the
-        // view reads the sender's `_sent/` and the named recipients' two paths.
+        // The reader lists exactly one directory, the sender's `_sent/`, and
+        // probes only the two paths of each recipient the ledger names. Other
+        // panels' directories are neither listed nor probed, however many.
         let id = ulid(-10)
         try deliver(id, to: alpha, stamp: sender)
         ledger(id, to: [(alpha, "alpha")])
-        let bystander = UUID()
-        try FileManager.default.createDirectory(at: inbox(bystander), withIntermediateDirectories: true)
-        try "not json".write(to: inbox(bystander).appendingPathComponent("\(ulid(-1)).msg"), atomically: true, encoding: .utf8)
-        let sent = listing()
+        let bystanders = [UUID(), UUID(), UUID()]
+        for panel in bystanders {
+            try FileManager.default.createDirectory(at: inbox(panel), withIntermediateDirectories: true)
+            try "not json".write(to: inbox(panel).appendingPathComponent("\(ulid(-1)).msg"), atomically: true, encoding: .utf8)
+        }
+        let recorder = RecordingFileManager()
+        let sent = MailboxPanelMail.sentListing(senderInbox: inbox(sender), mailboxesRoot: root, fileManager: recorder)
         XCTAssertEqual(sent.messages.count, 1)
         XCTAssertEqual(sent.messages.first?.recipients.map(\.name), ["alpha"])
+        XCTAssertEqual(recorder.listed.map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+                       [MailboxSentLedger.directory(inbox: inbox(sender)).standardizedFileURL.path])
+        let allowed = Set([
+            inbox(alpha).appendingPathComponent("\(id).msg").standardizedFileURL.path,
+            MailboxDrain.readURL(inbox: inbox(alpha)).appendingPathComponent("\(id).msg").standardizedFileURL.path,
+        ])
+        for path in recorder.probed {
+            XCTAssertTrue(allowed.contains(URL(fileURLWithPath: path).standardizedFileURL.path), "unexpected probe: \(path)")
+        }
+        XCTAssertFalse(recorder.probed.isEmpty)
+    }
+
+    func testAMismatchedCopysBodyRefIsNotFollowed() throws {
+        // Another sender's stamp: the copy is dropped before its body_ref is read.
+        let id = ulid(-10)
+        let marker = root.appendingPathComponent("referenced.txt")
+        try "REFERENCED-SECRET".write(to: marker, atomically: true, encoding: .utf8)
+        var object: [String: Any] = ["version": 1, "id": id, "from": "x", "ts": "2026-10-22T04:00:00Z", "body": "", "to": "x",
+                                     "body_ref": marker.path]
+        object["ext"] = [MailboxEnvelope.senderPanelKey: UUID().uuidString.lowercased()]
+        try FileManager.default.createDirectory(at: inbox(alpha), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: object).write(to: inbox(alpha).appendingPathComponent("\(id).msg"))
+        ledger(id, to: [(alpha, "alpha")])
+        let message = try XCTUnwrap(listing().messages.first)
+        XCTAssertEqual(message.recipients.first?.state, .gone)
+        XCTAssertNil(message.message)
     }
 
     func testListingIsNewestFirstAndLimited() throws {
@@ -513,3 +597,4 @@ final class MailboxSentViewTests: XCTestCase {
         XCTAssertFalse(names.contains("\(first).\(MailboxSentLedger.fileExtension)"))
     }
 }
+

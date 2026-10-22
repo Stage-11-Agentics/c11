@@ -913,7 +913,7 @@ function configureMermaid(mathLabels=false,ganttWidth) {
   mermaid.initialize({startOnLoad:false,securityLevel:'strict',suppressErrorRendering:true,theme:'base',
     // Document directives cannot override this allowlist. HTML labels are enabled only for diagrams using math.
     secure:['secure','securityLevel','startOnLoad','maxTextSize','maxEdges','flowchart','htmlLabels','theme','themeVariables'],
-    maxTextSize:50000,maxEdges:500,htmlLabels:mathLabels,
+    maxTextSize:50000,maxEdges:500,htmlLabels:mathLabels,forceLegacyMathML:mathLabels,
     fontFamily:'"JetBrains Mono Variable", monospace',flowchart:{htmlLabels:mathLabels,curve:'basis',padding:14,nodeSpacing:34,rankSpacing:46},
     // Mermaid 12 derives oversized text from the Gantt width. Match its coordinate space to this panel.
     gantt:{useWidth:ganttWidth,leftPadding:150,rightPadding:75},
@@ -970,6 +970,16 @@ function stripMathLabelInlineStyles(source) {
   }
   return output;
 }
+function mermaidEntity(name) {
+  if(name.startsWith('#x'))return '#'+parseInt(name.slice(2),16)+';';
+  if(name.startsWith('#'))return name+';';
+  return '#'+name+';';
+}
+function inlineMathML(content) {
+  const rendered=katex.renderToString(content,{displayMode:false,output:'mathml',throwOnError:false,trust:false,strict:'ignore',maxSize:20,maxExpand:1000});
+  const mathML=/<math\b[\s\S]*?<\/math>/.exec(rendered)?.[0]||rendered;
+  return mathML.replace(/<[^>]+>/g,tag=>tag.replace(/"([^"]*)"/g,(_,value)=>`'${value}'`));
+}
 function diagramSource(raw,mathLabels=false) {
   const source=mathLabels?stripMathLabelInlineStyles(raw):raw;
   // Decode entities before Mermaid sees semicolons, especially in sequence messages.
@@ -981,7 +991,10 @@ function diagramSource(raw,mathLabels=false) {
   const frontmatter=/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(decoded);
   const configFrontmatter=!!frontmatter&&/^\s*config\s*:/im.test(frontmatter[1]);
   if(initDirective||configFrontmatter)throw new Error('Unsupported diagram directive');
-  return source.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>name.startsWith('#x')?'#'+parseInt(name.slice(2),16)+';':name.startsWith('#')?name+';':'#'+name+';');
+  const encoded=source.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name));
+  if(!mathLabels)return encoded;
+  return encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
+    .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name)));
 }
 const mathLabelTags=['div','span','br','b','strong','i','em','u','s','sub','sup','p','math','semantics','annotation','mrow','mi','mn','mo','mfrac','msup','msub','msubsup','msqrt','mroot','mtext','mstyle','mspace','mpadded','mphantom','menclose','munder','mover','munderover','mtable','mtr','mtd','merror','maction'];
 const mathLabelAttrs=['xmlns','class','style','display','mathvariant','mathsize','scriptlevel','displaystyle','mathbackground','mathcolor','encoding','notation','rowspan','columnspan','rowalign','columnalign','columnlines','rowlines','columnspacing','rowspacing','linethickness','bevelled','stretchy','symmetric','fence','separator','form','lspace','rspace','minsize','maxsize','largeop','movablelimits','accent','accentunder'];
@@ -990,7 +1003,15 @@ function safeMathLabelStyle(property,value) {
   if(property==='white-space')return value==='nowrap';
   if(property==='line-height')return /^\d+(?:\.\d+)?$/.test(value)&&Number(value)>=1&&Number(value)<=2;
   if(property==='text-align'||property==='align-items'||property==='justify-content')return value==='center';
-  if(property==='width'||property==='max-width')return /^\d+(?:\.\d+)?px$/.test(value)&&parseFloat(value)<=400;
+  if(property==='position')return value==='relative';
+  if(property==='color')return /^(?:#[\da-f]{3,8}|[a-z]{1,20}|rgba?\([\d.% ,]+\)|hsla?\([\d.% ,]+\))$/i.test(value)&&CSS.supports('color',value);
+  if(['height','width','min-width','max-width','top','margin-left','margin-right','margin-top','margin-bottom','padding-left','padding-right','padding-top','padding-bottom','vertical-align','border-bottom-width','font-size'].includes(property)) {
+    if(['baseline','middle','sub','super','text-top','text-bottom'].includes(value)&&property==='vertical-align')return true;
+    const match=/^(-?(?:\d+(?:\.\d*)?|\.\d+))(em|ex|px|%)$/.exec(value);
+    if(!match)return false;
+    const amount=Math.abs(Number(match[1])),unit=match[2];
+    return amount<=(unit==='px'?400:unit==='%'?100:40);
+  }
   return false;
 }
 function cleanSVG(svg,mathLabels=false) {
@@ -1009,6 +1030,7 @@ function cleanSVG(svg,mathLabels=false) {
         for(const property of [...node.style])if(!safeMathLabelStyle(property,node.style.getPropertyValue(property).trim().toLowerCase()))node.style.removeProperty(property);
         if(!node.style.length)node.removeAttribute('style');
       }
+      for(const node of $$('.katex-html',safeForeignObjects[i]))node.setAttribute('aria-hidden','true');
     }
   }
   // Mermaid emits CSS, but no CSS capable of reaching another resource may survive.

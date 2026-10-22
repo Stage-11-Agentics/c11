@@ -72,5 +72,5 @@ Mermaid math syntax uses double dollar delimiters.
 
 ```mermaid
 flowchart LR
-    Input["Input: $$x^2 + y^2$$"] --> Output["Result: $$\frac{1}{2}$$"]
+    Input["Input: $$x^2 + y^2$$"] --> Output["Result: $$\frac{1}{2} + \sqrt{2}$$"]
 ```

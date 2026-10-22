@@ -1009,11 +1009,6 @@ function cleanSVG(svg,mathLabels=false) {
         for(const property of [...node.style])if(!safeMathLabelStyle(property,node.style.getPropertyValue(property).trim().toLowerCase()))node.style.removeProperty(property);
         if(!node.style.length)node.removeAttribute('style');
       }
-      for(const math of $$('math[display="block"]',safeForeignObjects[i])) {
-        math.setAttribute('display','inline');
-        // WebKit still lays out display="block" MathML as a separate line; enforce inline flow in CSS too.
-        math.style.display='inline';
-      }
     }
   }
   // Mermaid emits CSS, but no CSS capable of reaching another resource may survive.

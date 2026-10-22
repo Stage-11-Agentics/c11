@@ -47,9 +47,18 @@ try {
   for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof']])
     assert.ok(mermaid12Labels[index].includes(label),`diagram ${index+1} did not render its ${label} label`);
   assert.equal(await page.locator('.diagram-stage math').count(),2,'both formulas must survive as MathML in the label');
-  assert.deepEqual(await page.locator('.diagram-stage math').evaluateAll(nodes=>nodes.map(node=>({attribute:node.getAttribute('display'),style:node.style.display,computed:getComputedStyle(node).display}))),[
-    {attribute:'inline',style:'inline',computed:'inline'},{attribute:'inline',style:'inline',computed:'inline'}
-  ],'math in Mermaid labels must use inline layout in the rendered DOM');
+  const mathLayouts=await page.locator('.diagram-stage math').evaluateAll(nodes=>nodes.map(math=>{
+    const shape=math.closest('g.node')?.querySelector('rect.basic');
+    const label=math.getBoundingClientRect(),box=shape?.getBoundingClientRect();
+    return {
+      attribute:math.getAttribute('display'),style:math.style.display,computed:getComputedStyle(math).display,
+      contained:!!box&&label.left>=box.left-1&&label.right<=box.right+1&&label.top>=box.top-1&&label.bottom<=box.bottom+1
+    };
+  }));
+  assert.deepEqual(mathLayouts.map(({attribute,style,computed})=>({attribute,style,computed})),[
+    {attribute:'block',style:'',computed:'block math'},{attribute:'block',style:'',computed:'block math'}
+  ],'Mermaid MathML must preserve the layout it measured before building the SVG');
+  assert.ok(mathLayouts.every(layout=>layout.contained),'MathML must stay inside its Mermaid node shape');
   const ganttSvg=page.locator('.diagram-stage svg').nth(4);
   const assertGanttAxis=async()=>{
     const metrics=await ganttSvg.evaluate(svg=>{

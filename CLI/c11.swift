@@ -6645,7 +6645,7 @@ struct CMUXCLI {
             return skillFlagPreflightSpec(args)
         case "agent-hook", "codex-hook":
             return CLIFlagPreflightSpec(valueOptions: ["--native-event"])
-        case "new-panel", "launch-agent":
+        case "new-panel", "launch-agent", "break-pane", "join-pane":
             guard var spec = helpDerivedFlagPreflightSpec(command: command, args: args) else { return nil }
             spec.flags.insert("--no-focus")
             return spec

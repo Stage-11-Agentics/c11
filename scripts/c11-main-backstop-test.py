@@ -203,11 +203,11 @@ sys.exit(m.main())
             if not (self.root / "started").exists():
                 return False
             if not waiting:
-                requested.append(time.monotonic())
+                requested.append(time.time())
                 waiting.append(subprocess.Popen([
                     "/usr/bin/python3", str(m.SLOTS), "fixture-pr", "--poller",
                     "/usr/bin/python3", "-c",
-                    "import pathlib,time; pathlib.Path(%r).write_text(str(time.monotonic()))" % str(marker),
+                    "import pathlib,time; pathlib.Path(%r).write_text(str(time.time()))" % str(marker),
                 ], env=self.fixture_env, stdout=subprocess.DEVNULL))
             return True
         try:
@@ -217,6 +217,7 @@ sys.exit(m.main())
             waiting[0].wait(timeout=5)
             elapsed = float(marker.read_text()) - requested[0]
             print("PR demand to admitted poller: %.3fs" % elapsed)
+            self.assertGreaterEqual(elapsed, 0)
             self.assertLess(elapsed, 15)
             self.assertFalse((self.root / "state/running.json").exists())
         finally:

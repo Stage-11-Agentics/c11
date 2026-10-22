@@ -634,6 +634,10 @@
 		FDA0BE0001234A1CD69B5467 /* FullDiskAccessProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7017BF1A1B2C3D4E5F60718 /* FullDiskAccessProbeTests.swift */; };
 		FE01AA00000000000000B001 /* SendKeyVocabularyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE01AA00000000000000B002 /* SendKeyVocabularyTests.swift */; };
 		FFE880D945D44532D09BE71C /* ConversationStoreFailureModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96951AF465673123431D362B /* ConversationStoreFailureModeTests.swift */; };
+		C11472000000000000000011 /* ClaudeMailboxAcceptance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */; };
+		C11472000000000000000012 /* ClaudeMailboxAcceptance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */; };
+		C11472000000000000000013 /* ClaudeMailboxCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000002 /* ClaudeMailboxCommand.swift */; };
+		C11472000000000000000014 /* ClaudeMailboxAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1285,6 +1289,9 @@
 		FE01AA00000000000000B002 /* SendKeyVocabularyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SendKeyVocabularyTests.swift; sourceTree = "<group>"; };
 		FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalCommand.swift; path = JournalCommand.swift; sourceTree = "<group>"; };
 		IC000002 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AppIcon.icon; sourceTree = "<group>"; };
+		C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxAcceptance.swift; sourceTree = "<group>"; };
+		C11472000000000000000002 /* ClaudeMailboxCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxCommand.swift; sourceTree = "<group>"; };
+		C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxAcceptanceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1476,6 +1483,7 @@
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
 				C1130600A1B2C3D4E5F60704 /* ClaudeStopTranscript.swift */,
+				C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */,
 				C11284000000000000000011 /* BundledSkill.swift */,
 				C11284000000000000000001 /* CapabilityFeatures.swift */,
 				C11286000000000000000001 /* WindowResizePlan.swift */,
@@ -1751,6 +1759,7 @@
 				C11349000000000000000001 /* ActivityAnalysisCommand.swift */,
 				FF91ED2E5B27D3A6E39FFD73 /* JournalCommand.swift */,
 				C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */,
+				C11472000000000000000002 /* ClaudeMailboxCommand.swift */,
 				B9000001A1B2C3D4E5F60719 /* c11.swift */,
 				DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */,
 				DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */,
@@ -1916,6 +1925,7 @@
 				D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */,
 				C11144A0B0C0D0E0F0010003 /* MailboxStdinBufferTests.swift */,
 				C11D3940A1B2C3D4E5F60703 /* MailboxDoorbellTests.swift */,
+				C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */,
 				D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */,
 				D7113BF1A1B2C3D4E5F60718 /* MailboxDispatcherGCTests.swift */,
 				3BF9D5EC78046EDA9B54AC68 /* DefaultAgentConfigTests.swift */,
@@ -2273,6 +2283,7 @@
 				6F3E766AEE928B3A98ADC170 /* MailboxDispatcherTests.swift in Sources */,
 				C11144A0B0C0D0E0F0010004 /* MailboxStdinBufferTests.swift in Sources */,
 				C11D3940A1B2C3D4E5F60704 /* MailboxDoorbellTests.swift in Sources */,
+				C11472000000000000000014 /* ClaudeMailboxAcceptanceTests.swift in Sources */,
 				DBF8F51099CEF804B8023B5D /* MailboxDispatchLogTests.swift in Sources */,
 				8C1F311B2760FEE15B8DFD2F /* MailboxEnvelopeValidationTests.swift in Sources */,
 				BAE105919F0262DEA7D0DE0C /* MailboxIOTests.swift in Sources */,
@@ -2538,6 +2549,7 @@
 				C11144A0B0C0D0E0F0010002 /* MailboxStdinBuffer.swift in Sources */,
 				C11471000000000000000002 /* MailboxNativeDoorbell.swift in Sources */,
 				C11D3940A1B2C3D4E5F60702 /* MailboxDoorbell.swift in Sources */,
+				C11472000000000000000011 /* ClaudeMailboxAcceptance.swift in Sources */,
 				A5008F11 /* PanelTitleBarView.swift in Sources */,
 				DD488C60E0F13C57E4D9F0D8 /* WorkspaceRootEditor.swift in Sources */,
 				A5008F21 /* TitleFormatting.swift in Sources */,
@@ -2712,6 +2724,7 @@
 				C11277000000000000000102 /* JournalQuery.swift in Sources */,
 				AEBFCF000212C27520A056EF /* JournalCommand.swift in Sources */,
 				C1126400A1B2C3D4E5F6000B /* FeedCommand.swift in Sources */,
+				C11472000000000000000013 /* ClaudeMailboxCommand.swift in Sources */,
 				C1126400A1B2C3D4E5F60003 /* FeedProjector.swift in Sources */,
 				C1126500A1B2C3D4E5F60003 /* AttentionOrder.swift in Sources */,
 				1E29B72EBDD94D393DE0DE90 /* JournalSpool.swift in Sources */,
@@ -2742,6 +2755,7 @@
 				D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60719 /* CLIAdvisoryConnectivity.swift in Sources */,
 				C1130600A1B2C3D4E5F60702 /* ClaudeStopTranscript.swift in Sources */,
+				C11472000000000000000012 /* ClaudeMailboxAcceptance.swift in Sources */,
 				75B580E4A1859423B310E203 /* EventLogLayout.swift in Sources */,
 				365F4BE2806EC0D12A9336BD /* EventEnvelope.swift in Sources */,
 				D1510386129C337B5868E50D /* AgentLaunchStats.swift in Sources */,

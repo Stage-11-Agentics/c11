@@ -25,6 +25,8 @@ The same wrapper may attach optional lifecycle or attention observations that th
 
 A wrapper may also load a bundled c11 extension or plugin into that one process by launch flag, never through tenant config, to report the agent's prompt cache use (request times, provider and model ids, token counts, never text) through `agent.prompt_cache.report`, fire-and-forget with a timeout.
 
+The Claude wrapper may add a bundled mailbox bridge through the same per-launch `--settings` hooks file. An async SessionStart hook subscribes to c11's native mailbox stream and sends only the doorbell invitation to Claude's own session inbox socket, while idle. Its session token stays in process memory. The bridge may inspect new records in that bound session's transcript to confirm the invitation arrived; it never stores or forwards transcript contents. It does not claim mail, change inbound permissions, or expose tools. Missing support, a rejected connection, or no confirmation within two seconds leaves the existing typed doorbell as the fallback. The bridge retires with its Claude process or subscription; it writes no tenant configuration and adds no MCP server or channel consent prompt.
+
 Outside that bounded wrapper exception, lifecycle remains agent-reported: agents that read the c11 skill call `c11 set-metadata` / `c11 set-status` for the state they own. The wrapper contributes only optional, allowlisted observations at launch; it does not install or configure hooks in a tenant's environment.
 
 ## Vocabulary

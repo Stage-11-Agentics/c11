@@ -304,8 +304,8 @@ The initial success returns
 `subscription_id`; subsequent JSONL frames are `{type:"deliver", delivery_id,
 text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
 Only positive in-harness acceptance may produce `accepted`. Pi uses
-`route:"pi_extension", can_queue:false`; `codex_queue` and `claude_inbox` are
-reserved consumer route names. Authentication follows the existing socket
+`route:"pi_extension", can_queue:false`; Claude uses `claude_inbox` with the
+same idle-only contract, and `codex_queue` remains reserved. Authentication follows the existing socket
 policy, and IO runs off the main thread. Established idle streams do not poll.
 A new subscriber replaces the previous listener for that panel, including an
 in-process listener replaced by a sidecar. The old stream receives
@@ -330,6 +330,20 @@ and standalone Bun runtime, plus a controlled provider fixture. It uses the
 real Pi TUI and extension API, exports no credentials, and does not exercise a
 real model provider. Install Pi 0.81.1 and Bun on the Tart host first. omp's
 different extension API is tracked separately in C11-473.
+
+### Claude Code native inbox
+
+The interactive c11 wrapper adds an async SessionStart hook to its existing per-launch settings file. When Claude exports a messaging socket and session token, the bundled bridge registers `claude_inbox` on `mailbox.native.subscribe`. It sends only the invitation, at idle, and confirms a new matching peer-message record in that same session's transcript within two seconds. It never types into or reads the composer, so an operator draft stays intact. The token stays in memory; no MCP configuration, channel flag, consent prompt, or tenant settings write is involved.
+
+The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. The envelope remains unread until `recv --ack` or the existing Stop hook claims it. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
+
+Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt. Delivery is at-least-once: a late confirmation is logged as `native_late_accept`, so a duplicate invitation is possible.
+
+`--resume` and `/clear` create a fresh subscription bound to that launch's session transcript. The bridge stays armed across repeated wakes and long idle, and exits when its Claude process exits or its c11 connection closes. If c11 restarts while Claude stays running, that session uses typed fallback until its next SessionStart. Print, background, and passthrough commands do not gain the bridge. Other MCP flags remain the operator's own. For a typed-route comparison, launch with `C11_CLAUDE_NATIVE_MAIL_DISABLED=1`; lifecycle and Stop-drain hooks remain active.
+
+The hook's five-second timeout was observed as unenforced for async hooks; if Claude starts enforcing it, the route falls back to typed delivery.
+
+For a repeatable Claude guest proof, stage `--agents claude` with `sandbox-up.sh`, then run `scripts/check-claude-native-mail.py <run-id>`. It uses real Claude sessions in isolated scratch configuration, checks native draft/repeat, `/clear`, `--resume`, hook-absent fallback, explicit inbound refusal, and unchanged default tenant files. `--disable-native-control` removes the bridge and must fail the native-with-draft assertion. The caller owns the guest and credential cleanup.
 
 ### When the doorbell line arrives
 
@@ -364,8 +378,7 @@ A socket Return (`c11 send-key enter`, or `c11 send` with no text) on a composer
 
 A session start (a fresh launch, a session c11 resumed after a restart, a Claude `/clear`) says nothing about the turn. It names the agent's process and makes the turn **unknown** until the harness reports an edge. A working state with nothing behind it also becomes unknown: a working edge or Return holds the gate for 2 minutes, and if the agent's journal does not show a turn in progress by then, the turn reads as unknown. A turn the journal shows in progress holds for as long as it runs, including a long tool call that prints nothing.
 
-The following composer checks describe the typed route. Pi native delivery
-uses the same idle edge and bypasses the composer checks.
+The following table describes typed delivery, including fallback when a native route is unavailable. Pi and Claude native delivery use the same idle edge and bypass composer checks.
 
 | Recipient agent state | What gets typed |
 |-----------------------|----------------|

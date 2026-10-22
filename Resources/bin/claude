@@ -249,6 +249,14 @@ c11_conversation_claim_bg() {
 }
 [[ -n "$C11_SET_AGENT_BIN" ]] && c11_conversation_claim_bg "$C11_SET_AGENT_BIN"
 
+# The inbox bridge is interactive-only and optional. Older Claude versions
+# without the exported messaging socket/token simply leave typed mail enabled.
+# It shares this launch's settings file; no MCP or tenant configuration is used.
+SESSION_START_HOOKS='{"type":"command","command":"c11 claude-hook session-start","timeout":10}'
+if [[ "$claude_interactive" == "1" && "${C11_CLAUDE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
+    SESSION_START_HOOKS+=',{"type":"command","command":"c11 claude-mailbox","timeout":5,"async":true}'
+fi
+
 # Build hooks settings JSON.
 # Claude Code merges --settings additively with the user's own settings.json.
 # - SessionStart/Stop/Notification: existing lifecycle hooks
@@ -259,7 +267,7 @@ c11_conversation_claim_bg() {
 #   ExitPlanMode stay synchronous so their answer edge cannot pass Stop first.
 # - StopFailure, SubagentStart, SubagentStop, PreCompact: lifecycle observations
 # - PermissionRequest: synchronous, timeout 1, stdout {} from the hook. It must not answer Claude.
-HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-start","timeout":10}]}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop","timeout":10}]}],"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-end","timeout":1}]}],"Notification":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook notification","timeout":10}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook prompt-submit","timeout":10}]}],"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-tool-use","timeout":5,"async":true}]}],"PostToolUse":[{"matcher":"AskUserQuestion|ExitPlanMode","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5}]},{"matcher":"^(?!(AskUserQuestion|ExitPlanMode)$).*","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5,"async":true}]}],"StopFailure":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop-failure","timeout":10}]}],"PermissionRequest":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook permission-request","timeout":1}]}],"SubagentStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-start","timeout":5,"async":true}]}],"SubagentStop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-stop","timeout":5,"async":true}]}],"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-compact","timeout":5,"async":true}]}]}}'
+HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":['"$SESSION_START_HOOKS"']}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop","timeout":10}]}],"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-end","timeout":1}]}],"Notification":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook notification","timeout":10}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook prompt-submit","timeout":10}]}],"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-tool-use","timeout":5,"async":true}]}],"PostToolUse":[{"matcher":"AskUserQuestion|ExitPlanMode","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5}]},{"matcher":"^(?!(AskUserQuestion|ExitPlanMode)$).*","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5,"async":true}]}],"StopFailure":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop-failure","timeout":10}]}],"PermissionRequest":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook permission-request","timeout":1}]}],"SubagentStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-start","timeout":5,"async":true}]}],"SubagentStop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-stop","timeout":5,"async":true}]}],"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-compact","timeout":5,"async":true}]}]}}'
 
 # Claude Code 2.1.119 silently drops hooks loaded from inline
 # `--settings <json>` but honours them when loaded from

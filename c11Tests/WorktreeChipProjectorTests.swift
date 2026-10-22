@@ -226,4 +226,63 @@ final class WorktreeChipProjectorTests: XCTestCase {
         XCTAssertFalse(wt?.isSubmodule ?? true)
         XCTAssertFalse(wt?.dotColorHex.isEmpty ?? true)
     }
+
+    // MARK: - C11-229: per-surface location triple (tree --json)
+
+    func testLocationMainCheckoutHasBranchAndNoWorktree() {
+        let context = ResolvedGitContext(outer: .mainCheckout(branch: .attached("main")))
+        let location = PanelGitLocation.project(context: context, cwd: "/repo", isRemote: false)
+        XCTAssertEqual(location, PanelGitLocation(cwd: "/repo", branch: "main", worktree: nil))
+    }
+
+    func testLocationLinkedWorktreeCarriesBasenameAndBranch() {
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "ov-229",
+                absolutePath: "/wt/ov-229",
+                branch: .attached("c11/C11-229-surface-cwd-branch")
+            )
+        )
+        let location = PanelGitLocation.project(context: context, cwd: "/wt/ov-229/Sources", isRemote: false)
+        XCTAssertEqual(location.worktree, "ov-229")
+        XCTAssertEqual(location.branch, "c11/C11-229-surface-cwd-branch")
+        XCTAssertEqual(location.cwd, "/wt/ov-229/Sources")
+    }
+
+    func testLocationDetachedAndNoBranchMatchDerivedStrings() {
+        let detached = ResolvedGitContext(outer: .mainCheckout(branch: .detached(shortSHA: "abc1234")))
+        XCTAssertEqual(
+            PanelGitLocation.project(context: detached, cwd: "/r", isRemote: false).branch,
+            "(detached @ abc1234)"
+        )
+        let none = ResolvedGitContext(outer: .mainCheckout(branch: .noBranch))
+        XCTAssertNil(PanelGitLocation.project(context: none, cwd: "/r", isRemote: false).branch)
+    }
+
+    func testLocationNotInRepoKeepsCwdOnly() {
+        XCTAssertEqual(
+            PanelGitLocation.project(context: nil, cwd: "/tmp/x", isRemote: false),
+            PanelGitLocation(cwd: "/tmp/x", branch: nil, worktree: nil)
+        )
+        let stale = ResolvedGitContext(outer: .stale)
+        XCTAssertEqual(
+            PanelGitLocation.project(context: stale, cwd: "/tmp/x", isRemote: false),
+            PanelGitLocation(cwd: "/tmp/x", branch: nil, worktree: nil)
+        )
+    }
+
+    func testLocationUnknownCwdIsNil() {
+        XCTAssertNil(PanelGitLocation.project(context: nil, cwd: nil, isRemote: false).cwd)
+        XCTAssertNil(PanelGitLocation.project(context: nil, cwd: "  ", isRemote: false).cwd)
+    }
+
+    func testLocationRemoteWorkspaceReportsNothing() {
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(basename: "ov-229", absolutePath: "/wt/ov-229", branch: .attached("feat"))
+        )
+        XCTAssertEqual(
+            PanelGitLocation.project(context: context, cwd: "/home/remote/repo", isRemote: true),
+            .unknown
+        )
+    }
 }

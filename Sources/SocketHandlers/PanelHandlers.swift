@@ -15,6 +15,22 @@ private enum TerminalSelectionCapture {
 extension TerminalController {
     private static let seenTimestampFormatter = ISO8601DateFormatter()
 
+    /// C11-229: `cwd`, `branch`, `worktree` on a surface item (null when
+    /// unknown). Main-actor dictionary reads of the values the sidebar chips
+    /// render; no probe runs here. Remote workspaces report null.
+    func v2SetLocationFields(_ item: inout [String: Any], workspace: Workspace, panel: any Panel) {
+        let location = panel.panelType == .terminal
+            ? PanelGitLocation.project(
+                context: workspace.panelGitContexts[panel.id] ?? nil,
+                cwd: workspace.panelDirectories[panel.id],
+                isRemote: workspace.isRemoteWorkspace
+            )
+            : .unknown
+        item["cwd"] = v2OrNull(location.cwd)
+        item["branch"] = v2OrNull(location.branch)
+        item["worktree"] = v2OrNull(location.worktree)
+    }
+
     /// C11-243: set `last_seen_at` (ISO-8601 to the second, "now" while being
     /// seen, null if never seen) and `being_seen` on a surface item. Main-actor
     /// read; formats one timestamp string per surface, with a shared formatter.
@@ -171,6 +187,7 @@ extension TerminalController {
                 ]
                 v2SetSeenFields(&item, panelId: panel.id)
                 v2SetPromptCacheField(&item, panelId: panel.id)
+                v2SetLocationFields(&item, workspace: ws, panel: panel)
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
                     item["profile_id"] = browserPanel.profileID.uuidString

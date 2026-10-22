@@ -1393,6 +1393,14 @@ class WorkspaceManager: ObservableObject {
             return
         }
 
+        // C11-237: a remote workspace reports paths on another host. Probing
+        // one against the local filesystem would name a local repo that is
+        // not the panel's, so no probe runs and nothing derived is kept.
+        if workspace.isRemoteWorkspace {
+            clearDerivedGitState(workspace: workspace, workspaceId: workspaceId, panelId: panelId)
+            return
+        }
+
         scheduleWorkspaceGitMetadataRefresh(
             workspaceId: workspaceId,
             panelId: panelId,
@@ -1883,6 +1891,13 @@ class WorkspaceManager: ObservableObject {
                 "expected=\(expectedDirectory) current=\(currentDirectory)"
             )
 #endif
+            return
+        }
+
+        // The workspace may have become remote since this probe was scheduled.
+        if workspace.isRemoteWorkspace {
+            clearWorkspaceGitProbe(probeKey)
+            clearDerivedGitState(workspace: workspace, workspaceId: probeKey.workspaceId, panelId: probeKey.panelId)
             return
         }
 
@@ -2668,6 +2683,15 @@ class WorkspaceManager: ObservableObject {
             panelId: surfaceId,
             reason: "branchChange"
         )
+    }
+
+    /// C11-237: drop everything the git probe derived for a panel (sidebar
+    /// branch, PR and chip context, plus the derived metadata keys).
+    private func clearDerivedGitState(workspace: Workspace, workspaceId: UUID, panelId: UUID) {
+        if workspace.panelGitBranches[panelId] != nil { workspace.clearPanelGitBranch(panelId: panelId) }
+        if workspace.panelPullRequests[panelId] != nil { workspace.clearPanelPullRequest(panelId: panelId) }
+        workspace.updatePanelGitContext(panelId: panelId, context: nil)
+        applyDerivedWorktreeBranchMetadata(workspaceId: workspaceId, surfaceId: panelId, context: nil)
     }
 
     /// C11-104 — write the resolved worktree/branch labels into the

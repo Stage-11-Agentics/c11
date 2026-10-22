@@ -47,8 +47,8 @@ try {
   for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof']])
     assert.ok(mermaid12Labels[index].includes(label),`diagram ${index+1} did not render its ${label} label`);
   assert.equal(await page.locator('.diagram-stage math').count(),2,'both formulas must survive as MathML in the label');
-  assert.deepEqual(await page.locator('.diagram-stage math').evaluateAll(nodes=>nodes.map(node=>({attribute:node.getAttribute('display'),computed:getComputedStyle(node).display}))),[
-    {attribute:'inline',computed:'inline'},{attribute:'inline',computed:'inline'}
+  assert.deepEqual(await page.locator('.diagram-stage math').evaluateAll(nodes=>nodes.map(node=>({attribute:node.getAttribute('display'),style:node.style.display,computed:getComputedStyle(node).display}))),[
+    {attribute:'inline',style:'inline',computed:'inline'},{attribute:'inline',style:'inline',computed:'inline'}
   ],'math in Mermaid labels must use inline layout in the rendered DOM');
   const ganttSvg=page.locator('.diagram-stage svg').nth(4);
   assert.equal((await ganttSvg.getAttribute('viewBox')).split(/\s+/)[2],'1200','Gantt must render against the stable viewer width');

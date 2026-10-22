@@ -295,7 +295,12 @@ ring still-unread mail again. No configuration is written under `~/.pi`.
 
 The stream binds a panel UUID, live foreground agent PID and kernel start time,
 and a per-session ID. Its request parameters are `panel_id`, `agent_pid`,
-`session_id`, `route` and `can_queue`. The initial success returns
+`session_id`, `route` and `can_queue`. The socket's kernel peer must be that
+harness or a verified descendant. Sidecars may have no controlling terminal;
+the harness must still own the panel's foreground terminal. The parent walk
+checks process start times and revalidates its chain to reject PID reuse.
+A claimed `agent_pid` or a matching caller terminal alone is insufficient.
+The initial success returns
 `subscription_id`; subsequent JSONL frames are `{type:"deliver", delivery_id,
 text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
 Only positive in-harness acceptance may produce `accepted`. Pi uses

@@ -2208,6 +2208,13 @@ class TerminalController {
                 // ncat --send-only closes the connection right after writing, so by
                 // the time a new thread starts the peer may already be gone.
                 let peerPid = getPeerPid(clientSocket)
+                // Pin native subscribers before handing the connection to a
+                // worker; a later request cannot borrow a reused peer PID.
+                let nativePeer = peerPid.flatMap { pid in
+                    MailboxAgentForeground.processTerminalInfo(pid: pid).map {
+                        MailboxStdinBuffer.AgentProcess(pid: pid, startTime: $0.startTime)
+                    }
+                }
 
                 // Handle client in new thread
                 AppNapActivityCoordinator.shared.socketClientDidConnect()
@@ -2217,7 +2224,7 @@ class TerminalController {
                         close(clientSocket)
                         return
                     }
-                    self.handleClient(clientSocket, peerPid: peerPid)
+                    self.handleClient(clientSocket, peerPid: peerPid, nativePeer: nativePeer)
                 }
             }
         }
@@ -2305,7 +2312,7 @@ class TerminalController {
         }
     }
 
-    private func handleClient(_ socket: Int32, peerPid: pid_t? = nil) {
+    private func handleClient(_ socket: Int32, peerPid: pid_t?, nativePeer: MailboxStdinBuffer.AgentProcess?) {
         defer { close(socket) }
 
         // In c11Only mode, verify the connecting process is a descendant of c11.
@@ -2339,6 +2346,7 @@ class TerminalController {
         serveClientCommandLines(
             socket: socket,
             callerTTYDevice: socketCallerTTYDevice(peerPid: peerPid ?? getPeerPid(socket)),
+            nativePeer: nativePeer,
             shouldContinue: { withListenerState { isRunning } },
             execute: { processCommandUsingSocketExecutionPolicy($0) }
         )
@@ -2352,6 +2360,7 @@ class TerminalController {
     func serveClientCommandLines(
         socket: Int32,
         callerTTYDevice: UInt32?,
+        nativePeer: MailboxStdinBuffer.AgentProcess? = nil,
         shouldContinue: () -> Bool,
         execute: (String) -> String
     ) {
@@ -2391,7 +2400,7 @@ class TerminalController {
                 }
                 if request.method == "mailbox.native.subscribe" {
                     self.v2StreamNativeMailbox(id: request.id, params: request.params, socket: streamSocket,
-                                               callerTTYDevice: callerTTYDevice, shouldContinue: shouldContinue)
+                                               peer: nativePeer, shouldContinue: shouldContinue)
                     return true
                 }
                 let context = SocketCommandContext(

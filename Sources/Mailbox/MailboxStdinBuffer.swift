@@ -493,6 +493,8 @@ enum MailboxAgentForeground {
         let isZombie: Bool
         /// Process start time in microseconds since the epoch.
         var startTime: UInt64 = 0
+        /// Kernel parent PID, used to authenticate native mailbox sidecars.
+        var parentPID: pid_t = 0
     }
 
     /// Pure decision. Fails closed on a missing process, a different process
@@ -547,7 +549,8 @@ enum MailboxAgentForeground {
             terminalDevice: info.kp_eproc.e_tdev,
             isZombie: Int32(info.kp_proc.p_stat) == SZOMB,
             startTime: UInt64(info.kp_proc.p_starttime.tv_sec) * 1_000_000
-                + UInt64(info.kp_proc.p_starttime.tv_usec)
+                + UInt64(info.kp_proc.p_starttime.tv_usec),
+            parentPID: info.kp_eproc.e_ppid
         )
     }
 

@@ -1434,6 +1434,60 @@ final class HeldComposerSeriesTests: XCTestCase {
 }
 
 final class MailboxNativeDoorbellTests: XCTestCase {
+    private func nativeProcess(_ parent: pid_t, start: UInt64, tty: dev_t = -1) -> MailboxAgentForeground.ProcessTerminalInfo {
+        .init(processGroup: 10, terminalForegroundGroup: 10, terminalDevice: tty,
+              isZombie: false, startTime: start, parentPID: parent)
+    }
+
+    func testNativeSubscriberAcceptsDetachedDescendantWithoutTTY() {
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(10, start: 200),
+            30: nativeProcess(20, start: 300)
+        ]
+        // The kernel peer is the no-TTY hook's child; agent_pid names its
+        // foreground harness. The direct in-process Pi listener also works.
+        for (pid, start): (pid_t, UInt64) in [(30, 300), (10, 100)] {
+            XCTAssertEqual(MailboxNativeDoorbell.verifiedAgent(peer: .init(pid: pid, startTime: start),
+                agentPID: 10, readProcess: { processes[$0] }), processes[10])
+        }
+    }
+
+    func testNativeSubscriberRejectsUnrelatedCallerEvenOnSameTTY() {
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(1, start: 200, tty: 7)
+        ]
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: .init(pid: 20, startTime: 200),
+            agentPID: 10, readProcess: { processes[$0] }))
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: nil,
+            agentPID: 10, readProcess: { processes[$0] }))
+    }
+
+    func testNativeSubscriberRejectsReusedProcessIdentities() {
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(10, start: 200),
+            30: nativeProcess(20, start: 300)
+        ]
+        let peer = MailboxStdinBuffer.AgentProcess(pid: 30, startTime: 300)
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: .init(pid: 30, startTime: 299),
+            agentPID: 10, readProcess: { processes[$0] }), "peer replaced since socket acceptance")
+        var replacedParent = processes
+        replacedParent[20] = nativeProcess(10, start: 400)
+        XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: 10,
+            readProcess: { replacedParent[$0] }), "replacement parent cannot be younger than child")
+        for changedPID: pid_t in [10, 20, 30] {
+            var reads: [pid_t: Int] = [:]
+            XCTAssertNil(MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: 10, readProcess: { pid in
+                reads[pid, default: 0] += 1
+                guard var info = processes[pid] else { return nil }
+                if pid == changedPID && reads[pid, default: 0] > 1 { info.startTime += 1 }
+                return info
+            }), "PID \(changedPID) changed identity during ancestry walk")
+        }
+    }
+
     private func registration(panel: UUID = UUID(), pid: pid_t = 123, start: UInt64 = 456) -> MailboxNativeDoorbell.Registration {
         .init(id: UUID(), panelID: panel, agentPID: pid, processStart: start,
               sessionID: UUID().uuidString, route: .piExtension, canQueue: false)

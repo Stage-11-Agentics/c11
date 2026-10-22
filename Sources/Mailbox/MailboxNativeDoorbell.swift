@@ -26,6 +26,43 @@ final class MailboxNativeDoorbell {
         }
     }
     enum Result: Equatable { case accepted(late: Bool), failed(String) }
+
+    /// The peer identity is captured from the accepted socket, never JSON.
+    /// A hook may have detached from the terminal while remaining a descendant
+    /// of the interactive harness. Only the harness must own that terminal.
+    static func verifiedAgent(
+        peer: MailboxStdinBuffer.AgentProcess?,
+        agentPID: pid_t,
+        readProcess: (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? = MailboxAgentForeground.processTerminalInfo
+    ) -> MailboxAgentForeground.ProcessTerminalInfo? {
+        guard let peer, let peerStart = peer.startTime, peerStart > 0,
+              let agent = readProcess(agentPID), agent.startTime > 0,
+              !agent.isZombie, agent.terminalDevice != -1,
+              agent.processGroup > 0, agent.processGroup == agent.terminalForegroundGroup,
+              let first = readProcess(peer.pid), first.startTime == peerStart else { return nil }
+        var chain: [(pid_t, MailboxAgentForeground.ProcessTerminalInfo)] = []
+        var seen: Set<pid_t> = []
+        var pid = peer.pid
+        var process = first
+        for _ in 0..<128 {
+            guard pid > 1, !process.isZombie, process.startTime > 0,
+                  seen.insert(pid).inserted else { return nil }
+            chain.append((pid, process))
+            if pid == agentPID {
+                guard process == agent else { return nil }
+                // Re-read every edge: an exit, reparent or PID replacement
+                // during the walk must not authenticate a different process.
+                guard chain.allSatisfy({ readProcess($0.0) == $0.1 }) else { return nil }
+                return agent
+            }
+            guard let parent = readProcess(process.parentPID),
+                  parent.startTime <= process.startTime else { return nil }
+            pid = process.parentPID
+            process = parent
+        }
+        return nil
+    }
+
     private struct Pending {
         let reply: (Result) -> Void
         var failed = false
@@ -125,17 +162,14 @@ extension TerminalController {
     /// before this function. A registration is usable only while Workspace's
     /// live process/start-time/foreground checks match it.
     nonisolated func v2StreamNativeMailbox(id: Any?, params: [String: Any], socket: Int32,
-                                          callerTTYDevice: UInt32?, shouldContinue: () -> Bool) {
+                                          peer: MailboxStdinBuffer.AgentProcess?, shouldContinue: () -> Bool) {
         guard let rawPanel = params["panel_id"] as? String, let panelID = UUID(uuidString: rawPanel),
               let pidNumber = params["agent_pid"] as? NSNumber,
               pidNumber.doubleValue.rounded() == pidNumber.doubleValue,
               pidNumber.int64Value > 1, pidNumber.int64Value <= Int64(Int32.max),
               let sessionID = params["session_id"] as? String, !sessionID.isEmpty, sessionID.utf8.count <= 256,
               let rawRoute = params["route"] as? String, let route = MailboxNativeDoorbell.Route(rawValue: rawRoute), route != .typed,
-              let process = MailboxAgentForeground.processTerminalInfo(pid: pidNumber.int32Value),
-              !process.isZombie, process.terminalDevice != -1,
-              process.processGroup == process.terminalForegroundGroup,
-              let callerTTYDevice, UInt32(bitPattern: process.terminalDevice) == callerTTYDevice else {
+              let process = MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: pidNumber.int32Value) else {
             _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
             return
         }

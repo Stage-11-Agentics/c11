@@ -178,6 +178,12 @@ final class CodexThreadTracker {
                         switchesInFlight: switches)
     }
 
+    /// Whether the TUI's connection was told this turn started.
+    func shown(turn: String) -> Bool {
+        condition.lock(); defer { condition.unlock() }
+        return started.contains { $0.turn == turn }
+    }
+
     /// Waits for a turn on `thread` that reached the TUI at or after `since`.
     func waitForTurn(thread: String, since: TimeInterval, until deadline: TimeInterval) -> Bool {
         condition.lock(); defer { condition.unlock() }
@@ -401,41 +407,121 @@ private final class CodexMailboxProxy {
         guard snapshot.idle else { return finish(.rejected("thread_not_idle"), "thread_not_idle") }
         // A thread's first turn can reach the TUI many seconds after it starts.
         guard snapshot.warm else { return finish(.rejected("thread_not_warm"), "thread_not_warm") }
-        guard let rpc = CodexRPCClient(path: upstream, deadline: start + 0.5) else {
+        guard var rpc = CodexRPCClient(path: upstream, deadline: start + 0.5) else {
             return finish(.rejected("upstream_unavailable"), "upstream_unavailable")
         }
         defer { rpc.close() }
         let clientID = UUID().uuidString
         let input: [[String: Any]] = [["type": "text", "text": CodexMailboxProxyCommand.invitation, "text_elements": []]]
-        guard let added = rpc.call("thread/queue/add", ["threadId": thread, "clientUserMessageId": clientID, "input": input],
-                                   deadline: start + 0.8),
-              let submission = (added["queuedSubmission"] as? [String: Any])?["id"] as? String else {
-            return finish(.rejected("queue_error"), "queue_error")
+        guard let addID = rpc.send("thread/queue/add", ["threadId": thread, "clientUserMessageId": clientID, "input": input]) else {
+            return finish(.rejected("upstream_unavailable"), "upstream_unavailable")
         }
-        let seen = tracker.waitForTurn(thread: thread, since: start, until: start + 1.5)
-        let queued = rpc.call("thread/queue/list", ["threadId": thread], deadline: uptime + 0.3)
-        let stillQueued = queued.map { (($0["data"] as? [[String: Any]]) ?? []).contains { $0["id"] as? String == submission } }
-        if seen, stillQueued == false {
-            return finish(.accepted, "accepted", ["thread": thread])
-        }
-        if stillQueued != false {
-            let removed = rpc.call("thread/queue/delete", ["threadId": thread, "queuedSubmissionId": submission], deadline: uptime + 0.3)
-            if removed?["deleted"] as? Bool == true {
-                return finish(.rejected(seen ? "busy_race" : "unconfirmed_withdrawn"), seen ? "busy_race" : "unconfirmed_withdrawn")
+        // From here the submission may exist even without a reply. Switches stay
+        // held until it is confirmed on screen, withdrawn, stopped, or proven
+        // never to have run; only a definite add error counts as nothing sent.
+        var submission: String?
+        var addPending = true
+        func readAdd(_ reply: CodexRPCClient.Reply) -> Bool {
+            switch reply {
+            case .result(let added):
+                submission = (added["queuedSubmission"] as? [String: Any])?["id"] as? String
+                addPending = false
+            case .error: return false
+            case .closed: addPending = false
+            case .pending: break
             }
+            return true
         }
-        // Consumed but not seen by the TUI: stop it before a thread switch can
-        // leave it running unwatched. Switches stay held until this returns.
-        let turns = rpc.call("thread/turns/list", ["threadId": thread, "limit": 1, "cursor": NSNull(),
-                                                   "sortDirection": NSNull(), "itemsView": NSNull()], deadline: uptime + 0.5)
-        let turn = ((turns?["data"] as? [[String: Any]]) ?? []).first { turn in
-            ((turn["items"] as? [[String: Any]]) ?? []).contains { $0["clientId"] as? String == clientID }
+        guard readAdd(rpc.reply(to: addID, deadline: start + 0.8)) else { return finish(.rejected("queue_error"), "queue_error") }
+        _ = tracker.waitForTurn(thread: thread, since: start, until: start + 1.5)
+        // The app hands a ring to the typed gate after two seconds; an answer
+        // later than that would arrive after the typed doorbell.
+        func settle(_ result: RingResult, _ reason: String, _ extra: [String: Any] = [:]) -> RingResult {
+            var extra = extra
+            if result != .ambiguous, uptime - start > 1.7 { extra["late"] = true; return finish(.ambiguous, reason, extra) }
+            return finish(result, reason, extra)
         }
-        var interrupted = false
-        if let turnID = turn?["id"] as? String {
-            interrupted = rpc.call("turn/interrupt", ["threadId": thread, "turnId": turnID], deadline: uptime + 0.5) != nil
+        var attempts = 0
+        var idleSince: TimeInterval?
+        while options.agentAlive, tracker.snapshot().connected {
+            attempts += 1
+            if !rpc.isOpen {
+                addPending = false
+                guard let fresh = CodexRPCClient(path: upstream, deadline: uptime + 0.5) else {
+                    Thread.sleep(forTimeInterval: min(0.1 * Double(attempts), 1)); continue
+                }
+                rpc = fresh
+            }
+            if addPending, !readAdd(rpc.reply(to: addID, deadline: uptime + 0.2)) {
+                return settle(.rejected("queue_error"), "queue_error", ["attempts": attempts])
+            }
+            let seen = tracker.waitForTurn(thread: thread, since: start, until: uptime)
+            switch queued(rpc, thread: thread, submission: submission, clientID: clientID) {
+            case .present(let id):
+                idleSince = nil
+                if rpc.call("thread/queue/delete", ["threadId": thread, "queuedSubmissionId": id], deadline: uptime + 0.3)?["deleted"] as? Bool == true {
+                    let reason = seen ? "busy_race" : "unconfirmed_withdrawn"
+                    return settle(.rejected(reason), reason, ["attempts": attempts])
+                }
+            case .absent where !addPending:
+                if seen { return settle(.accepted, "accepted", ["thread": thread, "attempts": attempts]) }
+                // Consumed but not seen by the TUI: stop it before a thread
+                // switch can leave it running unwatched.
+                switch running(rpc, thread: thread, clientID: clientID) {
+                case .unknown:
+                    idleSince = nil
+                case .running(let turn):
+                    idleSince = nil
+                    if rpc.call("turn/interrupt", ["threadId": thread, "turnId": turn], deadline: uptime + 0.5) != nil {
+                        return settle(.ambiguous, "unconfirmed_interrupted", ["interrupted": true, "attempts": attempts])
+                    }
+                case .stopped:
+                    // Queue and turn list can lag each other; look twice.
+                    if let idleSince, uptime - idleSince >= 0.3 {
+                        return settle(.ambiguous, "unconfirmed_not_running", ["attempts": attempts])
+                    }
+                    if idleSince == nil { idleSince = uptime }
+                }
+            case .absent, .unknown:
+                idleSince = nil
+            }
+            if attempts == 1 { log.write(["event": "ring_reconcile", "ms": Int((uptime - start) * 1000)]) }
+            Thread.sleep(forTimeInterval: min(0.1 * Double(attempts), 1))
         }
-        return finish(.ambiguous, "unconfirmed_interrupted", ["interrupted": interrupted])
+        return finish(.ambiguous, "tui_gone", ["attempts": attempts])
+    }
+
+    private enum Queued { case present(String), absent, unknown }
+
+    /// Whether this ring's submission is still queued. An unreadable list is unknown.
+    private func queued(_ rpc: CodexRPCClient, thread: String, submission: String?, clientID: String) -> Queued {
+        guard let list = rpc.call("thread/queue/list", ["threadId": thread], deadline: uptime + 0.3),
+              let rows = (list["data"] ?? list["queuedSubmissions"]) as? [[String: Any]] else { return .unknown }
+        let row = rows.first { row in
+            (submission != nil && row["id"] as? String == submission) || row["clientUserMessageId"] as? String == clientID
+        }
+        guard let row else { return .absent }
+        return (row["id"] as? String).map { .present($0) } ?? .unknown
+    }
+
+    private enum Running { case running(String), stopped, unknown }
+
+    /// The turn this ring's submission started, if it is still running. A turn
+    /// row names its user message's `clientId`; when the list omits items, an
+    /// in-progress turn the TUI was never shown is taken to be this ring's.
+    private func running(_ rpc: CodexRPCClient, thread: String, clientID: String) -> Running {
+        guard let list = rpc.call("thread/turns/list", ["threadId": thread, "limit": 5, "cursor": NSNull(),
+                                                        "sortDirection": NSNull(), "itemsView": NSNull()], deadline: uptime + 0.5),
+              let rows = list["data"] as? [[String: Any]] else { return .unknown }
+        for row in rows {
+            guard let id = row["id"] as? String, let status = row["status"] as? String else { return .unknown }
+            if let items = row["items"] as? [[String: Any]] {
+                guard items.contains(where: { $0["clientId"] as? String == clientID }) else { continue }
+                return status == "inProgress" ? .running(id) : .stopped
+            }
+            if status == "inProgress", !tracker.shown(turn: id) { return .running(id) }
+        }
+        return .stopped
     }
 }
 
@@ -576,9 +662,13 @@ struct CodexWebSocketParser {
 
 /// One short-lived app-server connection for a ring.
 private final class CodexRPCClient {
+    enum Reply { case result([String: Any]), error, pending, closed }
+
     private var fd: Int32
     private var parser = CodexWebSocketParser(masked: false)
     private var next = 0
+    /// Replies that arrived while another request was awaited.
+    private var replies: [String: [String: Any]] = [:]
 
     init?(path: String, deadline: TimeInterval) {
         guard let descriptor = CodexProxySocket.connect(path) else { return nil }
@@ -602,6 +692,8 @@ private final class CodexRPCClient {
 
     func close() { if fd >= 0 { Darwin.close(fd); fd = -1 } }
 
+    var isOpen: Bool { fd >= 0 }
+
     private func send(_ object: [String: Any]) -> Bool {
         guard fd >= 0, let data = try? JSONSerialization.data(withJSONObject: object) else { return false }
         return CodexProxySocket.writeAll(fd, CodexWebSocketParser.encodeClientText(data))
@@ -613,24 +705,40 @@ private final class CodexRPCClient {
         guard fd >= 0, remaining > 0, poll(&descriptor, 1, Int32((remaining * 1000).rounded(.up))) > 0 else { return nil }
         var buffer = [UInt8](repeating: 0, count: 65536)
         let count = read(fd, &buffer, buffer.count)
-        guard count > 0 else { return nil }
+        guard count > 0 else { close(); return nil }
         return parser.feed(buffer[..<count])
+    }
+
+    /// Sends a request and returns its id, or nil when nothing was written.
+    func send(_ method: String, _ params: [String: Any]) -> String? {
+        next += 1
+        let id = "c11-\(next)"
+        return send(["id": id, "method": method, "params": params]) ? id : nil
+    }
+
+    /// The reply to `id`. `pending` means it has not arrived by the deadline,
+    /// which says nothing about whether the server acted on the request.
+    func reply(to id: String, deadline: TimeInterval) -> Reply {
+        while true {
+            if let message = replies.removeValue(forKey: id) {
+                if let result = message["result"] as? [String: Any] { return .result(result) }
+                return message["error"] != nil ? .error : .result([:])
+            }
+            guard fd >= 0 else { return .closed }
+            guard let chunks = receive(deadline: deadline) else { return fd >= 0 ? .pending : .closed }
+            for chunk in chunks {
+                guard let data = chunk.message,
+                      let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let key = message["id"] as? String, message["method"] == nil else { continue }
+                replies[key] = message
+            }
+        }
     }
 
     /// The result object, or nil for an error, a closed connection or the deadline.
     func call(_ method: String, _ params: [String: Any], deadline: TimeInterval) -> [String: Any]? {
-        next += 1
-        let id = "c11-\(next)"
-        guard send(["id": id, "method": method, "params": params]) else { return nil }
-        while let chunks = receive(deadline: deadline) {
-            for chunk in chunks {
-                guard let data = chunk.message,
-                      let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      message["id"] as? String == id else { continue }
-                return message["result"] as? [String: Any]
-            }
-        }
-        return nil
+        guard let id = send(method, params), case .result(let result) = reply(to: id, deadline: deadline) else { return nil }
+        return result
     }
 }
 

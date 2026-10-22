@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 import shlex
 import subprocess
@@ -230,8 +231,9 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         assert row.get('route') == 'typed' and row.get('native_route') == 'codex_queue' and row.get('native_failure'), row
         note('C_cold_typed', dict(row=row, proxy=[r for r in proxy_log() if r.get('event') == 'ring'][-1]))
 
-        # D. Relay killed under a live TUI: c11 logs the lost route.
-        killed_pid = max(pid for pid, cmd in processes() if 'codex-mailbox-proxy' in cmd)
+        # D. Relay killed under a live TUI: c11 logs the lost route. The native
+        # panel's relay (the older one) dies, so E resumes that thread after death.
+        killed_pid = min(pid for pid, cmd in processes() if 'codex-mailbox-proxy' in cmd)
         earlier = len([r for r in inspect(cold)['dispatch'] if r.get('event') == 'native_route_lost'])
         guest('import os,signal,sys;os.kill(int(sys.argv[1]),signal.SIGKILL)', killed_pid)
         lost = wait('native_route_lost logged', lambda: [r for r in inspect(cold)['dispatch'] if r.get('event') == 'native_route_lost'][earlier:], 15)
@@ -250,6 +252,31 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         assert submitted(native, fourth) is None, rows(native, fourth)
         note('E_exited', dict(rows=rows(native, fourth), screen=screen(native, 10)))
 
+        # E2. Run the reconnect command each exited TUI printed, exactly as offered:
+        # native after its relay was killed, cold after an ordinary exit.
+        offered_re = re.compile(r'codex --remote (unix:///tmp/c11-\d+/codex-\d+\.sock) resume ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
+        resumed = {}
+        for target, history in ((native, '• C11_READY_NEW_' + nonce), (cold, SHOWN)):
+            text = screen(target, 30)
+            match = offered_re.search(text) or offered_re.search(text.replace('\n', ''))
+            assert match, ('no reconnect command offered', target['label'], text)
+            offered, socket_url, thread = match.group(0), match.group(1), match.group(2)
+            old_socket = socket_url[len('unix://'):]
+            wait('old relay gone: ' + target['label'], lambda: not any(old_socket in cmd for _, cmd in processes())
+                 and guest('import os,sys;print("gone" if not os.path.exists(sys.argv[1]) else "")', old_socket), 15)
+            remote_before = remote_pids()
+            c11('send', '--workspace', workspace, '--panel', target['panel'], offered)
+            wait('resumed composer: ' + target['label'], lambda: 'for shortcuts' in screen(target) or 'context left' in screen(target), 90)
+            wait('resumed history: ' + target['label'], lambda: history in screen(target, 200), 30)
+            fresh = [cmd for pid, cmd in processes() if pid in remote_pids() - remote_before]
+            assert fresh and all(old_socket not in cmd and ('resume ' + thread) in cmd for cmd in fresh), fresh
+            resumed[target['label']] = dict(offered=offered, thread=thread, history=history, launched=fresh)
+            for _ in range(2):
+                c11('send-key', '--workspace', workspace, '--panel', target['panel'], 'ctrl+c')
+                time.sleep(.5)
+            time.sleep(2)
+        note('E2_offered_resume', resumed)
+
         # F. Operator chose --no-daemon: no relay, typed delivery.
         remote_before = remote_pids()
         nodaemon = launch('nodaemon', prompt=False, shell_command='codex --no-daemon')
@@ -260,7 +287,7 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         note('F_no_daemon', row)
 
         observations['passed'] = True
-        print('PASS: setting off typed, native+draft, /new retarget, cold typed fallback, relay death logged, exited TUI, --no-daemon typed, tenant config unchanged')
+        print('PASS: setting off typed, native+draft, /new retarget, cold typed fallback, relay death logged, exited TUI, offered reconnect commands resume after death and exit, --no-daemon typed, tenant config unchanged')
     finally:
         setting(False)
         for target in targets:

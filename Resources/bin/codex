@@ -135,6 +135,23 @@ fi
 
 REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
 
+# A Codex TUI that ran through c11's native mail relay prints a reconnect
+# command naming that relay's socket, which retired with its process. Drop it
+# so the command resumes like `codex resume <id>`; any other `--remote` is the
+# operator's and stays.
+c11_retired_relay='^unix:///tmp/c11-[0-9]+/codex-[0-9]+\.sock$'
+c11_relay_args=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--remote" && $# -ge 2 && "$2" =~ $c11_retired_relay ]]; then
+        shift 2; continue
+    fi
+    if [[ "$1" == --remote=* && "${1#--remote=}" =~ $c11_retired_relay ]]; then
+        shift; continue
+    fi
+    c11_relay_args+=("$1"); shift
+done
+set -- ${c11_relay_args[@]+"${c11_relay_args[@]}"}
+
 # Pass through subcommands that aren't interactive sessions. `exec`,
 # `review`, `login`, `logout`, `mcp`, `completion`, `apply`, `sandbox`,
 # `debug`, `cloud`, `features`, `mcp-server`, `app-server`, `app`,
@@ -265,13 +282,23 @@ fi
 # TUI shows and queue the doorbell there alone. It writes only its socket and
 # log in a private /tmp/c11-<uid> directory. If it cannot start, or the
 # operator chose a transport (`--remote`, `--no-daemon`), Codex launches
-# exactly as without the setting.
+# exactly as without the setting. Codex runs no notify program for a
+# `--remote` TUI, so an operator `notify` override also keeps the default
+# transport, where that override still runs.
 codex_remote_args=()
 codex_native_mail_eligible() {
-    local arg
+    local arg config_next=0 notify_key='^[[:space:]]*notify[[:space:]]*='
     for arg in "$@"; do
+        if [[ "$config_next" == "1" ]]; then
+            config_next=0
+            [[ "$arg" =~ $notify_key ]] && return 1
+            continue
+        fi
         case "$arg" in
             --remote|--remote=*|--no-daemon) return 1 ;;
+            -c|--config) config_next=1 ;;
+            --config=*) [[ "${arg#--config=}" =~ $notify_key ]] && return 1 ;;
+            -c*) [[ "${arg#-c}" =~ $notify_key ]] && return 1 ;;
         esac
     done
     case "${1:-}" in

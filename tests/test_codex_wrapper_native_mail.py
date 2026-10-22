@@ -127,6 +127,43 @@ class WrapperTests(unittest.TestCase):
             self.assertFalse(any(c[:1] == ["codex-mailbox-proxy"] for c in calls), argv)
             self.assertEqual(launched.count("--remote"), argv.count("--remote") + 0, argv)
 
+    def test_explicit_notify_keeps_the_default_transport(self):
+        # Codex runs no notify program under --remote, so an operator override keeps the default transport.
+        for argv in (["-c", 'notify=["/tmp/review-custom-notify"]'], ["--config", "notify = []"],
+                     ['--config=notify=["/tmp/n"]'], ["-cnotify=[]"], ["resume", "--last", "-c", "notify=[]"]):
+            base, _, _, _ = self.run_wrapper(argv)
+            launched, calls, _, _ = self.run_wrapper(argv, native="1")
+            self.assertEqual(launched, base, argv)
+            self.assertNotIn("--remote", launched, argv)
+            self.assertFalse(any(c[:1] == ["codex-mailbox-proxy"] for c in calls), argv)
+        launched, _, _, _ = self.run_wrapper(["-c", 'model="o3"'], native="1")
+        self.assertIn("--remote", launched)
+
+    def test_retired_proxy_remote_starts_a_fresh_relay(self):
+        session = "01a162f5-08ef-75a0-9f33-75526786ad94"
+        retired = "unix:///tmp/c11-%d/codex-99999.sock" % os.getuid()
+        base, _, _, _ = self.run_wrapper(["resume", session])
+        for argv in (["--remote", retired, "resume", session], ["--remote=" + retired, "resume", session]):
+            on, calls, _, _ = self.run_wrapper(argv, native="1")
+            self.assertNotIn(retired, on, argv)
+            index = on.index("--remote")
+            self.assertEqual(on[:index] + on[index + 2:], base, argv)
+            self.assertRegex(on[index + 1], r"^unix:///tmp/c11-%d/codex-\d+\.sock$" % os.getuid())
+            proxy = next(c for c in calls if c[:1] == ["codex-mailbox-proxy"])
+            self.assertEqual(proxy[proxy.index("--listen") + 1], on[index + 1][len("unix://"):])
+            # The lifecycle claim sees the resume id, as for a plain `codex resume <id>`.
+            self.assertTrue(any(session in " ".join(c) for c in calls if c[:1] != ["codex-mailbox-proxy"]), calls)
+            off, _, _, _ = self.run_wrapper(argv)
+            self.assertEqual(off, base, argv)
+
+    def test_operator_remote_is_unchanged(self):
+        for argv in (["--remote", "ws://127.0.0.1:9", "resume", "--last"], ["--remote", "unix:///tmp/elsewhere.sock"]):
+            for native in (None, "1"):
+                launched, calls, _, _ = self.run_wrapper(argv, native=native)
+                self.assertEqual(launched.count("--remote"), 1, (argv, native))
+                self.assertEqual(launched[launched.index("--remote") + 1], argv[1])
+                self.assertFalse(any(c[:1] == ["codex-mailbox-proxy"] for c in calls), (argv, native))
+
     def test_relay_failure_launches_codex_unchanged(self):
         base, _, _, _ = self.run_wrapper([])
         for mode in ("fail", "hang"):

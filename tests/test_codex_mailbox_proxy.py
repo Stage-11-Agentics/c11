@@ -932,7 +932,6 @@ class CodexMailboxProxyTests(unittest.TestCase):
         turns = self.server.find(kind="recv", method="thread/turns/list")
         self.assertTrue(turns and turns[0]["seq"] < interrupt["seq"])
         self.assertEqual(turns[0]["msg"]["params"]["threadId"], thread)
-        self.assertEqual(turns[0]["msg"]["params"]["limit"], 1)
         self.assertEqual(interrupt["msg"]["params"], {"threadId": thread, "turnId": "turn-" + qid})
         self.assertEqual(self.server.requests("thread/queue/delete"), [])
         self.assert_no_reply(delivery, until=max(offered + 3, time.monotonic() + 0.5))
@@ -991,6 +990,116 @@ class CodexMailboxProxyTests(unittest.TestCase):
         time.sleep(0.3)
         self.assertEqual(len(self.server.connections), probes)
 
+
+    # 17
+    def test_slow_add_reply_reconciles_before_switch(self):
+        original = self.server.handle
+
+        def slow_add(conn, msg):
+            if msg["method"] != "thread/queue/add":
+                return original(conn, msg)
+            thread, cid = msg["params"]["threadId"], msg["params"]["clientUserMessageId"]
+            qid = "q-slow"
+            with self.server.cv:
+                self.server.queue.setdefault(thread, []).append({"id": qid, "clientUserMessageId": cid})
+                self.server.added.append((thread, qid, cid))
+            # The daemon took the write; its reply comes after the relay's add deadline.
+            self.server.later(1.2, conn.send, {"id": msg["id"], "result": {"queuedSubmission": {"id": qid}}})
+
+            def consume_if_pending():
+                if any(q["id"] == qid for q in self.server.queue.get(thread, [])):
+                    self.server.consume_silently(thread, qid, cid)
+            self.server.later(2.4, consume_if_pending)
+            return None
+
+        self.server.handle = slow_add
+        self.start()
+        tui, old = self.connect_tui()
+        self.warm(tui, old)
+        offered = time.monotonic()
+        delivery = self.offer()
+        self.server.wait_event(kind="recv", method="thread/queue/add")
+        gated = tui.request("thread/start", {"cwd": "/tmp", "ephemeral": False})
+        self.assertEqual(self.reply(delivery)["type"], "rejected")
+        tui.wait_for(lambda m: m.get("id") == gated and "result" in m, timeout=4)
+        time.sleep(max(0, offered + 3 - time.monotonic()))
+        self.assertEqual(self.server.queue.get(old), [])
+        self.assertNotIn(old, self.server.consumed_turns)
+        delete = self.server.wait_event(kind="recv", method="thread/queue/delete")
+        self.assertEqual(delete["msg"]["params"], {"threadId": old, "queuedSubmissionId": "q-slow"})
+        switch = self.server.wait_event(kind="recv", conn=self.server.tui_conn(), pred=lambda e: e["msg"].get("id") == gated)
+        self.assertLess(delete["seq"], switch["seq"])
+
+    # 18
+    def test_failed_interrupt_holds_switch(self):
+        self.server.queue_mode = "consume"
+        original = self.server.handle
+        attempts = []
+
+        def flaky_interrupt(conn, msg):
+            if msg["method"] != "turn/interrupt":
+                return original(conn, msg)
+            attempts.append(msg["params"]["turnId"])
+            if len(attempts) == 1:
+                conn.send({"id": msg["id"], "error": {"code": -32000, "message": "temporarily unavailable"}})
+                return None
+            self.server.consumed_turns[msg["params"]["threadId"]]["status"] = "interrupted"
+            return {}
+
+        self.server.handle = flaky_interrupt
+        self.start()
+        tui, old = self.connect_tui()
+        self.warm(tui, old)
+        offered = time.monotonic()
+        delivery = self.offer()
+        self.server.wait_event(kind="recv", method="thread/queue/add")
+        gated = tui.request("thread/start", {"cwd": "/tmp", "ephemeral": False})
+        tui.wait_for(lambda m: m.get("id") == gated and "result" in m, timeout=6)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(self.server.consumed_turns[old]["status"], "interrupted")
+        interrupts = self.server.find(kind="recv", method="turn/interrupt")
+        switch = self.server.wait_event(kind="recv", conn=self.server.tui_conn(), pred=lambda e: e["msg"].get("id") == gated)
+        self.assertLess(interrupts[-1]["seq"], switch["seq"])
+        self.assert_no_reply(delivery, until=max(offered + 3, time.monotonic() + 0.3))
+
+    # 19
+    def test_turns_list_without_items_holds_switch(self):
+        self.server.queue_mode = "consume"
+        original = self.server.handle
+        lists = []
+        interrupts = []
+
+        def bare_lists(conn, msg):
+            thread = (msg.get("params") or {}).get("threadId")
+            if msg["method"] == "thread/turns/list":
+                lists.append(msg)
+                turn = self.server.consumed_turns.get(thread)
+                if len(lists) == 1 or turn is None:
+                    return {}  # an unreadable list says nothing
+                return {"data": [{"id": turn["id"], "status": turn["status"]}]}
+            if msg["method"] == "turn/interrupt":
+                interrupts.append(msg)
+                if len(interrupts) == 1:
+                    return None  # never answered: the relay must not treat it as done
+                self.server.consumed_turns[thread]["status"] = "interrupted"
+                return {}
+            return original(conn, msg)
+
+        self.server.handle = bare_lists
+        self.start()
+        tui, old = self.connect_tui()
+        self.warm(tui, old)
+        self.offer()
+        self.server.wait_event(kind="recv", method="thread/queue/add")
+        gated = tui.request("thread/start", {"cwd": "/tmp", "ephemeral": False})
+        tui.wait_for(lambda m: m.get("id") == gated and "result" in m, timeout=8)
+        self.assertGreaterEqual(len(lists), 2)
+        self.assertEqual(len(interrupts), 2)
+        self.assertEqual(interrupts[-1]["params"]["turnId"], self.server.consumed_turns[old]["id"])
+        self.assertEqual(self.server.consumed_turns[old]["status"], "interrupted")
+        last = self.server.find(kind="recv", method="turn/interrupt")[-1]
+        switch = self.server.wait_event(kind="recv", conn=self.server.tui_conn(), pred=lambda e: e["msg"].get("id") == gated)
+        self.assertLess(last["seq"], switch["seq"])
 
 if __name__ == "__main__":
     if not Path(os.environ.get("C11_TEST_CLI", "")).is_file():

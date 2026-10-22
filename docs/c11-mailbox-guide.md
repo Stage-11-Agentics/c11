@@ -310,8 +310,10 @@ policy, and IO runs off the main thread. Established idle streams do not poll.
 A new subscriber replaces the previous listener for that panel, including an
 in-process listener replaced by a sidecar. The old stream receives
 `{type:"replaced"}` before closing and stops reconnecting. An explicit
-`ok:false` subscription reply also stops that subscriber; a new harness session
-can try again. Unexpected connection loss still retries with bounded backoff.
+`ok:false` subscription reply also stops that subscriber, except for the
+transient `not_ready` response during session restore, which retries. A new
+harness session can try again after other refusals. Unexpected connection loss
+still retries with bounded backoff.
 
 `_dispatch.log` names `route:"pi_extension"` or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and

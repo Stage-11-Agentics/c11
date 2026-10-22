@@ -68,6 +68,23 @@ test('explicit subscribe rejection stops reconnecting', { timeout: 5000 }, async
   assert.equal(f.subscriptions.length, 1);
 });
 
+test('not_ready retries after session restore and later delivers', { timeout: 5000 }, async t => {
+  const delivered = [];
+  const f = await fixture(t, (socket, frame, subscriptions) => {
+    if (frame.method !== 'mailbox.native.subscribe') return;
+    if (subscriptions.length === 1) {
+      send(socket, { ok: false, error: { code: 'not_ready' } });
+      return;
+    }
+    accept(socket);
+    send(socket, { type: 'deliver', delivery_id: 'after-restore', text: doorbellText });
+  });
+  f.subscribe('restoring', text => delivered.push(text));
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'after-restore'));
+  assert.equal(f.subscriptions.length, 2);
+  assert.deepEqual(delivered, [doorbellText]);
+});
+
 test('replacement retires the old consumer without a reconnect contest', { timeout: 5000 }, async t => {
   let active;
   let oldDeliveries = 0;

@@ -33,9 +33,9 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
         let frame;
         try { frame = JSON.parse(line); } catch { current.destroy(); return; }
         if (!registered) {
-          // An explicit refusal requires a new session/configuration, not a
-          // reconnect loop for the lifetime of this harness.
-          if (frame.ok === false) { stop(); return; }
+          // Session restore's not_ready is transient. Other explicit refusals
+          // require a new session/configuration instead of a reconnect loop.
+          if (frame.ok === false && frame.error?.code !== 'not_ready') { stop(); return; }
           if (!frame.ok || !frame.result?.subscription_id) { current.destroy(); return; }
           registered = true; failures = 0; current.setTimeout(0);
           continue;

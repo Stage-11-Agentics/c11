@@ -88,6 +88,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2BrowserFocusWebView(params: params))
         case "browser.is_webview_focused":
             return v2Result(id: id, self.v2BrowserIsWebViewFocused(params: params))
+        case "browser.keep_live":
+            return v2Result(id: id, self.v2BrowserKeepLive(params: params))
         case "browser.get.title":
             return v2Result(id: id, self.v2BrowserGetTitle(params: params))
         case "browser.frame.main":

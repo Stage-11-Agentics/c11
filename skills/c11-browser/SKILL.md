@@ -99,6 +99,18 @@ c11 browser <panel> wait --load-state complete --timeout-ms 15000
 c11 browser <panel> wait --function "document.readyState === 'complete'" --timeout-ms 10000
 ```
 
+## Keep a Background Tab Running
+
+A browser panel in a hidden workspace is hidden to WebKit: `document.hidden` is true, timers and media are throttled, and the page may not render. To prove a poller, timer, video or rAF feature without showing the workspace, turn keep-live on for that panel:
+
+```bash
+c11 browser <panel> keep-live on      # page reports visibilityState "visible"; timers, media and snapshots keep working
+c11 browser <panel> keep-live status  # on | off
+c11 browser <panel> keep-live off     # normal throttling returns
+```
+
+Socket: `browser.keep_live` with `panel_id` and optional `enabled` (omit to read). It never selects a workspace, moves focus or reorders windows. Keep-live is off by default, is not saved across a c11 restart, and costs the CPU and memory of a visible tab, so turn it off when the check is done. It works while the c11 window itself is on screen; a minimized or fully covered window throttles every page, kept live or not. Verify with `c11 browser <panel> eval "document.visibilityState"`.
+
 ## Common Flows
 
 ### Form Submit

@@ -233,6 +233,7 @@ extension TerminalController {
             "browser.is.checked",
             "browser.focus_webview",
             "browser.is_webview_focused",
+            "browser.keep_live",
             "browser.find.role",
             "browser.find.text",
             "browser.find.label",

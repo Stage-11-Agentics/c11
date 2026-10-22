@@ -2372,7 +2372,24 @@ final class BrowserPanel: Panel, ObservableObject {
     let sticksAsPreferred: Bool
 
     /// The underlying web view
-    private(set) var webView: WKWebView
+    private(set) var webView: WKWebView {
+        didSet {
+            // C11-324: a replaced web view (crash recovery, hibernate resume) inherits keep-live.
+            guard oldValue !== webView else { return }
+            oldValue.isKeepLive = false
+            webView.isKeepLive = keepLive
+        }
+    }
+
+    /// C11-324: keep this page running while its workspace is hidden (visibilityState
+    /// stays "visible"; timers, media and snapshots keep working). Off by default and
+    /// not persisted; the operator-visible workspace, focus and selection never change.
+    private(set) var keepLive = false
+
+    func setKeepLive(_ enabled: Bool) {
+        keepLive = enabled
+        BrowserWindowPortalRegistry.setKeepLive(for: webView, enabled: enabled)
+    }
     private var websiteDataStore: WKWebsiteDataStore
 
     /// Monotonic identity for the current WKWebView instance.
@@ -3996,6 +4013,12 @@ final class BrowserPanel: Panel, ObservableObject {
 
     func close() {
         prepareForHostTeardown()
+        if keepLive {
+            // C11-324: a parked keep-live slot must not outlive its panel.
+            keepLive = false
+            webView.isKeepLive = false
+            BrowserWindowPortalRegistry.detach(webView: webView)
+        }
         preferredDeveloperToolsVisible = false
         // Ensure we don't keep a hidden WKWebView (or its content view) as first responder while
         // bonsplit/SwiftUI reshuffles views during close.

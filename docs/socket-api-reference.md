@@ -221,6 +221,7 @@ Dotted v2 methods, grouped by domain. Method names are stable identifiers; argum
 - `browser.is.enabled`
 - `browser.is.visible`
 - `browser.is_webview_focused`
+- `browser.keep_live`
 - `browser.keydown`
 - `browser.keyup`
 - `browser.navigate`

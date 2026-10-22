@@ -2569,6 +2569,9 @@ class TerminalController {
         // Resize dimensions are validated on the worker; live window resolution
         // and the bounded AppKit frame operation share one main-actor hop.
         "window.resize",
+        // C11-468: store read and transcript stats off-main; one main hop
+        // decides and schedules the typing.
+        "conversation.resume",
         "panel.send_text",
         "panel.send_key",
         "panel.read_text",

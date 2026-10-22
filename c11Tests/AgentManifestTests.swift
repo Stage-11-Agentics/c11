@@ -258,7 +258,6 @@ final class AgentAutoApproveCoverageTests: XCTestCase {
         let id = Self.resumableIDs["codex"]!
         let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
             mode: .clean,
-            auditComplete: true,
             ownership: .unique,
             kind: "codex",
             id: id,

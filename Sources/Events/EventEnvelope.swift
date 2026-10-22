@@ -104,6 +104,7 @@ struct EventEnvelope {
         case mailboxDelivered = "mailbox.delivered"
         case conversationResumeMode = "conversation.resume.mode"
         case conversationResumeDecision = "conversation.resume.decision"
+        case conversationStartupAudit = "conversation.startup_audit"
         case hangPrecursor = "hang.precursor"
         case askOpened = "ask.opened"
         case askClosed = "ask.closed"

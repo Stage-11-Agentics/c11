@@ -297,6 +297,13 @@ protocol ConversationFilesystem: Sendable {
         trailingID: String
     ) -> Bool
 
+    /// Every session filename under `root` (names only), for answering many
+    /// exact-id lookups from one walk.
+    func sessionFileNamesRecursively(
+        _ root: URL,
+        extensionFilter: String
+    ) -> [String]
+
     /// Stat-only existence check for a single path. Used by crash-recovery
     /// transcript verification (`ClaudeCodeStrategy.transcriptExists`).
     /// Never opens the file — honors the scrape privacy contract.
@@ -318,6 +325,14 @@ protocol ConversationFilesystem: Sendable {
 }
 
 extension ConversationFilesystem {
+    func sessionFileNamesRecursively(
+        _ root: URL,
+        extensionFilter: String
+    ) -> [String] {
+        listSessionsRecursivelyByMtime(root, extensionFilter: extensionFilter, max: Int.max)
+            .map(\.fileName)
+    }
+
     func containsSessionRecursively(
         _ root: URL,
         extensionFilter: String,
@@ -335,6 +350,45 @@ extension ConversationFilesystem {
     /// means a filesystem that opts out of head reads degrades to the prior
     /// no-cwd-recovery behaviour (candidate `cwd == nil`), never worse.
     func readSessionHead(atPath path: String, maxBytes: Int) -> String? { nil }
+}
+
+/// Answers every exact-id lookup under one root from a single filename walk,
+/// so a dirty launch walks `~/.codex/sessions` once rather than once per ref.
+/// Lives for one classification pass; everything else forwards to `base`.
+final class SessionNameIndexFilesystem: ConversationFilesystem, @unchecked Sendable {
+    private let base: ConversationFilesystem
+    private let lock = NSLock()
+    private var namesByRoot: [String: [String]] = [:]
+
+    init(base: ConversationFilesystem) {
+        self.base = base
+    }
+
+    var homeDirectory: URL? { base.homeDirectory }
+
+    func listDirectoryByMtime(_ directory: URL, max: Int) -> [ConversationFilesystemEntry] {
+        base.listDirectoryByMtime(directory, max: max)
+    }
+
+    func listSessionsRecursivelyByMtime(_ root: URL, extensionFilter: String, max: Int) -> [ConversationFilesystemEntry] {
+        base.listSessionsRecursivelyByMtime(root, extensionFilter: extensionFilter, max: max)
+    }
+
+    func containsSessionRecursively(_ root: URL, extensionFilter: String, trailingID: String) -> Bool {
+        let key = "\(root.standardizedFileURL.path)|\(extensionFilter)"
+        lock.lock()
+        defer { lock.unlock() }
+        let names = namesByRoot[key] ?? base.sessionFileNamesRecursively(root, extensionFilter: extensionFilter)
+        namesByRoot[key] = names
+        let suffix = "\(trailingID).\(extensionFilter)"
+        return names.contains { $0.hasSuffix(suffix) }
+    }
+
+    func fileExists(atPath path: String) -> Bool { base.fileExists(atPath: path) }
+
+    func readSessionHead(atPath path: String, maxBytes: Int) -> String? {
+        base.readSessionHead(atPath: path, maxBytes: maxBytes)
+    }
 }
 
 struct ConversationFilesystemEntry: Sendable, Equatable {
@@ -385,6 +439,25 @@ struct DefaultConversationFilesystem: ConversationFilesystem {
             }
         }
         return false
+    }
+
+    func sessionFileNamesRecursively(
+        _ root: URL,
+        extensionFilter: String
+    ) -> [String] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        let suffix = ".\(extensionFilter)"
+        var names: [String] = []
+        for case let url as URL in enumerator where url.lastPathComponent.hasSuffix(suffix) {
+            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                names.append(url.lastPathComponent)
+            }
+        }
+        return names
     }
 
     /// Bounded head read: opens the file, reads at most `maxBytes`, and

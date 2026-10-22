@@ -222,29 +222,6 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         }
     }
 
-    func testStartupTimeoutDurablyFailsClosedAcrossThirtyTwoRefs() async {
-        let store = ConversationStore()
-        for index in 0..<32 {
-            _ = await store.captureRuntimeEnv(
-                surfaceId: "S\(index)",
-                id: String(format: "%08x-2222-3333-4444-555566667777", index),
-                cwd: "/work/\(index)"
-            )
-        }
-        let gate = ResumeStartupEpochGate()
-        let token = gate.begin(mode: .clean)
-        XCTAssertTrue(gate.markFailed(token, reason: "startup audit timeout"))
-        await store.markAllUnknown(reason: "startup audit failed: timeout")
-
-        let refs = await store.snapshot().values.compactMap(\.active)
-        XCTAssertEqual(refs.count, 32)
-        XCTAssertTrue(refs.allSatisfy { $0.state == .unknown })
-        XCTAssertTrue(refs.allSatisfy {
-            $0.diagnosticReason == "startup audit failed: timeout"
-        })
-        XCTAssertFalse(gate.snapshot().auditComplete)
-    }
-
     // MARK: - resume: suspended is resumable, unknown/tombstoned skip
 
     func testResumeEmitsTypeCommandForSuspended() {

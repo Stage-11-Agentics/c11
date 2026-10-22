@@ -397,8 +397,7 @@ extension Workspace {
         // state, not a full rollback. Removed in 0.46.0 / v1.1 alongside
         // the legacy claude.session_id metadata bridge.
         if ConversationStorePolicy.isDisabled {
-            let startup = ResumeStartupEpochGate.shared.snapshot()
-            if startup.auditComplete, startup.mode != .noResume {
+            if StartupConversationAudit.shared.mode != .noResume {
                 scheduleAgentRestartLegacy(
                     from: snapshot,
                     registry: .phase1
@@ -470,108 +469,108 @@ extension Workspace {
     nonisolated static func readConversationsByPanelIdSync(
         timeout: TimeInterval = 2.0
     ) -> [String: PanelConversations] {
+        readConversationsByPanelIdSyncIfCompleted(timeout: timeout) ?? [:]
+    }
+
+    /// The same read, but nil when it did not complete in time. A caller that
+    /// persists the result must skip the write on nil: an empty map would
+    /// erase every panel's ref (C11-468).
+    nonisolated static func readConversationsByPanelIdSyncIfCompleted(
+        timeout: TimeInterval = 2.0
+    ) -> [String: PanelConversations]? {
         guard !ConversationStorePolicy.isDisabled else { return [:] }
-        let sema = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var captured: [String: PanelConversations] = [:]
-        Task.detached(priority: .userInitiated) {
-            captured = await ConversationStore.shared.snapshot()
-            sema.signal()
+        let outcome = BoundedLifecycleWait.run(timeout: timeout) {
+            // Never hand a persistence boundary an unseeded store.
+            await StartupConversationAudit.shared.awaitSeeded()
+            return await ConversationStore.shared.snapshot()
         }
-        _ = sema.wait(timeout: .now() + timeout)
-        return captured
+        guard case .completed(let conversations) = outcome else { return nil }
+        return conversations
+    }
+
+    typealias RestartCommand = (panelId: UUID, action: ResumeAction, conversation: ConversationRef)
+
+    /// Restore planning for one workspace: the resume commands to stagger now,
+    /// and the panels whose skip may still turn into a command once their
+    /// kind's startup scrape lands.
+    struct RestartPlan {
+        var commands: [RestartCommand] = []
+        var awaitingScrape: [UUID] = []
     }
 
     /// C11-24: collect ResumeActions for terminal panels by consulting the
-    /// `ConversationStore`. Reads via the strategy registry: each panel's
-    /// active ref is handed to its strategy's `resume(ref:)`; the action
-    /// is then executed via `execute(_:on:panelMap:)`.
+    /// `ConversationStore`. Each panel's active ref goes through the shared
+    /// `ResumeDecisionEngine`; every decided panel emits one
+    /// `conversation.resume.decision` and records its launch outcome.
     ///
     /// Internal (not private) so unit tests can exercise it without going
     /// through the full live workspace restore path.
     func pendingRestartPlans(
         from snapshot: SessionWorkspaceSnapshot,
         registry: ConversationStrategyRegistry,
-        startup: ResumeStartupEpochGate.Snapshot? = nil
-    ) -> [(panelId: UUID, action: ResumeAction, conversation: ConversationRef)] {
-        guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return [] }
-        let startup = startup ?? ResumeStartupEpochGate.shared.snapshot()
-        var result: [(panelId: UUID, action: ResumeAction, conversation: ConversationRef)] = []
-        // C11-24: bulk-read the actor via the shared sync helper. The
-        // previous inline `Task { ... }` deadlocked from `@MainActor`
-        // contexts because the unstructured Task inherited that
-        // isolation and could not run while main was blocked on the
-        // semaphore. `readConversationsByPanelIdSync` uses
-        // `Task.detached` to break the inheritance.
-        let storeSnapshot = Workspace.readConversationsByPanelIdSync(timeout: 1.0)
+        mode: ResumeRecoveryMode? = nil,
+        conversations: [String: PanelConversations]? = nil
+    ) -> [RestartCommand] {
+        restartPlan(
+            from: snapshot,
+            registry: registry,
+            mode: mode ?? StartupConversationAudit.shared.mode,
+            conversations: conversations ?? Workspace.readConversationsByPanelIdSync(timeout: 1.0)
+        ).commands
+    }
+
+    /// `awaitingScrape` names the panels whose ref still depends on a startup
+    /// scrape. Their decision is held, not emitted, until the scrape settles
+    /// (`resumeAfterStartupScrape`).
+    func restartPlan(
+        from snapshot: SessionWorkspaceSnapshot,
+        registry: ConversationStrategyRegistry,
+        mode: ResumeRecoveryMode,
+        conversations: [String: PanelConversations],
+        awaitingScrape: Set<String> = []
+    ) -> RestartPlan {
+        guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return RestartPlan() }
+        var plan = RestartPlan()
         for panelSnapshot in snapshot.panels {
             guard panelSnapshot.type == .terminal else { continue }
             let key = panelSnapshot.id.uuidString
-            guard let surface = storeSnapshot[key], let ref = surface.active else {
+            // A placeholder or inferred ref is decided once its scrape lands:
+            // the scrape may replace a stale inferred id or prove ambiguity.
+            if awaitingScrape.contains(key) {
+                plan.awaitingScrape.append(panelSnapshot.id)
+                launchResumeOutcomes[panelSnapshot.id] = .awaitingScrape
+                continue
+            }
+            guard let ref = conversations[key]?.active else {
                 let persistedRef = panelSnapshot.surfaceConversations?.active
                 let metadataKind = Self.stringValues(from: panelSnapshot.metadata)[
                     PanelMetadataKeyName.terminalType
                 ]?.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let kind = persistedRef?.kind ?? metadataKind,
-                   !kind.isEmpty,
-                   registry.contains(kind: kind) {
-                    EventEmitter.shared.emitConversationResumeDecision(
-                        workspace: id,
-                        surface: panelSnapshot.id,
-                        kind: kind,
-                        conversationId: persistedRef?.id,
-                        mode: startup.mode,
-                        decision: .skip(
-                            code: .conversationUnavailable,
-                            reason: "no active conversation in restore store"
-                        )
-                    )
-                }
-                continue
-            }
-            guard let strategy = registry.strategy(forKind: ref.kind) else {
-                EventEmitter.shared.emitConversationResumeDecision(
-                    workspace: id,
-                    surface: panelSnapshot.id,
-                    kind: ref.kind,
-                    conversationId: ref.id,
-                    mode: startup.mode,
+                guard let kind = persistedRef?.kind ?? metadataKind,
+                      !kind.isEmpty,
+                      registry.contains(kind: kind) else { continue }
+                recordLaunchResumeDecision(
+                    panelId: panelSnapshot.id,
+                    kind: kind,
+                    conversationId: persistedRef?.id,
+                    mode: mode,
                     decision: .skip(
-                        code: .strategyUnavailable,
-                        reason: "no registered resume strategy for kind \(ref.kind)"
+                        code: .conversationUnavailable,
+                        reason: "no active conversation in restore store"
                     )
                 )
                 continue
             }
-            let strategyAction = strategy.resume(ref: ref)
-            let fallbackCommand: ResumeCommand?
-            if case .typeCommand(let text, let submit) = strategyAction {
-                fallbackCommand = ResumeCommand(text: text, submitWithReturn: submit)
-            } else {
-                fallbackCommand = nil
-            }
-            let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
-                mode: startup.mode,
-                auditComplete: startup.auditComplete,
-                ownership: Self.resumeOwnership(for: ref),
-                kind: ref.kind,
-                id: ref.id,
-                placeholder: ref.placeholder,
-                state: ResumePersistedState(rawValue: ref.state.rawValue) ?? .unsupported,
-                exactIDValid: strategy.isValidId(ref.id),
-                transcriptEvidence: Self.transcriptEvidence(for: ref, mode: startup.mode),
-                diagnosticReason: ref.diagnosticReason,
-                fallbackCommand: fallbackCommand
-            ))
-            EventEmitter.shared.emitConversationResumeDecision(
-                workspace: id,
-                surface: panelSnapshot.id,
+            let decision = Self.resumeDecision(for: ref, registry: registry, mode: mode)
+            recordLaunchResumeDecision(
+                panelId: panelSnapshot.id,
                 kind: ref.kind,
                 conversationId: ref.id,
-                mode: startup.mode,
+                mode: mode,
                 decision: decision
             )
             guard case .command(let command) = decision else { continue }
-            result.append((
+            plan.commands.append((
                 panelId: panelSnapshot.id,
                 action: .typeCommand(
                     text: command.text,
@@ -580,7 +579,95 @@ extension Workspace {
                 conversation: ref
             ))
         }
-        return result
+        return plan
+    }
+
+    /// The shared decision for one ref this launch. Pure: app restore, the
+    /// late-scrape path and `c11 conversation resume` all call it. A dirty
+    /// launch reads transcript evidence from the store's crash-recovery
+    /// diagnostic unless the caller already statted it.
+    nonisolated static func resumeDecision(
+        for ref: ConversationRef,
+        registry: ConversationStrategyRegistry,
+        mode: ResumeRecoveryMode,
+        transcriptEvidence evidenceOverride: ResumeTranscriptEvidence? = nil
+    ) -> ResumeDecision {
+        guard let strategy = registry.strategy(forKind: ref.kind) else {
+            return .skip(
+                code: .strategyUnavailable,
+                reason: "no registered resume strategy for kind \(ref.kind)"
+            )
+        }
+        let fallbackCommand: ResumeCommand?
+        if case .typeCommand(let text, let submit) = strategy.resume(ref: ref) {
+            fallbackCommand = ResumeCommand(text: text, submitWithReturn: submit)
+        } else {
+            fallbackCommand = nil
+        }
+        return ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: mode,
+            ownership: resumeOwnership(for: ref),
+            kind: ref.kind,
+            id: ref.id,
+            placeholder: ref.placeholder,
+            state: ResumePersistedState(rawValue: ref.state.rawValue) ?? .unsupported,
+            exactIDValid: strategy.isValidId(ref.id),
+            transcriptEvidence: mode == .dirty
+                ? evidenceOverride ?? transcriptEvidence(for: ref, mode: mode)
+                : .notRequired,
+            diagnosticReason: ref.diagnosticReason,
+            fallbackCommand: fallbackCommand
+        ))
+    }
+
+    /// What this launch did with each restored agent panel; the targets of
+    /// `c11 conversation resume --all-skipped`. Main-actor, not published.
+    enum LaunchResumeOutcome: Equatable {
+        case awaitingScrape
+        case resumed
+        case skipped(code: ResumeSkipCode, reason: String)
+    }
+
+    func recordLaunchResumeDecision(
+        panelId: UUID,
+        kind: String,
+        conversationId: String?,
+        mode: ResumeRecoveryMode,
+        decision: ResumeDecision
+    ) {
+        if case .skip(let code, let reason) = decision {
+            launchResumeOutcomes[panelId] = .skipped(code: code, reason: reason)
+        }
+        EventEmitter.shared.emitConversationResumeDecision(
+            workspace: id,
+            surface: panelId,
+            kind: kind,
+            conversationId: conversationId,
+            mode: mode,
+            decision: decision
+        )
+    }
+
+    /// A panel nobody has used since launch: no operator keystroke, and a
+    /// shell idle at its prompt, or a terminal that has not started yet (the
+    /// command queues until it does, as at restore). Only such a panel may
+    /// receive a resume decided after restore (a late scrape,
+    /// `c11 conversation resume`).
+    ///
+    /// The restore-time resume (typed `agentRestartDelay` after restore, while
+    /// shells may still be starting) passes `idleShellRequired: false`, which
+    /// also accepts an attached shell that has not reported its state yet.
+    func isUntouchedShell(_ panelId: UUID, idleShellRequired: Bool = true) -> Bool {
+        guard let panel = panels[panelId] as? TerminalPanel,
+              panel.surface.lastOperatorKeyAt == nil else { return false }
+        switch panelShellActivityStates[panelId] ?? .unknown {
+        case .promptIdle:
+            return true
+        case .commandRunning:
+            return false
+        case .unknown:
+            return !idleShellRequired || panel.surface.surface == nil
+        }
     }
 
     /// Recheck the process-local writer evidence immediately before a delayed
@@ -683,50 +770,164 @@ extension Workspace {
     ///
     /// Panel ids are stable across restart, so the live panel id equals the
     /// snapshot panel id resolved in `pendingRestartPlans`.
+    ///
+    /// C11-468: planning waits for this launch's audit classification, never
+    /// for a scrape it does not need. Panels whose decision depends on a
+    /// scrape wait for that kind's scrape alone and resume only if untouched.
     private func scheduleAgentRestart(
         from snapshot: SessionWorkspaceSnapshot,
         registry: ConversationStrategyRegistry
     ) {
-        let plans = pendingRestartPlans(from: snapshot, registry: registry)
-        guard !plans.isEmpty else { return }
-        // C11-156: stagger the resumes so N agents don't all boot in the same
-        // main-queue turn and fire their SessionStart hooks at once (the
-        // mass-resume thundering herd that beachballs the app). Each agent
-        // resumes one `agentRestartStagger` after the previous.
-        let base = SessionPersistencePolicy.agentRestartDelay
-        let stagger = SessionPersistencePolicy.agentRestartStagger
-        for (index, plan) in plans.enumerated() {
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + base + Double(index) * stagger
-            ) { [weak self] in
+        guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return }
+        let restoredAt = DispatchTime.now()
+        Task { @MainActor [weak self] in
+            let classification = await StartupConversationAudit.shared.awaitClassification()
+            let conversations = await ConversationStore.shared.snapshot()
+            guard let self else { return }
+            let plan = self.restartPlan(
+                from: snapshot,
+                registry: registry,
+                mode: classification.mode,
+                conversations: conversations,
+                awaitingScrape: Set(classification.scrapeKindBySurface.keys)
+            )
+            self.dispatchRestartCommands(
+                plan.commands,
+                firstAt: max(restoredAt + SessionPersistencePolicy.agentRestartDelay, .now()),
+                idleShellRequired: false
+            )
+
+            let awaitingByKind = Dictionary(grouping: plan.awaitingScrape) {
+                classification.scrapeKindBySurface[$0.uuidString] ?? ""
+            }
+            for (kind, panelIds) in awaitingByKind {
+                guard let scrape = classification.scrapes[kind] else { continue }
                 Task { @MainActor [weak self] in
-                    let conversationsBySurface = await ConversationStore.shared.snapshot()
-                    guard let self else { return }
-                    let liveWriterSurfaceIds = AppDelegate.shared?.liveAttributedAgentSurfaceIds(
-                        matching: plan.conversation,
-                        excluding: plan.panelId,
-                        conversationsBySurface: conversationsBySurface
-                    ) ?? []
-                    let action = Self.resumeActionBeforeSubmission(
-                        plan.action,
-                        conversation: plan.conversation,
-                        targetSurfaceId: plan.panelId,
-                        conversationsBySurface: conversationsBySurface,
-                        liveAttributedAgentSurfaceIds: liveWriterSurfaceIds
+                    let result = await scrape.value
+                    let conversations = await ConversationStore.shared.snapshot()
+                    self?.resumeAfterStartupScrape(
+                        panelIds: panelIds,
+                        snapshot: snapshot,
+                        registry: registry,
+                        mode: classification.mode,
+                        conversations: conversations,
+                        scrape: result.outcome,
+                        firstAt: max(restoredAt + SessionPersistencePolicy.agentRestartDelay, .now())
                     )
-                    self.executeResumeAction(action, on: plan.panelId)
                 }
             }
         }
     }
 
+    /// Decide the panels a startup scrape was resolving. A command reaches
+    /// only an untouched panel; anything else is one specific skip.
+    func resumeAfterStartupScrape(
+        panelIds: [UUID],
+        snapshot: SessionWorkspaceSnapshot,
+        registry: ConversationStrategyRegistry,
+        mode: ResumeRecoveryMode,
+        conversations: [String: PanelConversations],
+        scrape: StartupConversationAudit.ScrapeOutcome,
+        firstAt: DispatchTime
+    ) {
+        let panelsById = Dictionary(
+            snapshot.panels.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var commands: [RestartCommand] = []
+        for panelId in panelIds {
+            guard launchResumeOutcomes[panelId] == .awaitingScrape else { continue }
+            let ref = conversations[panelId.uuidString]?.active
+            let kind = ref?.kind
+                ?? panelsById[panelId]?.surfaceConversations?.active?.kind
+                ?? Self.stringValues(from: panelsById[panelId]?.metadata)[PanelMetadataKeyName.terminalType]
+                ?? ""
+            var decision: ResumeDecision = ref.map {
+                Self.resumeDecision(for: $0, registry: registry, mode: mode)
+            } ?? .skip(code: .conversationUnavailable, reason: "no active conversation in restore store")
+            if case .skip(let code, let reason) = decision, case .failed(let failure) = scrape {
+                decision = .skip(code: code, reason: "\(reason); \(failure)")
+            }
+            if case .command = decision, !isUntouchedShell(panelId) {
+                decision = .skip(
+                    code: .panelInUse,
+                    reason: "panel was used before its startup scrape finished"
+                )
+            }
+            recordLaunchResumeDecision(
+                panelId: panelId,
+                kind: kind,
+                conversationId: ref?.id,
+                mode: mode,
+                decision: decision
+            )
+            guard case .command(let command) = decision, let ref else { continue }
+            commands.append((
+                panelId: panelId,
+                action: .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
+                conversation: ref
+            ))
+        }
+        dispatchRestartCommands(commands, firstAt: firstAt, idleShellRequired: true)
+    }
+
+    /// C11-156: stagger the resumes so N agents don't all boot in the same
+    /// main-queue turn and fire their SessionStart hooks at once (the
+    /// mass-resume thundering herd that beachballs the app). Each agent
+    /// resumes one `agentRestartStagger` after the previous.
+    func dispatchRestartCommands(
+        _ commands: [RestartCommand],
+        firstAt: DispatchTime,
+        idleShellRequired: Bool
+    ) {
+        let stagger = SessionPersistencePolicy.agentRestartStagger
+        for (index, plan) in commands.enumerated() {
+            DispatchQueue.main.asyncAfter(
+                deadline: firstAt + Double(index) * stagger
+            ) { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.submitResume(plan, idleShellRequired: idleShellRequired)
+                }
+            }
+        }
+    }
+
+    /// The one submission point for a resume decided this launch, rechecked
+    /// at the moment of typing: another live c11 panel already running the
+    /// conversation, a panel this launch already resumed, or a panel someone
+    /// has used since launch each turn the command into a skip.
+    func submitResume(_ plan: RestartCommand, idleShellRequired: Bool) async {
+        let conversationsBySurface = await ConversationStore.shared.snapshot()
+        let liveWriterSurfaceIds = AppDelegate.shared?.liveAttributedAgentSurfaceIds(
+            matching: plan.conversation,
+            excluding: plan.panelId,
+            conversationsBySurface: conversationsBySurface
+        ) ?? []
+        var action = Self.resumeActionBeforeSubmission(
+            plan.action,
+            conversation: plan.conversation,
+            targetSurfaceId: plan.panelId,
+            conversationsBySurface: conversationsBySurface,
+            liveAttributedAgentSurfaceIds: liveWriterSurfaceIds
+        )
+        if case .typeCommand = action {
+            if launchResumeOutcomes[plan.panelId] == .resumed {
+                action = .skip(reason: "already resumed this launch")
+            } else if !isUntouchedShell(plan.panelId, idleShellRequired: idleShellRequired) {
+                action = .skip(reason: "panel was used before its resume was typed")
+            }
+        }
+        executeResumeAction(action, on: plan.panelId)
+    }
+
     /// Execute a `ResumeAction` against a live terminal panel. Logs `.skip`
-    /// reasons for diagnostic visibility. Main-actor; only called from
-    /// `scheduleAgentRestart`'s deferred dispatch.
-    private func executeResumeAction(_ action: ResumeAction, on panelId: UUID) {
+    /// reasons for diagnostic visibility and records the launch outcome.
+    /// Main-actor; called from restore dispatch and `c11 conversation resume`.
+    func executeResumeAction(_ action: ResumeAction, on panelId: UUID) {
         switch action {
         case .typeCommand(let text, let submit):
             guard let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+            launchResumeOutcomes[panelId] = .resumed
             if submit {
                 // Use the deferred-Return submission path (see
                 // scheduleAgentRestart's doc comment): sendSubmitFormText
@@ -738,10 +939,12 @@ extension Workspace {
                 terminalPanel.surface.sendText(text)
             }
         case .skip(let reason):
+            if launchResumeOutcomes[panelId] != .resumed {
+                launchResumeOutcomes[panelId] = .skipped(code: .panelInUse, reason: reason)
+            }
             #if DEBUG
             dlog("conversation.resume.skipped panel=\(panelId.uuidString.prefix(8)) reason=\(reason)")
             #endif
-            _ = reason // silence release-build unused warning
         }
     }
 
@@ -5144,6 +5347,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// When each panel's shell last started or finished a command (tab sheet
     /// `active` for plain terminals). Plain store, not published.
     var panelShellEdgeAt: [UUID: Date] = [:]
+    /// What this launch did with each restored agent panel (C11-468).
+    private(set) var launchResumeOutcomes: [UUID: LaunchResumeOutcome] = [:]
     /// Per-tab queue of framed `<c11-msg>` blocks that arrived while the
     /// recipient was busy, plus the agent turn edges that gate them. Flushed
     /// at an agent's prompt edge or a shell's return to `.promptIdle` (see

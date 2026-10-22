@@ -92,9 +92,8 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
 
     func testQueuedResumeDoesNotWriteIntoRetainedDisplacedTerminal() async throws {
         #if DEBUG
-        let startup = ResumeStartupEpochGate.shared.snapshot()
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled,
-              !ConversationStorePolicy.isDisabled, startup.auditComplete, startup.mode == .clean else {
+              !ConversationStorePolicy.isDisabled, StartupConversationAudit.shared.mode == .clean else {
             throw XCTSkip("resume scheduling is disabled by the host")
         }
         let manager = WorkspaceManager()

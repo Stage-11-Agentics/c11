@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import shutil
 import socket
 import subprocess
@@ -35,6 +36,10 @@ def run_wrapper(
     existing_config: str | None = None,
     in_c11: bool = True,
     ping_succeeds: bool = True,
+    interactive: bool = False,
+    existing_tui: str | None = None,
+    native_disabled: bool = False,
+    current_names: bool = False,
 ) -> tuple[int, list[str], dict, list[str], str]:
     with tempfile.TemporaryDirectory(prefix="c11-opencode-wrapper-test-") as td:
         tmp = Path(td)
@@ -49,6 +54,7 @@ def run_wrapper(
         home.mkdir()
         shutil.copy2(SOURCE_WRAPPER, wrapper_dir / "opencode")
         shutil.copy2(SOURCE_PLUGIN, plugin_dir / "c11-notify.js")
+        shutil.copy2(SOURCE_PLUGIN.with_name("c11-mailbox.mjs"), plugin_dir / "c11-mailbox.mjs")
         (wrapper_dir / "opencode").chmod(0o755)
 
         args_log = tmp / "args.log"
@@ -63,12 +69,22 @@ set -euo pipefail
 printf '%s\\n' "$@" > "$FAKE_ARGS_LOG"
 /usr/bin/python3 -B -c 'import json,os
 path = os.environ.get("OPENCODE_CONFIG")
-config_file = open(path).read() if path else None
+config_file = config_reread = None
+if path:
+  with open(path) as source:
+    config_file = source.read()
+  with open(path) as source:  # OpenCode migration and server open separately.
+    config_reread = source.read()
+tui = os.environ.get("OPENCODE_TUI_CONFIG")
 print(json.dumps({
   "content": os.environ.get("OPENCODE_CONFIG_CONTENT"),
   "config_path": path,
   "config_file": config_file,
+  "config_reread": config_reread,
   "hook_cli": os.environ.get("C11_AGENT_HOOK_CLI"),
+  "interactive_pid": os.environ.get("C11_AGENT_INTERACTIVE_PID"),
+  "tui_path": tui,
+  "tui_content": open(tui).read() if tui else None,
 }))' > "$FAKE_ENV_LOG"
 """,
         )
@@ -111,6 +127,12 @@ fi
         if not in_c11:
             env.pop("CMUX_WORKSPACE_ID", None)
             env.pop("CMUX_SURFACE_ID", None)
+        if current_names and in_c11:
+            env["C11_SOCKET_PATH"] = env.pop("CMUX_SOCKET_PATH")
+            env["C11_PANEL_ID"] = env.pop("CMUX_SURFACE_ID")
+        env["C11_AGENT_INTERACTIVE_PID"] = "1"  # must never inherit a parent marker
+        if native_disabled:
+            env["C11_OPENCODE_NATIVE_MAIL_DISABLED"] = "1"
         if existing_content is not None:
             env["OPENCODE_CONFIG_CONTENT"] = existing_content
         else:
@@ -122,11 +144,19 @@ fi
         else:
             env.pop("OPENCODE_CONFIG", None)
 
+        tui_path = tmp / "operator tui.json"
+        if existing_tui is not None:
+            tui_path.write_text(existing_tui)
+            env["OPENCODE_TUI_CONFIG"] = str(tui_path)
+
+        master, slave = pty.openpty() if interactive else (None, None)
         try:
             proc = subprocess.run(
                 [str(wrapper_dir / "opencode"), *argv],
                 env=env,
-                capture_output=True,
+                stdin=slave,
+                stdout=slave if interactive else subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 check=False,
                 timeout=5,
@@ -137,16 +167,25 @@ fi
                     break
                 time.sleep(0.02)
         finally:
+            if interactive:
+                os.close(slave)
+                os.close(master)
             if test_socket is not None:
                 test_socket.close()
 
         state = json.loads(env_log.read_text(encoding="utf-8")) if env_log.exists() else {}
+        runtime_path = state.get("config_path")
+        if existing_config is None and runtime_path and runtime_path.startswith("/tmp/c11-opencode-config."):
+            Path(runtime_path).unlink()  # This fake harness has now exited.
         state["tenant_paths"] = sorted(str(path.relative_to(home)) for path in home.rglob("*"))
         state["tenant_plugins_present"] = (home / ".config" / "opencode" / "plugins").exists()
         assert state["tenant_paths"] == [], state
         if existing_config is not None:
             assert config_path.read_bytes() == existing_config.encode("utf-8"), "operator config was rewritten"
             state["expected_config_path"] = str(config_path)
+        if existing_tui is not None:
+            assert tui_path.read_text() == existing_tui, "operator TUI config was rewritten"
+            state["expected_tui_path"] = str(tui_path)
         return proc.returncode, read(args_log), state, read(c11_log), proc.stderr.strip()
 
 
@@ -173,6 +212,7 @@ def test_existing_content_is_preserved_via_second_runtime_source() -> None:
     assert state["content"] == existing, state
     config = json.loads(state["config_file"])
     assert config["plugin"][0].endswith("/c11-notify.js"), config
+    assert state["config_reread"] == state["config_file"], state
 
 
 def test_missing_socket_and_subcommand_are_transparent() -> None:
@@ -232,10 +272,36 @@ def test_both_runtime_config_sources_are_preserved_without_tenant_writes() -> No
     assert any("agent-hook idle" in line for line in c11_log), c11_log
 
 
+def test_native_tui_requires_interactive_launch_and_free_runtime_slot() -> None:
+    for current in (False, True):
+        code, _, state, _, stderr = run_wrapper(live=True, argv=[], interactive=True, current_names=current)
+        assert code == 0, stderr
+        assert int(state["interactive_pid"]) > 1, state
+        assert json.loads(state["tui_content"])["plugin"][0].endswith("/c11-mailbox.mjs"), state
+    for options, argv in [({}, []), ({"interactive": True}, ["run", "hello"]),
+                          ({"interactive": True, "native_disabled": True}, []),
+                          ({"interactive": True}, ["--version"])]:
+        code, _, state, _, stderr = run_wrapper(live=True, argv=argv, **options)
+        assert code == 0, stderr
+        assert state["tui_path"] is None, state
+        if not options.get("native_disabled"):
+            assert state["interactive_pid"] is None, state
+    existing = ' {"plugin":["operator-tui"],"theme":"private"}\n'
+    code, _, state, _, stderr = run_wrapper(live=True, argv=[], interactive=True, existing_tui=existing)
+    assert code == 0, stderr
+    assert state["tui_path"] == state["expected_tui_path"], state
+    assert state["tui_content"] == existing, state
+    code, _, state, _, stderr = run_wrapper(live=True, argv=[], interactive=True,
+        existing_content='{"plugin":["operator-plugin"]}', existing_config='{"model":"operator/model"}')
+    assert code == 0, stderr
+    assert state["tui_path"] is None, "no native route without the bundled lifecycle plugin"
+
+
 if __name__ == "__main__":
     test_live_tui_runtime_loads_plugin()
     test_existing_content_is_preserved_via_second_runtime_source()
     test_missing_socket_and_subcommand_are_transparent()
     test_outside_c11_and_unreachable_socket_are_transparent()
     test_both_runtime_config_sources_are_preserved_without_tenant_writes()
+    test_native_tui_requires_interactive_launch_and_free_runtime_slot()
     print("PASS: OpenCode lifecycle loads at runtime without tenant config writes")

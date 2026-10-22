@@ -12,6 +12,10 @@ set -uo pipefail
 # first so no early exec passes a parent's marker on.
 unset C11_AGENT_INTERACTIVE_PID
 
+# Current names take precedence; legacy names remain accepted for old terminals.
+c11_socket="${C11_SOCKET_PATH:-${CMUX_SOCKET_PATH:-}}"
+c11_panel="${C11_PANEL_ID:-${C11_TAB_ID:-${CMUX_SURFACE_ID:-}}}"
+
 find_real_opencode() {
     local self_dir
     self_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -24,7 +28,7 @@ find_real_opencode() {
 }
 
 c11_socket_available() {
-    local socket="${CMUX_SOCKET_PATH:-}"
+    local socket="$c11_socket"
     [[ -n "$socket" && -S "$socket" ]] || return 1
 
     local self_dir c11_bin
@@ -33,7 +37,7 @@ c11_socket_available() {
     [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
     [[ -n "$c11_bin" ]] || return 1
 
-    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+    C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
         "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
 }
 
@@ -42,7 +46,7 @@ REAL_OPENCODE="$(find_real_opencode)" || {
     exit 127
 }
 
-if [[ -z "${CMUX_SURFACE_ID:-}" || "${CMUX_OPENCODE_HOOKS_DISABLED:-}" == "1" ]] ||
+if [[ -z "$c11_panel" || "${C11_OPENCODE_HOOKS_DISABLED:-${CMUX_OPENCODE_HOOKS_DISABLED:-}}" == "1" ]] ||
    ! c11_socket_available; then
     exec "$REAL_OPENCODE" "$@"
 fi
@@ -56,7 +60,7 @@ case "${1:-}" in
 esac
 
 # Mark this launch as an interactive agent only when it reads and writes
-# its terminal (`opencode run` is one-shot). c11 pushes mailbox messages only to a tab whose
+# its terminal (`opencode run` is one-shot). c11 pushes mailbox messages only to a panel whose
 # lifecycle reports carry this PID (exec keeps it), and only while that PID's
 # process group owns the terminal.
 if [[ -t 0 && -t 1 ]] && [[ "${1:-}" != "run" ]]; then
@@ -69,15 +73,15 @@ c11_bin="$self_dir/c11"
 
 if [[ -n "$c11_bin" ]]; then
     (
-        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type opencode \
+        C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+            "$c11_bin" --socket "$c11_socket" set-agent --type opencode \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
 
     (
-        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" agent-hook idle \
+        C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+            "$c11_bin" --socket "$c11_socket" agent-hook idle \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
@@ -88,17 +92,37 @@ plugin_url="file://$plugin_path"
 plugin_url="${plugin_url//\\/\\\\}"
 plugin_url="${plugin_url//\"/\\\"}"
 c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
+c11_runtime_plugin=0
 
 # OpenCode merges its config sources. Prefer the in-memory content override;
-# if the operator already owns that slot, supply c11's plugin through a live
-# file descriptor instead. If both runtime slots are explicitly occupied,
+# if the operator already owns that slot, supply c11's plugin through a private
+# runtime file instead. If both runtime slots are explicitly occupied,
 # preserve them untouched—the shared foreground-agent liveness guard still
 # prevents false-idle decay.
 if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
     export OPENCODE_CONFIG_CONTENT="$c11_runtime_config"
+    c11_runtime_plugin=1
 elif [[ -z "${OPENCODE_CONFIG:-}" ]]; then
-    exec 3<<<"$c11_runtime_config"
-    export OPENCODE_CONFIG="/dev/fd/3"
+    # Migration and the server open this separately. /dev/fd shares its read
+    # position and loses the plugin on the second read. Like the Claude wrapper,
+    # retain a private, secret-free c11 tempfile until /tmp is reaped.
+    c11_config_file="$(mktemp /tmp/c11-opencode-config.XXXXXX)"
+    if [[ -n "$c11_config_file" ]] && printf '%s\n' "$c11_runtime_config" > "$c11_config_file"; then
+        export OPENCODE_CONFIG="$c11_config_file"
+        c11_runtime_plugin=1
+    fi
+fi
+
+# OpenCode 1.15's TUI plugins can identify the displayed session. Keep the
+# operator's explicit TUI config untouched; that case uses typed delivery.
+# Older versions ignore this runtime override and retain their existing route.
+if [[ "$c11_runtime_plugin" == "1" && -n "${C11_AGENT_INTERACTIVE_PID:-}" && -z "${OPENCODE_TUI_CONFIG:-}" &&
+      "${C11_OPENCODE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
+    tui_plugin_url="${plugin_url%/c11-notify.js}/c11-mailbox.mjs"
+    if [[ -f "${plugin_path%/c11-notify.js}/c11-mailbox.mjs" ]]; then
+        exec 9<<<"{\"plugin\":[\"$tui_plugin_url\"]}"
+        export OPENCODE_TUI_CONFIG="/dev/fd/9"
+    fi
 fi
 
 export C11_AGENT_HOOK_CLI="$c11_bin"

@@ -26,8 +26,14 @@ const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 try {
   const { C11NotifyPlugin } = await import(pathToFileURL(pluginPath));
   const calls = [];
+  const lookups = [];
+  const client = { session: { get: async ({ path: { id } }) => {
+    lookups.push(id);
+    if (id === 'ses_unavailable') throw new Error('unavailable');
+    return { data: { id, ...(id === 'ses_resumed_child' ? { parentID: 'ses_root' } : {}) } };
+  } } };
   const shell = (_strings, command, args) => ({ quiet: async () => { calls.push({ command, args }); } });
-  const hooks = await C11NotifyPlugin({ $: shell });
+  const hooks = await C11NotifyPlugin({ $: shell, client });
   await hooks.event({ event: { type: "session.created", properties: { info: { id: "ses_root", directory: "/synthetic" } } } });
   assert(calls.some(({ args }) => args.join(" ").includes("conversation push --kind opencode --id ses_root")));
   assert.equal(events().at(-1).kind, "agent.session.started");
@@ -100,6 +106,24 @@ try {
     reset: { reason: "compaction", at_ms: 1_790_000_050_000 }, panel_id: "11111111-1111-4111-8111-111111111111",
   });
   assert(!cacheReports().some((report) => JSON.stringify(report).includes("PRIVATE-SENTINEL")));
+
+  // A resumed session emits no session.created. Its first real user prompt
+  // must restore the exact conversation owner before publishing the turn.
+  const beforeResume = events().length;
+  await hooks["chat.message"]({ sessionID: "ses_resumed" });
+  assert.deepEqual(lookups, ["ses_resumed"]);
+  assert(calls.some(({ args }) => args.join(" ").includes("conversation push --kind opencode --id ses_resumed")));
+  assert.deepEqual(events().slice(beforeResume).map(e => [e.kind, e.session_id]), [
+    ["agent.session.started", "ses_resumed"], ["agent.turn.started", "ses_resumed"],
+  ]);
+  await hooks["chat.message"]({ sessionID: "ses_resumed" });
+  assert.equal(lookups.length, 1, "ordinary prompts do not re-fetch the session");
+  for (const sessionID of ["ses_resumed_child", "ses_unavailable"]) {
+    const before = [calls.length, events().length];
+    await hooks["chat.message"]({ sessionID });
+    assert.deepEqual([calls.length, events().length], before, "unconfirmed roots cannot claim the panel");
+  }
+  await hooks["chat.message"]({ sessionID: "ses_root" });
 
   process.env.JOURNAL_TEST_FAILURE = "storage_unavailable";
   const beforeFailedPermission = calls.length;

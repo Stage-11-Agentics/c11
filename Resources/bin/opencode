@@ -60,7 +60,7 @@ case "${1:-}" in
 esac
 
 # Mark this launch as an interactive agent only when it reads and writes
-# its terminal (`opencode run` is one-shot). c11 pushes mailbox messages only to a tab whose
+# its terminal (`opencode run` is one-shot). c11 pushes mailbox messages only to a panel whose
 # lifecycle reports carry this PID (exec keeps it), and only while that PID's
 # process group owns the terminal.
 if [[ -t 0 && -t 1 ]] && [[ "${1:-}" != "run" ]]; then
@@ -95,8 +95,8 @@ c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
 c11_runtime_plugin=0
 
 # OpenCode merges its config sources. Prefer the in-memory content override;
-# if the operator already owns that slot, supply c11's plugin through a live
-# file descriptor instead. If both runtime slots are explicitly occupied,
+# if the operator already owns that slot, supply c11's plugin through a private
+# runtime file instead. If both runtime slots are explicitly occupied,
 # preserve them untouched—the shared foreground-agent liveness guard still
 # prevents false-idle decay.
 if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then

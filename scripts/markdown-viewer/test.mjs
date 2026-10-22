@@ -558,11 +558,17 @@ try {
   await page.evaluate(()=>{
     window.transientMathStyle.length=0;
     window.transientMathRenderSources.length=0;
+    window.transientMathOriginalRender=mermaid.render;
+    mermaid.render=async(id,source)=>{
+      window.transientMathRenderSources.push(source);
+      return window.transientMathOriginalRender(id,source);
+    };
     window.transientMathStyleObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
   });
-  const unterminatedMathAttack='```mermaid\nflowchart LR\n  A["$$x^2$$<div style=position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red;"] --> B\n```\n';
+  const unterminatedMathAttack='```mermaid\nflowchart LR\n  A["$$x^2$$<div style=position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red;\n```\n';
   await load(unterminatedMathAttack,'/synthetic/unterminated-math-style.md');
-  await page.evaluate(()=>window.transientMathStyleObserver.disconnect());
+  await page.evaluate(()=>{transientMathStyleObserver.disconnect();mermaid.render=transientMathOriginalRender;});
+  assert.equal(await page.evaluate(()=>transientMathRenderSources.length),1,'unterminated attack did not reach Mermaid render input');
   assert.equal(await page.evaluate(()=>transientMathRenderSources.some(source=>/<[^>]+(?:\s|\/)style\s*=/i.test(source))),false,'unterminated author inline CSS reached Mermaid input');
   assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'unterminated author inline CSS reached Mermaid\'s attached temporary SVG');
   scenario('unterminated math-label markup is dropped before Mermaid rendering');

@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_WRAPPER = ROOT / "Resources" / "bin" / "omp"
 SOURCE_EXTENSION = ROOT / "Resources" / "bin" / "omp-prompt-cache.ts"
+SOURCE_NATIVE_MAIL = ROOT / "Resources" / "bin" / "omp-native-mail.ts"
 
 
 def make_executable(path: Path, content: str) -> None:
@@ -37,6 +38,7 @@ def run_wrapper(socket_live: bool, argv: list[str]) -> tuple[int, list[str], lis
         real_dir.mkdir()
         shutil.copy2(SOURCE_WRAPPER, wrapper_dir / "omp")
         shutil.copy2(SOURCE_EXTENSION, wrapper_dir / "omp-prompt-cache.ts")
+        shutil.copy2(SOURCE_NATIVE_MAIL, wrapper_dir / "omp-native-mail.ts")
         (wrapper_dir / "omp").chmod(0o755)
 
         real_args = tmp / "real-args.log"
@@ -103,13 +105,15 @@ printf '%s\\n' "$*" >> "$FAKE_C11_LOG"
         return proc.returncode, lines(real_args), lines(real_env), lines(c11_log), proc.stderr.strip(), home_files
 
 
-def test_interactive_live_surface_loads_the_prompt_cache_extension() -> None:
+def test_interactive_live_surface_loads_the_bundled_extensions() -> None:
     code, argv, env_log, c11_log, stderr, home_files = run_wrapper(True, ["--model", "test"])
     assert code == 0, stderr
     assert home_files == [], f"the wrapper must not write tenant config: {home_files}"
     assert argv[0] == "--extension", argv
     assert argv[1].endswith("/omp-prompt-cache.ts"), argv
-    assert argv[2:] == ["--model", "test"], argv
+    assert argv[2] == "--extension", argv
+    assert argv[3].endswith("/omp-native-mail.ts"), argv
+    assert argv[4:] == ["--model", "test"], argv
     assert env_log and env_log[0].endswith("/c11"), env_log
     assert any("set-agent --type omp" in line for line in c11_log), c11_log
     assert any("conversation claim --kind omp" in line for line in c11_log), c11_log
@@ -129,7 +133,8 @@ def test_launches_with_prompts_and_flags_get_the_extension() -> None:
         code, real_argv, _, _, stderr, _ = run_wrapper(True, argv)
         assert code == 0, stderr
         assert real_argv[0] == "--extension" and real_argv[1].endswith("/omp-prompt-cache.ts"), (argv, real_argv)
-        assert real_argv[2:] == argv, (argv, real_argv)
+        assert real_argv[2] == "--extension" and real_argv[3].endswith("/omp-native-mail.ts"), (argv, real_argv)
+        assert real_argv[4:] == argv, (argv, real_argv)
 
 
 def test_missing_socket_passes_through() -> None:
@@ -148,7 +153,7 @@ def test_noninteractive_command_passes_through() -> None:
 
 
 if __name__ == "__main__":
-    test_interactive_live_surface_loads_the_prompt_cache_extension()
+    test_interactive_live_surface_loads_the_bundled_extensions()
     test_subcommands_reach_omp_unchanged()
     test_launches_with_prompts_and_flags_get_the_extension()
     test_missing_socket_passes_through()

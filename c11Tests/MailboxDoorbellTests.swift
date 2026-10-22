@@ -1654,6 +1654,17 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertFalse(reg.matches(process: nil, kind: "pi"))
     }
 
+    func testOmpRouteBindsOnlyToOmpAndHasAWireName() {
+        let omp = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123, processStart: 456,
+            sessionID: UUID().uuidString, route: .ompExtension, canQueue: false)
+        XCTAssertEqual(MailboxNativeDoorbell.Route(rawValue: "omp_extension"), .ompExtension)
+        XCTAssertTrue(omp.matches(process: .init(pid: 123, startTime: 456), kind: "omp"))
+        // A Pi panel never accepts an omp stream, nor the reverse.
+        XCTAssertFalse(omp.matches(process: .init(pid: 123, startTime: 456), kind: "pi"))
+        XCTAssertFalse(registration().matches(process: .init(pid: 123, startTime: 456), kind: "omp"))
+        XCTAssertFalse(omp.matches(process: .init(pid: 123, startTime: 457), kind: "omp"))
+    }
+
     func testNativeAndFallbackLogsNameTheirRoutes() throws {
         let line = MailboxDispatchLog.serialize(event: .handler(id: "mail", recipient: "pi", handler: "stdin", outcome: .doorbell,
             bytes: 5, elapsedMs: nil, reason: "submitted", route: "typed", nativeRoute: "pi_extension", nativeFailure: "native_timeout"), at: Date())

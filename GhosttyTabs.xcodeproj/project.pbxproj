@@ -484,6 +484,7 @@
 		C1382000000000000000A002 /* PromptCacheReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A001 /* PromptCacheReports.swift */; };
 		C1382000000000000000A004 /* PromptCacheReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A003 /* PromptCacheReportTests.swift */; };
 		C1382000000000000000A006 /* omp-prompt-cache.ts in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1382000000000000000A005 /* omp-prompt-cache.ts */; };
+		C11473000000000000000002 /* omp-native-mail.ts in Copy CLI */ = {isa = PBXBuildFile; fileRef = C11473000000000000000001 /* omp-native-mail.ts */; };
 		C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1ADE00001A1B2C3D4E5F719 /* claude */; };
 		C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1CDE00001A1B2C3D4E5F719 /* codex */; };
 		C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00001A1B2C3D4E5F719 /* pi */; };
@@ -695,6 +696,7 @@
 				C11471000000000000000004 /* mailbox-native.mjs in Copy CLI */,
 				C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */,
 				C1382000000000000000A006 /* omp-prompt-cache.ts in Copy CLI */,
+				C11473000000000000000002 /* omp-native-mail.ts in Copy CLI */,
 				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
 				C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */,
 				C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */,
@@ -1109,6 +1111,7 @@
 		C1382000000000000000A001 /* PromptCacheReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCacheReports.swift; sourceTree = "<group>"; };
 		C1382000000000000000A003 /* PromptCacheReportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PromptCacheReportTests.swift; sourceTree = "<group>"; };
 		C1382000000000000000A005 /* omp-prompt-cache.ts */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.typescript; path = "Resources/bin/omp-prompt-cache.ts"; sourceTree = SOURCE_ROOT; };
+		C11473000000000000000001 /* omp-native-mail.ts */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.typescript; path = "Resources/bin/omp-native-mail.ts"; sourceTree = SOURCE_ROOT; };
 		C1ADE00001A1B2C3D4E5F719 /* claude */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/claude; sourceTree = SOURCE_ROOT; };
 		C1CDE00001A1B2C3D4E5F719 /* codex */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/codex; sourceTree = SOURCE_ROOT; };
 		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
@@ -1350,6 +1353,7 @@
 				C11471000000000000000003 /* mailbox-native.mjs */,
 				C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */,
 				C1382000000000000000A005 /* omp-prompt-cache.ts */,
+				C11473000000000000000001 /* omp-native-mail.ts */,
 				C1F2E00001A1B2C3D4E5F719 /* omp */,
 				C1F3E00001A1B2C3D4E5F719 /* grok */,
 				C1F4E00001A1B2C3D4E5F719 /* opencode */,

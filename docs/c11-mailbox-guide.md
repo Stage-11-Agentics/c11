@@ -88,8 +88,9 @@ c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 c11 set-title "watcher"
 c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to the doorbell
 # The invitation starts a turn when the agent is idle; it never includes
-# the envelope body. Pi uses its native extension when available, otherwise
-# c11 uses the typed route (see "Pi native delivery" below).
+# the envelope body. Pi and omp use their native extension when available,
+# otherwise c11 uses the typed route (see "Pi native delivery" and "omp native
+# delivery" below; omp has no typed route).
 c11 mailbox recv --drain                   # pull now, when stdout is a terminal
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
@@ -315,7 +316,7 @@ transient `not_ready` response during session restore, which retries. A new
 harness session can try again after other refusals. Unexpected connection loss
 still retries with bounded backoff.
 
-`_dispatch.log` names `route:"pi_extension"` or `route:"typed"` on each ring.
+`_dispatch.log` names `route:"pi_extension"` (or `omp_extension`, below) or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and
 `native_failure` (`native_timeout`, `native_rejected`, `native_disconnected`,
 `native_replaced`, `native_unavailable` or `native_write_failed`). To compare the
@@ -328,8 +329,56 @@ For repeatable guest proof, stage `--agents pi` with `sandbox-up.sh`, then run
 `scripts/check-pi-native-mail.py <run-id>`. Staging copies the host's Pi package
 and standalone Bun runtime, plus a controlled provider fixture. It uses the
 real Pi TUI and extension API, exports no credentials, and does not exercise a
-real model provider. Install Pi 0.81.1 and Bun on the Tart host first. omp's
-different extension API is tracked separately in C11-473.
+real model provider. Install Pi 0.81.1 and Bun on the Tart host first.
+`--agents pi-live` stages the same Pi against OpenRouter instead (one credential,
+the OpenRouter key, from `C11_SANDBOX_OPENROUTER_KEY` in the caller's environment,
+written in the guest as a mode 600 `auth.json`; set it again for `verify-clean`).
+`scripts/check-live-native-mail.py <run-id> --kind pi` then runs one real-model
+smoke of the native route with an unsent draft in the composer.
+
+### omp native delivery
+
+Interactive omp launched through the bundled wrapper loads a second launch-flag
+extension, `omp-native-mail.ts`, beside its prompt cache bridge. It registers
+`route:"omp_extension", can_queue:false` on the same stream as Pi and reports
+`working`/`idle` through `agent-hook` (the wrapper exports
+`C11_AGENT_INTERACTIVE_PID` for an interactive agent session). Idle edges come
+from omp's `agent_start` and `agent_end` events, published once `isIdle()` is
+true; a new session (`/new`, a resume) emits `session_switch`, which rebinds the
+stream with a fresh session ID.
+
+The invitation goes in as a custom message, `sendMessage({customType:
+"c11-mailbox-doorbell", content, display:true}, {triggerTurn:true})`. At idle omp
+starts a turn and the model reads the invitation like a user message. Two other
+omp calls were rejected on evidence: `sendUserMessage(text)` also starts a turn,
+but omp's UI clears the composer for any user message it did not submit itself
+(it would erase an operator draft), and with `deliverAs:"followUp"` it queues
+even when idle and emits nothing until the queue drains, so there is no
+acceptance signal inside c11's two-second bound. Mid-turn, `sendMessage` steers
+into the running turn, so the route is idle-only: the consumer waits up to 1.5
+seconds for `isIdle()` and otherwise rejects before any side effect. Mail that
+arrives mid-turn waits for the idle edge, as in Pi. Acceptance is omp's own
+`message_start` for that custom message with the exact doorbell text; the same
+words as a user message, or another custom type, do not accept.
+
+omp has no typed composer reader, so there is no typed fallback: a rejected,
+timed-out or unavailable native delivery leaves the mail in the inbox for
+`c11 mailbox recv --ack`, exactly as before this route existed. The extension
+writes nothing: omp's own state, including `~/.omp`, is untouched. Task
+subagents (`hasUI` false) neither subscribe nor report lifecycle. For diagnosis
+launch with `C11_OMP_NATIVE_MAIL_DISABLED=1`; lifecycle reports remain.
+
+For repeatable guest proof, stage `--agents omp` with `sandbox-up.sh`, then run
+`scripts/check-omp-native-mail.py <run-id>`. Staging builds one self-contained
+omp install on the Tart host (`~/c11-omp-stage`, omp's version, Bun 1.3.14 or
+newer) and ships it with a controlled provider fixture
+(`scripts/fixtures/omp-mailbox-provider.ts`); the guest shim keeps omp's state in
+a private HOME. It checks draft preservation before and after the turn, a draft
+typed mid-turn, the idle edge, `/new`, the no-typed-route control, and that the
+guest's own `~/.omp` was never created. `--disable-native-control` must fail the
+native assertions. `--agents omp-live` plus
+`scripts/check-live-native-mail.py <run-id> --kind omp` runs the same route
+against OpenRouter's `openai/gpt-4o-mini`.
 
 ### Claude Code native inbox
 
@@ -392,7 +441,7 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 
 **Only an interactive agent that owns its terminal is ever typed into.** Two guards hold for every harness:
 
-- *Interactive marker.* Each c11 agent wrapper (Claude, Codex, Grok, OpenCode, Pi) exports `C11_AGENT_INTERACTIVE_PID`, its own PID, only when stdin and stdout are terminals and no print, one-shot or background mode is requested (`claude -p`/`--print`/`--bg`/`--background`, `opencode run`; `codex exec`, `grok -p`, `pi -p` bypass the wrapper's agent path entirely). Lifecycle reports carry that PID. A report without it is headless: the panel counts as an agent that is never at its prompt, so its mail is never pasted.
+- *Interactive marker.* Each c11 agent wrapper (Claude, Codex, Grok, OpenCode, Pi, omp) exports `C11_AGENT_INTERACTIVE_PID`, its own PID, only when stdin and stdout are terminals and no print, one-shot or background mode is requested (`claude -p`/`--print`/`--bg`/`--background`, `opencode run`; `codex exec`, `grok -p`, `pi -p`, `omp -p` and omp's management subcommands bypass the wrapper's agent path entirely). Lifecycle reports carry that PID. A report without it is headless: the panel counts as an agent that is never at its prompt, so its mail is never pasted.
 - *Terminal ownership.* Before it types the doorbell line, and again just before the Return, c11 asks the kernel four things, and every one must hold:
   1. That PID is still the process that registered: its start time matches, so a later process reusing the PID never qualifies.
   2. Its process group is the foreground process group of its terminal.
@@ -419,7 +468,7 @@ Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows 
 
 ### Doorbell
 
-Every `mailbox.delivery=stdin` panel whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. That includes omp and GitHub Copilot. Those seats get no doorbell. `c11 send` still refuses a Claude-style draft or dialog on that panel. An empty prompt there stays unknown. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
+Every `mailbox.delivery=stdin` panel whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. That includes omp and GitHub Copilot. Those seats get no typed doorbell; omp is rung only through its native route (above). `c11 send` still refuses a Claude-style draft or dialog on that panel. An empty prompt there stays unknown. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
 
 `You have mail: run c11 mailbox recv --ack when you want to receive it.`
 

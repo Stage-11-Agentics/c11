@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import shutil
 import socket
 import subprocess
@@ -38,7 +39,7 @@ def parse_settings_arg(argv: list[str]) -> dict:
     return json.loads(argv[index + 1])
 
 
-def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True) -> tuple[int, list[str], list[str], str, str]:
+def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True, interactive: bool = False) -> tuple[int, list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-test-") as td:
         tmp = Path(td)
         home = tmp / "home"
@@ -111,16 +112,23 @@ exit 0
         env["FAKE_CMUX_PING_OK"] = "1" if socket_state == "live" else "0"
         env["CLAUDECODE"] = "nested-session-sentinel"
 
+        terminal = pty.openpty() if interactive else None
         try:
             proc = subprocess.run(
                 ["claude", *argv],
                 cwd=tmp,
                 env=env,
-                capture_output=True,
+                stdin=terminal[1] if terminal else subprocess.DEVNULL,
+                stdout=terminal[1] if terminal else subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 check=False,
+                timeout=10,
             )
         finally:
+            if terminal:
+                for descriptor in terminal:
+                    os.close(descriptor)
             if test_socket is not None:
                 test_socket.close()
 
@@ -251,6 +259,29 @@ def test_unwritable_tmpdir_falls_back_to_inline_json(failures: list[str]) -> Non
     expect("PermissionRequest" in hooks, f"inline fallback: missing PermissionRequest in {sorted(hooks)}", failures)
 
 
+def test_native_inbox_hook_is_interactive_only(failures: list[str]) -> None:
+    def native_hooks(arguments: list[str], interactive: bool = True) -> tuple[list[dict], list[str]]:
+        code, forwarded, _, stderr, _ = run_wrapper(socket_state="live", argv=arguments, interactive=interactive)
+        expect(code == 0, f"native hook {arguments}: {code} {stderr}", failures)
+        hooks = parse_settings_arg(forwarded).get("hooks", {}).get("SessionStart", [])
+        return [hook for group in hooks for hook in group["hooks"] if hook["command"] == "c11 claude-mailbox"], forwarded
+
+    for arguments in (["hello"], ["--resume", "existing-session"],
+                      ["--mcp-config", "operator.json", "--strict-mcp-config", "hello"]):
+        hooks, forwarded = native_hooks(arguments)
+        expect(len(hooks) == 1 and hooks[0].get("async") is True,
+               f"interactive launch needs exactly one async inbox hook: {hooks}", failures)
+        expect(forwarded[-len(arguments):] == arguments, "operator flags changed", failures)
+        if "--resume" in arguments:
+            expect("--session-id" not in forwarded, "resume was replaced by a new session", failures)
+    for arguments in (["-p", "hello"], ["--print", "hello"], ["-cp", "hello"],
+                      ["--bg", "hello"], ["--background", "hello"], ["mcp", "list"], ["agents"]):
+        hooks, _ = native_hooks(arguments)
+        expect(not hooks, f"noninteractive/passthrough launch gained inbox hook: {arguments}", failures)
+    hooks, _ = native_hooks(["hello"], interactive=False)
+    expect(not hooks, "piped launch gained an inbox hook", failures)
+
+
 def main() -> int:
     failures: list[str] = []
     test_live_socket_injects_supported_hooks(failures)
@@ -258,6 +289,7 @@ def main() -> int:
     test_stale_socket_skips_hook_injection(failures)
     test_outside_c11_passes_argv_through(failures)
     test_unwritable_tmpdir_falls_back_to_inline_json(failures)
+    test_native_inbox_hook_is_interactive_only(failures)
 
     if failures:
         print("FAIL: claude wrapper regression checks failed")

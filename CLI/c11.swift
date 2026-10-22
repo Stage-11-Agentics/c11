@@ -1339,6 +1339,15 @@ final class SocketClient {
         path
     }
 
+    /// Transfers an authenticated connection to a bidirectional subscriber.
+    /// The caller owns closing it; this client must make no further requests.
+    func takeConnectedDescriptor() throws -> Int32 {
+        guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
+        let descriptor = socketFD
+        socketFD = -1
+        return descriptor
+    }
+
     func connect() throws {
         if socketFD >= 0 { return }
         try connectOnce()
@@ -2240,6 +2249,32 @@ struct CMUXCLI {
 
         let command = Self.canonicalCommandName(args[index])
         let commandArgs = Array(args[(index + 1)...])
+        if command == "claude-mailbox" {
+            // Internal, launch-scoped hook. Do not run discovery, telemetry,
+            // journal capture, or a generic request timeout on this stream.
+            // An unavailable hook is silent and leaves typed delivery intact.
+            guard commandArgs.isEmpty, envSocketPath != nil || socketPathSource == .explicitFlag,
+                  let binding = ClaudeMailboxCommand.Binding(
+                    environment: processEnv,
+                    input: FileHandle.standardInput.readDataToEndOfFile()
+                  ) else { return }
+            let priorDeadline = SocketClient.processDeadline
+            defer { SocketClient.processDeadline = priorDeadline }
+            SocketClient.processDeadline = Date().addingTimeInterval(1)
+            let client = SocketClient(path: socketPath)
+            client.usesSingleLineResponses = true
+            defer { client.close() }
+            do {
+                try client.connect()
+                try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: socketPath)
+                SocketClient.processDeadline = priorDeadline
+                try ClaudeMailboxCommand.run(binding: binding, descriptor: client.takeConnectedDescriptor())
+            } catch {
+                // No hook error banner, and no raw input, token, or transcript
+                // contents enter a diagnostic. The app owns fallback logging.
+            }
+            return
+        }
         let isSendText = ["send", "send-panel", "paste"].contains(command)
         let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
             .contains(where: { $0 == "--help" || $0 == "-h" })

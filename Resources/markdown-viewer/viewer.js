@@ -929,7 +929,12 @@ function stripMathLabelInlineStyles(source) {
   // Remove author CSS before that step; cleanSVG runs only after render returns.
   let output='',cursor=0;
   while(cursor<source.length) {
+    const mathStart=source.indexOf('$$',cursor);
+    const mathEnd=mathStart<0?-1:source.indexOf('$$',mathStart+2);
     const start=source.indexOf('<',cursor);
+    if(mathStart>=0&&mathEnd>=0&&(start<0||mathStart<start)) {
+      output+=source.slice(cursor,mathEnd+2);cursor=mathEnd+2;continue;
+    }
     if(start<0)return output+source.slice(cursor);
     output+=source.slice(cursor,start);
     let nameStart=start+1;if(source[nameStart]==='/')nameStart++;
@@ -943,7 +948,7 @@ function stripMathLabelInlineStyles(source) {
       else if(ch==='"'||ch==="'")quote=ch;
       else if(ch==='>')break;
     }
-    if(end>=source.length)return output;
+    if(end>=source.length){output+='#lt;';cursor=start+1;continue;}
     const tag=source.slice(start,end+1),tagEnd=tag.length-1;let index=nameEnd-start;
     let clean=tag.slice(0,index);
     while(index<tagEnd) {
@@ -995,6 +1000,10 @@ function diagramSource(raw,mathLabels=false) {
   if(!mathLabels)return encoded;
   return encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
     .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name)));
+}
+function diagramSupportsMathLabels(source) {
+  const header=source.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('%%'))||'';
+  return /^(?:flowchart|graph)\b|^stateDiagram(?:-v2)?\b/i.test(header);
 }
 const mathLabelTags=['div','span','br','b','strong','i','em','u','s','sub','sup','p','math','semantics','annotation','mrow','mi','mn','mo','mfrac','msup','msub','msubsup','msqrt','mroot','mtext','mstyle','mspace','mpadded','mphantom','menclose','munder','mover','munderover','mtable','mtr','mtd','merror','maction'];
 const mathLabelAttrs=['xmlns','class','style','display','mathvariant','mathsize','scriptlevel','displaystyle','mathbackground','mathcolor','encoding','notation','rowspan','columnspan','rowalign','columnalign','columnlines','rowlines','columnspacing','rowspacing','linethickness','bevelled','stretchy','symmetric','fence','separator','form','lspace','rspace','minsize','maxsize','largeop','movablelimits','accent','accentunder'];
@@ -1051,7 +1060,7 @@ async function diagrams(generation, coalesce=false) {
       if(generation!==S.generation)return;
       const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
       try {
-        const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels,diagramContentWidth($('.diagram-stage',fig)));
+        const mathLabels=diagramSupportsMathLabels(fig._mermaid)&&/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels,diagramContentWidth($('.diagram-stage',fig)));
         const {svg}=await mermaid.render(id,diagramSource(fig._mermaid,mathLabels));
         if(generation!==S.generation)return;
         rendered.push({fig,node:cleanSVG(svg,mathLabels)});
@@ -1077,7 +1086,7 @@ async function diagrams(generation, coalesce=false) {
     if(generation!==S.generation)return;
     const id='c11md-'+generation+'-'+n+'-'+(++diagramRenderId);
     try {
-      const mathLabels=/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels,diagramContentWidth($('.diagram-stage',fig)));
+      const mathLabels=diagramSupportsMathLabels(fig._mermaid)&&/\$\$[\s\S]*?\$\$/.test(fig._mermaid);configureMermaid(mathLabels,diagramContentWidth($('.diagram-stage',fig)));
       const {svg}=await mermaid.render(id,diagramSource(fig._mermaid,mathLabels));
       if(generation!==S.generation)return;
       const a=capture();$('.diagram-stage',fig).replaceChildren(cleanSVG(svg,mathLabels));fig._theme=S.resolved;layoutAll();restore(a);

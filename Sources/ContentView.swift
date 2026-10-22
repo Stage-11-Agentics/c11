@@ -9331,9 +9331,7 @@ private struct FeedbackComposerAppMetadata {
     static var current: FeedbackComposerAppMetadata {
         let infoDictionary = Bundle.main.infoDictionary ?? [:]
         let env = ProcessInfo.processInfo.environment
-        let commit = (infoDictionary["CMUXCommit"] as? String).flatMap { value in
-            value.isEmpty ? nil : value
-        } ?? env["CMUX_COMMIT"]
+        let commit = C11BuildIdentity.resolveCommit(info: infoDictionary, environment: env)
 
         return FeedbackComposerAppMetadata(
             appVersion: infoDictionary["CFBundleShortVersionString"] as? String ?? "",

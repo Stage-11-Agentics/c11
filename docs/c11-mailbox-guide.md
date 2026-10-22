@@ -86,10 +86,10 @@ c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 
 # In panel "watcher":
 c11 set-title "watcher"
-c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to PTY injection
-# The framed block lands in the PTY the next time builder sends. An agent at
-# its prompt gets it as a new turn at once; mid-turn, it lands when the turn
-# ends (see "When the push lands" below).
+c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to the doorbell
+# The invitation starts a turn when the agent is idle; it never includes
+# the envelope body. Pi uses its native extension when available, otherwise
+# c11 uses the typed route (see "Pi native delivery" below).
 c11 mailbox recv --drain                   # pull now, when stdout is a terminal
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
@@ -349,6 +349,9 @@ A turn end read from a transcript counts at the time the agent wrote it, not whe
 A socket Return (`c11 send-key enter`, or `c11 send` with no text) on a composer the panel's reader calls empty or a suggestion usually starts no turn. c11 reads the composer before that Return and again a second later. If the composer is unchanged, no agent report arrived, and the journal shows no turn, the Return's submit edge is taken back and the gate reopens as a new idle period, so mail sent after it rings at once. A Return typed on the keyboard is never read; it holds the gate as below.
 
 A session start (a fresh launch, a session c11 resumed after a restart, a Claude `/clear`) says nothing about the turn. It names the agent's process and makes the turn **unknown** until the harness reports an edge. A working state with nothing behind it also becomes unknown: a working edge or Return holds the gate for 2 minutes, and if the agent's journal does not show a turn in progress by then, the turn reads as unknown. A turn the journal shows in progress holds for as long as it runs, including a long tool call that prints nothing.
+
+The following composer checks describe the typed route. Pi native delivery
+uses the same idle edge and bypasses the composer checks.
 
 | Recipient agent state | What gets typed |
 |-----------------------|----------------|

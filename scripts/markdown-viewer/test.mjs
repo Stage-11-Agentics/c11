@@ -34,14 +34,79 @@ try {
     await page.setViewportSize({width,height:820});await settings({theme,scale:1,typeface:'serif',outlineOpen:'auto'});
     for(const file of files) {
       const markdown=await readFile(file,'utf8');await load(markdown,'/synthetic/'+path.basename(file));
-      const result=await page.evaluate(()=>({heads:c11md.outline().length,figures:document.querySelectorAll('.diagram').length,svgs:document.querySelectorAll('.diagram svg').length,failed:document.querySelectorAll('.diagram-err').length,overflow:document.documentElement.scrollWidth>innerWidth}));
+      const result=await page.evaluate(()=>({heads:c11md.outline().length,figures:document.querySelectorAll('.diagram').length,svgs:document.querySelectorAll('.diagram-stage > svg').length,failed:document.querySelectorAll('.diagram-err').length,overflow:document.documentElement.scrollWidth>innerWidth}));
       assert.ok(result.heads>0,file);assert.equal(result.failed,0,`${file}: diagram failure`);assert.equal(result.figures,result.svgs,file);assert.equal(result.overflow,false,file);
       report.matrices.push({theme,width,file:path.relative(root,file),...result});
     }
   }
-  scenario('7 fixtures at 560/820/1200 px in light/dark',{loads:report.matrices.length});
+  scenario('8 fixtures at 560/820/1200 px in light/dark',{loads:report.matrices.length});
+  const mermaid12=await readFile(path.join(fixtures,'mermaid-12-acceptance.md'),'utf8');
+  await load(mermaid12,'/synthetic/mermaid-12-acceptance.md');
+  const mermaid12Labels=await page.locator('.diagram-stage > svg').allTextContents();
+  assert.equal(mermaid12Labels.length,6,'flowchart, sequence, class, state, gantt, and math diagrams must render');
+  for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof']])
+    assert.ok(mermaid12Labels[index].includes(label),`diagram ${index+1} did not render its ${label} label`);
+  const assertMathLabels=async()=>{
+    assert.equal(await page.locator('.diagram-stage math').count(),2,'both formulas must survive as MathML in the label');
+    const mathLayouts=await page.locator('.diagram-stage math').evaluateAll(nodes=>nodes.map(math=>{
+      const shape=math.closest('g.node')?.querySelector('rect.basic');
+      const box=shape?.getBoundingClientRect(),visual=math.getBoundingClientRect();
+      return {
+        attribute:math.getAttribute('display'),style:math.style.display,computed:getComputedStyle(math).display,
+        visible:getComputedStyle(math).display==='math'&&visual.width>0&&visual.height>0,
+        contained:!!box&&!!visual&&visual.left>=box.left-1&&visual.right<=box.right+1&&visual.top>=box.top-1&&visual.bottom<=box.bottom+1
+      };
+    }));
+    assert.ok(mathLayouts.every(layout=>layout.attribute!=='block'&&layout.computed==='math'),`KaTeX labels must use inline MathML: ${JSON.stringify(mathLayouts)}`);
+    assert.ok(mathLayouts.every(layout=>layout.visible&&layout.contained),`MathML labels must be visible and stay inside their Mermaid node shapes: ${JSON.stringify(mathLayouts)}`);
+    assert.equal(await page.locator('.diagram-stage msqrt').count(),1,'the radical was lost from the MathML label');
+    assert.equal(await page.locator('.diagram-stage mfrac').count(),1,'the fraction was lost from the MathML label');
+  };
+  await assertMathLabels();
+  const ganttSvg=page.locator('.diagram-stage > svg').nth(4);
+  const assertGanttAxis=async()=>{
+    const metrics=await ganttSvg.evaluate(svg=>{
+      const stage=svg.closest('.diagram-stage'),style=getComputedStyle(stage);
+      return {
+        viewBoxWidth:svg.viewBox.baseVal.width,
+        contentWidth:Math.max(600,Math.round(stage.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight))),
+        ticks:[...svg.querySelectorAll('.grid text')].map(node=>{const box=node.getBoundingClientRect();return {x:box.left,right:box.right,text:node.textContent};})
+      };
+    });
+    assert.equal(metrics.viewBoxWidth,metrics.contentWidth,'Gantt must render against the available viewer width');
+    assert.deepEqual(metrics.ticks.map(tick=>tick.text),['Oct 22','Oct 23','Oct 24'],'Gantt must preserve the fixture daily date format');
+    for(let index=1;index<metrics.ticks.length;index++)assert.ok(metrics.ticks[index-1].right<=metrics.ticks[index].x+1,`Gantt axis labels overlap: ${metrics.ticks[index-1].text} / ${metrics.ticks[index].text}`);
+  };
+  await assertGanttAxis();
+  await page.setViewportSize({width:560,height:820});
+  await load(mermaid12,'/synthetic/mermaid-12-acceptance.md',2);
+  await assertGanttAxis();
+  await assertMathLabels();
+  assert.equal(await page.locator('.diagram-err').count(),0);
+  scenario('Mermaid acceptance matrix renders five diagram types and inline MathML labels');
+  let mathDiagramRevision=3;
+  const assertSingleMermaidDiagram=async(name,source,{mathCount,assertNoRawMath=false}={})=>{
+    await load('```mermaid\n'+source+'\n```\n','/synthetic/'+name+'.md',mathDiagramRevision++);
+    const result=await page.evaluate(()=>({
+      svg:document.querySelectorAll('.diagram-stage > svg').length,
+      errors:document.querySelectorAll('.diagram-err').length,
+      math:document.querySelectorAll('.diagram-stage math').length,
+      text:document.querySelector('.diagram-stage')?.textContent||''
+    }));
+    assert.equal(result.svg,1,`${name}: diagram did not render as one SVG`);
+    assert.equal(result.errors,0,`${name}: Mermaid reported a diagram error`);
+    if(mathCount!==undefined)assert.equal(result.math,mathCount,`${name}: unexpected MathML count`);
+    if(assertNoRawMath)assert.doesNotMatch(result.text,/<math\b/i,`${name}: raw MathML markup appeared as label text`);
+    scenario(name,{svg:result.svg,errors:result.errors,math:result.math});
+  };
+  await assertSingleMermaidDiagram('Mermaid math inequality label','flowchart LR\n  A["$$a<b$$"] --> B',{mathCount:1});
+  await assertSingleMermaidDiagram('Mermaid label inequality after math','flowchart LR\n  A["Input: $$x^2$$"] --> B["n<k"]',{mathCount:1});
+  await assertSingleMermaidDiagram('Mermaid math inequality range','flowchart LR\n  A["$$0<x<1$$"] --> B',{mathCount:1});
+  await assertSingleMermaidDiagram('Mermaid class labels keep their native path','classDiagram\n  class A\n  A : +$$x^2$$ field',{mathCount:0,assertNoRawMath:true});
+  await assertSingleMermaidDiagram('Mermaid Gantt labels keep their native path','gantt\n  dateFormat YYYY-MM-DD\n  section S\n  Task $$x^2$$ :a, 2026-10-22, 1d',{mathCount:0,assertNoRawMath:true});
+  await assertSingleMermaidDiagram('Mermaid sequence labels keep their native path','sequenceDiagram\n  Alice->>Bob: $$x^2$$\n  Bob->>Alice: ok',{mathCount:0,assertNoRawMath:true});
   const messaging=await readFile(path.join(root,'docs/c11-messaging-primitive-design.md'),'utf8');
-  await load(messaging);assert.equal(await page.locator('.diagram svg').count(),7);scenario('messaging document: all 7 diagrams, including entity-bearing sequences');
+  await load(messaging);assert.equal(await page.locator('.diagram-stage > svg').count(),7);scenario('messaging document: all 7 diagrams, including entity-bearing sequences');
   const specimen='---\ntitle: Synthetic reader\n---\n# Reader\n\nA footnote[^note], **bold**, $E=mc^2$ and [jump](#tasks).\n\n> [!NOTE]\n> Keep the reader’s place.\n\n## Tasks\n\n- [x] Complete\n- [ ] Pending\n\n| Key | Value | Notes |\n| --- | --- | --- |\n| One | Two | Three |\n\n```javascript\nconst answer = 42;\n```\n\n$$\n\\sum_{i=1}^{n} i\n$$\n\n```mermaid\nflowchart LR\n  A[Input] --> B[Output]\n```\n\n[^note]: A margin note.\n';
   await page.setViewportSize({width:1200,height:820});await load(specimen);
   assert.equal(await page.locator('.callout-note').count(),1);assert.equal(await page.locator('input:checked').count(),1);
@@ -74,7 +139,7 @@ try {
   await load(specimen);
   const infoCorpus='## Info strings\n\n```Mermaid\nflowchart LR\n  A --> B\n```\n\n```mermaid title=sample\nflowchart LR\n  C --> D\n```\n\n- mixed fences\n  ```mermaid title\n  flowchart LR\n    E --> F\n  ```\n  ```js\n  const mixed = 42;\n  ```\n';
   await load(infoCorpus,'/synthetic/info-strings.md');
-  assert.equal(await page.locator('.diagram svg').count(),3);assert.equal(await page.locator('.diagram-err').count(),0);
+  assert.equal(await page.locator('.diagram-stage > svg').count(),3);assert.equal(await page.locator('.diagram-err').count(),0);
   await page.locator('.code .copy').click();
   assert.equal(await page.evaluate(()=>testMessages.findLast(x=>x.type==='copy').text),'const mixed = 42;\n');
   scenario('case-insensitive Mermaid first-word metadata renders diagrams and preserves neighboring code-copy source');
@@ -482,7 +547,7 @@ try {
     'flowchart LR\n  A["first line\n---\nlast line"] --> B',
   ];
   await load(literalDiagrams.map(x=>['```mermaid',x,'```'].join('\n')).join('\n\n'),'/synthetic/diagram-literals.md');
-  assert.equal(await page.locator('.diagram svg').count(),literalDiagrams.length);
+  assert.equal(await page.locator('.diagram-stage > svg').count(),literalDiagrams.length);
   assert.equal(await page.locator('.diagram-err').count(),0,'ordinary label text was refused as a directive');
   scenario('Mermaid labels may document HTML, CSS and thematic-rule text without activating it');
   const hostileMermaid=[
@@ -519,10 +584,58 @@ try {
   await page.evaluate(svg=>{window.originalMermaidRender=mermaid.render;mermaid.render=async()=>({svg});},unsafeSvg);
   await load('```mermaid\nflowchart LR\n  A --> B\n```\n','/synthetic/svg-sanitizer.md');
   await page.evaluate(()=>{mermaid.render=window.originalMermaidRender;delete window.originalMermaidRender;});
-  assert.equal(await page.locator('.diagram-stage svg').count(),1);
+  assert.equal(await page.locator('.diagram-stage > svg').count(),1);
   assert.equal(await page.locator('.diagram-stage foreignObject,.diagram-stage image,.diagram-stage a,.diagram-stage script,.diagram-stage img,.diagram-stage [onerror],.diagram-stage [onload],.diagram-stage [href]').count(),0);
   assert.equal(await page.evaluate(()=>window.__owned),undefined);
   scenario('SVG sanitizer removes injected active elements, handlers, and external references');
+  await page.evaluate(()=>{
+    window.transientMathStyle=[];
+    window.transientMathRenderSources=[];
+    window.transientMathOriginalRender=mermaid.render;
+    mermaid.render=async(id,source)=>{
+      window.transientMathRenderSources.push(source);
+      return window.transientMathOriginalRender(id,source);
+    };
+    window.transientMathStyleObserver=new MutationObserver(()=>{
+      for(const node of document.querySelectorAll('foreignObject [style]')) {
+        const style=node.getAttribute('style')||'';
+        if(/position\s*:\s*fixed|inset\s*:|z-index\s*:\s*99999|background\s*:\s*red/i.test(style))window.transientMathStyle.push(style);
+      }
+    });
+    window.transientMathStyleObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+  });
+  const transientMathAttack='```mermaid\nflowchart LR\n  A["<div style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>OVERLAY</div><math-α style=\'position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red\'>CUSTOM</math-α><div style=position:fixed;inset:0;z-index:99999;background:red;--x=a>UNQUOTED</div><div/style=\'position:fixed;inset:0;z-index:99999;background:red\'>SLASH</div> $$x^2$$"] --> B\n```\n';
+  await load(transientMathAttack,'/synthetic/transient-math-style.md');
+  await page.evaluate(()=>{transientMathStyleObserver.disconnect();mermaid.render=transientMathOriginalRender;});
+  assert.equal(await page.evaluate(()=>transientMathRenderSources.some(source=>/position\s*:\s*fixed|inset\s*:|z-index\s*:|background\s*:\s*red/i.test(source))),false,'unsafe author CSS reached Mermaid input');
+  assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'untrusted inline CSS reached Mermaid\'s attached temporary SVG');
+  assert.equal(await page.locator('.diagram-stage math').count(),1,'the math label stopped rendering');
+  scenario('unsafe author CSS is removed before inline math labels render');
+  await page.evaluate(()=>{
+    window.transientMathStyle.length=0;
+    window.transientMathRenderSources.length=0;
+    window.transientMathOriginalRender=mermaid.render;
+    mermaid.render=async(id,source)=>{
+      window.transientMathRenderSources.push(source);
+      return window.transientMathOriginalRender(id,source);
+    };
+    window.transientMathStyleObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+  });
+  const unterminatedMathAttack='```mermaid\nflowchart LR\n  A["$$x^2$$<div style=position:fixed;inset:0;z-index:99999;width:1200px;height:1000px;background:red;\n```\n';
+  await load(unterminatedMathAttack,'/synthetic/unterminated-math-style.md');
+  await page.evaluate(()=>{transientMathStyleObserver.disconnect();mermaid.render=transientMathOriginalRender;});
+  assert.equal(await page.evaluate(()=>transientMathRenderSources.length),1,'unterminated attack did not reach Mermaid render input');
+  assert.deepEqual(await page.evaluate(()=>transientMathStyle),[],'unterminated author inline CSS reached Mermaid\'s attached temporary SVG');
+  scenario('unterminated math-label markup is dropped before Mermaid rendering');
+  const unsafeMathSvg='<svg xmlns="http://www.w3.org/2000/svg"><foreignObject width="120" height="40"><div xmlns="http://www.w3.org/1999/xhtml" style="position:fixed;inset:0;z-index:99999;width:9999px;background:url(https://example.invalid/x)"><span>Math <math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mn>1</mn><mn>2</mn></mfrac></math><img src="https://example.invalid/x" onerror="window.__owned=5"><script>window.__owned=6</script><a href="javascript:window.__owned=7">bad</a></span></div></foreignObject></svg>';
+  await page.evaluate(svg=>{window.originalMermaidRender=mermaid.render;mermaid.render=async()=>({svg});},unsafeMathSvg);
+  await load('```mermaid\nflowchart LR\n  A["$$x^2$$"] --> B\n```\n','/synthetic/math-label-sanitizer.md');
+  await page.evaluate(()=>{mermaid.render=window.originalMermaidRender;delete window.originalMermaidRender;});
+  assert.equal(await page.locator('.diagram-stage math').count(),1,'sanitized MathML was lost');
+  assert.equal(await page.locator('.diagram-stage img,.diagram-stage script,.diagram-stage a,.diagram-stage iframe,.diagram-stage [onerror],.diagram-stage [href]').count(),0);
+  assert.equal(await page.locator('.diagram-stage [style*="fixed"],.diagram-stage [style*="inset"],.diagram-stage [style*="z-index"],.diagram-stage [style*="background"],.diagram-stage [style*="9999"]').count(),0,'unsafe math-label styles survived');
+  assert.equal(await page.evaluate(()=>window.__owned),undefined);
+  scenario('Math labels preserve MathML while dropping active HTML and external references');
   // Async diagram replacement above an unchanged lower section holds its position.
   const graph='```mermaid\nflowchart TD\n A --> B\n```\n\n', above='# Async\n\n'+graph+long;
   await settings({scale:1,typeface:'serif'});await load(above,'/synthetic/async.md');await page.evaluate(()=>c11md.scrollToHeading('Section 30'));

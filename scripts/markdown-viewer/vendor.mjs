@@ -11,7 +11,7 @@ const nm = path.join(here, 'node_modules');
 await mkdir(out, { recursive: true });
 await build({ entryPoints:[path.join(here,'markdown-entry.js')], outfile:path.join(out,'markdown.js'), bundle:true, minify:true, format:'iife', legalComments:'eof' });
 for (const [pkg, src, dst] of [
-  // package.json's KaTeX override changes npm resolution; Mermaid's prebuilt bundle still embeds KaTeX 0.16.45.
+  // Mermaid ships a prebuilt bundle; its embedded KaTeX version is checked and recorded below.
   ['mermaid','dist/mermaid.min.js','mermaid.min.js'],
   ['@highlightjs/cdn-assets','highlight.min.js','highlight.min.js'],
   ['dompurify','dist/purify.min.js','purify.min.js'],
@@ -52,8 +52,19 @@ async function notices(dir,prefix='') {
   }
 }
 await notices(nm);
-// Mermaid 11.16.1 prebundles parser dependencies, so their notices are not present in node_modules.
-licenses += await readFile(path.join(here,'mermaid-bundled-notices.md'),'utf8');
+// Mermaid prebundles parser dependencies that do not ship as independent runtime files.
+const bundledNotices=await readFile(path.join(here,'mermaid-bundled-notices.md'),'utf8');
+const includedNotices=new Set([...licenses.matchAll(/^### (.+)$/gm)].map(match=>match[1]));
+for(const section of bundledNotices.split(/(?=^### )/m)) {
+  const heading=section.match(/^### (.+)$/m)?.[1];
+  if(heading&&!includedNotices.has(heading)) licenses+=section;
+}
+const mermaidBundle=await readFile(path.join(out,'mermaid.min.js'),'utf8');
+const embeddedKatex=mermaidBundle.match(/renderToHTMLTree"\),[A-Za-z_$][\w$]*="(\d+\.\d+\.\d+)"/)?.[1];
+if(!embeddedKatex) throw new Error('Could not identify Mermaid bundle embedded KaTeX version');
+const [katexMajor,katexMinor,katexPatch]=embeddedKatex.split('.').map(Number);
+if(katexMajor===0&&(katexMinor<18||katexMinor===18&&katexPatch<2)) throw new Error(`Mermaid bundle embeds unsupported KaTeX ${embeddedKatex}`);
+manifest.mermaid.embeddedKatex=embeddedKatex;
 const files={};
 async function hashes(dir) { for(const e of await readdir(dir,{withFileTypes:true})) {
   const f=path.join(dir,e.name); if(e.isDirectory()) await hashes(f);

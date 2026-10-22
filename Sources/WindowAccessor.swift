@@ -45,6 +45,9 @@ extension WindowAccessor {
 final class WindowObservingView: NSView {
     var onWindow: ((NSWindow) -> Void)?
 
+    // Observes the window only; never the target of a click or drag.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
         if let newWindow {

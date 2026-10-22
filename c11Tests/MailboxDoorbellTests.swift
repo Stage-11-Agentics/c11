@@ -1541,9 +1541,10 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         }
     }
 
-    private func registration(panel: UUID = UUID(), pid: pid_t = 123, start: UInt64 = 456) -> MailboxNativeDoorbell.Registration {
+    private func registration(panel: UUID = UUID(), pid: pid_t = 123, start: UInt64 = 456,
+                              route: MailboxNativeDoorbell.Route = .piExtension) -> MailboxNativeDoorbell.Registration {
         .init(id: UUID(), panelID: panel, agentPID: pid, processStart: start,
-              sessionID: UUID().uuidString, route: .piExtension, canQueue: false)
+              sessionID: UUID().uuidString, route: route, canQueue: false)
     }
 
     func testNativeDeliveryUsesCommonGuardsWithoutReadingDraft() {
@@ -1759,6 +1760,91 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             XCTAssertTrue(MailboxNativeDoorbell.failureSticksToTypedGate(route: .ompExtension, reason: reason), reason)
         }
         XCTAssertTrue(MailboxNativeDoorbell.failureSticksToTypedGate(route: .claudeInbox, reason: "native_rejected"))
+    }
+
+    func testOmpHardFailureAdmitsNewMailWithoutRetryingTheSameFailedIDs() {
+        let broker = MailboxNativeDoorbell(), reg = registration(route: .ompExtension)
+        let state = MailboxStdinBufferStore()
+        state.buffer.noteAgentTurn(surfaceId: reg.panelID, atPrompt: true, at: Date())
+        var fallback: MailboxNativeDoorbell.Fallback?
+        var nativeCovered: Set<String> = []
+        let sent = [expectation(description: "first native invitation"), expectation(description: "new mail invitation")]
+        var writes = 0
+        broker.register(reg, write: { frame in
+            XCTAssertEqual(frame["text"] as? String, MailboxDoorbell.text)
+            if writes < sent.count { sent[writes].fulfill() }
+            writes += 1
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+
+        func nativeAvailable(arrivingID: String? = nil) -> Bool {
+            let unread = Set(state.buffer.queuedEntries(surfaceId: reg.panelID).map(\.id))
+            return fallback?.blocksNative(registrationID: reg.id, unreadIDs: unread,
+                coveredIDs: state.doorbell.ledger(for: reg.panelID).coveredIds, arrivingID: arrivingID) != true
+        }
+        func admit(_ id: String) -> MailboxStdinDelivery.AdmitResult {
+            // Workspace reads the admission gate before enqueue. An active
+            // input transaction must not hide newly available native delivery.
+            let gate = MailboxStdinDelivery.Gate(nativeRoute: nativeAvailable(arrivingID: id),
+                ownsTerminal: true, inputTransactionActive: true)
+            return MailboxStdinDelivery.deliver(state: state, surfaceId: reg.panelID,
+                entry: .init(id: id, recipientName: "omp", block: "body", bufferedAt: Date()), gate: gate,
+                logEvicted: { _ in }, ringInput: { capture in
+                    XCTAssertFalse(capture, "omp must not fall through to a composer reader")
+                    return .init(nativeRoute: nativeAvailable(), prompt: nil)
+                })
+        }
+        func offer(_ ids: Set<String>) -> UUID {
+            broker.deliver(reg, timeout: 30) { result in
+                switch result {
+                case .failed(let reason):
+                    fallback = .init(registration: reg, ids: ids, reason: reason)
+                case .accepted(let late):
+                    XCTAssertTrue(late)
+                    state.doorbell.update(surfaceId: reg.panelID) { ledger in
+                        _ = MailboxNativeDoorbell.recordAcceptance(ids, registrationID: reg.id,
+                            currentRegistrationID: broker.registration(panelID: reg.panelID)?.id,
+                            nativeCovered: &nativeCovered, ledger: &ledger)
+                    }
+                }
+            }
+        }
+
+        XCTAssertEqual(admit("first"), .doorbell(bytes: 4, effect: .ring))
+        let first = offer(["first"])
+        wait(for: [sent[0]], timeout: 1)
+        broker.resolve(reg, requestID: first, result: .failed("native_timeout"))
+        XCTAssertFalse(nativeAvailable(), "rechecks must not retry the failed envelope")
+        XCTAssertEqual(admit("first"), .buffered(bytes: 4), "redelivery of one ID is not new mail")
+
+        XCTAssertEqual(admit("second"), .doorbell(bytes: 4, effect: .ring))
+        let second = offer(["first", "second"])
+        wait(for: [sent[1]], timeout: 1)
+        broker.resolve(reg, requestID: second, result: .failed("native_write_failed"))
+        XCTAssertFalse(nativeAvailable(), "a failed retry must latch its new IDs too")
+        XCTAssertEqual(admit("second"), .buffered(bytes: 4))
+
+        broker.resolve(reg, requestID: first, result: .accepted(late: false))
+        XCTAssertEqual(nativeCovered, ["first"], "late acceptance covers only dispatch-time IDs")
+        XCTAssertFalse(nativeAvailable(), "late acceptance must not clear the newer failure")
+        XCTAssertEqual(admit("third"), .doorbell(bytes: 4, effect: .ring))
+    }
+
+    func testNativeFallbackPreservesTypedRoutesAndIgnoresCoveredNewMail() {
+        for route: MailboxNativeDoorbell.Route in [.ompExtension, .piExtension, .claudeInbox] {
+            let reg = registration(route: route)
+            let fallback = MailboxNativeDoorbell.Fallback(registration: reg, ids: ["failed"], reason: "native_timeout")
+            XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed"], coveredIDs: []))
+            XCTAssertEqual(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed", "new"], coveredIDs: []),
+                           route != .ompExtension)
+            XCTAssertEqual(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed"], coveredIDs: [], arrivingID: "new"),
+                           route != .ompExtension, "arrival is visible before enqueue")
+            XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed", "new"], coveredIDs: ["new"]))
+            XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed"], coveredIDs: ["new"], arrivingID: "new"))
+            XCTAssertFalse(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed"], coveredIDs: ["failed"]))
+            XCTAssertFalse(fallback.blocksNative(registrationID: UUID(), unreadIDs: ["failed"], coveredIDs: []))
+        }
     }
 
     func testNativeAndFallbackLogsNameTheirRoutes() throws {

@@ -182,7 +182,7 @@ c11 mailbox send --to watcher --topic ci.status --urgent --body "CI red" \
   --reply-to builder --in-reply-to 01K3A2B7X8PQRTVWYZ0123456J
 ```
 
-Auto-fills `version`, `id` (fresh ULID), `ts` (current UTC), and `from` (the caller's panel title resolved over the socket). Prints the new envelope id on stdout.
+Auto-fills `version`, `id` (fresh ULID), `ts` (current UTC), and `from` (the caller's declared mailbox address, or `id:<panel-uuid>` when no address is set). Prints the new envelope id on stdout.
 
 Send flags accepted by the CLI:
 
@@ -205,7 +205,7 @@ Send flags accepted by the CLI:
 
 An empty body with no `--body-ref` is refused. `--body` together with a trailing argument, a second trailing argument, and any unknown flag are refused. The command exits nonzero and writes nothing. `--body` takes the next token as text even when it starts with dashes (`--body ---`, `--body --help`). `--` before a trailing argument does the same (`-- --literal`). `mailbox send --help` still prints help and sends nothing.
 
-With no explicit `--from`, c11 keeps the existing title-based sender for callers that already declare `mailbox.address`. Without a non-empty address, it writes `id:<panel-uuid>` so a reply still reaches that panel after a rename. `id:<uuid>` is an exact address accepted by `--to`. `c11 mailbox sender-from` prints the same default for raw-file writers; `panel-name` remains a title-only helper.
+With no explicit `--from`, c11 uses the non-empty `mailbox.address` declared by the caller. Without a non-empty address, it writes `id:<panel-uuid>` so a reply still reaches that panel after a rename. `id:<uuid>` is an exact address accepted by `--to`. `c11 mailbox sender-from` prints the same default for raw-file writers; `panel-name` remains a title-only helper.
 
 **Raw file write (any process, any language):**
 
@@ -371,7 +371,10 @@ omp has no typed composer reader, so there is no typed fallback. A busy
 a turn) is retried natively at the next ring, bounded by the 20-per-10-minutes
 cap. A hard failure (`native_timeout`, unavailable, replaced, disconnected, or
 `C11_OMP_NATIVE_MAIL_DISABLED=1`) leaves the mail in the inbox for
-`c11 mailbox recv --ack`, exactly as before this route existed. The extension
+`c11 mailbox recv --ack`. The failed IDs do not retry indefinitely. A new unread
+envelope permits a fresh native attempt while that failed mail remains unread;
+a later failure suppresses the IDs from that attempt until more mail arrives.
+Pi and Claude keep their existing typed-fallback behavior. The extension
 writes nothing: omp's own state, including `~/.omp`, is untouched. Task
 subagents (`hasUI` false) neither subscribe nor report lifecycle. For diagnosis
 launch with `C11_OMP_NATIVE_MAIL_DISABLED=1`; lifecycle reports remain.

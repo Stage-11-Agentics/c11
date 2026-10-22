@@ -3512,7 +3512,7 @@ struct CMUXCLI {
             let json = jsonOutput || remaining.contains("--json")
             let directionArgs = remaining.filter { $0 != "--json" }
             guard directionArgs.count == 1, let direction = directionArgs.first else {
-                throw CLIError(message: "drag-panel-to-split requires a direction")
+                throw CLIError(message: String(localized: "cli.dragPanelToSplit.direction.count", defaultValue: "drag-panel-to-split takes exactly one direction (left|right|up|down)"))
             }
             let workspaceId = try resolveLayoutWorkspaceId(workspaceArg, client: client)
             let panelId = try resolveSurfaceId(panelArg, workspaceId: workspaceId, client: client)
@@ -7682,7 +7682,7 @@ struct CMUXCLI {
         if let workspaceOpt {
             forwarded += ["--workspace", workspaceOpt]
         }
-        if let panel = panelOpt ?? surfaceOpt {
+        if let panel = try validatedPanelTargetValue(panelOpt ?? surfaceOpt, wasProvided: panelOpt != nil || surfaceOpt != nil) {
             forwarded += ["--panel", panel]
         }
 
@@ -10543,9 +10543,7 @@ struct CMUXCLI {
         // See resolveWorkspaceId — same hazard. Empty string is a programming
         // error, not a request for "focused surface". Fall through to focused
         // is reserved for the nil case where no flag was passed at all.
-        if let raw, raw.isEmpty {
-            throw CLIError(message: "--panel received an empty value (likely from an unset shell variable, e.g. $C11_PANEL_ID). Pass a real ref or omit the flag.")
-        }
+        _ = try validatedPanelTargetValue(raw, wasProvided: raw != nil)
         if let raw, client.scopedWindow != nil, !isUUID(raw), !isHandleRef(raw), Int(raw) == nil {
             throw CLIError(message: "not_found: " + String(localized: "cli.window.scope.workspaceTabNotFound", defaultValue: "Panel not found in scoped workspace") + ": \(raw)")
         }

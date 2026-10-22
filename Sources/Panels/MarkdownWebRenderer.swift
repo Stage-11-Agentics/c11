@@ -5,11 +5,17 @@ import WebKit
 
 @MainActor
 final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
-    private let policy: MarkdownAssetPolicy
+    private var policy: MarkdownAssetPolicy
     private var active: [ObjectIdentifier: UUID] = [:]
     private let queue = DispatchQueue(label: "com.stage11.c11.markdown-assets", qos: .userInitiated)
 
     init(policy: MarkdownAssetPolicy) { self.policy = policy }
+
+    /// Points relative-image serving at the document now shown (C11-387). In-flight
+    /// requests keep the policy they started with.
+    func retargetDocument(to directory: URL?) {
+        policy = policy.retargeted(documentDirectory: directory)
+    }
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         let key = ObjectIdentifier(urlSchemeTask)
@@ -51,6 +57,7 @@ final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
 /// Read-only content must not claim WebKit's page zoom shortcuts.
 final class MarkdownWKWebView: WKWebView {
     var allowsPanelFocus = false
+    var schemeHandler: MarkdownSchemeHandler?
     weak var renderer: MarkdownWebRenderer?
     var onShowPanelDetails: (() -> Void)?
     var onViewportSizeChange: ((NSSize) -> Void)?
@@ -266,6 +273,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
     private var entryNavigationAdmitted = false
     private var closed = false
     private var loadedContent: String?
+    private var loadedDocumentPath: String?
     private var loadedSettings: [String: String] = [:]
     private var revision = 0
     private var pendingRestorePosition: MarkdownReadingPosition?
@@ -536,8 +544,13 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
             }
         }
         let content = restoreContentBeforeReload ?? panel.content
-        if loadedContent != content {
+        if loadedContent != content || loadedDocumentPath != panel.filePath {
             loadedContent = content
+            loadedDocumentPath = panel.filePath
+            // Relative images resolve against the folder of the document now shown, not the first one.
+            webView.schemeHandler?.retargetDocument(
+                to: panel.filePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+            )
             revision += 1
             call("load", arguments: [["markdown": content, "documentPath": panel.filePath ?? "",
                                       "baseURL": panel.filePath.map { URL(fileURLWithPath: $0).absoluteString } ?? "",
@@ -963,6 +976,7 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.viewerScheme)
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
         let webView = MarkdownWKWebView(frame: NSRect(origin: .zero, size: panel.lastKnownViewportSize), configuration: config)
+        webView.schemeHandler = scheme
         webView.allowsMagnification = false
         webView.allowsBackForwardNavigationGestures = false
         webView.pageZoom = 1

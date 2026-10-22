@@ -313,7 +313,6 @@ final class ConversationRefTests: XCTestCase {
 
         let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
             mode: .clean,
-            auditComplete: true,
             ownership: .unique,
             kind: active?.kind ?? "codex",
             id: active?.id ?? "",
@@ -484,7 +483,6 @@ final class ConversationRefTests: XCTestCase {
 
         let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
             mode: .clean,
-            auditComplete: true,
             ownership: Workspace.resumeOwnership(for: active),
             kind: active.kind,
             id: active.id,

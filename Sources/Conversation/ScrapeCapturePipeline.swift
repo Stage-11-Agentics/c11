@@ -68,6 +68,37 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     }
 }
 
+extension ScrapeCaptureContext {
+    /// A panel needs the scrape only when the store holds no exact causal
+    /// evidence for it: no ref, a placeholder, or an inferred ref. Tombstones
+    /// stay down.
+    static func needsScrape(_ ref: ConversationRef?) -> Bool {
+        guard let ref else { return true }
+        guard ref.state != .tombstoned else { return false }
+        return ref.placeholder || !ref.capturedVia.isCausal
+    }
+
+    /// The contexts worth collecting, grouped by kind. A kind with no panel
+    /// that needs the scrape is not collected at all. Codex keeps every one of
+    /// its contexts once any needs it: causal Codex surfaces reserve their ids
+    /// and anchor the same-cwd exclusion for the inferred ones. Other kinds
+    /// collect only the panels that need it.
+    static func scoped(
+        _ contexts: [ScrapeCaptureContext],
+        to conversations: [String: PanelConversations]
+    ) -> [String: [ScrapeCaptureContext]] {
+        var result: [String: [ScrapeCaptureContext]] = [:]
+        for (kind, kindContexts) in Dictionary(grouping: contexts, by: \.kind) {
+            let needing = kindContexts.filter {
+                needsScrape(conversations[$0.surfaceId]?.active)
+            }
+            guard !needing.isEmpty else { continue }
+            result[kind] = kind == "codex" ? kindContexts : needing
+        }
+        return result
+    }
+}
+
 /// The two snapshot-derived scopes used at a conversation lifecycle boundary.
 ///
 /// Scraping remains limited to terminal panels that declare an agent kind.

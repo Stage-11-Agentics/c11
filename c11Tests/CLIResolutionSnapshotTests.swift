@@ -237,7 +237,6 @@ final class CLIResolutionSnapshotTests: XCTestCase {
 
     private func resumeInput(
         mode: ResumeRecoveryMode,
-        auditComplete: Bool = true,
         ownership: ResumeOwnershipStatus = .unique,
         placeholder: Bool = false,
         state: ResumePersistedState = .suspended,
@@ -246,7 +245,6 @@ final class CLIResolutionSnapshotTests: XCTestCase {
     ) -> ResumeDecisionInput {
         ResumeDecisionInput(
             mode: mode,
-            auditComplete: auditComplete,
             ownership: ownership,
             kind: "codex",
             id: codexID,
@@ -277,23 +275,16 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         XCTAssertEqual(code, .transcriptMissing)
     }
 
-    func testNoResumeOverridesIncompleteAudit() {
+    func testNoResumeOverridesUnauditedOwnership() {
         guard case .skip(let code, _) = ResumeDecisionEngine.decide(
-            resumeInput(mode: .noResume, auditComplete: false, ownership: .unaudited)
+            resumeInput(mode: .noResume, ownership: .unaudited)
         ) else {
             return XCTFail("no-resume must always skip")
         }
         XCTAssertEqual(code, .policyNoResume)
     }
 
-    func testIncompleteAuditAndUnsafeIdentityAreTypedSkips() {
-        guard case .skip(let unaudited, _) = ResumeDecisionEngine.decide(
-            resumeInput(mode: .clean, auditComplete: false)
-        ) else {
-            return XCTFail("incomplete startup audit must skip")
-        }
-        XCTAssertEqual(unaudited, .startupUnaudited)
-
+    func testUnsafeIdentityIsATypedSkip() {
         guard case .skip(let duplicate, _) = ResumeDecisionEngine.decide(
             resumeInput(mode: .clean, ownership: .duplicate)
         ) else {
@@ -307,55 +298,6 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             return XCTFail("placeholder must skip")
         }
         XCTAssertEqual(placeholder, .placeholder)
-    }
-
-    func testStartupEpochFailureCannotBeReopenedByLateCompletion() {
-        let gate = ResumeStartupEpochGate()
-        let token = gate.begin(mode: .dirty)
-        XCTAssertTrue(gate.markFailed(token, reason: "timeout"))
-        XCTAssertFalse(gate.markReady(token), "late completion must not enable failed epoch")
-        XCTAssertEqual(gate.snapshot().phase, .failed(reason: "timeout"))
-        XCTAssertFalse(gate.snapshot().auditComplete)
-    }
-
-    func testOlderStartupEpochCannotMutateCurrentEpoch() {
-        let gate = ResumeStartupEpochGate()
-        let first = gate.begin(mode: .clean)
-        let second = gate.begin(mode: .noResume)
-        XCTAssertFalse(gate.markReady(first))
-        XCTAssertTrue(gate.markReady(second))
-        XCTAssertEqual(gate.snapshot().mode, .noResume)
-        XCTAssertTrue(gate.snapshot().auditComplete)
-    }
-
-    func testFailedStartupEpochSuppressesThirtyTwoResumeDispatches() {
-        let gate = ResumeStartupEpochGate()
-        let token = gate.begin(mode: .clean)
-        XCTAssertTrue(gate.markFailed(token, reason: "delayed ownership audit timed out"))
-        let startup = gate.snapshot()
-
-        let decisions = (0..<32).map { index in
-            let id = String(format: "%08x-2222-3333-4444-555566667777", index)
-            return ResumeDecisionEngine.decide(ResumeDecisionInput(
-                mode: startup.mode,
-                auditComplete: startup.auditComplete,
-                ownership: .unique,
-                kind: "codex",
-                id: id,
-                placeholder: false,
-                state: .suspended,
-                exactIDValid: true,
-                transcriptEvidence: .notRequired
-            ))
-        }
-        XCTAssertTrue(decisions.allSatisfy {
-            if case .skip(code: .startupUnaudited, reason: _) = $0 { return true }
-            return false
-        })
-        XCTAssertEqual(
-            startup.phase,
-            .failed(reason: "delayed ownership audit timed out")
-        )
     }
 
     func testDelayedFinalStoreReadReturnsCompletedValueNotEmptyFallback() {

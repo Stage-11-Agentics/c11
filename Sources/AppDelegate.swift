@@ -2487,6 +2487,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// from whichever path runs first.
     private var didArmShutdownSentinel = false
     private var resolvedResumeRecoveryMode: ResumeRecoveryMode?
+    /// How long launch blocked main waiting for the conversation seed (C11-468).
+    private(set) var startupConversationSeedWaitMs = 0
     private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
     private(set) var didCompleteInitialSessionRestore = false
@@ -3581,9 +3583,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         startupSessionSnapshot = snapshot
 
-        // Resolve the one-shot policy before any slow work. Even if seed or
-        // scrape times out, the epoch's mode remains no-resume and the shared
-        // decision engine will never dispatch a command.
+        // Resolve the one-shot policy before any slow work. The shared
+        // decision engine applies it to every panel whatever the audit does.
         let noResumeURL = Self.restartNoResumeSentinelURL()
         let explicitNoResume = noResumeURL.map {
             FileManager.default.fileExists(atPath: $0.path)
@@ -3596,12 +3597,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             priorShutdown: priorShutdownAtLaunch
         )
         recordResolvedResumeRecoveryMode(mode)
-        let epoch = ResumeStartupEpochGate.shared.begin(mode: mode)
 
         guard let snapshot, !ConversationStorePolicy.isDisabled else {
             JournalCoordinator.shared.startupSeedReady()
             JournalCoordinator.shared.startupPanelsReady()
-            _ = ResumeStartupEpochGate.shared.markReady(epoch)
+            StartupConversationAudit.shared.beginWithoutAudit(mode: mode)
             return
         }
 
@@ -3621,98 +3621,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             PanelActivityTracker.shared.seed(from: activityFloor)
         }
 
-        let captureScope = ConversationSnapshotCaptureScope(snapshot: snapshot)
-        let contexts = captureScope.scrapeContexts
-        let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
+        // C11-468: each restored panel awaits the audit phase its own decision
+        // needs (`Workspace.scheduleAgentRestart`), so main waits only for the
+        // in-memory seed, and a late or failed phase writes nothing.
         let preferredConversationSocketPath = SocketControlSettings.socketPath()
-        let completed = DispatchSemaphore(value: 0)
-        let result = LifecycleResultBox<Bool>()
-        Task.detached(priority: .userInitiated) {
-            defer { JournalCoordinator.shared.startupSeedReady(); completed.signal() }
-
-            // One completion chain: seed (which audits seeded duplicates),
-            // collect once per kind, atomically commit, re-audit, apply the
-            // selected recovery policy, and audit the final store.
-            _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
-            JournalCoordinator.shared.refreshOwners()
-            let launchBoundaries = CodexLaunchBoundaryMarkerStore.loadForStartup(
-                preferredSocketPath: preferredConversationSocketPath,
-                allowedSurfaceIds: captureScope.markerSurfaceIds
-            )
-            _ = await ConversationStore.shared.applyCodexLaunchBoundaries(
-                launchBoundaries
-            )
-            let batch: ScrapeCandidateBatch
-            do {
-                batch = try await pipeline.collectCandidateBatch(contexts: contexts)
-            } catch {
-                _ = ResumeStartupEpochGate.shared.markFailed(
-                    epoch,
-                    reason: "startup scrape collection failed: \(error)"
+        let audit = StartupConversationAudit.shared
+        var auditEnvironment = StartupConversationAudit.Environment(
+            store: ConversationStore.shared,
+            pipeline: ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1),
+            registry: .v1,
+            filesystem: DefaultConversationFilesystem(),
+            loadLaunchBoundaries: { surfaceIds in
+                CodexLaunchBoundaryMarkerStore.loadForStartup(
+                    preferredSocketPath: preferredConversationSocketPath,
+                    allowedSurfaceIds: surfaceIds
                 )
-                await ConversationStore.shared.markAllUnknown(
-                    reason: "startup audit failed: scrape collection error"
-                )
-                result.set(false)
-                return
-            }
-            guard ResumeStartupEpochGate.shared.isPending(epoch) else {
-                await ConversationStore.shared.markAllUnknown(
-                    reason: "startup audit failed: epoch expired before scrape commit"
-                )
-                result.set(false)
-                return
-            }
-            _ = await ConversationStore.shared.applyScrapeBatch(
-                batch,
-                pipeline: pipeline
-            )
-            guard ResumeStartupEpochGate.shared.isPending(epoch) else {
-                await ConversationStore.shared.markAllUnknown(
-                    reason: "startup audit failed: epoch expired during scrape commit"
-                )
-                result.set(false)
-                return
-            }
-            _ = await ConversationStore.shared.auditGlobalOwnership()
-
-            switch mode {
-            case .noResume:
-                await ConversationStore.shared.markAllUnknown(
-                    reason: "app restart --no-resume"
-                )
-            case .dirty:
-                await ConversationStore.shared.reclassifyAfterCrash(registry: .v1)
-            case .clean:
-                break
-            }
-            guard ResumeStartupEpochGate.shared.isPending(epoch) else {
-                await ConversationStore.shared.markAllUnknown(
-                    reason: "startup audit failed: epoch expired during recovery verification"
-                )
-                result.set(false)
-                return
-            }
-            _ = await ConversationStore.shared.auditGlobalOwnership()
-            result.set(true)
+            },
+            refreshOwners: { JournalCoordinator.shared.refreshOwners() },
+            classificationReady: { JournalCoordinator.shared.startupSeedReady() },
+            report: { EventEmitter.shared.emitConversationStartupAudit($0) }
+        )
+#if DEBUG
+        let qaEnvironment = ProcessInfo.processInfo.environment
+        auditEnvironment.injectedScrapeDelay = qaEnvironment["C11_DEBUG_STARTUP_SCRAPE_DELAY_SECONDS"]
+            .flatMap(TimeInterval.init) ?? 0
+        if qaEnvironment["C11_DEBUG_STARTUP_SCRAPE_FAIL"] == "1" {
+            auditEnvironment.injectedScrapeFailure = "injected by C11_DEBUG_STARTUP_SCRAPE_FAIL"
         }
-
-        // Rare startup seam: one bounded wait over a detached task, never an
-        // inherited main-actor Task. Failure is durable for this epoch; a
-        // late task cannot mark it ready or enable Workspace dispatch.
-        if completed.wait(timeout: .now() + 5.0) == .success, result.get() == true {
-            _ = ResumeStartupEpochGate.shared.markReady(epoch)
-        } else {
-            _ = ResumeStartupEpochGate.shared.markFailed(
-                epoch,
-                reason: "startup conversation audit timed out"
-            )
-            Task.detached(priority: .userInitiated) {
-                await ConversationStore.shared.markAllUnknown(
-                    reason: "startup audit failed: timeout"
-                )
-            }
+#endif
+        audit.begin(mode: mode, snapshot: snapshot, environment: auditEnvironment)
+        // Rare startup seam: the seed is in memory only, and every store read
+        // that feeds a snapshot or a resume decision awaits it. Waiting here
+        // keeps restored terminals, early pushes and saves behind it; the
+        // bound only guards against a wedged actor.
+        let seedWaitStart = DispatchTime.now().uptimeNanoseconds
+        let seedWait = BoundedLifecycleWait.run(timeout: 5.0) {
+            await audit.awaitSeeded()
         }
+        startupConversationSeedWaitMs = Int(
+            (DispatchTime.now().uptimeNanoseconds &- seedWaitStart) / 1_000_000
+        )
+        audit.recordMainSeedWait(ms: startupConversationSeedWaitMs)
+#if DEBUG
+        if case .timedOut = seedWait {
+            dlog("conversation.startup_audit seed_wait=timeout ms=\(startupConversationSeedWaitMs)")
+        }
+#endif
+        _ = seedWait
     }
 
     private func persistedWindowGeometry(
@@ -4586,10 +4541,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let conversationSocketPath = TerminalController.shared.activeSocketPath(
             preferredPath: SocketControlSettings.socketPath()
         )
-        let operationGate = ResumeStartupEpochGate()
-        let token = operationGate.begin(mode: .clean)
+        let deadline = BoundedLifecycleDeadline()
 
         let outcome = BoundedLifecycleWait.run(timeout: timeout) {
+            // Never persist an unseeded store.
+            await StartupConversationAudit.shared.awaitSeeded()
             let launchBoundaries = CodexLaunchBoundaryMarkerStore.load(
                 socketPath: conversationSocketPath,
                 allowedSurfaceIds: captureScope.markerSurfaceIds
@@ -4597,34 +4553,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = await ConversationStore.shared.applyCodexLaunchBoundaries(
                 launchBoundaries
             )
-            let batch: ScrapeCandidateBatch
-            batch = try await pipeline.collectCandidateBatch(contexts: contexts)
-            guard operationGate.isPending(token) else {
-                throw CancellationError()
+            // C11-468: collect only the panels without exact causal evidence.
+            let scoped = ScrapeCaptureContext.scoped(
+                contexts,
+                to: await ConversationStore.shared.snapshot()
+            )
+            if !scoped.isEmpty {
+                let batch = try await pipeline.collectCandidateBatch(
+                    contexts: scoped.values.flatMap { $0 }
+                )
+                guard deadline.isLive else { throw CancellationError() }
+                _ = await ConversationStore.shared.applyScrapeBatch(batch, pipeline: pipeline)
             }
-            _ = await ConversationStore.shared.applyScrapeBatch(batch, pipeline: pipeline)
-            guard operationGate.isPending(token) else {
-                throw CancellationError()
-            }
+            guard deadline.isLive else { throw CancellationError() }
             _ = await ConversationStore.shared.auditGlobalOwnership()
             if suspendAlive {
                 await ConversationStore.shared.suspendAllAlive()
             }
-            guard operationGate.isPending(token) else {
-                throw CancellationError()
-            }
+            guard deadline.isLive else { throw CancellationError() }
             return await ConversationStore.shared.snapshot()
         }
 
         switch outcome {
         case .completed(let conversations):
-            guard operationGate.markReady(token) else { return nil }
+            guard deadline.expire() else { return nil }
             return conversations
-        case .failed(let reason):
-            _ = operationGate.markFailed(token, reason: reason)
-            return nil
-        case .timedOut:
-            _ = operationGate.markFailed(token, reason: "conversation persistence preparation timed out")
+        case .failed, .timedOut:
+            deadline.expire()
             return nil
         }
     }
@@ -4890,6 +4845,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if ConversationStorePolicy.isDisabled {
             conversations = [:]
         } else {
+            // An unseeded store would persist every panel without its ref.
+            await StartupConversationAudit.shared.awaitSeeded()
             conversations = await ConversationStore.shared.snapshot()
         }
 
@@ -5088,8 +5045,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // main on the semaphore. Synchronous callers (termination, power-off,
         // window unregister) pass nil and keep the sync bridge — blocking is
         // acceptable there (rare, one-shot, correct when the app is dying).
-        let conversationsByPanelId = injectedConversations
-            ?? Workspace.readConversationsByPanelIdSync()
+        // C11-468: a read that did not complete skips this save; persisting an
+        // empty map would erase every panel's ref.
+        guard let conversationsByPanelId = injectedConversations
+            ?? Workspace.readConversationsByPanelIdSyncIfCompleted() else {
+#if DEBUG
+            dlog("session.save.skipped reason=conversation_store_read_timeout")
+#endif
+            return nil
+        }
 
         let windows: [SessionWindowSnapshot] = contexts
             .prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)
@@ -6326,6 +6290,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             current = candidate.superview
         }
         return false
+    }
+
+    /// Every workspace in every main window, in window order.
+    func allMainWindowWorkspaces() -> [Workspace] {
+        mainWindowContexts.values.flatMap { $0.workspaceManager.workspaces }
     }
 
     func locateSurface(surfaceId: UUID) -> (windowId: UUID, workspaceId: UUID, workspaceManager: WorkspaceManager)? {

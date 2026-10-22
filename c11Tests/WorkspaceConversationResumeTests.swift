@@ -65,7 +65,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
 
         let plans = workspace.pendingRestartPlans(
             from: normalized, registry: .v1,
-            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+            mode: .clean
         )
         XCTAssertEqual(plans.count, firstHasConversation ? 1 : 0)
         if firstHasConversation {
@@ -122,6 +122,43 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(text.contains(claudeSessionId))
     }
 
+    /// C11-468: every resume decided this launch goes through one guarded
+    /// submission. A panel already resumed (by restore or the recovery verb)
+    /// is never typed into twice, and a panel the operator typed in is left
+    /// alone.
+    func testGuardedSubmissionRefusesAResumedOrTouchedPanel() async throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let panelId = terminal.id
+        let ref = ConversationRef(
+            kind: "claude-code", id: claudeSessionId, cwd: "/tmp",
+            capturedVia: .hook, state: .suspended
+        )
+        let plan: Workspace.RestartCommand = (
+            panelId: panelId,
+            action: .typeCommand(text: "true", submitWithReturn: false),
+            conversation: ref
+        )
+
+        let before = terminal.surface.pendingInitialInputForTests
+        await workspace.submitResume(plan, idleShellRequired: false)
+        XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed)
+        let afterFirst = terminal.surface.pendingInitialInputForTests
+        XCTAssertNotEqual(afterFirst, before, "the first submission types the command")
+        await workspace.submitResume(plan, idleShellRequired: false)
+        XCTAssertEqual(workspace.launchResumeOutcomes[panelId], .resumed)
+        XCTAssertEqual(terminal.surface.pendingInitialInputForTests, afterFirst, "a second submission types nothing")
+
+        let other = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
+        other.surface.lastOperatorKeyAt = Date()
+        await workspace.submitResume((panelId: other.id, action: plan.action, conversation: ref), idleShellRequired: false)
+        guard case .skipped(let code, _)? = workspace.launchResumeOutcomes[other.id] else {
+            return XCTFail("a panel with an operator keystroke must not receive a resume")
+        }
+        XCTAssertEqual(code, .panelInUse)
+    }
+
     func testDeferredResumeSubmissionSkipsOnlyForLiveAttributedSameConversationWriter() async throws {
         let workspace = Workspace()
         let targetSurfaceId = UUID()
@@ -140,7 +177,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
                 makePanelSnapshot(id: targetSurfaceId, type: .terminal)
             ]),
             registry: .v1,
-            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+            mode: .clean
         )
         let plan = try XCTUnwrap(plans.first)
         XCTAssertEqual(plans.count, 1)
@@ -265,7 +302,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         let plans = workspace.pendingRestartPlans(
             from: makeSnapshot(panels: [makePanelSnapshot(id: panelId, type: .terminal)]),
             registry: .v1,
-            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+            mode: .clean
         )
         XCTAssertEqual(plans.count, 1)
         XCTAssertEqual(plans.first?.panelId, panelId)
@@ -276,7 +313,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(submitWithReturn)
     }
 
-    func testNoResumeAndFailedAuditYieldZeroPlans() async throws {
+    func testNoResumeYieldsZeroPlans() async throws {
         let workspace = Workspace()
         let panelId = UUID()
         _ = await ConversationStore.shared.captureRuntimeEnv(
@@ -290,12 +327,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(workspace.pendingRestartPlans(
             from: snapshot,
             registry: .v1,
-            startup: .init(epoch: 1, mode: .noResume, phase: .ready)
-        ).isEmpty)
-        XCTAssertTrue(workspace.pendingRestartPlans(
-            from: snapshot,
-            registry: .v1,
-            startup: .init(epoch: 2, mode: .clean, phase: .failed(reason: "timeout"))
+            mode: .noResume
         ).isEmpty)
     }
 
@@ -334,7 +366,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(workspace.pendingRestartPlans(
             from: workspaceSnapshot,
             registry: .v1,
-            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+            mode: .clean
         ).isEmpty, "startup must dispatch zero stale-A resume actions")
     }
 
@@ -377,7 +409,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(workspace.pendingRestartPlans(
             from: workspaceSnapshot,
             registry: .v1,
-            startup: .init(epoch: 2, mode: .clean, phase: .ready)
+            mode: .clean
         ).isEmpty, "a clean snapshot must not make stale A resumable")
     }
 
@@ -428,7 +460,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(workspace.pendingRestartPlans(
             from: workspaceSnapshot,
             registry: .v1,
-            startup: .init(epoch: 3, mode: .clean, phase: .ready)
+            mode: .clean
         ).isEmpty, "startup must dispatch zero same-CWD inferred Codex resumes")
         let conversations = await ConversationStore.shared.snapshot()
         XCTAssertEqual(
@@ -489,7 +521,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         let plans = workspace.pendingRestartPlans(
             from: workspaceSnapshot,
             registry: .v1,
-            startup: .init(epoch: 4, mode: .clean, phase: .ready)
+            mode: .clean
         )
         XCTAssertEqual(plans.count, 1)
         XCTAssertEqual(plans.first?.panelId, activePanelId)
@@ -528,7 +560,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
                 makePanelSnapshot(id: missingPanel, type: .terminal),
             ]),
             registry: .v1,
-            startup: .init(epoch: 1, mode: .dirty, phase: .ready)
+            mode: .dirty
         )
         XCTAssertEqual(plans.map(\.panelId), [verifiedPanel])
     }
@@ -561,7 +593,6 @@ final class WorkspaceConversationResumeTests: XCTestCase {
 
         let missingDecision = ResumeDecisionEngine.decide(ResumeDecisionInput(
             mode: .dirty,
-            auditComplete: true,
             ownership: Workspace.resumeOwnership(for: missing),
             kind: missing.kind,
             id: missing.id,
@@ -573,7 +604,6 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         ))
         let unavailableDecision = ResumeDecisionEngine.decide(ResumeDecisionInput(
             mode: .dirty,
-            auditComplete: true,
             ownership: Workspace.resumeOwnership(for: unavailable),
             kind: unavailable.kind,
             id: unavailable.id,
@@ -617,7 +647,6 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         func decision(for ref: ConversationRef) -> ResumeDecision {
             ResumeDecisionEngine.decide(ResumeDecisionInput(
                 mode: .clean,
-                auditComplete: true,
                 ownership: Workspace.resumeOwnership(for: ref),
                 kind: ref.kind,
                 id: ref.id,

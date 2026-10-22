@@ -50,7 +50,6 @@ public struct ResumeCommand: Sendable, Equatable {
 
 public enum ResumeSkipCode: String, Codable, Sendable, Equatable {
     case policyNoResume = "policy-no-resume"
-    case startupUnaudited = "startup-unaudited"
     case conversationUnavailable = "conversation-unavailable"
     case duplicateOwnership = "duplicate-ownership"
     case ambiguousOwnership = "ambiguous-ownership"
@@ -61,6 +60,9 @@ public enum ResumeSkipCode: String, Codable, Sendable, Equatable {
     case transcriptMissing = "transcript-missing"
     case transcriptUnverified = "transcript-unverified"
     case strategyUnavailable = "strategy-unavailable"
+    /// The panel was used before a resume decided after restore could be
+    /// typed, or another c11 panel is already running the conversation.
+    case panelInUse = "panel-in-use"
 }
 
 public enum ResumeDecision: Sendable, Equatable {
@@ -74,7 +76,6 @@ public enum ResumeDecision: Sendable, Equatable {
 /// here so app and CLI cannot drift to `--last` or another session selector.
 public struct ResumeDecisionInput: Sendable, Equatable {
     public let mode: ResumeRecoveryMode
-    public let auditComplete: Bool
     public let ownership: ResumeOwnershipStatus
     public let kind: String
     public let id: String
@@ -87,7 +88,6 @@ public struct ResumeDecisionInput: Sendable, Equatable {
 
     public init(
         mode: ResumeRecoveryMode,
-        auditComplete: Bool,
         ownership: ResumeOwnershipStatus,
         kind: String,
         id: String,
@@ -99,7 +99,6 @@ public struct ResumeDecisionInput: Sendable, Equatable {
         fallbackCommand: ResumeCommand? = nil
     ) {
         self.mode = mode
-        self.auditComplete = auditComplete
         self.ownership = ownership
         self.kind = kind
         self.id = id
@@ -114,13 +113,9 @@ public struct ResumeDecisionInput: Sendable, Equatable {
 
 public enum ResumeDecisionEngine {
     public static func decide(_ input: ResumeDecisionInput) -> ResumeDecision {
-        // Policy is unconditional, including when an earlier startup stage
-        // timed out. This keeps `app restart --no-resume` honest.
+        // Policy is unconditional. This keeps `app restart --no-resume` honest.
         guard input.mode != .noResume else {
             return .skip(code: .policyNoResume, reason: "resume suppressed by no-resume policy")
-        }
-        guard input.auditComplete else {
-            return .skip(code: .startupUnaudited, reason: "startup ownership audit did not complete")
         }
         switch input.ownership {
         case .unique:
@@ -178,82 +173,6 @@ public enum ResumeDecisionEngine {
     }
 }
 
-/// An epoch-bound gate shared by startup lifecycle orchestration and restored
-/// workspaces. Once an epoch fails, a late completion for that token is
-/// ignored and can never re-enable dispatch.
-public final class ResumeStartupEpochGate: @unchecked Sendable {
-    public struct Token: Sendable, Equatable { fileprivate let value: UInt64 }
-
-    public enum Phase: Sendable, Equatable {
-        case pending
-        case ready
-        case failed(reason: String)
-    }
-
-    public struct Snapshot: Sendable, Equatable {
-        public let epoch: UInt64
-        public let mode: ResumeRecoveryMode
-        public let phase: Phase
-
-        public var auditComplete: Bool {
-            if case .ready = phase { return true }
-            return false
-        }
-    }
-
-    public static let shared = ResumeStartupEpochGate(initiallyReady: true)
-
-    private let lock = NSLock()
-    private var epoch: UInt64 = 0
-    private var mode: ResumeRecoveryMode = .clean
-    private var phase: Phase
-
-    public init(initiallyReady: Bool = false) {
-        phase = initiallyReady ? .ready : .pending
-    }
-
-    @discardableResult
-    public func begin(mode: ResumeRecoveryMode) -> Token {
-        lock.lock()
-        defer { lock.unlock() }
-        epoch &+= 1
-        self.mode = mode
-        phase = .pending
-        return Token(value: epoch)
-    }
-
-    @discardableResult
-    public func markReady(_ token: Token) -> Bool {
-        transition(token, to: .ready)
-    }
-
-    @discardableResult
-    public func markFailed(_ token: Token, reason: String) -> Bool {
-        transition(token, to: .failed(reason: reason))
-    }
-
-    public func snapshot() -> Snapshot {
-        lock.lock()
-        defer { lock.unlock() }
-        return Snapshot(epoch: epoch, mode: mode, phase: phase)
-    }
-
-    public func isPending(_ token: Token) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard token.value == epoch, case .pending = phase else { return false }
-        return true
-    }
-
-    private func transition(_ token: Token, to next: Phase) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard token.value == epoch, case .pending = phase else { return false }
-        phase = next
-        return true
-    }
-}
-
 /// Reusable completion-aware bridge for rare synchronous lifecycle seams.
 /// A timeout never substitutes a default value; the only success case carries
 /// the exact value produced by the completed async operation.
@@ -299,6 +218,31 @@ public enum BoundedLifecycleWait {
             return .timedOut
         }
         return result.get() ?? .failed("lifecycle operation completed without a result")
+    }
+}
+
+/// Fences a `BoundedLifecycleWait` operation once its caller stops waiting:
+/// the operation checks `isLive` before each mutation, and the caller's
+/// `expire()` reports whether the operation was still live.
+public final class BoundedLifecycleDeadline: @unchecked Sendable {
+    private let lock = NSLock()
+    private var live = true
+
+    public init() {}
+
+    public var isLive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return live
+    }
+
+    @discardableResult
+    public func expire() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let wasLive = live
+        live = false
+        return wasLive
     }
 }
 

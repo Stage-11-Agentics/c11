@@ -15026,6 +15026,8 @@ struct CMUXCLI {
             try runConversationGet(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
         case "clear":
             try runConversationClear(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "resume":
+            try runConversationResume(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
         case "help", "--help", "-h":
             print(conversationUsage())
         default:
@@ -15049,8 +15051,12 @@ struct CMUXCLI {
           list [--panel <id>] [--json]
           get [--panel <id>] [--json]
           clear [--panel <id>]
+          resume (--panel <id> | --all-skipped) [--dry-run] [--json]
+                 Rerun this launch's resume decision and type the command
+                 only into panels nobody has used since launch.
 
-        --panel defaults to $C11_PANEL_ID. There is NO focused-panel
+        --panel defaults to $C11_PANEL_ID for every subcommand except
+        resume, which needs it explicitly. There is NO focused-panel
         fallback; commands error out if the env var is missing and no flag
         was given.
         """
@@ -15371,6 +15377,51 @@ struct CMUXCLI {
             print(jsonString(response))
         } else {
             print("OK conversation.clear panel=\(surface)")
+        }
+    }
+
+    /// C11-468: the agent-drivable recovery for panels this launch did not
+    /// resume. The caller names the targets; the app decides per panel.
+    private func runConversationResume(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let allSkipped = hasFlag(subArgs, name: "--all-skipped")
+        let panel = optionValue(subArgs, name: "--panel")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let panel, panel.isEmpty {
+            throw CLIError(message: "empty_ref: --panel was provided but empty")
+        }
+        guard allSkipped != (panel != nil) else {
+            throw CLIError(message: "conversation resume needs exactly one of --panel <ref> or --all-skipped")
+        }
+        var params: [String: Any] = [
+            "all_skipped": allSkipped,
+            "dry_run": hasFlag(subArgs, name: "--dry-run"),
+        ]
+        if let panel { params["panel_id"] = panel }
+        let response = try client.sendV2(method: "conversation.resume", params: params)
+        if jsonOutput || hasFlag(subArgs, name: "--json") {
+            print(jsonString(response))
+            return
+        }
+        let rows = response["panels"] as? [[String: Any]] ?? []
+        if rows.isEmpty {
+            print("(no skipped panels this launch)")
+            return
+        }
+        for row in rows {
+            let panelId = row["panel_id"] as? String ?? "?"
+            let kind = row["kind"] as? String ?? "-"
+            let outcome = row["outcome"] as? String ?? "?"
+            var line = "\(outcome) panel=\(panelId) kind=\(kind)"
+            if let code = row["skip_code"] as? String { line += " code=\(code)" }
+            if let reason = row["reason"] as? String { line += " reason=\(reason)" }
+            if let command = row["command"] as? String, outcome != "scheduled" {
+                line += " command=\(command)"
+            }
+            print(line)
         }
     }
 
@@ -15895,7 +15946,6 @@ struct CMUXCLI {
 
         let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
             mode: mode,
-            auditComplete: true,
             ownership: ownership,
             kind: input.kind,
             id: input.id,

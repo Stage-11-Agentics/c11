@@ -69,12 +69,18 @@ set -euo pipefail
 printf '%s\\n' "$@" > "$FAKE_ARGS_LOG"
 /usr/bin/python3 -B -c 'import json,os
 path = os.environ.get("OPENCODE_CONFIG")
-config_file = open(path).read() if path else None
+config_file = config_reread = None
+if path:
+  with open(path) as source:
+    config_file = source.read()
+  with open(path) as source:  # OpenCode migration and server open separately.
+    config_reread = source.read()
 tui = os.environ.get("OPENCODE_TUI_CONFIG")
 print(json.dumps({
   "content": os.environ.get("OPENCODE_CONFIG_CONTENT"),
   "config_path": path,
   "config_file": config_file,
+  "config_reread": config_reread,
   "hook_cli": os.environ.get("C11_AGENT_HOOK_CLI"),
   "interactive_pid": os.environ.get("C11_AGENT_INTERACTIVE_PID"),
   "tui_path": tui,
@@ -168,6 +174,9 @@ fi
                 test_socket.close()
 
         state = json.loads(env_log.read_text(encoding="utf-8")) if env_log.exists() else {}
+        runtime_path = state.get("config_path")
+        if existing_config is None and runtime_path and runtime_path.startswith("/tmp/c11-opencode-config."):
+            Path(runtime_path).unlink()  # This fake harness has now exited.
         state["tenant_paths"] = sorted(str(path.relative_to(home)) for path in home.rglob("*"))
         state["tenant_plugins_present"] = (home / ".config" / "opencode" / "plugins").exists()
         assert state["tenant_paths"] == [], state
@@ -203,6 +212,7 @@ def test_existing_content_is_preserved_via_second_runtime_source() -> None:
     assert state["content"] == existing, state
     config = json.loads(state["config_file"])
     assert config["plugin"][0].endswith("/c11-notify.js"), config
+    assert state["config_reread"] == state["config_file"], state
 
 
 def test_missing_socket_and_subcommand_are_transparent() -> None:

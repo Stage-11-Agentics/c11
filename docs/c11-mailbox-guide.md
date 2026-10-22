@@ -441,8 +441,9 @@ No tenant configuration is written. An explicit `OPENCODE_TUI_CONFIG`, missing
 plugin support, a noninteractive launch, or `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`
 keeps typed fallback. Both server-config slots being occupied also keeps typed
 delivery, because c11 cannot ensure its lifecycle plugin is loaded. Other runtime config sources remain the operator's own;
-the server lifecycle plugin uses a separate inherited descriptor when CONTENT
-is already occupied. Older OpenCode releases without the TUI plugin API are not
+the server lifecycle plugin uses a private c11 tempfile in `/tmp` when CONTENT
+is already occupied. It contains only the bundled plugin path and remains
+available for repeated reads until temporary-file cleanup. Older OpenCode releases without the TUI plugin API are not
 native-capable. The existing lifecycle and prompt-cache plugin remains separate.
 
 For the credential-free acceptance check, start an Atlas sandbox with the tagged

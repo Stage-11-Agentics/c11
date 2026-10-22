@@ -103,11 +103,14 @@ if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
     export OPENCODE_CONFIG_CONTENT="$c11_runtime_config"
     c11_runtime_plugin=1
 elif [[ -z "${OPENCODE_CONFIG:-}" ]]; then
-    # OpenCode/Bun repurposes fd 3 during startup. Keep the inherited runtime
-    # source on fd 8 (verified with the real OpenCode TUI, not just a fake CLI).
-    exec 8<<<"$c11_runtime_config"
-    export OPENCODE_CONFIG="/dev/fd/8"
-    c11_runtime_plugin=1
+    # Migration and the server open this separately. /dev/fd shares its read
+    # position and loses the plugin on the second read. Like the Claude wrapper,
+    # retain a private, secret-free c11 tempfile until /tmp is reaped.
+    c11_config_file="$(mktemp /tmp/c11-opencode-config.XXXXXX)"
+    if [[ -n "$c11_config_file" ]] && printf '%s\n' "$c11_runtime_config" > "$c11_config_file"; then
+        export OPENCODE_CONFIG="$c11_config_file"
+        c11_runtime_plugin=1
+    fi
 fi
 
 # OpenCode 1.15's TUI plugins can identify the displayed session. Keep the

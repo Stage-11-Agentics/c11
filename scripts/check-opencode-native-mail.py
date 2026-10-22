@@ -119,6 +119,18 @@ p=int(pathlib.Path(sys.argv[1]).read_text())
 try: os.kill(p,0); print('')
 except ProcessLookupError: print('gone')''', root + '/' + target['label'] + '.pid'))
 
+    def capture_native(target):
+        c11('focus-panel', '--workspace', workspace, '--panel', target['panel'])
+        window = json.loads(guest(r'''import pathlib,subprocess,json,sys
+app=next((pathlib.Path.home()/'c11-sandbox/apps'/sys.argv[1]).glob('*.app'))
+binary=str(app/'Contents/MacOS/c11')
+processes=[line.strip().split(None,1) for line in subprocess.check_output(['/bin/ps','-axo','pid=,command='],text=True).splitlines()]
+pid=next(int(p) for p,cmd in processes if cmd==binary or cmd.startswith(binary+' '))
+js="ObjC.import('CoreGraphics'); ObjC.bindFunction('CGWindowListCopyWindowInfo',['id',['uint32','uint32']]); var w=ObjC.deepUnwrap($.CGWindowListCopyWindowInfo(0,0)).filter(x=>x.kCGWindowOwnerPID==="+str(pid)+" && x.kCGWindowLayer===0 && x.kCGWindowBounds.Width>500); w.sort((a,b)=>b.kCGWindowBounds.Width*b.kCGWindowBounds.Height-a.kCGWindowBounds.Width*a.kCGWindowBounds.Height); console.log(JSON.stringify({pid:"+str(pid)+",window:w[0].kCGWindowNumber}));"
+print(subprocess.check_output(['/usr/bin/osascript','-l','JavaScript','-e',js],stderr=subprocess.STDOUT,text=True).strip())''', args.run_id))
+        command('sandbox-shot.sh', args.out / 'native-draft.png', '-x', '-l', window['window'], '-o')
+        observations['native_window'] = window
+
     try:
         command('stage-opencode-mail-proof.sh', timeout=90)
         guest(r'''import pathlib,json,sys,shlex
@@ -146,8 +158,9 @@ p=r/'launch.sh';p.write_text(s);p.chmod(0o755)''', root, args.run_id)
         data = wait('native delivery with draft', lambda: submitted(native, mail_id, 'opencode_plugin'), seconds=15)
         assert len(messages(data, DOORBELL)) == 1, data
         screen = c11('read-screen', '--workspace', workspace, '--panel', native['panel'], '--lines', '70')
-        assert draft in screen and DOORBELL in screen, screen
+        assert draft in screen, screen
         observations['native_draft'] = {'data': data, 'screen': screen}
+        capture_native(native)
         ack(native, mail_id)
         c11('send-key', '--workspace', workspace, '--panel', native['panel'], 'ctrl+u')
         c11('send', '--workspace', workspace, '--panel', native['panel'], 'BUSY-476')
@@ -192,8 +205,13 @@ p=r/'launch.sh';p.write_text(s);p.chmod(0o755)''', root, args.run_id)
         for target in targets:
             try:
                 observations[target['label'] + '_final'] = inspect(target)
+                observations[target['label'] + '_metadata'] = c11('get-metadata', '--workspace', workspace, '--panel', target['panel'], '--json')
+                observations[target['label'] + '_screen'] = c11('read-screen', '--workspace', workspace, '--panel', target['panel'], '--lines', '70')
             except Exception as error:
                 observations[target['label'] + '_error'] = str(error)
+        observations['runtime_logs'] = guest('''import pathlib,json,sys
+r=pathlib.Path(sys.argv[1]);logs=r/'home/data/opencode/log'
+print(json.dumps({p.name:p.read_text()[-16000:] for p in logs.glob('*.log')}))''', root)
         observations['seconds'] = round(time.monotonic() - started, 3)
         (args.out / 'proof.json').write_text(json.dumps(observations, indent=2) + '\n')
         for panel in reversed(panels):

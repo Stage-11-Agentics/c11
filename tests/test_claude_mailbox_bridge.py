@@ -154,6 +154,12 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.process.stdout.read(), b"")
         self.assertEqual(self.process.stderr.read(), b"")
 
+    def assert_no_subscription(self):
+        self.app.server.settimeout(.15)
+        with self.assertRaises(socket.timeout):
+            connection, _ = self.app.server.accept()
+            connection.close()
+
     def test_repeat_acceptance_and_listener_retirement(self):
         self.launch()
         self.subscribe()
@@ -186,10 +192,12 @@ class BridgeTests(unittest.TestCase):
     def test_missing_feature_exits_without_connecting(self):
         self.launch(CLAUDE_CODE_MESSAGING_TOKEN="")
         self.assert_quiet_exit()
+        self.assert_no_subscription()
 
     def test_headless_launch_exits_without_connecting(self):
         self.launch(C11_AGENT_INTERACTIVE_PID="")
         self.assert_quiet_exit()
+        self.assert_no_subscription()
 
     def test_harness_exit_retires_idle_bridge(self):
         self.launch()

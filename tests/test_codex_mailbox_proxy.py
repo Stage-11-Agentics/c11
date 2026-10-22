@@ -629,14 +629,14 @@ class CodexMailboxProxyTests(unittest.TestCase):
         except OSError:
             return ""
 
-    def launch(self, agent_pid=None, listen=None):
+    def launch(self, agent_pid=None, listen=None, extra=()):
         env = {key: value for key, value in os.environ.items() if not key.startswith(("C11_", "CMUX_"))}
         env.update(C11_SOCKET=str(self.app.path), C11_PANEL_ID=self.panel,
                    C11_AGENT_INTERACTIVE_PID=str(agent_pid if agent_pid is not None else os.getpid()))
         with open(self.sock_dir / "proxy.stderr", "ab") as err:
             self.process = subprocess.Popen(
                 [os.environ["C11_TEST_CLI"], "--password", PASSWORD, "codex-mailbox-proxy",
-                 "--listen", str(listen or self.listen), "--upstream", str(self.server.path)],
+                 "--listen", str(listen or self.listen), "--upstream", str(self.server.path), *extra],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err, env=env)
         self.processes.append(self.process)
         return self.process
@@ -800,6 +800,28 @@ class CodexMailboxProxyTests(unittest.TestCase):
         self.assertEqual(ring_methods[:3], ["initialize", "initialized", "thread/queue/add"])
         lists = self.server.find(kind="recv", method="thread/queue/list", after=add["seq"])
         self.assertTrue(lists and lists[0]["msg"]["params"]["threadId"] == thread)
+
+    # 16
+    def test_turn_completion_runs_the_notify_callback_without_text(self):
+        handler = self.sock_dir / "notify-handler"
+        calls = self.sock_dir / "notify-calls"
+        handler.write_text("#!/bin/sh\nprintf '%s\\t%s\\n' \"$1\" \"$2\" >> " + str(calls) + "\n")
+        handler.chmod(0o755)
+        self.launch(extra=("--notify", str(handler)))
+        self.subscribe()
+        self.wait_listen()
+        tui, thread = self.connect_tui()
+        self.warm(tui, thread)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not calls.exists():
+            time.sleep(0.05)
+        self.assertTrue(calls.exists(), "notify callback never ran")
+        verb, payload = calls.read_text().splitlines()[0].split("\t")
+        self.assertEqual(verb, "__c11-notify")
+        payload = json.loads(payload)
+        self.assertEqual(payload["type"], "agent-turn-complete")
+        self.assertEqual(payload["thread-id"], thread)
+        self.assertEqual(set(payload), {"type", "thread-id", "turn-id", "client"})
 
     # 4
     def test_new_thread_after_slash_new_is_the_target(self):

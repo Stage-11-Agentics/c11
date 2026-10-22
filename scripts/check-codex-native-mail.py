@@ -19,6 +19,7 @@ import uuid
 
 SCRIPTS = Path(__file__).resolve().parent
 DOORBELL = 'You have mail: run c11 mailbox recv --ack when you want to receive it.'
+SHOWN = '› You have mail: run c11 mailbox recv'  # the TUI wraps the rest of the line
 WORK = '/Users/admin/c11-sandbox/work'
 
 
@@ -157,9 +158,24 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
     workspace = json.loads(c11('current-workspace', '--json'))['workspace_id']
     sender = json.loads(c11('new-panel', '--workspace', workspace, '--no-focus', '--json'))['panel_id']
     panels.append(sender)
-    observations['tenant_before'] = tenant()
     guest('import subprocess;subprocess.run(["/usr/local/bin/codex","app-server","daemon","start"],timeout=30,capture_output=True)')
     try:
+        # G. Setting off: the wrapper adds nothing; typed delivery. Runs first, so
+        # Codex's own first-run writes to config.toml land before the snapshot.
+        setting(False)
+        remote_before = remote_pids()
+        off = launch('off')
+        assert remote_pids() <= remote_before, 'setting off: Codex launched with --remote'
+        sixth = mail(off)
+        row = wait('setting off typed', lambda: submitted(off, sixth))
+        assert row.get('route') == 'typed' and not row.get('native_route'), row
+        note('G_setting_off', row)
+
+        for _ in range(2):
+            c11('send-key', '--workspace', workspace, '--panel', off['panel'], 'ctrl+c')
+            time.sleep(.5)
+        time.sleep(2)
+        observations['tenant_before'] = tenant()
         setting(True)
 
         # A. Native delivery to a warm thread, with an operator draft in the composer.
@@ -171,7 +187,7 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         first = mail(native)
         row = wait('native doorbell', lambda: submitted(native, first))
         assert row.get('route') == 'codex_queue', row
-        wait('doorbell turn visible', lambda: '› ' + DOORBELL in screen(native) and 'C11_AWAKE_' + nonce in screen(native), 60)
+        wait('doorbell turn visible', lambda: SHOWN in screen(native) and 'C11_AWAKE_' + nonce in screen(native), 60)
         assert draft in screen(native), 'draft lost'
         note('A_native_draft', dict(row=row, unread=inspect(native)['unread']))
         c11('send-key', '--workspace', workspace, '--panel', native['panel'], 'ctrl+c')
@@ -189,7 +205,7 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         assert row.get('route') == 'codex_queue', row
         accepted = [r.get('thread') for r in proxy_log() if r.get('outcome') == 'accepted']
         assert accepted and accepted[-1] not in before, ('ring did not move to the new thread', accepted, before)
-        wait('doorbell on new thread', lambda: '› ' + DOORBELL in screen(native), 30)
+        wait('doorbell on new thread', lambda: SHOWN in screen(native), 30)
         note('B_new_thread', dict(row=row, accepted_threads=accepted))
 
         # C. A thread with no completed turn: native refuses, typed delivers.
@@ -226,18 +242,8 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
         assert row.get('route') == 'typed' and not row.get('native_route'), row
         note('F_no_daemon', row)
 
-        # G. Setting off: the wrapper adds nothing; typed delivery.
-        setting(False)
-        remote_before = remote_pids()
-        off = launch('off')
-        assert remote_pids() <= remote_before, 'setting off: Codex launched with --remote'
-        sixth = mail(off)
-        row = wait('setting off typed', lambda: submitted(off, sixth))
-        assert row.get('route') == 'typed' and not row.get('native_route'), row
-        note('G_setting_off', row)
-
         observations['passed'] = True
-        print('PASS: native+draft, /new retarget, cold typed fallback, relay death logged, exited TUI, --no-daemon typed, setting off typed')
+        print('PASS: setting off typed, native+draft, /new retarget, cold typed fallback, relay death logged, exited TUI, --no-daemon typed, tenant config unchanged')
     finally:
         setting(False)
         for target in targets:
@@ -255,7 +261,7 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),unread=[p.stem for p i
             except Exception as error:
                 observations['close_' + panel] = str(error)
         observations['tenant_after'] = tenant()
-        observations['tenant_unchanged'] = observations['tenant_before'] == observations['tenant_after']
+        observations['tenant_unchanged'] = observations.get('tenant_before') == observations['tenant_after']
         observations['seconds'] = round(time.monotonic() - started, 3)
         (args.out / 'proof.json').write_text(json.dumps(observations, indent=2) + '\n')
         assert observations['tenant_unchanged'], 'Codex tenant config changed during the proof'

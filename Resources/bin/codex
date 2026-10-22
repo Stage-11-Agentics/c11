@@ -287,6 +287,7 @@ if [[ "${C11_CODEX_NATIVE_MAIL:-}" == "1" && -n "$c11_bin" && -n "${C11_AGENT_IN
         rm -f -- "$proxy_socket" 2>/dev/null
         "$c11_bin" --socket "${CMUX_SOCKET_PATH}" codex-mailbox-proxy \
             --listen "$proxy_socket" --codex "$REAL_CODEX" --log "${proxy_dir}/codex-$$.log" \
+            --notify "$self_dir/codex" \
             </dev/null >/dev/null 2>&1 &
         proxy_pid=$!
         proxy_wait=0

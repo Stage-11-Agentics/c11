@@ -14,6 +14,7 @@ enum CodexMailboxProxyCommand {
         let upstream: String?
         let codex: String?
         let log: String?
+        let notify: String?
         let panelID: String
         let agentPID: pid_t
         let agentBirth: UInt64
@@ -23,7 +24,7 @@ enum CodexMailboxProxyCommand {
             var index = 0
             while index < arguments.count {
                 let flag = arguments[index]
-                guard ["--listen", "--upstream", "--codex", "--log"].contains(flag), index + 1 < arguments.count,
+                guard ["--listen", "--upstream", "--codex", "--log", "--notify"].contains(flag), index + 1 < arguments.count,
                       values[flag] == nil else { return nil }
                 values[flag] = arguments[index + 1]
                 index += 2
@@ -38,6 +39,7 @@ enum CodexMailboxProxyCommand {
             self.upstream = values["--upstream"]
             self.codex = values["--codex"]
             self.log = values["--log"]
+            self.notify = values["--notify"].flatMap { $0.hasPrefix("/") ? $0 : nil }
             self.panelID = panel
             self.agentPID = pid
             self.agentBirth = birth
@@ -93,6 +95,9 @@ final class CodexThreadTracker {
     }
 
     let condition = NSCondition()
+    /// Codex runs no `notify` program for a `--remote` TUI, so the relay
+    /// reports each turn completion the TUI receives (thread and turn ids).
+    var onTurnCompleted: ((String, String) -> Void)?
     private var tui: Int?
     private var pending: [String: (method: String, ephemeral: Bool)] = [:]
     private var subscribed: [String] = []
@@ -149,6 +154,8 @@ final class CodexThreadTracker {
             if started.count > 64 { started.removeFirst(started.count - 64) }
         case "turn/completed":
             warm.insert(thread)
+            let turn = (params["turn"] as? [String: Any])?["id"] as? String ?? ""
+            if let onTurnCompleted { DispatchQueue.global(qos: .utility).async { onTurnCompleted(thread, turn) } }
         case "thread/closed":
             subscribed.removeAll { $0 == thread }
         default:
@@ -203,6 +210,24 @@ private final class CodexMailboxProxy {
         self.options = options
         self.upstream = upstream
         self.log = log
+        if let handler = options.notify {
+            tracker.onTurnCompleted = { thread, turn in CodexMailboxProxy.notify(handler, thread: thread, turn: turn) }
+        }
+    }
+
+    /// The wrapper's private `__c11-notify` callback, given the payload Codex
+    /// itself passes outside `--remote`, without any message text.
+    private static func notify(_ handler: String, thread: String, turn: String) {
+        let payload: [String: Any] = ["type": "agent-turn-complete", "thread-id": thread, "turn-id": turn, "client": "codex-tui"]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: handler)
+        process.arguments = ["__c11-notify", String(decoding: data, as: UTF8.self)]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { if process.isRunning { process.terminate() } }
     }
 
     func serve(listener: Int32) -> String {

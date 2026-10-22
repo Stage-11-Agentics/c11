@@ -364,3 +364,152 @@ final class MailboxBadgeStoreTests: XCTestCase {
         XCTAssertTrue(store.isTracking(panelId: panel))
     }
 }
+
+/// C11-399: the Sent view, read from the sender's ledger and the recipients'
+/// own copies on a real tree.
+final class MailboxSentViewTests: XCTestCase {
+
+    private var root: URL!
+    private let sender = UUID()
+    private let alpha = UUID()
+    private let beta = UUID()
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-sent-view-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func inbox(_ panel: UUID) -> URL { MailboxPanelMail.inboxURL(mailboxesRoot: root, panelId: panel) }
+
+    private func ulid(_ offset: TimeInterval) -> String {
+        MailboxULID.encode(
+            timestampMs: UInt64(Date().addingTimeInterval(offset).timeIntervalSince1970 * 1000),
+            random: [UInt8](repeating: 9, count: MailboxULID.randomByteCount)
+        )
+    }
+
+    /// A recipient copy as the dispatcher writes it: stamped with the sender
+    /// unless `stamp` says otherwise.
+    private func deliver(_ id: String, to panel: UUID, read: Bool = false, stamp: UUID?, body: String = "hello") throws {
+        var object: [String: Any] = ["version": 1, "id": id, "from": "sender", "ts": "2026-10-22T04:00:00Z", "body": body, "to": "x"]
+        if let stamp { object["ext"] = [MailboxEnvelope.senderPanelKey: stamp.uuidString.lowercased()] }
+        let dir = read ? MailboxDrain.readURL(inbox: inbox(panel)) : inbox(panel)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: object).write(to: dir.appendingPathComponent("\(id).msg"))
+    }
+
+    private func ledger(_ id: String, to panels: [(UUID, String)], topic: String? = "t") {
+        MailboxSentLedger.record(
+            .init(id: id, ts: "2026-10-22T04:00:00Z", to: "x", topic: topic,
+                  recipients: panels.map { .init(panel: $0.0.uuidString.lowercased(), name: $0.1) }),
+            senderInbox: inbox(sender)
+        )
+    }
+
+    private func listing() -> MailboxPanelMail.SentListing {
+        MailboxPanelMail.sentListing(senderInbox: inbox(sender), mailboxesRoot: root)
+    }
+
+    func testSentListsEachRecipientWithItsReadState() throws {
+        let id = ulid(-10)
+        try deliver(id, to: alpha, stamp: sender)
+        try deliver(id, to: beta, read: true, stamp: sender)
+        ledger(id, to: [(alpha, "alpha"), (beta, "beta")])
+        let sent = listing()
+        XCTAssertEqual(sent.total, 1)
+        let message = try XCTUnwrap(sent.messages.first)
+        XCTAssertEqual(message.recipients.map(\.name), ["alpha", "beta"])
+        XCTAssertEqual(message.recipients.map(\.state), [.unread, .read])
+        XCTAssertEqual(message.message?.body, "hello")
+        XCTAssertEqual(message.topic, "t")
+    }
+
+    func testStateFollowsTheRecipientClaimingAndTheCopyDisappearing() throws {
+        let id = ulid(-10)
+        try deliver(id, to: alpha, stamp: sender)
+        ledger(id, to: [(alpha, "alpha")])
+        XCTAssertEqual(listing().messages.first?.recipients.first?.state, .unread)
+        // A claim renames the file into _read/.
+        try FileManager.default.createDirectory(at: MailboxDrain.readURL(inbox: inbox(alpha)), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(
+            at: inbox(alpha).appendingPathComponent("\(id).msg"),
+            to: MailboxDrain.readURL(inbox: inbox(alpha)).appendingPathComponent("\(id).msg")
+        )
+        XCTAssertEqual(listing().messages.first?.recipients.first?.state, .read)
+        try FileManager.default.removeItem(at: MailboxDrain.readURL(inbox: inbox(alpha)).appendingPathComponent("\(id).msg"))
+        let gone = try XCTUnwrap(listing().messages.first)
+        XCTAssertEqual(gone.recipients.first?.state, .gone)
+        XCTAssertNil(gone.message)
+    }
+
+    func testMailSentBeforeTheStampIsNotInSentButStillInReceived() throws {
+        // An old envelope: delivered to alpha with no stamp and no ledger entry.
+        let old = ulid(-100)
+        try deliver(old, to: alpha, stamp: nil)
+        XCTAssertEqual(listing().total, 0)
+        XCTAssertTrue(listing().messages.isEmpty)
+        let received = MailboxPanelMail.listing(inbox: inbox(alpha))
+        XCTAssertEqual(received.messages.map(\.fileId), [old])
+        XCTAssertNil(received.messages.first?.senderPanelId)
+    }
+
+    func testACopyThisPanelDidNotSendIsNeverShown() throws {
+        // The ledger names alpha, but alpha's copy carries another sender's stamp
+        // (or none): the entry's say-so is not enough.
+        let forged = ulid(-10), unstamped = ulid(-5)
+        try deliver(forged, to: alpha, stamp: UUID(), body: "SECRET-FROM-SOMEONE-ELSE")
+        try deliver(unstamped, to: alpha, stamp: nil, body: "SECRET-UNSTAMPED")
+        ledger(forged, to: [(alpha, "alpha")])
+        ledger(unstamped, to: [(alpha, "alpha")])
+        for message in listing().messages {
+            XCTAssertEqual(message.recipients.first?.state, .gone)
+            XCTAssertNil(message.message)
+        }
+    }
+
+    func testOnlyTheLedgersRecipientsAreTouched() throws {
+        // A bystander panel with a huge number of envelopes is never listed: the
+        // view reads the sender's `_sent/` and the named recipients' two paths.
+        let id = ulid(-10)
+        try deliver(id, to: alpha, stamp: sender)
+        ledger(id, to: [(alpha, "alpha")])
+        let bystander = UUID()
+        try FileManager.default.createDirectory(at: inbox(bystander), withIntermediateDirectories: true)
+        try "not json".write(to: inbox(bystander).appendingPathComponent("\(ulid(-1)).msg"), atomically: true, encoding: .utf8)
+        let sent = listing()
+        XCTAssertEqual(sent.messages.count, 1)
+        XCTAssertEqual(sent.messages.first?.recipients.map(\.name), ["alpha"])
+    }
+
+    func testListingIsNewestFirstAndLimited() throws {
+        for offset in [-30.0, -20, -10] {
+            let id = ulid(offset)
+            try deliver(id, to: alpha, stamp: sender)
+            ledger(id, to: [(alpha, "alpha")])
+        }
+        let sent = MailboxPanelMail.sentListing(senderInbox: inbox(sender), mailboxesRoot: root, limit: 2)
+        XCTAssertEqual(sent.total, 3)
+        XCTAssertEqual(sent.messages.count, 2)
+        XCTAssertEqual(sent.hiddenCount, 1)
+        XCTAssertEqual(sent.messages.map(\.entryId), sent.messages.map(\.entryId).sorted(by: >))
+    }
+
+    func testLedgerTrimsOldestPastItsBound() throws {
+        let dir = MailboxSentLedger.directory(inbox: inbox(sender))
+        let total = MailboxSentLedger.retain + MailboxSentLedger.trimSlack + 5
+        var first = ""
+        for index in 0..<total {
+            let id = ulid(TimeInterval(index) - 10_000)
+            if index == 0 { first = id }
+            MailboxSentLedger.record(.init(id: id, ts: nil, to: nil, topic: nil, recipients: []), senderInbox: inbox(sender))
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertLessThanOrEqual(names.count, MailboxSentLedger.retain + MailboxSentLedger.trimSlack)
+        XCTAssertFalse(names.contains("\(first).\(MailboxSentLedger.fileExtension)"))
+    }
+}

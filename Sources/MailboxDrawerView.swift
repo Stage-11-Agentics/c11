@@ -169,7 +169,13 @@ struct MailboxDrawerView: View {
     let style: MailboxDrawerStyle
     let resolveSenders: ([String]) -> [String: MailboxDrawerSender]
 
+    /// C11-399: the drawer reads what the panel received, or what it sent.
+    enum Tab: Hashable { case received, sent }
+
+    @State private var tab: Tab = .received
     @State private var listing: MailboxPanelMail.Listing?
+    @State private var sentListing: MailboxPanelMail.SentListing?
+    @State private var sentGeneration = 0
     @State private var senders: [String: MailboxDrawerSender] = [:]
     @State private var expanded: Set<String> = []
     @State private var contentHeight: CGFloat = 0
@@ -182,6 +188,7 @@ struct MailboxDrawerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            tabBar
             Rectangle().fill(style.border).frame(height: 1)
             content
         }
@@ -190,6 +197,28 @@ struct MailboxDrawerView: View {
         .overlay(Rectangle().stroke(style.border, lineWidth: 1))
         .onAppear(perform: reload)
         .onChange(of: model.revision) { _ in reload() }
+        .onChange(of: tab) { newTab in
+            if newTab == .sent { reloadSent() }
+        }
+        // Recipients take mail on their own; their counts do not move this
+        // panel's revision, so the open Sent view refreshes itself. One listing
+        // of this panel's `_sent/` plus a few stats per message, off the main
+        // thread, and only while the Sent tab is showing.
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            if tab == .sent { reloadSent() }
+        }
+    }
+
+    private var tabBar: some View {
+        Picker("", selection: $tab) {
+            Text(String(localized: "mailbox.drawer.tab.received", defaultValue: "Received")).tag(Tab.received)
+            Text(String(localized: "mailbox.drawer.tab.sent", defaultValue: "Sent")).tag(Tab.sent)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 180 * style.scale)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     private var header: some View {
@@ -205,10 +234,15 @@ struct MailboxDrawerView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            Text(String(
-                localized: "mailbox.drawer.counts",
-                defaultValue: "\(model.summary.unread) unread · \(model.summary.received) received"
-            ))
+            Text(tab == .sent
+                ? String(
+                    localized: "mailbox.drawer.sent.counts",
+                    defaultValue: "\(sentListing?.total ?? 0) sent"
+                )
+                : String(
+                    localized: "mailbox.drawer.counts",
+                    defaultValue: "\(model.summary.unread) unread · \(model.summary.received) received"
+                ))
             .font(metaFont.monospacedDigit())
             .foregroundColor(style.secondary)
             .lineLimit(1)
@@ -233,7 +267,9 @@ struct MailboxDrawerView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let listing {
+        if tab == .sent {
+            sentContent
+        } else if let listing {
             if listing.messages.isEmpty {
                 Text(String(localized: "mailbox.drawer.empty", defaultValue: "No mail yet."))
                     .font(textFont)
@@ -298,6 +334,74 @@ struct MailboxDrawerView: View {
         }
     }
 
+    @ViewBuilder
+    private var sentContent: some View {
+        if let sentListing {
+            if sentListing.messages.isEmpty {
+                Text(String(localized: "mailbox.drawer.sent.empty", defaultValue: "Nothing sent yet."))
+                    .font(textFont)
+                    .foregroundColor(style.secondary)
+                    .padding(12)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    TimelineView(.periodic(from: .now, by: 30)) { timeline in
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(sentListing.messages) { message in
+                                MailboxSentCard(
+                                    message: message,
+                                    now: timeline.date,
+                                    style: style,
+                                    bodyFont: bodyFont,
+                                    metaFont: metaFont,
+                                    textFont: textFont
+                                )
+                                Rectangle().fill(style.border).frame(height: 1)
+                            }
+                            if sentListing.hiddenCount > 0 {
+                                Text(String(
+                                    localized: "mailbox.drawer.sent.olderHidden",
+                                    defaultValue: "\(sentListing.hiddenCount) older sent messages are not shown."
+                                ))
+                                .font(metaFont)
+                                .foregroundColor(style.secondary)
+                                .padding(12)
+                            }
+                        }
+                        .background(
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: MailboxDrawerHeightKey.self, value: geometry.size.height)
+                            }
+                        )
+                    }
+                }
+                .frame(height: min(max(contentHeight, 1), geometry.maxHeight))
+                .onPreferenceChange(MailboxDrawerHeightKey.self) { contentHeight = $0 }
+            }
+        } else {
+            Text(String(localized: "mailbox.drawer.loading", defaultValue: "Reading mail…"))
+                .font(textFont)
+                .foregroundColor(style.secondary)
+                .padding(12)
+        }
+    }
+
+    private func reloadSent() {
+        guard let inboxURL else {
+            sentListing = MailboxPanelMail.SentListing()
+            return
+        }
+        sentGeneration += 1
+        let generation = sentGeneration
+        let root = inboxURL.deletingLastPathComponent()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loaded = autoreleasepool { MailboxPanelMail.sentListing(senderInbox: inboxURL, mailboxesRoot: root) }
+            DispatchQueue.main.async {
+                guard generation == sentGeneration else { return }
+                if loaded != sentListing { sentListing = loaded }
+            }
+        }
+    }
+
     private func toggleExpanded(_ id: String) {
         if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
     }
@@ -323,6 +427,98 @@ struct MailboxDrawerView: View {
 private struct MailboxDrawerHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// One message the panel sent: where it went and whether each recipient's
+/// agent has taken it. Text is untrusted and renders verbatim.
+private struct MailboxSentCard: View {
+    let message: MailboxPanelMail.SentMessage
+    let now: Date
+    let style: MailboxDrawerStyle
+    let bodyFont: Font
+    let metaFont: Font
+    let textFont: Font
+
+    private var orange: Color { Color(nsColor: .systemOrange) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(verbatim: message.topic ?? String(localized: "mailbox.drawer.noTopic", defaultValue: "(no topic)"))
+                    .font(metaFont.weight(.semibold))
+                    .foregroundColor(message.topic == nil ? style.secondary : style.foreground)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+                Text(timeText)
+                    .font(metaFont.monospacedDigit())
+                    .foregroundColor(style.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            ForEach(message.recipients.indices, id: \.self) { index in
+                recipientRow(message.recipients[index])
+            }
+            if let copy = message.message, copy.problem == nil, !copy.body.isEmpty {
+                Text(verbatim: copy.body)
+                    .font(bodyFont)
+                    .foregroundColor(style.foreground)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.18)))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(style.border, lineWidth: 1))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var timeText: String {
+        guard let date = message.sentAt else { return "" }
+        return "\(MailboxDrawerText.stamp(date)) · \(MailboxDrawerText.age(of: date, now: now))"
+    }
+
+    private func recipientRow(_ recipient: MailboxPanelMail.SentRecipient) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(String(localized: "mailbox.drawer.sent.to", defaultValue: "to"))
+                .font(textFont)
+                .foregroundColor(style.secondary)
+            Text(verbatim: recipient.name)
+                .font(textFont.weight(.semibold))
+                .foregroundColor(style.foreground)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            stateChip(recipient.state)
+        }
+    }
+
+    private func stateChip(_ state: MailboxPanelMail.SentState) -> some View {
+        let label: String
+        let help: String
+        switch state {
+        case .unread:
+            label = String(localized: "mailbox.drawer.state.unread", defaultValue: "UNREAD")
+            help = String(localized: "mailbox.drawer.sent.state.unread.help", defaultValue: "The recipient has not taken this message yet.")
+        case .read:
+            label = String(localized: "mailbox.drawer.state.read", defaultValue: "READ")
+            help = String(localized: "mailbox.drawer.sent.state.read.help", defaultValue: "The recipient has taken this message.")
+        case .gone:
+            label = String(localized: "mailbox.drawer.sent.state.gone", defaultValue: "GONE")
+            help = String(localized: "mailbox.drawer.sent.state.gone.help", defaultValue: "The recipient's copy is no longer there.")
+        }
+        let unread = state == .unread
+        return Text(label)
+            .font(.system(size: 9 * style.scale, weight: .semibold))
+            .foregroundColor(unread ? Color.black.opacity(0.85) : style.secondary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 3).fill(unread ? orange : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(unread ? Color.clear : style.border, lineWidth: 1))
+            .help(help)
+    }
 }
 
 private struct MailboxMessageCard: View {

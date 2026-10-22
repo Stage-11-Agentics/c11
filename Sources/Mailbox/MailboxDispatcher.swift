@@ -399,13 +399,34 @@ final class MailboxDispatcher {
             return
         }
 
+        // Step 3b (C11-399): decide the reserved sender stamp. `from` is only
+        // a name, so the stamp is set only when it resolves to exactly one live
+        // panel here; a sender-supplied stamp is always dropped.
+        let senderPanel = resolveSender(envelope: envelope)
+        envelope = envelope.stampingSender(senderPanel)
+
         // Step 4: copy into each recipient inbox.
         let envelopeBytes = (try? envelope.encode()) ?? Data()
+        var landed: [MailboxPanelResolver.PanelMetadata] = []
         for recipient in recipients {
-            copyToInbox(
+            if copyToInbox(
                 envelope: envelope,
                 recipient: recipient,
                 envelopeBytes: envelopeBytes
+            ) { landed.append(recipient) }
+        }
+        if let senderPanel, !landed.isEmpty {
+            MailboxSentLedger.record(
+                MailboxSentLedger.Entry(
+                    id: envelope.id,
+                    ts: envelope.ts,
+                    to: envelope.to,
+                    topic: envelope.topic,
+                    recipients: landed.map {
+                        MailboxSentLedger.Recipient(panel: $0.surfaceId.uuidString.lowercased(), name: $0.displayName)
+                    }
+                ),
+                senderInbox: MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: senderPanel)
             )
         }
 
@@ -455,13 +476,27 @@ final class MailboxDispatcher {
         )
     }
 
+    /// The one live panel `from` names in this workspace, by the same matcher
+    /// recipients use. Zero or several matches stamp nothing: Sent must never
+    /// attribute mail to the wrong panel.
+    private func resolveSender(envelope: MailboxEnvelope) -> UUID? {
+        let all = resolver.panelsWithMailboxMetadata()
+        let matches = MailboxMatcher.select(
+            MailboxAddress.parse(envelope.from),
+            from: all,
+            identity: { $0.identity }
+        )
+        return matches.count == 1 ? matches[0].surfaceId : nil
+    }
+
     // MARK: - Inbox copy
 
+    @discardableResult
     private func copyToInbox(
         envelope: MailboxEnvelope,
         recipient: MailboxPanelResolver.PanelMetadata,
         envelopeBytes: Data
-    ) {
+    ) -> Bool {
         do {
             let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
@@ -486,6 +521,7 @@ final class MailboxDispatcher {
                 surface: recipient.surfaceId,
                 via: "inbox"
             )
+            return true
         } catch {
             // The `resolved` event already lists the recipient; failure to
             // copy is logged as a handler-style failure so the operator can
@@ -501,6 +537,7 @@ final class MailboxDispatcher {
                     reason: nil
                 )
             )
+            return false
         }
     }
 

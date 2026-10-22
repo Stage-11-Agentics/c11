@@ -377,6 +377,89 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertFalse(MessagesPageRenderer.render(snapshot: snapshot).contains(envelope.body))
     }
 
+    // MARK: - Sender stamp and Sent ledger (C11-399)
+
+    private func dispatch(_ envelope: MailboxEnvelope, with dispatcher: MailboxDispatcher) throws {
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        dispatcher.log.flush()
+    }
+
+    private func senderInbox(_ panel: UUID) -> URL {
+        MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: panel)
+    }
+
+    func testAcceptedEnvelopeIsStampedWithItsSendingPanelAndLedgered() throws {
+        let sender = seedSurface(name: "stamp-sender")
+        let one = seedSurface(name: "stamp-one")
+        let two = seedSurface(name: "stamp-two")
+        let dispatcher = makeDispatcher(surfaces: [sender, one, two])
+        var ids: [String] = []
+        for target in ["stamp-one", "stamp-two"] {
+            let envelope = try MailboxEnvelope.build(from: "stamp-sender", to: target, topic: "stamp.t", body: "hi " + target)
+            try dispatch(envelope, with: dispatcher)
+            ids.append(envelope.id)
+        }
+        for (panel, id) in zip([one, two], ids) {
+            let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: panel, id: id))
+            XCTAssertEqual(copy.senderPanelId, sender)
+            XCTAssertEqual(copy.body, copy.body)
+        }
+        let listed = MailboxSentLedger.entries(senderInbox: senderInbox(sender), limit: 10)
+        XCTAssertEqual(listed.total, 2)
+        XCTAssertEqual(Set(listed.entries.map(\.id)), Set(ids))
+        let byId = Dictionary(uniqueKeysWithValues: listed.entries.map { ($0.id, $0) })
+        XCTAssertEqual(byId[ids[0]]?.recipients, [.init(panel: one.uuidString.lowercased(), name: "stamp-one")])
+        XCTAssertEqual(byId[ids[1]]?.recipients, [.init(panel: two.uuidString.lowercased(), name: "stamp-two")])
+        XCTAssertEqual(byId[ids[0]]?.topic, "stamp.t")
+        // The ledger lives in the sender's directory, not the recipients'.
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(one), limit: 10).total, 0)
+    }
+
+    func testUnresolvedOrAmbiguousSenderIsNotStampedOrLedgered() throws {
+        let twinA = seedSurface(name: "twin")
+        let twinB = seedSurface(name: "twin")
+        let recipient = seedSurface(name: "stamp-recipient")
+        let dispatcher = makeDispatcher(surfaces: [twinA, twinB, recipient])
+        for from in ["twin", "not-a-panel"] {
+            let envelope = try MailboxEnvelope.build(from: from, to: "stamp-recipient", body: "x")
+            try dispatch(envelope, with: dispatcher)
+            let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: envelope.id))
+            XCTAssertNil(copy.senderPanelId, from)
+            XCTAssertNil(copy.ext?[MailboxEnvelope.senderPanelKey], from)
+        }
+        for panel in [twinA, twinB] {
+            XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(panel), limit: 10).total, 0)
+        }
+    }
+
+    func testSenderCannotForgeTheReservedStamp() throws {
+        let real = seedSurface(name: "real-sender")
+        let victim = seedSurface(name: "victim")
+        let recipient = seedSurface(name: "forge-recipient")
+        let dispatcher = makeDispatcher(surfaces: [real, victim, recipient])
+        // A forged stamp naming another panel is replaced by the resolved sender.
+        let forged = try MailboxEnvelope.build(
+            from: "real-sender", to: "forge-recipient", body: "x",
+            ext: [MailboxEnvelope.senderPanelKey: victim.uuidString.lowercased(), "custom": "kept"]
+        )
+        try dispatch(forged, with: dispatcher)
+        let copy = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: forged.id))
+        XCTAssertEqual(copy.senderPanelId, real)
+        XCTAssertEqual(copy.ext?["custom"] as? String, "kept")
+        XCTAssertEqual(MailboxSentLedger.entries(senderInbox: senderInbox(victim), limit: 10).total, 0)
+        // A forged stamp from an unresolvable sender is dropped, not kept.
+        let outsider = try MailboxEnvelope.build(
+            from: "ghost", to: "forge-recipient", body: "y",
+            ext: [MailboxEnvelope.senderPanelKey: victim.uuidString.lowercased()]
+        )
+        try dispatch(outsider, with: dispatcher)
+        let dropped = try MailboxEnvelope.validate(data: try readInboxFile(panel: recipient, id: outsider.id))
+        XCTAssertNil(dropped.senderPanelId)
+        XCTAssertNil(dropped.ext)
+    }
+
     func testDispatchesToNamedRecipient() throws {
         let watcher = seedSurface(name: "watcher", delivery: "silent")
         let dispatcher = makeDispatcher(surfaces: [watcher])

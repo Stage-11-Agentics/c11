@@ -26,6 +26,66 @@
         "en": {"stringUnit": {"state": "translated", "value": "Invalid panel handle: %@ (expected UUID, ref like panel:1, or index)"}}
       }
     },
+    "mailbox.drawer.sent.counts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld sent"}}
+      }
+    },
+    "mailbox.drawer.sent.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Nothing sent yet."}}
+      }
+    },
+    "mailbox.drawer.sent.olderHidden": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld older sent messages are not shown."}}
+      }
+    },
+    "mailbox.drawer.sent.state.gone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "GONE"}}
+      }
+    },
+    "mailbox.drawer.sent.state.gone.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The recipient's copy is no longer there."}}
+      }
+    },
+    "mailbox.drawer.sent.state.read.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The recipient has taken this message."}}
+      }
+    },
+    "mailbox.drawer.sent.state.unread.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The recipient has not taken this message yet."}}
+      }
+    },
+    "mailbox.drawer.sent.to": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "to"}}
+      }
+    },
+    "mailbox.drawer.tab.received": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Received"}}
+      }
+    },
+    "mailbox.drawer.tab.sent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Sent"}}
+      }
+    },
     "mailbox.native.error.liveProcess": {
       "extractionState": "manual",
       "localizations": {

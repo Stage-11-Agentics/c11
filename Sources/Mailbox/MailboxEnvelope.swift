@@ -64,6 +64,35 @@ struct MailboxEnvelope: Equatable {
         (try? lhs.encode()) == (try? rhs.encode())
     }
 
+    /// Reserved `ext` key. The dispatcher stamps the sending panel's UUID here
+    /// on accepted envelopes (C11-399), only when `from` resolves to exactly one
+    /// live panel in the workspace. A sender cannot supply it: it is removed
+    /// from every envelope before the stamp is decided.
+    static let senderPanelKey = "c11_sender_panel_id"
+
+    /// The stamped sending panel, when the dispatcher recorded one.
+    var senderPanelId: UUID? {
+        (ext?[Self.senderPanelKey] as? String).flatMap(UUID.init(uuidString:))
+    }
+
+    /// This envelope with the reserved sender stamp decided by the dispatcher:
+    /// any sender-supplied value is dropped, then `panel` is recorded if given.
+    /// Other `ext` fields are preserved; an `ext` that held only a stamp is removed.
+    func stampingSender(_ panel: UUID?) -> MailboxEnvelope {
+        var object = raw
+        var extensionFields = ext ?? [:]
+        extensionFields.removeValue(forKey: Self.senderPanelKey)
+        if let panel { extensionFields[Self.senderPanelKey] = panel.uuidString.lowercased() }
+        if extensionFields.isEmpty {
+            // Remove an `ext` that held only a forged stamp; keep one the sender
+            // sent empty, so an unstamped envelope stays byte-identical.
+            if !(ext?.isEmpty ?? true) { object.removeValue(forKey: "ext") }
+        } else {
+            object["ext"] = extensionFields
+        }
+        return MailboxEnvelope(raw: object)
+    }
+
     /// Delivery keeps its local body, while history consumers honor the durable
     /// opt-out even after the accepted event has aged out of the event log.
     func suppressActivityHistoryText() -> MailboxEnvelope {

@@ -177,6 +177,10 @@ enum MailboxPanelMail {
         /// when the listing loads, off the main thread.
         let isLong: Bool
 
+        /// The panel the dispatcher stamped as sender (C11-399); nil on mail sent
+        /// before the stamp existed or from a sender it could not pin down.
+        var senderPanelId: UUID? = nil
+
         /// The TTL ran out before `now`, measured from when it was sent.
         func isExpired(now: Date) -> Bool {
             guard let ttlSeconds, ttlSeconds > 0, let start = sentAt ?? arrivedAt else { return false }
@@ -236,6 +240,100 @@ enum MailboxPanelMail {
             message(at: entry.url, isUnread: entry.unread, arrivedAt: entry.date, fileManager: fileManager)
         }
         return Listing(messages: Array(messages), total: all.count, unread: unread.count)
+    }
+
+    // MARK: - Sent (C11-399)
+
+    /// Where one recipient's copy of a sent message stands right now.
+    enum SentState: Equatable {
+        /// In the recipient's inbox root: its agent has not taken it.
+        case unread
+        /// In the recipient's `_read/`: its agent has taken it.
+        case read
+        /// In neither: swept, expired or the panel's mailbox is gone.
+        case gone
+    }
+
+    struct SentRecipient: Equatable {
+        let panelId: UUID?
+        let name: String
+        let state: SentState
+    }
+
+    /// One message the panel sent, as the Sent view shows it.
+    struct SentMessage: Identifiable, Equatable {
+        var id: String { entryId }
+        let entryId: String
+        let sentAt: Date?
+        let to: String?
+        let topic: String?
+        let recipients: [SentRecipient]
+        /// The first recipient copy still on disk, for the body. Nil when every
+        /// copy is gone.
+        let message: Message?
+    }
+
+    struct SentListing: Equatable {
+        var messages: [SentMessage] = []
+        /// Every entry the panel has, including any past the limit.
+        var total: Int = 0
+
+        var hiddenCount: Int { max(0, total - messages.count) }
+    }
+
+    /// Newest first, at most `limit`: one listing of the sender's `_sent/`, then
+    /// two stats per recipient and one envelope read per message. No other
+    /// panel's directory is listed. Only recipient panels the sender's own
+    /// entries name are looked at, so the view cannot reach mail the sender
+    /// did not send. Call it off the main thread.
+    static func sentListing(
+        senderInbox: URL,
+        mailboxesRoot: URL,
+        limit: Int = drawerLimit,
+        fileManager: FileManager = .default
+    ) -> SentListing {
+        let (entries, total) = MailboxSentLedger.entries(senderInbox: senderInbox, limit: limit, fileManager: fileManager)
+        // The sender's own panel id, from its directory name: a recipient copy
+        // counts as this panel's only if the dispatcher stamped it with that id.
+        let sender = UUID(uuidString: senderInbox.lastPathComponent)
+        let messages = entries.map { entry -> SentMessage in
+            var firstCopy: Message?
+            let recipients = entry.recipients.map { recipient -> SentRecipient in
+                guard let panel = UUID(uuidString: recipient.panel) else {
+                    return SentRecipient(panelId: nil, name: recipient.name, state: .gone)
+                }
+                let inbox = inboxURL(mailboxesRoot: mailboxesRoot, panelId: panel)
+                let file = MailboxLayout.envelopeFilename(id: entry.id)
+                let unreadURL = inbox.appendingPathComponent(file)
+                let readURL = MailboxDrain.readURL(inbox: inbox).appendingPathComponent(file)
+                let state: SentState
+                let copy: URL?
+                if fileManager.fileExists(atPath: unreadURL.path) {
+                    state = .unread; copy = unreadURL
+                } else if fileManager.fileExists(atPath: readURL.path) {
+                    state = .read; copy = readURL
+                } else {
+                    state = .gone; copy = nil
+                }
+                guard let copy else { return SentRecipient(panelId: panel, name: recipient.name, state: .gone) }
+                let found = message(at: copy, isUnread: state == .unread, arrivedAt: arrivalDate(of: copy, fileManager: fileManager), fileManager: fileManager)
+                // A copy this panel did not send is not shown, whatever the entry says.
+                guard sender != nil, found.senderPanelId == sender else {
+                    return SentRecipient(panelId: panel, name: recipient.name, state: .gone)
+                }
+                if firstCopy == nil { firstCopy = found }
+                return SentRecipient(panelId: panel, name: recipient.name, state: state)
+            }
+            return SentMessage(
+                entryId: entry.id,
+                sentAt: entry.ts.flatMap(parseTimestamp) ?? ulidDate(entry.id),
+                to: entry.to,
+                topic: entry.topic,
+                recipients: recipients,
+                message: firstCopy
+            )
+        }
+        return SentListing(messages: messages, total: total)
     }
 
     static let foldedLineLimit = 12
@@ -308,7 +406,9 @@ enum MailboxPanelMail {
             body: body,
             reference: reference,
             problem: nil,
-            isLong: isLong(body) || isLong(referencedText)
+            isLong: isLong(body) || isLong(referencedText),
+            senderPanelId: ((raw["ext"] as? [String: Any])?[MailboxEnvelope.senderPanelKey] as? String)
+                .flatMap(UUID.init(uuidString:))
         )
     }
 

@@ -287,7 +287,7 @@ final class MailboxGlobalResolverTests: XCTestCase {
         XCTAssertEqual(resolution, .unique(workspaceId: wsB, surfaceIds: [owner.surfaceId]))
     }
 
-    func testSenderFromUsesExactIdAndPreservesExistingPaths() throws {
+    func testSenderFromUsesExactIdAndResolvesAfterRename() throws {
         let senderId = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
         let from = try XCTUnwrap(MailboxSenderFrom.value(
             override: nil,
@@ -297,6 +297,8 @@ final class MailboxGlobalResolverTests: XCTestCase {
         ))
         let envelope = try MailboxEnvelope.build(from: from, to: "watcher", body: "reply")
         let renamedSender = surface(wsA, id: senderId, title: "renamed sender")
+        let oldTitleCollision = surface(wsB, title: "c11 mailbox send --to lc-claude --body …")
+        let reply = try MailboxEnvelope.build(from: "watcher", to: envelope.from, body: "reply")
 
         XCTAssertEqual(envelope.from, "id:\(senderId.uuidString.lowercased())")
         XCTAssertEqual(
@@ -308,27 +310,58 @@ final class MailboxGlobalResolverTests: XCTestCase {
             from
         )
         XCTAssertEqual(
-            resolver([renamedSender]).resolve(name: envelope.from, senderWorkspaceId: wsB),
+            resolver([oldTitleCollision, renamedSender]).resolve(
+                name: try XCTUnwrap(reply.to),
+                senderWorkspaceId: wsB
+            ),
             .unique(workspaceId: wsA, surfaceIds: [senderId])
         )
-        XCTAssertEqual(
-            try XCTUnwrap(MailboxSenderFrom.value(
-                override: nil,
-                title: "existing sender title",
-                mailboxAddress: "stable-sender-address",
-                panelId: UUID()
-            )),
-            "existing sender title"
+    }
+
+    func testSenderFromUsesAddressAndReplyResolvesAfterRenameWithTitleCollision() throws {
+        let sender = surface(wsA, title: "original sender title", address: "stable-sender-address")
+        let from = try XCTUnwrap(MailboxSenderFrom.value(
+            override: nil,
+            title: sender.name,
+            mailboxAddress: sender.address,
+            panelId: sender.surfaceId
+        ))
+        let envelope = try MailboxEnvelope.build(from: from, to: "watcher", body: "request")
+        let renamedSender = MailboxGlobalResolver.PanelRecord(
+            workspaceId: wsA,
+            surfaceId: sender.surfaceId,
+            name: "renamed sender",
+            address: sender.address
         )
+        // Even a title collision in the replier's own workspace must not
+        // override the declared address of the original sender.
+        let titleCollision = surface(wsB, title: "stable-sender-address")
+        let oldTitleCollision = surface(wsB, title: sender.name)
+        let reply = try MailboxEnvelope.build(from: "watcher", to: envelope.from, body: "reply")
+
+        XCTAssertEqual(envelope.from, "stable-sender-address")
         XCTAssertEqual(
-            try XCTUnwrap(MailboxSenderFrom.value(
-                override: "caller-selected-from",
-                title: "live shell command title",
-                mailboxAddress: nil,
-                panelId: UUID()
-            )),
-            "caller-selected-from"
+            resolver([titleCollision, oldTitleCollision, renamedSender]).resolve(
+                name: try XCTUnwrap(reply.to),
+                senderWorkspaceId: wsB
+            ),
+            .unique(workspaceId: wsA, surfaceIds: [sender.surfaceId])
         )
+    }
+
+    func testSenderFromExplicitOverrideWinsWithAndWithoutAddress() throws {
+        let mailboxAddresses: [String?] = [nil, "stable-sender-address"]
+        for mailboxAddress in mailboxAddresses {
+            XCTAssertEqual(
+                try XCTUnwrap(MailboxSenderFrom.value(
+                    override: "caller-selected-from",
+                    title: "live shell command title",
+                    mailboxAddress: mailboxAddress,
+                    panelId: UUID()
+                )),
+                "caller-selected-from"
+            )
+        }
     }
 
     // MARK: - Collision across workspaces

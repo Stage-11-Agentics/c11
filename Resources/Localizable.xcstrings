@@ -2,6 +2,12 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "cli.dragPanelToSplit.direction.count": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "drag-panel-to-split takes exactly one direction (left|right|up|down)"}}
+      }
+    },
     "cli.layout.arguments.invalid": {
       "extractionState": "manual",
       "localizations": {

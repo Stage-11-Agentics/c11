@@ -1405,7 +1405,14 @@ extension TerminalController {
         let operation = SelectionReadOperation<Result<Capture, V2CallResult>>()
         Task { @MainActor in
             guard operation.beginCapture() else { return }
-            switch resolveSurfaceSendTargets(params: params) {
+            v2RefreshKnownRefs()
+            let target: PanelSendPhaseAOutcome
+            if let error = v2RejectUnresolvedTargetRefs(params) {
+                target = .err(error)
+            } else {
+                target = resolveSurfaceSendTargets(params: params)
+            }
+            switch target {
             case .err(let error):
                 var data = PromptInputClassification(state: .unavailable, draftLength: nil)
                     .responseFields(source: nil, observedAtMs: nil)
@@ -1479,6 +1486,10 @@ extension TerminalController {
                 operation.complete(.failure(.err(code: code, message: message, data: nil)))
             }
             v2RefreshKnownRefs()
+            if let error = v2RejectUnresolvedTargetRefs(params) {
+                operation.complete(.failure(error))
+                return
+            }
             for key in ["window_id", "workspace_id", "surface_id"] where params[key] != nil {
                 guard let raw = params[key] as? String, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                       let uuid = v2UUID(params, key) else {
@@ -1713,6 +1724,9 @@ extension TerminalController {
     }
 
     private func v2PanelGetTitleBarState(params: [String: Any]) -> V2CallResult {
+        if let error = v2RejectUnresolvedTargetRefs(
+            params, fallbackWorkspaceManager: v2ResolveWorkspaceManager(params: params)
+        ) { return error }
         guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
             return .err(code: "surface_not_found", message: "Panel not found", data: nil)
         }
@@ -2008,6 +2022,9 @@ extension TerminalController {
     }
 
     private func v2PanelGetMetadata(params: [String: Any]) -> V2CallResult {
+        if let error = v2RejectUnresolvedTargetRefs(
+            params, fallbackWorkspaceManager: v2ResolveWorkspaceManager(params: params)
+        ) { return error }
         let keys: [String]?
         if params["keys"] is NSNull || params["keys"] == nil {
             keys = nil

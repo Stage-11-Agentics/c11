@@ -32,9 +32,32 @@ final class MailboxNativeDoorbell {
     }
     enum Result: Equatable { case accepted(late: Bool), failed(String) }
 
+    struct Fallback {
+        let registration: Registration
+        let ids: Set<String>
+        let reason: String
+
+        /// A hard failure holds the same uncovered mail off native delivery.
+        /// omp has no typed reader, so a genuinely new uncovered envelope may
+        /// start another native attempt. That attempt records its own IDs if
+        /// it fails, preventing rechecks of the same mail from spinning.
+        func blocksNative(registrationID: UUID, unreadIDs: Set<String>, coveredIDs: Set<String>,
+                          arrivingID: String? = nil) -> Bool {
+            guard registration.id == registrationID else { return false }
+            var unread = unreadIDs
+            // Admission reads its gate before it enqueues the new envelope.
+            if let arrivingID { unread.insert(arrivingID) }
+            let uncovered = unread.subtracting(coveredIDs)
+            guard !ids.isDisjoint(with: uncovered) else { return false }
+            if registration.route == .ompExtension, !uncovered.isSubset(of: ids) { return false }
+            return true
+        }
+    }
+
     /// Whether a failed native attempt hands its envelopes to the typed gate
-    /// until a new session registers. A busy rejection on omp happens before any
-    /// side effect and omp has no typed composer reader, so sticking would
+    /// until a new session registers (or new mail arrives for omp). A busy
+    /// rejection on omp happens before any side effect and omp has no typed
+    /// composer reader, so sticking would
     /// strand the mail for the whole session: the next ring tries native again,
     /// bounded by the rate cap. Every other failure, and every other route,
     /// sticks (a timeout may follow a turn that already started).

@@ -394,12 +394,11 @@ private func asBool(_ number: NSNumber) -> Bool? {
 }
 
 enum MailboxSenderFrom {
-    /// The current title remains the sender for panels that already declare a
-    /// mailbox address. For panels without one, use an exact UUID address so
-    /// replies remain routable after a title change.
+    /// Use a declared mailbox address, or an exact UUID address when absent,
+    /// so replies remain routable after a title change.
     static func defaultValue(title: String, mailboxAddress: String?, panelId: UUID?) -> String? {
         if let mailboxAddress, !mailboxAddress.isEmpty {
-            return title
+            return mailboxAddress
         }
         guard let panelId else { return nil }
         return "id:\(panelId.uuidString.lowercased())"

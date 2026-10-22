@@ -1,6 +1,71 @@
 import XCTest
 @testable import c11
 
+/// Exercise the real command router with a focused panel available: a stale
+/// explicit target must fail before any read can resolve that focused panel.
+@MainActor
+final class PanelReadTargetRoutingTests: XCTestCase {
+    private func call(_ controller: TerminalController, _ method: String,
+                      _ params: [String: Any]) async throws -> [String: Any] {
+        let data = try JSONSerialization.data(withJSONObject: ["id": 478, "method": method, "params": params])
+        let command = String(decoding: data, as: UTF8.self)
+        let response = await Task.detached {
+            controller.processCommandUsingSocketExecutionPolicy(command)
+        }.value
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+    }
+
+    private func checkFocusedRead(_ method: String) async throws {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        let panelID = try XCTUnwrap(workspace.focusedPanelId)
+        let controller = TerminalController.makeForTesting()
+        controller.setActiveWorkspaceManager(manager)
+        let ordinal = controller.surfaceOrdinal(forSurfaceUUID: panelID)
+        for valid in [panelID.uuidString, "panel:\(ordinal)"] {
+            let before = try await call(controller, method, ["panel_id": valid])
+            XCTAssertEqual(before["ok"] as? Bool, true, "\(method): \(before)")
+            let result = try XCTUnwrap(before["result"] as? [String: Any])
+            XCTAssertEqual(result["panel_id"] as? String, panelID.uuidString)
+            for key in ["panel_id", "surface_id", "tab_id"] {
+                for stale in ["panel:999999999", UUID().uuidString] {
+                    let response = try await call(controller, method, [key: stale])
+                    XCTAssertEqual(response["ok"] as? Bool, false, "\(method) \(key): \(response)")
+                    XCTAssertEqual((response["error"] as? [String: Any])?["code"] as? String, "not_found")
+                    XCTAssertNil(response["result"], "Stale target exposed another panel's data")
+                }
+            }
+            let after = try await call(controller, method, ["panel_id": valid])
+            XCTAssertEqual(after["ok"] as? Bool, true)
+            XCTAssertEqual((after["result"] as? [String: Any])?["panel_id"] as? String, panelID.uuidString)
+        }
+    }
+
+    func testMetadataStaleTargetNeverReadsFocusedPanel() async throws {
+        try await checkFocusedRead("panel.get_metadata")
+    }
+
+    func testTitlebarStaleTargetNeverReadsFocusedPanel() async throws {
+        try await checkFocusedRead("panel.get_titlebar_state")
+    }
+
+    func testWorkerReadsRejectStaleTargetsThroughCommandRouter() async throws {
+        let controller = TerminalController.makeForTesting()
+        let missingPanelID = UUID()
+        let knownOrdinal = controller.surfaceOrdinal(forSurfaceUUID: missingPanelID)
+        for method in ["panel.read_text", "panel.read_selection", "panel.input_state"] {
+            for key in ["panel_id", "surface_id", "tab_id"] {
+                for stale in ["panel:999999999", missingPanelID.uuidString, "panel:\(knownOrdinal)"] {
+                    let response = try await call(controller, method, [key: stale])
+                    XCTAssertEqual(response["ok"] as? Bool, false, "\(method) \(key): \(response)")
+                    XCTAssertEqual((response["error"] as? [String: Any])?["code"] as? String, "not_found", "\(method) \(key): \(response)")
+                    XCTAssertNil(response["result"])
+                }
+            }
+        }
+    }
+}
+
 /// C11-165 COR-1 — empty/absent surface-ref rejection (the logic-suite half
 /// of COR-4). `SocketSurfaceRefValidator` is the pure seam the v2/v1 write
 /// handlers invoke (`v2RejectInvalidSurfaceRef`, `v1RejectMissingTabRef`), so

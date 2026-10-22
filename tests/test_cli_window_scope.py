@@ -256,7 +256,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
             return {"methods": ["window.list", "workspace.list", "workspace.current",
                                 "workspace.select", "area.list", "area.panels", "area.create",
                                 "panel.list", "panel.read_text", "panel.send_text", "panel.send_key",
-                                "panel.create", "panel.split", "panel.get_metadata", "panel.set_metadata",
+                                "panel.create", "panel.split", "panel.get_metadata", "panel.set_metadata", "panel.action",
                                 "system.identify", "system.tree", "workspace.group.list",
                                 "notification.create", "notification.create_for_panel", "sidebar.state",
                                 "flag.raise", "flag.lower", "flag.delegate", "flag.undelegate",
@@ -465,8 +465,14 @@ class Server(socketserver.ThreadingUnixStreamServer):
             workspace["panels"].append(tab)
             self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
             return self.context(window, workspace, tab)
+        if method == "panel.action" and params.get("action") == "rename" and "panel_id" not in params:
+            raise RPCError("missing_ref", "No panel target was provided")
         tab = self.target(workspace, "panel", params)
         context = self.context(window, workspace, tab)
+        if method == "panel.action" and params.get("action") == "rename":
+            tab["title"] = params["title"]
+            self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
+            return context
         if method.startswith("flag."):
             tab["attention"] = method
             self.mutations.append((method, window["ref"], workspace["ref"], tab["ref"]))
@@ -589,8 +595,8 @@ def run_worker(worker: int, cli: str) -> int:
                     run(*args, env=caller, success=False)
                     unchanged()
 
-            # Spread the larger independent blocks across the eight fixture
-            # processes; the resulting groups contain 14 to 20 cases each.
+            # Spread independent blocks across isolated fixture processes;
+            # parser error guards have their own groups below.
             tree_groups = {0: ("scoped",), 5: ("ignores_scope",), 7: ("unsupported",)}
             if worker in tree_groups:
                 tree_mode_cases(tree_groups[worker])
@@ -1022,6 +1028,54 @@ def run_worker(worker: int, cli: str) -> int:
                 assert b["ref"] in out.stderr, out.stderr
                 assert not any(name == "panel.read_text" for name, _ in server.calls), server.calls
                 assert server.windows == closed_state and server.mutations == close_mutations
+
+            if worker == 8:
+                # Explicit empty targets share the read-command error contract,
+                # including legacy flag spellings and whitespace-only values.
+                for window in (None, b["ref"]):
+                    for flag in ("--panel", "--surface"):
+                        for value in ("", " \t\r\n"):
+                            for command, tail in (("set-description", "Synthetic description"),
+                                                  ("drag-panel-to-split", "right")):
+                                out = run(command, "--workspace", b_ws["id"], flag, value, tail,
+                                          window=window, env=caller, success=False)
+                                assert "empty_ref: --panel was provided but empty" in out.stderr, out.stderr
+                                assert not any(name in ("panel.set_metadata", "panel.drag_to_split")
+                                               for name, _ in server.calls), server.calls
+                                unchanged()
+
+            if worker == 9:
+                for window in (None, b["ref"]):
+                    for flag in ("--panel", "--surface"):
+                        for value in ("", " \t\r\n"):
+                            out = run("rename-panel", "--workspace", b_ws["id"], flag, value,
+                                      "Synthetic rename", window=window, env=caller, success=False)
+                            assert "empty_ref: --panel was provided but empty" in out.stderr, out.stderr
+                            assert not any(name == "panel.action" for name, _ in server.calls), server.calls
+                            unchanged()
+
+                    # Omitting a target still reaches the server's missing_ref
+                    # guard; a valid target proves this fake endpoint can rename.
+                    out = run("rename-panel", "--workspace", b_ws["id"], "Synthetic rename",
+                              window=window, success=False)
+                    assert "missing_ref" in out.stderr and "empty_ref" not in out.stderr, out.stderr
+                    assert any(name == "panel.action" for name, _ in server.calls), server.calls
+                    unchanged()
+                    run("rename-panel", "--workspace", b_ws["id"], "--panel", b_tab["id"],
+                        "Synthetic rename", window=window, env=caller)
+                    assert server.mutations == [("panel.action", b["ref"], b_ws["ref"], b_tab["ref"])], server.mutations
+                    expected = fixture()
+                    expected[1]["workspaces"][0]["panels"][0]["title"] = "Synthetic rename"
+                    assert server.windows == expected, server.windows
+
+            if worker == 10:
+                for window in (None, b["ref"]):
+                    for directions in ((), ("right", "left")):
+                        out = run("drag-panel-to-split", "--workspace", b_ws["id"], "--panel", b_tab["id"],
+                                  *directions, window=window, env=caller, success=False)
+                        assert "takes exactly one direction (left|right|up|down)" in out.stderr, out.stderr
+                        assert not any(name == "panel.drag_to_split" for name, _ in server.calls), server.calls
+                        unchanged()
         finally:
             server.shutdown()
             server.server_close()
@@ -1036,7 +1090,7 @@ def main() -> int:
         raise SystemExit("Set C11_CLI_BIN to the CLI built from this change; no bundled-CLI fallback.")
     cli = resolve_c11_cli()
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {worker: pool.submit(run_worker, worker, cli) for worker in range(8)}
+        futures = {worker: pool.submit(run_worker, worker, cli) for worker in range(11)}
         counts: dict[int, int] = {}
         failures: dict[int, Exception] = {}
         for worker, future in futures.items():
@@ -1051,9 +1105,9 @@ def main() -> int:
         )
         raise AssertionError(f"{len(failures)} window-scope worker(s) failed:\n{details}")
     total = sum(counts.values())
-    if total != 146:
-        raise AssertionError(f"expected 146 window-scope CLI cases, got {total}")
-    print(f"PASS: {total} CLI fake-socket window-scope cases across 8 isolated workers")
+    if total != 178:
+        raise AssertionError(f"expected 178 window-scope CLI cases, got {total}")
+    print(f"PASS: {total} CLI fake-socket window-scope cases across 11 isolated workers")
     return 0
 
 

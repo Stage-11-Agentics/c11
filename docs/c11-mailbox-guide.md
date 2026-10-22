@@ -319,7 +319,8 @@ still retries with bounded backoff.
 `_dispatch.log` names `route:"pi_extension"` (or `omp_extension`, below) or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and
 `native_failure` (`native_timeout`, `native_rejected`, `native_disconnected`,
-`native_replaced`, `native_unavailable` or `native_write_failed`). To compare the
+`native_replaced`, `native_unavailable` or `native_write_failed`; the Claude
+bridge's own reasons are listed under Claude Code native inbox). To compare the
 typed route diagnostically, launch Pi with `C11_PI_NATIVE_MAIL_DISABLED=1`.
 The wrapper's lifecycle observations remain active.
 Route and native-failure metadata appear only on actual `doorbell` or
@@ -391,7 +392,19 @@ The interactive c11 wrapper adds an async SessionStart hook to its existing per-
 
 The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. The envelope remains unread until `recv --ack` or the existing Stop hook claims it. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
 
-Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt. Delivery is at-least-once: a late confirmation is logged as `native_late_accept`, so a duplicate invitation is possible.
+Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt.
+
+The bridge reports why an offer failed, and `native_failure` names it:
+
+| `native_failure` | Meaning |
+|---|---|
+| `native_transcript_unavailable` | The session transcript could not be opened; nothing was sent. |
+| `native_inbox_unavailable` | Claude's inbox socket could not be reached; nothing was sent. |
+| `native_inbox_write_failed` | The invitation write stalled or broke partway. |
+| `native_unconfirmed` | The write succeeded, but no matching record appeared within 1.8 seconds. `crossSessionInbound` `refuse` or `hold` lands here, because Claude accepts the write and answers nothing; so does a changed acceptance marker. |
+| `native_timeout` | The bridge itself said nothing within two seconds. |
+
+After `native_inbox_write_failed` or `native_unconfirmed`, the bridge keeps watching the transcript for 10 seconds. A confirmation in that window is logged as `native_late_accept` and covers the dispatched IDs. Delivery is at-least-once, so a duplicate invitation is possible.
 
 `--resume` and `/clear` create a fresh subscription bound to that launch's session transcript. The bridge stays armed across repeated wakes and long idle, and exits when its Claude process exits or its c11 connection closes. If c11 restarts while Claude stays running, that session uses typed fallback until its next SessionStart. Print, background, and passthrough commands do not gain the bridge. Other MCP flags remain the operator's own. For a typed-route comparison, launch with `C11_CLAUDE_NATIVE_MAIL_DISABLED=1`; lifecycle and Stop-drain hooks remain active.
 

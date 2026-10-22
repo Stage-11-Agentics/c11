@@ -199,22 +199,77 @@ class BridgeTests(unittest.TestCase):
         delivery = self.offer()
         self.assertEqual(self.app.read(timeout=2.5), {"type": "accepted", "delivery_id": delivery})
 
+    def assert_unconfirmed(self, delivery):
+        # Reported inside the app's two-second bound, then never acknowledged.
+        started = time.monotonic()
+        self.assertEqual(self.app.read(timeout=2.4), {"type": "rejected", "delivery_id": delivery,
+                                                    "reason": "unconfirmed"})
+        self.assertLess(time.monotonic() - started, 2.0)
+        with self.assertRaises(socket.timeout):
+            self.app.read(timeout=1)
+
     def test_old_and_wrong_session_records_do_not_acknowledge(self):
         self.append()
         self.launch()
         self.subscribe()
         self.receive_invitation(wrong_session=True)
-        self.offer()
-        with self.assertRaises(socket.timeout):
-            self.app.read(timeout=2.4)
+        self.assert_unconfirmed(self.offer())
 
     def test_successful_socket_write_without_harness_acceptance_is_not_ack(self):
         self.launch()
         self.subscribe()
         self.receive_invitation(confirm=False)
-        self.offer()
+        self.assert_unconfirmed(self.offer())
+
+    def test_late_confirmation_after_unconfirmed_is_accepted(self):
+        self.launch()
+        self.subscribe()
+        self.receive_invitation(confirm=False)
+        delivery = self.offer()
+        self.assertEqual(self.app.read(timeout=2.4), {"type": "rejected", "delivery_id": delivery,
+                                                    "reason": "unconfirmed"})
+        self.workers[-1].join(timeout=2)
+        self.append()
+        self.assertEqual(self.app.read(timeout=1), {"type": "accepted", "delivery_id": delivery})
+
+    def test_new_offer_ends_the_late_watch(self):
+        self.launch()
+        self.subscribe()
+        self.receive_invitation(confirm=False)
+        first = self.offer()
+        self.assertEqual(self.app.read(timeout=2.4)["delivery_id"], first)
+        self.workers[-1].join(timeout=2)
+        self.receive_invitation()
+        second = self.offer()
+        self.assertEqual(self.app.read(timeout=2), {"type": "accepted", "delivery_id": second})
         with self.assertRaises(socket.timeout):
-            self.app.read(timeout=2.4)
+            self.app.read(timeout=.5)
+
+    def test_unreadable_transcript_rejects_as_transcript_unavailable(self):
+        self.transcript.write_text("")
+        self.transcript.chmod(0)
+        self.launch()
+        self.subscribe()
+        delivery = self.offer()
+        self.assertEqual(self.app.read(timeout=2), {"type": "rejected", "delivery_id": delivery,
+                                                  "reason": "transcript_unavailable"})
+        self.assert_inbox_untouched()
+
+    def test_stalled_inbox_write_rejects_as_inbox_write_failed(self):
+        token = "x" * (16 * 1024)
+        self.inbox.server.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192)
+        self.launch(CLAUDE_CODE_MESSAGING_TOKEN=token)
+        self.subscribe()
+        delivery = self.offer()
+        self.inbox.accept()  # Accepts and never reads, so the auth line stalls.
+        self.assertEqual(self.app.read(timeout=2.4), {"type": "rejected", "delivery_id": delivery,
+                                                    "reason": "inbox_write_failed"})
+
+    def assert_inbox_untouched(self):
+        self.inbox.server.settimeout(.15)
+        with self.assertRaises(socket.timeout):
+            connection, _ = self.inbox.server.accept()
+            connection.close()
 
     def test_missing_feature_exits_without_connecting(self):
         self.launch(CLAUDE_CODE_MESSAGING_TOKEN="")

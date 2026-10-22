@@ -383,6 +383,7 @@ jobs:
           launch_cli_test activity-analysis env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py
           launch_cli_test mailbox-body env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_mailbox_body_cli.py "$CLI_BINARY"
           launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline
+          launch_cli_test claude-mailbox-bridge env C11_TEST_CLI="$CLI_BINARY" python3 tests/test_claude_mailbox_bridge.py
           failures=0
           for i in "${!pids[@]}"; do
             if wait "${pids[$i]}"; then

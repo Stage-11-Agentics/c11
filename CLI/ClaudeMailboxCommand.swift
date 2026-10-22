@@ -61,40 +61,70 @@ enum ClaudeMailboxCommand {
         guard let reply = try stream.read(deadline: uptime + 1),
               reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
 
+        var late: LateWatch?
         while binding.isAlive {
             let shouldContinue = try autoreleasepool { () throws -> Bool in
                 // No idle transcript or mailbox polling. The timeout only checks
                 // the harness lifetime, including PID reuse and orphaned hooks.
-                guard let frame = try stream.read(deadline: uptime + 1) else { return true }
+                // An unconfirmed offer is watched briefly between frame reads.
+                let readDeadline = late.map { min(uptime + 0.05, $0.until) } ?? uptime + 1
+                guard let frame = try stream.read(deadline: readDeadline) else {
+                    if let watch = late {
+                        if (try? watch.observer.observe()) == true {
+                            late = nil
+                            try stream.write(["type": "accepted", "delivery_id": watch.deliveryID], deadline: uptime + 0.2)
+                        } else if uptime >= watch.until {
+                            late = nil
+                        }
+                    }
+                    return true
+                }
                 if frame["type"] as? String == "replaced" { return false }
                 guard frame["type"] as? String == "deliver" else { return true }
                 guard let deliveryID = frame["delivery_id"] as? String,
                       UUID(uuidString: deliveryID) != nil else { throw Failure.invalidFrame }
+                // A newer offer carries the same invitation text, so an older
+                // watch could not tell whose record it saw.
+                late = nil
                 guard frame["text"] as? String == ClaudeMailboxAcceptance.invitation else {
-                    try stream.write(["type": "rejected", "delivery_id": deliveryID,
-                                      "reason": "unsupported_invitation"], deadline: uptime + 0.2)
+                    try reject(stream, deliveryID, "unsupported_invitation")
                     return true
                 }
-                try deliver(binding: binding, stream: stream, deliveryID: deliveryID)
+                late = try deliver(binding: binding, stream: stream, deliveryID: deliveryID)
                 return true
             }
             if !shouldContinue { return }
         }
     }
 
-    private static func deliver(binding: Binding, stream: ClaudeMailboxStream, deliveryID: String) throws {
-        let deadline = uptime + 2
-        guard binding.isAlive else { throw Failure.closed }
+    /// The app's own bound is two seconds from dispatch. Reporting first lets it
+    /// log why the offer failed; the watch after it lets a slightly late
+    /// confirmation still reach the app as `native_late_accept`.
+    static let confirmWindow: TimeInterval = 1.8
+    static let lateWindow: TimeInterval = 10
+
+    private struct LateWatch {
+        let deliveryID: String
         let observer: ClaudeMailboxAcceptance
-        let inbox: ClaudeMailboxStream
-        do {
-            observer = try ClaudeMailboxAcceptance(path: binding.transcript, sessionID: binding.sessionID)
-            inbox = try ClaudeMailboxStream(path: binding.inbox, deadline: min(deadline, uptime + 0.3))
-        } catch {
-            // No frame has been sent, so a definite rejection is truthful.
-            try stream.write(["type": "rejected", "delivery_id": deliveryID,
-                              "reason": "inbox_unavailable"], deadline: uptime + 0.2)
-            return
+        let until: TimeInterval
+    }
+
+    private static func reject(_ stream: ClaudeMailboxStream, _ deliveryID: String, _ reason: String) throws {
+        try stream.write(["type": "rejected", "delivery_id": deliveryID, "reason": reason], deadline: uptime + 0.2)
+    }
+
+    private static func deliver(binding: Binding, stream: ClaudeMailboxStream, deliveryID: String) throws -> LateWatch? {
+        let deadline = uptime + confirmWindow
+        guard binding.isAlive else { throw Failure.closed }
+        // Until the inbox write starts, nothing has been sent, so these
+        // rejections are definite and name what was missing.
+        guard let observer = try? ClaudeMailboxAcceptance(path: binding.transcript, sessionID: binding.sessionID) else {
+            try reject(stream, deliveryID, "transcript_unavailable")
+            return nil
+        }
+        guard let inbox = try? ClaudeMailboxStream(path: binding.inbox, deadline: min(deadline, uptime + 0.3)) else {
+            try reject(stream, deliveryID, "inbox_unavailable")
+            return nil
         }
         do {
             // The token is never persisted, printed, or passed in argv.
@@ -103,20 +133,24 @@ enum ClaudeMailboxCommand {
                             "content": ClaudeMailboxAcceptance.invitation]], deadline: deadline)
             inbox.close()
         } catch {
-            // A partial write is ambiguous. Leave the shared deadline to make
-            // its normal fallback decision rather than claim non-delivery.
-            return
+            // A partial write may still arrive, so keep watching for it.
+            inbox.close()
+            try reject(stream, deliveryID, "inbox_write_failed")
+            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + lateWindow)
         }
         while uptime < deadline, binding.isAlive, stream.isConnected {
             if try observer.observe() {
                 try stream.write(["type": "accepted", "delivery_id": deliveryID], deadline: uptime + 0.2)
-                return
+                return nil
             }
             Thread.sleep(forTimeInterval: 0.02)
         }
-        // Explicit inbound policy can silently hold or discard a valid write.
-        // Silence is not acceptance. The app times out the offer and runs the
-        // same envelopes through the typed gate, with at-least-once semantics.
+        guard binding.isAlive, stream.isConnected else { return nil }
+        // Explicit inbound policy (crossSessionInbound refuse or hold) accepts
+        // the write and answers nothing, so it is indistinguishable here from a
+        // slow harness or a changed acceptance marker. Silence is not acceptance.
+        try reject(stream, deliveryID, "unconfirmed")
+        return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + lateWindow)
     }
 
     fileprivate enum Failure: Error { case closed, invalidFrame, unavailable, timeout }

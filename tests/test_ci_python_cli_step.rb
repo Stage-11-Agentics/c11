@@ -26,7 +26,8 @@ required = [
   'launch_cli_test window-scope env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py',
   'launch_cli_test activity-analysis env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py',
   'launch_cli_test mailbox-body env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_mailbox_body_cli.py "$CLI_BINARY"',
-  'launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline'
+  'launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline',
+  'launch_cli_test claude-mailbox-bridge env C11_TEST_CLI="$CLI_BINARY" python3 tests/test_claude_mailbox_bridge.py'
 ]
 missing = required.reject { |command| run.lines.any? { |line| line.strip == command } }
 abort "FAIL: CLI step is missing built-binary commands: #{missing.join('; ')}" unless missing.empty?
@@ -37,4 +38,4 @@ abort "FAIL: CLI step must wait for every process and collect all exit statuses"
 abort "FAIL: CLI step must print every script log" unless run.include?('cat "${logs[$i]}"')
 abort "FAIL: CLI step must not re-query Xcode build settings" if run.include?("-showBuildSettings")
 
-puts "PASS: Python job runs all six scripts concurrently against the exact-head CLI build"
+puts "PASS: Python job runs all seven scripts concurrently against the exact-head CLI build"

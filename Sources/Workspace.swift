@@ -6920,7 +6920,9 @@ final class Workspace: Identifiable, ObservableObject {
                         if late { return }
                     case .failed(let reason):
                         guard ownsAttempt else { return }
-                        self.mailboxNativeFallback[surfaceId] = NativeMailboxFallback(registration: registration, ids: ids, reason: reason)
+                        if MailboxNativeDoorbell.failureSticksToTypedGate(route: registration.route, reason: reason) {
+                            self.mailboxNativeFallback[surfaceId] = NativeMailboxFallback(registration: registration, ids: ids, reason: reason)
+                        }
                         self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
                             if ledger.rungEpoch == epoch { ledger.rungEpoch = nil }
                         }

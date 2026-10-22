@@ -5,7 +5,7 @@ import Darwin
 /// over it. Socket IO and deadlines run on workers; Workspace owns ring policy.
 final class MailboxNativeDoorbell {
     static let shared = MailboxNativeDoorbell()
-    enum Route: String { case typed, piExtension = "pi_extension", codexQueue = "codex_queue", claudeInbox = "claude_inbox" }
+    enum Route: String { case typed, piExtension = "pi_extension", ompExtension = "omp_extension", codexQueue = "codex_queue", claudeInbox = "claude_inbox" }
     struct Registration: Equatable {
         let id: UUID
         let panelID: UUID
@@ -19,6 +19,7 @@ final class MailboxNativeDoorbell {
             guard let process, process.pid == agentPID, process.startTime == processStart else { return false }
             switch route {
             case .piExtension: return kind == "pi"
+            case .ompExtension: return kind == "omp"
             case .codexQueue: return kind == "codex"
             case .claudeInbox: return kind == "claude-code" || kind == "claude"
             case .typed: return false
@@ -26,6 +27,16 @@ final class MailboxNativeDoorbell {
         }
     }
     enum Result: Equatable { case accepted(late: Bool), failed(String) }
+
+    /// Whether a failed native attempt hands its envelopes to the typed gate
+    /// until a new session registers. A busy rejection on omp happens before any
+    /// side effect and omp has no typed composer reader, so sticking would
+    /// strand the mail for the whole session: the next ring tries native again,
+    /// bounded by the rate cap. Every other failure, and every other route,
+    /// sticks (a timeout may follow a turn that already started).
+    static func failureSticksToTypedGate(route: Route, reason: String) -> Bool {
+        !(route == .ompExtension && reason == "native_rejected")
+    }
 
     /// Apply an observed acceptance on the main hop. The return value says
     /// whether the listener is still current and may trigger further work.

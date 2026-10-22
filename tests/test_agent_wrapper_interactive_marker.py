@@ -41,6 +41,9 @@ def run(wrapper: str, argv: list[str], *, tty_stdout: bool, in_c11: bool = True)
         (wrapper_dir / wrapper).chmod(0o755)
         if wrapper == "pi":
             shutil.copy2(BIN / "pi-lifecycle.ts", wrapper_dir / "pi-lifecycle.ts")
+        if wrapper == "omp":
+            for extension in ("omp-prompt-cache.ts", "omp-native-mail.ts"):
+                shutil.copy2(BIN / extension, wrapper_dir / extension)
         log = tmp / "real.log"
         notify_log = tmp / "notify.log"
         make_executable(
@@ -141,6 +144,11 @@ CASES = [
     ("pi", [], True, True, True),
     ("pi", ["-p", "hi"], True, True, False),
     ("pi", [], False, True, False),
+    ("omp", [], True, True, True),
+    ("omp", ["-p", "hi"], True, True, False),
+    ("omp", ["commit"], True, True, False),             # management subcommand
+    ("omp", [], False, True, False),
+    ("omp", [], True, False, False),
 ]
 
 

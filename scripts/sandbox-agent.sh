@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Agent panels (Claude Code, Codex, Grok, Pi) inside a sandbox guest's c11.
+# Agent panels (Claude Code, Codex, Grok, Pi, omp) inside a sandbox guest's c11.
 # Usage: scripts/sandbox-agent.sh <run-id> <stage|launch|screen|c11|wipe|verify-clean> [args...]
 set -euo pipefail
 
@@ -15,7 +15,7 @@ Agents run inside the guest that sandbox-up.sh started. Every command below
 reaches the guest over SSH through the Tart host. Nothing runs on, or takes
 focus on, the machine where this script is invoked.
 
-  stage [claude,codex,grok,pi]
+  stage [claude,codex,grok,pi,omp,pi-live,omp-live]
       Copy the Tart host's installed agent CLIs into the guest and stage one
       access credential per kind, exported on the Tart host by the Overwatch
       seat launcher (seat.sh export-cred). Default: all three. Run it again to
@@ -24,8 +24,16 @@ focus on, the machine where this script is invoked.
       Pi stages the host's Pi package and Bun runtime with a controlled
       provider fixture. It stages no credential or tenant configuration;
       real model-provider authentication is not exercised in this mode.
+      omp does the same with the host's omp package (built into a
+      self-contained install on the host) and a Bun runtime new enough for it.
+      pi-live and omp-live run the same agents against OpenRouter with a real
+      model. They stage one credential: the OpenRouter key, read from
+      C11_SANDBOX_OPENROUTER_KEY in the caller's environment, sent on SSH
+      stdin, written in the guest as a mode 600 file. Set the variable for
+      stage and again for verify-clean, which searches for it. The key is
+      never put in an argument, a file on this machine, or output.
 
-  launch <claude|codex|grok|pi> <brief-file> [--title T] [--model M] [--effort E]
+  launch <claude|codex|grok|pi|omp|pi-live|omp-live> <brief-file> [--title T] [--model M] [--effort E]
          [--workspace REF] [--address A] [--no-push] [--no-wait] [--timeout S]
       Copy the brief into the guest and launch a typed agent tab in the guest
       c11 with `c11 launch-agent --prompt-file`, so the agent is told to read
@@ -73,8 +81,8 @@ sandbox_validate_kinds() {
   local IFS=,
   for k in $list; do
     case "$k" in
-      claude|codex|grok|pi) ;;
-      *) sandbox_die "unknown agent kind '$k'. Kinds: claude, codex, grok, pi." ;;
+      claude|codex|grok|pi|omp|pi-live|omp-live) ;;
+      *) sandbox_die "unknown agent kind '$k'. Kinds: claude, codex, grok, pi, omp, pi-live, omp-live." ;;
     esac
   done
 }
@@ -85,6 +93,8 @@ sandbox_validate_kinds() {
 sandbox_agent_host_prelude() {
   printf 'seat_sh=%q\n' "${C11_SANDBOX_SEAT_SH:-}"
   printf 'claude_account=%q\n' "${C11_SANDBOX_CLAUDE_ACCOUNT:-}"
+  # Goes to the Tart host on SSH stdin with the rest of this script, never argv.
+  printf 'openrouter_key=%q\n' "${C11_SANDBOX_OPENROUTER_KEY:-}"
   cat <<'ZSH'
 [[ -n "$seat_sh" ]] || seat_sh="$HOME/Projects/Stage11/code/overwatch/launcher/seat.sh"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
@@ -94,8 +104,13 @@ lib_dir=/usr/local/libexec/c11-sandbox
 # callers keep it in a variable or a pipe, never a file or argv.
 export_cred() {
   local kind="$1"
-  if [[ "$kind" == pi ]]; then
-    print -r -- '{"agent":"pi","env":{},"account":"controlled-provider"}'
+  if [[ "$kind" == pi || "$kind" == omp ]]; then
+    print -r -- '{"agent":"'"$kind"'","env":{},"account":"controlled-provider"}'
+    return
+  fi
+  if [[ "$kind" == pi-live || "$kind" == omp-live ]]; then
+    [[ -n "$openrouter_key" ]] || die "$kind needs the OpenRouter key: set C11_SANDBOX_OPENROUTER_KEY for this command"
+    OPENROUTER_API_KEY="$openrouter_key" /usr/bin/python3 -c 'import json, os, sys; print(json.dumps({"agent": sys.argv[1], "env": {"OPENROUTER_API_KEY": os.environ["OPENROUTER_API_KEY"]}, "account": "openrouter"}))' "$kind"
     return
   fi
   [[ -x "$seat_sh" || -f "$seat_sh" ]] || die "Overwatch seat launcher not found at $seat_sh (set C11_SANDBOX_SEAT_SH)"
@@ -232,8 +247,10 @@ for line in sys.stdin:
         vals = [t["access_token"]] + ([t["id_token"]] if t.get("id_token") else [])
     elif kind == "grok":
         vals = [json.loads(env["GROK_ACCESS_TOKEN_JSON"])["access_token"]]
-    elif kind == "pi":
+    elif kind in ("pi", "omp"):
         vals = []  # Controlled provider; no credential is staged.
+    elif kind in ("pi-live", "omp-live"):
+        vals = [env["OPENROUTER_API_KEY"]]
     else:
         sys.exit("unknown kind " + kind)
     if mode == "summary":
@@ -307,6 +324,44 @@ exec /usr/local/libexec/c11-sandbox/pi/runtime /usr/local/libexec/c11-sandbox/pi
   --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve \
   --extension "$HOME/c11-sandbox/agents/pi-provider.ts" "$@"
 SH
+cat > "$tmp/pi-live" <<'SH'
+#!/bin/sh
+# A real model through OpenRouter. The key is in a mode 600 auth.json beside the agent state,
+# never in this process's environment, so an agent tool cannot print it.
+export PI_CODING_AGENT_DIR="$HOME/c11-sandbox/agents/pi-config"
+export PI_TELEMETRY=0
+exec /usr/local/libexec/c11-sandbox/pi/runtime /usr/local/libexec/c11-sandbox/pi/package/dist/cli.js \
+  --provider openrouter --model openai/gpt-4o-mini --offline --no-session --no-extensions \
+  --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve "$@"
+SH
+cat > "$tmp/omp" <<'SH'
+#!/bin/sh
+# An isolated delivery fixture. omp keeps all state under a private HOME, so nothing is written to
+# the guest's own ~/.omp. The wrapper's launch-flag extensions load beside the fixture provider.
+agents="$HOME/c11-sandbox/agents"
+export HOME="$agents/omp-home"
+mkdir -p "$HOME/.omp/agent"
+[ -f "$HOME/.omp/agent/config.yml" ] || printf 'setupVersion: 1\nstartup:\n  setupWizard: false\n' > "$HOME/.omp/agent/config.yml"
+exec /usr/local/libexec/c11-sandbox/omp/runtime /usr/local/libexec/c11-sandbox/omp/package/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js \
+  --extension "$agents/omp-provider.ts" --model c11-spike/fixture --no-session --no-skills \
+  --no-rules --no-lsp --no-title --no-pty "$@"
+SH
+cat > "$tmp/omp-live" <<'SH'
+#!/bin/sh
+# A real model through OpenRouter, from a mode 600 key file. State stays under a private HOME.
+f="$HOME/.c11-sandbox-secrets/openrouter-key"
+# stage runs `omp --version` before it writes the key, so a version query needs none.
+if [ "${1:-}" != "--version" ]; then
+  [ -r "$f" ] || { echo "omp: $f missing; run scripts/sandbox-agent.sh <run-id> stage omp-live" >&2; exit 1; }
+  OPENROUTER_API_KEY="$(cat "$f")"
+  export OPENROUTER_API_KEY
+fi
+export HOME="$HOME/c11-sandbox/agents/omp-home"
+mkdir -p "$HOME/.omp/agent"
+[ -f "$HOME/.omp/agent/config.yml" ] || printf 'setupVersion: 1\nstartup:\n  setupWizard: false\n' > "$HOME/.omp/agent/config.yml"
+exec /usr/local/libexec/c11-sandbox/omp/runtime /usr/local/libexec/c11-sandbox/omp/package/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js \
+  --model openrouter/openai/gpt-4o-mini --no-session --no-skills --no-rules --no-lsp --no-title --no-pty "$@"
+SH
 cat > "$tmp/stage.py" <<'PY'
 # c11 sandbox credential stager. stdin: one JSON line per kind from seat.sh export-cred.
 # Writes each secret as a mode 600 file and seeds first-run state. Prints paths, never values.
@@ -373,8 +428,13 @@ for line in sys.stdin:
             "[analytics]",
             "enabled = false",
             ""]))
-    elif kind == "pi":
-        print("pi controlled provider: no credentials staged")
+    elif kind in ("pi", "omp"):
+        print("%s controlled provider: no credentials staged" % kind)
+    elif kind == "pi-live":
+        write_secret(os.path.join(home, "c11-sandbox", "agents", "pi-config", "auth.json"),
+                     json.dumps({"openrouter": {"type": "api_key", "key": env["OPENROUTER_API_KEY"]}}).encode())
+    elif kind == "omp-live":
+        write_secret(os.path.join(secrets, "openrouter-key"), env["OPENROUTER_API_KEY"].encode())
     elif kind == "grok":
         write_secret(os.path.join(secrets, "grok-token"), env["GROK_ACCESS_TOKEN_JSON"].encode())
         write_text(os.path.join(home, ".grok", "config.toml"), "\n".join([
@@ -406,6 +466,9 @@ PY
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/claude" "$lib/claude-shim"
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/grok-auth" "$lib/grok-auth"
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/pi" "$lib/pi-shim"
+/usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/pi-live" "$lib/pi-live-shim"
+/usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/omp" "$lib/omp-shim"
+/usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/omp-live" "$lib/omp-live-shim"
 mkdir -p "$HOME/c11-sandbox/agents"
 /usr/bin/install -m 644 "$tmp/stage.py" "$HOME/c11-sandbox/agents/stage.py"
 rm -rf "$tmp"
@@ -415,8 +478,11 @@ for k in ${=kinds}; do
     codex) /usr/bin/sudo -n /bin/ln -sfn "$lib/codex/bin/codex" /usr/local/bin/codex ;;
     grok) /usr/bin/sudo -n /bin/ln -sfn "$lib/grok/grok" /usr/local/bin/grok ;;
     pi) /usr/bin/sudo -n /bin/ln -sfn "$lib/pi-shim" /usr/local/bin/pi ;;
+    pi-live) /usr/bin/sudo -n /bin/ln -sfn "$lib/pi-live-shim" /usr/local/bin/pi ;;
+    omp) /usr/bin/sudo -n /bin/ln -sfn "$lib/omp-shim" /usr/local/bin/omp ;;
+    omp-live) /usr/bin/sudo -n /bin/ln -sfn "$lib/omp-live-shim" /usr/local/bin/omp ;;
   esac
-  v="$(/usr/local/bin/$k --version </dev/null 2>/dev/null | head -n 1 || true)"
+  v="$(/usr/local/bin/${k%-live} --version </dev/null 2>/dev/null | head -n 1 || true)"
   [[ -n "$v" ]] || { print -u2 -- "$k does not run in the guest"; exit 1 }
   print -r -- "guest_${k}=$v"
 done
@@ -427,8 +493,9 @@ cmd_stage() {
   local kinds="${1:-claude,codex,grok}"
   [[ $# -le 1 ]] || sandbox_die "stage takes one comma-separated kind list"
   sandbox_validate_kinds "$kinds"
-  local installer_b64 pi_fixture_b64
+  local installer_b64 pi_fixture_b64 omp_fixture_b64
   pi_fixture_b64="$(base64 < "$SCRIPT_DIR/fixtures/pi-mailbox-provider.ts" | tr -d '\n')"
+  omp_fixture_b64="$(base64 < "$SCRIPT_DIR/fixtures/omp-mailbox-provider.ts" | tr -d '\n')"
   installer_b64="$(sandbox_agent_guest_installer | base64 | tr -d '\n')"
   sandbox_on_host <<EOF
 set -eu
@@ -449,22 +516,25 @@ for k in \$kinds; do
 done
 # 2. Agent CLIs: the versions installed on this host, copied when the guest lacks them.
 typeset -A versions payload
-for k in \$kinds; do
+# pi-live and omp-live run the same installed agent as pi and omp.
+bases=(\${(u)\${kinds%-live}})
+for k in \$bases; do
   case "\$k" in
+    omp) b="\$HOME/.bun/bin/omp"; [[ -e "\$b" ]] || b="\$(command -v omp)" ;;
     claude) b="\$HOME/.local/bin/claude"; [[ -e "\$b" ]] || b="\$(command -v claude)" ;;
     codex) b="\$(command -v codex)" ;;
     grok) b="\$HOME/.local/bin/grok"; [[ -e "\$b" ]] || b="\$(command -v grok)" ;;
     pi) b="\$HOME/.local/bin/pi"; [[ -e "\$b" ]] || b="\$(command -v pi)" ;;
   esac
   b="\${b:A}"
-  [[ "\$k" == pi ]] || /usr/bin/file -b "\$b" | grep -q 'Mach-O' || die "\$k on this host is not a native binary (\$b)"
+  [[ "\$k" == pi || "\$k" == omp ]] || /usr/bin/file -b "\$b" | grep -q 'Mach-O' || die "\$k on this host is not a native binary (\$b)"
   versions[\$k]="\$(agent_version "\$k" "\$b")"
   [[ -n "\${versions[\$k]}" ]] || die "\$k --version did not answer on this host (\$b)"
   payload[\$k]="\$b"
 done
-guest_has="\$(print -r -- 'for k in claude codex grok pi; do print -r -- "\$k=\$(cat /usr/local/libexec/c11-sandbox/\$k/VERSION 2>/dev/null)"; done' | guest_ssh "\$ip")"
+guest_has="\$(print -r -- 'for k in claude codex grok pi omp; do print -r -- "\$k=\$(cat /usr/local/libexec/c11-sandbox/\$k/VERSION 2>/dev/null)"; done' | guest_ssh "\$ip")"
 copied=()
-for k in \$kinds; do
+for k in \$bases; do
   have="\$(print -r -- "\$guest_has" | sed -n "s/^\$k=//p")"
   [[ "\$have" == "\${versions[\$k]}" ]] && continue
   b="\${payload[\$k]}"
@@ -479,6 +549,27 @@ for k in \$kinds; do
     [[ -f "\$package/package.json" ]] || die "Pi package root missing"
     COPYFILE_DISABLE=1 /usr/bin/tar -C "\${package:h}" -s ",^\${package:t},pi/package," -cf - "\${package:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
     COPYFILE_DISABLE=1 /usr/bin/tar -C "\${runtime:h}" -s ",^\${runtime:t}\$,pi/runtime," -cf - "\${runtime:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
+  elif [[ "\$k" == omp ]]; then
+    # omp needs a Bun newer than the one Pi stages, and its dependencies hoisted
+    # beside it: build one self-contained install on this host, then ship it.
+    runtime=""
+    for cand in "\$HOME/.local/bin/bun" "\$HOME/.bun/bin/bun" "\$(command -v bun)"; do
+      [[ -x "\$cand" ]] || continue
+      bun_version="\$(\$cand --version </dev/null)"
+      [[ "\$(printf '%s\\n%s\\n' "\$bun_version" 1.3.14 | sort -V | head -n 1)" == 1.3.14 ]] || continue
+      runtime="\${cand:A}"; break
+    done
+    [[ -n "\$runtime" ]] || die "omp staging needs Bun 1.3.14 or newer on this host"
+    /usr/bin/file -b "\$runtime" | grep -q 'Mach-O' || die "omp staging needs a standalone Bun runtime"
+    omp_version="\${versions[omp]#omp/}"
+    stage_dir="\$HOME/c11-omp-stage"
+    if ! grep -q "\"version\": \"\$omp_version\"" "\$stage_dir/node_modules/@oh-my-pi/pi-coding-agent/package.json" 2>/dev/null; then
+      /bin/rm -rf "\$stage_dir"; mkdir -p "\$stage_dir"
+      print -r -- '{"name":"c11-omp-stage","private":true}' > "\$stage_dir/package.json"
+      (cd "\$stage_dir" && "\$runtime" add "@oh-my-pi/pi-coding-agent@\$omp_version" </dev/null >/dev/null) || die "could not build the omp \$omp_version install on this host"
+    fi
+    COPYFILE_DISABLE=1 /usr/bin/tar -C "\${stage_dir:h}" -s ",^\${stage_dir:t},omp/package," -cf - "\${stage_dir:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
+    COPYFILE_DISABLE=1 /usr/bin/tar -C "\${runtime:h}" -s ",^\${runtime:t}\$,omp/runtime," -cf - "\${runtime:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
   elif [[ "\$k" == codex && -d "\${b:h:h}/codex-resources" ]]; then
     # The Homebrew cask keeps resources beside bin/; ship the whole version directory.
     COPYFILE_DISABLE=1 /usr/bin/tar -C "\${b:h:h:h}" -s ",^\${b:h:h:t},codex," -cf - "\${b:h:h:t}" | guest_receive_tar "\$ip" "/Users/\$guest_user/\$inc"
@@ -497,10 +588,11 @@ done
   printf 'kinds=%q\n' "\${(j: :)kinds}"
   printf 'copied=%q\n' "\${(j: :)copied}"
   print -r -- 'typeset -A versions'
-  for k in \$kinds; do printf 'versions[%s]=%q\n' "\$k" "\${versions[\$k]}"; done
+  for k in \$bases; do printf 'versions[%s]=%q\n' "\$k" "\${versions[\$k]}"; done
   print -r -- '${installer_b64}' | /usr/bin/base64 -D
 } | guest_ssh "\$ip"
 print -r -- 'mkdir -p "\$HOME/c11-sandbox/agents"; printf %s ${pi_fixture_b64} | /usr/bin/base64 -D > "\$HOME/c11-sandbox/agents/pi-provider.ts"' | guest_ssh "\$ip"
+print -r -- 'mkdir -p "\$HOME/c11-sandbox/agents"; printf %s ${omp_fixture_b64} | /usr/bin/base64 -D > "\$HOME/c11-sandbox/agents/omp-provider.ts"' | guest_ssh "\$ip"
 # 4. Secrets: on SSH stdin, written in the guest as mode 600 files.
 for k in \$kinds; do print -r -- "\${cred[\$k]}"; done \
   | guest_ssh_run "\$ip" '/usr/bin/python3 "\$HOME/c11-sandbox/agents/stage.py"'
@@ -519,7 +611,9 @@ if (( \${+cred[claude]} )); then
   accounts+=("\$acct")
 fi
 new_fps="\$(for k in \$kinds; do print -r -- "\${cred[\$k]}"; done | secret_tool fingerprints | tr '\n' ' ')"
-[[ "\$kinds_csv" == pi || -n "\${new_fps// /}" ]] || die "could not fingerprint the staged credentials"
+needs_cred=0
+for k in \$kinds; do [[ "\$k" == pi || "\$k" == omp ]] || needs_cred=1; done
+(( needs_cred == 0 )) || [[ -n "\${new_fps// /}" ]] || die "could not fingerprint the staged credentials"
 fps="\$FINGERPRINTS \$new_fps"
 {
   printf 'KINDS=%q\n' "\${(j:,:)\${(@u)all_kinds}}"
@@ -530,7 +624,7 @@ fps="\$FINGERPRINTS \$new_fps"
 } > "\$record.tmp"
 mv "\$record.tmp" "\$record"
 for k in \$kinds; do print -r -- "\${cred[\$k]}"; done | secret_tool summary | sed 's/^/credential /'
-for k in \$kinds; do printf 'version_%s=%s\n' "\$k" "\${versions[\$k]}"; done
+for k in \$bases; do printf 'version_%s=%s\n' "\$k" "\${versions[\$k]}"; done
 printf 'copied=%s\n' "\${(j:,:)copied}"
 printf 'staged=%s\n' "\${(j:,:)kinds}"
 EOF
@@ -562,7 +656,7 @@ EOF
 
 cmd_launch() {
   local kind="${1:-}" brief="${2:-}"
-  [[ -n "$kind" && -n "$brief" ]] || sandbox_die "launch needs <claude|codex|grok|pi> <brief-file>"
+  [[ -n "$kind" && -n "$brief" ]] || sandbox_die "launch needs <claude|codex|grok|pi|omp|pi-live|omp-live> <brief-file>"
   shift 2
   sandbox_validate_kinds "$kind"
   [[ -f "$brief" ]] || sandbox_die "brief not found: $brief"
@@ -586,6 +680,8 @@ cmd_launch() {
   local type
   case "$kind" in
     claude) type=claude-code ;;
+    pi-live) type=pi ;;
+    omp-live) type=omp ;;
     *) type="$kind" ;;
   esac
   local -a la=(launch-agent --type "$type" --title "$title" --json)
@@ -605,7 +701,8 @@ push=$(printf '%q' "$push")
 wait=$(printf '%q' "$wait")
 timeout=$(printf '%q' "$timeout")
 c() { "\$SANDBOX_CLI" --socket "\$SANDBOX_SOCKET" "\$@" </dev/null }
-command -v "\$kind" >/dev/null 2>&1 || [[ -x "/usr/local/bin/\$kind" ]] || {
+bin="\${kind%-live}"
+command -v "\$bin" >/dev/null 2>&1 || [[ -x "/usr/local/bin/\$bin" ]] || {
   print -u2 -- "\$kind is not installed in this guest. Run scripts/sandbox-agent.sh \$SANDBOX_RUN_ID stage \$kind first."
   exit 1
 }
@@ -635,6 +732,18 @@ case "\$kind" in
   pi)
     ready='fixture|Controlled protocol fixture'
     fail='Failed to load extension|No API key found|No model found|Cannot find module'
+    ;;
+  omp)
+    ready='Controlled protocol fixture'
+    fail='Failed to load extension|Model .* not found|No models available|Cannot find module|Setup step'
+    ;;
+  pi-live)
+    ready='gpt-4o-mini'
+    fail='Failed to load extension|No API key found|No model found|Cannot find module'
+    ;;
+  omp-live)
+    ready='gpt-4o-mini'
+    fail='Failed to load extension|Model .* not found|No models available|Cannot find module|Setup step'
     ;;
   claude)
     ready='bypass permissions on'
@@ -706,7 +815,7 @@ cmd_wipe() {
   sandbox_guest_script "$run_id" <<'EOF'
 set -eu
 removed=()
-for f in "$HOME/.c11-sandbox-secrets" "$HOME/.codex/auth.json" "$HOME/c11-sandbox/agents/pi-config"; do
+for f in "$HOME/.c11-sandbox-secrets" "$HOME/.codex/auth.json" "$HOME/c11-sandbox/agents/pi-config" "$HOME/c11-sandbox/agents/omp-home"; do
   if [[ -e "$f" ]]; then
     /bin/rm -rf "$f"
     removed+=("$f")
@@ -743,15 +852,15 @@ else
   if [[ -n "\$state" ]]; then print -r -- "clone=present (\$state)"; bad=1; else print -r -- "clone=absent"; fi
   if [[ -e "\$HOME/.tart/vms/\$vm" ]]; then print -r -- "clone_dir=present"; bad=1; else print -r -- "clone_dir=absent"; fi
 fi
-if [[ "\$KINDS" == pi && -z "\${FINGERPRINTS// /}" ]]; then
-  print -r -- "credentials=none (controlled Pi provider; no token exported or staged)"
+if [[ -z "\${FINGERPRINTS// /}" ]]; then
+  print -r -- "credentials=none (controlled provider; no token exported or staged)"
   golden_disk="\$HOME/.tart/vms/\$golden/disk.img"
   [[ -f "\$golden_disk" && "\$(stat -f %m "\$golden_disk")" == "\$GOLDEN_DISK_MTIME" ]] || die "golden disk changed or is missing"
   print -r -- "golden_disk_mtime=unchanged since stage"
   if [[ "\$control" == 1 ]]; then
     print -r -- "control=not_applicable_no_credentials"
   else
-    (( bad == 0 )) || die "Pi fixture clone cleanup failed"
+    (( bad == 0 )) || die "fixture clone cleanup failed"
     print -r -- "verify_clean=pass"
   fi
   exit 0

@@ -1434,6 +1434,21 @@ final class HeldComposerSeriesTests: XCTestCase {
 }
 
 final class MailboxNativeDoorbellTests: XCTestCase {
+    func testOpenCodeRouteRequiresMatchingHarnessAndProcess() throws {
+        let route = try XCTUnwrap(MailboxNativeDoorbell.Route(rawValue: "opencode_plugin"))
+        let reg = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123,
+            processStart: 456, sessionID: UUID().uuidString, route: route, canQueue: false)
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        XCTAssertTrue(reg.matches(process: process, kind: "opencode"))
+        XCTAssertFalse(reg.canQueue)
+        for kind in ["pi", "codex", "claude", "grok"] {
+            XCTAssertFalse(reg.matches(process: process, kind: kind))
+        }
+        XCTAssertFalse(reg.matches(process: .init(pid: 124, startTime: 456), kind: "opencode"))
+        XCTAssertFalse(reg.matches(process: .init(pid: 123, startTime: 457), kind: "opencode"))
+        XCTAssertFalse(reg.matches(process: nil, kind: "opencode"))
+    }
+
     func testReplacementWritesRetirementFrameBeforeClosingOldStream() {
         let broker = MailboxNativeDoorbell(), old = registration()
         let retired = expectation(description: "old stream retired")

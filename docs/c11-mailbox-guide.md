@@ -308,7 +308,7 @@ The initial success returns
 text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
 Only positive in-harness acceptance may produce `accepted`. Pi uses
 `route:"pi_extension", can_queue:false`; Claude uses `claude_inbox` with the
-same idle-only contract, and `codex_queue` remains reserved. Authentication follows the existing socket
+same idle-only contract; OpenCode uses `opencode_plugin`. `codex_queue` remains reserved. Authentication follows the existing socket
 policy, and IO runs off the main thread. Established idle streams do not poll.
 A new subscriber replaces the previous listener for that panel, including an
 in-process listener replaced by a sidecar. The old stream receives
@@ -318,7 +318,7 @@ transient `not_ready` response during session restore, which retries. A new
 harness session can try again after other refusals. Unexpected connection loss
 still retries with bounded backoff.
 
-`_dispatch.log` names `route:"pi_extension"` (or `omp_extension`, below) or `route:"typed"` on each ring.
+`_dispatch.log` names `route:"pi_extension"` (or `omp_extension`, below), `route:"opencode_plugin"`, or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and
 `native_failure` (`native_timeout`, `native_rejected`, `native_disconnected`,
 `native_replaced`, `native_unavailable` or `native_write_failed`; the Claude
@@ -413,6 +413,47 @@ After `native_inbox_write_failed` or `native_unconfirmed`, the bridge keeps watc
 The hook's five-second timeout was observed as unenforced for async hooks; if Claude starts enforcing it, the route falls back to typed delivery.
 
 For a repeatable Claude guest proof, stage `--agents claude` with `sandbox-up.sh`, then run `scripts/check-claude-native-mail.py <run-id>`. It uses real Claude sessions in isolated scratch configuration, checks native draft/repeat, `/clear`, `--resume`, hook-absent fallback, explicit inbound refusal, and unchanged default tenant files. `--disable-native-control` removes the bridge and must fail the native-with-draft assertion. The caller owns the guest and credential cleanup.
+
+### OpenCode native plugin
+
+The interactive wrapper runtime-loads `skills/opencode-plugins/c11-mailbox.mjs`
+through `OPENCODE_TUI_CONFIG`. OpenCode 1.15.13's TUI plugin API exposes the
+displayed session; the server plugin alone cannot distinguish a visible session
+from another session. The native plugin registers `opencode_plugin` with
+`can_queue:false` and sends only the fixed invitation at idle. It never reads or
+edits the composer. Busy, retry, permission and question states refuse injection.
+
+Acceptance requires OpenCode's matching text-part and user-message events in the
+bound session. The SDK returning 204 is insufficient. An uncertain response
+leaves c11's two-second timeout to apply the ordinary typed gate. A late observed
+acceptance can still be logged. Envelopes remain unread until explicit
+`recv --ack`; all shared opt-in, doorbell-off, flag, process, coverage and rate
+guards remain active. Dispatch uses `route: opencode_plugin`, or `typed` with
+the attempted native route and failure reason after a failed native attempt.
+
+Home retires the subscription; new and resumed sessions bind fresh generations.
+The plugin reads the live route again before every SDK call and monitors route
+changes every 250 ms because this API has no navigation event. Plugin disposal
+and process exit close the stream. Unexpected c11 connection loss uses the shared
+client's bounded reconnect; a replaced stream stays retired.
+
+No tenant configuration is written. An explicit `OPENCODE_TUI_CONFIG`, missing
+plugin support, a noninteractive launch, or `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`
+keeps typed fallback. Other runtime config sources remain the operator's own;
+the server lifecycle plugin uses a separate inherited descriptor when CONTENT
+is already occupied. Older OpenCode releases without the TUI plugin API are not
+native-capable. The existing lifecycle and prompt-cache plugin remains separate.
+
+For the credential-free acceptance check, start an Atlas sandbox with the tagged
+app, then run `scripts/check-opencode-native-mail.py <run-id>`. It stages the
+Atlas host's `~/.opencode/bin/opencode` executable, a synthetic local provider and
+an observer under a private guest `/tmp` directory, with isolated HOME/XDG paths.
+It checks native delivery with a draft, busy-to-idle, new and resumed sessions,
+typed fallback, and unread envelopes until ack. `--disable-native-control` must
+fail the native-with-draft assertion. The check closes its panels and provider;
+the caller still runs `sandbox-down.sh`. No provider credentials are copied or
+real model calls made. Focused transport/acceptance guards run with
+`node --test tests/test_opencode_native_mail.mjs` on Atlas.
 
 ### When the doorbell line arrives
 

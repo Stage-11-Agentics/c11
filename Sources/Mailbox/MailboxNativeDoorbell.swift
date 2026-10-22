@@ -5,7 +5,10 @@ import Darwin
 /// over it. Socket IO and deadlines run on workers; Workspace owns ring policy.
 final class MailboxNativeDoorbell {
     static let shared = MailboxNativeDoorbell()
-    enum Route: String { case typed, piExtension = "pi_extension", ompExtension = "omp_extension", codexQueue = "codex_queue", claudeInbox = "claude_inbox" }
+    enum Route: String {
+        case typed, piExtension = "pi_extension", ompExtension = "omp_extension"
+        case codexQueue = "codex_queue", claudeInbox = "claude_inbox", opencodePlugin = "opencode_plugin"
+    }
     struct Registration: Equatable {
         let id: UUID
         let panelID: UUID
@@ -22,6 +25,7 @@ final class MailboxNativeDoorbell {
             case .ompExtension: return kind == "omp"
             case .codexQueue: return kind == "codex"
             case .claudeInbox: return kind == "claude-code" || kind == "claude"
+            case .opencodePlugin: return kind == "opencode"
             case .typed: return false
             }
         }

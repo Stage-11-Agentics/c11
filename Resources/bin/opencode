@@ -12,6 +12,10 @@ set -uo pipefail
 # first so no early exec passes a parent's marker on.
 unset C11_AGENT_INTERACTIVE_PID
 
+# Current names take precedence; legacy names remain accepted for old terminals.
+c11_socket="${C11_SOCKET_PATH:-${CMUX_SOCKET_PATH:-}}"
+c11_panel="${C11_PANEL_ID:-${C11_TAB_ID:-${CMUX_SURFACE_ID:-}}}"
+
 find_real_opencode() {
     local self_dir
     self_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -24,7 +28,7 @@ find_real_opencode() {
 }
 
 c11_socket_available() {
-    local socket="${CMUX_SOCKET_PATH:-}"
+    local socket="$c11_socket"
     [[ -n "$socket" && -S "$socket" ]] || return 1
 
     local self_dir c11_bin
@@ -33,7 +37,7 @@ c11_socket_available() {
     [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
     [[ -n "$c11_bin" ]] || return 1
 
-    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+    C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
         "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
 }
 
@@ -42,7 +46,7 @@ REAL_OPENCODE="$(find_real_opencode)" || {
     exit 127
 }
 
-if [[ -z "${CMUX_SURFACE_ID:-}" || "${CMUX_OPENCODE_HOOKS_DISABLED:-}" == "1" ]] ||
+if [[ -z "$c11_panel" || "${C11_OPENCODE_HOOKS_DISABLED:-${CMUX_OPENCODE_HOOKS_DISABLED:-}}" == "1" ]] ||
    ! c11_socket_available; then
     exec "$REAL_OPENCODE" "$@"
 fi
@@ -69,15 +73,15 @@ c11_bin="$self_dir/c11"
 
 if [[ -n "$c11_bin" ]]; then
     (
-        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type opencode \
+        C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+            "$c11_bin" --socket "$c11_socket" set-agent --type opencode \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
 
     (
-        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" agent-hook idle \
+        C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+            "$c11_bin" --socket "$c11_socket" agent-hook idle \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
@@ -97,8 +101,22 @@ c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
 if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
     export OPENCODE_CONFIG_CONTENT="$c11_runtime_config"
 elif [[ -z "${OPENCODE_CONFIG:-}" ]]; then
-    exec 3<<<"$c11_runtime_config"
-    export OPENCODE_CONFIG="/dev/fd/3"
+    # OpenCode/Bun repurposes fd 3 during startup. Keep the inherited runtime
+    # source on fd 8 (verified with the real OpenCode TUI, not just a fake CLI).
+    exec 8<<<"$c11_runtime_config"
+    export OPENCODE_CONFIG="/dev/fd/8"
+fi
+
+# OpenCode 1.15's TUI plugins can identify the displayed session. Keep the
+# operator's explicit TUI config untouched; that case uses typed delivery.
+# Older versions ignore this runtime override and retain their existing route.
+if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" && -z "${OPENCODE_TUI_CONFIG:-}" &&
+      "${C11_OPENCODE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
+    tui_plugin_url="${plugin_url%/c11-notify.js}/c11-mailbox.mjs"
+    if [[ -f "${plugin_path%/c11-notify.js}/c11-mailbox.mjs" ]]; then
+        exec 9<<<"{\"plugin\":[\"$tui_plugin_url\"]}"
+        export OPENCODE_TUI_CONFIG="/dev/fd/9"
+    fi
 fi
 
 export C11_AGENT_HOOK_CLI="$c11_bin"

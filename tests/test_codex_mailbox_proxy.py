@@ -1064,6 +1064,42 @@ class CodexMailboxProxyTests(unittest.TestCase):
 
     # 19
     def test_turns_list_without_items_holds_switch(self):
+        self.check_unmatched_turn_rows_hold_switch(lambda turn: {"id": turn["id"], "status": turn["status"]})
+
+    # 20
+    def test_turns_list_with_empty_items_holds_switch(self):
+        # A turn can be listed before its user message item is published.
+        self.check_unmatched_turn_rows_hold_switch(lambda turn: {"id": turn["id"], "status": turn["status"], "items": []})
+
+    # 21
+    def test_unseen_turn_of_another_message_is_not_interrupted(self):
+        self.server.queue_mode = "consume"
+        original = self.server.handle
+
+        def foreign(conn, msg):
+            thread = (msg.get("params") or {}).get("threadId")
+            if msg["method"] == "thread/turns/list":
+                turn = self.server.consumed_turns.get(thread)
+                if turn is None:
+                    return {"data": []}
+                return {"data": [{"id": turn["id"], "status": turn["status"],
+                                  "items": [{"type": "userMessage", "id": "item-9", "clientId": "someone-else"}]}]}
+            return original(conn, msg)
+
+        self.server.handle = foreign
+        self.start()
+        tui, old = self.connect_tui()
+        self.warm(tui, old)
+        self.offer()
+        self.server.wait_event(kind="recv", method="thread/queue/add")
+        gated = tui.request("thread/start", {"cwd": "/tmp", "ephemeral": False})
+        time.sleep(3)
+        self.assertEqual(self.server.requests("turn/interrupt"), [])
+        self.assertFalse(self.server.find(kind="recv", conn=self.server.tui_conn(), pred=lambda e: e["msg"].get("id") == gated))
+        self.server.consumed_turns[old]["status"] = "completed"  # once it ends, the switch goes through
+        tui.wait_for(lambda m: m.get("id") == gated and "result" in m, timeout=5)
+
+    def check_unmatched_turn_rows_hold_switch(self, row_for):
         self.server.queue_mode = "consume"
         original = self.server.handle
         lists = []
@@ -1076,7 +1112,7 @@ class CodexMailboxProxyTests(unittest.TestCase):
                 turn = self.server.consumed_turns.get(thread)
                 if len(lists) == 1 or turn is None:
                     return {}  # an unreadable list says nothing
-                return {"data": [{"id": turn["id"], "status": turn["status"]}]}
+                return {"data": [row_for(turn)]}
             if msg["method"] == "turn/interrupt":
                 interrupts.append(msg)
                 if len(interrupts) == 1:

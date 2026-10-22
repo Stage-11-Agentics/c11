@@ -507,21 +507,24 @@ private final class CodexMailboxProxy {
     private enum Running { case running(String), stopped, unknown }
 
     /// The turn this ring's submission started, if it is still running. A turn
-    /// row names its user message's `clientId`; when the list omits items, an
-    /// in-progress turn the TUI was never shown is taken to be this ring's.
+    /// row names its user message's `clientId`, but a new turn can be listed
+    /// before its user message is. An in-progress turn the TUI was never shown
+    /// is taken to be this ring's unless it already names another message; one
+    /// that does is someone else's, and is waited out rather than interrupted.
     private func running(_ rpc: CodexRPCClient, thread: String, clientID: String) -> Running {
         guard let list = rpc.call("thread/turns/list", ["threadId": thread, "limit": 5, "cursor": NSNull(),
                                                         "sortDirection": NSNull(), "itemsView": NSNull()], deadline: uptime + 0.5),
               let rows = list["data"] as? [[String: Any]] else { return .unknown }
+        var result = Running.stopped
         for row in rows {
             guard let id = row["id"] as? String, let status = row["status"] as? String else { return .unknown }
-            if let items = row["items"] as? [[String: Any]] {
-                guard items.contains(where: { $0["clientId"] as? String == clientID }) else { continue }
-                return status == "inProgress" ? .running(id) : .stopped
-            }
-            if status == "inProgress", !tracker.shown(turn: id) { return .running(id) }
+            let clients = ((row["items"] as? [[String: Any]]) ?? []).compactMap { $0["clientId"] as? String }
+            if clients.contains(clientID) { return status == "inProgress" ? .running(id) : .stopped }
+            guard status == "inProgress", !tracker.shown(turn: id) else { continue }
+            if clients.isEmpty { return .running(id) }
+            result = .unknown
         }
-        return .stopped
+        return result
     }
 }
 

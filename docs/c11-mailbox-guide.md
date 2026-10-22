@@ -197,21 +197,23 @@ Send flags accepted by the CLI:
 | `--in-reply-to <id>`  | ULID of the envelope being answered.                               |
 | `--urgent`            | Sender hint. Handlers may honor or ignore.                         |
 | `--ttl-seconds <n>`   | Advisory expiry. Recipients may drop expired envelopes on read.    |
-| `--from <panel>`    | Override caller's resolved title.                                  |
+| `--from <value>`    | Set the envelope's sender field explicitly.                       |
 | `--id <ulid>`         | Pin envelope id (testing / replay).                                |
 | `--ts <rfc3339>`      | Pin timestamp (testing / replay).                                  |
 | `--content-type <m>`  | MIME hint for body or body_ref.                                    |
 
 An empty body with no `--body-ref` is refused. `--body` together with a trailing argument, a second trailing argument, and any unknown flag are refused. The command exits nonzero and writes nothing. `--body` takes the next token as text even when it starts with dashes (`--body ---`, `--body --help`). `--` before a trailing argument does the same (`-- --literal`). `mailbox send --help` still prints help and sends nothing.
 
+With no explicit `--from`, c11 keeps the existing title-based sender for callers that already declare `mailbox.address`. Without a non-empty address, it writes `id:<panel-uuid>` so a reply still reaches that panel after a rename. `id:<uuid>` is an exact address accepted by `--to`. `c11 mailbox sender-from` prints the same default for raw-file writers; `panel-name` remains a title-only helper.
+
 **Raw file write (any process, any language):**
 
 ```bash
 OUTBOX=$(c11 mailbox outbox-dir)
-MY_NAME=$(c11 mailbox panel-name)
+MY_FROM=$(c11 mailbox sender-from)
 ULID=$(c11 mailbox new-id)
 cat > "$OUTBOX/.$ULID.tmp" <<EOF
-{"version":1,"id":"$ULID","from":"$MY_NAME","to":"watcher","ts":"$(date -u +%FT%TZ)","body":"build green sha=abc"}
+{"version":1,"id":"$ULID","from":"$MY_FROM","to":"watcher","ts":"$(date -u +%FT%TZ)","body":"build green sha=abc"}
 EOF
 mv "$OUTBOX/.$ULID.tmp" "$OUTBOX/$ULID.msg"
 ```
@@ -683,6 +685,7 @@ The dispatcher stores `body_ref` on the envelope and leaves `body` empty. `c11 m
 c11 mailbox outbox-dir                         # absolute path of caller's outbox
 c11 mailbox inbox-dir                          # absolute path of caller's inbox
 c11 mailbox inbox-dir --panel watcher        # someone else's inbox
+c11 mailbox sender-from                       # default envelope from value
 c11 mailbox panel-name                       # caller's resolved title
 c11 mailbox new-id                             # fresh ULID for raw-file writers
 c11 mailbox tail                               # follow _dispatch.log

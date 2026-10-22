@@ -236,6 +236,12 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Сообщения почтового ящика не помечаются прочитанными, потому что stdout не является терминалом. Выполните %@"}}
       }
     },
+    "mailbox.cli.error.workspace-not-set": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "C11_WORKSPACE_ID is not set. Run from a c11 panel or set it for a script."}}
+      }
+    },
     "mailbox.drawer.age.ago": {
       "extractionState": "manual",
       "localizations": {

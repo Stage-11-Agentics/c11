@@ -287,6 +287,50 @@ final class MailboxGlobalResolverTests: XCTestCase {
         XCTAssertEqual(resolution, .unique(workspaceId: wsB, surfaceIds: [owner.surfaceId]))
     }
 
+    func testSenderFromUsesExactIdAndPreservesExistingPaths() throws {
+        let senderId = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        let from = try XCTUnwrap(MailboxSenderFrom.value(
+            override: nil,
+            title: "c11 mailbox send --to lc-claude --body …",
+            mailboxAddress: nil,
+            panelId: senderId
+        ))
+        let envelope = try MailboxEnvelope.build(from: from, to: "watcher", body: "reply")
+        let renamedSender = surface(wsA, id: senderId, title: "renamed sender")
+
+        XCTAssertEqual(envelope.from, "id:\(senderId.uuidString.lowercased())")
+        XCTAssertEqual(
+            try XCTUnwrap(MailboxSenderFrom.defaultValue(
+                title: "c11 mailbox send --to lc-claude --body …",
+                mailboxAddress: "",
+                panelId: senderId
+            )),
+            from
+        )
+        XCTAssertEqual(
+            resolver([renamedSender]).resolve(name: envelope.from, senderWorkspaceId: wsB),
+            .unique(workspaceId: wsA, surfaceIds: [senderId])
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(MailboxSenderFrom.value(
+                override: nil,
+                title: "existing sender title",
+                mailboxAddress: "stable-sender-address",
+                panelId: UUID()
+            )),
+            "existing sender title"
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(MailboxSenderFrom.value(
+                override: "caller-selected-from",
+                title: "live shell command title",
+                mailboxAddress: nil,
+                panelId: UUID()
+            )),
+            "caller-selected-from"
+        )
+    }
+
     // MARK: - Collision across workspaces
 
     func testNameInMultipleRemoteWorkspacesIsAmbiguous() {

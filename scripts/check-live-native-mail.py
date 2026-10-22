@@ -118,6 +118,7 @@ print(json.dumps(dict(dispatch=lines(root/'_dispatch.log'),unread=[p.stem for p 
         observations['screen_final'] = screen(panel)
         observations['inbox'] = inspect(panel)
         command('sandbox-shot.sh', out / 'live-final.png')
+        assert observations['model_claimed_mail'], 'the model did not claim the mail after the doorbell'
         observations['passed'] = True
         print('PASS: %s native route delivered with a real model (%s); draft intact; model_claimed_mail=%s' % (
             args.kind, observations['model'], observations['model_claimed_mail']))

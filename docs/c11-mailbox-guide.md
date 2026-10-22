@@ -342,10 +342,12 @@ Interactive omp launched through the bundled wrapper loads a second launch-flag
 extension, `omp-native-mail.ts`, beside its prompt cache bridge. It registers
 `route:"omp_extension", can_queue:false` on the same stream as Pi and reports
 `working`/`idle` through `agent-hook` (the wrapper exports
-`C11_AGENT_INTERACTIVE_PID` for an interactive agent session). Idle edges come
-from omp's `agent_start` and `agent_end` events, published once `isIdle()` is
-true; a new session (`/new`, a resume) emits `session_switch`, which rebinds the
-stream with a fresh session ID.
+`C11_AGENT_INTERACTIVE_PID` for an interactive agent session). `agent_start`
+publishes `working`. Idle is published after `agent_end` only once `isIdle()` is
+true and no newer turn has begun (omp can start a continuation, such as an
+empty-response retry, before it emits the old `agent_end`), and by `session_start`
+and `session_switch` when the new context is idle. A new session (`/new`, a
+resume) emits `session_switch`, which rebinds the stream with a fresh session ID.
 
 The invitation goes in as a custom message, `sendMessage({customType:
 "c11-mailbox-doorbell", content, display:true}, {triggerTurn:true})`. At idle omp
@@ -361,8 +363,11 @@ arrives mid-turn waits for the idle edge, as in Pi. Acceptance is omp's own
 `message_start` for that custom message with the exact doorbell text; the same
 words as a user message, or another custom type, do not accept.
 
-omp has no typed composer reader, so there is no typed fallback: a rejected,
-timed-out or unavailable native delivery leaves the mail in the inbox for
+omp has no typed composer reader, so there is no typed fallback. A busy
+`native_rejected` (made before any side effect, for mail that raced the start of
+a turn) is retried natively at the next ring, bounded by the 20-per-10-minutes
+cap. A hard failure (`native_timeout`, unavailable, replaced, disconnected, or
+`C11_OMP_NATIVE_MAIL_DISABLED=1`) leaves the mail in the inbox for
 `c11 mailbox recv --ack`, exactly as before this route existed. The extension
 writes nothing: omp's own state, including `~/.omp`, is untouched. Task
 subagents (`hasUI` false) neither subscribe nor report lifecycle. For diagnosis

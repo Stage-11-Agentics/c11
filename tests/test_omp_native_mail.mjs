@@ -190,6 +190,23 @@ try {
     await omp.emit("session_shutdown");
   });
 
+  // 3c. A delivery waiting for idle when the session switches is superseded:
+  //     it must not call omp in the new session.
+  await withEnv(env(srv), async () => {
+    const omp = host({ idle: false });
+    const before = srv.subscribes().length;
+    extension(omp.api);
+    await omp.emit("session_start");
+    await until(() => srv.subscribes().length === before + 1, "subscribed");
+    srv.deliver("D3c");
+    await delay(100);
+    await omp.emit("session_switch", { reason: "new" });
+    omp.state.idle = true;
+    await delay(200);
+    assert.equal(omp.state.sent.length, 0, "a superseded delivery never reaches the new session");
+    await omp.emit("session_shutdown");
+  });
+
   // 4. Lifecycle edges: working at agent_start; idle only once omp's isIdle()
   //    is true, because agent_end fires before it flips.
   await withEnv(env(srv), async () => {

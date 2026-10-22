@@ -1665,6 +1665,19 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertFalse(omp.matches(process: .init(pid: 123, startTime: 457), kind: "omp"))
     }
 
+    func testOmpRejectedBusyDoesNotStickFallback() {
+        // omp has no typed composer reader: a busy reject (before any side
+        // effect) must try native again at the next ring.
+        XCTAssertFalse(MailboxNativeDoorbell.failureSticksToTypedGate(route: .ompExtension, reason: "native_rejected"))
+        // Pi has a typed reader, so its busy reject is the seam's typed handoff.
+        XCTAssertTrue(MailboxNativeDoorbell.failureSticksToTypedGate(route: .piExtension, reason: "native_rejected"))
+        // A timeout may follow a turn that already started; it still sticks.
+        for reason in ["native_timeout", "native_unavailable", "native_disconnected", "native_replaced", "native_write_failed"] {
+            XCTAssertTrue(MailboxNativeDoorbell.failureSticksToTypedGate(route: .ompExtension, reason: reason), reason)
+        }
+        XCTAssertTrue(MailboxNativeDoorbell.failureSticksToTypedGate(route: .claudeInbox, reason: "native_rejected"))
+    }
+
     func testNativeAndFallbackLogsNameTheirRoutes() throws {
         let line = MailboxDispatchLog.serialize(event: .handler(id: "mail", recipient: "pi", handler: "stdin", outcome: .doorbell,
             bytes: 5, elapsedMs: nil, reason: "submitted", route: "typed", nativeRoute: "pi_extension", nativeFailure: "native_timeout"), at: Date())

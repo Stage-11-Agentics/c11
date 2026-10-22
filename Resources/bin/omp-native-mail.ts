@@ -56,6 +56,7 @@ export default function c11OmpNativeMail(omp: {
   };
 
   let turn = 0;
+  let session = 0;
   let stopMailbox: (() => void) | undefined;
   let nativeAccepted: (() => void) | undefined;
   let nativeContext: any;
@@ -67,6 +68,7 @@ export default function c11OmpNativeMail(omp: {
 
   const bind = async (_event: any, ctx: any) => {
     turn += 1;
+    session += 1;
     stopNative();
     if (isSubagent(ctx)) return;
     nativeContext = ctx;
@@ -75,15 +77,16 @@ export default function c11OmpNativeMail(omp: {
       stopMailbox = subscribeNativeMailbox({
         socketPath: socket, panelID: panel, agentPID, sessionID: randomUUID(), route: "omp_extension", canQueue: false,
         deliver: async (text: string) => {
-          // c11 learns of a turn start through an asynchronous report, so a
-          // request can land just after one began. Give the turn a moment to
-          // settle (inside c11's two-second bound), then reject: only before any
-          // side effect, since a busy agent would throw AgentBusyError into the
-          // operator's UI and typed fallback has no omp composer reader.
-          for (let wait = 0; wait < 60 && !nativeContext?.isIdle(); wait += 1) {
+          // The wait delivers only if isIdle() becomes true (a turn that is
+          // ending); it does not absorb the start of a live turn. Otherwise reject,
+          // only before any side effect: a busy agent would throw AgentBusyError
+          // into the operator's UI. c11 treats this rejection as retryable on omp.
+          // A session switch during the wait supersedes this delivery.
+          const bound = session;
+          for (let wait = 0; wait < 60 && !nativeContext?.isIdle() && session === bound; wait += 1) {
             await new Promise((resolve) => setTimeout(resolve, 25));
           }
-          if (!nativeContext?.isIdle()) throw new Error("busy");
+          if (session !== bound || !nativeContext?.isIdle()) throw new Error("busy");
           return new Promise<void>((resolve) => {
             nativeAccepted = () => { nativeAccepted = undefined; resolve(); };
             // The API returns void. Only message_start below acknowledges it. A
@@ -103,7 +106,7 @@ export default function c11OmpNativeMail(omp: {
   };
   omp.on("session_start", bind);
   omp.on("session_switch", bind);
-  omp.on("session_shutdown", async () => { turn += 1; stopNative(); });
+  omp.on("session_shutdown", async () => { turn += 1; session += 1; stopNative(); });
 
   // A turn counter invalidates a pending end notification. omp's recovery
   // paths (an empty response, auto-retry) schedule a continuation before they

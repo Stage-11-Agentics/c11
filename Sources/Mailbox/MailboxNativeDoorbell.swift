@@ -28,6 +28,16 @@ final class MailboxNativeDoorbell {
     }
     enum Result: Equatable { case accepted(late: Bool), failed(String) }
 
+    /// Whether a failed native attempt hands its envelopes to the typed gate
+    /// until a new session registers. A busy rejection on omp happens before any
+    /// side effect and omp has no typed composer reader, so sticking would
+    /// strand the mail for the whole session: the next ring tries native again,
+    /// bounded by the rate cap. Every other failure, and every other route,
+    /// sticks (a timeout may follow a turn that already started).
+    static func failureSticksToTypedGate(route: Route, reason: String) -> Bool {
+        !(route == .ompExtension && reason == "native_rejected")
+    }
+
     /// Apply an observed acceptance on the main hop. The return value says
     /// whether the listener is still current and may trigger further work.
     static func recordAcceptance(_ ids: Set<String>, registrationID: UUID, currentRegistrationID: UUID?,

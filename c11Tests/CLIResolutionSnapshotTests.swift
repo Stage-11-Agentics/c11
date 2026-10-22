@@ -658,6 +658,60 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         }
     }
 
+    func testValueOptionDoesNotHideEmptyPanelFlag() {
+        let aliases = ["--panel", "--surface", "--tab"]
+        for alias in aliases {
+            for value in ["", nil] as [String?] {
+                var command = ["get-metadata", "--key", alias]
+                if let value { command.append(value) }
+                guard let result = runCLI(command) else { return }
+                XCTAssertEqual(result.status, 1, "\(command): \(result.stderr)")
+                XCTAssertEqual(result.stdout, "", "\(command)")
+                XCTAssertEqual(
+                    result.stderr,
+                    value == nil
+                        ? "Error: --panel requires a value\n"
+                        : "Error: empty_ref: --panel was provided but empty\n",
+                    "\(command)"
+                )
+            }
+        }
+
+        let invalidPanelTargets: [[String]] = [
+            ["read-screen", "--lines", "--panel", ""],
+            ["capture-pane", "--lines", "--panel", ""],
+            ["capturep", "--lines", "--panel", ""],
+            ["pipe-pane", "--command", "--panel", ""],
+            ["pipe-pane", "--command", "--panel"],
+        ]
+        for command in invalidPanelTargets {
+            guard let result = runCLI(command) else { return }
+            XCTAssertEqual(result.status, 1, "\(command): \(result.stderr)")
+            XCTAssertEqual(result.stdout, "", "\(command)")
+            XCTAssertEqual(
+                result.stderr,
+                command.last == "--panel"
+                    ? "Error: --panel requires a value\n"
+                    : "Error: empty_ref: --panel was provided but empty\n",
+                "\(command)"
+            )
+        }
+
+        let literalValues: [[String]] = [
+            ["browser", "eval", "--script", "--panel"],
+            ["markdown", "scroll", "--panel", "panel:1", "--heading", "--panel"],
+            ["browser", "panel:1", "state", "save", "--panel"],
+        ]
+        for command in literalValues {
+            guard let result = runCLI(command) else { return }
+            XCTAssertEqual(result.status, 1, "\(command): \(result.stderr)")
+            XCTAssertEqual(result.stdout, "", "\(command)")
+            XCTAssertFalse(result.stderr.contains("--panel requires a value"), "\(command): \(result.stderr)")
+            XCTAssertFalse(result.stderr.contains("empty_ref: --panel was provided but empty"), "\(command): \(result.stderr)")
+            XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("socket"), "\(command): \(result.stderr)")
+        }
+    }
+
     func testMailboxSendBodyThatLooksLikePanelFlagRemainsBodyText() {
         for flagShapedBody in ["--panel", "--surface", "--tab"] {
             guard let socket = try? CapturedCLISocket() else {

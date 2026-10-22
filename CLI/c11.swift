@@ -6565,14 +6565,26 @@ struct CMUXCLI {
             // past `--` and only consume --workspace as a value.
             return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: false)
         case "read-screen", "capture-pane", "capturep":
-            return PanelTargetPreflightSpec(valueOptions: ["--workspace", "--lines"], honorsEndOfOptions: true)
+            return PanelTargetPreflightSpec(
+                valueOptions: ["--workspace", "--lines"],
+                valueOptionsRejectingLongFlags: ["--lines"],
+                honorsEndOfOptions: true
+            )
         case "pipe-pane":
-            return PanelTargetPreflightSpec(valueOptions: ["--command"], honorsEndOfOptions: true)
+            return PanelTargetPreflightSpec(
+                valueOptions: ["--command"],
+                valueOptionsRejectingLongFlags: ["--command"],
+                honorsEndOfOptions: true
+            )
         case "read-selection", "input-state":
             return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: true)
         case "get-metadata":
             // These values are extracted by optionValue/collectRepeatedOption.
-            return PanelTargetPreflightSpec(valueOptions: ["--workspace", "--area", "--key"], honorsEndOfOptions: false)
+            return PanelTargetPreflightSpec(
+                valueOptions: ["--workspace", "--area", "--key"],
+                valueOptionsRejectingLongFlags: ["--key"],
+                honorsEndOfOptions: false
+            )
         case "get-titlebar-state":
             return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: true)
         case "family", "markdown-content":

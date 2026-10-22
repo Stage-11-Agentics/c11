@@ -11335,6 +11335,36 @@ final class Workspace: Identifiable, ObservableObject {
     }
     // MARK: - Focus Management
 
+    /// A socket layout move has no focus intent. Keep the selected panel (and
+    /// its area, unless that very panel moved), including delayed Bonsplit callbacks.
+    /// Leave the normal drag delegate enabled so a sole-panel move repairs the
+    /// placeholder left in its source area.
+    func movePanelToSplitPreservingFocus(
+        _ panelId: UUID,
+        orientation: SplitOrientation,
+        insertFirst: Bool
+    ) -> PaneID? {
+        guard let tabId = bonsplitTabIdFromTabId(panelId) else { return nil }
+        let previousPaneId = bonsplitController.focusedPaneId
+        let previousPanelId = focusedPanelId
+        let previousHostedView = focusedTerminalPanel?.hostedView
+        guard let newPaneId = bonsplitController.splitPane(
+            orientation: orientation,
+            movingTab: tabId,
+            insertFirst: insertFirst
+        ) else { return nil }
+
+        if previousPanelId == nil, let previousPaneId {
+            bonsplitController.focusPane(previousPaneId)
+        }
+        preserveFocusAfterNonFocusSplit(
+            preferredPanelId: previousPanelId,
+            splitPanelId: panelId,
+            previousHostedView: previousHostedView
+        )
+        return newPaneId
+    }
+
     private func preserveFocusAfterNonFocusSplit(
         preferredPanelId: UUID?,
         splitPanelId: UUID,

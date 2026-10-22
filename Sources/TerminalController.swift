@@ -7466,7 +7466,7 @@ class TerminalController {
     }
 
     private func resolveSurfaceId(from arg: String, workspace: Workspace) -> UUID? {
-        if let uuid = UUID(uuidString: arg), workspace.panels[uuid] != nil {
+        if let uuid = UUID(uuidString: arg) ?? v2ResolveHandleRef(arg), workspace.panels[uuid] != nil {
             return uuid
         }
 
@@ -8687,14 +8687,14 @@ class TerminalController {
                 let workspace = target.workspace
 	
 	            guard let panelId = self.resolveSurfaceId(from: surfaceArg, workspace: workspace),
-	                  let bonsplitTabId = workspace.bonsplitTabIdFromTabId(panelId) else {
+	                  workspace.bonsplitTabIdFromTabId(panelId) != nil else {
 	                result = "ERROR: Surface not found"
 	                return
 	            }
 	
-	            guard let newPaneId = workspace.bonsplitController.splitPane(
+	            guard let newPaneId = workspace.movePanelToSplitPreservingFocus(
+                    panelId,
 	                orientation: orientation,
-	                movingTab: bonsplitTabId,
 	                insertFirst: insertFirst
 	            ) else {
 	                result = "ERROR: Failed to split pane"

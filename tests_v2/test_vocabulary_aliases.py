@@ -1161,7 +1161,7 @@ def test_cli_read_command_aliases(cli: str, f: Fixture) -> None:
     listing = _cli_json(cli, ["list-panels", "--workspace", f.ws])
     _must("tabs" not in listing, f"list-panels --json should carry `panels` only: {sorted(listing)}")
     for command in ("refresh-panels", "refresh-tabs", "refresh-surfaces"):
-        _cli(cli, [command])
+        _cli(cli, [command, "--workspace", ws])
 
     # Ref-format output says panel:N / area:N and never the old prefixes.
     refs_out = _cli_json(cli, ["list-panels", "--workspace", ws], id_format="refs")
@@ -1299,17 +1299,15 @@ def test_cli_action_command_aliases(c: cmux, cli: str, f: Fixture) -> None:
     time.sleep(0.3)
     _must(len(_areas(c, ws)) == areas_before, "closing the new areas' panels should remove them")
 
-    # drag-panel-to-split / drag-tab-to-split / drag-surface-to-split speak the v1 text
-    # protocol. The scratch workspace stays in the background (agents cannot select it),
-    # so `--window` scopes the command to it; every spelling must really split the
+    # The scratch workspace stays in the background (agents cannot select it).
+    # Explicit workspace scope works without --window; every spelling must split the
     # panel off into a new area. Each drags a fresh sibling so its source area keeps one.
-    window = _window_ref_of(c, ws)
     for command, flag, direction in (("drag-panel-to-split", "--panel", "right"),
                                      ("drag-tab-to-split", "--tab", "down"),
                                      ("drag-surface-to-split", "--surface", "right")):
         sibling = _spare_panel(c, ws, f.area_b)
         areas_before = len(_areas(c, ws))
-        proc = _cli(cli, ["--window", window, command, "--workspace", ws, flag, sibling, direction], check=False)
+        proc = _cli(cli, [command, "--workspace", ws, flag, sibling, direction], check=False)
         out = (proc.stdout + proc.stderr).strip()
         _must(proc.returncode == 0 and out.startswith("OK"), f"{command} {flag} should split the panel: {out!r}")
         time.sleep(0.3)

@@ -21996,6 +21996,8 @@ extension CMUXCLI {
             try runMailboxInboxDirCommand(subArgs: rest, client: client)
         case "panel-name", "tab-name", "surface-name":
             try runMailboxSurfaceNameCommand(subArgs: rest, client: client)
+        case "sender-from":
+            try runMailboxSenderFromCommand(subArgs: rest, client: client)
         case "new-id":
             print(MailboxULID.make())
         case "watch":
@@ -22019,7 +22021,8 @@ extension CMUXCLI {
           tail       follow _dispatch.log
           outbox-dir print the caller's outbox directory (for raw-bash writers)
           inbox-dir  print the caller's inbox directory (for raw-bash readers)
-          panel-name print the caller's panel title (for `from` auto-fill)
+          panel-name  print the caller's display title
+          sender-from print the caller's default envelope `from` value
           new-id     print a fresh Crockford base32 ULID (26 chars)
 
         Send flags:
@@ -22034,7 +22037,7 @@ extension CMUXCLI {
           --in-reply-to <ulid>    envelope id this is replying to
           --urgent                sender hint (handlers may ignore)
           --ttl-seconds <n>       advisory expiry
-          --from <panel>          override caller's resolved title
+          --from <value>          override the envelope's sender value
           --id <ulid>             pin envelope id (testing / replay)
           --ts <rfc3339>          pin timestamp (testing / replay)
           --content-type <mime>   MIME hint for body or body_ref
@@ -22065,35 +22068,40 @@ extension CMUXCLI {
 
     // MARK: - Caller resolution
 
-    /// Returns the caller's workspace UUID, tab name and tab UUID. Workspace
-    /// UUID comes from the CMUX_WORKSPACE_ID (or C11_WORKSPACE_ID alias) env
-    /// var that every tab shell inherits. Tab name is looked up via
-    /// `tab.get_metadata`. Pass an override when scripting without a live
-    /// c11 tab; the tab UUID is then the override itself when it is a UUID,
-    /// else nil (`resolveMailboxInboxTabId` resolves a name over the socket).
-    /// Inboxes are keyed on the tab UUID; the name is the sender's `from`.
+    /// Returns the caller's workspace UUID, panel title, panel UUID and
+    /// mailbox address. Workspace
+    /// UUID comes from the C11_WORKSPACE_ID env var that every panel shell
+    /// inherits; the legacy environment alias remains a fallback. The panel
+    /// title is looked up via `panel.get_metadata`.
+    /// Pass an override when scripting without a live c11 panel; its UUID is
+    /// then the override itself when it is a UUID, else nil.
+    /// Inboxes are keyed on the panel UUID; sender-from chooses between the
+    /// existing title and exact UUID form using the mailbox address.
     private func resolveMailboxCaller(
         client: SocketClient,
         fromOverride: String?,
         surfaceOverride: String?
-    ) throws -> (workspaceId: UUID, panelName: String, panelId: UUID?) {
+    ) throws -> (workspaceId: UUID, panelName: String, panelId: UUID?, mailboxAddress: String?) {
         let env = ProcessInfo.processInfo.environment
-        let workspaceIdStr = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
+        let workspaceIdStr = env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]
         guard
             let workspaceIdStr,
             let workspaceId = UUID(uuidString: workspaceIdStr)
         else {
             throw CLIError(
-                message: "CMUX_WORKSPACE_ID not set — run from inside a c11 panel or script with --from override and env"
+                message: String(
+                    localized: "mailbox.cli.error.workspace-not-set",
+                    defaultValue: "C11_WORKSPACE_ID is not set. Run from a c11 panel or set it for a script."
+                )
             )
         }
 
         if let name = fromOverride ?? surfaceOverride, !name.isEmpty {
-            return (workspaceId, name, UUID(uuidString: name))
+            return (workspaceId, name, UUID(uuidString: name), nil)
         }
 
         let surfaceIdStr = Self.callerPanelEnv(env)
-        guard let surfaceIdStr else {
+        guard let surfaceIdStr, let surfaceId = UUID(uuidString: surfaceIdStr) else {
             throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
         }
 
@@ -22113,7 +22121,8 @@ extension CMUXCLI {
                 ).replacingOccurrences(of: "%@", with: "(untitled)")
             )
         }
-        return (workspaceId, title, UUID(uuidString: surfaceIdStr))
+        let mailboxAddress = metadata["mailbox.address"] as? String
+        return (workspaceId, title, surfaceId, mailboxAddress)
     }
 
     /// The tab UUID whose inbox `recv` / `inbox-dir` should read. A caller
@@ -22212,14 +22221,22 @@ extension CMUXCLI {
             )
         }
 
-        let (workspaceId, panelName, _) = try resolveMailboxCaller(
+        let (workspaceId, panelName, callerPanelId, mailboxAddress) = try resolveMailboxCaller(
             client: client,
             fromOverride: fromOverride,
             surfaceOverride: nil
         )
 
+        guard let from = MailboxSenderFrom.value(
+            override: fromOverride,
+            title: panelName,
+            mailboxAddress: mailboxAddress,
+            panelId: callerPanelId
+        ) else {
+            throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
+        }
         let envelope = try MailboxEnvelope.build(
-            from: fromOverride ?? panelName,
+            from: from,
             to: to,
             topic: topic,
             body: body,
@@ -22440,7 +22457,7 @@ extension CMUXCLI {
         let drain = parsed.drains
         let surfaceOverride = parsed.panel
 
-        let (workspaceId, panelName, callerPanelId) = try resolveMailboxCaller(
+        let (workspaceId, panelName, callerPanelId, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: surfaceOverride
@@ -22787,7 +22804,7 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (workspaceId, _, _) = try resolveMailboxCaller(
+        let (workspaceId, _, _, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil
@@ -23016,7 +23033,7 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (workspaceId, _, _) = try resolveMailboxCaller(
+        let (workspaceId, _, _, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil
@@ -23031,7 +23048,7 @@ extension CMUXCLI {
         client: SocketClient
     ) throws {
         let surfaceOverride = optionValue(subArgs, name: "--panel")
-        let (workspaceId, panelName, callerPanelId) = try resolveMailboxCaller(
+        let (workspaceId, panelName, callerPanelId, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: surfaceOverride
@@ -23062,11 +23079,30 @@ extension CMUXCLI {
         subArgs: [String],
         client: SocketClient
     ) throws {
-        let (_, panelName, _) = try resolveMailboxCaller(
+        let (_, panelName, _, _) = try resolveMailboxCaller(
             client: client,
             fromOverride: nil,
             surfaceOverride: nil
         )
         print(panelName)
+    }
+
+    private func runMailboxSenderFromCommand(
+        subArgs: [String],
+        client: SocketClient
+    ) throws {
+        let (_, panelName, panelId, mailboxAddress) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: nil
+        )
+        guard let from = MailboxSenderFrom.defaultValue(
+            title: panelName,
+            mailboxAddress: mailboxAddress,
+            panelId: panelId
+        ) else {
+            throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
+        }
+        print(from)
     }
 }

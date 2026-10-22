@@ -483,15 +483,17 @@ final class MailboxDispatcherTests: XCTestCase {
     }
 
     func testCrossWorkspaceTitleCollisionDoesNotAttributeSentMail() throws {
-        // Workspace A's addressed panel "Builder" sends to "Reviewer", which
-        // lives here in B. B also has its own, different panel titled "Builder".
+        // Workspace A's panel, addressed "builder-a", sends to "Reviewer", which
+        // lives here in B. B also has its own, different panel with that same
+        // address, so the `from` string alone names the wrong panel here.
         let lookalike = seedSurface(name: "Builder")
+        setAddress("builder-a", on: lookalike)
         let reviewer = seedSurface(name: "Reviewer")
         let dispatcher = makeDispatcher(surfaces: [lookalike, reviewer])
         let otherWorkspace = UUID()
         let senderInA = UUID()
         let from = try XCTUnwrap(MailboxSenderFrom.defaultValue(title: "Builder", mailboxAddress: "builder-a", panelId: senderInA))
-        XCTAssertEqual(from, "Builder")
+        XCTAssertEqual(from, "builder-a")
         let envelope = try MailboxEnvelope.build(
             from: from, to: "Reviewer", body: "from workspace A",
             ext: claim(senderInA, workspace: otherWorkspace)

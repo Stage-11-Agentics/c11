@@ -999,6 +999,7 @@ function cleanSVG(svg,mathLabels=false) {
     for(let i=0;i<safeForeignObjects.length;i++) {
       const safe=DOMPurify.sanitize(rawForeignObjects[i].innerHTML,{ALLOWED_TAGS:mathLabelTags,ALLOWED_ATTR:mathLabelAttrs,ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false});
       safeForeignObjects[i].innerHTML=safe;
+      for(const math of $$('math[display="block"]',safeForeignObjects[i]))math.setAttribute('display','inline');
       for(const node of $$('[style]',safeForeignObjects[i])) {
         for(const property of [...node.style])if(!safeMathLabelStyle(property,node.style.getPropertyValue(property).trim().toLowerCase()))node.style.removeProperty(property);
         if(!node.style.length)node.removeAttribute('style');

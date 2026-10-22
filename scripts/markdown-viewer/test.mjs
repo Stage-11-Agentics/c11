@@ -47,6 +47,7 @@ try {
   for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof']])
     assert.ok(mermaid12Labels[index].includes(label),`diagram ${index+1} did not render its ${label} label`);
   assert.equal(await page.locator('.diagram-stage math').count(),2,'both formulas must survive as MathML in the label');
+  assert.deepEqual(await page.locator('.diagram-stage math').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('display'))),['inline','inline'],'math in Mermaid labels must use inline layout');
   assert.equal(await page.locator('.diagram-err').count(),0);
   scenario('Mermaid acceptance matrix renders five diagram types and MathML labels');
   const messaging=await readFile(path.join(root,'docs/c11-messaging-primitive-design.md'),'utf8');

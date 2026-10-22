@@ -6889,7 +6889,8 @@ final class Workspace: Identifiable, ObservableObject {
         let epoch = input.epoch
         let token = UUID()
         mailboxNativeInFlight[surfaceId] = token
-        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.beginAttempt(at: Date(), epoch: epoch) }
+        let startedAt = Date()
+        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.beginAttempt(at: startedAt, epoch: epoch) }
         logMailboxDoorbellEntries(queued, outcome: .doorbell, reason: "started", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
         MailboxNativeDoorbell.shared.deliver(registration) { [weak self] result in
             DispatchQueue.main.async {
@@ -6911,6 +6912,7 @@ final class Workspace: Identifiable, ObservableObject {
                         }
                         self.mailboxNativeCovered[surfaceId] = covered
                         guard isCurrent else { return }
+                        self.mailboxStdinState.buffer.noteNativeTurnStarted(surfaceId: surfaceId, at: startedAt)
                         self.logMailboxDoorbellEntries(queued, outcome: .doorbell,
                             reason: late ? "native_late_accept" : "submitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
                         if late { return }

@@ -165,6 +165,24 @@ struct MailboxStdinBuffer {
         }
     }
 
+    /// A native route's invitation was accepted: it started a turn at
+    /// `startedAt`, as a ring's Return does. A harness whose edges arrive
+    /// through the journal (OpenCode's plugin) can lose a short turn's
+    /// working edge to the newer idle snapshot, leaving the turn at the
+    /// prompt it was rung in, so later mail reads as the same idle period.
+    /// An idle report since `startedAt` ended that turn and opens the next
+    /// idle period; otherwise the turn is working until one does. A working
+    /// edge or prompt already seen after `startedAt` is kept.
+    mutating func noteNativeTurnStarted(surfaceId: UUID, at startedAt: Date) {
+        guard let turn = turns[surfaceId], turn.atPrompt, turn.since < startedAt else { return }
+        lastSubmitAt[surfaceId] = max(lastSubmitAt[surfaceId] ?? .distantPast, startedAt)
+        if let reported = lastReportedAt[surfaceId], reported > startedAt {
+            turns[surfaceId] = AgentTurn(atPrompt: true, since: reported)
+        } else {
+            turns[surfaceId] = AgentTurn(atPrompt: false, since: startedAt)
+        }
+    }
+
     /// The turn state just before a socket Return lands on a composer that
     /// reads empty or a suggestion (C11-407).
     struct NoOpReturnMark: Equatable {

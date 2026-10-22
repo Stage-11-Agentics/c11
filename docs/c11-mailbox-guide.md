@@ -261,7 +261,12 @@ sequenceDiagram
     participant Agent as Recipient agent
 
     D->>Inbox: atomic write ULID.msg
-    alt mailbox.delivery contains "stdin" and the composer is recognized
+    alt mailbox.delivery contains "stdin" and a native route is registered (Pi, omp, Claude, OpenCode)
+        D->>Agent: invitation over the native stream at idle, composer never read
+        Note over Inbox: file stays in the inbox root, draft untouched
+        Agent->>Inbox: c11 mailbox recv --ack
+        Note over D: rejection, closed stream or no confirmation: typed branch below (omp has none)
+    else mailbox.delivery contains "stdin" and the composer is recognized
         D->>SH: deliver(envelope, surfaceId)
         alt interactive agent at its prompt, owning its terminal
             SH->>PTY: type the doorbell line and submit (log "doorbell")
@@ -275,8 +280,9 @@ sequenceDiagram
     else delivery unset, or typed route with an unreadable composer
         Note over Agent: Inbox file sits until recv or a hook drain
     end
-    Note over D,Agent: Native routes (Pi, omp, Claude, OpenCode) ring without reading the composer
 ```
+
+The first branch is the native route, which never inspects the composer. The two branches after it are the typed route, including the fallback from a failed native attempt; they keep every composer check.
 
 ### Pi native delivery
 
@@ -744,11 +750,11 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecyc
 | `evicted`     | a queued envelope dropped because the per-panel cap was exceeded (inbox floor holds it) |
 | `skipped`     | the ring found the envelope already claimed by a drain; nothing typed |
 | `closed`      | the panel was gone or was not a terminal when the handler ran |
-| `doorbell`    | the invitation was `started` or `submitted`, or Return was pressed on a line already in the composer (`stranded_return`). `bytes` is the invitation, not the envelope |
+| `doorbell`    | the invitation was `started` or `submitted`, or Return was pressed on a line already in the composer (`stranded_return`), or a native confirmation arrived after its two-second deadline (`native_late_accept`; those envelopes count as covered). `route` is the route used. `bytes` is the invitation, not the envelope |
 | `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `opted_out`, `not_stdin`, `draft`, `dialog`, `unknown_prompt`, `unavailable`, `gate_closed`, `input_transaction`, or `already_covered` (a submitted ring already covered every unread envelope) |
 | `doorbell_capped` | this panel already used 20 submitted attempts in the last 10 minutes. `reason` is `rate_capped`. The mail stays queued and is checked again at the end of the window |
 | `doorbell_recheck` | a held composer was looked at again. `reason` is `draft`, `unknown_prompt`, or `stranded` (the composer still holds the doorbell line); `next_ms` is the delay to the next look. One line per look, on the oldest unread envelope |
-| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `turn_open` (the journal showed a turn open at the Return), `interruption_settling`, `pasted_not_submitted`, or `submit_unconfirmed`. The mail stays queued. A line left in the composer is not retyped; a later idle look presses Return on it |
+| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `turn_open` (the journal showed a turn open at the Return), `interruption_settling`, `pasted_not_submitted`, or `submit_unconfirmed`; or, for a native attempt, `native_timeout`, `native_rejected`, `native_disconnected`, `native_replaced`, `native_unavailable`, `native_write_failed`, `native_transcript_unavailable`, `native_inbox_unavailable`, `native_inbox_write_failed`, `native_unconfirmed` or `native_unsupported_invitation`. A native row is the attempt itself (`route` is the native route); the typed fallback is a later row with `route: typed`, `native_route` and `native_failure`. The mail stays queued. A line left in the composer is not retyped; a later idle look presses Return on it |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows

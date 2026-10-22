@@ -211,6 +211,8 @@ print(pids[0])''', args.run_id))
         for target in targets:
             try:
                 observations[target['address']] = inspect(target)
+                if not observations.get('passed'):
+                    screenshot('failed-' + target['address'], target)
                 c11('send-key', '--workspace', workspace, '--panel', target['panel'], 'ctrl+u')
                 c11('send', '--workspace', workspace, '--panel', target['panel'], '/exit')
             except Exception as error:

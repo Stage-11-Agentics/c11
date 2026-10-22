@@ -83,6 +83,9 @@ enum FeedCommand {
         func take(_ name: String, allowFlagValue: Bool = false) throws -> String? {
             // Any spelling in the flag's alias group (`--panel` / `--tab` / `--surface`).
             let spellings = CMUXCLI.flagSpellings(name)
+            #if DEBUG
+            CLIFlagReadLog.read(spellings)
+            #endif
             var index = args.startIndex
             while index < args.endIndex {
                 if name != "--text", args[index] == "--text" {

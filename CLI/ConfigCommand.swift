@@ -12,6 +12,9 @@ import Foundation
 // file-scoped, so this file parses its own subArgs).
 
 private func cfgOption(_ args: [String], _ name: String) -> String? {
+    #if DEBUG
+    CLIFlagReadLog.read([name])
+    #endif
     var i = 0
     while i < args.count {
         if args[i] == name, i + 1 < args.count { return args[i + 1] }
@@ -22,7 +25,10 @@ private func cfgOption(_ args: [String], _ name: String) -> String? {
 }
 
 private func cfgFlag(_ args: [String], _ name: String) -> Bool {
-    args.contains(name)
+    #if DEBUG
+    CLIFlagReadLog.read([name])
+    #endif
+    return args.contains(name)
 }
 
 private func cfgFirstPositional(_ args: [String]) -> String? {

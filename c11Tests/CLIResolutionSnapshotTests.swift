@@ -763,8 +763,6 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             ["journal", "query", "--not-a-real-flag"],
             ["agent-event", "append", "--not-a-real-flag"],
             ["themes", "clear", "--not-a-real-flag"],
-            ["read-screen", "--json"],
-            ["mailbox", "recv", "--json"],
             ["model-costs", "rm", "claude-opus-4-7", "--in", "1"],
             ["history", "back", "--limit", "5"],
             ["history", "--limit", "5", "back"],
@@ -868,6 +866,8 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             (["clear-progress", "--", "--not-a-real-flag"], []),
             (["set-progress", "0.5", "--", "--not-a-real-flag"], []),
             (["set-status", "build", "ok", "--", "--not-a-real-flag"], []),
+            (["notify", "--title", "t", "--", "-body"], ["notification.create_for_panel"]),
+            (["notify", "--", "--not-a-real-flag"], ["notification.create_for_panel"]),
         ]
 
         for (command, mutatingMethods) in cases {
@@ -1036,7 +1036,7 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             (["send", "--", "-n"], nil, "panel.send_text"),
             (["set-title", "--panel", panelID, "--", "-draft"], nil, "panel.set_metadata"),
             (["rename-workspace", "--", "--backend"], nil, "workspace.rename"),
-            (["notify", "--title", "t", "--", "-body"], nil, "notification.create_for_panel"),
+            (["notify", "--title", "t", "--body", "-body"], nil, "notification.create_for_panel"),
             (["browser", panelID, "type", "sel", "--", "--literal"], nil, "browser.type"),
             (["browser", panelID, "fill", "sel", "--", "--x"], nil, "browser.fill"),
         ]
@@ -1069,6 +1069,7 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                     XCTAssertEqual((params?["metadata"] as? [String: String])?["title"], "-draft")
                 } else if command.first == "notify" {
                     XCTAssertEqual(params?["title"] as? String, "t")
+                    XCTAssertEqual(params?["body"] as? String, "-body")
                 } else if command.first == "rename-workspace" {
                     XCTAssertEqual(params?["title"] as? String, "--backend")
                 } else {
@@ -1601,5 +1602,293 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                 userInfo: [NSLocalizedDescriptionKey: "CLI fake socket \(operation) failed"]
             )
         }
+    }
+}
+
+// MARK: - C11-334: declared flags match what each parser reads
+
+extension CLIResolutionSnapshotTests {
+    private static let declPanelID = "ddd11111-2222-3333-4444-555566667777"
+    private static let declWorkspaceID = "11111111-2222-3333-4444-555566667777"
+
+    /// Argv that c11 1.1.3 accepted and the r1/r2 reviews of PR #737 found
+    /// rejected: trailing `--json`, `--name=value`, parser-read aliases, and
+    /// words the parser takes as text. Run with no socket, so nothing mutates;
+    /// a preflight rejection is the only "unknown flag" these can print.
+    private static let previouslyAcceptedArgv: [[String]] = [
+        // r1 kit
+        ["set-status", "k", "v", "--panel", "panel:1"], ["set-status", "k", "v", "--tab", "panel:1"],
+        ["set-status", "k", "v", "--panel=panel:1"], ["set-status", "k", "v", "--priority", "5"],
+        ["set-status", "k", "v", "--url", "http://x"], ["set-status", "k", "v", "--format", "markdown"],
+        ["set-progress", "0.5", "--panel", "panel:1"], ["log", "--panel", "panel:1", "msg"],
+        ["log", "--level", "error", "--panel", "panel:1", "--", "msg"], ["clear-status", "k", "--panel", "panel:1"],
+        ["identify", "--json"], ["capabilities", "--json"], ["read-selection", "--panel", "panel:1", "--json"],
+        ["list-panels", "--json"], ["sidebar-state", "--json"], ["drag-panel-to-split", "--panel", "panel:1", "right", "--json"],
+        ["refresh-panels", "--json"], ["new-split", "right", "--json"], ["focus-panel", "--panel", "panel:1", "--json"],
+        ["raise-flag", "--panel", "panel:1", "--json", "why"], ["raise-flag", "--workspace", "workspace:1", "--panel", "panel:1", "why"],
+        ["lower-flag", "--window", "window:1", "--panel", "panel:1"], ["clear-notifications", "--workspace", "workspace:1"],
+        ["set-metadata", "--panel", "panel:1", "--json-input", "{\"a\":1}"], ["set-metadata", "--panel", "panel:1", "--body", "{\"a\":1}"],
+        ["get-metadata", "--panel", "panel:1", "--include-sources"], ["get-workspace-metadata", "--key", "description"],
+        ["set-workspace-description", "--value", "hello"], ["set-workspace-icon", "--value", "x"],
+        ["browser", "panel:1", "scroll", "--dy", "800", "--snapshot-after"],
+        ["set-status", "k", "- item"], ["set-status", "k", "-3", "failing"], ["set-status", "k", "--", "-3", "failing"],
+        ["log", "- bullet"], ["set-title", "--panel", "panel:1", "--", "-draft"],
+        ["browser", "panel:1", "type", "sel", "--", "--literal"], ["browser", "panel:1", "fill", "sel", "--", "--x"],
+        ["__tmux-compat", "select-layout", "-t", "@1", "tiled"],
+        ["__tmux-compat", "set-option", "-p", "-t", "%1", "pane-border-style", "fg=blue"],
+        ["new-split", "right", "--force"], ["new-area", "right", "--force"], ["restore", "snap", "--replace"],
+        // r2 kit
+        ["tree", "--json"], ["tree", "--all", "--json"], ["family", "--json"], ["family", "--panel", "panel:1", "--json"],
+        ["agents", "--json"], ["doctor", "--json"], ["health", "--json"], ["guide", "--json"], ["guide", "api", "--json"],
+        ["list-snapshots", "--json"], ["reorder-workspaces", "--order", "workspace:1", "--dry-run", "--json"],
+        ["get-metadata", "--panel", "panel:1", "--json"], ["get-workspace-metadata", "--json"],
+        ["clear-workspace-metadata", "--key", "k", "--json"], ["markdown-content", "--panel", "panel:1", "--json"],
+        ["ping", "--json"], ["list-windows", "--json"], ["current-workspace", "--json"], ["list-areas", "--json"],
+        ["list-area-panels", "--json"], ["close-panel", "--panel", "panel:1", "--json"],
+        ["send", "--panel", "panel:1", "hi", "--json"], ["notify", "--title", "t", "--json"],
+        ["set-agent", "--panel", "panel:1", "--type", "claude-code", "--json"], ["themes", "list", "--json"],
+        ["events", "tail", "--json"], ["capture-pane", "--panel", "panel:1", "--json"],
+        ["get-metadata", "--panel", "panel:1", "--key=title"], ["clear-metadata", "--panel", "panel:1", "--key=title"],
+        ["clear-workspace-metadata", "--key=description"], ["config", "stats", "--window=7d"], ["config", "stats", "--by=harness"],
+        ["skill", "status", "--tool=claude"],
+        ["usage", "--since=1d", "--state-root=/nonexistent-c11-334", "--claude-root=/nonexistent-c11-334", "--codex-root=/nonexistent-c11-334"],
+        ["conversation", "claim", "--panel", "panel:1", "--kind", "claude-code", "--id", "abc"],
+        ["conversation", "tombstone", "--tab", "panel:1", "--kind", "claude-code", "--id", "abc"],
+        ["feed", "--tab", "panel:1", "open"], ["browser", "panel:1", "scrollintoview", "--selector", "#x"],
+        ["browser", "--panel", "panel:1", "scrollinto", "#x", "--snapshot-after"],
+        ["respawn-pane", "--panel", "panel:1", "ls", "-la"], ["pipe-pane", "--panel", "panel:1", "grep", "-v", "foo"],
+        ["set-hook", "pane-exited", "echo", "-n", "done"],
+        ["__tmux-compat", "send-keys", "-t", "%1", "git", "log", "--oneline", "Enter"],
+        ["__tmux-compat", "split-window", "-v", "npm", "run", "dev", "--port", "3000"],
+        // r2 grok and the r2 text-region findings
+        ["rpc", "system.capabilities", "--json"], ["paste", "--json", "hello"],
+        ["clear-metadata", "--key", "title", "--json"], ["clear-workspace-metadata", "description", "--json"],
+        ["browser", "panel:1", "type", "#q", "--verbose"], ["browser", "panel:1", "fill", "#q", "hello", "--world"],
+        ["browser", "panel:1", "dialog", "accept", "--force"], ["browser", "panel:1", "addscript", "x", "=", "--y"],
+        ["notify", "--title", "t", "--body", "-body"],
+    ]
+
+    func testPreviouslyAcceptedArgvFromReviewCorporaPassesPreflight() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("c11-334-home-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        var rejected: [String] = []
+        for argv in Self.previouslyAcceptedArgv {
+            guard let result = runCLI(
+                argv,
+                socketPath: "/tmp/c11-334-no-socket-\(UUID().uuidString).sock",
+                environmentOverrides: ["HOME": home.path]
+            ) else { return }
+            if result.stderr.localizedCaseInsensitiveContains("unknown flag")
+                || result.stderr.localizedCaseInsensitiveContains("requires a value") {
+                rejected.append("\(argv.joined(separator: " ")) -> \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
+            }
+        }
+        XCTAssertEqual(rejected, [], rejected.joined(separator: "\n"))
+    }
+
+    /// `--name=value` reaches the parser as `--name value`, so every parser
+    /// reads the `=` form of every declared value option.
+    func testInlineValueOptionReachesParserAsSeparatedValue() {
+        func request(_ argv: [String]) -> [String: Any]? {
+            guard let socket = try? CapturedCLISocket(),
+                  let result = runCLI(argv, socketPath: socket.path) else { return nil }
+            XCTAssertEqual(result.status, 0, "\(argv): \(result.stderr)")
+            XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(argv)")
+            return socket.requests.first(where: { $0["method"] as? String == "panel.get_metadata" })?["params"] as? [String: Any]
+        }
+        let panel = Self.declPanelID
+        let separated = request(["get-metadata", "--panel", panel, "--key", "title"])
+        let inline = request(["get-metadata", "--panel=\(panel)", "--key=title"])
+        XCTAssertEqual(separated?["keys"] as? [String], ["title"])
+        XCTAssertEqual(inline?["keys"] as? [String], ["title"])
+        XCTAssertEqual(inline?["panel_id"] as? String, separated?["panel_id"] as? String)
+        XCTAssertNotNil(inline?["panel_id"])
+    }
+
+    /// A post-command `--json` is the global output switch, so handlers that
+    /// print JSON only for `c11 --json <command>` honor it too.
+    func testPostCommandJSONMatchesGlobalJSON() {
+        func stdout(_ argv: [String]) -> String? {
+            guard let socket = try? CapturedCLISocket(),
+                  let result = runCLI(argv, socketPath: socket.path) else { return nil }
+            XCTAssertEqual(result.status, 0, "\(argv): \(result.stderr)")
+            XCTAssertTrue(socket.requests.contains(where: { $0["method"] as? String == "panel.get_metadata" }), "\(socket.requests)")
+            return result.stdout
+        }
+        let global = stdout(["--json", "get-metadata", "--panel", Self.declPanelID])
+        let trailing = stdout(["get-metadata", "--panel", Self.declPanelID, "--json"])
+        XCTAssertEqual(trailing, global)
+        XCTAssertTrue(trailing?.hasPrefix("{") ?? false, trailing ?? "")
+    }
+
+    /// Words after a trailing-command parser's options are the command line.
+    func testTrailingCommandTextReachesHandler() {
+        guard let socket = try? CapturedCLISocket(),
+              let result = runCLI(["respawn-pane", "--panel", Self.declPanelID, "ls", "-la"], socketPath: socket.path)
+        else { return }
+        XCTAssertEqual(result.status, 0, result.stderr)
+        XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving respawn-pane")
+        let text = socket.requests.first(where: { $0["method"] as? String == "panel.send_text" })?["params"]
+            .flatMap { ($0 as? [String: Any])?["text"] as? String }
+        XCTAssertTrue(text?.hasSuffix("ls -la\n") ?? false, String(describing: text))
+    }
+
+    /// One argv per command path. A parser queries every option name on the
+    /// path it takes, present or not, so one run checks the whole path.
+    private static let declarationPaths: [[String]] = {
+        let p = declPanelID
+        let w = declWorkspaceID
+        return [
+            ["ping"], ["capabilities"], ["brand"], ["identify"], ["list-windows"], ["current-window"],
+            ["focus-window", "--window", "window:1"], ["move-workspace-to-window", "--workspace", w, "--window", "window:1"],
+            ["move-panel", "--panel", p, "--workspace", w], ["reorder-panel", "--panel", p, "--index", "0"],
+            ["reorder-workspace", "--workspace", w, "--index", "0"], ["reorder-workspaces", "--order", w, "--dry-run"],
+            ["workspace-group", "list"], ["workspace-group", "create", "--name", "g"],
+            ["workspace-action", "--action", "pin", "--workspace", w], ["panel-action", "--action", "pin", "--panel", p],
+            ["rename-panel", "--panel", p, "title"], ["set-title", "--panel", p, "t"], ["set-description", "--panel", p, "d"],
+            ["set-panel-icon", "--panel", p, "x"], ["set-panel-color", "--panel", p, "teal"], ["get-titlebar-state", "--panel", p],
+            ["list-workspaces"], ["snapshot", "--workspace", w], ["list-snapshots"], ["new-workspace", "--title", "t"],
+            ["new-split", "right", "--panel", p], ["list-areas"], ["list-area-panels"], ["tree"], ["tree", "--all"],
+            ["family", "--panel", p], ["focus-area", "--area", "area:1"], ["new-area", "right"],
+            ["launch-agent", "--type", "codex", "--workspace", w], ["raise-flag", "--panel", p, "why"], ["lower-flag", "--panel", p],
+            ["delegate", "--panel", p], ["new-panel", "--type", "terminal"], ["close-panel", "--panel", p],
+            ["area-confirm", "--panel", p, "--title", "t"], ["drag-panel-to-split", "--panel", p, "right"], ["refresh-panels"],
+            ["panel-health"], ["trigger-flash", "--panel", p], ["cancel-flash", "--panel", p], ["list-panels"],
+            ["focus-panel", "--panel", p], ["close-workspace", "--workspace", w], ["select-workspace", "--workspace", w],
+            ["rename-workspace", "--workspace", w, "name"], ["rename-window", "name"],
+            ["set-workspace-root", "--workspace", w, "/tmp"], ["get-workspace-root", "--workspace", w], ["current-workspace"],
+            ["read-selection", "--panel", p], ["input-state", "--panel", p], ["read-screen", "--panel", p],
+            ["send", "--panel", p, "--workspace", w, "hi"], ["paste", "--panel", p, "--workspace", w, "hi"],
+            ["send-key", "--panel", p, "--workspace", w, "enter"], ["notify", "--title", "t"],
+            ["feed", "list"], ["feed", "open", p], ["list-notifications"], ["clear-notifications"],
+            ["set-status", "k", "v"], ["clear-status", "k"], ["list-status"], ["set-progress", "0.5"], ["clear-progress"],
+            ["log", "msg"], ["clear-log"], ["list-log"], ["sidebar-state"], ["set-agent", "--panel", p, "--type", "codex"],
+            ["set-metadata", "--panel", p, "--key", "k", "--value", "v"], ["get-metadata", "--panel", p],
+            ["clear-metadata", "--panel", p, "--key", "k"], ["set-workspace-metadata", "--key", "k", "--value", "v"],
+            ["get-workspace-metadata"], ["clear-workspace-metadata", "--key", "k"],
+            ["set-workspace-description", "--value", "d"], ["set-workspace-icon", "--value", "x"],
+            ["conversation", "get", "--panel", p], ["conversation", "list"], ["conversation", "claim", "--panel", p, "--kind", "codex", "--id", "abc"],
+            ["conversation", "push", "--panel", p, "--kind", "codex", "--id", "abc"],
+            ["conversation", "tombstone", "--panel", p, "--kind", "codex", "--id", "abc"],
+            ["app", "status"], ["capture-pane", "--panel", p], ["resize-pane", "--pane", "area:1", "-L"],
+            ["pipe-pane", "--panel", p, "--command", "cat"], ["swap-pane", "--pane", "area:1", "--target-pane", "area:2"],
+            ["last-pane"], ["clear-history", "--panel", p], ["paste-buffer", "--name", "missing-c11-334"],
+            ["respawn-pane", "--panel", p, "true"], ["display-message", "-p", "hi"],
+            ["browser", p, "url"], ["browser", p, "snapshot"], ["browser", p, "eval", "1"], ["browser", p, "wait", "--selector", "x"],
+            ["browser", p, "click", "#x"], ["browser", p, "type", "#x", "hi"], ["browser", p, "press", "enter"],
+            ["browser", p, "select", "#x", "v"], ["browser", p, "scroll", "--dy", "1"], ["browser", p, "get", "text", "#x"],
+            ["browser", p, "get", "attr", "#x", "--attr", "a"], ["browser", p, "is", "visible", "#x"],
+            ["browser", p, "find", "role", "button"], ["browser", p, "frame", "main"], ["browser", p, "dialog", "dismiss"],
+            ["browser", p, "cookies", "get"], ["browser", p, "storage", "local", "get"], ["browser", p, "panel", "list"],
+            ["browser", p, "console", "list"], ["browser", p, "highlight", "#x"], ["browser", p, "addscript", "1"],
+            ["browser", p, "network", "requests"], ["browser", p, "keep-live", "status"], ["browser", "identify"],
+            ["browser", "profiles", "list"], ["open-browser", "https://example.invalid"], ["get-url", "--panel", p],
+            ["markdown", "visible", "--panel", p], ["markdown", "links", "--panel", p], ["markdown-content", "--panel", p],
+            ["themes", "list"], ["workspace-color", "get"], ["panel-color", "get", "--panel", p],
+            ["mailbox", "inbox-dir", "--panel", p], ["mailbox", "view"], ["messages", "view"],
+            ["workspace", "recents", "list"], ["guide"], ["history", "--limit", "1"],
+            ["config", "list"], ["config", "stats"], ["config", "launch", "missing-c11-334"],
+            ["doctor"], ["health"], ["agents"], ["events", "tail"], ["journal", "query"], ["skill", "status"],
+            ["model-costs", "list"], ["report"], ["state", "verify"], ["default-agent", "launch"], ["new-window"],
+            ["close-window", "--window", "window:1"], ["workspace-group", "add", "--group", "g", "--workspaces", w],
+            ["themes", "get"], ["ui", "themes", "list"], ["set-app-focus", "clear"], ["simulate-app-active"],
+            ["ssh-session-end", "--relay-port", "1"], ["mailbox", "recv", "--peek"], ["markdown", "open", "/tmp/c11-334.md"],
+            ["workspace", "export-blueprint", "--workspace", w, "--out", "/dev/null"], ["get-titlebar-state"],
+            ["resize-window", "--window", "window:1", "10", "10"], ["break-pane", "--pane", "area:1"],
+            ["join-pane", "--target-pane", "area:1"], ["browser", p, "screenshot", "--out", "/dev/null"],
+            ["browser", p, "download", "--path", "/dev/null"], ["browser", p, "dom", "--selector", "x"],
+            ["browser", p, "locator", "--selector", "x"], ["browser", p, "back"], ["browser", p, "goto", "https://example.invalid"],
+        ]
+    }()
+
+    /// Names a parser reads only to reject them, keyed by command path.
+    /// Preflight rejects them before discovery instead: same outcome, earlier.
+    private static let readOnlyToReject: [String: Set<String>] = [
+        // "--workspace is not supported in v1"
+        "conversation list": ["--workspace"],
+        // `feed` takes these before its verb, then rejects the ones a verb does not use.
+        "feed list": ["--panel", "--surface", "--tab", "--workspace"],
+        "feed open": ["--scope"],
+        // Markdown agent verbs reject routing flags other than --panel.
+        "markdown links": ["--area", "--pane", "--window", "--workspace"],
+        "markdown visible": ["--area", "--pane", "--window", "--workspace"],
+    ]
+
+    func testEveryFlagAParserReadsIsDeclared() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-334-reads-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cli = try bundledCLI()
+        let lock = NSLock()
+        var findings: [String] = []
+        let paths = Self.declarationPaths
+        // Each path is its own CLI process, socket and log; run them side by
+        // side so the whole command surface fits the per-test time limit.
+        DispatchQueue.concurrentPerform(iterations: paths.count) { index in
+            let argv = paths[index]
+            let finding = Self.declarationFinding(argv: argv, cli: cli, directory: directory) {
+                try CapturedCLISocket()
+            }
+            if let finding {
+                lock.lock()
+                findings.append(finding)
+                lock.unlock()
+            }
+        }
+        XCTAssertEqual(findings.sorted(), [], findings.sorted().joined(separator: "\n"))
+    }
+
+    /// Runs one path with the read log on. Returns nil when every name the
+    /// parser read is declared, else a line naming what is wrong.
+    private static func declarationFinding(
+        argv: [String],
+        cli: URL,
+        directory: URL,
+        makeSocket: () throws -> CapturedCLISocket
+    ) -> String? {
+        let label = argv.joined(separator: " ")
+        guard let socket = try? makeSocket() else { return "\(label): could not create a fake socket" }
+        let log = directory.appendingPathComponent("\(UUID().uuidString).json")
+        let process = Process()
+        process.executableURL = cli
+        process.arguments = ["--socket", socket.path] + argv
+        var environment = ProcessInfo.processInfo.environment
+        for key in environment.keys where key.hasPrefix("C11_") || key.hasPrefix("CMUX_") {
+            environment.removeValue(forKey: key)
+        }
+        environment["C11_CLI_FLAG_READ_LOG"] = log.path
+        environment["C11_WORKSPACE_ID"] = declWorkspaceID
+        environment["C11_PANEL_ID"] = declPanelID
+        environment["HOME"] = directory.path
+        process.environment = environment
+        let stderr = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+        do { try process.run() } catch { return "\(label): could not run the CLI: \(error)" }
+        if exited.wait(timeout: .now() + 15) == .timedOut {
+            process.terminate()
+            return "\(label): CLI did not exit within 15 seconds"
+        }
+        let errorText = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        if errorText.localizedCaseInsensitiveContains("unknown flag") {
+            return "\(label): rejected by preflight: \(errorText.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+        guard let data = try? Data(contentsOf: log),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let queried = object["queried"] as? [String],
+              let acceptedByCommand = object["accepted"] as? [String: [String]],
+              !acceptedByCommand.isEmpty else {
+            return "\(label): no read log (the path wrote no declaration)"
+        }
+        let accepted = Set(acceptedByCommand.values.flatMap { $0 })
+        let undeclared = Set(queried)
+            .subtracting(accepted)
+            .subtracting(readOnlyToReject.first(where: { label.hasPrefix($0.key + " ") || label == $0.key })?.value ?? [])
+            .subtracting(["--help", "-h"])
+        return undeclared.isEmpty ? nil : "\(label): parser reads \(undeclared.sorted()) not declared"
     }
 }

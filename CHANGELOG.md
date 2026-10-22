@@ -4,6 +4,29 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [1.2.0] - 2026-10-21
+
+Headline: **c11 1.2.0. Drag a panel onto a sidebar workspace to move it there, agents resume per panel after a crash or reboot, and a mail doorbell no longer gets left unsent in an agent's prompt.**
+
+### Added
+
+- **Drag a panel onto a sidebar workspace card to move it there.** The card under the cursor gets a gold outline, and the panel lands in that workspace's focused area. You stay on your workspace unless the panel was its last one. ([#707](https://github.com/Stage-11-Agentics/c11/pull/707), [#711](https://github.com/Stage-11-Agentics/c11/pull/711))
+- **`c11 conversation resume` recovers panels that startup skipped.** Pass `--panel <ref>` or `--all-skipped`, with `--dry-run` and `--json`. A new `conversation.startup_audit` event records how long each startup phase took. ([#708](https://github.com/Stage-11-Agentics/c11/pull/708))
+
+### Fixed
+
+- **After a crash or reboot, c11 decides resume per panel.** Agents with an exact hook or runtime id resume without waiting on the transcript scan, and a slow or failed scan no longer marks every conversation unknown. ([#708](https://github.com/Stage-11-Agentics/c11/pull/708))
+- **A mail doorbell left in an agent's prompt gets submitted.** When an agent started a turn while c11 was typing the doorbell line, the line could sit unsent in the prompt. c11 now presses Return on it at the agent's next idle prompt, with the same checks as any ring. ([#710](https://github.com/Stage-11-Agentics/c11/pull/710))
+- **An unnamed workspace is titled after its `WS N` number.** The title matches the number on its sidebar card instead of the window's workspace count. ([#707](https://github.com/Stage-11-Agentics/c11/pull/707))
+
+### Changed
+
+- **The bundled c11 skill tells agents to open their last message with whether you need to act.** Reports are written for an operator arriving cold: a first line that says if anything needs you, then state, not story. ([#703](https://github.com/Stage-11-Agentics/c11/pull/703))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.1.3] - 2026-10-15
 
 Headline: **c11 1.1.3. A mail doorbell never presses Return on text you just typed, more mail reaches Grok and Codex, and New Workspace works after a window closes.**

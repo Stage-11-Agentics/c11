@@ -1487,6 +1487,83 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertEqual(ledger.rungEpoch, "idle", "route-change handling owns clearing the epoch")
     }
 
+    /// One native ring, then the ring decision for the next envelope, with
+    /// `edges` run between the ring's start and its acceptance.
+    private func nativeRingThenNextDecision(
+        edges: (inout MailboxStdinBuffer, UUID, Date) -> Void,
+        afterAcceptance: (inout MailboxStdinBuffer, UUID, Date) -> Void = { _, _, _ in }
+    ) -> (rung: String, next: String, decision: MailboxDoorbell.Decision) {
+        var buffer = MailboxStdinBuffer()
+        var ledger = MailboxDoorbell.Ledger()
+        let panel = UUID(), idleAt = Date(timeIntervalSince1970: 1_000)
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: idleAt)
+        let rung = buffer.ringEpoch(surfaceId: panel)
+        let startedAt = idleAt.addingTimeInterval(40)
+        ledger.beginAttempt(at: startedAt, epoch: rung)
+        edges(&buffer, panel, startedAt)
+        ledger.endAttempt()
+        buffer.noteNativeTurnStarted(surfaceId: panel, at: startedAt)
+        afterAcceptance(&buffer, panel, startedAt)
+        let next = buffer.ringEpoch(surfaceId: panel)
+        var input = MailboxDoorbell.Input(nativeRoute: true, epoch: next)
+        input.rungThisEpoch = ledger.rung(in: next)
+        input.recentAttempts = ledger.rings(at: startedAt)
+        input.inFlight = ledger.inFlight
+        return (rung, next, MailboxDoorbell.decide(input))
+    }
+
+    /// OpenCode's journal dropped the invitation turn's working edge; only its
+    /// idle edge landed, before the acceptance. The next envelope rings.
+    func testNativeAcceptanceOpensNextIdleWhenOnlyTheIdleEdgeLanded() {
+        let result = nativeRingThenNextDecision(edges: { buffer, panel, startedAt in
+            buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: startedAt.addingTimeInterval(0.17))
+        })
+        XCTAssertNotEqual(result.next, result.rung)
+        XCTAssertEqual(result.decision, .ring)
+    }
+
+    /// The acceptance landed before the idle edge: the turn is working until
+    /// that edge, and the edge opens a new idle period that rings.
+    func testNativeAcceptanceBeforeIdleEdgeRingsAtThatEdge() {
+        var working: String?
+        let result = nativeRingThenNextDecision(edges: { _, _, _ in }, afterAcceptance: { buffer, panel, startedAt in
+            working = buffer.ringEpoch(surfaceId: panel)
+            XCTAssertEqual(buffer.agentTurn(surfaceId: panel)?.atPrompt, false)
+            buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: startedAt.addingTimeInterval(0.2))
+        })
+        XCTAssertNotEqual(working, result.rung)
+        XCTAssertNotEqual(result.next, result.rung)
+        XCTAssertEqual(result.decision, .ring)
+    }
+
+    /// Pi and omp report both edges directly: the acceptance changes nothing,
+    /// and a second ring inside the new idle period is still refused.
+    func testNativeAcceptanceKeepsSeenEdgesAndOncePerIdle() {
+        var buffer = MailboxStdinBuffer()
+        var ledger = MailboxDoorbell.Ledger()
+        let panel = UUID(), idleAt = Date(timeIntervalSince1970: 1_000)
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: idleAt)
+        let startedAt = idleAt.addingTimeInterval(40)
+        ledger.beginAttempt(at: startedAt, epoch: buffer.ringEpoch(surfaceId: panel))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: startedAt.addingTimeInterval(0.05))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: startedAt.addingTimeInterval(0.1))
+        ledger.endAttempt()
+        let afterEdges = buffer.ringEpoch(surfaceId: panel)
+        buffer.noteNativeTurnStarted(surfaceId: panel, at: startedAt)
+        XCTAssertEqual(buffer.ringEpoch(surfaceId: panel), afterEdges)
+
+        // Second envelope rings in the new idle period; a third in that same period does not.
+        ledger.beginAttempt(at: startedAt.addingTimeInterval(1), epoch: afterEdges)
+        ledger.endAttempt()
+        var input = MailboxDoorbell.Input(nativeRoute: true, epoch: afterEdges)
+        input.rungThisEpoch = ledger.rung(in: buffer.ringEpoch(surfaceId: panel))
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "once_per_idle"))
+
+        // The typed route's once-per-idle rule is untouched too.
+        input.nativeRoute = false
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "once_per_idle"))
+    }
+
     private func nativeProcess(_ parent: pid_t, start: UInt64, tty: dev_t = -1) -> MailboxAgentForeground.ProcessTerminalInfo {
         .init(processGroup: 10, terminalForegroundGroup: 10, terminalDevice: tty,
               isZombie: false, startTime: start, parentPID: parent)

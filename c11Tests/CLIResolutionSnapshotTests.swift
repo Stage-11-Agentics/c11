@@ -784,6 +784,26 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         }
     }
 
+    func testMissingWorkspaceOptionValueDoesNotFallBackToCallerTarget() {
+        let workspaceID = "11111111-2222-3333-4444-555566667777"
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let result = runCLI(
+            ["close-panel", "--workspace"],
+            socketPath: socket.path,
+            environmentOverrides: ["C11_WORKSPACE_ID": workspaceID, "C11_PANEL_ID": panelID]
+        ) else { return }
+        XCTAssertNotEqual(result.status, 0, result.stderr)
+        XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("--workspace requires a value"), result.stderr)
+        XCTAssertFalse(
+            socket.requests.contains(where: { $0["method"] as? String == "panel.close" }),
+            "missing --workspace value fell back to the caller target: \(socket.requests)"
+        )
+    }
+
     func testStateSaveRejectsUnexpectedArgumentAfterEndOfOptionsBeforeMutation() {
         guard let socket = try? CapturedCLISocket() else {
             XCTFail("Could not create a fake CLI socket")
@@ -837,11 +857,51 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         )
     }
 
+    func testFlagAfterEndOfOptionsDoesNotMutate() {
+        let workspaceID = "11111111-2222-3333-4444-555566667777"
+        let panelID = "ddd11111-2222-3333-4444-555566667777"
+        let cases: [([String], Set<String>)] = [
+            (["close-panel", "--", "--not-a-real-flag"], ["panel.close"]),
+            (["new-panel", "--", "--not-a-real-flag"], ["panel.create"]),
+            (["new-split", "right", "--", "--not-a-real-flag"], ["panel.split"]),
+            (["clear-log", "--", "--not-a-real-flag"], []),
+            (["clear-progress", "--", "--not-a-real-flag"], []),
+            (["set-progress", "0.5", "--", "--not-a-real-flag"], []),
+            (["set-status", "build", "ok", "--", "--not-a-real-flag"], []),
+        ]
+
+        for (command, mutatingMethods) in cases {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(
+                command,
+                socketPath: socket.path,
+                environmentOverrides: ["C11_WORKSPACE_ID": workspaceID, "C11_PANEL_ID": panelID]
+            ) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(command): \(result.stderr)")
+            XCTAssertTrue(
+                result.stderr.localizedCaseInsensitiveContains("unknown flag")
+                    || result.stderr.localizedCaseInsensitiveContains("unexpected argument"),
+                "Expected a flag validation error for \(command), got \(result.stderr)"
+            )
+            XCTAssertFalse(
+                socket.requests.contains(where: { mutatingMethods.contains($0["method"] as? String ?? "") }),
+                "Mutation reached the socket for \(command): \(socket.requests)"
+            )
+            XCTAssertTrue(socket.legacyCommands.isEmpty, "Legacy mutation reached the socket for \(command): \(socket.legacyCommands)")
+        }
+    }
+
     func testKnownFlagsAndHiddenAliasesStillReachTheirHandlers() {
         let panelID = "ddd11111-2222-3333-4444-555566667777"
         let cases: [(command: [String], method: String)] = [
             (["new-workspace", "--title", "C11-334 documented flag"], "workspace.create"),
+            (["new-split", "right", "--force"], "panel.split"),
+            (["new-area", "right", "--force"], "area.create"),
             (["new-panel", "--no-focus"], "panel.create"),
+            (["rename-panel", "--title", "C11-334 renamed panel"], "panel.action"),
             (["launch-agent", "--type", "codex", "--no-focus"], "agent.launch"),
             (["break-pane", "--no-focus"], "area.break"),
             (["join-pane", "--target-pane", "area:1", "--no-focus"], "area.join"),
@@ -855,6 +915,9 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             (["workspace", "recents", "list", "--pinned", "--json"], "workspace.recents.list"),
             (["history", "--limit", "5", "--json"], "history.list"),
             (["app", "restart", "--no-resume"], "app.restart"),
+            (["restore", "snap", "--replace"], "snapshot.restore"),
+            (["markdown-content", "--panel", panelID], "markdown.get_content"),
+            (["ssh-session-end", "--relay-port", "1", "--workspace", "11111111-2222-3333-4444-555566667777", "--panel", panelID], "workspace.remote.terminal_session_end"),
         ]
 
         for item in cases {
@@ -862,7 +925,14 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                 XCTFail("Could not create a fake CLI socket")
                 return
             }
-            guard let result = runCLI(item.command, socketPath: socket.path) else { return }
+            let environmentOverrides = item.command.first == "restore"
+                ? ["C11_WORKSPACE_ID": "11111111-2222-3333-4444-555566667777"]
+                : [:]
+            guard let result = runCLI(
+                item.command,
+                socketPath: socket.path,
+                environmentOverrides: environmentOverrides
+            ) else { return }
             XCTAssertEqual(result.status, 0, "\(item.command): \(result.stderr)")
             XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(item.command)")
             XCTAssertTrue(
@@ -963,7 +1033,9 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             (["set-status", "k", "--", "-3 failing", "--panel", panelID], "-3 failing", nil),
             (["set-progress", "-0.5", "--panel", panelID], "-0.5", nil),
             (["log", "- bullet", "--panel", panelID], "- bullet", nil),
+            (["send", "--", "-n"], nil, "panel.send_text"),
             (["set-title", "--panel", panelID, "--", "-draft"], nil, "panel.set_metadata"),
+            (["rename-workspace", "--", "--backend"], nil, "workspace.rename"),
             (["notify", "--title", "t", "--", "-body"], nil, "notification.create_for_panel"),
             (["browser", panelID, "type", "sel", "--", "--literal"], nil, "browser.type"),
             (["browser", panelID, "fill", "sel", "--", "--x"], nil, "browser.fill"),
@@ -997,8 +1069,11 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                     XCTAssertEqual((params?["metadata"] as? [String: String])?["title"], "-draft")
                 } else if command.first == "notify" {
                     XCTAssertEqual(params?["title"] as? String, "t")
+                } else if command.first == "rename-workspace" {
+                    XCTAssertEqual(params?["title"] as? String, "--backend")
                 } else {
-                    XCTAssertEqual(params?["text"] as? String, command.last == "--x" ? "--x" : "--literal")
+                    let expectedText = command.first == "send" ? "-n" : (command.last == "--x" ? "--x" : "--literal")
+                    XCTAssertEqual(params?["text"] as? String, expectedText)
                 }
             }
         }
@@ -1094,6 +1169,10 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         XCTAssertEqual(skillPath.status, 0, skillPath.stderr)
         XCTAssertTrue(skillPath.stdout.contains("\"path\""), skillPath.stdout)
 
+        guard let setTitleFromFile = runCLI(["set-title", "--from-file", "/dev/null"]) else { return }
+        XCTAssertNotEqual(setTitleFromFile.status, 0, "An empty title must fail")
+        XCTAssertFalse(setTitleFromFile.stderr.localizedCaseInsensitiveContains("unknown flag"), setTitleFromFile.stderr)
+
         guard let journalQuery = runCLI([
             "journal", "query", "--bundle-id", "com.stage11.c11", "--agent", "codex",
             "--model", "codex", "--workspace", "00000000-0000-0000-0000-000000000001",
@@ -1110,6 +1189,22 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         ) else { return }
         XCTAssertEqual(skillInstall.status, 0, skillInstall.stderr)
         XCTAssertFalse(skillInstall.stderr.localizedCaseInsensitiveContains("unknown flag"), skillInstall.stderr)
+
+        guard let workspaceApply = runCLI(["workspace-apply", "--file", "/dev/null"]) else { return }
+        XCTAssertNotEqual(workspaceApply.status, 0, "An empty plan file must fail")
+        XCTAssertFalse(workspaceApply.stderr.localizedCaseInsensitiveContains("unknown flag"), workspaceApply.stderr)
+
+        guard let treeSocket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let treeOptions = runCLI(
+            ["tree", "--window", "--layout", "--no-layout", "--canvas-cols", "80", "--out", "/dev/null", "--report"],
+            socketPath: treeSocket.path
+        ) else { return }
+        XCTAssertNotEqual(treeOptions.status, 0, "Conflicting tree layout flags must fail")
+        XCTAssertTrue(treeOptions.stderr.contains("--layout and --no-layout"), treeOptions.stderr)
+        XCTAssertFalse(treeOptions.stderr.localizedCaseInsensitiveContains("unknown flag"), treeOptions.stderr)
     }
 
     func testClaudeTeamsForwardsChildFlagsWithoutC11Preflight() throws {

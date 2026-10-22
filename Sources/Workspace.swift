@@ -9536,8 +9536,30 @@ final class Workspace: Identifiable, ObservableObject {
         return payload
     }
 
+    /// C11-237: a workspace that turns remote must not keep the git identity
+    /// the local probe already derived for its panels. A pending probe is
+    /// dropped at apply time (it re-checks `isRemoteWorkspace`); this clears
+    /// what a finished probe left, immediately, without waiting for a cwd change.
+    private func clearLocalGitIdentity() {
+        for panelId in panels.keys {
+            if panelGitBranches[panelId] != nil { clearPanelGitBranch(panelId: panelId) }
+            if panelPullRequests[panelId] != nil { clearPanelPullRequest(panelId: panelId) }
+            updatePanelGitContext(panelId: panelId, context: nil)
+            for key in [MetadataKey.worktree, MetadataKey.branch] {
+                PanelMetadataStore.shared.setInternal(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: key,
+                    value: "",
+                    source: .derived
+                )
+            }
+        }
+    }
+
     func configureRemoteConnection(_ configuration: WorkspaceRemoteConfiguration, autoConnect: Bool = true) {
         remoteConfiguration = configuration
+        clearLocalGitIdentity()
         seedInitialRemoteTerminalSessionIfNeeded(configuration: configuration)
         remoteDetectedPorts = []
         remoteForwardedPorts = []

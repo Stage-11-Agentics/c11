@@ -2875,6 +2875,7 @@ class TerminalController {
             ]
             v2SetSeenFields(&item, panelId: panel.id)
             v2SetPromptCacheField(&item, panelId: panel.id)
+            v2SetLocationFields(&item, workspace: workspace, panel: panel)
 
             if panel.panelType == .browser, let browserPanel = panel as? BrowserPanel {
                 item["url"] = browserPanel.currentURL?.absoluteString ?? ""

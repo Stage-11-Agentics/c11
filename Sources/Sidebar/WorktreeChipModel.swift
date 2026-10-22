@@ -145,3 +145,55 @@ public enum WorktreeChipProjector {
         }
     }
 }
+
+/// C11-229 — the per-surface location triple exposed over the socket
+/// (`tree --json`, `get-metadata`). Built from the same inputs the sidebar
+/// chips use (`Workspace.panelGitContexts`, `Workspace.panelDirectories`), so
+/// the two never disagree. Every field is nil when unknown.
+public struct PanelGitLocation: Equatable, Sendable {
+    public let cwd: String?
+    public let branch: String?
+    /// Basename of the linked worktree; nil for a main checkout.
+    public let worktree: String?
+
+    public static let unknown = PanelGitLocation(cwd: nil, branch: nil, worktree: nil)
+
+    public init(cwd: String?, branch: String?, worktree: String?) {
+        self.cwd = cwd
+        self.branch = branch
+        self.worktree = worktree
+    }
+
+    /// A remote (`c11 ssh`) workspace reports nothing: its reported cwd is a
+    /// path on another host, and resolving it here would name a local repo
+    /// that is not the panel's.
+    public static func project(
+        context: ResolvedGitContext?,
+        cwd: String?,
+        isRemote: Bool
+    ) -> PanelGitLocation {
+        guard !isRemote else { return .unknown }
+        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedCwd = (trimmedCwd?.isEmpty ?? true) ? nil : trimmedCwd
+        guard let context else {
+            return PanelGitLocation(cwd: resolvedCwd, branch: nil, worktree: nil)
+        }
+        switch context.outer {
+        case .mainCheckout(let branch):
+            return PanelGitLocation(cwd: resolvedCwd, branch: branchLabel(branch), worktree: nil)
+        case .linkedWorktree(let basename, _, let branch):
+            return PanelGitLocation(cwd: resolvedCwd, branch: branchLabel(branch), worktree: basename)
+        case .notInRepo, .stale:
+            return PanelGitLocation(cwd: resolvedCwd, branch: nil, worktree: nil)
+        }
+    }
+
+    /// Same strings the derived `branch` metadata key carries.
+    static func branchLabel(_ branch: BranchValue) -> String? {
+        switch branch {
+        case .attached(let name): return name
+        case .detached(let sha): return "(detached @ \(sha))"
+        case .noBranch: return nil
+        }
+    }
+}

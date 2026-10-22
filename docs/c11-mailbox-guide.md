@@ -52,7 +52,7 @@ If the panel is an interactive agent and should receive pushed mail, opt in duri
 c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery --value stdin --type string
 ```
 
-c11 pushes only to an interactive agent that owns its terminal: the panel must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's Stop hook (`Resources/bin/claude`) drains at turn end. Codex's wrapper does not: `Resources/bin/codex` passes a notify callback only and installs no hooks. Grok has no per-launch drain hook. Those seats read mail with `c11 mailbox recv --ack` after the doorbell line. `c11 mailbox recv --drain` is the explicit inbox floor.
+c11 pushes only to an interactive agent that owns its terminal: the panel must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's Stop hook (`Resources/bin/claude`) drains at turn end; no other wrapper installs a drain hook, so every other seat reads mail with `c11 mailbox recv --ack` after the doorbell line. `c11 mailbox recv --drain` is the explicit inbox floor.
 
 A direct `c11 send` is refused (nonzero exit, nothing typed) when the target shows a recognized operator draft or question/plan dialog. A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --panel <t> "…" && c11 send-key --panel <t> enter` so a refusal stops the chain. Do not use a direct `c11 send` as the only completion or blocker report. Send the durable report through the mailbox, then use a direct poke only when the recipient also needs an immediate visible nudge.
 
@@ -88,9 +88,10 @@ c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 c11 set-title "watcher"
 c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to the doorbell
 # The invitation starts a turn when the agent is idle; it never includes
-# the envelope body. Pi and omp use their native extension when available,
-# otherwise c11 uses the typed route (see "Pi native delivery" and "omp native
-# delivery" below; omp has no typed route).
+# the envelope body. Pi, omp, Claude Code and OpenCode use their native route
+# when available (see "Pi native delivery", "omp native delivery", "Claude Code
+# native inbox" and "OpenCode native plugin" below). All but omp fall back to
+# the typed route; omp has none.
 c11 mailbox recv --drain                   # pull now, when stdout is a terminal
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
@@ -260,7 +261,12 @@ sequenceDiagram
     participant Agent as Recipient agent
 
     D->>Inbox: atomic write ULID.msg
-    alt mailbox.delivery contains "stdin" and the composer is recognized
+    alt mailbox.delivery contains "stdin" and a native route is registered (Pi, omp, Claude, OpenCode)
+        D->>Agent: invitation over the native stream at idle, composer never read
+        Note over Inbox: file stays in the inbox root, draft untouched
+        Agent->>Inbox: c11 mailbox recv --ack
+        Note over D: rejection, closed stream or no confirmation: typed branch below (omp has none)
+    else mailbox.delivery contains "stdin" and the composer is recognized
         D->>SH: deliver(envelope, surfaceId)
         alt interactive agent at its prompt, owning its terminal
             SH->>PTY: type the doorbell line and submit (log "doorbell")
@@ -271,10 +277,12 @@ sequenceDiagram
             Note over PTY: next real idle, if the composer is empty
             SH->>PTY: type the doorbell line and submit
         end
-    else delivery unset, or composer unknown
+    else delivery unset, or typed route with an unreadable composer
         Note over Agent: Inbox file sits until recv or a hook drain
     end
 ```
+
+The first branch is the native route, which never inspects the composer. The two branches after it are the typed route, including the fallback from a failed native attempt; they keep every composer check.
 
 ### Pi native delivery
 
@@ -307,8 +315,8 @@ The initial success returns
 `subscription_id`; subsequent JSONL frames are `{type:"deliver", delivery_id,
 text}` from c11 and `{type:"accepted"|"rejected", delivery_id}` from the consumer.
 Only positive in-harness acceptance may produce `accepted`. Pi uses
-`route:"pi_extension", can_queue:false`; Claude uses `claude_inbox` with the
-same idle-only contract; OpenCode uses `opencode_plugin`. `codex_queue` remains reserved. Authentication follows the existing socket
+`route:"pi_extension"`, omp `route:"omp_extension"`, Claude `route:"claude_inbox"`
+and OpenCode `route:"opencode_plugin"`, all with `can_queue:false` (idle-only); `codex_queue` remains reserved. Authentication follows the existing socket
 policy, and IO runs off the main thread. Established idle streams do not poll.
 A new subscriber replaces the previous listener for that panel, including an
 in-process listener replaced by a sidecar. The old stream receives
@@ -318,13 +326,16 @@ transient `not_ready` response during session restore, which retries. A new
 harness session can try again after other refusals. Unexpected connection loss
 still retries with bounded backoff.
 
-`_dispatch.log` names `route:"pi_extension"` (or `omp_extension`, below), `route:"opencode_plugin"`, or `route:"typed"` on each ring.
+`_dispatch.log` names `route:"pi_extension"`, `route:"omp_extension"`, `route:"claude_inbox"`, `route:"opencode_plugin"` or `route:"typed"` on each ring.
 After a native failure, the typed entry also names `native_route` and
 `native_failure` (`native_timeout`, `native_rejected`, `native_disconnected`,
 `native_replaced`, `native_unavailable` or `native_write_failed`; the Claude
-bridge's own reasons are listed under Claude Code native inbox). To compare the
-typed route diagnostically, launch Pi with `C11_PI_NATIVE_MAIL_DISABLED=1`.
-The wrapper's lifecycle observations remain active.
+bridge's own reasons are listed under Claude Code native inbox). The failed
+attempt itself is a `doorbell_failed` row carrying the same `native_*` reason,
+and a late confirmation is a `doorbell` row with reason `native_late_accept`.
+To compare the typed route diagnostically, launch Pi with
+`C11_PI_NATIVE_MAIL_DISABLED=1`; with it set no native attempt is made and no
+failure is logged. The wrapper's lifecycle observations remain active.
 Route and native-failure metadata appear only on actual `doorbell` or
 `doorbell_failed` attempts. Skipped and capped rows leave those fields absent.
 
@@ -369,15 +380,17 @@ words as a user message, or another custom type, do not accept.
 omp has no typed composer reader, so there is no typed fallback. A busy
 `native_rejected` (made before any side effect, for mail that raced the start of
 a turn) is retried natively at the next ring, bounded by the 20-per-10-minutes
-cap. A hard failure (`native_timeout`, unavailable, replaced, disconnected, or
-`C11_OMP_NATIVE_MAIL_DISABLED=1`) leaves the mail in the inbox for
-`c11 mailbox recv --ack`. The failed IDs do not retry indefinitely. A new unread
-envelope permits a fresh native attempt while that failed mail remains unread;
-a later failure suppresses the IDs from that attempt until more mail arrives.
-Pi and Claude keep their existing typed-fallback behavior. The extension
+cap. A hard failure (`native_timeout`, unavailable, replaced or disconnected)
+leaves the mail in the inbox for `c11 mailbox recv --ack`. The failed IDs do
+not retry indefinitely: while they stay unread the native route is withheld
+for them, but a new unread envelope permits a fresh native attempt, and a later
+failure suppresses the IDs from that attempt until more mail arrives. Claiming
+the failed envelopes, or a new omp session, also restores the doorbell. Pi and
+Claude keep their typed-fallback behavior. The extension
 writes nothing: omp's own state, including `~/.omp`, is untouched. Task
 subagents (`hasUI` false) neither subscribe nor report lifecycle. For diagnosis
-launch with `C11_OMP_NATIVE_MAIL_DISABLED=1`; lifecycle reports remain.
+launch with `C11_OMP_NATIVE_MAIL_DISABLED=1`: no native attempt is made, nothing
+is logged as a failure, omp gets no doorbell at all, and lifecycle reports remain.
 
 For repeatable guest proof, stage `--agents omp` with `sandbox-up.sh`, then run
 `scripts/check-omp-native-mail.py <run-id>`. Staging builds one self-contained
@@ -484,13 +497,16 @@ Receive protocol:
 
 c11 never pastes a `<c11-msg>` block where it would corrupt input: a build's stdin, a `vim` buffer, an agent's permission prompt, or a half-typed line in an agent's composer. Two gates decide when a push lands, depending on what owns the panel.
 
-**Agent panels** (Claude Code, Codex, Grok). An agent TUI keeps its shell "command running" for its whole life, so the gate is the agent's own turn edge, which c11 hears from the agent's lifecycle:
+**Agent panels** (Claude Code, Codex, Grok, OpenCode, Pi, omp). An agent TUI keeps its shell "command running" for its whole life, so the gate is the agent's own turn edge, which c11 hears from the agent's lifecycle:
 
 | Harness | At its prompt when | Working when |
 |---------|--------------------|--------------|
 | Claude Code | each `Stop` hook; an Esc interrupt, read from the `[Request interrupted by user]` line in its transcript (within the 10 s transcript sweep) for the prompt it names | prompt submit, any submitted Return |
 | Codex | launch, each completed or interrupted turn (its `notify` callback, or the turn end or `turn_aborted` in its rollout file, whichever c11 records first) | any submitted Return |
 | Grok | launch, each `turn_ended` in its session's `events.jsonl` (from its wrapper or c11's transcript reader) | `turn_started`, any submitted Return |
+| OpenCode | each `session.idle`, or `session.status` reporting idle (its lifecycle plugin) | `chat.message`, any submitted Return |
+| Pi | `session_start` at an idle prompt, each `agent_settled` (its extension's idle report) | `agent_start`, any submitted Return |
+| omp | `session_start`, `session_switch` and `agent_end` once `isIdle()` is true and no newer turn has begun (native route only; omp has no typed reader) | `agent_start`, any submitted Return |
 
 A turn end read from a transcript counts at the time the agent wrote it, not when c11 read it, and is ignored if a Return was submitted after it: the agent has had input since.
 
@@ -498,7 +514,7 @@ A socket Return (`c11 send-key enter`, or `c11 send` with no text) on a composer
 
 A session start (a fresh launch, a session c11 resumed after a restart, a Claude `/clear`) says nothing about the turn. It names the agent's process and makes the turn **unknown** until the harness reports an edge. A working state with nothing behind it also becomes unknown: a working edge or Return holds the gate for 2 minutes, and if the agent's journal does not show a turn in progress by then, the turn reads as unknown. A turn the journal shows in progress holds for as long as it runs, including a long tool call that prints nothing.
 
-The following table describes typed delivery, including fallback when a native route is unavailable. Pi and Claude native delivery use the same idle edge and bypass composer checks.
+The following table describes typed delivery, including fallback when a native route is unavailable. Pi, omp, Claude and OpenCode native delivery use the same idle edge and bypass composer checks.
 
 | Recipient agent state | What gets typed |
 |-----------------------|----------------|
@@ -526,7 +542,7 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 **The ring does not claim.** Just before it types, c11 checks that `<inbox>/<ULID>.msg` is still in the inbox root. The check runs off the main thread. Only the line and its submit run on the main thread. The file stays put.
 
 - If the file is already gone, a `recv` or a hook drain took it first, and nothing is typed for it (logged `skipped`).
-- The envelope stays unread until `c11 mailbox recv --ack` or the Claude Stop hook claims it. Prompt-submit does not drain. Codex's wrapper does not install a drain hook.
+- The envelope stays unread until `c11 mailbox recv --ack` or the Claude Stop hook claims it (see Turn-boundary drain).
 - A failed submit leaves the queue. The same idle period is not retried. The next idle period rings again while the file is still there.
 
 `_read/` is history, never re-delivered. `recv` and the hook drain are what move a file there.
@@ -549,7 +565,7 @@ The focused panel waits 3 seconds after an operator key or text-box input, then 
 
 `mailbox.doorbell=off` (trimmed, any case) types nothing. The inbox still holds the mail. A panel that raised its own flag (`flag_caller_panel_id` is that panel) is not rung. A dispatch flag or an operator-designated flag still rings. Lowering any flag runs the ring decision again while mail is unread. A suppressed panel is rung. Nothing here changes focus or activates c11.
 
-The Claude Stop hook still drains into hook context. That is not typed input. Prompt-submit does not drain (`MailboxDrain.shouldDrain`). Codex's wrapper does not install that hook, and Grok has no per-launch Stop hook, so after the line those seats run `c11 mailbox recv --ack`. Without `--ack`, a tool call's recv refuses and leaves the envelope unread.
+The Claude Stop hook still drains into hook context; every other seat runs `c11 mailbox recv --ack` after the line (see Turn-boundary drain). Without `--ack`, a tool call's recv refuses and leaves the envelope unread.
 
 ### Explicit inbox drain
 
@@ -572,7 +588,7 @@ Files are sorted lexicographically by ULID, which gives you near-chronological o
 
 ### Turn-boundary drain (harness hooks)
 
-Claude Code, when busy, sees waiting mail at its next Stop hook as additional context, without a hook error, and takes one more turn to act on it. `Resources/bin/claude` is the only wrapper that runs that hook. Prompt-submit does not drain. Codex and Grok are not wired to it.
+Claude Code, when busy, sees waiting mail at its next Stop hook as additional context, without a hook error, and takes one more turn to act on it. `Resources/bin/claude` is the only wrapper that runs that hook, so every other seat (Codex, Grok, OpenCode, Pi, omp) reads mail with `c11 mailbox recv --ack`. Prompt-submit does not drain (`MailboxDrain.shouldDrain`).
 
 Claude Code 2.1.163 or newer is required for Stop-hook `additionalContext`.
 
@@ -583,6 +599,7 @@ Mail is never drained at prompt submit. Added to a turn the operator just starte
 | Claude Code | `hookSpecificOutput.additionalContext`; Claude takes one more turn without a hook error | folded into the `c11 claude-hook stop` hook `Resources/bin/claude` already injects via `--settings` |
 | Codex | does not drain | `Resources/bin/codex` passes `notify` only. It does not pass a Stop hook, a hooks config, or `--enable hooks`. Codex reads the doorbell with `c11 mailbox recv --ack` |
 | Grok Build | does not drain | no per-launch Stop hook; Grok reads the doorbell with `c11 mailbox recv --ack` |
+| OpenCode, Pi, omp | do not drain | their wrappers install no Stop hook; they read the doorbell with `c11 mailbox recv --ack` |
 
 The hook command is:
 
@@ -733,11 +750,11 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecyc
 | `evicted`     | a queued envelope dropped because the per-panel cap was exceeded (inbox floor holds it) |
 | `skipped`     | the ring found the envelope already claimed by a drain; nothing typed |
 | `closed`      | the panel was gone or was not a terminal when the handler ran |
-| `doorbell`    | the invitation was `started` or `submitted`, or Return was pressed on a line already in the composer (`stranded_return`). `bytes` is the invitation, not the envelope |
+| `doorbell`    | the invitation was `started` or `submitted`, or Return was pressed on a line already in the composer (`stranded_return`), or a native confirmation arrived after its two-second deadline (`native_late_accept`; those envelopes count as covered). `route` is the route used. `bytes` is the invitation, not the envelope |
 | `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `opted_out`, `not_stdin`, `draft`, `dialog`, `unknown_prompt`, `unavailable`, `gate_closed`, `input_transaction`, or `already_covered` (a submitted ring already covered every unread envelope) |
 | `doorbell_capped` | this panel already used 20 submitted attempts in the last 10 minutes. `reason` is `rate_capped`. The mail stays queued and is checked again at the end of the window |
 | `doorbell_recheck` | a held composer was looked at again. `reason` is `draft`, `unknown_prompt`, or `stranded` (the composer still holds the doorbell line); `next_ms` is the delay to the next look. One line per look, on the oldest unread envelope |
-| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `turn_open` (the journal showed a turn open at the Return), `interruption_settling`, `pasted_not_submitted`, or `submit_unconfirmed`. The mail stays queued. A line left in the composer is not retyped; a later idle look presses Return on it |
+| `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `turn_open` (the journal showed a turn open at the Return), `interruption_settling`, `pasted_not_submitted`, or `submit_unconfirmed`; or, for a native attempt, `native_timeout`, `native_rejected`, `native_disconnected`, `native_replaced`, `native_unavailable`, `native_write_failed`, `native_transcript_unavailable`, `native_inbox_unavailable`, `native_inbox_write_failed`, `native_unconfirmed` or `native_unsupported_invitation`. A native row is the attempt itself (`route` is the native route); the typed fallback is a later row with `route: typed`, `native_route` and `native_failure`. The mail stays queued. A line left in the composer is not retyped; a later idle look presses Return on it |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows

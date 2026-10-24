@@ -118,7 +118,7 @@ def main() -> int:
                 assert server.calls[-1] == (f"history.{action}", {}), server.calls
                 assert json.loads(run("history", action, "--json").stdout) == {**entry(2, True), "position": 1}
                 out = run("history", action, "--limit", "2", success=False)
-                assert "limit applies to history listing" in out.stderr, out.stderr
+                assert "unknown flag '--limit'" in out.stderr, out.stderr
                 assert not any(m.startswith("history.") for m, _ in server.calls), server.calls
                 server.navigation_error = f"No {'earlier' if action == 'back' else 'later'} focus history entry"
                 out = run("history", action, success=False)
@@ -129,7 +129,7 @@ def main() -> int:
                 assert "limit must be an integer from 1 to 200" in out.stderr, out.stderr
                 assert not any(m.startswith("history.") for m, _ in server.calls), server.calls
             out = run("history", "--limit", success=False)
-            assert "limit must be an integer from 1 to 200" in out.stderr
+            assert "--limit requires a value" in out.stderr, out.stderr
             for args in (("history", "sideways"), ("history", "back", "forward"), ("history", "--unknown")):
                 run(*args, success=False)
                 assert not any(m.startswith("history.") for m, _ in server.calls), server.calls

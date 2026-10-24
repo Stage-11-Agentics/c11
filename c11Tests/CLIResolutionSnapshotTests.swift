@@ -2158,6 +2158,14 @@ extension CLIResolutionSnapshotTests {
             ["panel-action", "--action", "close-right"], ["panel-action", "close-others"],
             ["panel-action", "--workspace", Self.closeWorkspace, "--action", "close-left"],
             ["workspace-action", "close-below"], ["workspace-action", "--action", "close-above"],
+            // The handler runs the last --action and trims it, as the server does.
+            ["panel-action", "--action", "pin", "--action", "close-right"],
+            ["panel-action", "--action=pin", "--action=close-right"],
+            ["panel-action", " close-right"], ["panel-action", "--action", " Close-Others "],
+            ["tab-action", "--action", "pin", "--action", "close-left"],
+            ["workspace-action", "--action", "pin", "--action", "close-below"],
+            ["workspace-action", "--action=pin", "--action=close-above"],
+            ["workspace-action", " close-below"],
         ]
         for argv in cases {
             guard let run = runClose(argv) else { return }
@@ -2226,7 +2234,12 @@ extension CLIResolutionSnapshotTests {
     }
 
     func testTmuxKillVerbsRequireATarget() {
-        for argv in [["__tmux-compat", "kill-pane"], ["__tmux-compat", "kill-window"]] {
+        for argv in [
+            ["__tmux-compat", "kill-pane"], ["__tmux-compat", "kill-window"],
+            ["__tmux-compat", "killp"], ["__tmux-compat", "killw"],
+            ["__tmux-compat", "kill-pane", "-t", ""], ["__tmux-compat", "kill-window", "-t", ""],
+            ["__tmux-compat", "killp", "-t", "  "], ["__tmux-compat", "killw", "-t", " "],
+        ] {
             guard let run = runClose(argv) else { return }
             XCTAssertNotEqual(run.result.status, 0, "\(argv)")
             XCTAssertTrue(run.result.stderr.contains("requires -t"), "\(argv): \(run.result.stderr)")

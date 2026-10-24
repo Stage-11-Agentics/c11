@@ -6962,19 +6962,26 @@ struct CMUXCLI {
             let options = args.prefix(while: { $0 != "--" })
             return options.indices.contains { spellings.contains(options[$0]) && $0 + 1 < options.endIndex }
         }
+        // The action the handler will run, parsed the way `runPanelAction` /
+        // `runWorkspaceAction` parse it (the last `--action` wins, else the
+        // first remaining word) and normalized the way the server does.
         func action() -> String? {
-            let options = Array(args.prefix(while: { $0 != "--" }))
-            if let index = options.firstIndex(of: "--action"), index + 1 < options.count { return options[index + 1] }
-            let values = Set(["--workspace", "--panel", "--action", "--title", "--url"].flatMap(Self.flagSpellings))
-            var index = 0
-            while index < options.count {
-                if values.contains(options[index]) { index += 2; continue }
-                if options[index].hasPrefix("-") { index += 1; continue }
-                return options[index]
+            let options = command == "panel-action"
+                ? ["--workspace", "--panel", "--panel", "--action", "--title", "--url"]
+                : ["--workspace", "--action", "--title"]
+            var remaining = args
+            var actionOption: String?
+            for name in options {
+                let (value, rest) = parseOption(remaining, name: name)
+                if name == "--action" { actionOption = value }
+                remaining = rest
             }
-            return nil
+            return actionOption ?? remaining.first
         }
-        let closeAction = action().map { $0.lowercased().replacingOccurrences(of: "-", with: "_").hasPrefix("close") } ?? false
+        let closeAction = action().map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                .replacingOccurrences(of: "-", with: "_").hasPrefix("close")
+        } ?? false
         switch command {
         case "close-panel" where !has("--panel"):
             throw CLIError(message: String(localized: "cli.close.panel.requiresTarget", defaultValue: "close-panel requires --panel <ref>. Use --panel self to close the calling panel."))
@@ -20597,13 +20604,17 @@ struct CMUXCLI {
         case "kill-window", "killw":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
             // No default target: a kill without -t would close the caller.
-            guard parsed.value("-t") != nil else { throw CLIError(message: "kill-window requires -t <target>") }
+            guard parsed.value("-t").map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? false else {
+                throw CLIError(message: String(localized: "cli.tmux.killWindow.requiresTarget", defaultValue: "kill-window requires -t <target>"))
+            }
             let workspaceId = try tmuxResolveWorkspaceTarget(parsed.value("-t"), client: client)
             _ = try client.sendV2(method: "workspace.close", params: ["workspace_id": workspaceId])
 
         case "kill-pane", "killp":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
-            guard parsed.value("-t") != nil else { throw CLIError(message: "kill-pane requires -t <target>") }
+            guard parsed.value("-t").map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? false else {
+                throw CLIError(message: String(localized: "cli.tmux.killPane.requiresTarget", defaultValue: "kill-pane requires -t <target>"))
+            }
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
             _ = try client.sendV2(method: "panel.close", params: [
                 "workspace_id": target.workspaceId,

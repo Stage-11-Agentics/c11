@@ -270,8 +270,8 @@ c11 workspace-color get|clear [--workspace <id|ref>]
 c11 workspace-color list-palette                      # the accepted names
 
 # Close
-c11 close-panel [--panel <id|ref>]      # Close a panel (defaults to caller's)
-c11 close-workspace --workspace <id|ref>    # Close entire workspace
+c11 close-panel --panel <id|ref|self>      # Close a panel; required, `self` = $C11_PANEL_ID
+c11 close-workspace --workspace <id|ref|self>    # Close entire workspace
 ```
 
 For these four create commands, `--command` queues literal text plus Return into the new terminal shell through Ghostty startup input. It keeps the shell alive and reports `initial_input: queued`, which does not mean the command finished. Blank input is omitted. Browser/markdown panels and areas reject nonblank `--command`; `new-workspace --layout` also rejects it before creating anything. `initial_command` remains a separate shell-replacement RPC field. Queued input is consumed at native creation and is not saved or replayed during restore.
@@ -543,7 +543,7 @@ c11 send --panel panel:2 --no-submit -- --literal-flag-text
 
 **Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush), not that an agent read or processed the text. `submitted: false` means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. A queued payload is never an agent acknowledgment.
 
-**Targeting is strict.** An empty or unresolvable ref (`--panel ""`, a stale `panel:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-panel`, `close-workspace`, `close-window`, `workspace-action`, `panel-action`, `clear-history`) hold the same rule for every ref they are given; omitting a ref still takes the documented default. For `send` / `send-key`, a panel ref is a global handle: `--panel` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a panel within the caller's workspace, so pass `--workspace` alongside it there.)
+**Targeting is strict.** An empty or unresolvable ref (`--panel ""`, a stale `panel:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-panel`, `close-workspace`, `close-window`, `workspace-action`, `panel-action`, `clear-history`) hold the same rule for every ref they are given. The close commands and close actions also require a ref: none falls back to the caller or the focused target, and `self` names the caller explicitly. For `send` / `send-key`, a panel ref is a global handle: `--panel` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a panel within the caller's workspace, so pass `--workspace` alongside it there.)
 
 Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--panel`) still targets that workspace's focused area — you named a target, just a coarser one.
 

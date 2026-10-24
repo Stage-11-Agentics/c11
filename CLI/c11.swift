@@ -36,12 +36,16 @@ enum CLIFlagReadLog {
     private static var armed = false
     private static var suspended = 0
     private static var accepted: [String: Set<String>] = [:]
+    private static var arity: [String: String] = [:]
+    private static var positionals: [String: Int] = [:]
     private static var queried: Set<String> = []
     private static var registered = false
 
-    static func recordAccepted(command: String, flags: Set<String>) {
+    static func recordAccepted(command: String, flags: Set<String>, arity: String, positionals: Int) {
         guard path != nil else { return }
         accepted[command, default: []].formUnion(flags)
+        self.arity[command] = arity
+        self.positionals[command] = positionals
         registerFlush()
     }
 
@@ -76,6 +80,8 @@ enum CLIFlagReadLog {
         guard let path else { return }
         let object: [String: Any] = [
             "accepted": accepted.mapValues { $0.sorted() },
+            "arity": arity,
+            "positionals": positionals,
             "queried": queried.sorted(),
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return }
@@ -2403,6 +2409,7 @@ struct CMUXCLI {
             let preflight = try preflightCommandFlags(command: command, args: commandArgs)
             commandArgs = preflight.args
             jsonOutput = jsonOutput || preflight.requestsJSON
+            try requireExplicitCloseTarget(command: command, args: commandArgs)
             if isTerminalCreate {
                 (createCommandText, createArgs) = parseOption(commandArgs, name: "--command")
             }
@@ -2868,7 +2875,22 @@ struct CMUXCLI {
             guard let target = optionValue(commandArgs, name: "--window") else {
                 throw CLIError(message: "close-window requires --window")
             }
-            let windowId = try resolveScopedWindow(target, client: client)
+            let windowId: String
+            if target.lowercased() == "self" {
+                // The window holding the caller's own workspace, never the key window.
+                guard let workspace = try resolvedSelfCloseTarget("self", kind: "workspace") else {
+                    throw CLIError(message: "close-window requires --window")
+                }
+                var caller: [String: Any] = ["workspace_id": workspace]
+                if let panel = Self.callerPanelEnv() { caller["panel_id"] = panel }
+                let identified = try client.sendV2(method: "system.identify", params: ["caller": caller])
+                guard let callerWindow = (identified["caller"] as? [String: Any])?["window_id"] as? String else {
+                    throw CLIError(message: String(localized: "cli.close.window.selfUnresolved", defaultValue: "close-window --window self: c11 did not report the calling workspace's window."))
+                }
+                windowId = callerWindow
+            } else {
+                windowId = try resolveScopedWindow(target, client: client)
+            }
             let response = try sendV1Command("close_window \(windowId)", client: client)
             print(response)
 
@@ -3527,9 +3549,10 @@ struct CMUXCLI {
 
         case "close-panel":
             try rejectEmptyTargetFlags(commandArgs)
-            let csWsFlag = optionValue(commandArgs, name: "--workspace")
+            let csWsFlag = try resolvedSelfCloseTarget(optionValue(commandArgs, name: "--workspace"), kind: "workspace")
             let workspaceArg = csWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceRaw = optionValue(commandArgs, name: "--panel") ?? (csWsFlag == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            // Preflight requires --panel; `self` is the caller's own panel.
+            let surfaceRaw = try resolvedSelfCloseTarget(optionValue(commandArgs, name: "--panel"), kind: "panel")
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -3761,7 +3784,7 @@ struct CMUXCLI {
 
         case "close-workspace":
             try rejectEmptyTargetFlags(commandArgs)
-            guard let workspaceRaw = optionValue(commandArgs, name: "--workspace") else {
+            guard let workspaceRaw = try resolvedSelfCloseTarget(optionValue(commandArgs, name: "--workspace"), kind: "workspace") else {
                 throw CLIError(message: "close-workspace requires --workspace")
             }
             var params: [String: Any] = [:]
@@ -6620,6 +6643,9 @@ struct CMUXCLI {
         /// pass as text; `--` makes the rest literal.
         var textStart: Int?
         var honorsEndOfOptions: Bool
+        /// How many positional words the parser reads, set from
+        /// `declaredPositionalArity` (subcommand words included).
+        var positionals: CLIPositionalArity = .unchecked
 
         init(
             flags: Set<String> = [],
@@ -6635,6 +6661,27 @@ struct CMUXCLI {
             self.literalTailStart = literalTailStart
             self.textStart = textStart
             self.honorsEndOfOptions = honorsEndOfOptions
+        }
+    }
+
+    /// Positional words outside text regions. A parser that reads none, or a
+    /// fixed few, gets a bound so a stray word (`close-panel panel:268`) fails
+    /// before the socket instead of being ignored.
+    enum CLIPositionalArity: Equatable {
+        /// Not declared yet. DEBUG builds' declaration test fails on it.
+        case unchecked
+        /// The parser reads a variable list or joins words into text.
+        case any
+        case atMost(Int)
+
+        static let none = CLIPositionalArity.atMost(0)
+
+        var logValue: String {
+            switch self {
+            case .unchecked: return "unchecked"
+            case .any: return "any"
+            case .atMost(let count): return "atMost:\(count)"
+            }
         }
     }
 
@@ -6673,15 +6720,25 @@ struct CMUXCLI {
             spec.flags.formUnion(spellings)
             if spec.valueOptions.contains(flag) { spec.valueOptions.formUnion(spellings) }
         }
-        #if DEBUG
-        CLIFlagReadLog.recordAccepted(command: command, flags: spec.flags.union(["--json"]))
-        #endif
+        spec.positionals = declaredPositionalArity(command: command, args: args)
         var normalized: [String] = []
         var requestsJSON = false
+        var positionalCount = 0
+        func countPositional(_ word: String) throws {
+            positionalCount += 1
+            if case .atMost(let limit) = spec.positionals, positionalCount > limit {
+                throw CLIError(message: unexpectedPositionalMessage(command: command, word: word, valueOptions: spec.valueOptions))
+            }
+        }
         var index = 0
         while index < args.count {
-            if spec.literalFlagArgumentIndices.contains(index)
-                || (spec.literalTailStart.map { index >= $0 } ?? false) {
+            if spec.literalFlagArgumentIndices.contains(index) {
+                try countPositional(args[index])
+                normalized.append(args[index])
+                index += 1
+                continue
+            }
+            if spec.literalTailStart.map({ index >= $0 }) ?? false {
                 normalized.append(args[index])
                 index += 1
                 continue
@@ -6701,6 +6758,7 @@ struct CMUXCLI {
                 of: #"^--?[A-Za-z][A-Za-z0-9-]*(?:=.*)?$"#,
                 options: .regularExpression
             ) != nil else {
+                if !inText { try countPositional(argument) }
                 normalized.append(argument)
                 index += 1
                 continue
@@ -6746,7 +6804,229 @@ struct CMUXCLI {
             }
             throw CLIError(message: unknownFlagMessage(command: command, flag: argument))
         }
+        #if DEBUG
+        CLIFlagReadLog.recordAccepted(
+            command: command,
+            flags: spec.flags.union(["--json"]),
+            arity: spec.positionals.logValue,
+            positionals: positionalCount
+        )
+        #endif
         return CLIFlagPreflightResult(args: normalized, requestsJSON: requestsJSON)
+    }
+
+    /// How many positional words each command's parser reads, counting the
+    /// subcommand words themselves (`config list` reads 1, `browser <ref> get
+    /// attr <sel> <attr>` reads 5). Text a parser joins, a variable list, and a
+    /// parser that treats every `--word` as taking a value are `.any`, so the
+    /// bound never rejects a word a parser reads. Help-dispatch and
+    /// unsupported commands keep their own errors (`.any`).
+    private func declaredPositionalArity(command: String, args: [String]) -> CLIPositionalArity {
+        let first = args.first?.lowercased()
+        func sub(_ table: [String: Int], bare: Int = 0) -> CLIPositionalArity {
+            guard let first else { return .atMost(bare) }
+            return table[first].map { .atMost($0) } ?? .any
+        }
+        switch command {
+        case "workspace-action", "panel-action", "rename-panel", "set-title", "set-description", "ssh",
+             "rename-workspace", "rename-window", "send", "send-panel", "paste", "set-status", "clear-status",
+             "set-progress", "log", "set-workspace-metadata", "get-workspace-metadata", "clear-workspace-metadata",
+             "set-workspace-description", "set-workspace-icon", "pipe-pane", "find-window", "set-hook",
+             "set-buffer", "respawn-pane", "display-message", "open-browser", "navigate",
+             "popup", "bind-key", "unbind-key", "copy-mode", "claude-teams":
+            return .any
+        case "ping", "capabilities", "brand", "identify", "list-windows", "current-window", "new-window",
+             "focus-window", "close-window", "move-workspace-to-window", "reorder-workspaces", "get-titlebar-state",
+             "list-workspaces", "ssh-session-end", "workspace-apply", "snapshot", "list-snapshots", "new-workspace",
+             "list-areas", "list-area-panels", "tree", "family", "launch-agent", "lower-flag", "delegate",
+             "undelegate", "suppress", "unsuppress", "new-panel", "close-panel", "area-confirm", "refresh-panels",
+             "panel-health", "debug-terminals", "trigger-flash", "cancel-flash", "list-panels", "focus-panel",
+             "close-workspace", "select-workspace", "get-workspace-root", "current-workspace", "read-selection",
+             "input-state", "read-screen", "notify", "list-notifications", "clear-notifications", "list-status",
+             "clear-progress", "clear-log", "list-log", "sidebar-state", "set-agent", "set-metadata",
+             "get-metadata", "clear-metadata", "simulate-app-active", "markdown-content", "usage", "report",
+             "remote-daemon-status", "health", "doctor", "feedback", "agents", "capture-pane", "resize-pane",
+             "swap-pane", "break-pane", "join-pane", "last-window", "next-window", "previous-window", "last-pane",
+             "clear-history", "paste-buffer", "list-buffers", "browser-back", "browser-forward",
+             "browser-reload", "get-url", "focus-webview", "is-webview-focused":
+            return .none
+        case "move-panel", "reorder-panel", "reorder-workspace", "set-panel-icon", "set-panel-color", "restore",
+             "new-split", "new-area", "focus-area", "raise-flag", "drag-panel-to-split", "set-workspace-root",
+             "send-key", "send-key-panel", "set-app-focus", "guide", "wait-for", "agent-event", "history",
+             "agent-hook", "codex-hook":
+            return .atMost(1)
+        case "rpc", "resize-window":
+            return .atMost(2)
+        case "workspace":
+            if first == "recents" {
+                switch args.dropFirst().first?.lowercased() {
+                case "list": return .atMost(2)
+                case "pin", "unpin", "remove": return .atMost(3)
+                case nil: return .atMost(1)
+                default: return .any
+                }
+            }
+            return sub(["apply": 1, "new": 1, "export-blueprint": 1])
+        case "feed":
+            switch firstCommandWord(args, valueOptions: Set(Self.flagSpellings("--panel")).union(["--workspace", "--scope", "--text", "--by"])) {
+            case "list", "watch": return .atMost(1)
+            case "open", "answer": return .atMost(2)
+            default: return .any
+            }
+        case "default-agent": return sub(["get": 1, "set": 2, "launch": 1])
+        case "conversation":
+            return sub(["capture-runtime": 1, "claim": 1, "push": 1, "tombstone": 1, "list": 1, "get": 1,
+                        "clear": 1, "resume": 1, "help": 1])
+        case "state": return sub(["save": 1, "verify": 2, "help": 1])
+        case "app": return sub(["restart": 1, "help": 1])
+        case "claude-hook":
+            return sub(["session-start": 1, "active": 1, "stop": 1, "idle": 1, "prompt-submit": 1,
+                        "notification": 1, "notify": 1, "session-end": 1, "pre-tool-use": 1, "post-tool-use": 1,
+                        "stop-failure": 1, "subagent-start": 1, "subagent-stop": 1, "pre-compact": 1,
+                        "permission-request": 1, "help": 1])
+        case "messages": return sub(["view": 1, "help": 1])
+        case "journal": return sub(["query": 1, "export": 1, "clear": 1])
+        case "skill":
+            return sub(["path": 1, "status": 1, "list": 1, "install": 1, "remove": 1, "uninstall": 1, "help": 1])
+        case "terminal-theme": return sub(["list": 1, "clear": 1])
+        case "model-costs": return sub(["list": 1, "help": 1])
+        case "events": return sub(["tail": 1, "help": 1])
+        case "config": return sub(["list": 1, "recent": 1, "stats": 1])
+        case "themes":
+            return sub(["list": 1, "get": 1, "clear": 1, "reload": 1, "path": 1, "dump": 1, "set": 2, "validate": 2, "diff": 3])
+        case "ui":
+            guard first == "themes" else { return first == nil ? .none : .any }
+            switch args.dropFirst().first?.lowercased() {
+            case nil: return .atMost(1)
+            case "list", "get", "clear", "reload", "path", "dump": return .atMost(2)
+            case "set", "validate", "inherit": return .atMost(3)
+            case "diff": return .atMost(4)
+            default: return .any
+            }
+        case "workspace-color", "panel-color": return sub(["set": 2, "get": 1, "clear": 1, "list-palette": 1])
+        case "workspace-group":
+            return sub(["list": 1, "create": 1, "rename": 1, "delete": 1, "ungroup": 1, "collapse": 1,
+                        "expand": 1, "pin": 1, "unpin": 1, "focus": 1, "add": 1, "remove": 1, "move": 1,
+                        "set-color": 1, "set-icon": 1])
+        case "markdown":
+            var routed = args
+            for name in ["--workspace", "--window", "--panel", "--area"] { routed = parseOption(routed, name: name).1 }
+            switch routed.first?.lowercased() {
+            case "scroll", "visible", "theme", "typeface", "font", "open-external", "history", "links", "backlinks":
+                return .atMost(1)
+            case "open": return .atMost(2)
+            case nil: return .none
+            default: return .atMost(1)
+            }
+        case "mailbox":
+            return sub(["send": 2, "trace": 2, "recv": 1, "view": 1, "inbox-dir": 1, "outbox-dir": 1, "tail": 1,
+                        "panel-name": 1, "tab-name": 1, "surface-name": 1, "sender-from": 1, "new-id": 1,
+                        "watch": 1, "help": 1])
+        case "browser":
+            return browserPositionalArity(args)
+        default:
+            return .unchecked
+        }
+    }
+
+    /// Positional words of `browser [<ref>] <verb> ...`: the panel handle
+    /// when given as a word, the verb, and what the verb's parser reads.
+    private func browserPositionalArity(_ args: [String]) -> CLIPositionalArity {
+        guard let located = browserVerbArgumentIndex(args) else { return .any }
+        let panelSpellings = Set(Self.flagSpellings("--panel"))
+        let handleWords = args[..<located.index].contains { !$0.hasPrefix("-") }
+            && !args[..<located.index].contains(where: panelSpellings.contains) ? 1 : 0
+        let verbArgs: [String: Int] = [
+            "identify": 0, "back": 0, "forward": 0, "reload": 0, "url": 0, "get-url": 0, "focus-webview": 0,
+            "focus_webview": 0, "is-webview-focused": 0, "is_webview_focused": 0, "snapshot": 0, "screenshot": 0,
+            "input_mouse": 0, "input_keyboard": 0, "input_touch": 0, "dom": 0, "locator": 0,
+            "wait": 1, "click": 1, "dblclick": 1, "hover": 1, "focus": 1, "check": 1, "uncheck": 1,
+            "scroll-into-view": 1, "scrollintoview": 1, "scrollinto": 1, "press": 1, "key": 1, "keydown": 1,
+            "keyup": 1, "scroll": 1, "frame": 1, "console": 1, "errors": 1, "highlight": 1, "keep-live": 1,
+            "keep_live": 1, "offline": 1, "screencast": 1,
+            "select": 2, "is": 2, "download": 2, "state": 2, "viewport": 2, "geolocation": 2, "geo": 2,
+            "trace": 2, "network": 2,
+            "get": 3, "find": 3, "cookies": 3, "storage": 4,
+        ]
+        guard let count = verbArgs[located.verb] else { return .any }
+        return .atMost(handleWords + 1 + count)
+    }
+
+    /// Close verbs never fall back to the caller or the focused target: every
+    /// subprocess of an agent inherits `C11_PANEL_ID`, so a malformed close
+    /// from a helper would close the agent itself. `--panel self` /
+    /// `--workspace self` name the caller explicitly.
+    private func requireExplicitCloseTarget(command: String, args: [String]) throws {
+        func has(_ name: String) -> Bool {
+            let spellings = Set(Self.flagSpellings(name))
+            let options = args.prefix(while: { $0 != "--" })
+            return options.indices.contains { spellings.contains(options[$0]) && $0 + 1 < options.endIndex }
+        }
+        func action() -> String? {
+            let options = Array(args.prefix(while: { $0 != "--" }))
+            if let index = options.firstIndex(of: "--action"), index + 1 < options.count { return options[index + 1] }
+            let values = Set(["--workspace", "--panel", "--action", "--title", "--url"].flatMap(Self.flagSpellings))
+            var index = 0
+            while index < options.count {
+                if values.contains(options[index]) { index += 2; continue }
+                if options[index].hasPrefix("-") { index += 1; continue }
+                return options[index]
+            }
+            return nil
+        }
+        let closeAction = action().map { $0.lowercased().replacingOccurrences(of: "-", with: "_").hasPrefix("close") } ?? false
+        switch command {
+        case "close-panel" where !has("--panel"):
+            throw CLIError(message: String(localized: "cli.close.panel.requiresTarget", defaultValue: "close-panel requires --panel <ref>. Use --panel self to close the calling panel."))
+        case "panel-action" where closeAction && !has("--panel"):
+            throw CLIError(message: String(localized: "cli.close.panelAction.requiresTarget", defaultValue: "panel-action close actions require --panel <ref>. Use --panel self for the calling panel."))
+        case "workspace-action" where closeAction && !has("--workspace"):
+            throw CLIError(message: String(localized: "cli.close.workspaceAction.requiresTarget", defaultValue: "workspace-action close actions require --workspace <ref>. Use --workspace self for the calling workspace."))
+        default:
+            return
+        }
+    }
+
+    /// `self` for a close target: the caller's own panel or workspace from the
+    /// environment, never the focused one.
+    private func resolvedSelfCloseTarget(_ raw: String?, kind: String) throws -> String? {
+        guard raw?.lowercased() == "self" else { return raw }
+        let value: String?
+        if kind == "panel" {
+            value = Self.callerPanelEnv()
+        } else {
+            let env = ProcessInfo.processInfo.environment
+            value = [env["C11_WORKSPACE_ID"], env["CMUX_WORKSPACE_ID"]]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+        }
+        guard let value else {
+            let format = String(localized: "cli.close.self.unavailable", defaultValue: "--%@ self needs a c11 terminal: %@ is not set.")
+            throw CLIError(message: String(format: format, kind, kind == "panel" ? "C11_PANEL_ID" : "C11_WORKSPACE_ID"))
+        }
+        return value
+    }
+
+    /// `close-panel: unexpected argument 'panel:268'.` plus, when the word is
+    /// a handle the command takes through an option, `Did you mean --panel panel:268?`
+    private func unexpectedPositionalMessage(command: String, word: String, valueOptions: Set<String>) -> String {
+        let message = unexpectedArgumentMessage(command: command, argument: word) + "."
+        let lowered = word.lowercased()
+        let option: String?
+        if ["panel:", "tab:", "surface:"].contains(where: lowered.hasPrefix) || UUID(uuidString: word) != nil {
+            option = "--panel"
+        } else if lowered.hasPrefix("workspace:") {
+            option = "--workspace"
+        } else if lowered.hasPrefix("window:") {
+            option = "--window"
+        } else if lowered.hasPrefix("area:") || lowered.hasPrefix("pane:") {
+            option = "--area"
+        } else {
+            option = nil
+        }
+        guard let option, valueOptions.contains(option) else { return message }
+        let format = String(localized: "cli.command.unexpectedArgument.optionHint", defaultValue: "Did you mean %@ %@?")
+        return message + " " + String(format: format, option, word)
     }
 
     /// Rewrites `--panel=<ref>` (any spelling), `--area=`, `--workspace=` and
@@ -8735,7 +9015,7 @@ struct CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (workspaceRawOpt, rem0) = parseOption(commandArgs, name: "--workspace")
         let (actionOpt, rem1) = parseOption(rem0, name: "--action")
         let (titleOpt, rem2) = parseOption(rem1, name: "--title")
 
@@ -8755,6 +9035,7 @@ struct CMUXCLI {
         }
 
         let action = actionRaw.lowercased().replacingOccurrences(of: "-", with: "_")
+        let workspaceOpt = try resolvedSelfCloseTarget(workspaceRawOpt, kind: "workspace")
         let workspaceArg = workspaceOpt ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let workspaceId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
 
@@ -8797,8 +9078,8 @@ struct CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
-        let (panelOpt, rem1) = parseOption(rem0, name: "--panel")
+        let (workspaceRawOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (panelRawOpt, rem1) = parseOption(rem0, name: "--panel")
         let (surfaceOpt, rem2) = parseOption(rem1, name: "--panel")
         let (actionOpt, rem3) = parseOption(rem2, name: "--action")
         let (titleOpt, rem4) = parseOption(rem3, name: "--title")
@@ -8820,6 +9101,8 @@ struct CMUXCLI {
         }
 
         let action = actionRaw.lowercased().replacingOccurrences(of: "-", with: "_")
+        let workspaceOpt = try resolvedSelfCloseTarget(workspaceRawOpt, kind: "workspace")
+        let panelOpt = try resolvedSelfCloseTarget(panelRawOpt ?? surfaceOpt, kind: "panel")
         let workspaceArg = workspaceOpt ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let tabArg = panelOpt
             ?? surfaceOpt
@@ -12282,12 +12565,12 @@ struct CMUXCLI {
 
         case "close-window":
             return """
-            Usage: c11 close-window --window <id|ref|index>
+            Usage: c11 close-window --window <id|ref|index|self>
 
             Close the specified window.
 
             Flags:
-              --window <id|ref|index>   Window to close (required)
+              --window <id|ref|index|self>   Window to close (required; self = the window of $C11_WORKSPACE_ID)
 
             Example:
               c11 close-window --window 0
@@ -12433,13 +12716,14 @@ struct CMUXCLI {
 
             Flags:
               --action <name>              Action name (required if not positional)
-              --workspace <id|ref|index>   Target workspace (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <id|ref|index|self>  Target workspace (default: current/$C11_WORKSPACE_ID;
+                                           required for close-above | close-below)
               --title <text>               Title for rename (or pass trailing title text)
 
             Example:
               c11 workspace-action --workspace workspace:2 --action pin
               c11 workspace-action --action rename --title "infra"
-              c11 workspace-action close-below
+              c11 workspace-action --workspace self close-below
             """
         case "panel-action", "tab-action":
             return """
@@ -12457,14 +12741,15 @@ struct CMUXCLI {
 
             Flags:
               --action <name>              Action name (required if not positional)
-              --panel <id|ref|index>       Target panel (default: $C11_PANEL_ID, then focused panel)
+              --panel <id|ref|index|self>  Target panel (default: $C11_PANEL_ID, then focused panel;
+                                           required for close-left | close-right | close-others)
               --workspace <id|ref|index>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
               --title <text>               Title for rename (or pass trailing title text)
               --url <url>                  Optional URL for new-browser-right
 
             Example:
               c11 panel-action --panel panel:3 --action pin
-              c11 panel-action --action close-right
+              c11 panel-action --panel self --action close-right
               c11 panel-action --panel panel:2 --action rename --title "build logs"
             """
         case "rename-panel", "rename-tab":
@@ -12985,17 +13270,17 @@ struct CMUXCLI {
             """
         case "close-panel", "close-tab":
             return """
-            Usage: c11 close-panel [flags]
+            Usage: c11 close-panel --panel <id|ref|self> [flags]
 
-            Close a panel. Defaults to the focused panel if none specified.
+            Close a panel. The target is required: there is no default.
 
             Flags:
-              --panel <id|ref>   Panel to close (default: $C11_PANEL_ID)
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --panel <id|ref|self>   Panel to close (required; self = $C11_PANEL_ID)
+              --workspace <id|ref|self>   Workspace context (default: $C11_WORKSPACE_ID)
 
             Example:
-              c11 close-panel
               c11 close-panel --panel panel:3
+              c11 close-panel --panel self
             """
         case "drag-panel-to-split", "drag-tab-to-split":
             return """
@@ -13108,12 +13393,12 @@ struct CMUXCLI {
             """
         case "close-workspace":
             return """
-            Usage: c11 close-workspace --workspace <id|ref|index>
+            Usage: c11 close-workspace --workspace <id|ref|index|self>
 
             Close the specified workspace.
 
             Flags:
-              --workspace <id|ref|index>   Workspace to close (required)
+              --workspace <id|ref|index|self>   Workspace to close (required; self = $C11_WORKSPACE_ID)
 
             Example:
               c11 close-workspace --workspace workspace:2
@@ -20311,11 +20596,14 @@ struct CMUXCLI {
 
         case "kill-window", "killw":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
+            // No default target: a kill without -t would close the caller.
+            guard parsed.value("-t") != nil else { throw CLIError(message: "kill-window requires -t <target>") }
             let workspaceId = try tmuxResolveWorkspaceTarget(parsed.value("-t"), client: client)
             _ = try client.sendV2(method: "workspace.close", params: ["workspace_id": workspaceId])
 
         case "kill-pane", "killp":
             let parsed = try parseTmuxArguments(rawArgs, valueFlags: ["-t"], boolFlags: [])
+            guard parsed.value("-t") != nil else { throw CLIError(message: "kill-pane requires -t <target>") }
             let target = try tmuxResolveSurfaceTarget(parsed.value("-t"), client: client)
             _ = try client.sendV2(method: "panel.close", params: [
                 "workspace_id": target.workspaceId,

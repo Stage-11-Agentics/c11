@@ -1502,7 +1502,11 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                 throw Self.posixError("listen")
             }
             listenerFD = fd
-            DispatchQueue.global(qos: .userInitiated).async { [self] in serveOneClient() }
+            // Its own thread, not a GCD worker: hundreds of these in one test
+            // must not exhaust the shared pool.
+            let server = Thread { [self] in serveOneClient() }
+            server.stackSize = 1 << 18
+            server.start()
         }
 
         deinit {
@@ -1514,8 +1518,21 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             finished.wait(timeout: .now() + 2) == .success
         }
 
+        private var resultOverrides: [String: [String: Any]] = [:]
+
+        /// Answer `method` with `result` instead of the default reply.
+        func reply(to method: String, with result: [String: Any]) {
+            lock.lock()
+            resultOverrides[method] = result
+            lock.unlock()
+        }
+
         private func serveOneClient() {
             defer { finished.signal() }
+            // A CLI that never connects (a preflight rejection) must not hold
+            // this thread forever.
+            var descriptor = pollfd(fd: listenerFD, events: Int16(POLLIN), revents: 0)
+            guard Darwin.poll(&descriptor, 1, 20_000) > 0 else { return }
             var clientAddress = sockaddr_un()
             var clientAddressLength = socklen_t(MemoryLayout<sockaddr_un>.size)
             let clientFD = withUnsafeMutablePointer(to: &clientAddress) { pointer in
@@ -1560,8 +1577,13 @@ final class CLIResolutionSnapshotTests: XCTestCase {
 
         private func respond(to request: [String: Any], on clientFD: Int32) {
             let method = request["method"] as? String ?? ""
+            lock.lock()
+            let override = resultOverrides[method]
+            lock.unlock()
             let result: [String: Any]
             switch method {
+            case _ where override != nil:
+                result = override ?? [:]
             case "system.capabilities":
                 result = ["features": [["id": "vocabulary.workspace_area_panel"]]]
             case "panel.list":
@@ -1680,7 +1702,8 @@ extension CLIResolutionSnapshotTests {
                 environmentOverrides: ["HOME": home.path]
             ) else { return }
             if result.stderr.localizedCaseInsensitiveContains("unknown flag")
-                || result.stderr.localizedCaseInsensitiveContains("requires a value") {
+                || result.stderr.localizedCaseInsensitiveContains("requires a value")
+                || result.stderr.localizedCaseInsensitiveContains("unexpected argument") {
                 rejected.append("\(argv.joined(separator: " ")) -> \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
         }
@@ -1922,6 +1945,7 @@ extension CLIResolutionSnapshotTests {
     ]
 
     func testEveryFlagAParserReadsIsDeclared() throws {
+        signal(SIGPIPE, SIG_IGN)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-334-reads-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1946,15 +1970,53 @@ extension CLIResolutionSnapshotTests {
     }
 
     /// Runs one path with the read log on. Returns nil when every name the
-    /// parser read is declared, else a line naming what is wrong.
+    /// parser read is declared and the path declares its positional arity,
+    /// else a line naming what is wrong.
     private static func declarationFinding(
         argv: [String],
         cli: URL,
         directory: URL,
         makeSocket: () throws -> CapturedCLISocket
     ) -> String? {
+        switch declarationRun(argv: argv, cli: cli, directory: directory, makeSocket: makeSocket) {
+        case .failure(let message):
+            return message
+        case .success(let run):
+            let label = argv.joined(separator: " ")
+            var problems: [String] = []
+            let undeclared = run.queried
+                .subtracting(run.accepted)
+                .subtracting(readOnlyToReject.first(where: { label.hasPrefix($0.key + " ") || label == $0.key })?.value ?? [])
+                .subtracting(["--help", "-h"])
+            if !undeclared.isEmpty { problems.append("parser reads \(undeclared.sorted()) not declared") }
+            if run.arity == "unchecked" { problems.append("no positional arity declared") }
+            return problems.isEmpty ? nil : "\(label): " + problems.joined(separator: "; ")
+        }
+    }
+
+    private struct DeclarationRun {
+        var stderr: String
+        var queried: Set<String>
+        var accepted: Set<String>
+        var arity: String
+        var positionals: Int
+        var requests: [[String: Any]]
+    }
+
+    private enum DeclarationRunResult {
+        case success(DeclarationRun)
+        case failure(String)
+    }
+
+    private static func declarationRun(
+        argv: [String],
+        cli: URL,
+        directory: URL,
+        expectRejection: Bool = false,
+        makeSocket: () throws -> CapturedCLISocket
+    ) -> DeclarationRunResult {
         let label = argv.joined(separator: " ")
-        guard let socket = try? makeSocket() else { return "\(label): could not create a fake socket" }
+        guard let socket = try? makeSocket() else { return .failure("\(label): could not create a fake socket") }
         let log = directory.appendingPathComponent("\(UUID().uuidString).json")
         let process = Process()
         process.executableURL = cli
@@ -1974,27 +2036,192 @@ extension CLIResolutionSnapshotTests {
         process.standardInput = FileHandle.nullDevice
         let exited = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in exited.signal() }
-        do { try process.run() } catch { return "\(label): could not run the CLI: \(error)" }
+        do { try process.run() } catch { return .failure("\(label): could not run the CLI: \(error)") }
         if exited.wait(timeout: .now() + 15) == .timedOut {
             process.terminate()
-            return "\(label): CLI did not exit within 15 seconds"
+            return .failure("\(label): CLI did not exit within 15 seconds")
         }
         let errorText = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        if errorText.localizedCaseInsensitiveContains("unknown flag") {
-            return "\(label): rejected by preflight: \(errorText.trimmingCharacters(in: .whitespacesAndNewlines))"
+        if expectRejection {
+            // A rejected argv never connects; give a connection that did
+            // happen a moment to be read before reporting its requests.
+            Thread.sleep(forTimeInterval: 0.2)
+            return .success(DeclarationRun(stderr: errorText, queried: [], accepted: [], arity: "", positionals: 0, requests: socket.requests))
+        }
+        if errorText.localizedCaseInsensitiveContains("unknown flag")
+            || errorText.localizedCaseInsensitiveContains("unexpected argument") {
+            return .failure("\(label): rejected by preflight: \(errorText.trimmingCharacters(in: .whitespacesAndNewlines))")
         }
         guard let data = try? Data(contentsOf: log),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let queried = object["queried"] as? [String],
               let acceptedByCommand = object["accepted"] as? [String: [String]],
-              !acceptedByCommand.isEmpty else {
-            return "\(label): no read log (the path wrote no declaration)"
+              let arityByCommand = object["arity"] as? [String: String],
+              let positionalsByCommand = object["positionals"] as? [String: Int],
+              let command = acceptedByCommand.keys.first else {
+            return .failure("\(label): no read log (the path wrote no declaration)")
         }
-        let accepted = Set(acceptedByCommand.values.flatMap { $0 })
-        let undeclared = Set(queried)
-            .subtracting(accepted)
-            .subtracting(readOnlyToReject.first(where: { label.hasPrefix($0.key + " ") || label == $0.key })?.value ?? [])
-            .subtracting(["--help", "-h"])
-        return undeclared.isEmpty ? nil : "\(label): parser reads \(undeclared.sorted()) not declared"
+        return .success(DeclarationRun(
+            stderr: errorText,
+            queried: Set(queried),
+            accepted: Set(acceptedByCommand.values.flatMap { $0 }),
+            arity: arityByCommand[command] ?? "unchecked",
+            positionals: positionalsByCommand[command] ?? 0,
+            requests: socket.requests
+        ))
+    }
+
+    /// For every path with a bounded arity, one word past the bound fails
+    /// before the socket with "unexpected argument".
+    func testEveryBoundedArityRejectsOneMoreWord() throws {
+        // The fake socket may answer a CLI that already exited.
+        signal(SIGPIPE, SIG_IGN)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-481-arity-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cli = try bundledCLI()
+        let lock = NSLock()
+        var findings: [String] = []
+        var bounded = 0
+        let paths = Self.declarationPaths
+        DispatchQueue.concurrentPerform(iterations: paths.count) { index in
+            let argv = paths[index]
+            guard case .success(let run) = Self.declarationRun(argv: argv, cli: cli, directory: directory, makeSocket: { try CapturedCLISocket() }),
+                  run.arity.hasPrefix("atMost:"), let limit = Int(run.arity.dropFirst("atMost:".count)) else { return }
+            let extra = Array(repeating: "stray-c11-481", count: max(1, limit - run.positionals + 1))
+            let label = (argv + extra).joined(separator: " ")
+            var finding: String?
+            switch Self.declarationRun(argv: argv + extra, cli: cli, directory: directory, expectRejection: true, makeSocket: { try CapturedCLISocket() }) {
+            case .failure(let message):
+                finding = message
+            case .success(let rejected):
+                if !rejected.stderr.contains("unexpected argument 'stray-c11-481'") {
+                    finding = "\(label): not rejected as a stray word: \(rejected.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+                } else if !rejected.requests.isEmpty {
+                    finding = "\(label): reached the socket: \(rejected.requests)"
+                }
+            }
+            lock.lock()
+            bounded += 1
+            if let finding { findings.append(finding) }
+            lock.unlock()
+        }
+        XCTAssertEqual(findings.sorted(), [], findings.sorted().joined(separator: "\n"))
+        XCTAssertGreaterThan(bounded, 50, "expected most paths to declare a bound")
+    }
+}
+
+// MARK: - C11-481: positional arity and explicit close targets
+
+extension CLIResolutionSnapshotTests {
+    private static let closeCaller = "ddd11111-2222-3333-4444-555566667777"
+    private static let closeOther = "eee11111-2222-3333-4444-555566667777"
+    private static let closeWorkspace = "11111111-2222-3333-4444-555566667777"
+
+    private func runClose(_ argv: [String], environment: [String: String]? = nil, configure: (CapturedCLISocket) -> Void = { _ in })
+        -> (result: (status: Int32, stdout: String, stderr: String), socket: CapturedCLISocket)? {
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return nil
+        }
+        configure(socket)
+        let env = environment ?? ["C11_PANEL_ID": Self.closeCaller, "C11_WORKSPACE_ID": Self.closeWorkspace]
+        guard let result = runCLI(argv, socketPath: socket.path, environmentOverrides: env) else { return nil }
+        return (result, socket)
+    }
+
+    /// The C11-481 incident: a stray ref is rejected before the CLI connects,
+    /// and the hint names an option only when the command takes it.
+    func testStrayPositionalFailsBeforeSocketWithOptionHint() {
+        let cases: [(argv: [String], stderr: String)] = [
+            (["close-panel", "panel:268"], "Error: close-panel: unexpected argument 'panel:268'. Did you mean --panel panel:268?\n"),
+            (["close-tab", "--panel", "panel:1", "panel:268"], "Error: close-panel: unexpected argument 'panel:268'. Did you mean --panel panel:268?\n"),
+            (["close-panel", "--panel", "panel:1", "--", "panel:268"], "Error: close-panel: unexpected argument 'panel:268'. Did you mean --panel panel:268?\n"),
+            (["identify", "panel:268"], "Error: identify: unexpected argument 'panel:268'. Did you mean --panel panel:268?\n"),
+            (["close-workspace", "--workspace", "workspace:1", "workspace:2"], "Error: close-workspace: unexpected argument 'workspace:2'. Did you mean --workspace workspace:2?\n"),
+            (["ping", "panel:268"], "Error: ping: unexpected argument 'panel:268'.\n"),
+            (["list-windows", "extra"], "Error: list-windows: unexpected argument 'extra'.\n"),
+        ]
+        for (argv, stderr) in cases {
+            guard let run = runClose(argv) else { return }
+            XCTAssertNotEqual(run.result.status, 0, "\(argv)")
+            XCTAssertEqual(run.result.stderr, stderr, "\(argv)")
+            XCTAssertTrue(run.socket.requests.isEmpty, "\(argv) reached the socket: \(run.socket.requests)")
+        }
+    }
+
+    /// No close falls back to `C11_PANEL_ID` or the focused panel.
+    func testCloseCommandsWithoutTargetFailBeforeSocket() {
+        let cases: [[String]] = [
+            ["close-panel"], ["close-tab"], ["close-surface"],
+            ["close-panel", "--workspace", Self.closeWorkspace],
+            ["panel-action", "--action", "close-right"], ["panel-action", "close-others"],
+            ["panel-action", "--workspace", Self.closeWorkspace, "--action", "close-left"],
+            ["workspace-action", "close-below"], ["workspace-action", "--action", "close-above"],
+        ]
+        for argv in cases {
+            guard let run = runClose(argv) else { return }
+            XCTAssertNotEqual(run.result.status, 0, "\(argv)")
+            XCTAssertTrue(run.result.stderr.contains(" require"), "\(argv): \(run.result.stderr)")
+            XCTAssertTrue(run.socket.requests.isEmpty, "\(argv) reached the socket: \(run.socket.requests)")
+        }
+    }
+
+    /// An explicit ref, or `self`, closes exactly that target.
+    func testCloseCommandsCloseExactlyTheNamedOrSelfTarget() {
+        let cases: [(argv: [String], method: String, key: String, value: String)] = [
+            (["close-panel", "--panel", Self.closeOther], "panel.close", "panel_id", Self.closeOther),
+            (["close-panel", "--panel=\(Self.closeOther)"], "panel.close", "panel_id", Self.closeOther),
+            (["close-panel", "--panel", "self"], "panel.close", "panel_id", Self.closeCaller),
+            (["close-tab", "--tab", "self"], "panel.close", "panel_id", Self.closeCaller),
+            (["close-surface", "--surface", "self"], "panel.close", "panel_id", Self.closeCaller),
+            (["close-workspace", "--workspace", "self"], "workspace.close", "workspace_id", Self.closeWorkspace),
+            (["panel-action", "--panel", "self", "--action", "close-right"], "panel.action", "panel_id", Self.closeCaller),
+            (["workspace-action", "--workspace", "self", "close-below"], "workspace.action", "workspace_id", Self.closeWorkspace),
+        ]
+        for (argv, method, key, value) in cases {
+            guard let run = runClose(argv) else { return }
+            XCTAssertEqual(run.result.status, 0, "\(argv): \(run.result.stderr)")
+            _ = run.socket.waitUntilFinished()
+            let params = run.socket.requests.first(where: { $0["method"] as? String == method })?["params"] as? [String: Any]
+            XCTAssertEqual(params?[key] as? String, value, "\(argv): \(run.socket.requests)")
+        }
+    }
+
+    func testCloseWindowSelfClosesTheCallersWindow() {
+        let window = "bbb11111-2222-3333-4444-555566667777"
+        guard let run = runClose(["close-window", "--window", "self"], configure: {
+            $0.reply(to: "system.identify", with: ["caller": ["window_id": window]])
+        }) else { return }
+        XCTAssertEqual(run.result.status, 0, run.result.stderr)
+        _ = run.socket.waitUntilFinished()
+        let identify = run.socket.requests.first(where: { $0["method"] as? String == "system.identify" })?["params"] as? [String: Any]
+        XCTAssertEqual((identify?["caller"] as? [String: Any])?["workspace_id"] as? String, Self.closeWorkspace)
+        XCTAssertEqual(run.socket.legacyCommands, ["close_window \(window)"])
+    }
+
+    /// `self` with no caller in the environment is an error, not the focused panel.
+    func testSelfCloseTargetWithoutCallerEnvironmentFails() {
+        for argv in [["close-panel", "--panel", "self"], ["close-workspace", "--workspace", "self"]] {
+            guard let run = runClose(argv, environment: [:]) else { return }
+            XCTAssertNotEqual(run.result.status, 0, "\(argv)")
+            XCTAssertTrue(run.result.stderr.contains("self needs a c11 terminal"), "\(argv): \(run.result.stderr)")
+            XCTAssertFalse(
+                run.socket.requests.contains(where: { ["panel.close", "workspace.close"].contains($0["method"] as? String ?? "") }),
+                "\(argv): \(run.socket.requests)"
+            )
+        }
+    }
+
+    func testTmuxKillVerbsRequireATarget() {
+        for argv in [["__tmux-compat", "kill-pane"], ["__tmux-compat", "kill-window"]] {
+            guard let run = runClose(argv) else { return }
+            XCTAssertNotEqual(run.result.status, 0, "\(argv)")
+            XCTAssertTrue(run.result.stderr.contains("requires -t"), "\(argv): \(run.result.stderr)")
+            XCTAssertFalse(
+                run.socket.requests.contains(where: { ["panel.close", "workspace.close"].contains($0["method"] as? String ?? "") }),
+                "\(argv): \(run.socket.requests)"
+            )
+        }
     }
 }

@@ -1121,9 +1121,19 @@ class TerminalController {
         return pid
     }
 
+    #if DEBUG
+    /// Set by a test that swaps in its own manager, so the host app's window
+    /// activation (`AppDelegate.setActiveMainWindow`) cannot replace it while
+    /// the test's main-queue work is still pending.
+    var workspaceManagerPinnedForTesting = false
+    #endif
+
     /// Update which window's TabManager receives socket commands.
     /// This is used when the user switches between multiple terminal windows.
     func setActiveWorkspaceManager(_ workspaceManager: WorkspaceManager?) {
+        #if DEBUG
+        if workspaceManagerPinnedForTesting { return }
+        #endif
         self.workspaceManager = workspaceManager
     }
 

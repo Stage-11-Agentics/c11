@@ -26,9 +26,11 @@ final class AgentPIDAttentionCleanupTests: XCTestCase {
         let controller = TerminalController.shared
         let oldManager = controller.workspaceManager
         controller.workspaceManager = manager
+        controller.workspaceManagerPinnedForTesting = true
         let store = TerminalNotificationStore.shared
         defer {
             store.replaceNotificationsForTesting([])
+            controller.workspaceManagerPinnedForTesting = false
             controller.workspaceManager = oldManager
         }
         store.replaceNotificationsForTesting([notice(workspace.id, caller), notice(workspace.id, sibling)])
@@ -56,7 +58,13 @@ final class AgentPIDAttentionCleanupTests: XCTestCase {
         let controller = TerminalController.shared
         let oldManager = controller.workspaceManager
         controller.workspaceManager = manager
-        defer { controller.workspaceManager = oldManager }
+        // The host app's window activation runs on the main queue that
+        // drainMainQueue() drains; pinned, it cannot swap this manager out.
+        controller.workspaceManagerPinnedForTesting = true
+        defer {
+            controller.workspaceManagerPinnedForTesting = false
+            controller.workspaceManager = oldManager
+        }
         XCTAssertEqual(controller.setAgentPID("caller 101 --tab=\(workspace.id) --panel=\(caller)"), "OK")
         drainMainQueue()
         XCTAssertEqual(workspace.removeAgentPID(key: "caller"), caller)

@@ -14,3 +14,5 @@ c11Tests/GhosttySurfaceOverlayTests/testWorkspaceSelectionReleasesExistingEditor
 c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture	atlas	wall-clock budget, load-sensitive on the shared Atlas host
 c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture	atlas	wall-clock budget, load-sensitive on the shared Atlas host
 c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry	atlas	wall-clock budget, load-sensitive on the shared Atlas host
+c11Tests/WindowRoutingShortcutTests/testCmdNPresentsPickerAndResolvesEventWindowWhenObjectKeyLookupIsMismatched	atlas	Atlas fails the browser address-bar focus assertion even at 4f81f2d1f9, alone and in the full suite; macos-15 CI passes it and keeps coverage.
+c11Tests/WindowRoutingShortcutTests/testCustomCmdTNewWorkspacePresentsPickerAndSkipsOrphanedContext	atlas	Fails in every full Atlas host run but passes alone, so it depends on window state left by earlier tests there; macos-15 CI passes it and keeps coverage.

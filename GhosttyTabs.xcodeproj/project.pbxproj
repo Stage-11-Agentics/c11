@@ -640,6 +640,51 @@
 		C11472000000000000000012 /* ClaudeMailboxAcceptance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */; };
 		C11472000000000000000013 /* ClaudeMailboxCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000002 /* ClaudeMailboxCommand.swift */; };
 		C11472000000000000000014 /* ClaudeMailboxAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */; };
+		C11317BB5F9B621E753D0F9B /* CLIClaudeHookSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F39AB2821350506B5D /* CLIClaudeHookSession.swift */; };
+		C11317B8A85DA5690E84469C /* CLIExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F9C177A8EC324AED1E /* CLIExtensions.swift */; };
+		C11317B473F28B06EDB2A43C /* CLIFlagReadLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F89AE2C3A2022A01DC /* CLIFlagReadLog.swift */; };
+		C11317BFD74193883B009F1B /* CLIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FD67766A822949A8FF /* CLIModels.swift */; };
+		C11317B5533546258A3D51BE /* CLIProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F8301DE01554EFA9D8 /* CLIProcessRunner.swift */; };
+		C11317B1388BCE9BEEBE2042 /* CLISocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FC4E40ADD586DA4BDC /* CLISocketClient.swift */; };
+		C11317B607BAEEB5173E3DFB /* CLISocketConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FA2F5FF7F165A6FAD4 /* CLISocketConfig.swift */; };
+		C11317B6365AEEFAA2D74745 /* CLISocketSentryTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F925520526AEEA2AE2 /* CLISocketSentryTelemetry.swift */; };
+		C11317BC3DFE1712679B6020 /* CLIVersionSkew.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F911A6204179B5FCAD /* CLIVersionSkew.swift */; };
+		C11317B0767E4109990F897F /* CMUXCLI+Agents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F277B21D4B27AB73BA /* CMUXCLI+Agents.swift */; };
+		C11317B70302A32382D5C7CB /* CMUXCLI+App.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F6F0B060815CD063F7 /* CMUXCLI+App.swift */; };
+		C11317B048496AE4050CD4C7 /* CMUXCLI+Args.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F2F5051B2635997E59 /* CMUXCLI+Args.swift */; };
+		C11317BDCD69436A3C25FA92 /* CMUXCLI+Blueprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F61583D7DD1D83BDE4 /* CMUXCLI+Blueprint.swift */; };
+		C11317B6197D8FD7E00DACDB /* CMUXCLI+Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FD5D4A58A1A13F27CC /* CMUXCLI+Browser.swift */; };
+		C11317B983F1A3963DE5EE10 /* CMUXCLI+ClaudeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FC4D2B1D4224FB2699 /* CMUXCLI+ClaudeHook.swift */; };
+		C11317BE1EAA84ECA91F0B87 /* CMUXCLI+ClaudeTeams.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F6B45189E0203E0A3F /* CMUXCLI+ClaudeTeams.swift */; };
+		C11317BDBEEEEF84B59F3B72 /* CMUXCLI+Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F0D270AACE66A5D651 /* CMUXCLI+Colors.swift */; };
+		C11317BF45C5E8A79CD34474 /* CMUXCLI+Conversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F5B635D96D0D498934 /* CMUXCLI+Conversation.swift */; };
+		C11317BA8C126CDA40DD765D /* CMUXCLI+DebugFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F0D8A6EB8AC6B199A9 /* CMUXCLI+DebugFormat.swift */; };
+		C11317BB878CDE3C8DFABF51 /* CMUXCLI+Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F70E900006E670445A /* CMUXCLI+Feedback.swift */; };
+		C11317B181FDDAA606CEADDD /* CMUXCLI+FloorPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F18A1D91179185B039 /* CMUXCLI+FloorPlan.swift */; };
+		C11317BCAE1759E9BFBB1A91 /* CMUXCLI+Handles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FE33E0353F9AF6320D /* CMUXCLI+Handles.swift */; };
+		C11317BB890489255E153236 /* CMUXCLI+History.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FD17AC9D2870F05E47 /* CMUXCLI+History.swift */; };
+		C11317B59660638AB77D8DC0 /* CMUXCLI+Mailbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F88974E100430E7CCF /* CMUXCLI+Mailbox.swift */; };
+		C11317BAE95A78731A7A7C64 /* CMUXCLI+Markdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F57CC8471B54A7F59F /* CMUXCLI+Markdown.swift */; };
+		C11317BB17A2A250FDBA1F94 /* CMUXCLI+Metadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F33291D61B7FF7CD89 /* CMUXCLI+Metadata.swift */; };
+		C11317B71FD9710FD1942E8A /* CMUXCLI+Output.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FAACBB81424FF26828 /* CMUXCLI+Output.swift */; };
+		C11317B76B86B29CAF6D4224 /* CMUXCLI+PanelMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FD3EFE0949212AB3E6 /* CMUXCLI+PanelMove.swift */; };
+		C11317B81DD4C6E8FEA54F95 /* CMUXCLI+PanelTitleBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FCC87A34703E3893BD /* CMUXCLI+PanelTitleBar.swift */; };
+		C11317B147AD468F1BF46184 /* CMUXCLI+Resolve.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F1716A2DC50A361EC5 /* CMUXCLI+Resolve.swift */; };
+		C11317B25F43D83A3B0FAAAA /* CMUXCLI+Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FCEADD739A681FEE15 /* CMUXCLI+Run.swift */; };
+		C11317BBA7DB4BB72DBDF59A /* CMUXCLI+SSH.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FBF5FA620F504FBA6C /* CMUXCLI+SSH.swift */; };
+		C11317BA793FE68EC9341862 /* CMUXCLI+Sidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FD513DE0C373D12FB5 /* CMUXCLI+Sidebar.swift */; };
+		C11317B70495A1A2B843908B /* CMUXCLI+Skill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F92A0391BF731A3E11 /* CMUXCLI+Skill.swift */; };
+		C11317B795F1DB6E144DF6DC /* CMUXCLI+Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F55AD54A5C9C8A3573 /* CMUXCLI+Snapshot.swift */; };
+		C11317BF9AD7061A3B1BC284 /* CMUXCLI+SocketDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FBFFD475DDE9178A7E /* CMUXCLI+SocketDiscovery.swift */; };
+		C11317B51F57175EE8717CF0 /* CMUXCLI+State.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F52EDE19F0A273CB9B /* CMUXCLI+State.swift */; };
+		C11317B063605FB7DC156BB5 /* CMUXCLI+SubcommandHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FA61EF7EFEB642C0D2 /* CMUXCLI+SubcommandHelp.swift */; };
+		C11317B09C6B8F5CBBAE593D /* CMUXCLI+ThemeFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F142618572CE49AE5E /* CMUXCLI+ThemeFiles.swift */; };
+		C11317BD37263689F69145A5 /* CMUXCLI+Themes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F639E83FFD9523EEBE /* CMUXCLI+Themes.swift */; };
+		C11317BC70544EE9FDE489A7 /* CMUXCLI+TmuxCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F580B7F72FD6DBB7C0 /* CMUXCLI+TmuxCompat.swift */; };
+		C11317B683DD6EDA1B569A8C /* CMUXCLI+Tree.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F27D04C5A189D78189 /* CMUXCLI+Tree.swift */; };
+		C11317B58D56971501F930D0 /* CMUXCLI+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */; };
+		C11317BCFB3B1ED9789925EF /* CMUXCLI+Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */; };
+		C11317B7F5BDB77DA49F81F3 /* CMUXCLI+WorkspaceGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1297,6 +1342,51 @@
 		C11472000000000000000001 /* ClaudeMailboxAcceptance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxAcceptance.swift; sourceTree = "<group>"; };
 		C11472000000000000000002 /* ClaudeMailboxCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxCommand.swift; sourceTree = "<group>"; };
 		C11472000000000000000003 /* ClaudeMailboxAcceptanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeMailboxAcceptanceTests.swift; sourceTree = "<group>"; };
+		C11317F39AB2821350506B5D /* CLIClaudeHookSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLIClaudeHookSession.swift"; sourceTree = "<group>"; };
+		C11317F9C177A8EC324AED1E /* CLIExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLIExtensions.swift"; sourceTree = "<group>"; };
+		C11317F89AE2C3A2022A01DC /* CLIFlagReadLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLIFlagReadLog.swift"; sourceTree = "<group>"; };
+		C11317FD67766A822949A8FF /* CLIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLIModels.swift"; sourceTree = "<group>"; };
+		C11317F8301DE01554EFA9D8 /* CLIProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLIProcessRunner.swift"; sourceTree = "<group>"; };
+		C11317FC4E40ADD586DA4BDC /* CLISocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLISocketClient.swift"; sourceTree = "<group>"; };
+		C11317FA2F5FF7F165A6FAD4 /* CLISocketConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLISocketConfig.swift"; sourceTree = "<group>"; };
+		C11317F925520526AEEA2AE2 /* CLISocketSentryTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLISocketSentryTelemetry.swift"; sourceTree = "<group>"; };
+		C11317F911A6204179B5FCAD /* CLIVersionSkew.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CLIVersionSkew.swift"; sourceTree = "<group>"; };
+		C11317F277B21D4B27AB73BA /* CMUXCLI+Agents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Agents.swift"; sourceTree = "<group>"; };
+		C11317F6F0B060815CD063F7 /* CMUXCLI+App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+App.swift"; sourceTree = "<group>"; };
+		C11317F2F5051B2635997E59 /* CMUXCLI+Args.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Args.swift"; sourceTree = "<group>"; };
+		C11317F61583D7DD1D83BDE4 /* CMUXCLI+Blueprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Blueprint.swift"; sourceTree = "<group>"; };
+		C11317FD5D4A58A1A13F27CC /* CMUXCLI+Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Browser.swift"; sourceTree = "<group>"; };
+		C11317FC4D2B1D4224FB2699 /* CMUXCLI+ClaudeHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+ClaudeHook.swift"; sourceTree = "<group>"; };
+		C11317F6B45189E0203E0A3F /* CMUXCLI+ClaudeTeams.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+ClaudeTeams.swift"; sourceTree = "<group>"; };
+		C11317F0D270AACE66A5D651 /* CMUXCLI+Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Colors.swift"; sourceTree = "<group>"; };
+		C11317F5B635D96D0D498934 /* CMUXCLI+Conversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Conversation.swift"; sourceTree = "<group>"; };
+		C11317F0D8A6EB8AC6B199A9 /* CMUXCLI+DebugFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+DebugFormat.swift"; sourceTree = "<group>"; };
+		C11317F70E900006E670445A /* CMUXCLI+Feedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Feedback.swift"; sourceTree = "<group>"; };
+		C11317F18A1D91179185B039 /* CMUXCLI+FloorPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+FloorPlan.swift"; sourceTree = "<group>"; };
+		C11317FE33E0353F9AF6320D /* CMUXCLI+Handles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Handles.swift"; sourceTree = "<group>"; };
+		C11317FD17AC9D2870F05E47 /* CMUXCLI+History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+History.swift"; sourceTree = "<group>"; };
+		C11317F88974E100430E7CCF /* CMUXCLI+Mailbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Mailbox.swift"; sourceTree = "<group>"; };
+		C11317F57CC8471B54A7F59F /* CMUXCLI+Markdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Markdown.swift"; sourceTree = "<group>"; };
+		C11317F33291D61B7FF7CD89 /* CMUXCLI+Metadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Metadata.swift"; sourceTree = "<group>"; };
+		C11317FAACBB81424FF26828 /* CMUXCLI+Output.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Output.swift"; sourceTree = "<group>"; };
+		C11317FD3EFE0949212AB3E6 /* CMUXCLI+PanelMove.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+PanelMove.swift"; sourceTree = "<group>"; };
+		C11317FCC87A34703E3893BD /* CMUXCLI+PanelTitleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+PanelTitleBar.swift"; sourceTree = "<group>"; };
+		C11317F1716A2DC50A361EC5 /* CMUXCLI+Resolve.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Resolve.swift"; sourceTree = "<group>"; };
+		C11317FCEADD739A681FEE15 /* CMUXCLI+Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Run.swift"; sourceTree = "<group>"; };
+		C11317FBF5FA620F504FBA6C /* CMUXCLI+SSH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SSH.swift"; sourceTree = "<group>"; };
+		C11317FD513DE0C373D12FB5 /* CMUXCLI+Sidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Sidebar.swift"; sourceTree = "<group>"; };
+		C11317F92A0391BF731A3E11 /* CMUXCLI+Skill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Skill.swift"; sourceTree = "<group>"; };
+		C11317F55AD54A5C9C8A3573 /* CMUXCLI+Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Snapshot.swift"; sourceTree = "<group>"; };
+		C11317FBFFD475DDE9178A7E /* CMUXCLI+SocketDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SocketDiscovery.swift"; sourceTree = "<group>"; };
+		C11317F52EDE19F0A273CB9B /* CMUXCLI+State.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+State.swift"; sourceTree = "<group>"; };
+		C11317FA61EF7EFEB642C0D2 /* CMUXCLI+SubcommandHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SubcommandHelp.swift"; sourceTree = "<group>"; };
+		C11317F142618572CE49AE5E /* CMUXCLI+ThemeFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+ThemeFiles.swift"; sourceTree = "<group>"; };
+		C11317F639E83FFD9523EEBE /* CMUXCLI+Themes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Themes.swift"; sourceTree = "<group>"; };
+		C11317F580B7F72FD6DBB7C0 /* CMUXCLI+TmuxCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+TmuxCompat.swift"; sourceTree = "<group>"; };
+		C11317F27D04C5A189D78189 /* CMUXCLI+Tree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Tree.swift"; sourceTree = "<group>"; };
+		C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Usage.swift"; sourceTree = "<group>"; };
+		C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Version.swift"; sourceTree = "<group>"; };
+		C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+WorkspaceGroup.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1768,6 +1858,51 @@
 				C1126400A1B2C3D4E5F6000A /* FeedCommand.swift */,
 				C11472000000000000000002 /* ClaudeMailboxCommand.swift */,
 				B9000001A1B2C3D4E5F60719 /* c11.swift */,
+				C11317F39AB2821350506B5D /* CLIClaudeHookSession.swift */,
+				C11317F9C177A8EC324AED1E /* CLIExtensions.swift */,
+				C11317F89AE2C3A2022A01DC /* CLIFlagReadLog.swift */,
+				C11317FD67766A822949A8FF /* CLIModels.swift */,
+				C11317F8301DE01554EFA9D8 /* CLIProcessRunner.swift */,
+				C11317FC4E40ADD586DA4BDC /* CLISocketClient.swift */,
+				C11317FA2F5FF7F165A6FAD4 /* CLISocketConfig.swift */,
+				C11317F925520526AEEA2AE2 /* CLISocketSentryTelemetry.swift */,
+				C11317F911A6204179B5FCAD /* CLIVersionSkew.swift */,
+				C11317F277B21D4B27AB73BA /* CMUXCLI+Agents.swift */,
+				C11317F6F0B060815CD063F7 /* CMUXCLI+App.swift */,
+				C11317F2F5051B2635997E59 /* CMUXCLI+Args.swift */,
+				C11317F61583D7DD1D83BDE4 /* CMUXCLI+Blueprint.swift */,
+				C11317FD5D4A58A1A13F27CC /* CMUXCLI+Browser.swift */,
+				C11317FC4D2B1D4224FB2699 /* CMUXCLI+ClaudeHook.swift */,
+				C11317F6B45189E0203E0A3F /* CMUXCLI+ClaudeTeams.swift */,
+				C11317F0D270AACE66A5D651 /* CMUXCLI+Colors.swift */,
+				C11317F5B635D96D0D498934 /* CMUXCLI+Conversation.swift */,
+				C11317F0D8A6EB8AC6B199A9 /* CMUXCLI+DebugFormat.swift */,
+				C11317F70E900006E670445A /* CMUXCLI+Feedback.swift */,
+				C11317F18A1D91179185B039 /* CMUXCLI+FloorPlan.swift */,
+				C11317FE33E0353F9AF6320D /* CMUXCLI+Handles.swift */,
+				C11317FD17AC9D2870F05E47 /* CMUXCLI+History.swift */,
+				C11317F88974E100430E7CCF /* CMUXCLI+Mailbox.swift */,
+				C11317F57CC8471B54A7F59F /* CMUXCLI+Markdown.swift */,
+				C11317F33291D61B7FF7CD89 /* CMUXCLI+Metadata.swift */,
+				C11317FAACBB81424FF26828 /* CMUXCLI+Output.swift */,
+				C11317FD3EFE0949212AB3E6 /* CMUXCLI+PanelMove.swift */,
+				C11317FCC87A34703E3893BD /* CMUXCLI+PanelTitleBar.swift */,
+				C11317F1716A2DC50A361EC5 /* CMUXCLI+Resolve.swift */,
+				C11317FCEADD739A681FEE15 /* CMUXCLI+Run.swift */,
+				C11317FBF5FA620F504FBA6C /* CMUXCLI+SSH.swift */,
+				C11317FD513DE0C373D12FB5 /* CMUXCLI+Sidebar.swift */,
+				C11317F92A0391BF731A3E11 /* CMUXCLI+Skill.swift */,
+				C11317F55AD54A5C9C8A3573 /* CMUXCLI+Snapshot.swift */,
+				C11317FBFFD475DDE9178A7E /* CMUXCLI+SocketDiscovery.swift */,
+				C11317F52EDE19F0A273CB9B /* CMUXCLI+State.swift */,
+				C11317FA61EF7EFEB642C0D2 /* CMUXCLI+SubcommandHelp.swift */,
+				C11317F142618572CE49AE5E /* CMUXCLI+ThemeFiles.swift */,
+				C11317F639E83FFD9523EEBE /* CMUXCLI+Themes.swift */,
+				C11317F580B7F72FD6DBB7C0 /* CMUXCLI+TmuxCompat.swift */,
+				C11317F27D04C5A189D78189 /* CMUXCLI+Tree.swift */,
+				C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */,
+				C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */,
+				C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */,
 				DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */,
 				DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */,
 				DEC6775014AC879E643E79D6 /* ConfigCommand.swift */,
@@ -2745,6 +2880,51 @@
 				C11284000000000000000013 /* BundledSkill.swift in Sources */,
 				C11284000000000000000003 /* CapabilityFeatures.swift in Sources */,
 				B9000002A1B2C3D4E5F60719 /* c11.swift in Sources */,
+				C11317BB5F9B621E753D0F9B /* CLIClaudeHookSession.swift in Sources */,
+				C11317B8A85DA5690E84469C /* CLIExtensions.swift in Sources */,
+				C11317B473F28B06EDB2A43C /* CLIFlagReadLog.swift in Sources */,
+				C11317BFD74193883B009F1B /* CLIModels.swift in Sources */,
+				C11317B5533546258A3D51BE /* CLIProcessRunner.swift in Sources */,
+				C11317B1388BCE9BEEBE2042 /* CLISocketClient.swift in Sources */,
+				C11317B607BAEEB5173E3DFB /* CLISocketConfig.swift in Sources */,
+				C11317B6365AEEFAA2D74745 /* CLISocketSentryTelemetry.swift in Sources */,
+				C11317BC3DFE1712679B6020 /* CLIVersionSkew.swift in Sources */,
+				C11317B0767E4109990F897F /* CMUXCLI+Agents.swift in Sources */,
+				C11317B70302A32382D5C7CB /* CMUXCLI+App.swift in Sources */,
+				C11317B048496AE4050CD4C7 /* CMUXCLI+Args.swift in Sources */,
+				C11317BDCD69436A3C25FA92 /* CMUXCLI+Blueprint.swift in Sources */,
+				C11317B6197D8FD7E00DACDB /* CMUXCLI+Browser.swift in Sources */,
+				C11317B983F1A3963DE5EE10 /* CMUXCLI+ClaudeHook.swift in Sources */,
+				C11317BE1EAA84ECA91F0B87 /* CMUXCLI+ClaudeTeams.swift in Sources */,
+				C11317BDBEEEEF84B59F3B72 /* CMUXCLI+Colors.swift in Sources */,
+				C11317BF45C5E8A79CD34474 /* CMUXCLI+Conversation.swift in Sources */,
+				C11317BA8C126CDA40DD765D /* CMUXCLI+DebugFormat.swift in Sources */,
+				C11317BB878CDE3C8DFABF51 /* CMUXCLI+Feedback.swift in Sources */,
+				C11317B181FDDAA606CEADDD /* CMUXCLI+FloorPlan.swift in Sources */,
+				C11317BCAE1759E9BFBB1A91 /* CMUXCLI+Handles.swift in Sources */,
+				C11317BB890489255E153236 /* CMUXCLI+History.swift in Sources */,
+				C11317B59660638AB77D8DC0 /* CMUXCLI+Mailbox.swift in Sources */,
+				C11317BAE95A78731A7A7C64 /* CMUXCLI+Markdown.swift in Sources */,
+				C11317BB17A2A250FDBA1F94 /* CMUXCLI+Metadata.swift in Sources */,
+				C11317B71FD9710FD1942E8A /* CMUXCLI+Output.swift in Sources */,
+				C11317B76B86B29CAF6D4224 /* CMUXCLI+PanelMove.swift in Sources */,
+				C11317B81DD4C6E8FEA54F95 /* CMUXCLI+PanelTitleBar.swift in Sources */,
+				C11317B147AD468F1BF46184 /* CMUXCLI+Resolve.swift in Sources */,
+				C11317B25F43D83A3B0FAAAA /* CMUXCLI+Run.swift in Sources */,
+				C11317BBA7DB4BB72DBDF59A /* CMUXCLI+SSH.swift in Sources */,
+				C11317BA793FE68EC9341862 /* CMUXCLI+Sidebar.swift in Sources */,
+				C11317B70495A1A2B843908B /* CMUXCLI+Skill.swift in Sources */,
+				C11317B795F1DB6E144DF6DC /* CMUXCLI+Snapshot.swift in Sources */,
+				C11317BF9AD7061A3B1BC284 /* CMUXCLI+SocketDiscovery.swift in Sources */,
+				C11317B51F57175EE8717CF0 /* CMUXCLI+State.swift in Sources */,
+				C11317B063605FB7DC156BB5 /* CMUXCLI+SubcommandHelp.swift in Sources */,
+				C11317B09C6B8F5CBBAE593D /* CMUXCLI+ThemeFiles.swift in Sources */,
+				C11317BD37263689F69145A5 /* CMUXCLI+Themes.swift in Sources */,
+				C11317BC70544EE9FDE489A7 /* CMUXCLI+TmuxCompat.swift in Sources */,
+				C11317B683DD6EDA1B569A8C /* CMUXCLI+Tree.swift in Sources */,
+				C11317B58D56971501F930D0 /* CMUXCLI+Usage.swift in Sources */,
+				C11317BCFB3B1ED9789925EF /* CMUXCLI+Version.swift in Sources */,
+				C11317B7F5BDB77DA49F81F3 /* CMUXCLI+WorkspaceGroup.swift in Sources */,
 				DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */,
 				DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */,
 				C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */,

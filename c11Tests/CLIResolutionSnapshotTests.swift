@@ -1755,6 +1755,7 @@ extension CLIResolutionSnapshotTests {
             (["browser", p, "type", "#x", "--verbose"], "browser.type", ["text": "--verbose"]),
             (["browser", p, "fill", "#x", "hello", "--world"], "browser.fill", ["text": "hello --world"]),
             (["browser", p, "eval", "--script=1+1"], "browser.eval", ["script": "1+1"]),
+            (["browser", p, "eval", "1+1", "--x"], "browser.eval", ["script": "1+1 --x"]),
             (["browser", p, "addinitscript", "--script=window.x=1"], "browser.addinitscript", ["script": "window.x=1"]),
             (["browser", p, "addscript", "--script=window.x=1"], "browser.addscript", ["script": "window.x=1"]),
             (["browser", p, "addstyle", "--css=body{color:red}"], "browser.addstyle", ["css": "body{color:red}"]),
@@ -1771,6 +1772,53 @@ extension CLIResolutionSnapshotTests {
             for (key, value) in expected {
                 XCTAssertEqual(params[key] as? String, value, "\(argv): \(key)")
             }
+        }
+    }
+
+    /// A target-shaped word that is another option's value is text: it never
+    /// retargets the command and keeps all its characters (PR #737 r4 V1).
+    func testTargetShapedOptionValueStaysTextAndKeepsCallerTarget() {
+        let caller = Self.declPanelID
+        let other = "eee11111-2222-3333-4444-555566667777"
+        let otherWorkspace = "fff11111-2222-3333-4444-555566667777"
+        let cases: [(argv: [String], method: String, expected: [String: String], absent: [String])] = [
+            (["notify", "--body", "--panel=\(other)"], "notification.create_for_panel", ["panel_id": caller, "body": "--panel=\(other)"], []),
+            (["notify", "--body", "--tab=\(other)"], "notification.create_for_panel", ["panel_id": caller, "body": "--tab=\(other)"], []),
+            (["notify", "--body", "--surface=\(other)"], "notification.create_for_panel", ["panel_id": caller, "body": "--surface=\(other)"], []),
+            (["notify", "--body", "--workspace=\(otherWorkspace)"], "notification.create_for_panel", ["panel_id": caller, "body": "--workspace=\(otherWorkspace)"], ["workspace_id"]),
+            (["respawn-pane", "--command", "--panel=\(other)"], "panel.send_text", ["text": "--panel=\(other)\n"], ["panel_id"]),
+        ]
+        for (argv, method, expected, absent) in cases {
+            guard let socket = try? CapturedCLISocket(),
+                  let result = runCLI(argv, socketPath: socket.path, environmentOverrides: ["C11_PANEL_ID": caller])
+            else { return }
+            XCTAssertEqual(result.status, 0, "\(argv): \(result.stderr)")
+            _ = socket.waitUntilFinished()
+            guard let params = socket.requests.first(where: { $0["method"] as? String == method })?["params"] as? [String: Any] else {
+                XCTFail("\(argv): expected \(method), got \(socket.requests)")
+                continue
+            }
+            for (key, value) in expected {
+                XCTAssertEqual(params[key] as? String, value, "\(argv): \(key)")
+            }
+            for key in absent {
+                XCTAssertNil(params[key], "\(argv): unexpected \(key)")
+            }
+        }
+    }
+
+    /// With `--script`, `eval` takes no positional text, so an unknown flag
+    /// fails before any browser request (PR #737 r4 V2).
+    func testBrowserEvalWithScriptOptionRejectsUnknownFlag() {
+        for argv in [
+            ["browser", Self.declPanelID, "eval", "--script", "1+1", "--not-a-real-flag"],
+            ["browser", Self.declPanelID, "eval", "--script=1+1", "--not-a-real-flag"],
+        ] {
+            guard let socket = try? CapturedCLISocket(),
+                  let result = runCLI(argv, socketPath: socket.path) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(argv)")
+            XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains("unknown flag"), "\(argv): \(result.stderr)")
+            XCTAssertFalse(socket.requests.contains(where: { $0["method"] as? String == "browser.eval" }), "\(argv): \(socket.requests)")
         }
     }
 

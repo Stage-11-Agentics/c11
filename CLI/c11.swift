@@ -6658,12 +6658,13 @@ struct CMUXCLI {
             let commandName = command == "state" ? "state save" : command
             throw CLIError(message: unexpectedArgumentMessage(command: commandName, argument: unexpected))
         }
-        // Target options before the first word choose nothing, but a verb
-        // after them selects the declaration: split their `=` form first so
-        // `browser --panel=<ref> click` selects `click`.
-        // A command with no declaration (claude-teams) forwards argv untouched.
+        // Browser and markdown choose their declaration by the verb after the
+        // target options, so split a leading `--panel=<ref>` first to make
+        // `browser --panel=<ref> click` select `click`. Every other command's
+        // options are rewritten by the declaration-aware scan below. A command
+        // with no declaration (claude-teams) forwards argv untouched.
         let originalArgs = args
-        let args = splittingLeadingTargetOptions(args)
+        let args = command == "browser" || command == "markdown" ? splittingLeadingTargetOptions(args) : args
         guard var spec = commandFlagPreflightSpec(command: command, args: args) else {
             return CLIFlagPreflightResult(args: originalArgs, requestsJSON: false)
         }
@@ -6749,7 +6750,9 @@ struct CMUXCLI {
     }
 
     /// Rewrites `--panel=<ref>` (any spelling), `--area=`, `--workspace=` and
-    /// `--window=` into separated form up to the first word or `--`.
+    /// `--window=` into separated form while argv starts with target options.
+    /// It stops at the first word, `--`, or any other option, so a value of
+    /// another option is never read as a target.
     private func splittingLeadingTargetOptions(_ args: [String]) -> [String] {
         let targets = Set(["--panel", "--area", "--workspace", "--window"].flatMap(Self.flagSpellings))
         var result: [String] = []
@@ -6762,12 +6765,9 @@ struct CMUXCLI {
                 index += 2
                 continue
             }
-            if let equals = argument.firstIndex(of: "="), targets.contains(String(argument[..<equals])) {
-                result.append(String(argument[..<equals]))
-                result.append(String(argument[argument.index(after: equals)...]))
-            } else {
-                result.append(argument)
-            }
+            guard let equals = argument.firstIndex(of: "="), targets.contains(String(argument[..<equals])) else { break }
+            result.append(String(argument[..<equals]))
+            result.append(String(argument[argument.index(after: equals)...]))
             index += 1
         }
         return result + args[index...]
@@ -7661,9 +7661,25 @@ struct CMUXCLI {
             valueOptions: values,
             literalFlagArgumentIndices: verb == "state" ? browserPositionalStatePathIndex(commandArgs).map { Set([$0]) } ?? [] : [],
             literalTailStart: verb == "dialog" && subArgs.first?.lowercased() == "accept" ? located.index + 2 : nil,
-            textStart: ["type", "fill", "eval", "addinitscript", "addscript", "addstyle"].contains(verb) ? located.index + 1 : nil,
+            textStart: browserTextStart(verb: verb, verbIndex: located.index, subArgs: subArgs),
             honorsEndOfOptions: verb == "type" || verb == "fill"
         )
+    }
+
+    /// Where a text verb starts taking unrecognized words as text. `eval`
+    /// with `--script` (either spelling) takes no positional script, so an
+    /// unknown flag there stays an error.
+    private func browserTextStart(verb: String, verbIndex: Int, subArgs: [String]) -> Int? {
+        switch verb {
+        case "type", "fill", "addinitscript", "addscript", "addstyle":
+            return verbIndex + 1
+        case "eval":
+            let options = subArgs.prefix(while: { $0 != "--" })
+            let hasScriptOption = options.contains { $0 == "--script" || $0.hasPrefix("--script=") }
+            return hasScriptOption ? nil : verbIndex + 1
+        default:
+            return nil
+        }
     }
 
     /// The browser verb and its index in argv. Without `--panel`, a leading

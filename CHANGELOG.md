@@ -8,6 +8,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ### Changed
 
+- **Close commands need an explicit target, and a stray word is an error.** `close-panel` (and `close-tab` / `close-surface`) requires `--panel <ref>`; it no longer closes `$C11_PANEL_ID` or the focused panel when the ref is missing, so a subagent's malformed `c11 close-panel panel:268` cannot close its parent agent. `--panel self` closes the calling panel on purpose; `close-workspace` and `close-window` accept `self` too. The close actions of `panel-action` and `workspace-action` require a target, and the tmux shim's `kill-pane` / `kill-window` require `-t`. A command that reads no positional word now rejects one before contacting the app, with a `Did you mean --panel …?` hint for refs. (C11-481)
 - **Layout commands require a workspace target.** `drag-panel-to-split` and `refresh-panels` use `--workspace` or the caller's `C11_WORKSPACE_ID`. A bare shell must pass `--workspace`; `--window` alone no longer chooses that window's selected workspace. ([#717](https://github.com/Stage-11-Agentics/c11/pull/717))
 
 ## [1.2.0] - 2026-10-21

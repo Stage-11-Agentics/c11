@@ -80,7 +80,7 @@ def main() -> int:
 
     help_text = _run_cli(cli, ["panel-action", "--help"], json_output=False)
     _must("Target panel" in help_text, "panel-action --help should describe panel target naming")
-    _must("--panel <id|ref|index>" in help_text, "panel-action --help should document --panel")
+    _must("--panel <id|ref|index|self>" in help_text, "panel-action --help should document --panel")
     _must("surface" not in help_text.lower() and not re.search(r"\btabs?\b", help_text.lower()),
           "panel-action --help should not use the old tab or surface words")
     _must("--panel panel:" in help_text, "panel-action examples should use panel: refs")

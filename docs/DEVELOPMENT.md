@@ -88,13 +88,13 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 ## The CLI and socket
 
-`CLI/c11.swift` is one enormous Swift file — the `c11` binary. It:
+The `c11` binary is the `CLI/` directory. `CLI/c11.swift` holds the entry point (`@main`); the `run()` dispatch switch lives in `CLI/CMUXCLI+Run.swift`, and every other command family has its own `CLI/CMUXCLI+<Family>.swift` (blueprints, snapshots, markdown, browser, SSH, themes, tree, tmux compat, mailbox, usage and help text, …). Add a new command's code to the file for its family, or to a new `CMUXCLI+<Family>.swift` registered in the c11-cli target. It:
 
 - parses subcommands (`c11 split`, `c11 send`, `c11 tree`, `c11 browser ...`, `c11 set-metadata`, etc.)
 - talks to the running app over a Unix socket (`/tmp/c11.sock` in production, `/tmp/c11-debug-<tag>.sock` for tagged dev builds)
 - doubles as a compat shim for the legacy `cmux` command (hardlink in the bundle)
 
-The socket protocol it speaks is documented in [`socket-api-reference.md`](socket-api-reference.md). New CLI commands almost always pair with a new socket method on the app side — the canonical pattern is: add the socket method in `AppDelegate.swift` or a domain-specific handler (e.g., `Theme/ThemeSocketMethods.swift`), wire it into the CLI dispatch in `CLI/c11.swift`, and add a Python test in `tests_v2/`.
+The socket protocol it speaks is documented in [`socket-api-reference.md`](socket-api-reference.md). New CLI commands almost always pair with a new socket method on the app side — the canonical pattern is: add the socket method in `AppDelegate.swift` or a domain-specific handler (e.g., `Theme/ThemeSocketMethods.swift`), wire it into the CLI dispatch in `CLI/CMUXCLI+Run.swift`, and add a Python test in `tests_v2/`.
 
 ## Latency-sensitive paths — read before editing
 

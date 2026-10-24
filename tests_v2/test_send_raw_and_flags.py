@@ -207,7 +207,7 @@ def offline(cli):
         dead = str(Path(directory) / "absent.sock")
         for flag in ("--bogus", "--text"):
             proc = cli_run(cli, dead, "send", "--panel", tab, flag, "hello", ok=False)
-            assert flag in proc.stderr and "Unknown flag" in proc.stderr, proc.stderr
+            assert f"unknown flag '{flag}'" in proc.stderr, proc.stderr
         assert "send --raw" in cli_run(cli, dead, "paste", "--help").stdout
         send_help = cli_run(cli, dead, "send", "--help").stdout
         assert "--allow-unguarded" in send_help and "not atomic" in send_help.lower(), send_help

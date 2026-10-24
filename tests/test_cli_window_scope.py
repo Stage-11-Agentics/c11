@@ -1073,7 +1073,8 @@ def run_worker(worker: int, cli: str) -> int:
                     for directions in ((), ("right", "left")):
                         out = run("drag-panel-to-split", "--workspace", b_ws["id"], "--panel", b_tab["id"],
                                   *directions, window=window, env=caller, success=False)
-                        assert "takes exactly one direction (left|right|up|down)" in out.stderr, out.stderr
+                        expected = "unexpected argument 'left'" if directions else "takes exactly one direction (left|right|up|down)"
+                        assert expected in out.stderr, out.stderr
                         assert not any(name == "panel.drag_to_split" for name, _ in server.calls), server.calls
                         unchanged()
         finally:

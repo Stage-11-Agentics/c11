@@ -14649,6 +14649,288 @@
         }
       }
     },
+    "cli.command.unexpectedArgument.optionHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Did you mean %@ %@?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ のことですか?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@을(를) 의미하셨나요?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вы имели в виду %@ %@?"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ви мали на увазі %@ %@?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您是想使用 %@ %@ 吗?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您是想使用 %@ %@ 嗎?"
+          }
+        }
+      }
+    },
+    "cli.close.panel.requiresTarget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel requires --panel <ref>. Use --panel self to close the calling panel."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel には --panel <ref> が必要です。呼び出し元のパネルを閉じるには --panel self を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel에는 --panel <ref>가 필요합니다. 호출한 패널을 닫으려면 --panel self를 사용하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel требует --panel <ref>. Чтобы закрыть вызывающую панель, используйте --panel self."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel вимагає --panel <ref>. Щоб закрити панель, яка викликає команду, використайте --panel self."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel 需要 --panel <ref>。要关闭调用方所在的面板,请使用 --panel self。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-panel 需要 --panel <ref>。要關閉呼叫端所在的面板,請使用 --panel self。"
+          }
+        }
+      }
+    },
+    "cli.close.panelAction.requiresTarget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "panel-action close actions require --panel <ref>. Use --panel self for the calling panel."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "panel-action の close 系アクションには --panel <ref> が必要です。呼び出し元のパネルには --panel self を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "panel-action의 close 동작에는 --panel <ref>가 필요합니다. 호출한 패널에는 --panel self를 사용하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Действия закрытия panel-action требуют --panel <ref>. Для вызывающей панели используйте --panel self."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дії закриття panel-action вимагають --panel <ref>. Для панелі, яка викликає команду, використайте --panel self."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "panel-action 的关闭操作需要 --panel <ref>。对于调用方所在的面板,请使用 --panel self。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "panel-action 的關閉操作需要 --panel <ref>。對於呼叫端所在的面板,請使用 --panel self。"
+          }
+        }
+      }
+    },
+    "cli.close.workspaceAction.requiresTarget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspace-action close actions require --workspace <ref>. Use --workspace self for the calling workspace."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspace-action の close 系アクションには --workspace <ref> が必要です。呼び出し元のワークスペースには --workspace self を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspace-action의 close 동작에는 --workspace <ref>가 필요합니다. 호출한 워크스페이스에는 --workspace self를 사용하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Действия закрытия workspace-action требуют --workspace <ref>. Для вызывающего рабочего пространства используйте --workspace self."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дії закриття workspace-action вимагають --workspace <ref>. Для робочого простору, який викликає команду, використайте --workspace self."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspace-action 的关闭操作需要 --workspace <ref>。对于调用方所在的工作区,请使用 --workspace self。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspace-action 的關閉操作需要 --workspace <ref>。對於呼叫端所在的工作區,請使用 --workspace self。"
+          }
+        }
+      }
+    },
+    "cli.close.self.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self needs a c11 terminal: %@ is not set."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self には c11 ターミナルが必要です: %@ が設定されていません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self에는 c11 터미널이 필요합니다: %@이(가) 설정되지 않았습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self требует терминал c11: %@ не задана."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self потребує термінала c11: %@ не задано."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self 需要 c11 终端:%@ 未设置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--%@ self 需要 c11 終端機:%@ 未設定。"
+          }
+        }
+      }
+    },
+    "cli.close.window.selfUnresolved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self: c11 did not report the calling workspace's window."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self: c11 は呼び出し元ワークスペースのウィンドウを報告しませんでした。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self: c11이 호출한 워크스페이스의 윈도우를 보고하지 않았습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self: c11 не сообщил окно вызывающего рабочего пространства."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self: c11 не повідомив вікно робочого простору, який викликає команду."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self:c11 未报告调用方所在工作区的窗口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "close-window --window self:c11 未回報呼叫端所在工作區的視窗。"
+          }
+        }
+      }
+    },
     "cli.command.unknownFlag": {
       "extractionState": "manual",
       "localizations": {

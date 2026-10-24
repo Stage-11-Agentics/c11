@@ -2213,6 +2213,18 @@ extension CLIResolutionSnapshotTests {
         }
     }
 
+    /// The skill documents tmux's `resize-pane -L 500`; the amount word is
+    /// read, not dropped, now that a stray word would be rejected.
+    func testResizePaneReadsTmuxStyleAmountWord() {
+        for (argv, amount) in [(["resize-pane", "--pane", "area:1", "-L", "500"], 500), (["resize-pane", "--pane", "area:1", "-R", "--amount", "7"], 7)] {
+            guard let run = runClose(argv) else { return }
+            XCTAssertEqual(run.result.status, 0, "\(argv): \(run.result.stderr)")
+            _ = run.socket.waitUntilFinished()
+            let params = run.socket.requests.first(where: { $0["method"] as? String == "area.resize" })?["params"] as? [String: Any]
+            XCTAssertEqual(params?["amount"] as? Int, amount, "\(argv): \(run.socket.requests)")
+        }
+    }
+
     func testTmuxKillVerbsRequireATarget() {
         for argv in [["__tmux-compat", "kill-pane"], ["__tmux-compat", "kill-window"]] {
             guard let run = runClose(argv) else { return }

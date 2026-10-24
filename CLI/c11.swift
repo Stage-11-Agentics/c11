@@ -6845,7 +6845,7 @@ struct CMUXCLI {
              "input-state", "read-screen", "notify", "list-notifications", "clear-notifications", "list-status",
              "clear-progress", "clear-log", "list-log", "sidebar-state", "set-agent", "set-metadata",
              "get-metadata", "clear-metadata", "simulate-app-active", "markdown-content", "usage", "report",
-             "remote-daemon-status", "health", "doctor", "feedback", "agents", "capture-pane", "resize-pane",
+             "remote-daemon-status", "health", "doctor", "feedback", "agents", "capture-pane",
              "swap-pane", "break-pane", "join-pane", "last-window", "next-window", "previous-window", "last-pane",
              "clear-history", "paste-buffer", "list-buffers", "browser-back", "browser-forward",
              "browser-reload", "get-url", "focus-webview", "is-webview-focused":
@@ -6853,7 +6853,7 @@ struct CMUXCLI {
         case "move-panel", "reorder-panel", "reorder-workspace", "set-panel-icon", "set-panel-color", "restore",
              "new-split", "new-area", "focus-area", "raise-flag", "drag-panel-to-split", "set-workspace-root",
              "send-key", "send-key-panel", "set-app-focus", "guide", "wait-for", "agent-event", "history",
-             "agent-hook", "codex-hook":
+             "agent-hook", "codex-hook", "resize-pane":
             return .atMost(1)
         case "rpc", "resize-window":
             return .atMost(2)
@@ -20892,7 +20892,10 @@ struct CMUXCLI {
         case "resize-pane":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
             let paneArg = optionValue(commandArgs, name: "--pane")
-            let amountArg = optionValue(commandArgs, name: "--amount")
+            // tmux spelling: `resize-pane -L 500` takes the amount as a word.
+            let positionalAmount = parseOption(parseOption(parseOption(commandArgs, name: "--workspace").1, name: "--pane").1, name: "--amount").1
+                .first { !$0.hasPrefix("-") }
+            let amountArg = optionValue(commandArgs, name: "--amount") ?? positionalAmount
             let amount = Int(amountArg ?? "1") ?? 1
             if amount <= 0 {
                 throw CLIError(message: "--amount must be greater than 0")

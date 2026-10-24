@@ -646,7 +646,7 @@ The workspace metadata commands follow the same rule: `set-workspace-metadata`, 
 Binary splits aren't balanced automatically. Two `new-split right` calls give you `[A 50% | B 25% | C 25%]`, not equal thirds. Use `resize-pane` (the tmux-compatible command) to rebalance.
 
 ```bash
-c11 resize-pane --pane <ref> --workspace <ref> (-L|-R|-U|-D) --amount <px>
+c11 resize-pane --pane <ref> --workspace <ref> (-L|-R|-U|-D) --amount <px>   # or tmux-style: -L <px>
 ```
 
 - `-R <px>` grows the area by pushing its **right** border rightward (shrinks the right neighbor).

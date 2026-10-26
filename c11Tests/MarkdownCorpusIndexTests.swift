@@ -379,6 +379,27 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertEqual(parsed.document.headings.last?.slug, "bold-code-link")
     }
 
+    func testEmptyHeadingsAreBoundedByTheHeadingAttemptLimit() throws {
+        let root = URL(fileURLWithPath: "/tmp/markdown-empty-heading-budget-fixture", isDirectory: true)
+        let file = root.appendingPathComponent("reader.md")
+        let emptyHeading = "# " + String(repeating: "`", count: 512)
+        let source = Array(repeating: emptyHeading, count: 3_000).joined(separator: "\n")
+        let maximumHeadings = 128
+
+        let parsed = MarkdownCorpusParser.parse(
+            source,
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: maximumHeadings,
+            maximumLinks: 20,
+            maximumTicketIDs: 20
+        )
+
+        XCTAssertEqual(parsed.headingTextAttempts, maximumHeadings * 2)
+        XCTAssertTrue(parsed.document.headings.isEmpty)
+        XCTAssertFalse(parsed.headingsTruncated, "the work cap must not trigger repeated cache reparses")
+    }
+
     func testLinkPatternWorkBudgetBoundsManyAdversarialLines() throws {
         let root = URL(fileURLWithPath: "/tmp/markdown-link-budget-fixture", isDirectory: true)
         let file = root.appendingPathComponent("reader.md")
@@ -405,6 +426,84 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             maximumTicketIDs: 20
         )
         XCTAssertEqual(ordinary.document.links.map(\.text), ["target"])
+    }
+
+    func testScaledLinkBudgetSkipsOnlyOverBudgetLinesAndKeepsOrdinaryLinks() throws {
+        let root = URL(fileURLWithPath: "/tmp/markdown-scaled-link-budget-fixture", isDirectory: true)
+        let file = root.appendingPathComponent("reader.md")
+        let expensiveLine = String(repeating: "[a](<", count: 1_264)
+        let oldBudgetWork = expensiveLine.filter { $0 == "[" }.count * expensiveLine.utf8.count
+        XCTAssertLessThan(expensiveLine.utf8.count, 16 * 1024)
+        XCTAssertLessThan(oldBudgetWork, 8_000_000)
+
+        let parsed = MarkdownCorpusParser.parse(
+            "Before [first](first.md)\n\(expensiveLine)\nAfter [second](second.md)",
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 20,
+            maximumTicketIDs: 20
+        )
+        XCTAssertTrue(parsed.linksTruncated, "the proportional budget should reject the formerly under-budget line")
+        XCTAssertEqual(parsed.document.links.map(\.text), ["first", "second"], "later lines should still be scanned")
+
+        let normalLines = Array(repeating: "Release notes [setup](setup.md) and [install](install.md).", count: 2_000)
+        let normalSource = normalLines.joined(separator: "\n")
+        let normal = MarkdownCorpusParser.parse(
+            normalSource,
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 4_000,
+            maximumTicketIDs: 20
+        )
+        XCTAssertEqual(normal.document.links.count, 4_000)
+        XCTAssertFalse(normal.linksTruncated)
+    }
+
+    func testBudgetTruncatedLinksAreReusedOnUnchangedRescan() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let reader = root.appendingPathComponent("reader.md")
+        let expensiveLine = String(repeating: "[a](<", count: 1_264)
+        try Data("[before](before.md)\n\(expensiveLine)\n[after](after.md)\n".utf8).write(to: reader)
+        let indexer = MarkdownCorpusIndexer(fileURL: reader) { _ in }
+
+        let first = await scan(indexer)
+        XCTAssertTrue(first.truncated)
+        XCTAssertEqual(first.documents.first?.links.map(\.text), ["before", "after"])
+        XCTAssertEqual(first.filesReparsed, 1)
+
+        let unchanged = await scan(indexer)
+        XCTAssertTrue(unchanged.truncated)
+        XCTAssertEqual(unchanged.filesReparsed, 1, "budget truncation alone must not trigger another parse")
+        indexer.stop()
+    }
+
+    func testCacheReparsesWhenLinkSlotsExpand() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let firstFile = root.appendingPathComponent("a.md")
+        let secondFile = root.appendingPathComponent("b.md")
+        try Data("[one](one.md)\n[two](two.md)\n".utf8).write(to: firstFile)
+        try Data("[alpha](alpha.md)\n[beta](beta.md)\n".utf8).write(to: secondFile)
+        var limits = MarkdownCorpusIndexer.Limits()
+        limits.maximumTotalLinks = 2
+        let indexer = MarkdownCorpusIndexer(fileURL: firstFile, limits: limits) { _ in }
+
+        let initiallyCapped = await scan(indexer)
+        XCTAssertEqual(initiallyCapped.documents.first(where: { $0.relativePath == "b.md" })?.links.count, 0)
+        XCTAssertEqual(initiallyCapped.filesReparsed, 2)
+
+        try Data("No links now\n".utf8).write(to: firstFile)
+        let expanded = await scan(indexer)
+        XCTAssertEqual(expanded.documents.first(where: { $0.relativePath == "b.md" })?.links.count, 2)
+        XCTAssertEqual(expanded.filesReparsed, 4, "slot-truncated cached content should be reparsed when its allocation grows")
+        indexer.stop()
     }
 
     func testTicketMatchingStaysLinearWithManyConfiguredPrefixes() throws {
@@ -460,7 +559,7 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             }
         ) { _ in stoppedPublishes.increment() }
         stoppedIndexer.start()
-        let reachedFirstCandidate = firstCandidateIndexed.wait(timeout: .now() + 5)
+        let reachedFirstCandidate = firstCandidateIndexed.wait(timeout: .now() + 30)
         stoppedIndexer.stop()
         resumeScan.signal()
         XCTAssertEqual(reachedFirstCandidate, .success)

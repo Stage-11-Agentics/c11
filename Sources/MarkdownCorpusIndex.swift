@@ -273,6 +273,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         let signature: Signature
         let document: MarkdownCorpusDocument
         let linkSlotsUsed: Int
+        let linkSlotsTruncated: Bool
         let headingsTruncated: Bool
         let linksTruncated: Bool
         let ticketIDsTruncated: Bool
@@ -628,7 +629,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                     cached.linkSlotsUsed > maximumLinks ||
                     cached.document.ticketIDs.count > maximumTicketIDs ||
                     (cached.headingsTruncated && maximumHeadings > cached.document.headings.count) ||
-                    (cached.linksTruncated && maximumLinks > cached.linkSlotsUsed) ||
+                    (cached.linkSlotsTruncated && maximumLinks > cached.linkSlotsUsed) ||
                     (cached.ticketIDsTruncated && maximumTicketIDs > cached.document.ticketIDs.count)
                 if !needsReparse {
                     updated[candidate.relativePath] = cached
@@ -674,6 +675,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 signature: candidate.signature,
                 document: parsed.document,
                 linkSlotsUsed: parsed.linkSlotsUsed,
+                linkSlotsTruncated: parsed.linkSlotsTruncated,
                 headingsTruncated: parsed.headingsTruncated,
                 linksTruncated: parsed.linksTruncated,
                 ticketIDsTruncated: parsed.ticketIDsTruncated
@@ -1146,8 +1148,7 @@ enum MarkdownCorpusParser {
         pattern: #"\[([^\]]+)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)"#
     )
     private static let codePattern = try! NSRegularExpression(pattern: #"`+[^`]*`+"#)
-    private static let maximumLinkPatternWork = 8_000_000
-    private static let headingCodeSpanPattern = try! NSRegularExpression(pattern: #"`+([^`]+)`+"#)
+    private static let headingCodeSpanPattern = try! NSRegularExpression(pattern: #"(?<!`)(?:`+)([^`]+)`+"#)
     private static let readableHeadingPatterns: [(NSRegularExpression, String)] = [
         (try! NSRegularExpression(pattern: #"!?\[([^\]]*)\]\([^)]*\)"#), "$1"),
         (try! NSRegularExpression(pattern: #"<[^>]+>"#), ""),
@@ -1169,7 +1170,9 @@ enum MarkdownCorpusParser {
 
     struct Parsed {
         let document: MarkdownCorpusDocument
+        let headingTextAttempts: Int
         let linkSlotsUsed: Int
+        let linkSlotsTruncated: Bool
         let headingsTruncated: Bool
         let linksTruncated: Bool
         let ticketIDsTruncated: Bool
@@ -1184,6 +1187,12 @@ enum MarkdownCorpusParser {
         maximumTicketIDs: Int,
         ticketPrefixes: Set<String> = []
     ) -> Parsed {
+        let sourceByteCount = source.utf8.count
+        let (scaledLinkWorkBudget, linkBudgetOverflow) = sourceByteCount.multipliedReportingOverflow(by: 16)
+        let maximumLinkPatternWork = max(262_144, linkBudgetOverflow ? Int.max : scaledLinkWorkBudget)
+        let maximumHeadingCount = max(0, maximumHeadings)
+        let (scaledHeadingAttemptLimit, headingAttemptLimitOverflow) = maximumHeadingCount.multipliedReportingOverflow(by: 2)
+        let maximumHeadingTextAttempts = headingAttemptLimitOverflow ? Int.max : scaledHeadingAttemptLimit
         let lines = source.components(separatedBy: .newlines)
         let frontmatterRange: ClosedRange<Int>? = {
             guard let first = lines.first,
@@ -1199,9 +1208,12 @@ enum MarkdownCorpusParser {
         var inFence: (character: Character, length: Int)?
         var headingCounts: [String: Int] = [:]
         var headingsTruncated = false
+        var headingTextAttempts = 0
 
         func addHeading(text raw: String, level: Int, line: Int) {
             guard headings.count < maximumHeadings else { headingsTruncated = true; return }
+            guard headingTextAttempts < maximumHeadingTextAttempts else { return }
+            headingTextAttempts += 1
             let text = readableHeadingText(raw)
             guard !text.isEmpty else { return }
             let base = slugify(text)
@@ -1250,12 +1262,12 @@ enum MarkdownCorpusParser {
 
         var rawLinks: [RawLink] = []
         var linksTruncated = false
+        var linkSlotsTruncated = false
         var ticketIDsTruncated = false
         var currentSection: MarkdownCorpusHeading?
         inFence = nil
         var ids: Set<String> = []
         var linkPatternWork = 0
-        var stopExtractingLinks = false
 
         for (index, line) in lines.enumerated() {
             if frontmatterRange?.contains(index) == true || isIndentedCodeLine(line) { continue }
@@ -1280,7 +1292,6 @@ enum MarkdownCorpusParser {
                 guard ids.count < maximumTicketIDs else { ticketIDsTruncated = true; continue }
                 ids.insert(id)
             }
-            guard !stopExtractingLinks else { continue }
             let lineByteCount = line.utf8.count
             guard lineByteCount <= 16 * 1024 else {
                 linksTruncated = true
@@ -1292,12 +1303,12 @@ enum MarkdownCorpusParser {
             let lineWork = openBracketCount * lineByteCount
             guard lineWork <= maximumLinkPatternWork - linkPatternWork else {
                 linksTruncated = true
-                stopExtractingLinks = true
                 continue
             }
             linkPatternWork += lineWork
             let linkMatches = linkPattern.matches(in: withoutCode, range: visibleRange)
-            for match in linkMatches.prefix(maximumLinks) {
+            let remainingLinkSlots = max(0, maximumLinks - rawLinks.count)
+            for match in linkMatches.prefix(remainingLinkSlots) {
                 guard let labelRange = Range(match.range(at: 1), in: withoutCode),
                       let hrefRange = Range(match.range(at: match.range(at: 2).location != NSNotFound ? 2 : 3), in: withoutCode) else { continue }
                 rawLinks.append(RawLink(
@@ -1307,7 +1318,10 @@ enum MarkdownCorpusParser {
                     section: currentSection
                 ))
             }
-            if linkMatches.count > maximumLinks { linksTruncated = true }
+            if linkMatches.count > remainingLinkSlots {
+                linksTruncated = true
+                linkSlotsTruncated = true
+            }
         }
 
         let sourcePath = fileURL.standardizedFileURL.path
@@ -1340,7 +1354,9 @@ enum MarkdownCorpusParser {
         )
         return Parsed(
             document: document,
+            headingTextAttempts: headingTextAttempts,
             linkSlotsUsed: rawLinks.count,
+            linkSlotsTruncated: linkSlotsTruncated,
             headingsTruncated: headingsTruncated,
             linksTruncated: linksTruncated,
             ticketIDsTruncated: ticketIDsTruncated
@@ -1393,6 +1409,8 @@ enum MarkdownCorpusParser {
     }
 
     private static func readableHeadingText(_ source: String) -> String {
+        // Long headings intentionally slug from their first 512 scalars.
+        // A palette jump may not match the viewer's full anchor.
         let boundedSource = String(source.unicodeScalars.prefix(512))
         var value = boundedSource
         var codeSegments: [String] = []

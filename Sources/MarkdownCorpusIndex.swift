@@ -1307,8 +1307,7 @@ enum MarkdownCorpusParser {
             }
             linkPatternWork += lineWork
             let linkMatches = linkPattern.matches(in: withoutCode, range: visibleRange)
-            let remainingLinkSlots = max(0, maximumLinks - rawLinks.count)
-            for match in linkMatches.prefix(remainingLinkSlots) {
+            for match in linkMatches.prefix(maximumLinks) {
                 guard let labelRange = Range(match.range(at: 1), in: withoutCode),
                       let hrefRange = Range(match.range(at: match.range(at: 2).location != NSNotFound ? 2 : 3), in: withoutCode) else { continue }
                 rawLinks.append(RawLink(
@@ -1318,7 +1317,7 @@ enum MarkdownCorpusParser {
                     section: currentSection
                 ))
             }
-            if linkMatches.count > remainingLinkSlots {
+            if linkMatches.count > maximumLinks {
                 linksTruncated = true
                 linkSlotsTruncated = true
             }

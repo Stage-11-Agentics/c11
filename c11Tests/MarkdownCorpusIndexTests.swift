@@ -461,6 +461,25 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertFalse(normal.linksTruncated)
     }
 
+    func testExternalLinksOnEarlierLinesDoNotHideLaterMarkdownLinks() throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("changelog.md")
+        let externalLines = (0..<200).map { "- [PR \($0)](https://example.com/pull/\($0))" }
+        let parsed = MarkdownCorpusParser.parse(
+            (externalLines + ["See [target](target.md)."]).joined(separator: "\n"),
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 20,
+            maximumTicketIDs: 20
+        )
+        XCTAssertEqual(parsed.document.links.map(\.text), ["target"])
+        XCTAssertFalse(parsed.linksTruncated)
+    }
+
     func testBudgetTruncatedLinksAreReusedOnUnchangedRescan() async throws {
         let temp = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temp) }

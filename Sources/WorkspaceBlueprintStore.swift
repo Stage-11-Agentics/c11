@@ -18,6 +18,14 @@ import Foundation
 /// into CI.
 struct WorkspaceBlueprintStore: Sendable {
 
+    static let starterLayoutFiles: [String: String] = [
+        "starter:one-column": "basic-terminal", "one-column": "basic-terminal", "single": "basic-terminal",
+        "starter:two-columns": "side-by-side", "two-columns": "side-by-side",
+        "starter:quad": "quad-terminal", "quad": "quad-terminal",
+        "starter:two-by-three": "two-by-three", "two-by-three": "two-by-three",
+        "basic-terminal": "basic-terminal", "side-by-side": "side-by-side", "quad-terminal": "quad-terminal",
+    ]
+
     private let directoryOverride: URL?
     private let fileManager: FileManager
 
@@ -151,6 +159,29 @@ struct WorkspaceBlueprintStore: Sendable {
             source: .builtIn
         ))
         return result
+    }
+
+    /// Starter layouts always come from the app bundle, never a repo or user file.
+    func builtInEntry(named name: String) -> WorkspaceBlueprintIndex? {
+        indexEntries(urls: builtInBlueprintURLs(), source: .builtIn)
+            .first(where: { $0.name == name })
+    }
+
+    /// Explicit saved files keep their identity; names prefer user and shipped
+    /// blueprints over repo entries, with starter aliases reserved for built-ins.
+    func resolveLayoutReference(_ reference: String, cwd: URL?) -> WorkspaceBlueprintIndex? {
+        if reference.hasPrefix("saved:") {
+            let url = String(reference.dropFirst("saved:".count))
+            return merged(cwd: cwd).first(where: { $0.url == url })
+        }
+        if let name = Self.starterLayoutFiles[reference] {
+            return builtInEntry(named: name)
+        }
+        if let builtIn = builtInEntry(named: reference) {
+            return builtIn
+        }
+        let matches = merged(cwd: cwd).filter { $0.name == reference }
+        return matches.first(where: { $0.source != .repo }) ?? matches.first
     }
 
     // MARK: - Read / Write

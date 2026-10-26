@@ -204,13 +204,6 @@ extension TerminalController {
 
     // MARK: workspace.create_in_directory
 
-    private static let starterLayoutFiles: [String: String] = [
-        "starter:one-column": "basic-terminal", "one-column": "basic-terminal", "single": "basic-terminal",
-        "starter:two-columns": "side-by-side", "two-columns": "side-by-side",
-        "starter:quad": "quad-terminal", "quad": "quad-terminal",
-        "starter:two-by-three": "two-by-three", "two-by-three": "two-by-three",
-    ]
-
     /// A blueprint id (`starter:quad`, `saved:<url>`), starter short name,
     /// blueprint name, or file path.
     private func v2LayoutPlan(_ layout: String?, directory: String) -> Result<WorkspaceApplyPlan, V2CallResult> {
@@ -219,14 +212,7 @@ extension TerminalController {
         let wanted = (layout?.isEmpty == false ? layout : nil)
             ?? CreateWorkspaceLastLayout.load()
             ?? "starter:one-column"
-        var match: WorkspaceBlueprintIndex?
-        if wanted.hasPrefix("saved:") {
-            let url = String(wanted.dropFirst("saved:".count))
-            match = index.first(where: { $0.url == url })
-        } else {
-            let name = Self.starterLayoutFiles[wanted] ?? wanted
-            match = index.first(where: { $0.name == name })
-        }
+        let match = store.resolveLayoutReference(wanted, cwd: URL(fileURLWithPath: directory))
         do {
             if let match {
                 return .success(try store.read(url: URL(fileURLWithPath: match.url)).plan)

@@ -142,7 +142,7 @@ struct CreateWorkspaceSheet: View {
         self.openRoots = openRoots
         self.onSwitchToOpen = onSwitchToOpen
         _directory = State(initialValue: initialDirectory)
-        let seededEntries = Self.computeEntries(forDirectory: initialDirectory)
+        let seededEntries = Self.computeEntries()
         _entries = State(initialValue: seededEntries)
         _recentsState = State(initialValue: CreateWorkspaceRecents.loadState())
         _openRootSet = State(initialValue: openRoots())
@@ -1281,7 +1281,7 @@ struct CreateWorkspaceSheet: View {
     // MARK: - Loading
 
     private func reloadEntries() {
-        let collected = Self.computeEntries(forDirectory: directory)
+        let collected = Self.computeEntries()
         entries = collected
         if !entries.contains(where: { $0.id == selectionId }) {
             if let savedLast = CreateWorkspaceLastLayout.load(),
@@ -1293,18 +1293,12 @@ struct CreateWorkspaceSheet: View {
         }
     }
 
-    private static func computeEntries(forDirectory directory: String) -> [BlueprintEntry] {
+    private static func computeEntries() -> [BlueprintEntry] {
         let store = WorkspaceBlueprintStore()
-        let cwdURL: URL? = {
-            let trimmed = directory.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { return nil }
-            return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
-        }()
-        let allIndex = store.merged(cwd: cwdURL)
         var collected: [BlueprintEntry] = []
         let starterDefs = BlueprintEntry.starterDefinitions
         for def in starterDefs {
-            if let match = allIndex.first(where: { $0.name == def.fileName }) {
+            if let match = store.builtInEntry(named: def.fileName) {
                 collected.append(BlueprintEntry(
                     id: def.starterId,
                     kind: .starter,

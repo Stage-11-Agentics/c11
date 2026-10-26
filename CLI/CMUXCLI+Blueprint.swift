@@ -476,7 +476,24 @@ extension CMUXCLI {
         let payload = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": cwd])
         let blueprints = payload["blueprints"] as? [[String: Any]] ?? []
         let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let match = blueprints.first(where: { ($0["name"] as? String) == trimmed }),
+        // WorkspaceBlueprintStore is app-only; mirror its starter aliases here.
+        let starterLayoutFiles = [
+            "starter:one-column": "basic-terminal", "one-column": "basic-terminal", "single": "basic-terminal",
+            "starter:two-columns": "side-by-side", "two-columns": "side-by-side",
+            "starter:quad": "quad-terminal", "quad": "quad-terminal",
+            "starter:two-by-three": "two-by-three", "two-by-three": "two-by-three",
+            "basic-terminal": "basic-terminal", "side-by-side": "side-by-side", "quad-terminal": "quad-terminal",
+        ]
+        let name = starterLayoutFiles[trimmed] ?? trimmed
+        let matches = blueprints.filter { ($0["name"] as? String) == name }
+        let builtIn = matches.first { ($0["source"] as? String) == "built-in" }
+        let match: [String: Any]?
+        if starterLayoutFiles[trimmed] != nil || builtIn != nil {
+            match = builtIn
+        } else {
+            match = matches.first { ($0["source"] as? String) != "repo" } ?? matches.first
+        }
+        guard let match,
               let url = match["url"] as? String,
               let data = FileManager.default.contents(atPath: resolvePath(url)),
               let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

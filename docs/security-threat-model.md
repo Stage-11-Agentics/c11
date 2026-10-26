@@ -250,11 +250,18 @@ never interpolated JavaScript or a page URL. markdown-it runs with raw HTML
 off. Every rendered block passes DOMPurify, which forbids script, style,
 frame, object, embed, form and media elements and limits URLs to `http(s)`,
 `mailto`, `file`, `c11md-asset` and relative references. KaTeX runs with
-`trust: false`. Mermaid runs at `securityLevel: 'strict'` with HTML labels
-off, refuses `init` and `config` directives, and its SVG is sanitized again
-without `foreignObject`, links, images, event attributes or external
-`url()`. Because the CSP allows no inline script, a sanitizer bypass still
-cannot run script: the only page script is the bundled renderer.
+`trust: false`. Mermaid runs at `securityLevel: 'strict'`, refuses `init`
+and `config` directives, and its SVG is sanitized again without links,
+images, event attributes or external `url()`. HTML labels stay off, and
+`foreignObject` is removed, except in a diagram whose labels contain `$$`
+math (1.3: C11-456). There KaTeX renders each formula to MathML (`trust:
+false`, `output: 'mathml'`) before Mermaid measures it, labels become HTML,
+and each `foreignObject` body is sanitized separately against a fixed
+allowlist of text and MathML elements and presentation attributes
+(`mathLabelTags` / `mathLabelAttrs`), with no data or ARIA attributes and a
+filtered `style`. Because the CSP allows no inline script, a sanitizer
+bypass still cannot run script: the only page script is the bundled
+renderer.
 
 Local raster images use `c11md-asset://doc/`. The handler percent-decodes
 paths exactly once, treats remaining percent sequences as literal names,
@@ -267,13 +274,14 @@ are bounded to 20 MiB per image and run off
 main; stopped scheme requests receive no late callbacks. This capability
 permits the document to display images in its directory tree, including
 subdirectories, and grants no arbitrary file-read bridge. The image root is
-the directory of the document the reader was created for. In-panel
-navigation (links, palette, backlinks, history, `markdown.navigate`) keeps
-that root until the reader is rebuilt by eviction or recovery, so a
-document reached by navigation resolves relative images against the first
-document's directory. That is a rendering defect, not a widening: the root
-is still a directory the operator opened, reads stay image-typed and
-bounded, and the page has no channel to send bytes out.
+the directory of the document the reader currently shows. In-panel
+navigation (links, palette, backlinks, history, `markdown.navigate`) moves
+the root to the new document's directory, pinned by a fresh descriptor the
+same way (1.3: C11-387). The scope never widens: each root is exactly one
+document's directory, retargeting to the directory already pinned keeps the
+existing descriptor (so a directory swapped in underneath is still ignored),
+in-flight requests finish under the root they started with, reads stay
+image-typed and bounded, and the page has no channel to send bytes out.
 
 Only the initial bundled main-frame navigation is allowed. Document links,
 redirects, frames, downloads and new windows cannot navigate the reader,
@@ -414,13 +422,15 @@ Evidence:
 Sources/MarkdownAssetPolicy.swift:19-55               (pinned descriptor reads)
 Sources/MarkdownAssetPolicy.swift:58-74               (scope root: nearest .git ancestor)
 Sources/MarkdownAssetPolicy.swift:80                  (CSP)
+Sources/MarkdownAssetPolicy.swift:85-93               (retargeted image root, never wider)
 Sources/MarkdownAssetPolicy.swift:98-141              (scheme handler path and type policy)
 Sources/MarkdownAssetPolicy.swift:152-214             (link and mailto validation)
 Sources/MarkdownAssetPolicy.swift:235-345             (navigation scope, markdown-only, agentCLI exemption)
 Sources/Panels/MarkdownWebRenderer.swift:552-689       (c11md message validation and dispatch)
 Sources/Panels/MarkdownWebRenderer.swift:753-868       (link routing and peek reads)
 Sources/Panels/MarkdownWebRenderer.swift:874-885       (navigation and new-window denial)
-Sources/Panels/MarkdownWebRenderer.swift:952-971       (configuration; image root fixed at creation)
+Sources/Panels/MarkdownWebRenderer.swift:5-25         (scheme handler; image root retargeted per document)
+Sources/Panels/MarkdownWebRenderer.swift:965-985       (configuration)
 Sources/MarkdownCorpusIndex.swift:99-117               (corpusNavigate validation)
 Sources/MarkdownCorpusIndex.swift:177-196              (corpus bounds and skipped directories)
 Sources/MarkdownCorpusIndex.swift:422-449              (git check-ignore on file events)
@@ -436,7 +446,7 @@ Sources/SocketHandlers/MarkdownFeedbackHandlers.swift:460-517   (markdown.naviga
 Sources/SocketHandlers/MarkdownFeedbackHandlers.swift:859-900   (markdown.open_external)
 Resources/markdown-viewer/viewer.js:28-33              (markdown-it config)
 Resources/markdown-viewer/viewer.js:164-168            (DOMPurify config)
-Resources/markdown-viewer/viewer.js:907-943            (Mermaid config and SVG cleaning)
+Resources/markdown-viewer/viewer.js:913-1060           (Mermaid config, math labels and SVG cleaning)
 Resources/markdown-viewer/BRIDGE.md                    (renderer contract)
 c11Tests/MarkdownAssetPolicyTests.swift               (positive and negative capabilities)
 c11Tests/MarkdownCorpusIndexTests.swift               (corpus discovery and bounds; hostile repository config)

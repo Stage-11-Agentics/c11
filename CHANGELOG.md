@@ -6,10 +6,38 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-25
+
+Headline: **c11 1.3.0. Color a tab and the whole tab fills with that color, set it from the tab's right-click menu, idle agents get mail without c11 typing into their prompt, and the mailbox drawer shows what a panel sent.**
+
+### Added
+
+- **A colored tab fills with its color.** The selected tab shows the color at full strength and the others dimmed, with white or black text, whichever reads. Folded tab strips and the rail title take the color too, and a colored tab keeps its color in an unfocused area. Set it with `c11 set-panel-color` or the new **Panel Color** item in the tab's right-click menu (palette, Choose Custom Color…, Clear Color). ([#747](https://github.com/Stage-11-Agentics/c11/pull/747), [#748](https://github.com/Stage-11-Agentics/c11/pull/748))
+- **Idle agents receive mail without c11 typing into their prompt.** Claude Code, Pi, OpenCode and omp panels opted into mailbox push now get the doorbell through their own session or extension, so an unsent draft is never touched. The typed doorbell remains the fallback, and each delivery failure is named in the dispatch log. ([#713](https://github.com/Stage-11-Agentics/c11/pull/713), [#714](https://github.com/Stage-11-Agentics/c11/pull/714), [#715](https://github.com/Stage-11-Agentics/c11/pull/715), [#721](https://github.com/Stage-11-Agentics/c11/pull/721), [#724](https://github.com/Stage-11-Agentics/c11/pull/724), [#728](https://github.com/Stage-11-Agentics/c11/pull/728), [#740](https://github.com/Stage-11-Agentics/c11/pull/740))
+- **The mailbox drawer has a Sent view.** A Received | Sent switch lists what the panel sent, newest first, with each recipient marked unread, read or gone. ([#732](https://github.com/Stage-11-Agentics/c11/pull/732))
+- **`c11 browser <panel> keep-live on|off|status` keeps a page running while its workspace is hidden.** Off by default and not persisted. ([#719](https://github.com/Stage-11-Agentics/c11/pull/719))
+- **`c11 tree --json` reports each terminal panel's `cwd`, `branch` and `worktree`.** ([#731](https://github.com/Stage-11-Agentics/c11/pull/731))
+- **About shows the c11 commit the build came from.** ([#720](https://github.com/Stage-11-Agentics/c11/pull/720))
+
 ### Changed
 
 - **Close commands need an explicit target, and a stray word is an error.** `close-panel` (and `close-tab` / `close-surface`) requires `--panel <ref>`; it no longer closes `$C11_PANEL_ID` or the focused panel when the ref is missing, so a subagent's malformed `c11 close-panel panel:268` cannot close its parent agent. `--panel self` closes the calling panel on purpose; `close-workspace` and `close-window` accept `self` too. The close actions of `panel-action` and `workspace-action` require a target, and the tmux shim's `kill-pane` / `kill-window` require `-t`. A command that reads no positional word now rejects one before contacting the app, with a `Did you mean --panel …?` hint for refs. (C11-481)
 - **Layout commands require a workspace target.** `drag-panel-to-split` and `refresh-panels` use `--workspace` or the caller's `C11_WORKSPACE_ID`. A bare shell must pass `--workspace`; `--window` alone no longer chooses that window's selected workspace. ([#717](https://github.com/Stage-11-Agentics/c11/pull/717))
+- **The CLI rejects an unknown flag, a missing value or an empty panel target before contacting the app.** ([#723](https://github.com/Stage-11-Agentics/c11/pull/723), [#737](https://github.com/Stage-11-Agentics/c11/pull/737))
+- **Mail replies reach a renamed sender.** A sender with no `mailbox.address` is stamped `from: id:<panel-uuid>`, which keeps resolving after a rename. ([#727](https://github.com/Stage-11-Agentics/c11/pull/727))
+- **Markdown panels use Mermaid 12.2.0, and `$$…$$` math renders inside diagram labels.** Math labels are rendered as MathML and pass their own allowlist sanitizer; `docs/security-threat-model.md` records the change, along with relative-image scope following the current document. ([#733](https://github.com/Stage-11-Agentics/c11/pull/733))
+
+### Fixed
+
+- **A starved background watchdog can no longer freeze the app.** It could mistake its own delay for a main-thread stall and suspend a responsive main thread. ([#718](https://github.com/Stage-11-Agentics/c11/pull/718))
+- **Moving a panel into a split keeps focus and the right workspace.** A background agent's `drag-panel-to-split` no longer fails, ignores `--workspace`, splits your selected workspace or steals the target workspace's focus. ([#717](https://github.com/Stage-11-Agentics/c11/pull/717))
+- **Relative images follow the markdown document you navigate to.** They no longer keep showing the first document's pictures. ([#730](https://github.com/Stage-11-Agentics/c11/pull/730))
+- **A read of a closed panel fails instead of returning the focused panel's data,** and a timed-out omp delivery no longer silences later mail. ([#735](https://github.com/Stage-11-Agentics/c11/pull/735))
+- **The event log keeps recording after its file is deleted or replaced underneath it.** ([#736](https://github.com/Stage-11-Agentics/c11/pull/736))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.2.0] - 2026-10-21
 

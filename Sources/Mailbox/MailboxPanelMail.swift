@@ -469,16 +469,8 @@ enum MailboxPanelMail {
     }
 
     struct ReadFailure: Error {
-        enum Kind: Equatable {
-            case missing
-            case notRegularFile
-            case permissionDenied
-            case other
-        }
-
         let description: String
         let referenceContent: Reference.Content
-        let kind: Kind
     }
 
     struct PrefixRead {
@@ -504,8 +496,7 @@ enum MailboxPanelMail {
                         localized: "mailbox.drawer.problem.gone",
                         defaultValue: "This message was moved before it could be read."
                     ),
-                    referenceContent: .missing,
-                    kind: .missing
+                    referenceContent: .missing
                 ))
             case ELOOP:
                 return .failure(notRegular)
@@ -514,30 +505,17 @@ enum MailboxPanelMail {
                     localized: "mailbox.drawer.problem.permission",
                     defaultValue: "c11 does not have permission to read it."
                 )
-                return .failure(ReadFailure(
-                    description: reason,
-                    referenceContent: .unreadable(reason),
-                    kind: .permissionDenied
-                ))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
             default:
                 let reason = String(cString: strerror(code))
-                return .failure(ReadFailure(
-                    description: reason,
-                    referenceContent: .unreadable(reason),
-                    kind: .other
-                ))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
             }
         }
         defer { close(fd) }
         var info = stat()
         guard fstat(fd, &info) == 0 else {
-            let code = errno
-            let reason = String(cString: strerror(code))
-            return .failure(ReadFailure(
-                description: reason,
-                referenceContent: .unreadable(reason),
-                kind: code == EACCES || code == EPERM ? .permissionDenied : .other
-            ))
+            let reason = String(cString: strerror(errno))
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
         }
         guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
         let byteLimit = max(0, limit)
@@ -574,13 +552,8 @@ enum MailboxPanelMail {
             }
             if count < 0 {
                 if errno == EINTR { continue }
-                let code = errno
-                let reason = String(cString: strerror(code))
-                return .failure(ReadFailure(
-                    description: reason,
-                    referenceContent: .unreadable(reason),
-                    kind: code == EACCES || code == EPERM ? .permissionDenied : .other
-                ))
+                let reason = String(cString: strerror(errno))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
             }
             if count == 0 { break }
             filled += count
@@ -682,8 +655,7 @@ enum MailboxPanelMail {
                 localized: "mailbox.drawer.problem.notRegular",
                 defaultValue: "This entry is not a regular file, so c11 did not open it."
             ),
-            referenceContent: .notRegularFile,
-            kind: .notRegularFile
+            referenceContent: .notRegularFile
         )
     }
 }

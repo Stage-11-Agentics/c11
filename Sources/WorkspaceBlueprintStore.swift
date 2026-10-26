@@ -238,17 +238,17 @@ struct WorkspaceBlueprintStore: Sendable {
         ) {
         case .failure(let failure):
             let detail: String
-            switch failure.kind {
+            switch failure.referenceContent {
             case .missing:
                 detail = "file not found"
             case .notRegularFile:
                 detail = "not a regular file"
-            case .permissionDenied:
-                detail = "permission denied"
-            case .other:
+            case .unreadable(let reason):
+                detail = reason
+            default:
                 detail = failure.description
             }
-            if failure.kind == .notRegularFile {
+            if case .notRegularFile = failure.referenceContent {
                 throw StoreError.decodeFailed(url.path, underlying: detail)
             }
             throw StoreError.readFailed(url.path, underlying: detail)

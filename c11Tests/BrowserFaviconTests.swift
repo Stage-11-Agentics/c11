@@ -171,9 +171,29 @@ final class BrowserFaviconTests: XCTestCase {
         XCTAssertEqual(CGImageSourceGetType(source) as String?, "com.compuserve.gif")
         XCTAssertEqual(CGImageSourceGetCount(source), 1)
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 4096)
-        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 4096)
+        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 16)
+        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 16)
+        let frame = try XCTUnwrap(BrowserFavicon.firstGIFFrameDimensions(gif))
+        XCTAssertEqual(frame.width, 4096)
+        XCTAssertEqual(frame.height, 4096)
         XCTAssertNil(BrowserFavicon.decodePNG(gif, targetPx: 32))
+    }
+
+    func testGIFFrameInspectionHandlesExtensionsAndTruncation() throws {
+        let gif = try Self.raster(width: 16, height: 16, type: "com.compuserve.gif")
+        let bytes = Array(gif)
+        let tableSize = bytes[10] & 0x80 == 0 ? 0 : 3 * (1 << (Int(bytes[10] & 7) + 1))
+        let offset = 13 + tableSize
+        var extended = Data(gif.prefix(offset))
+        extended.append(contentsOf: [0x21, 0xfe, 3, 65, 66, 67, 0])
+        extended.append(gif.dropFirst(offset))
+        let frame = try XCTUnwrap(BrowserFavicon.firstGIFFrameDimensions(extended))
+        XCTAssertEqual(frame.width, 16)
+        XCTAssertEqual(frame.height, 16)
+        XCTAssertNotNil(BrowserFavicon.decodePNG(extended, targetPx: 32))
+        for length in 0..<(offset + 7) {
+            XCTAssertNil(BrowserFavicon.firstGIFFrameDimensions(Data(extended.prefix(length))))
+        }
     }
 
     func testEndlessStreamThrowsAtByteCap() async throws {

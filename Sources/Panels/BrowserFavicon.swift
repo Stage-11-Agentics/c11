@@ -122,6 +122,39 @@ enum BrowserFavicon {
         return result
     }
 
+    /// ImageIO reports the logical GIF screen, which can hide a larger frame.
+    static func firstGIFFrameDimensions(_ data: Data) -> (width: Int, height: Int)? {
+        guard data.count <= maximumBytes else { return nil }
+        let bytes = Array(data)
+        guard bytes.count >= 13,
+              ["GIF87a", "GIF89a"].contains(String(bytes: bytes.prefix(6), encoding: .ascii) ?? "") else { return nil }
+        var offset = 13
+        if bytes[10] & 0x80 != 0 {
+            offset += 3 * (1 << (Int(bytes[10] & 7) + 1))
+        }
+        while offset < bytes.count {
+            switch bytes[offset] {
+            case 0x2c:
+                guard bytes.count - offset >= 10 else { return nil }
+                return (Int(bytes[offset + 5]) | Int(bytes[offset + 6]) << 8,
+                        Int(bytes[offset + 7]) | Int(bytes[offset + 8]) << 8)
+            case 0x21:
+                guard bytes.count - offset >= 2 else { return nil }
+                offset += 2 // Extension introducer and label, then bounded sub-blocks.
+                while true {
+                    guard offset < bytes.count else { return nil }
+                    let count = Int(bytes[offset])
+                    offset += 1
+                    guard count <= bytes.count - offset else { return nil }
+                    offset += count
+                    if count == 0 { break }
+                }
+            default: return nil
+            }
+        }
+        return nil
+    }
+
     static func decodePNG(_ data: Data, targetPx: Int) -> Data? {
         guard data.count <= maximumBytes else {
 #if DEBUG
@@ -137,6 +170,15 @@ enum BrowserFavicon {
             dlog("browser.favicon.rejected reason=badType")
 #endif
             return nil
+        }
+        if type as String == "com.compuserve.gif" {
+            guard let frame = firstGIFFrameDimensions(data), frame.width > 0, frame.height > 0,
+                  frame.width <= 2048, frame.height <= 2048 else {
+#if DEBUG
+                dlog("browser.favicon.rejected reason=tooManyPixels source=gifFrame")
+#endif
+                return nil
+            }
         }
         let px = max(16, min(128, targetPx))
         let count = type as String == "com.microsoft.ico" ? min(64, CGImageSourceGetCount(source)) : min(1, CGImageSourceGetCount(source))

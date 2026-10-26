@@ -326,7 +326,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         let user = DefaultAgentConfig(defaultAgent: .codex, agents: [.codex: trusted])
         var project = DefaultAgentConfig(defaultAgent: .codex, agents: [.codex: trusted])
         let rejected = [
-            #"\'(id)\'"#, "x;id", "$(id)", "`id`", "=ls", "a'b", "a\"b",
+            #"\'(id)\'"#, "x;id", "$(id)", "`id`", "=ls", "a==ls", "x=y", "a'b", "a\"b",
             "a\\b", "a&b", "a|b", "a<b", "a>b", "a*b", "a?b", "a~b",
             "a{b", "a}b", "a#b", "a!b", "a(b", "a)b", "a$b", "é", "[1m]",
             String(repeating: "a", count: 129)
@@ -336,7 +336,7 @@ final class DefaultAgentResolverTests: XCTestCase {
             project.agents[.codex]?.effort = value
             XCTAssertEqual(DefaultAgentResolver.agentConfig(for: .codex, userDefault: user, projectConfig: project), trusted, value.debugDescription)
         }
-        for value in ["claude-opus-5-5[1m]", "gpt-6-luna", "sonnet", "anthropic/claude-sonnet-5-5", "A09._/:@+,%=[]-", String(repeating: "a", count: 128)] {
+        for value in ["claude-opus-5-5[1m]", "gpt-6-luna", "sonnet", "anthropic/claude-sonnet-5-5", "A09._/:@+,%[]-", String(repeating: "a", count: 128)] {
             project.agents[.codex]?.model = value
             project.agents[.codex]?.effort = value
             let config = DefaultAgentResolver.agentConfig(for: .codex, userDefault: user, projectConfig: project)
@@ -351,6 +351,21 @@ final class DefaultAgentResolverTests: XCTestCase {
         ])
         let config = DefaultAgentResolver.agentConfig(for: .claudeCode, userDefault: .factory, projectConfig: project)
         XCTAssertEqual(DefaultAgentResolver.launcherCommand(agent: .claudeCode, config: config), "claude --dangerously-skip-permissions --model 'claude-opus-5-5[1m]'")
+    }
+
+    func testOperatorOnlyLauncherCommandsKeepFlagStyles() {
+        let cases: [(AgentType, String)] = [
+            (.claudeCode, "claude --dangerously-skip-permissions --model operator-model --effort high"),
+            (.codex, "codex --yolo --model operator-model -c model_reasoning_effort=high"),
+            (.pi, "pi --model operator-model --thinking high"),
+            (.omp, "omp --auto-approve --model operator-model --thinking high")
+        ]
+        for (agent, expected) in cases {
+            var config = AgentConfig.factory(for: agent)
+            config.model = "operator-model"
+            config.effort = "high"
+            XCTAssertEqual(DefaultAgentResolver.launcherCommand(agent: agent, config: config), expected, agent.rawValue)
+        }
     }
 
     func testProjectModelCannotSuppressOperatorEffortOrSystemPrompt() {

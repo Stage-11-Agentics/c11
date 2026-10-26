@@ -187,7 +187,7 @@ enum DefaultAgentResolver {
         }
         let safe = value.unicodeScalars.allSatisfy { scalar in
             switch scalar {
-            case "a"..."z", "A"..."Z", "0"..."9", ".", "_", "/", ":", "@", "+", ",", "%", "=", "[", "]", "-":
+            case "a"..."z", "A"..."Z", "0"..."9", ".", "_", "/", ":", "@", "+", ",", "%", "[", "]", "-":
                 return true
             default: return false
             }

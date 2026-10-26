@@ -54,7 +54,7 @@ Project config `.c11/agents.json` (walk-up from the launch cwd) contributes only
 agent kind, model and effort. The command, environment and prompts always come
 from operator Settings, with factory defaults when no Settings entry exists.
 Project model and effort must be ASCII values of at most 128 characters, start
-with a letter or digit, and contain only letters, digits and `._/:@+,%=[]-`.
+with a letter or digit, and contain only letters, digits and `._/:@+,%[]-`.
 Effort must also match the kind's allowed values when declared. Invalid values
 keep the operator's setting.
 

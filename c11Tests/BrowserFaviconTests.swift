@@ -131,7 +131,7 @@ final class BrowserFaviconTests: XCTestCase {
             ("data:;base64,AA", Data([0])),
             ("data:;base64,AAA", Data([0, 0])),
             ("data:; base64 ,AA==", Data([0])),
-            ("data:; %20base64%20,AA==", Data([0])),
+            ("data:;%20base64%20,AA==", Data([0])),
             ("data:;base64,%09%0A%0C%0DAA%20==", Data([0])),
         ]
         for (value, expected) in cases {
@@ -145,7 +145,7 @@ final class BrowserFaviconTests: XCTestCase {
         let encoded = png.base64EncodedString()
         for payload in [encoded.replacingOccurrences(of: "=", with: ""),
                         "%20%0A" + encoded.replacingOccurrences(of: "=", with: "%3D") + "%20"] {
-            let url = try XCTUnwrap(URL(string: "data:image/png; base64 ," + payload))
+            let url = try XCTUnwrap(URL(string: "data:image/png;%20base64%20," + payload))
             XCTAssertEqual(BrowserFavicon.dataURLPayload(url), png)
             XCTAssertNotNil(BrowserFavicon.decodeDataURL(url, targetPx: 32))
         }
@@ -166,7 +166,7 @@ final class BrowserFaviconTests: XCTestCase {
     func testBase64NormalizationKeepsDecodedByteCap() throws {
         let exact = Data(repeating: 0, count: BrowserFavicon.maximumBytes)
         let exactPayload = "%20" + exact.base64EncodedString().replacingOccurrences(of: "=", with: "") + "%0A"
-        let exactURL = try XCTUnwrap(URL(string: "data:; base64," + exactPayload))
+        let exactURL = try XCTUnwrap(URL(string: "data:;%20base64," + exactPayload))
         XCTAssertEqual(BrowserFavicon.dataURLPayload(exactURL), exact)
         let oversized = Data(repeating: 0, count: BrowserFavicon.maximumBytes + 1)
         let oversizedPayload = "%20" + oversized.base64EncodedString().replacingOccurrences(of: "=", with: "") + "%0A"

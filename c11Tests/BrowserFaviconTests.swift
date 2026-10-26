@@ -93,6 +93,89 @@ final class BrowserFaviconTests: XCTestCase {
         }
     }
 
+    func testBase64DataPNGDecodes() throws {
+        let png = try Self.raster(width: 16, height: 16)
+        let url = try XCTUnwrap(URL(string: "data:image/png;base64," + png.base64EncodedString()))
+        XCTAssertEqual(BrowserFavicon.dataURLPayload(url), png)
+        XCTAssertNotNil(BrowserFavicon.decodeDataURL(url, targetPx: 32))
+    }
+
+    func testPercentEncodedDataPNGDecodesBinaryBytes() throws {
+        let png = try Self.raster(width: 16, height: 16)
+        let encoded = png.map { String(format: "%%%02X", $0) }.joined()
+        let url = try XCTUnwrap(URL(string: "data:image/png," + encoded))
+        XCTAssertEqual(BrowserFavicon.dataURLPayload(url), png)
+        XCTAssertNotNil(BrowserFavicon.decodeDataURL(url, targetPx: 32))
+    }
+
+    func testOversizedDataPayloadIsRejectedBeforeImageDecode() throws {
+        // The base64 envelope of cap+1 bytes has the same length as cap bytes.
+        // Padding must be checked before Data(base64Encoded:) allocates output.
+        let tooLarge = Data(repeating: 0, count: BrowserFavicon.maximumBytes + 1)
+        for payload in [tooLarge.base64EncodedString(), String(repeating: "A", count: 4 * ((BrowserFavicon.maximumBytes + 2) / 3) + 4)] {
+            let url = try XCTUnwrap(URL(string: "data:image/png;base64," + payload))
+            XCTAssertNil(BrowserFavicon.dataURLPayload(url))
+        }
+        let raw = try XCTUnwrap(URL(string: "data:image/png," + String(repeating: "A", count: BrowserFavicon.maximumBytes + 1)))
+        XCTAssertNil(BrowserFavicon.dataURLPayload(raw))
+        let escaped = try XCTUnwrap(URL(string: "data:image/png," + String(repeating: "%41", count: BrowserFavicon.maximumBytes + 1)))
+        XCTAssertNil(BrowserFavicon.dataURLPayload(escaped))
+        let exact = try XCTUnwrap(URL(string: "data:application/octet-stream;base64," + Data(repeating: 0, count: BrowserFavicon.maximumBytes).base64EncodedString()))
+        XCTAssertEqual(BrowserFavicon.dataURLPayload(exact)?.count, BrowserFavicon.maximumBytes)
+    }
+
+    func testSVGDataURLIsRejected() throws {
+        let svg = Data("<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'/>".utf8)
+        let url = try XCTUnwrap(URL(string: "data:image/svg+xml;base64," + svg.base64EncodedString()))
+        XCTAssertEqual(BrowserFavicon.dataURLPayload(url), svg)
+        XCTAssertNil(BrowserFavicon.decodeDataURL(url, targetPx: 32))
+    }
+
+    func testUnsupportedDiscoveredIconsKeepHTTPFallback() throws {
+        let page = try XCTUnwrap(URL(string: "https://example.com/page"))
+        let fallback = try XCTUnwrap(URL(string: "https://example.com/favicon.ico"))
+        for value in ["blob:https://example.com/id", "file:///dev/zero", "about:blank"] {
+            XCTAssertEqual(BrowserFavicon.iconCandidates(discoveredURL: URL(string: value), pageURL: page), [fallback])
+        }
+        let data = try XCTUnwrap(URL(string: "data:image/png;base64,AA=="))
+        XCTAssertEqual(BrowserFavicon.iconCandidates(discoveredURL: data, pageURL: page), [data, fallback])
+        XCTAssertEqual(BrowserFavicon.iconCandidates(discoveredURL: fallback, pageURL: page), [fallback])
+    }
+
+    func testICORejectsSmallDirectoryEntryWithOversizedEmbeddedPNG() throws {
+        let png = try Self.raster(width: 4096, height: 4096)
+        var ico = Data([0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0])
+        for value in [png.count, 22] {
+            for shift in 0..<4 { ico.append(UInt8(truncatingIfNeeded: value >> (shift * 8))) }
+        }
+        ico.append(png)
+        XCTAssertLessThan(ico.count, BrowserFavicon.maximumBytes)
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(ico as CFData, nil))
+        XCTAssertEqual(CGImageSourceGetType(source) as String?, "com.microsoft.ico")
+        XCTAssertEqual(CGImageSourceGetCount(source), 1)
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 4096)
+        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 4096)
+        XCTAssertNil(BrowserFavicon.decodePNG(ico, targetPx: 32))
+    }
+
+    func testGIFRejectsSmallLogicalScreenWithOversizedFirstFrame() throws {
+        var gif = Data("GIF89a".utf8)
+        gif.append(contentsOf: [16, 0, 16, 0, 0x80, 0, 0])
+        gif.append(contentsOf: [0, 0, 0, 255, 255, 255])
+        // Image separator, left/top, 4096-square descriptor, no local table.
+        gif.append(contentsOf: [0x2c, 0, 0, 0, 0, 0, 16, 0, 16, 0])
+        // Tiny LZW stream: clear, one black pixel, end. Remaining frame is empty.
+        gif.append(contentsOf: [2, 2, 0x44, 0x01, 0, 0x3b])
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(gif as CFData, nil))
+        XCTAssertEqual(CGImageSourceGetType(source) as String?, "com.compuserve.gif")
+        XCTAssertEqual(CGImageSourceGetCount(source), 1)
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 4096)
+        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 4096)
+        XCTAssertNil(BrowserFavicon.decodePNG(gif, targetPx: 32))
+    }
+
     func testEndlessStreamThrowsAtByteCap() async throws {
         let session = Self.session()
         defer { session.invalidateAndCancel() }

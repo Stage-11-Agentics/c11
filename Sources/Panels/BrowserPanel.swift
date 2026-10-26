@@ -4173,8 +4173,8 @@ final class BrowserPanel: Panel, ObservableObject {
             guard self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
 
             let fallbackURL = URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL
-            let iconURL = discoveredURL ?? fallbackURL
-            guard let iconURL, BrowserFavicon.isFetchable(iconURL) else { return }
+            let candidates = BrowserFavicon.iconCandidates(discoveredURL: discoveredURL, pageURL: pageURL)
+            guard let iconURL = candidates.first else { return }
 #if DEBUG
             dlog(
                 "browser.favicon.iconURL " +
@@ -4201,19 +4201,25 @@ final class BrowserPanel: Panel, ObservableObject {
 
             let remoteSession = remoteProxyURLSession()
             defer { remoteSession?.finishTasksAndInvalidate() }
-            var candidates = [iconURL]
-            if let fallbackURL, fallbackURL != iconURL {
-                candidates.append(fallbackURL)
-            }
             var decodedPNG: Data?
             for candidate in candidates {
                 guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID),
                       self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
+                if candidate.scheme?.lowercased() == "data" {
+                    decodedPNG = await Task.detached(priority: .utility) {
+                        BrowserFavicon.decodeDataURL(candidate, targetPx: 32)
+                    }.value
+                    if decodedPNG != nil { break }
+                    continue
+                }
                 var req = URLRequest(url: candidate)
                 req.timeoutInterval = 2.0
                 req.cachePolicy = .returnCacheDataElseLoad
                 req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
                 let effectiveRequest = remoteProxyPreparedRequest(from: req, logScope: "faviconRewrite")
+#if DEBUG
+                dlog("browser.favicon.fetch panel=\(id.uuidString.prefix(5)) via=\(remoteSession == nil ? "direct" : "proxy") url=\(effectiveRequest.url?.absoluteString ?? "<nil>")")
+#endif
                 do {
                     let raw = try await BrowserFavicon.fetch(
                         effectiveRequest,

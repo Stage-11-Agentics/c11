@@ -24,10 +24,16 @@ enum BrowserFavicon {
         ["http", "https"].contains(url.scheme?.lowercased() ?? "")
     }
 
+    // URLSession decodes Content-Encoding before delivering bytes, so this cap
+    // bounds decoded bytes we keep, not what CFNetwork inflates internally.
+    // In this project's Swift 5 mode, nonisolated async runs off the main actor.
     static func fetch(_ request: URLRequest, session: URLSession, maximumBytes: Int) async throws -> Data {
         guard let url = request.url, isFetchable(url) else { throw FetchError.invalidURL }
         let (bytes, response) = try await session.bytes(for: request)
         defer { bytes.task.cancel() }
+#if DEBUG
+        dlog("browser.favicon.response status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
+#endif
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw FetchError.badResponse
         }
@@ -49,6 +55,71 @@ enum BrowserFavicon {
             data.append(byte)
         }
         return data
+    }
+
+    static func iconCandidates(discoveredURL: URL?, pageURL: URL) -> [URL] {
+        var candidates: [URL] = []
+        if let discoveredURL, isFetchable(discoveredURL) || discoveredURL.scheme?.lowercased() == "data" {
+            candidates.append(discoveredURL)
+        }
+        if let fallback = URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL,
+           isFetchable(fallback), !candidates.contains(fallback) {
+            candidates.append(fallback)
+        }
+        return candidates
+    }
+
+    static func decodeDataURL(_ url: URL, targetPx: Int) -> Data? {
+        guard let payload = dataURLPayload(url) else { return nil }
+        return decodePNG(payload, targetPx: targetPx)
+    }
+
+    static func dataURLPayload(_ url: URL) -> Data? {
+        guard url.scheme?.lowercased() == "data" else { return nil }
+        let value = url.absoluteString.dropFirst(5)
+        guard let comma = value.firstIndex(of: ",") else { return nil }
+        let header = value[..<comma]
+        let payload = value[value.index(after: comma)...].utf8
+        if header.lowercased().hasSuffix(";base64") {
+            guard payload.count <= 4 * ((maximumBytes + 2) / 3), payload.count % 4 == 0 else { return nil }
+            let padding = payload.suffix(2).filter { $0 == 61 }.count
+            guard payload.count / 4 * 3 - padding <= maximumBytes else { return nil }
+            return Data(base64Encoded: String(value[value.index(after: comma)...]))
+        }
+        guard payload.count <= maximumBytes * 3 else { return nil }
+        let encoded = Array(payload)
+        func hex(_ byte: UInt8) -> UInt8? {
+            switch byte {
+            case 48...57: return byte - 48
+            case 65...70: return byte - 55
+            case 97...102: return byte - 87
+            default: return nil
+            }
+        }
+        // Count and validate before allocating or decoding the binary payload.
+        var index = 0
+        var count = 0
+        while index < encoded.count {
+            if encoded[index] == 37 {
+                guard index + 2 < encoded.count, hex(encoded[index + 1]) != nil,
+                      hex(encoded[index + 2]) != nil else { return nil }
+                index += 3
+            } else { index += 1 }
+            count += 1
+            guard count <= maximumBytes else { return nil }
+        }
+        var result = Data(capacity: count)
+        index = 0
+        while index < encoded.count {
+            if encoded[index] == 37 {
+                result.append(hex(encoded[index + 1])! * 16 + hex(encoded[index + 2])!)
+                index += 3
+            } else {
+                result.append(encoded[index])
+                index += 1
+            }
+        }
+        return result
     }
 
     static func decodePNG(_ data: Data, targetPx: Int) -> Data? {

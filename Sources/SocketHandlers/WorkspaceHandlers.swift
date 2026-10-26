@@ -1084,7 +1084,7 @@ extension TerminalController {
 
     /// `workspace.list_blueprints`: returns a merged index of all discovered
     /// blueprint files. Optional `cwd` param enables per-repo discovery.
-    /// Returns `{blueprints: [...WorkspaceBlueprintIndex...]}`.
+    /// Returns `{blueprints: [...WorkspaceBlueprintIndex...], starter_aliases: {...}}`.
     private func v2WorkspaceListBlueprints(params: [String: Any]) -> V2CallResult {
         let cwdURL: URL?
         if let cwdStr = params["cwd"] as? String, !cwdStr.isEmpty {
@@ -1099,7 +1099,7 @@ extension TerminalController {
         do {
             let encoded = try encoder.encode(entries)
             let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
-            return .ok(["blueprints": asAny])
+            return .ok(["blueprints": asAny, "starter_aliases": WorkspaceBlueprintStore.starterLayoutFiles])
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
         }

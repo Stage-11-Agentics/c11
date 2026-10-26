@@ -400,6 +400,31 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertFalse(parsed.headingsTruncated, "the work cap must not trigger repeated cache reparses")
     }
 
+    func testEmptyHeadingAttemptsConsumeTheCorpusBudgetAndRemainCached() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let firstFile = root.appendingPathComponent("a.md")
+        let laterFile = root.appendingPathComponent("b.md")
+        let emptyHeading = "# " + String(repeating: "`", count: 512)
+        try Data(Array(repeating: emptyHeading, count: 300).joined(separator: "\n").utf8).write(to: firstFile)
+        try Data("# Later heading\n".utf8).write(to: laterFile)
+        var limits = MarkdownCorpusIndexer.Limits()
+        limits.maximumTotalHeadings = 128
+        let indexer = MarkdownCorpusIndexer(fileURL: firstFile, limits: limits) { _ in }
+
+        let first = await scan(indexer)
+        XCTAssertTrue(first.truncated)
+        XCTAssertTrue(first.documents.first(where: { $0.relativePath == "b.md" })?.headings.isEmpty == true)
+        XCTAssertEqual(first.filesReparsed, 2)
+
+        let unchanged = await scan(indexer)
+        XCTAssertTrue(unchanged.documents.first(where: { $0.relativePath == "b.md" })?.headings.isEmpty == true)
+        XCTAssertEqual(unchanged.filesReparsed, 2, "cached heading attempts must consume the corpus budget without reparsing")
+        indexer.stop()
+    }
+
     func testLinkPatternWorkBudgetBoundsManyAdversarialLines() throws {
         let root = URL(fileURLWithPath: "/tmp/markdown-link-budget-fixture", isDirectory: true)
         let file = root.appendingPathComponent("reader.md")
@@ -478,6 +503,26 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         )
         XCTAssertEqual(parsed.document.links.map(\.text), ["target"])
         XCTAssertFalse(parsed.linksTruncated)
+    }
+
+    func testManyExternalLinksDoNotReparseCachedMarkdownOnUnchangedRescan() async throws {
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let reader = root.appendingPathComponent("CHANGELOG.md")
+        let externalLines = (0..<200).map { "- [PR \($0)](https://example.com/pull/\($0))" }
+        try Data((externalLines + ["See [target](target.md).\n"]).joined(separator: "\n").utf8).write(to: reader)
+        let indexer = MarkdownCorpusIndexer(fileURL: reader) { _ in }
+
+        let first = await scan(indexer)
+        XCTAssertEqual(first.documents.first?.links.map(\.text), ["target"])
+        XCTAssertEqual(first.filesReparsed, 1)
+
+        let unchanged = await scan(indexer)
+        let filesReparsedOnRescan = unchanged.filesReparsed - first.filesReparsed
+        XCTAssertEqual(filesReparsedOnRescan, 0, "filesReparsed is cumulative; an unchanged rescan should add zero")
+        indexer.stop()
     }
 
     func testBudgetTruncatedLinksAreReusedOnUnchangedRescan() async throws {

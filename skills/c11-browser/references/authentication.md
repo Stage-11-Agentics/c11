@@ -35,8 +35,10 @@ c11 browser panel:7 wait --url-contains "/dashboard" --timeout-ms 20000
 After logging in, save state for reuse:
 
 ```bash
-c11 browser panel:7 state save ./auth-state.json
+c11 browser panel:7 state save "$TMPDIR/auth-state.json"
 ```
+
+Save state under `$TMPDIR` (per-user, mode 0700 on macOS), never `/tmp`: it holds every cookie in the panel's profile, and c11 writes it with mode 0600.
 
 State includes cookies, localStorage, sessionStorage, and open page metadata for that panel.
 
@@ -44,7 +46,7 @@ State includes cookies, localStorage, sessionStorage, and open page metadata for
 
 ```bash
 c11 browser open https://app.example.com --json
-c11 browser panel:8 state load ./auth-state.json
+c11 browser panel:8 state load "$TMPDIR/auth-state.json"
 c11 browser panel:8 goto https://app.example.com/dashboard
 c11 browser panel:8 snapshot --interactive
 ```
@@ -60,7 +62,7 @@ c11 browser panel:7 fill e1 "user@gmail.com"
 c11 browser panel:7 click e2 --snapshot-after --json
 
 c11 browser panel:7 wait --url-contains "app.example.com" --timeout-ms 45000
-c11 browser panel:7 state save ./oauth-state.json
+c11 browser panel:7 state save "$TMPDIR/oauth-state.json"
 ```
 
 ## Two-Factor Authentication
@@ -74,7 +76,7 @@ c11 browser panel:7 click e3
 
 # complete 2FA manually in the webview, then:
 c11 browser panel:7 wait --url-contains "/dashboard" --timeout-ms 120000
-c11 browser panel:7 state save ./2fa-state.json
+c11 browser panel:7 state save "$TMPDIR/2fa-state.json"
 ```
 
 ## Cookie-Based Auth
@@ -95,7 +97,7 @@ c11 browser panel:7 goto https://app.example.com/dashboard
 #!/usr/bin/env bash
 set -euo pipefail
 
-STATE_FILE="./auth-state.json"
+STATE_FILE="$TMPDIR/auth-state.json"
 PANEL="panel:7"
 
 if [ -f "$STATE_FILE" ]; then
@@ -123,5 +125,5 @@ fi
 
 ```bash
 c11 browser panel:7 cookies clear --all
-rm -f ./auth-state.json
+rm -f "$TMPDIR/auth-state.json"
 ```

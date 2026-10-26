@@ -43,13 +43,13 @@ Each panel has its own:
 ### Save State
 
 ```bash
-c11 browser panel:7 state save /tmp/auth-state.json
+c11 browser panel:7 state save "$TMPDIR/auth-state.json"
 ```
 
 ### Load State
 
 ```bash
-c11 browser panel:8 state load /tmp/auth-state.json
+c11 browser panel:8 state load "$TMPDIR/auth-state.json"
 c11 browser panel:8 goto https://app.example.com/dashboard
 ```
 
@@ -60,11 +60,11 @@ c11 browser panel:8 goto https://app.example.com/dashboard
 ```bash
 c11 browser open https://app.example.com/login --json
 # login on panel:7 ...
-c11 browser panel:7 state save /tmp/auth.json
+c11 browser panel:7 state save "$TMPDIR/auth.json"
 
 c11 browser open https://app.example.com --json
 # assume panel:8
-c11 browser panel:8 state load /tmp/auth.json
+c11 browser panel:8 state load "$TMPDIR/auth.json"
 c11 browser panel:8 goto https://app.example.com/dashboard
 ```
 
@@ -75,9 +75,9 @@ c11 browser open https://site-a.example --json
 c11 browser open https://site-b.example --json
 c11 browser open https://site-c.example --json
 
-c11 browser panel:11 get text body > /tmp/a.txt
-c11 browser panel:12 get text body > /tmp/b.txt
-c11 browser panel:13 get text body > /tmp/c.txt
+c11 browser panel:11 get text body > "$TMPDIR/a.txt"
+c11 browser panel:12 get text body > "$TMPDIR/b.txt"
+c11 browser panel:13 get text body > "$TMPDIR/c.txt"
 ```
 
 ## Cleanup
@@ -85,7 +85,7 @@ c11 browser panel:13 get text body > /tmp/c.txt
 ```bash
 c11 close-panel --panel panel:7
 c11 close-panel --panel panel:8
-rm -f /tmp/auth-state.json
+rm -f "$TMPDIR/auth-state.json"
 ```
 
 ## Best Practices

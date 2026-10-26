@@ -6,6 +6,7 @@ Run only via scripts/sandbox-tests-v2.sh in an isolated guest.
 import json
 import os
 from pathlib import Path
+import stat
 import tempfile
 import threading
 import time
@@ -90,6 +91,7 @@ def main():
                 raise result["error"]
             assert elapsed < 1.0, f"pending save held main for {elapsed:.3f}s"
             saved = json.loads(output.read_text())
+            assert stat.S_IMODE(output.stat().st_mode) == 0o600, oct(stat.S_IMODE(output.stat().st_mode))
             assert saved["storage"]["local"]["fixture-local"] == "local", saved
             assert saved["storage"]["session"]["fixture-session"] == "session", saved
             assert any(cookie["name"] == "fixture" and cookie["value"] == "saved" for cookie in saved["cookies"]), saved

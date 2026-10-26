@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PANEL="${1:-panel:1}"
-STATE_FILE="${2:-./auth-state.json}"
+STATE_FILE="${2:-$TMPDIR/auth-state.json}"
 DASHBOARD_URL="${3:-https://app.example.com/dashboard}"
 
 if [ -f "$STATE_FILE" ]; then

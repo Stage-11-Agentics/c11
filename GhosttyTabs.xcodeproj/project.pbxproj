@@ -82,6 +82,7 @@
 		4AAA3FC2BA5D7AD1F1CA54B2 /* PanelHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 580B7B4F985A7A7C2B81A648 /* PanelHandlers.swift */; };
 		4BF73AE4358BED37E9D90771 /* WorkspaceApplyChromeScaleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C116000A00A1B2C3D4E5F014 /* WorkspaceApplyChromeScaleTests.swift */; };
 		4D11AA01B2C3D4E5F6071920 /* MarkdownPanelFontScaleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D11AA02B2C3D4E5F6071921 /* MarkdownPanelFontScaleTests.swift */; };
+		A11A6E01C11A6E0100000001 /* NewAgentShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11A6E02C11A6E0100000002 /* NewAgentShortcutTests.swift */; };
 		4EC81DFCF528D45999D2463D /* ConfigCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC6775014AC879E643E79D6 /* ConfigCommand.swift */; };
 		4EE5E828CC9D3BA957B86380 /* copilot in Copy CLI */ = {isa = PBXBuildFile; fileRef = D13A1E9CE25B945CC90A8D02 /* copilot */; };
 		505E486F8B252007A3CFE688 /* WorkspaceContentViewVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7000001A1B2C3D4E5F60718 /* WorkspaceContentViewVisibilityTests.swift */; };
@@ -798,6 +799,7 @@
 		4979C511C7C076498CDF3515 /* ResumeAction.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResumeAction.swift; path = Conversation/ResumeAction.swift; sourceTree = "<group>"; };
 		4B2DBF12A2F90CBDE7F6A289 /* AreaSizePolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AreaSizePolicyTests.swift; sourceTree = "<group>"; };
 		4D11AA02B2C3D4E5F6071921 /* MarkdownPanelFontScaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPanelFontScaleTests.swift; sourceTree = "<group>"; };
+		A11A6E02C11A6E0100000002 /* NewAgentShortcutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAgentShortcutTests.swift; sourceTree = "<group>"; };
 		51C0D2C1212976BCF837B620 /* HangBacktrace.c */ = {isa = PBXFileReference; includeInIndex = 1; path = HangBacktrace.c; sourceTree = "<group>"; };
 		51D3CB3B7B4231D786E8883E /* ShutdownSentinel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShutdownSentinel.swift; path = Conversation/ShutdownSentinel.swift; sourceTree = "<group>"; };
 		54017DD4C9F6BE7CFA98C2F7 /* Opencode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Opencode.swift; path = Conversation/Strategies/Opencode.swift; sourceTree = "<group>"; };
@@ -1992,6 +1994,7 @@
 				D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */,
 				F8F660980B554B158A0B9682 /* MarkdownWebRendererTests.swift */,
 				4D11AA02B2C3D4E5F6071921 /* MarkdownPanelFontScaleTests.swift */,
+				A11A6E02C11A6E0100000002 /* NewAgentShortcutTests.swift */,
 				AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */,
 				24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */,
 				63D43C0C6E454F73AA5EEF37 /* MarkdownRendererRetentionPolicyTests.swift */,
@@ -2436,6 +2439,7 @@
 				39AF4F57C52E593EC8CF0680 /* MailboxPanelResolverTests.swift in Sources */,
 				C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */,
 				4D11AA01B2C3D4E5F6071920 /* MarkdownPanelFontScaleTests.swift in Sources */,
+				A11A6E01C11A6E0100000001 /* NewAgentShortcutTests.swift in Sources */,
 				13F986E4DA1C4EAF92CA9445 /* MarkdownAssetPolicyTests.swift in Sources */,
 				E82D48CDE3BD488B8AAFA67D /* MarkdownPresentationTests.swift in Sources */,
 				D596A20B742A467FAA6951C3 /* MarkdownRendererRetentionPolicyTests.swift in Sources */,

@@ -29,6 +29,7 @@ enum KeyboardShortcutSettings {
         case renameWorkspace
         case closeWorkspace
         case newSurface
+        case newAgent
         case toggleTerminalCopyMode
 
         // Panes / splits
@@ -79,6 +80,7 @@ enum KeyboardShortcutSettings {
             case .renameWorkspace: return String(localized: "shortcut.renameWorkspace.label", defaultValue: "Rename Workspace")
             case .closeWorkspace: return String(localized: "shortcut.closeWorkspace.label", defaultValue: "Close Workspace")
             case .newSurface: return String(localized: "shortcut.newSurface.label", defaultValue: "New Panel")
+            case .newAgent: return String(localized: "shortcut.newAgent.label", defaultValue: "New Agent")
             case .toggleTerminalCopyMode: return String(localized: "shortcut.toggleTerminalCopyMode.label", defaultValue: "Toggle Terminal Copy Mode")
             case .focusLeft: return String(localized: "shortcut.focusPaneLeft.label", defaultValue: "Focus Area Left")
             case .focusRight: return String(localized: "shortcut.focusPaneRight.label", defaultValue: "Focus Area Right")
@@ -130,6 +132,7 @@ enum KeyboardShortcutSettings {
             case .nextSurface: return "shortcut.nextSurface"
             case .prevSurface: return "shortcut.prevSurface"
             case .newSurface: return "shortcut.newSurface"
+            case .newAgent: return "shortcut.newAgent"
             case .toggleTerminalCopyMode: return "shortcut.toggleTerminalCopyMode"
             case .openBrowser: return "shortcut.openBrowser"
             case .toggleBrowserDeveloperTools: return "shortcut.toggleBrowserDeveloperTools"
@@ -199,6 +202,12 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "[", command: true, shift: true, option: false, control: false)
             case .newSurface:
                 return StoredShortcut(key: "t", command: true, shift: false, option: false, control: false)
+            case .newAgent:
+                // ⌥⌘A: the A button's plain left-click, beside ⌘⇧A (the agent
+                // picker). A ⌘ chord never reaches the terminal, whereas ⌃⌥A
+                // would take Meta-Ctrl-A from shells and editors and is
+                // VoiceOver's "read all" while VoiceOver is on.
+                return StoredShortcut(key: "a", command: true, shift: false, option: true, control: false)
             case .toggleTerminalCopyMode:
                 return StoredShortcut(key: "m", command: true, shift: true, option: false, control: false)
             case .openBrowser:

@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Added
+
+- **New Agent has a keyboard shortcut: ⌥⌘A.** It launches the default agent in the focused area, exactly as a plain click on the panel bar's A button does; if the launch declines, the agent picker opens with the reason. Rebind it in Settings → Keyboard Shortcuts (Navigation → New Agent). It also appears under Area → New Panel → New Agent, and the A button's tooltip shows the chord. ([#750](https://github.com/Stage-11-Agentics/c11/pull/750))
+
 ## [1.3.0] - 2026-10-25
 
 Headline: **c11 1.3.0. Color a tab and the whole tab fills with that color, set it from the tab's right-click menu, idle agents get mail without c11 typing into their prompt, and the mailbox drawer shows what a panel sent.**

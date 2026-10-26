@@ -186,6 +186,7 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.focusDown.defaultsKey) private var focusDownShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.toggleSplitZoom.defaultsKey) private var toggleSplitZoomShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.newAgent.defaultsKey) private var newAgentShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.openBrowser.defaultsKey) private var openBrowserShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.renamePanel.defaultsKey) private var renamePanelShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.globalFontIncrease.defaultsKey) private var globalFontIncreaseShortcutData = Data()
@@ -989,6 +990,10 @@ struct cmuxApp: App {
                         activeWorkspaceManager.newSurface()
                     }
 
+                    splitCommandButton(title: String(localized: "menu.pane.newAgent", defaultValue: "New Agent"), shortcut: newAgentMenuShortcut) {
+                        AppDelegate.shared?.launchDefaultAgentForActiveWorkspace()
+                    }
+
                     splitCommandButton(title: String(localized: "menu.pane.newBrowser", defaultValue: "New Browser"), shortcut: openBrowserMenuShortcut) {
                         _ = AppDelegate.shared?.openBrowserAndFocusAddressBar(insertAtEnd: true)
                     }
@@ -1292,6 +1297,10 @@ struct cmuxApp: App {
 
     private var newSurfaceMenuShortcut: StoredShortcut {
         decodeShortcut(from: newSurfaceShortcutData, fallback: KeyboardShortcutSettings.Action.newSurface.defaultShortcut)
+    }
+
+    private var newAgentMenuShortcut: StoredShortcut {
+        decodeShortcut(from: newAgentShortcutData, fallback: KeyboardShortcutSettings.Action.newAgent.defaultShortcut)
     }
 
     private var openBrowserMenuShortcut: StoredShortcut {
@@ -6588,7 +6597,7 @@ struct SettingsView: View {
             ShortcutSettingsGroup(
                 id: "navigation",
                 title: String(localized: "settings.shortcuts.group.navigation", defaultValue: "Navigation"),
-                actions: [.nextSurface, .prevSurface, .nextSidebarWorkspace, .prevSidebarWorkspace, .focusHistoryBack, .focusHistoryForward, .renamePanel, .renameWorkspace, .closeWorkspace, .newSurface]
+                actions: [.nextSurface, .prevSurface, .nextSidebarWorkspace, .prevSidebarWorkspace, .focusHistoryBack, .focusHistoryForward, .renamePanel, .renameWorkspace, .closeWorkspace, .newSurface, .newAgent]
             ),
             ShortcutSettingsGroup(
                 id: "panes",

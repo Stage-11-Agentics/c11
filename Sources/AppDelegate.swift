@@ -2423,6 +2423,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let isFirstResponder: Bool
     }
     var debugCloseMainWindowConfirmationHandler: ((NSWindow) -> Bool)?
+    /// Tests capture the New Agent shortcut's resolved workspace, pane and
+    /// window here instead of spawning a real agent process.
+    var debugNewAgentLaunchHandler: ((Workspace, PaneID, NSWindow?) -> Void)?
     // Keep debug-only windows alive when tests intentionally inject key mismatches.
     private var debugDetachedContextWindows: [NSWindow] = []
 
@@ -6052,6 +6055,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .flatMap { $0.window ?? windowForMainWindowId($0.windowId) }
         guard let window = preferredWindow ?? managerWindow else { return }
         workspace.presentAgentPicker(inPane: pane, window: window, anchoringTo: nil)
+    }
+
+    /// The New Agent shortcut: launch the default agent in the active
+    /// workspace's focused pane, exactly as a plain left-click on that pane's
+    /// A button does. A declined launch opens the picker with the reason, the
+    /// same fallback the button takes. Resolves its target like
+    /// `presentAgentPickerForActiveWorkspace`, preferring the key event's own
+    /// window when the shortcut matcher passes one.
+    func launchDefaultAgentForActiveWorkspace(preferredWindow requestedWindow: NSWindow? = nil) {
+        let preferredWindow = [requestedWindow, NSApp.keyWindow, NSApp.mainWindow]
+            .compactMap { $0 }
+            .first(where: { isMainTerminalWindow($0) })
+        guard let manager = synchronizeActiveMainWindowContext(preferredWindow: preferredWindow),
+              let workspace = manager.selectedWorkspace,
+              let pane = workspace.bonsplitController.focusedPaneId else { return }
+
+        let managerWindow = mainWindowContexts.values
+            .first(where: { $0.workspaceManager === manager })
+            .flatMap { $0.window ?? windowForMainWindowId($0.windowId) }
+        let window = preferredWindow ?? managerWindow
+#if DEBUG
+        if let debugNewAgentLaunchHandler {
+            debugNewAgentLaunchHandler(workspace, pane, window)
+            return
+        }
+#endif
+        workspace.launchDefaultAgentFromPanelBar(inPane: pane, window: window)
     }
 
     private func clearCommandPalettePendingOpen(for window: NSWindow?) {
@@ -12360,6 +12390,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // New surface: Cmd+T
         if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .newSurface)) {
             workspaceManager?.newSurface()
+            return true
+        }
+
+        // New agent: Option+Cmd+A (the A button's plain left-click)
+        if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .newAgent)) {
+#if DEBUG
+            dlog("shortcut.action name=newAgent \(debugShortcutRouteSnapshot(event: event))")
+#endif
+            launchDefaultAgentForActiveWorkspace(preferredWindow: event.window)
             return true
         }
 

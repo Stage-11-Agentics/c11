@@ -1137,6 +1137,8 @@ actor MarkdownCorpusIndexRegistry {
 }
 
 enum MarkdownCorpusParser {
+    // The board loader accepts ticket prefixes matching [A-Z][A-Z0-9]{0,15};
+    // keep this capture in sync so every accepted prefix remains linkable.
     private static let ticketIDPattern = try! NSRegularExpression(
         pattern: #"\b([A-Z][A-Z0-9]{0,15})-[0-9]{1,9}\b"#
     )

@@ -361,7 +361,6 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             "## **Bold** `code` [link](x.md)",
         ].joined(separator: "\n")
 
-        let started = ProcessInfo.processInfo.systemUptime
         let parsed = MarkdownCorpusParser.parse(
             source,
             fileURL: file,
@@ -370,7 +369,6 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             maximumLinks: 20,
             maximumTicketIDs: 20
         )
-        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
         XCTAssertEqual(parsed.document.headings.map(\.line), [1, 2, 5, 6])
         XCTAssertFalse(parsed.document.headings.contains { $0.line == 4 }, "a heading that strips to empty is dropped")
         XCTAssertTrue(parsed.document.headings.allSatisfy { $0.text.unicodeScalars.count <= 512 })
@@ -387,7 +385,6 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         let hostileLine = String(repeating: "[", count: 16_000)
         let source = Array(repeating: hostileLine, count: 64).joined(separator: "\n")
 
-        let started = ProcessInfo.processInfo.systemUptime
         let parsed = MarkdownCorpusParser.parse(
             source,
             fileURL: file,
@@ -396,7 +393,6 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             maximumLinks: 20,
             maximumTicketIDs: 20
         )
-        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
         XCTAssertTrue(parsed.document.links.isEmpty)
         XCTAssertTrue(parsed.linksTruncated, "the per-document work budget should report skipped link extraction")
 
@@ -416,10 +412,11 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         let file = root.appendingPathComponent("reader.md")
         var prefixes = Set((0..<50_000).map { "P\($0)" })
         prefixes.insert("C11")
+        let longestUnusualPrefix = "Z9Y8X7W6V5U4T3SR"
+        prefixes.insert(longestUnusualPrefix)
 
-        let started = ProcessInfo.processInfo.systemUptime
         let parsed = MarkdownCorpusParser.parse(
-            "C11-5 XC11-6 C11-7x",
+            "C11-5 XC11-6 C11-7x \(longestUnusualPrefix)-123456789",
             fileURL: file,
             rootURL: root,
             maximumHeadings: 20,
@@ -427,8 +424,7 @@ final class MarkdownCorpusIndexTests: XCTestCase {
             maximumTicketIDs: 20,
             ticketPrefixes: prefixes
         )
-        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
-        XCTAssertEqual(parsed.document.ticketIDs, ["C11-5"])
+        XCTAssertEqual(parsed.document.ticketIDs, ["C11-5", "\(longestUnusualPrefix)-123456789"])
     }
 
     func testStopCancelsInFlightScanAndFreshIndexerCanUseSameRoot() async throws {

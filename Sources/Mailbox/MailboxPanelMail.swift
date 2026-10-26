@@ -558,8 +558,12 @@ enum MailboxPanelMail {
             if count == 0 { break }
             filled += count
         }
-        let data = Data(buffer.prefix(min(filled, byteLimit)))
-        return .success(PrefixRead(data: data, truncated: filled > byteLimit, size: Int(info.st_size)))
+        let truncated = filled > byteLimit
+        let byteCount = min(filled, byteLimit)
+        if byteCount < buffer.count {
+            buffer.removeSubrange(byteCount..<buffer.endIndex)
+        }
+        return .success(PrefixRead(data: buffer, truncated: truncated, size: Int(info.st_size)))
     }
 
     /// Opens a regular file without blocking, seeks to its last `limit` bytes,

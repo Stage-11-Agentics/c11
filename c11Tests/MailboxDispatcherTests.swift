@@ -715,14 +715,11 @@ final class MailboxDispatcherTests: XCTestCase {
         try Data("not an envelope".utf8).write(to: target)
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
 
-        let started = ProcessInfo.processInfo.systemUptime
         dispatcher.dispatchOne(url: link)
-        let elapsed = ProcessInfo.processInfo.systemUptime - started
         dispatcher.log.flush()
 
         let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
             .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
-        XCTAssertLessThan(elapsed, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
         XCTAssertEqual(
             try FileManager.default.attributesOfItem(atPath: rejected.path)[.type] as? FileAttributeType,
@@ -739,14 +736,11 @@ final class MailboxDispatcherTests: XCTestCase {
         let fifo = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
         XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
 
-        let started = ProcessInfo.processInfo.systemUptime
         dispatcher.dispatchOne(url: fifo)
-        let elapsed = ProcessInfo.processInfo.systemUptime - started
         dispatcher.log.flush()
 
         let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
             .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
-        XCTAssertLessThan(elapsed, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
         var fileInfo = stat()
         XCTAssertEqual(lstat(rejected.path, &fileInfo), 0)

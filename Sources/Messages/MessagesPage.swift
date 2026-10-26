@@ -660,6 +660,7 @@ enum MessagesPageSource {
         Data(#""type":"tab.input_sent""#.utf8),
     ]
     private static let mailboxEventMarker = Data(#""type":"mailbox."#.utf8)
+    private static let dispatchEventKeyMarker = Data(#""event""#.utf8)
 
     private struct DispatchHistory {
         var lifecycle: [MessagesPageLifecycle] = []
@@ -756,13 +757,14 @@ enum MessagesPageSource {
             // invoking JSONSerialization, and cache only decoded message
             // events. This keeps a qualifying 8 MiB log from turning into a
             // retained dictionary for every unrelated event.
-            for line in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
+            forEachLine(in: data) { line in
                 guard containsSendMarker(line)
-                        || line.range(of: mailboxEventMarker) != nil else { continue }
-                if let event = MessagesPageEvent(data: Data(line)) {
+                        || line.range(of: mailboxEventMarker) != nil else { return }
+                autoreleasepool {
+                    guard let event = MessagesPageEvent(data: Data(line)) else { return }
                     guard event.type == EventEnvelope.EventType.panelInputSent.rawValue
                             || event.type.hasPrefix("mailbox.") else {
-                        continue
+                        return
                     }
                     parsedEvents.append(event)
                 }
@@ -778,6 +780,30 @@ enum MessagesPageSource {
 
     private static func containsSendMarker(_ bytes: Data) -> Bool {
         sendEventMarkers.contains { bytes.range(of: $0) != nil }
+    }
+
+    /// Walks newline-delimited records without first materializing an array of
+    /// slices proportional to the file's line count.
+    private static func forEachLine(in data: Data, _ body: (Data.SubSequence) -> Void) {
+        var lineStart = data.startIndex
+        while lineStart < data.endIndex {
+            let lineEnd = data[lineStart...].firstIndex(of: 0x0A) ?? data.endIndex
+            if lineStart < lineEnd {
+                body(data[lineStart..<lineEnd])
+            }
+            lineStart = lineEnd == data.endIndex ? data.endIndex : data.index(after: lineEnd)
+        }
+    }
+
+    private static func isDispatchLineCandidate(_ line: Data.SubSequence) -> Bool {
+        var cursor = line.startIndex
+        while cursor < line.endIndex {
+            let byte = line[cursor]
+            guard byte == 0x20 || byte == 0x09 || byte == 0x0D else { break }
+            cursor = line.index(after: cursor)
+        }
+        guard cursor < line.endIndex, line[cursor] == 0x7B else { return false }
+        return line.range(of: dispatchEventKeyMarker) != nil
     }
 
     /// Reads every envelope tree below each workspace mailbox root, not just
@@ -937,36 +963,39 @@ enum MessagesPageSource {
             followSymlinks: false
         ) else { return [:] }
         var result: [String: DispatchHistory] = [:]
-        for line in data.split(separator: 0x0A) {
-            guard let object = try? JSONSerialization.jsonObject(with: Data(line)),
-                  let dictionary = object as? [String: Any],
-                  let id = MessagesPageJSON.string(dictionary["id"]),
-                  let event = MessagesPageJSON.string(dictionary["event"]) else { continue }
-            let timestamp = MessagesPageJSON.string(dictionary["ts"]) ?? ""
-            var history = result[id] ?? DispatchHistory()
-            if let from = MessagesPageJSON.string(dictionary["from"]) {
-                history.from = from
+        forEachLine(in: data) { line in
+            guard isDispatchLineCandidate(line) else { return }
+            autoreleasepool {
+                guard let object = try? JSONSerialization.jsonObject(with: Data(line)),
+                      let dictionary = object as? [String: Any],
+                      let id = MessagesPageJSON.string(dictionary["id"]),
+                      let event = MessagesPageJSON.string(dictionary["event"]) else { return }
+                let timestamp = MessagesPageJSON.string(dictionary["ts"]) ?? ""
+                var history = result[id] ?? DispatchHistory()
+                if let from = MessagesPageJSON.string(dictionary["from"]) {
+                    history.from = from
+                }
+                if let to = MessagesPageJSON.string(dictionary["to"])
+                    ?? MessagesPageJSON.string(dictionary["recipient"]) {
+                    history.to = to
+                }
+                let detail: String?
+                if event == "handler" {
+                    let handler = MessagesPageJSON.string(dictionary["handler"])
+                    let outcome = MessagesPageJSON.string(dictionary["outcome"])
+                    detail = [handler, outcome].compactMap { $0 }.joined(separator: ": ")
+                } else if event == "resolved",
+                          let recipients = dictionary["recipients"] as? [String] {
+                    detail = recipients.joined(separator: ", ")
+                } else {
+                    detail = MessagesPageJSON.string(dictionary["reason"])
+                        ?? MessagesPageJSON.string(dictionary["recipient"])
+                }
+                history.lifecycle.append(
+                    MessagesPageLifecycle(state: event, timestamp: timestamp, detail: detail)
+                )
+                result[id] = history
             }
-            if let to = MessagesPageJSON.string(dictionary["to"])
-                ?? MessagesPageJSON.string(dictionary["recipient"]) {
-                history.to = to
-            }
-            let detail: String?
-            if event == "handler" {
-                let handler = MessagesPageJSON.string(dictionary["handler"])
-                let outcome = MessagesPageJSON.string(dictionary["outcome"])
-                detail = [handler, outcome].compactMap { $0 }.joined(separator: ": ")
-            } else if event == "resolved",
-                      let recipients = dictionary["recipients"] as? [String] {
-                detail = recipients.joined(separator: ", ")
-            } else {
-                detail = MessagesPageJSON.string(dictionary["reason"])
-                    ?? MessagesPageJSON.string(dictionary["recipient"])
-            }
-            history.lifecycle.append(
-                MessagesPageLifecycle(state: event, timestamp: timestamp, detail: detail)
-            )
-            result[id] = history
         }
         for id in result.keys {
             result[id]?.lifecycle.sort { $0.timestamp < $1.timestamp }

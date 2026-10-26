@@ -626,6 +626,30 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(artifacts.first { $0.id == lastID }?.lifecycle.map(\.state), ["rejected"])
     }
 
+    func testDispatchLogSkipsManyJunkLinesAndKeepsValidRecord() throws {
+        let workspaceId = UUID()
+        let mailboxRoot = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: workspaceId)
+        let rejected = mailboxRoot.appendingPathComponent(MailboxLayout.rejectedDirectoryName, isDirectory: true)
+        try FileManager.default.createDirectory(at: rejected, withIntermediateDirectories: true)
+
+        let id = "01K3A2B7X8PQRTVWYZ0123456C"
+        let envelope = try MailboxEnvelope.build(from: "sender", to: "watcher", body: "", id: id)
+        try envelope.encode().write(to: rejected.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)))
+
+        var log = Data(String(repeating: "unstructured noise\n{\"type\":\"noise\"}\n", count: 10_000).utf8)
+        var validLine = try JSONSerialization.data(withJSONObject: [
+            "event": "rejected",
+            "id": id,
+            "ts": "t",
+        ])
+        validLine.append(0x0A)
+        log.append(validLine)
+        try log.write(to: mailboxRoot.appendingPathComponent(MailboxLayout.dispatchLogFileName))
+
+        let artifacts = MessagesPageSource.load(stateURL: tempDir).mailboxArtifacts
+        XCTAssertEqual(artifacts.first { $0.id == id }?.lifecycle.map(\.state), ["rejected"])
+    }
+
     func testMailboxOnlyEventLogIsReadWithoutASeparateSendMarker() throws {
         let eventsDirectory = EventLogLayout.eventsDirectoryURL(state: tempDir)
         try FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)

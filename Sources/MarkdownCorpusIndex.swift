@@ -205,9 +205,6 @@ struct MarkdownCorpusFSEventStreamDriver {
     )
 }
 
-/// A bounded, root-shared Markdown corpus. Directory discovery and every read
-/// happen on its utility queue; renderer callbacks only receive immutable
-/// snapshots. FSEvents drives refreshes and unchanged files reuse parsed data.
 private final class MarkdownCorpusScanCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
@@ -225,6 +222,9 @@ private final class MarkdownCorpusScanCancellation: @unchecked Sendable {
     }
 }
 
+/// A bounded, root-shared Markdown corpus. Directory discovery and every read
+/// happen on its utility queue; renderer callbacks only receive immutable
+/// snapshots. FSEvents drives refreshes and unchanged files reuse parsed data.
 final class MarkdownCorpusIndexer: @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.stage11.c11", category: "markdown.corpus")
     private static let mustScanSubDirsFlag = Int(kFSEventStreamEventFlagMustScanSubDirs)

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PANEL="${1:-panel:1}"
-STATE_FILE="${2:-$TMPDIR/auth-state.json}"
+STATE_DIR="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}"
+STATE_FILE="${2:-$STATE_DIR/auth-state.json}"
 DASHBOARD_URL="${3:-https://app.example.com/dashboard}"
 
 if [ -f "$STATE_FILE" ]; then

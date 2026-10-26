@@ -197,8 +197,8 @@ c11 browser tab:2 storage local clear
 c11 browser tab:2 storage session set flow onboarding
 c11 browser tab:2 storage session get flow
 
-c11 browser tab:2 state save /tmp/cmux-browser-state.json
-c11 browser tab:2 state load /tmp/cmux-browser-state.json`}</CodeBlock>
+c11 browser tab:2 state save "$TMPDIR/cmux-browser-state.json"
+c11 browser tab:2 state load "$TMPDIR/cmux-browser-state.json"`}</CodeBlock>
 
       <h2>{t("tabsSection")}</h2>
       <p>{t("tabsDesc")}</p>
@@ -259,9 +259,9 @@ c11 browser tab:2 screenshot --out /tmp/cmux-failure.png
 c11 browser tab:2 snapshot --interactive --compact`}</CodeBlock>
 
       <h3>{t("patternSession")}</h3>
-      <CodeBlock lang="bash">{`c11 browser tab:2 state save /tmp/session.json
+      <CodeBlock lang="bash">{`c11 browser tab:2 state save "$TMPDIR/session.json"
 # ...later...
-c11 browser tab:2 state load /tmp/session.json
+c11 browser tab:2 state load "$TMPDIR/session.json"
 c11 browser tab:2 reload`}</CodeBlock>
     </>
   );

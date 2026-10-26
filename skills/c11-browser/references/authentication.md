@@ -97,7 +97,7 @@ c11 browser panel:7 goto https://app.example.com/dashboard
 #!/usr/bin/env bash
 set -euo pipefail
 
-STATE_FILE="$TMPDIR/auth-state.json"
+STATE_FILE="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}/auth-state.json"
 PANEL="panel:7"
 
 if [ -f "$STATE_FILE" ]; then

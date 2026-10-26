@@ -214,8 +214,8 @@ c11 browser panel:2 storage session get flow
 ## Browser State (Save/Restore)
 
 ```bash
-c11 browser panel:2 state save /tmp/session.json
-c11 browser panel:2 state load /tmp/session.json
+c11 browser panel:2 state save "$TMPDIR/session.json"
+c11 browser panel:2 state load "$TMPDIR/session.json"
 c11 browser panel:2 reload
 ```
 
@@ -272,8 +272,8 @@ c11 browser panel:2 snapshot --interactive --compact
 ### Persist and Restore Session
 
 ```bash
-c11 browser panel:2 state save /tmp/session.json
+c11 browser panel:2 state save "$TMPDIR/session.json"
 # ...later...
-c11 browser panel:2 state load /tmp/session.json
+c11 browser panel:2 state load "$TMPDIR/session.json"
 c11 browser panel:2 reload
 ```

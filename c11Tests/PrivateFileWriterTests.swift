@@ -76,7 +76,52 @@ final class PrivateFileWriterTests: XCTestCase {
         XCTAssertThrowsError(try PrivateFileWriter.write(Data("state".utf8), to: destination))
 
         let names = try FileManager.default.contentsOfDirectory(atPath: sandbox.path)
-        XCTAssertFalse(names.contains { $0.hasPrefix(".directory.") && $0.hasSuffix(".tmp") })
+        XCTAssertFalse(names.contains { $0.hasPrefix(".c11-state.") && $0.hasSuffix(".tmp") })
+    }
+
+    func testWriteSupportsLongDestinationBasename() throws {
+        let destination = sandbox.appendingPathComponent(String(repeating: "s", count: 240))
+        let bytes = Data("private state".utf8)
+
+        try PrivateFileWriter.write(bytes, to: destination)
+
+        XCTAssertEqual(try Data(contentsOf: destination), bytes)
+        XCTAssertEqual(try permissions(destination), 0o600)
+    }
+
+    func testWriteClearsInheritedAllowACL() throws {
+        let fixtureDirectory = sandbox.appendingPathComponent("acl-fixture", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixtureDirectory, withIntermediateDirectories: true)
+        let directoryACL = try makeACL("everyone allow read,file_inherit", on: fixtureDirectory)
+        defer { acl_free(UnsafeMutableRawPointer(directoryACL)) }
+        XCTAssertEqual(acl_set_file(sandbox.path, ACL_TYPE_EXTENDED, directoryACL), 0)
+
+        let destination = sandbox.appendingPathComponent("inherited.json")
+        try PrivateFileWriter.write(Data("private state".utf8), to: destination)
+
+        errno = 0
+        let writtenACL = acl_get_file(destination.path, ACL_TYPE_EXTENDED)
+        if let writtenACL {
+            acl_free(UnsafeMutableRawPointer(writtenACL))
+            XCTFail("written state file retained an extended ACL")
+        } else {
+            XCTAssertEqual(errno, ENOENT)
+        }
+    }
+
+    func testAllowACLOnReadableFileIsRefused() throws {
+        let source = sandbox.appendingPathComponent("acl-readable.json")
+        try Data("{}".utf8).write(to: source)
+        XCTAssertEqual(chmod(source.path, mode_t(0o644)), 0)
+        let aclFixture = sandbox.appendingPathComponent("acl-fixture.json")
+        try Data("{}".utf8).write(to: aclFixture)
+        let allowACL = try makeACL("everyone allow write", on: aclFixture)
+        defer { acl_free(UnsafeMutableRawPointer(allowACL)) }
+        XCTAssertEqual(acl_set_file(source.path, ACL_TYPE_EXTENDED, allowACL), 0)
+
+        XCTAssertThrowsError(try PrivateFileWriter.readPrivateFile(at: source, maxBytes: 1024)) { error in
+            XCTAssertEqual(error as? PrivateFileWriter.ReadError, .unsafeFile)
+        }
     }
 
     func testOwnerOwned0644FileLoads() throws {
@@ -117,6 +162,30 @@ final class PrivateFileWriterTests: XCTestCase {
         }
 
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 1.0)
+    }
+
+    func testSymlinkLoadIsRefused() throws {
+        let target = sandbox.appendingPathComponent("target.json")
+        let link = sandbox.appendingPathComponent("link.json")
+        try Data("{}".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        XCTAssertThrowsError(try PrivateFileWriter.readPrivateFile(at: link, maxBytes: 1024)) { error in
+            XCTAssertEqual(error as? PrivateFileWriter.ReadError, .unsafeFile)
+        }
+    }
+
+    private func makeACL(_ text: String, on url: URL) throws -> acl_t {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        process.arguments = ["+a", text, url.path]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw POSIXError(.EIO) }
+        guard let acl = acl_get_file(url.path, ACL_TYPE_EXTENDED) else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return acl
     }
 
     private func permissions(_ url: URL) throws -> Int {

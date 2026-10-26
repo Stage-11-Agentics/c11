@@ -21,7 +21,7 @@ enum PrivateFileWriter {
 
     static func write(_ data: Data, to url: URL) throws {
         let temporaryURL = url.deletingLastPathComponent()
-            .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+            .appendingPathComponent(".c11-state.\(UUID().uuidString).tmp")
         let descriptor = open(
             temporaryURL.path,
             O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
@@ -36,6 +36,9 @@ enum PrivateFileWriter {
             if temporaryFileExists { unlink(temporaryURL.path) }
         }
 
+        guard let emptyACL = acl_init(0) else { throw posixError() }
+        defer { acl_free(UnsafeMutableRawPointer(emptyACL)) }
+        guard acl_set_fd_np(descriptor, emptyACL, ACL_TYPE_EXTENDED) == 0 else { throw posixError() }
         guard fchmod(descriptor, mode_t(0o600)) == 0 else { throw posixError() }
         try data.withUnsafeBytes { bytes in
             var offset = 0
@@ -63,7 +66,10 @@ enum PrivateFileWriter {
         guard maxBytes >= 0 else { throw ReadError.invalidSizeLimit }
 
         let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-        guard descriptor >= 0 else { throw posixError() }
+        guard descriptor >= 0 else {
+            if errno == ELOOP { throw ReadError.unsafeFile }
+            throw posixError()
+        }
         defer { Darwin.close(descriptor) }
 
         var info = stat()
@@ -73,6 +79,7 @@ enum PrivateFileWriter {
               info.st_mode & mode_t(0o022) == 0 else {
             throw ReadError.unsafeFile
         }
+        if try hasExtendedAllowACL(descriptor) { throw ReadError.unsafeFile }
         guard info.st_size >= 0 else { throw ReadError.unsafeFile }
         guard info.st_size <= off_t(maxBytes) else { throw ReadError.tooLarge }
 
@@ -97,5 +104,34 @@ enum PrivateFileWriter {
 
     private static func posixError() -> POSIXError {
         POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+
+    private static func hasExtendedAllowACL(_ descriptor: Int32) throws -> Bool {
+        guard let acl = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED) else {
+            if errno == ENOENT { return false }
+            throw posixError()
+        }
+        defer { acl_free(UnsafeMutableRawPointer(acl)) }
+
+        var entry: acl_entry_t?
+        var result = acl_get_entry(acl, ACL_FIRST_ENTRY.rawValue, &entry)
+        if result < 0 {
+            if errno == EINVAL { return false }
+            throw posixError()
+        }
+
+        while result == 0 {
+            guard let currentEntry = entry else { throw POSIXError(.EIO) }
+            var tag = ACL_UNDEFINED_TAG
+            guard acl_get_tag_type(currentEntry, &tag) == 0 else { throw posixError() }
+            if tag == ACL_EXTENDED_ALLOW { return true }
+
+            result = acl_get_entry(acl, ACL_NEXT_ENTRY.rawValue, &entry)
+            if result < 0 {
+                if errno == EINVAL { return false }
+                throw posixError()
+            }
+        }
+        return false
     }
 }

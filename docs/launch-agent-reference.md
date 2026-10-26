@@ -53,9 +53,10 @@ Launcher**:
 Project config `.c11/agents.json` (walk-up from the launch cwd) contributes only
 agent kind, model and effort. The command, environment and prompts always come
 from operator Settings, with factory defaults when no Settings entry exists.
-Project model and effort must be non-empty single values without leading dashes,
-whitespace or control characters; effort must match the kind's allowed values
-when declared. Invalid values keep the operator's setting.
+Project model and effort must be ASCII values of at most 128 characters, start
+with a letter or digit, and contain only letters, digits and `._/:@+,%=[]-`.
+Effort must also match the kind's allowed values when declared. Invalid values
+keep the operator's setting.
 
 Operator `envOverrides` from Settings are applied to the spawn env.
 
@@ -379,9 +380,10 @@ stamping, and command typing **atomically server-side** — a caller never has t
 sequence create → stamp → send itself. Response is the JSON object above;
 `config_source` is the matched `.c11/agents.json` path or null; that file supplies
 only agent kind, model and effort, never the base command, environment or prompts.
-When the selected agent's project entry contains ignored fields, the response
-adds `ignored_project_fields`, an array of field names. It is omitted when empty;
-invalid model/effort values are included among the ignored fields.
+The response adds `ignored_project_fields` when nonempty: a best-effort list of
+decoded fields c11 ignored for the selected agent. It lists nonempty command,
+environment and initial-prompt fields, non-nil system prompts, and nonempty
+rejected model/effort values. Unknown keys and undecodable values are not listed.
 Follows the socket threading policy (parse/validate off-main; UI mutation
 scheduled on main) and the no-focus-steal policy.
 

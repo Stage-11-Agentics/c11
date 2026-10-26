@@ -484,13 +484,13 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertNil(plan.delayedPrompt)
         let match = try XCTUnwrap(DefaultAgentProjectConfig.findMatch(from: nested.path))
         XCTAssertEqual(match.sourcePath, file.path)
-        XCTAssertEqual(match.ignoredProjectFields(for: .claudeCode), ["command", "envOverridesText", "initialPrompt", "systemPrompt"])
+        XCTAssertEqual(match.ignoredProjectFields(for: .claudeCode), ["command", "envOverridesText", "initialPrompt"])
         XCTAssertEqual(match.ignoredProjectFields(for: .codex), [])
 
-        try Data(#"{"agents":{"claude-code":{"model":"--settings=/x","effort":"unsupported","command":"","futurePrompt":"repo"}}}"#.utf8).write(to: file)
+        try Data(#"{"agents":{"claude-code":{"model":"--settings=/x","effort":"unsupported","command":"","futurePrompt":1e400,"systemPrompt":{"mode":"replace","text":"repo"}}}}"#.utf8).write(to: file)
         let invalid = try XCTUnwrap(DefaultAgentProjectConfig.findMatch(from: nested.path))
-        XCTAssertEqual(invalid.ignoredProjectFields(for: .claudeCode), ["command", "effort", "futurePrompt", "model"])
-        try Data(#"{"agents":{"claude-code":{"model":"sonnet","effort":"high"}}}"#.utf8).write(to: file)
+        XCTAssertEqual(invalid.ignoredProjectFields(for: .claudeCode), ["effort", "model", "systemPrompt"])
+        try Data(#"{"agents":{"claude-code":{"model":"sonnet","effort":"high","command":"","envOverridesText":"","initialPrompt":"","futurePrompt":"repo"}}}"#.utf8).write(to: file)
         let allowed = try XCTUnwrap(DefaultAgentProjectConfig.findMatch(from: nested.path))
         XCTAssertTrue(allowed.ignoredProjectFields(for: .claudeCode).isEmpty)
     }

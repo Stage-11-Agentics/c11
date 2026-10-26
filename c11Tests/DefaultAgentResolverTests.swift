@@ -321,6 +321,49 @@ final class DefaultAgentResolverTests: XCTestCase {
         XCTAssertEqual(DefaultAgentResolver.agentConfig(for: .claudeCode, userDefault: user, projectConfig: project), expected)
     }
 
+    func testProjectChoicesUseShellSafeASCII() {
+        let trusted = AgentConfig(command: "codex --yolo", initialPrompt: "", envOverridesText: "", model: "user-model", effort: "medium")
+        let user = DefaultAgentConfig(defaultAgent: .codex, agents: [.codex: trusted])
+        var project = DefaultAgentConfig(defaultAgent: .codex, agents: [.codex: trusted])
+        let rejected = [
+            #"\'(id)\'"#, "x;id", "$(id)", "`id`", "=ls", "a'b", "a\"b",
+            "a\\b", "a&b", "a|b", "a<b", "a>b", "a*b", "a?b", "a~b",
+            "a{b", "a}b", "a#b", "a!b", "a(b", "a)b", "a$b", "é", "[1m]",
+            String(repeating: "a", count: 129)
+        ]
+        for value in rejected {
+            project.agents[.codex]?.model = value
+            project.agents[.codex]?.effort = value
+            XCTAssertEqual(DefaultAgentResolver.agentConfig(for: .codex, userDefault: user, projectConfig: project), trusted, value.debugDescription)
+        }
+        for value in ["claude-opus-5-5[1m]", "gpt-6-luna", "sonnet", "anthropic/claude-sonnet-5-5", "A09._/:@+,%=[]-", String(repeating: "a", count: 128)] {
+            project.agents[.codex]?.model = value
+            project.agents[.codex]?.effort = value
+            let config = DefaultAgentResolver.agentConfig(for: .codex, userDefault: user, projectConfig: project)
+            XCTAssertEqual(config.model, value)
+            XCTAssertEqual(config.effort, value, "codex has no manifest effort allowlist")
+        }
+    }
+
+    func testAcceptedProjectModelRendersThroughLauncher() {
+        let project = DefaultAgentConfig(defaultAgent: .claudeCode, agents: [
+            .claudeCode: AgentConfig(command: "ignored", initialPrompt: "", envOverridesText: "", model: "claude-opus-5-5[1m]")
+        ])
+        let config = DefaultAgentResolver.agentConfig(for: .claudeCode, userDefault: .factory, projectConfig: project)
+        XCTAssertEqual(DefaultAgentResolver.launcherCommand(agent: .claudeCode, config: config), "claude --dangerously-skip-permissions --model 'claude-opus-5-5[1m]'")
+    }
+
+    func testProjectModelCannotSuppressOperatorEffortOrSystemPrompt() {
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: [
+            .claudeCode: AgentConfig(command: "claude --operator-command", initialPrompt: "", envOverridesText: "", effort: "high", systemPrompt: SystemPromptSetting(mode: .append, text: "operator system"))
+        ])
+        let project = DefaultAgentConfig(defaultAgent: .claudeCode, agents: [
+            .claudeCode: AgentConfig(command: "ignored", initialPrompt: "", envOverridesText: "", model: "sonnet--append-system-prompt--effort")
+        ])
+        let resolved = DefaultAgentResolver.resolve(explicitAgent: nil, userDefault: user, projectConfig: project)
+        XCTAssertEqual(resolved.launch.command, "claude --operator-command --model sonnet--append-system-prompt--effort --effort high --append-system-prompt 'operator system'")
+    }
+
     func testExplicitAgentBeatsBothProjectAndUserDefault() {
         let user = DefaultAgentConfig.factory  // default = claude
         let (agent, launch) = DefaultAgentResolver.resolve(
@@ -975,6 +1018,18 @@ final class AgentLaunchPlannerTests: XCTestCase {
         XCTAssertNil(p.delayedPrompt)
         XCTAssertEqual(p.model, "sonnet")
         XCTAssertEqual(p.effort, "high")
+    }
+
+    func testProjectCodexEffortUsesShellSafeChoice() throws {
+        let user = userDefault(.codex, effort: "medium")
+        var project = DefaultAgentConfig(defaultAgent: .codex, agents: [
+            .codex: AgentConfig(command: "ignored", initialPrompt: "", envOverridesText: "", model: "gpt-6-luna", effort: "xhigh")
+        ])
+        let accepted = try plan(AgentLaunchRequest(kind: "codex"), userDefault: user, projectConfig: project).get()
+        XCTAssertEqual(accepted.launchLine, "codex --yolo --model gpt-6-luna -c model_reasoning_effort=xhigh")
+        project.agents[.codex]?.effort = #"\'(id)\'"#
+        let rejected = try plan(AgentLaunchRequest(kind: "codex"), userDefault: user, projectConfig: project).get()
+        XCTAssertEqual(rejected.launchLine, "codex --yolo --model gpt-6-luna -c model_reasoning_effort=medium")
     }
 
     // MARK: composition per kind

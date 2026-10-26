@@ -11,20 +11,20 @@ enum DefaultAgentProjectConfig {
     struct Match {
         let config: DefaultAgentConfig
         let sourcePath: String
-        /// Preserve field presence for disclosure, including undecodable values.
-        let agentFields: [String: Set<String>]
-
+        /// Best-effort; lists decoded fields c11 ignored.
         func ignoredProjectFields(for agent: AgentType?) -> [String] {
-            guard let agent else { return [] }
-            var ignored = agentFields[agent.rawValue] ?? []
-            if let entry = config.agents[agent] {
-                if DefaultAgentResolver.isValidProjectChoice(entry.model) {
-                    ignored.remove("model")
-                }
-                let efforts = AgentRegistry.shared.manifest(for: agent)?.launch.effortValues ?? []
-                if DefaultAgentResolver.isValidProjectChoice(entry.effort, allowedValues: efforts) {
-                    ignored.remove("effort")
-                }
+            guard let agent, let entry = config.agents[agent] else { return [] }
+            var ignored: [String] = []
+            if !entry.command.isEmpty { ignored.append("command") }
+            if !entry.envOverridesText.isEmpty { ignored.append("envOverridesText") }
+            if !entry.initialPrompt.isEmpty { ignored.append("initialPrompt") }
+            if entry.systemPrompt != nil { ignored.append("systemPrompt") }
+            if !entry.model.isEmpty, !DefaultAgentResolver.isValidProjectChoice(entry.model) {
+                ignored.append("model")
+            }
+            let efforts = AgentRegistry.shared.manifest(for: agent)?.launch.effortValues ?? []
+            if !entry.effort.isEmpty, !DefaultAgentResolver.isValidProjectChoice(entry.effort, allowedValues: efforts) {
+                ignored.append("effort")
             }
             return ignored.sorted()
         }
@@ -71,10 +71,7 @@ enum DefaultAgentProjectConfig {
             if fileManager.fileExists(atPath: candidate.path),
                let data = try? Data(contentsOf: candidate),
                let cfg = try? JSONDecoder().decode(DefaultAgentConfig.self, from: data) {
-                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                let agents = json?["agents"] as? [String: [String: Any]] ?? [:]
-                let fields = agents.mapValues { Set($0.keys) }
-                return Match(config: cfg, sourcePath: candidate.path, agentFields: fields)
+                return Match(config: cfg, sourcePath: candidate.path)
             }
             let parent = url.deletingLastPathComponent()
             if parent.path == url.path { break }

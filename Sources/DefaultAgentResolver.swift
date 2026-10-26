@@ -178,10 +178,21 @@ enum DefaultAgentResolver {
         return config
     }
 
+    /// Keep repo-authored values safe across shells, without relying on POSIX quoting.
     static func isValidProjectChoice(_ value: String, allowedValues: [String] = []) -> Bool {
-        !value.isEmpty && !value.hasPrefix("-")
-            && value.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil
-            && (allowedValues.isEmpty || allowedValues.contains(value))
+        guard value.utf8.count <= 128, let first = value.unicodeScalars.first else { return false }
+        switch first {
+        case "a"..."z", "A"..."Z", "0"..."9": break
+        default: return false
+        }
+        let safe = value.unicodeScalars.allSatisfy { scalar in
+            switch scalar {
+            case "a"..."z", "A"..."Z", "0"..."9", ".", "_", "/", ":", "@", "+", ",", "%", "=", "[", "]", "-":
+                return true
+            default: return false
+            }
+        }
+        return safe && (allowedValues.isEmpty || allowedValues.contains(value))
     }
 
     /// Resolve the launch shape for a specific agent. Project config (if any)
@@ -355,18 +366,19 @@ enum DefaultAgentResolver {
     /// last), so it's applied here rather than after prompt-baking.
     /// Visible for testing.
     static func launcherCommand(agent: AgentType, config: AgentConfig) -> String {
-        var result = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !result.isEmpty else { return "" }
-        if let flag = modelFlag(agent: agent, config: config, command: result) {
+        let command = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return "" }
+        var result = command
+        if let flag = modelFlag(agent: agent, config: config, command: command) {
             result += " \(flag)"
         }
-        if let flag = effortFlag(agent: agent, config: config, command: result) {
+        if let flag = effortFlag(agent: agent, config: config, command: command) {
             result += " \(flag)"
         }
         // System-prompt flag rides after model/effort but before claude-code's
         // initial prompt (staged by the launch caller), matching the launch
         // line the planner composes.
-        if let flag = systemPromptFlag(agent: agent, config: config, command: result) {
+        if let flag = systemPromptFlag(agent: agent, config: config, command: command) {
             result += " \(flag)"
         }
         return result

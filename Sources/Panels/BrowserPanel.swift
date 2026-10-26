@@ -4134,7 +4134,11 @@ final class BrowserPanel: Panel, ObservableObject {
             (() => {
               const links = Array.from(document.querySelectorAll(
                 'link[rel~=\"icon\"], link[rel=\"shortcut icon\"], link[rel=\"apple-touch-icon\"], link[rel=\"apple-touch-icon-precomposed\"]'
-              ));
+              )).filter(link => {
+                if ((link.type || '').toLowerCase() === 'image/svg+xml') return false;
+                try { return !new URL(link.href).pathname.toLowerCase().endsWith('.svg'); }
+                catch { return false; }
+              });
               function score(link) {
                 const v = (link.sizes && link.sizes.value) ? link.sizes.value : '';
                 if (v === 'any') return 1000;
@@ -4168,9 +4172,9 @@ final class BrowserPanel: Panel, ObservableObject {
             guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID) else { return }
             guard self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
 
-            let fallbackURL = URL(string: "/favicon.ico", relativeTo: pageURL)
+            let fallbackURL = URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL
             let iconURL = discoveredURL ?? fallbackURL
-            guard let iconURL else { return }
+            guard let iconURL, BrowserFavicon.isFetchable(iconURL) else { return }
 #if DEBUG
             dlog(
                 "browser.favicon.iconURL " +
@@ -4195,83 +4199,41 @@ final class BrowserPanel: Panel, ObservableObject {
             }
             lastFaviconURLString = iconURLString
 
-            var req = URLRequest(url: iconURL)
-            req.timeoutInterval = 2.0
-            req.cachePolicy = .returnCacheDataElseLoad
-            req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
-            let effectiveRequest = remoteProxyPreparedRequest(from: req, logScope: "faviconRewrite")
-
-            let data: Data
-            let response: URLResponse
-            do {
-                let remoteSession = remoteProxyURLSession()
-                defer { remoteSession?.finishTasksAndInvalidate() }
-                if let remoteSession {
-#if DEBUG
-                    dlog(
-                        "browser.favicon.fetch " +
-                        "panel=\(id.uuidString.prefix(5)) " +
-                        "via=proxy " +
-                        "url=\(effectiveRequest.url?.absoluteString ?? "<nil>")"
+            let remoteSession = remoteProxyURLSession()
+            defer { remoteSession?.finishTasksAndInvalidate() }
+            var candidates = [iconURL]
+            if let fallbackURL, fallbackURL != iconURL {
+                candidates.append(fallbackURL)
+            }
+            var decodedPNG: Data?
+            for candidate in candidates {
+                guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID),
+                      self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
+                var req = URLRequest(url: candidate)
+                req.timeoutInterval = 2.0
+                req.cachePolicy = .returnCacheDataElseLoad
+                req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
+                let effectiveRequest = remoteProxyPreparedRequest(from: req, logScope: "faviconRewrite")
+                do {
+                    let raw = try await BrowserFavicon.fetch(
+                        effectiveRequest,
+                        session: remoteSession ?? BrowserFavicon.directSession,
+                        maximumBytes: BrowserFavicon.maximumBytes
                     )
-#endif
-                    (data, response) = try await remoteSession.data(for: effectiveRequest)
-                } else {
+                    // Use 2x the rendered point size so Retina icons stay sharp.
+                    decodedPNG = await Task.detached(priority: .utility) {
+                        BrowserFavicon.decodePNG(raw, targetPx: 32)
+                    }.value
+                    if decodedPNG != nil { break }
+                } catch {
 #if DEBUG
-                    dlog(
-                        "browser.favicon.fetch " +
-                        "panel=\(id.uuidString.prefix(5)) " +
-                        "via=direct " +
-                        "url=\(effectiveRequest.url?.absoluteString ?? "<nil>")"
-                    )
+                    dlog("browser.favicon.fetchError panel=\(id.uuidString.prefix(5)) error=\(error)")
 #endif
-                    (data, response) = try await URLSession.shared.data(for: effectiveRequest)
                 }
-            } catch {
-#if DEBUG
-                dlog(
-                    "browser.favicon.fetchError " +
-                    "panel=\(id.uuidString.prefix(5)) " +
-                    "error=\(String(describing: error))"
-                )
-#endif
-                return
             }
-            guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID) else { return }
-            guard self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
-
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-#if DEBUG
-                let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-                dlog(
-                    "browser.favicon.badResponse " +
-                    "panel=\(id.uuidString.prefix(5)) " +
-                    "status=\(status)"
-                )
-#endif
-                return
-            }
-#if DEBUG
-            dlog(
-                "browser.favicon.response " +
-                "panel=\(id.uuidString.prefix(5)) " +
-                "status=\(http.statusCode) " +
-                "bytes=\(data.count)"
-            )
-#endif
-
-            // Use >= 2x the rendered point size so we don't upscale (blurry) on Retina.
-            guard let png = Self.makeFaviconPNGData(from: data, targetPx: 32) else {
-#if DEBUG
-                dlog(
-                    "browser.favicon.decodeFailed " +
-                    "panel=\(id.uuidString.prefix(5)) " +
-                    "bytes=\(data.count)"
-                )
-#endif
-                return
-            }
+            guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID),
+                  self.isCurrentFaviconRefresh(generation: refreshGeneration),
+                  let png = decodedPNG else { return }
             // Only update if we got a real icon; keep the old one otherwise to avoid flashes.
             faviconPNGData = png
 #if DEBUG
@@ -4316,62 +4278,6 @@ final class BrowserPanel: Panel, ObservableObject {
                 resume(nil)
             }
         }
-    }
-
-    @MainActor
-    private static func makeFaviconPNGData(from raw: Data, targetPx: Int) -> Data? {
-        guard let image = NSImage(data: raw) else { return nil }
-
-        let px = max(16, min(128, targetPx))
-        let size = NSSize(width: px, height: px)
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: px,
-            pixelsHigh: px,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else {
-            return nil
-        }
-
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        let ctx = NSGraphicsContext(bitmapImageRep: rep)
-        ctx?.imageInterpolation = .high
-        ctx?.shouldAntialias = true
-        NSGraphicsContext.current = ctx
-
-        NSColor.clear.setFill()
-        NSRect(origin: .zero, size: size).fill()
-
-        // Aspect-fit into the target square.
-        let srcSize = image.size
-        let scale = min(size.width / max(1, srcSize.width), size.height / max(1, srcSize.height))
-        let drawSize = NSSize(width: srcSize.width * scale, height: srcSize.height * scale)
-        let drawOrigin = NSPoint(x: (size.width - drawSize.width) / 2.0, y: (size.height - drawSize.height) / 2.0)
-        // Align to integral pixels to avoid soft edges at small sizes.
-        let drawRect = NSRect(
-            x: round(drawOrigin.x),
-            y: round(drawOrigin.y),
-            width: round(drawSize.width),
-            height: round(drawSize.height)
-        )
-
-        image.draw(
-            in: drawRect,
-            from: NSRect(origin: .zero, size: srcSize),
-            operation: .sourceOver,
-            fraction: 1.0,
-            respectFlipped: true,
-            hints: [.interpolation: NSImageInterpolation.high]
-        )
-
-        return rep.representation(using: .png, properties: [:])
     }
 
     private func handleWebViewLoadingChanged(_ newValue: Bool) {

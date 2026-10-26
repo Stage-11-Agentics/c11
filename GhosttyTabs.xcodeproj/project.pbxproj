@@ -686,6 +686,8 @@
 		C11317B58D56971501F930D0 /* CMUXCLI+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */; };
 		C11317BCFB3B1ED9789925EF /* CMUXCLI+Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */; };
 		C11317B7F5BDB77DA49F81F3 /* CMUXCLI+WorkspaceGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */; };
+		6C10E78DEC53CA33B3B52458 /* BrowserFavicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A742AF7D01D16C9F93A6D67 /* BrowserFavicon.swift */; };
+		C9A9EE8A917AFDA56305D84E /* BrowserFaviconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B93AA031C8EDCB13939E77 /* BrowserFaviconTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1389,6 +1391,8 @@
 		C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Usage.swift"; sourceTree = "<group>"; };
 		C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Version.swift"; sourceTree = "<group>"; };
 		C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+WorkspaceGroup.swift"; sourceTree = "<group>"; };
+		6A742AF7D01D16C9F93A6D67 /* BrowserFavicon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BrowserFavicon.swift; path = Panels/BrowserFavicon.swift; sourceTree = "<group>"; };
+		B6B93AA031C8EDCB13939E77 /* BrowserFaviconTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserFaviconTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1793,6 +1797,7 @@
 				70A6F529ED5EF993BB54103F /* PanelLineage.swift */,
 				272E746324754FAF16B14175 /* PanelCloseForGoodPolicy.swift */,
 				9E121A213A31C49006AEBFDD /* PanelLineageStore.swift */,
+				6A742AF7D01D16C9F93A6D67 /* BrowserFavicon.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -2144,6 +2149,7 @@
 				7F9CD81A501C496DECFAB3F2 /* ModelCostCatalogTests.swift */,
 				C1120300000000000000F041 /* ModelCatalogTests.swift */,
 				5A17F22C82057A0196EEC4A2 /* MarkdownCorpusIndexTests.swift */,
+				B6B93AA031C8EDCB13939E77 /* BrowserFaviconTests.swift */,
 			);
 			path = c11Tests;
 			sourceTree = "<group>";
@@ -2551,6 +2557,7 @@
 				32E8C6DFC5D1745577BCD85C /* PanelCloseForGoodPolicy.swift in Sources */,
 				4126FE0A41180AF029CA62D0 /* PanelLineageStore.swift in Sources */,
 				C46400000000000000000002 /* C11LogicTestsBundleBootstrap.swift in Sources */,
+				C9A9EE8A917AFDA56305D84E /* BrowserFaviconTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2858,6 +2865,7 @@
 				1F7D58FBB534D28986BCFF0F /* PanelLineage.swift in Sources */,
 				B2037CBED0FB9D356FD1BB9A /* PanelCloseForGoodPolicy.swift in Sources */,
 				744C86277D36D47EAAAD42FA /* PanelLineageStore.swift in Sources */,
+				6C10E78DEC53CA33B3B52458 /* BrowserFavicon.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

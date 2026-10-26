@@ -345,6 +345,144 @@ final class MarkdownCorpusIndexTests: XCTestCase {
         XCTAssertTrue(pathological.linksTruncated, "oversized lines are skipped before the link regex runs")
     }
 
+    func testHostileHeadingsAreCappedBeforeRegexProcessing() throws {
+        let root = URL(fileURLWithPath: "/tmp/markdown-hostile-heading-fixture", isDirectory: true)
+        let file = root.appendingPathComponent("reader.md")
+        let bracketHeading = "# " + String(repeating: "[", count: 16_385)
+        let setextHeading = String(repeating: "<", count: 16_385)
+        let backtickHeading = "# " + String(repeating: "`", count: 16_385)
+        let combiningHeading = "# " + String(repeating: "<\u{301}", count: 4_096)
+        let source = [
+            bracketHeading,
+            setextHeading,
+            "===",
+            backtickHeading,
+            combiningHeading,
+            "## **Bold** `code` [link](x.md)",
+        ].joined(separator: "\n")
+
+        let started = ProcessInfo.processInfo.systemUptime
+        let parsed = MarkdownCorpusParser.parse(
+            source,
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 20,
+            maximumTicketIDs: 20
+        )
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
+        XCTAssertEqual(parsed.document.headings.map(\.line), [1, 2, 5, 6])
+        XCTAssertFalse(parsed.document.headings.contains { $0.line == 4 }, "a heading that strips to empty is dropped")
+        XCTAssertTrue(parsed.document.headings.allSatisfy { $0.text.unicodeScalars.count <= 512 })
+        XCTAssertEqual(parsed.document.headings[0].text, String(repeating: "[", count: 512))
+        XCTAssertEqual(parsed.document.headings[1].text, String(repeating: "<", count: 512))
+        XCTAssertEqual(parsed.document.headings[2].text.unicodeScalars.count, 512)
+        XCTAssertEqual(parsed.document.headings.last?.text, "Bold code link")
+        XCTAssertEqual(parsed.document.headings.last?.slug, "bold-code-link")
+    }
+
+    func testLinkPatternWorkBudgetBoundsManyAdversarialLines() throws {
+        let root = URL(fileURLWithPath: "/tmp/markdown-link-budget-fixture", isDirectory: true)
+        let file = root.appendingPathComponent("reader.md")
+        let hostileLine = String(repeating: "[", count: 16_000)
+        let source = Array(repeating: hostileLine, count: 64).joined(separator: "\n")
+
+        let started = ProcessInfo.processInfo.systemUptime
+        let parsed = MarkdownCorpusParser.parse(
+            source,
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 20,
+            maximumTicketIDs: 20
+        )
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
+        XCTAssertTrue(parsed.document.links.isEmpty)
+        XCTAssertTrue(parsed.linksTruncated, "the per-document work budget should report skipped link extraction")
+
+        let ordinary = MarkdownCorpusParser.parse(
+            "See [target](target.md)",
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 20,
+            maximumTicketIDs: 20
+        )
+        XCTAssertEqual(ordinary.document.links.map(\.text), ["target"])
+    }
+
+    func testTicketMatchingStaysLinearWithManyConfiguredPrefixes() throws {
+        let root = URL(fileURLWithPath: "/tmp/markdown-ticket-prefix-fixture", isDirectory: true)
+        let file = root.appendingPathComponent("reader.md")
+        var prefixes = Set((0..<50_000).map { "P\($0)" })
+        prefixes.insert("C11")
+
+        let started = ProcessInfo.processInfo.systemUptime
+        let parsed = MarkdownCorpusParser.parse(
+            "C11-5 XC11-6 C11-7x",
+            fileURL: file,
+            rootURL: root,
+            maximumHeadings: 20,
+            maximumLinks: 20,
+            maximumTicketIDs: 20,
+            ticketPrefixes: prefixes
+        )
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
+        XCTAssertEqual(parsed.document.ticketIDs, ["C11-5"])
+    }
+
+    func testStopCancelsInFlightScanAndFreshIndexerCanUseSameRoot() async throws {
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var stored = 0
+            var value: Int { lock.lock(); defer { lock.unlock() }; return stored }
+            func increment() { lock.lock(); stored += 1; lock.unlock() }
+        }
+
+        let temp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let root = temp.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let reader = root.appendingPathComponent("reader.md")
+        let second = root.appendingPathComponent("second.md")
+        try Data("# Reader\n".utf8).write(to: reader)
+        try Data("# Second\n".utf8).write(to: second)
+
+        let firstCandidateIndexed = DispatchSemaphore(value: 0)
+        let resumeScan = DispatchSemaphore(value: 0)
+        let stoppedCandidateCount = Counter()
+        let stoppedPublishes = Counter()
+        let stoppedIndexer = MarkdownCorpusIndexer(
+            rootURL: root,
+            priorityFileURLs: [reader],
+            afterCandidateIndexed: { _ in
+                stoppedCandidateCount.increment()
+                if stoppedCandidateCount.value == 1 {
+                    firstCandidateIndexed.signal()
+                    _ = resumeScan.wait(timeout: .now() + 10)
+                }
+            }
+        ) { _ in stoppedPublishes.increment() }
+        stoppedIndexer.start()
+        let reachedFirstCandidate = firstCandidateIndexed.wait(timeout: .now() + 5)
+        stoppedIndexer.stop()
+        resumeScan.signal()
+        XCTAssertEqual(reachedFirstCandidate, .success)
+        let stoppedSnapshot = await scan(stoppedIndexer)
+        XCTAssertTrue(stoppedSnapshot.documents.isEmpty)
+        XCTAssertEqual(stoppedCandidateCount.value, 1, "stop should halt before the next file is parsed")
+        XCTAssertEqual(stoppedPublishes.value, 0)
+
+        let restartedPublishes = Counter()
+        let restartedIndexer = MarkdownCorpusIndexer(rootURL: root, priorityFileURLs: [reader]) { _ in
+            restartedPublishes.increment()
+        }
+        let restartedSnapshot = await scan(restartedIndexer)
+        XCTAssertEqual(Set(restartedSnapshot.documents.map(\.relativePath)), Set(["reader.md", "second.md"]))
+        XCTAssertEqual(restartedPublishes.value, 1)
+        restartedIndexer.stop()
+    }
+
     func testCorpusNavigationValidationRejectsUnlistedTargetsAndUnrelatedBacklinks() {
         let root = URL(fileURLWithPath: "/tmp/markdown-navigation-fixture", isDirectory: true)
         let reader = root.appendingPathComponent("reader.md")

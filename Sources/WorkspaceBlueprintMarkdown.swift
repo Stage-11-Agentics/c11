@@ -59,6 +59,14 @@ import Foundation
 ///   hand-authoring and legible exports — not lossless capture.
 enum WorkspaceBlueprintMarkdown {
 
+    private static func validateLayoutDepth(_ depth: Int) throws {
+        guard depth <= YAML.maximumNestingDepth else {
+            throw ParseError.yamlParseFailed(
+                "layout nesting depth exceeds \(YAML.maximumNestingDepth)"
+            )
+        }
+    }
+
     // MARK: - Errors
 
     enum ParseError: Error, CustomStringConvertible, Equatable {
@@ -332,19 +340,21 @@ enum WorkspaceBlueprintMarkdown {
 
     private static func reserveExplicitSurfaceIDs(
         in node: YAML.Value,
-        reserved: inout Set<String>
+        reserved: inout Set<String>,
+        depth: Int = 0
     ) throws {
+        try validateLayoutDepth(depth)
         let keys = Set((node.asMapping ?? []).map { $0.0 })
         if keys.contains("direction") || keys.contains("children") {
             for child in node.lookup("children")?.asList ?? [] {
-                try reserveExplicitSurfaceIDs(in: child, reserved: &reserved)
+                try reserveExplicitSurfaceIDs(in: child, reserved: &reserved, depth: depth + 1)
             }
             return
         }
         if let listKey = panelListKey(in: keys) {
             // `buildLayoutTree` builds every panel-list item as a leaf and
-            // ignores any `tabs:`/`panels:`/`children:` it carries, so the
-            // reserve walk must treat the item the same way.
+            // ignores any `tabs:`/`panels:`/`children:`/`direction:` it carries,
+            // so the reserve walk must treat the item the same way.
             for panelNode in node.lookup(listKey)?.asList ?? [] {
                 try reserveLeafID(of: panelNode, reserved: &reserved)
             }
@@ -382,8 +392,10 @@ enum WorkspaceBlueprintMarkdown {
     private static func buildLayoutTree(
         from node: YAML.Value,
         surfaces: inout [PanelSpec],
-        idGen: inout PanelIDGenerator
+        idGen: inout PanelIDGenerator,
+        depth: Int = 0
     ) throws -> LayoutTreeSpec {
+        try validateLayoutDepth(depth)
         let mapping = node.asMapping ?? []
         let keys = Set(mapping.map { $0.0 })
 
@@ -400,8 +412,18 @@ enum WorkspaceBlueprintMarkdown {
             guard childrenList.count == 2 else {
                 throw ParseError.wrongChildCount(childrenList.count)
             }
-            let first = try buildLayoutTree(from: childrenList[0], surfaces: &surfaces, idGen: &idGen)
-            let second = try buildLayoutTree(from: childrenList[1], surfaces: &surfaces, idGen: &idGen)
+            let first = try buildLayoutTree(
+                from: childrenList[0],
+                surfaces: &surfaces,
+                idGen: &idGen,
+                depth: depth + 1
+            )
+            let second = try buildLayoutTree(
+                from: childrenList[1],
+                surfaces: &surfaces,
+                idGen: &idGen,
+                depth: depth + 1
+            )
             return .split(LayoutTreeSpec.SplitSpec(
                 orientation: orientation,
                 dividerPosition: dividerPosition,
@@ -523,7 +545,7 @@ enum WorkspaceBlueprintMarkdown {
                 throw ParseError.malformedSplitRatio(raw)
             }
             let result = lhs / (lhs + rhs)
-            guard result.isFinite else {
+            guard result.isFinite, result > 0, result < 1 else {
                 throw ParseError.malformedSplitRatio(raw)
             }
             return result
@@ -708,6 +730,8 @@ enum WorkspaceBlueprintMarkdown {
 /// scalars are NOT supported — anything beyond what `Sources/Blueprints/`
 /// emits will hit `parseFailed`.
 enum YAML {
+    fileprivate static let maximumNestingDepth = 64
+
     indirect enum Value: Equatable {
         case scalar(String)
         case list([Value])
@@ -754,7 +778,15 @@ enum YAML {
     static func parse(_ source: String) throws -> Value {
         let lines = tokenize(source)
         var index = 0
-        return parseValue(lines: lines, index: &index, indent: 0)
+        return try parseValue(lines: lines, index: &index, indent: 0, depth: 0)
+    }
+
+    private static func validateDepth(_ depth: Int) throws {
+        guard depth <= maximumNestingDepth else {
+            throw WorkspaceBlueprintMarkdown.ParseError.yamlParseFailed(
+                "YAML nesting depth exceeds \(maximumNestingDepth)"
+            )
+        }
     }
 
     /// Strip blank and comment-only lines; keep indent + trimmed content.
@@ -777,18 +809,30 @@ enum YAML {
 
     /// Parse a value at the given indent level. Decides between mapping,
     /// list, and scalar based on the first line at that indent.
-    private static func parseValue(lines: [Line], index: inout Int, indent: Int) -> Value {
+    private static func parseValue(
+        lines: [Line],
+        index: inout Int,
+        indent: Int,
+        depth: Int
+    ) throws -> Value {
+        try validateDepth(depth)
         guard index < lines.count else { return .scalar("") }
         let line = lines[index]
         if line.indent < indent { return .scalar("") }
         if line.content.hasPrefix("- ") || line.content == "-" {
-            return parseList(lines: lines, index: &index, indent: line.indent)
+            return try parseList(lines: lines, index: &index, indent: line.indent, depth: depth)
         }
-        return parseMapping(lines: lines, index: &index, indent: line.indent)
+        return try parseMapping(lines: lines, index: &index, indent: line.indent, depth: depth)
     }
 
     /// Parse mapping entries at exactly `indent`.
-    private static func parseMapping(lines: [Line], index: inout Int, indent: Int) -> Value {
+    private static func parseMapping(
+        lines: [Line],
+        index: inout Int,
+        indent: Int,
+        depth: Int
+    ) throws -> Value {
+        try validateDepth(depth)
         var entries: [(String, Value)] = []
         while index < lines.count {
             let line = lines[index]
@@ -804,7 +848,12 @@ enum YAML {
             if !after.isEmpty {
                 entries.append((key, .scalar(unquote(after))))
             } else if index < lines.count && lines[index].indent > indent {
-                let inner = parseValue(lines: lines, index: &index, indent: lines[index].indent)
+                let inner = try parseValue(
+                    lines: lines,
+                    index: &index,
+                    indent: lines[index].indent,
+                    depth: depth + 1
+                )
                 entries.append((key, inner))
             } else {
                 entries.append((key, .scalar("")))
@@ -814,7 +863,13 @@ enum YAML {
     }
 
     /// Parse list entries at exactly `indent` (the `-` sits at column `indent`).
-    private static func parseList(lines: [Line], index: inout Int, indent: Int) -> Value {
+    private static func parseList(
+        lines: [Line],
+        index: inout Int,
+        indent: Int,
+        depth: Int
+    ) throws -> Value {
+        try validateDepth(depth)
         var items: [Value] = []
         while index < lines.count {
             let line = lines[index]
@@ -828,7 +883,12 @@ enum YAML {
             index += 1
             if payload.isEmpty {
                 if index < lines.count && lines[index].indent > indent {
-                    items.append(parseValue(lines: lines, index: &index, indent: lines[index].indent))
+                    items.append(try parseValue(
+                        lines: lines,
+                        index: &index,
+                        indent: lines[index].indent,
+                        depth: depth + 1
+                    ))
                 } else {
                     items.append(.scalar(""))
                 }
@@ -844,7 +904,12 @@ enum YAML {
                 if !after.isEmpty {
                     entries.append((key, .scalar(unquote(after))))
                 } else if index < lines.count && lines[index].indent > mapIndent {
-                    let inner = parseValue(lines: lines, index: &index, indent: lines[index].indent)
+                    let inner = try parseValue(
+                        lines: lines,
+                        index: &index,
+                        indent: lines[index].indent,
+                        depth: depth + 1
+                    )
                     entries.append((key, inner))
                 } else {
                     entries.append((key, .scalar("")))
@@ -862,7 +927,12 @@ enum YAML {
                     if !v.isEmpty {
                         entries.append((k, .scalar(unquote(v))))
                     } else if index < lines.count && lines[index].indent > mapIndent {
-                        let inner = parseValue(lines: lines, index: &index, indent: lines[index].indent)
+                        let inner = try parseValue(
+                            lines: lines,
+                            index: &index,
+                            indent: lines[index].indent,
+                            depth: depth + 1
+                        )
                         entries.append((k, inner))
                     } else {
                         entries.append((k, .scalar("")))

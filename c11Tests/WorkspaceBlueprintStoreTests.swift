@@ -139,6 +139,39 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(merged[2].source, .builtIn, "built-in entries come last")
     }
 
+    func testMergedFallsBackToFilenameForDuplicatePanelIDsWithoutTrapping() throws {
+        let repoRoot = tmpRoot.appendingPathComponent("repo", isDirectory: true)
+        let blueprintDir = repoRoot.appendingPathComponent(".c11/blueprints", isDirectory: true)
+        try FileManager.default.createDirectory(at: blueprintDir, withIntermediateDirectories: true)
+        let crashURL = blueprintDir.appendingPathComponent("crash.md")
+        try Data("""
+        ---
+        title: crash
+        ---
+
+        ## Layout
+
+        ```yaml
+        layout:
+          - panels:
+              - id: a
+                type: terminal
+                tabs:
+              - id: a
+                type: terminal
+                tabs:
+        ```
+        """.utf8).write(to: crashURL)
+
+        let merged = makeStore().merged(cwd: repoRoot)
+
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged[0].name, "crash")
+        XCTAssertEqual(URL(fileURLWithPath: merged[0].url).lastPathComponent, "crash.md")
+        XCTAssertEqual(merged[0].source, .repo)
+        XCTAssertNil(merged[0].description)
+    }
+
     func testMergedSortsByModifiedAtDescWithinEachGroup() throws {
         let userDir: URL = tmpRoot
         let store = WorkspaceBlueprintStore(directoryOverride: userDir)
@@ -316,6 +349,63 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(read.description, "A test blueprint")
         XCTAssertEqual(read.version, 1)
         XCTAssertEqual(read.plan.surfaces.count, 1)
+    }
+
+    func testReadRejectsBlueprintNested200Levels() throws {
+        var layoutLines = ["layout:", "  - type: terminal"]
+        var indent = 4
+        for _ in 0..<200 {
+            layoutLines.append(String(repeating: " ", count: indent) + "ignored:")
+            indent += 2
+        }
+        layoutLines.append(String(repeating: " ", count: indent) + "leaf: value")
+        let sourceLines = ["## Layout", "", "```yaml"] + layoutLines + ["```"]
+        let url = tmpRoot.appendingPathComponent("deep.md")
+        try Data(sourceLines.joined(separator: "\n").utf8).write(to: url)
+
+        XCTAssertThrowsError(try makeStore().read(url: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected a bounded YAML decode failure, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("YAML nesting depth"), detail)
+        }
+    }
+
+    func testReadRejectsMarkdownLargerThanOneMiB() throws {
+        var data = try WorkspaceBlueprintMarkdown.serialize(sampleBlueprint(name: "Large"))
+        let sizeLimit = 1_048_576
+        data.append(Data(repeating: 0x20, count: sizeLimit + 1 - data.count))
+        let url = tmpRoot.appendingPathComponent("large.md")
+        try data.write(to: url)
+
+        XCTAssertThrowsError(try makeStore().read(url: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected an oversized blueprint decode failure, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("byte limit"), detail)
+        }
+    }
+
+    func testReadFollowsBlueprintSymlinks() throws {
+        let store = makeStore()
+        let blueprint = sampleBlueprint(name: "Symlinked Blueprint")
+        let targetURL = tmpRoot.appendingPathComponent("target.md")
+        let symlinkURL = tmpRoot.appendingPathComponent("linked.md")
+        try store.write(blueprint, to: targetURL)
+        try FileManager.default.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: targetURL.path)
+
+        XCTAssertEqual(try store.read(url: symlinkURL), blueprint)
+    }
+
+    func testReadRejectsNonRegularBlueprintFileAsDecodeFailure() throws {
+        let directoryURL = tmpRoot.appendingPathComponent("not-a-file.md", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(try makeStore().read(url: directoryURL)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed = error else {
+                return XCTFail("expected a non-regular-file decode failure, got \(error)")
+            }
+        }
     }
 
     // MARK: - write

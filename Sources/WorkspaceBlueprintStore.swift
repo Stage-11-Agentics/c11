@@ -49,6 +49,8 @@ struct WorkspaceBlueprintStore: Sendable {
         return "starter:one-column"
     }
 
+    private static let maximumBlueprintBytes = 1_048_576
+
     private let directoryOverride: URL?
     private let fileManager: FileManager
 
@@ -223,10 +225,24 @@ struct WorkspaceBlueprintStore: Sendable {
     /// as JSON.
     func read(url: URL) throws -> WorkspaceBlueprintFile {
         let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch {
-            throw StoreError.readFailed(url.path, underlying: "\(error)")
+        switch MailboxPanelMail.readRegularFilePrefix(
+            path: url.path,
+            limit: Self.maximumBlueprintBytes,
+            followSymlinks: true
+        ) {
+        case .failure(let failure):
+            if case .notRegularFile = failure.referenceContent {
+                throw StoreError.decodeFailed(url.path, underlying: failure.description)
+            }
+            throw StoreError.readFailed(url.path, underlying: failure.description)
+        case .success(let read):
+            guard !read.truncated else {
+                throw StoreError.decodeFailed(
+                    url.path,
+                    underlying: "blueprint exceeds \(Self.maximumBlueprintBytes)-byte limit"
+                )
+            }
+            data = read.data
         }
         if url.pathExtension.lowercased() == "md" {
             do {

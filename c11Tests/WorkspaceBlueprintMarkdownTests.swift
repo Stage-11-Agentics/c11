@@ -179,6 +179,30 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         }
     }
 
+    func testParseRejectsSplitRatiosOutsideUnitInterval() {
+        for ratio in ["-1/2", "3/-1"] {
+            let source = """
+            ## Layout
+
+            ```yaml
+            layout:
+              - direction: horizontal
+                split: \(ratio)
+                children:
+                  - type: terminal
+                  - type: terminal
+            ```
+            """
+
+            XCTAssertThrowsError(try WorkspaceBlueprintMarkdown.parse(Data(source.utf8)), ratio) { error in
+                guard case WorkspaceBlueprintMarkdown.ParseError.malformedSplitRatio(let raw) = error else {
+                    return XCTFail("expected malformedSplitRatio for \(ratio), got \(error)")
+                }
+                XCTAssertEqual(raw, ratio)
+            }
+        }
+    }
+
     // MARK: - C11-337 `panels:` list key (legacy `tabs:` accepted forever)
 
     private func multiPanelSource(listKey: String) -> String {

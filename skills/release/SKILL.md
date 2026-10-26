@@ -105,6 +105,13 @@ This is a checklist trigger, not a CI gate.
 - `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
   (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
   the operator's prod c11.
+- To keep the Release build off the laptop, run it on Atlas instead:
+  `./scripts/remote-build.sh --tag rel-vX.Y.Z --mode release` runs the same
+  `reloads.sh` there and returns the STAGING app (about 3 min on a fresh tag for
+  v1.4.0). A fresh release worktree needs `git submodule update --init ghostty
+  vendor/bonsplit` first, or remote-build refuses with "ghostty must be provisioned".
+  Launch it with `open --env C11_QA_LAUNCH=fresh <app>` so the startup dialogs
+  stay closed; prune both Atlas caches for the tag afterwards (c11-hotload, Tag hygiene).
 - Before handing off, screenshot the staging window and inspect every surface
   the changelog touches (sheets, titlebar, sidebar, new or redesigned modals).
   Release-only layout regressions have shipped past Debug builds before.
@@ -146,7 +153,7 @@ This is a checklist trigger, not a CI gate.
   Only tag once both match the release.
 - `git tag -a vX.Y.Z -m "Release vX.Y.Z"` (annotated; lightweight `git tag vX.Y.Z` is rejected with "no tag message?" by local git config)
 - `git push origin vX.Y.Z`
-- **If you tagged the wrong commit and the release run already started:** `gh run cancel <id>` (release builds take ~11 min, so a quick catch publishes nothing), delete the tag both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), fix `main`, re-verify the gate, then re-tag and push.
+- **If you tagged the wrong commit and the release run already started:** `gh run cancel <id>` (release runs took 33 to 41 min for v1.1.3 through v1.4.0, about 30 of it before signing, so a quick catch publishes nothing), delete the tag both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), fix `main`, re-verify the gate, then re-tag and push.
 
 11. Verify release workflow and assets:
 - `gh run watch --repo Stage-11-Agentics/c11`

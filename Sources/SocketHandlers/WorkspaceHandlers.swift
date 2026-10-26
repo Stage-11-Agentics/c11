@@ -1119,6 +1119,9 @@ extension TerminalController {
         guard !WorkspaceBlueprintStore().isReservedLayoutReference(name) else {
             return .err(code: "invalid_params", message: "Blueprint name '\(name)' is reserved for starter layouts or saved references", data: nil)
         }
+        guard !WorkspaceBlueprintStore.looksLikeLayoutPath(name) else {
+            return .err(code: "invalid_params", message: "Blueprint name '\(name)' must not look like a file path", data: nil)
+        }
         let description = params["description"] as? String
         let force = params["force"] as? Bool ?? false
         let formatRaw = (params["format"] as? String)?.lowercased() ?? "md"

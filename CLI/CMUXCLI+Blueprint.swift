@@ -438,14 +438,14 @@ extension CMUXCLI {
         let ext = (path as NSString).pathExtension.lowercased()
         if ext == "md" {
             guard let content = String(data: data, encoding: .utf8) else {
-                throw CLIError(message: "workspace new: '\(path)' is not valid UTF-8")
+                throw CLIError(message: "blueprint: '\(path)' is not valid UTF-8")
             }
             let parsed = try client.sendV2(
                 method: "workspace.parse_blueprint",
                 params: ["format": "md", "content": content]
             )
             guard let plan = parsed["plan"] else {
-                throw CLIError(message: "workspace new: '\(path)' parse returned no plan")
+                throw CLIError(message: "blueprint: '\(path)' parse returned no plan")
             }
             return plan
         }
@@ -453,7 +453,7 @@ extension CMUXCLI {
             let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let plan = file["plan"]
         else {
-            throw CLIError(message: "workspace new: '\(path)' is not a valid blueprint file (missing 'plan' key)")
+            throw CLIError(message: "blueprint: '\(path)' is not a valid blueprint file (missing 'plan' key)")
         }
         return plan
     }

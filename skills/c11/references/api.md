@@ -177,6 +177,7 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # Starter names ignore case and surrounding whitespace and always mean shipped layouts. Choose a repo blueprint
     # by its own non-reserved name, saved:<path>, or an explicit path (./quad, ~/layout, layout.json, layout.md).
     # An unknown bare word is never looked up as a file in the cwd; pass a path. Only known starter ids are remembered defaults.
+    # The server resolves a relative path-like layout against the target directory.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
 c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal

@@ -5456,8 +5456,10 @@ final class Workspace: Identifiable, ObservableObject {
             // §5.3 v1: the A-button tooltip carries the resolved default config's
             // name · model · effort (C11-179), read from the saved-config library
             // and resolved through the overlay for the display axes.
-            newAgent: DefaultAgentResolver.resolvedDefaultTooltip(
-                userDefault: DefaultAgentConfigStore.shared.current
+            newAgent: KeyboardShortcutSettings.Action.newAgent.tooltip(
+                DefaultAgentResolver.resolvedDefaultTooltip(
+                    userDefault: DefaultAgentConfigStore.shared.current
+                )
             ),
             chooseAgent: String(localized: "workspace.tooltip.chooseAgent", defaultValue: "Choose Agent to Launch…"),
             newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
@@ -14743,12 +14745,14 @@ extension Workspace: BonsplitDelegate {
     /// decline opens the picker carrying the reason as its notice bar — the
     /// operator sees *why* nothing launched and is already standing in the one
     /// surface that can fix it (pick another row, or Edit Launch Agents).
-    private func launchDefaultAgentFromPanelBar(inPane pane: PaneID) {
+    /// The New Agent shortcut (`KeyboardShortcutSettings.Action.newAgent`)
+    /// takes this same path for the focused pane, passing its resolved window.
+    func launchDefaultAgentFromPanelBar(inPane pane: PaneID, window: NSWindow? = nil) {
         let outcome = attemptAgentPanelLaunch(inPane: pane)
         guard let decline = outcome.decline else { return }
         presentAgentPicker(
             inPane: pane,
-            window: NSApp.currentEvent?.window,
+            window: window ?? NSApp.currentEvent?.window,
             anchoringTo: nil,
             notice: decline.message
         )

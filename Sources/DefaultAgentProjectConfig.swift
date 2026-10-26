@@ -2,8 +2,8 @@ import Foundation
 
 /// Walks up from a starting directory looking for `.c11/agents.json`. The first
 /// match wins (deepest directory first). When the file exists and parses, it
-/// overrides the user-level `DefaultAgentConfigStore.shared.current` for any
-/// terminal surface launched within that directory tree.
+/// supplies agent kind, model and effort for terminals launched within that
+/// directory tree. Commands, environment and prompts stay operator-owned.
 ///
 /// Matches the precedence/walk pattern used by `WorkspaceBlueprintStore`.
 enum DefaultAgentProjectConfig {
@@ -11,6 +11,23 @@ enum DefaultAgentProjectConfig {
     struct Match {
         let config: DefaultAgentConfig
         let sourcePath: String
+        /// Preserve field presence for disclosure, including undecodable values.
+        let agentFields: [String: Set<String>]
+
+        func ignoredProjectFields(for agent: AgentType?) -> [String] {
+            guard let agent else { return [] }
+            var ignored = agentFields[agent.rawValue] ?? []
+            if let entry = config.agents[agent] {
+                if DefaultAgentResolver.isValidProjectChoice(entry.model) {
+                    ignored.remove("model")
+                }
+                let efforts = AgentRegistry.shared.manifest(for: agent)?.launch.effortValues ?? []
+                if DefaultAgentResolver.isValidProjectChoice(entry.effort, allowedValues: efforts) {
+                    ignored.remove("effort")
+                }
+            }
+            return ignored.sorted()
+        }
     }
 
     /// Launch-rail entry point. Keeping the C11-194 resolution intact here
@@ -54,7 +71,10 @@ enum DefaultAgentProjectConfig {
             if fileManager.fileExists(atPath: candidate.path),
                let data = try? Data(contentsOf: candidate),
                let cfg = try? JSONDecoder().decode(DefaultAgentConfig.self, from: data) {
-                return Match(config: cfg, sourcePath: candidate.path)
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let agents = json?["agents"] as? [String: [String: Any]] ?? [:]
+                let fields = agents.mapValues { Set($0.keys) }
+                return Match(config: cfg, sourcePath: candidate.path, agentFields: fields)
             }
             let parent = url.deletingLastPathComponent()
             if parent.path == url.path { break }

@@ -71,7 +71,8 @@ initialPrompt, envOverrides }`:
   `defaultTerminalAgentConfig.v2`. `current` is recomputed on every access (line 333) so
   socket-driven writes propagate live with no restart. Mutators: `save` (347),
   `update(agent){mutate}` (354), `setDefaultAgent` (363), `reset` (369).
-- Project override: `.c11/agents.json`, loaded by `DefaultAgentProjectConfig.find(from:)`;
+- Project override: `.c11/agents.json` chooses only agent kind, model and effort,
+  loaded by `DefaultAgentProjectConfig.find(from:)`;
   a file that omits `defaultAgent` must not displace the user's pick
   (`overrideDefaultAgent`, line 236).
 
@@ -163,7 +164,7 @@ relaunch by default). New model/effort precedence inside `resolve`:
 ```
 hardcoded --model/--effort in command   (existing guard, unchanged)
   ▷ session override (NextAgentOverride)   ← NEW
-    ▷ project .c11/agents.json
+    ▷ project .c11/agents.json (agent kind, model and effort only)
       ▷ user Settings default
 ```
 

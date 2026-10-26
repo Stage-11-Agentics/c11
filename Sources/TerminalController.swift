@@ -10675,7 +10675,7 @@ class TerminalController {
             // CLI-originated → `.launchAgent`. Re-derive cfg the same way sites 1
             // and 4 do (the composition plan doesn't carry model/effort scalars).
             if !outcome.hasPrefix("ERROR"), let store = AgentLaunchStatsStore.shared {
-                let cfg = projectConfig?.agents[resolved.agent] ?? userDefault.config(for: resolved.agent)
+                let cfg = DefaultAgentResolver.agentConfig(for: resolved.agent, userDefault: userDefault, projectConfig: projectConfig)
                 let stats = ResolvedLaunch(harness: resolved.agent.rawValue, model: cfg.model, effort: cfg.effort)
                 DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .launchAgent) }
             }

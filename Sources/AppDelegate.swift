@@ -7403,8 +7403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         defaultValue: "Awaiting first task"
                     )
                 }
-                let cfg = projectConfig?.agents[resolved.agent]
-                    ?? userDefault.config(for: resolved.agent)
+                let cfg = DefaultAgentResolver.agentConfig(for: resolved.agent, userDefault: userDefault, projectConfig: projectConfig)
                 let model = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !model.isEmpty {
                     var meta = injected.surfaces[idx].metadata ?? [:]

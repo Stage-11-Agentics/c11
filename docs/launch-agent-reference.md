@@ -46,13 +46,18 @@ The launch line starts from the same command the A button would use, so
 `launch-agent` stays coherent with **Settings → Agents & Automation → Agent
 Launcher**:
 
-1. Project config `.c11/agents.json` entry for the kind (walk-up from the launch
-   cwd), else
-2. the operator's per-agent Settings command, else
-3. the registry factory command (`claude --dangerously-skip-permissions`,
+1. The operator's per-agent Settings command, else
+2. the registry factory command (`claude --dangerously-skip-permissions`,
    `codex --yolo`, …).
 
-Operator `envOverrides` from the same config are applied to the spawn env.
+Project config `.c11/agents.json` (walk-up from the launch cwd) contributes only
+agent kind, model and effort. The command, environment and prompts always come
+from operator Settings, with factory defaults when no Settings entry exists.
+Project model and effort must be non-empty single values without leading dashes,
+whitespace or control characters; effort must match the kind's allowed values
+when declared. Invalid values keep the operator's setting.
+
+Operator `envOverrides` from Settings are applied to the spawn env.
 
 ### Model and effort (`--model`, `--effort`)
 
@@ -372,7 +377,11 @@ same (resolve via `system.tree` or `c11 identify`).
 The handler performs resolution, panel creation, env injection, metadata
 stamping, and command typing **atomically server-side** — a caller never has to
 sequence create → stamp → send itself. Response is the JSON object above;
-`config_source` is the matched `.c11/agents.json` path or null.
+`config_source` is the matched `.c11/agents.json` path or null; that file supplies
+only agent kind, model and effort, never the base command, environment or prompts.
+When the selected agent's project entry contains ignored fields, the response
+adds `ignored_project_fields`, an array of field names. It is omitted when empty;
+invalid model/effort values are included among the ignored fields.
 Follows the socket threading policy (parse/validate off-main; UI mutation
 scheduled on main) and the no-focus-steal policy.
 

@@ -14534,7 +14534,7 @@ extension Workspace: BonsplitDelegate {
             )
             agent = resolved.agent
             launch = resolved.launch
-            let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+            let cfg = DefaultAgentResolver.agentConfig(for: agent, userDefault: userDefault, projectConfig: projectConfig)
             resolvedModel = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
             resolvedEffort = cfg.effort.trimmingCharacters(in: .whitespacesAndNewlines)
             resolvedSystemPromptMode = cfg.systemPrompt?.mode.rawValue

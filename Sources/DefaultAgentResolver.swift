@@ -155,12 +155,37 @@ struct ResolvedAgentLaunch: Equatable {
 }
 
 /// Pure resolver. No I/O; callers pass in the merged user default + project
-/// config and the resolver picks the right per-agent entry, then materializes
+/// config and the resolver applies allowed project choices, then materializes
 /// the bare launch command; launch callers stage initial prompts separately.
 enum DefaultAgentResolver {
 
+    /// Project files may choose model and effort, never executable content.
+    /// Keep the operator's command, environment and prompts as the trusted base.
+    static func agentConfig(
+        for agent: AgentType,
+        userDefault: DefaultAgentConfig,
+        projectConfig: DefaultAgentConfig?
+    ) -> AgentConfig {
+        var config = userDefault.config(for: agent)
+        guard let project = projectConfig?.agents[agent] else { return config }
+        if isValidProjectChoice(project.model) {
+            config.model = project.model
+        }
+        let efforts = AgentRegistry.shared.manifest(for: agent)?.launch.effortValues ?? []
+        if isValidProjectChoice(project.effort, allowedValues: efforts) {
+            config.effort = project.effort
+        }
+        return config
+    }
+
+    static func isValidProjectChoice(_ value: String, allowedValues: [String] = []) -> Bool {
+        !value.isEmpty && !value.hasPrefix("-")
+            && value.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil
+            && (allowedValues.isEmpty || allowedValues.contains(value))
+    }
+
     /// Resolve the launch shape for a specific agent. Project config (if any)
-    /// wins over user default for that agent's entry; the chosen `defaultAgent`
+    /// supplies only model and effort; the chosen `defaultAgent`
     /// at the project level wins over the user-level pick when nothing is
     /// passed explicitly.
     ///
@@ -180,10 +205,7 @@ enum DefaultAgentResolver {
             ?? projectDefault
             ?? userDefault.defaultAgent
 
-        // Project-level per-agent config beats user-level for the chosen agent.
-        let chosenConfig: AgentConfig =
-            projectConfig?.agents[agent]
-            ?? userDefault.config(for: agent)
+        let chosenConfig = agentConfig(for: agent, userDefault: userDefault, projectConfig: projectConfig)
 
         let command = buildCommand(agent: agent, config: chosenConfig)
         let bare = launcherCommand(agent: agent, config: chosenConfig)
@@ -228,10 +250,8 @@ enum DefaultAgentResolver {
         projectConfig: DefaultAgentConfig?
     ) -> (agent: AgentType, mergedConfig: AgentConfig, launch: ResolvedAgentLaunch)? {
         guard let agent = AgentType(rawValue: savedConfig.config.harness) else { return nil }
-        // Same per-agent base pick as `resolve` / the A button: project entry
-        // beats user Settings, factory fills the gaps. This base already equals
-        // `factory ◁ settings` (factory env is always empty).
-        let base = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+        // Same trusted Settings base and allowed project choices as `resolve`.
+        let base = agentConfig(for: agent, userDefault: userDefault, projectConfig: projectConfig)
         let (merged, env) = mergeOverlay(savedConfig.config, onto: base)
         let command = buildCommand(agent: agent, config: merged)
         let bare = launcherCommand(agent: agent, config: merged)
@@ -578,9 +598,8 @@ enum AgentLaunchPlanner {
             guard let manifest = AgentRegistry.shared.manifest(for: agentType) else {
                 return .failure(.unknownAgentType(kind))
             }
-            // Same per-agent config pick as the A button: project entry beats
-            // user Settings, factory fills the gaps.
-            let config = projectConfig?.agents[agentType] ?? userDefault.config(for: agentType)
+            // Same trusted Settings base and allowed project choices as the A button.
+            let config = DefaultAgentResolver.agentConfig(for: agentType, userDefault: userDefault, projectConfig: projectConfig)
             template = manifest.launch
             baseCommand = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
             baseEnv = config.envMap

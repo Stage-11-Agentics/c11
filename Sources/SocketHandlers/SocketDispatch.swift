@@ -1648,7 +1648,7 @@ extension TerminalController {
             agent["flag"] = self.v2OrNull(launchFlagReason)
             agent["delegated"] = launchDelegated
             agent["suppressed"] = launchDelegated
-            result = .ok([
+            var launchResult: [String: Any] = [
                 "agent": agent,
                 "command": plan.launchLine,
                 "prompt_file": self.v2OrNull(stagedPrompt?.url.path),
@@ -1667,7 +1667,12 @@ extension TerminalController {
                 "config_source": self.v2OrNull(projectConfigMatch?.sourcePath),
                 "warnings": warnings,
                 "warning_details": cwdWarning.map { [$0.payload] } ?? []
-            ])
+            ]
+            let ignored = projectConfigMatch?.ignoredProjectFields(for: plan.agentType) ?? []
+            if !ignored.isEmpty {
+                launchResult["ignored_project_fields"] = ignored
+            }
+            result = .ok(launchResult)
 
             // C11-178 rail-1: record the resolved launch. `plan` exposes model/
             // effort as scalars ("" = inherit → normalized to nil). Dispatched

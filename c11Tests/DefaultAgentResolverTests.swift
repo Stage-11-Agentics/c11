@@ -258,7 +258,7 @@ final class DefaultAgentResolverTests: XCTestCase {
     func testProjectConfigDefaultAgentBeatsUserDefault() {
         let user = DefaultAgentConfig.factory
         var projectAgents: [AgentType: AgentConfig] = [:]
-        projectAgents[.codex] = AgentConfig(command: "codex --custom", initialPrompt: "", envOverridesText: "")
+        projectAgents[.codex] = AgentConfig(command: "codex --custom", initialPrompt: "", envOverridesText: "", model: "project-model")
         let project = DefaultAgentConfig(defaultAgent: .codex, agents: projectAgents)
         let (agent, launch) = DefaultAgentResolver.resolve(
             explicitAgent: nil,
@@ -266,18 +266,17 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: project
         )
         XCTAssertEqual(agent, .codex)
-        XCTAssertEqual(launch.command, "codex --custom")
+        XCTAssertEqual(launch.command, "codex --yolo --model project-model")
     }
 
     func testProjectConfigPerAgentBeatsUserPerAgent() {
-        // Even when project + user agree on default agent, project's per-agent
-        // override should be used.
+        // Project model overrides the user's pin, while the user's command stays.
         var userAgents = DefaultAgentConfig.factory.agents
         userAgents[.codex] = AgentConfig(command: "codex --user-version", initialPrompt: "", envOverridesText: "")
         let user = DefaultAgentConfig(defaultAgent: .codex, agents: userAgents)
 
         var projectAgents: [AgentType: AgentConfig] = [:]
-        projectAgents[.codex] = AgentConfig(command: "codex --project-version", initialPrompt: "", envOverridesText: "")
+        projectAgents[.codex] = AgentConfig(command: "codex --project-version", initialPrompt: "", envOverridesText: "", model: "project-model")
         let project = DefaultAgentConfig(defaultAgent: .codex, agents: projectAgents)
 
         let (agent, launch) = DefaultAgentResolver.resolve(
@@ -286,7 +285,40 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: project
         )
         XCTAssertEqual(agent, .codex)
-        XCTAssertEqual(launch.command, "codex --project-version")
+        XCTAssertEqual(launch.command, "codex --user-version --model project-model")
+    }
+
+    func testProjectChoicesPreserveTrustedFieldsAndRejectUnsafeValues() {
+        let trusted = AgentConfig(
+            command: "claude --operator-command", initialPrompt: "operator prompt",
+            envOverridesText: "TRUSTED=value", model: "opus", effort: "medium",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "operator system")
+        )
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: [.claudeCode: trusted])
+        let projectEntry = AgentConfig(
+            command: "echo pwned; claude", initialPrompt: "repo prompt",
+            envOverridesText: "NODE_OPTIONS=--require /tmp/x.js", model: "sonnet", effort: "high",
+            systemPrompt: SystemPromptSetting(mode: .replace, text: "repo system")
+        )
+        var project = DefaultAgentConfig(defaultAgent: .claudeCode, agents: [.claudeCode: projectEntry])
+        var expected = trusted
+        expected.model = "sonnet"
+        expected.effort = "high"
+        XCTAssertEqual(DefaultAgentResolver.agentConfig(for: .claudeCode, userDefault: user, projectConfig: project), expected)
+        let resolved = DefaultAgentResolver.resolve(explicitAgent: nil, userDefault: user, projectConfig: project)
+        XCTAssertEqual(resolved.launch.command, "claude --operator-command --model sonnet --effort high --append-system-prompt 'operator system'")
+        XCTAssertEqual(resolved.launch.initialPrompt, "operator prompt")
+        XCTAssertEqual(resolved.launch.envOverrides, ["TRUSTED": "value"])
+
+        for value in ["--settings=/x", "two words", " sonnet", "sonnet\n", "sonnet\t", "sonnet\u{0}", "sonnet\u{7f}", "sonnet\u{a0}", ""] {
+            project.agents[.claudeCode]?.model = value
+            project.agents[.claudeCode]?.effort = value
+            XCTAssertEqual(DefaultAgentResolver.agentConfig(for: .claudeCode, userDefault: user, projectConfig: project), trusted, value.debugDescription)
+        }
+        project.agents[.claudeCode]?.model = "sonnet"
+        project.agents[.claudeCode]?.effort = "unsupported"
+        expected.effort = "medium"
+        XCTAssertEqual(DefaultAgentResolver.agentConfig(for: .claudeCode, userDefault: user, projectConfig: project), expected)
     }
 
     func testExplicitAgentBeatsBothProjectAndUserDefault() {
@@ -927,6 +959,22 @@ final class AgentLaunchPlannerTests: XCTestCase {
             promptFilePath: request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 ? "/tmp/owned prompt.txt" : nil
         )
+    }
+
+    func testProjectConfigCannotSupplyExecutableContent() throws {
+        let project = DefaultAgentConfig(defaultAgent: .claudeCode, agents: [
+            .claudeCode: AgentConfig(
+                command: "echo pwned; claude", initialPrompt: "repo prompt",
+                envOverridesText: "NODE_OPTIONS=--require /tmp/x.js", model: "sonnet", effort: "high",
+                systemPrompt: SystemPromptSetting(mode: .replace, text: "repo system")
+            )
+        ])
+        let p = try plan(AgentLaunchRequest(kind: "claude-code"), projectConfig: project).get()
+        XCTAssertEqual(p.launchLine, "claude --dangerously-skip-permissions --model sonnet --effort high")
+        XCTAssertNil(p.env["NODE_OPTIONS"])
+        XCTAssertNil(p.delayedPrompt)
+        XCTAssertEqual(p.model, "sonnet")
+        XCTAssertEqual(p.effort, "high")
     }
 
     // MARK: composition per kind

@@ -4125,7 +4125,7 @@ final class BrowserPanel: Panel, ObservableObject {
             dlog(
                 "browser.favicon.begin " +
                 "panel=\(id.uuidString.prefix(5)) " +
-                "page=\(pageURL.absoluteString)"
+                "page=\(pageURL.absoluteString.prefix(200))"
             )
 #endif
 
@@ -4170,16 +4170,16 @@ final class BrowserPanel: Panel, ObservableObject {
             guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID) else { return }
             guard self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
 
-            let fallbackURL = URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL
             let candidates = BrowserFavicon.iconCandidates(discoveredURL: discoveredURL, pageURL: pageURL)
             guard let iconURL = candidates.first else { return }
 #if DEBUG
+            let fallbackURL = URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL
             dlog(
                 "browser.favicon.iconURL " +
                 "panel=\(id.uuidString.prefix(5)) " +
-                "discovered=\(discoveredURL?.absoluteString ?? "<nil>") " +
-                "fallback=\(fallbackURL?.absoluteString ?? "<nil>") " +
-                "chosen=\(iconURL.absoluteString)"
+                "discovered=\(discoveredURL?.absoluteString.prefix(200) ?? "<nil>") " +
+                "fallback=\(fallbackURL?.absoluteString.prefix(200) ?? "<nil>") " +
+                "chosen=\(iconURL.absoluteString.prefix(200))"
             )
 #endif
 
@@ -4190,7 +4190,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 dlog(
                     "browser.favicon.skipCached " +
                     "panel=\(id.uuidString.prefix(5)) " +
-                    "icon=\(iconURLString)"
+                    "icon=\(iconURLString.prefix(200))"
                 )
 #endif
                 return
@@ -4216,7 +4216,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
                 let effectiveRequest = remoteProxyPreparedRequest(from: req, logScope: "faviconRewrite")
 #if DEBUG
-                dlog("browser.favicon.fetch panel=\(id.uuidString.prefix(5)) via=\(remoteSession == nil ? "direct" : "proxy") url=\(effectiveRequest.url?.absoluteString ?? "<nil>")")
+                dlog("browser.favicon.fetch panel=\(id.uuidString.prefix(5)) via=\(remoteSession == nil ? "direct" : "proxy") url=\(effectiveRequest.url?.absoluteString.prefix(200) ?? "<nil>")")
 #endif
                 do {
                     let raw = try await BrowserFavicon.fetch(
@@ -4231,7 +4231,7 @@ final class BrowserPanel: Panel, ObservableObject {
                     if decodedPNG != nil { break }
                 } catch {
 #if DEBUG
-                    dlog("browser.favicon.fetchError panel=\(id.uuidString.prefix(5)) error=\(error)")
+                    dlog("browser.favicon.fetchError panel=\(id.uuidString.prefix(5)) error=\(String(describing: error).prefix(200))")
 #endif
                 }
             }
@@ -4270,8 +4270,10 @@ final class BrowserPanel: Panel, ObservableObject {
                 continuation.resume(returning: value)
             }
 
-            webView.evaluateJavaScript(script) { result, _ in
-                let value = result as? String
+            // Favicon discovery ignores page prototype overrides so its href cap
+            // holds before the result crosses into native.
+            webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
+                let value = (try? result.get()) as? String
                 Task { @MainActor in
                     resume(value)
                 }

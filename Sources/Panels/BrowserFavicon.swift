@@ -85,18 +85,19 @@ enum BrowserFavicon {
 
     static func dataURLPayload(_ url: URL) -> Data? {
         guard url.scheme?.lowercased() == "data" else { return nil }
-        let value = url.absoluteString.dropFirst(5)
+        let maximumBase64Length = 4 * ((maximumBytes + 2) / 3)
+        let rawValue = url.absoluteString.dropFirst(5)
+        guard rawValue.utf8.count <= maximumBytes + maximumBase64Length * 3 else { return nil }
+        let value = rawValue.prefix { $0 != "#" }
         guard let comma = value.firstIndex(of: ",") else { return nil }
         let header = value[..<comma]
+        guard header.utf8.count <= maximumBytes,
+              let decodedHeader = header.removingPercentEncoding else { return nil }
+        let isBase64 = decodedHeader.contains(";") && decodedHeader.split(separator: ";", omittingEmptySubsequences: false)
+            .last?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "base64"
         let payload = value[value.index(after: comma)...].utf8
-        if header.lowercased().hasSuffix(";base64") {
-            guard payload.count <= 4 * ((maximumBytes + 2) / 3), payload.count % 4 == 0 else { return nil }
-            let padding = payload.suffix(2).filter { $0 == 61 }.count
-            guard payload.count / 4 * 3 - padding <= maximumBytes else { return nil }
-            return Data(base64Encoded: String(value[value.index(after: comma)...]))
-        }
-        guard payload.count <= maximumBytes * 3 else { return nil }
-        let encoded = Array(payload)
+        guard payload.count <= (isBase64 ? maximumBase64Length : maximumBytes) * 3 else { return nil }
+
         func hex(_ byte: UInt8) -> UInt8? {
             switch byte {
             case 48...57: return byte - 48
@@ -105,30 +106,55 @@ enum BrowserFavicon {
             default: return nil
             }
         }
-        // Count and validate before allocating or decoding the binary payload.
-        var index = 0
-        var count = 0
-        while index < encoded.count {
-            if encoded[index] == 37 {
-                guard index + 2 < encoded.count, hex(encoded[index + 1]) != nil,
-                      hex(encoded[index + 2]) != nil else { return nil }
-                index += 3
-            } else { index += 1 }
-            count += 1
-            guard count <= maximumBytes else { return nil }
+        func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+            byte == 9 || byte == 10 || byte == 12 || byte == 13 || byte == 32
         }
-        var result = Data(capacity: count)
-        index = 0
-        while index < encoded.count {
-            if encoded[index] == 37 {
-                result.append(hex(encoded[index + 1])! * 16 + hex(encoded[index + 2])!)
-                index += 3
-            } else {
-                result.append(encoded[index])
-                index += 1
+        func forEachDecodedByte(_ body: (UInt8) -> Bool) -> Bool {
+            var index = payload.startIndex
+            while index < payload.endIndex {
+                let byte = payload[index]
+                index = payload.index(after: index)
+                if byte == 37 {
+                    guard index < payload.endIndex, let high = hex(payload[index]) else { return false }
+                    index = payload.index(after: index)
+                    guard index < payload.endIndex, let low = hex(payload[index]) else { return false }
+                    index = payload.index(after: index)
+                    guard body(high * 16 + low) else { return false }
+                } else if !body(byte) { return false }
             }
+            return true
         }
-        return result
+
+        // Validate and measure the normalized payload before allocating it.
+        var count = 0
+        var padding = 0
+        guard forEachDecodedByte({ byte in
+            if isBase64, isASCIIWhitespace(byte) { return true }
+            count += 1
+            if isBase64 {
+                guard count <= maximumBase64Length else { return false }
+                if byte == 61 {
+                    padding += 1
+                    return padding <= 2
+                }
+                return padding == 0 && ((65...90).contains(byte) || (97...122).contains(byte)
+                    || (48...57).contains(byte) || byte == 43 || byte == 47)
+            }
+            return count <= maximumBytes
+        }) else { return nil }
+        var missingPadding = 0
+        if isBase64 {
+            guard count % 4 != 1, padding == 0 || count % 4 == 0 else { return nil }
+            missingPadding = (4 - count % 4) % 4
+            guard (count + missingPadding) / 4 * 3 - padding - missingPadding <= maximumBytes else { return nil }
+        }
+        var result = Data(capacity: count + missingPadding)
+        guard forEachDecodedByte({ byte in
+            if !isBase64 || !isASCIIWhitespace(byte) { result.append(byte) }
+            return true
+        }) else { return nil }
+        for _ in 0..<missingPadding { result.append(61) }
+        return isBase64 ? Data(base64Encoded: result) : result
     }
 
     /// ImageIO need not expose the real GIF frame size in its image properties.

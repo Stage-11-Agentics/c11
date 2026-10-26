@@ -123,6 +123,65 @@ final class BrowserFaviconTests: XCTestCase {
         XCTAssertNotNil(BrowserFavicon.decodeDataURL(url, targetPx: 32))
     }
 
+    func testForgivingBase64PayloadForms() throws {
+        let cases: [(String, Data)] = [
+            ("data:;base64,AA%20AA", Data([0, 0, 0])),
+            ("data:;base64,AA%0AAA", Data([0, 0, 0])),
+            ("data:;base64,AA%3D%3D", Data([0])),
+            ("data:;base64,AA", Data([0])),
+            ("data:;base64,AAA", Data([0, 0])),
+            ("data:; base64 ,AA==", Data([0])),
+            ("data:; %20base64%20,AA==", Data([0])),
+            ("data:;base64,%09%0A%0C%0DAA%20==", Data([0])),
+        ]
+        for (value, expected) in cases {
+            let url = try XCTUnwrap(URL(string: value))
+            XCTAssertEqual(BrowserFavicon.dataURLPayload(url), expected, value)
+        }
+    }
+
+    func testForgivingBase64PNGStillDecodes() throws {
+        let png = try Self.raster(width: 16, height: 16)
+        let encoded = png.base64EncodedString()
+        for payload in [encoded.replacingOccurrences(of: "=", with: ""),
+                        "%20%0A" + encoded.replacingOccurrences(of: "=", with: "%3D") + "%20"] {
+            let url = try XCTUnwrap(URL(string: "data:image/png; base64 ," + payload))
+            XCTAssertEqual(BrowserFavicon.dataURLPayload(url), png)
+            XCTAssertNotNil(BrowserFavicon.decodeDataURL(url, targetPx: 32))
+        }
+    }
+
+    func testDataPayloadDropsURLFragmentWithoutDroppingEscapedHash() throws {
+        let url = try XCTUnwrap(URL(string: "data:application/octet-stream,one%23two#ignored"))
+        XCTAssertEqual(BrowserFavicon.dataURLPayload(url), Data("one#two".utf8))
+    }
+
+    func testMalformedBase64RemainsRejected() throws {
+        for payload in ["A", "AA=", "AA===", "A=AA", "AA%21AA", "AA%250AAA"] {
+            let url = try XCTUnwrap(URL(string: "data:;base64," + payload))
+            XCTAssertNil(BrowserFavicon.dataURLPayload(url), payload)
+        }
+    }
+
+    func testBase64NormalizationKeepsDecodedByteCap() throws {
+        let exact = Data(repeating: 0, count: BrowserFavicon.maximumBytes)
+        let exactPayload = "%20" + exact.base64EncodedString().replacingOccurrences(of: "=", with: "") + "%0A"
+        let exactURL = try XCTUnwrap(URL(string: "data:; base64," + exactPayload))
+        XCTAssertEqual(BrowserFavicon.dataURLPayload(exactURL), exact)
+        let oversized = Data(repeating: 0, count: BrowserFavicon.maximumBytes + 1)
+        let oversizedPayload = "%20" + oversized.base64EncodedString().replacingOccurrences(of: "=", with: "") + "%0A"
+        let oversizedURL = try XCTUnwrap(URL(string: "data:;base64," + oversizedPayload))
+        XCTAssertNil(BrowserFavicon.dataURLPayload(oversizedURL))
+    }
+
+    func testDataURLRejectsOversizedNormalizationEnvelopes() throws {
+        let maximumBase64Length = 4 * ((BrowserFavicon.maximumBytes + 2) / 3)
+        let whitespace = try XCTUnwrap(URL(string: "data:;base64," + String(repeating: "%20", count: maximumBase64Length + 1)))
+        XCTAssertNil(BrowserFavicon.dataURLPayload(whitespace))
+        let header = try XCTUnwrap(URL(string: "data:" + String(repeating: "a", count: BrowserFavicon.maximumBytes + 1) + ";base64,AA=="))
+        XCTAssertNil(BrowserFavicon.dataURLPayload(header))
+    }
+
     func testPercentEncodedDataPNGDecodesBinaryBytes() throws {
         let png = try Self.raster(width: 16, height: 16)
         let encoded = png.map { String(format: "%%%02X", $0) }.joined()

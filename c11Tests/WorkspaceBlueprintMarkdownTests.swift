@@ -69,6 +69,44 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         XCTAssertEqual(r, file)
     }
 
+    func testTwentyLevelNestedSplitLayoutParsesAndRoundTrips() throws {
+        var surfaces: [PanelSpec] = []
+        var nextPanelId = 0
+        func nestedLayout(depth: Int) -> LayoutTreeSpec {
+            if depth == 0 {
+                let id = "panel-\(nextPanelId)"
+                nextPanelId += 1
+                surfaces.append(PanelSpec(id: id, kind: .terminal))
+                return .pane(.init(surfaceIds: [id]))
+            }
+            let first = nestedLayout(depth: depth - 1)
+            let second = nestedLayout(depth: 0)
+            return .split(.init(
+                orientation: .horizontal,
+                dividerPosition: 0.5,
+                first: first,
+                second: second
+            ))
+        }
+
+        let layout = nestedLayout(depth: 20)
+        let file = WorkspaceBlueprintFile(
+            name: "Nested 20",
+            description: nil,
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Nested 20"),
+                layout: layout,
+                surfaces: surfaces
+            )
+        )
+
+        let serialized = try WorkspaceBlueprintMarkdown.serialize(file)
+        let parsed = try WorkspaceBlueprintMarkdown.parse(serialized)
+        XCTAssertEqual(parsed, file)
+        XCTAssertEqual(try roundTrip(parsed), file)
+    }
+
     func testExplicitIDsReserveFallbackNamespaceAndAllowBrowserBeforeAgent() throws {
         let parsed = try WorkspaceBlueprintMarkdown.parse(fixture("browser-before-agent"))
         XCTAssertEqual(parsed.version, 1)

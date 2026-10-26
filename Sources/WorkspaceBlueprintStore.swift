@@ -49,7 +49,8 @@ struct WorkspaceBlueprintStore: Sendable {
         return "starter:one-column"
     }
 
-    private static let maximumBlueprintBytes = 1_048_576
+    static let maximumMarkdownBlueprintBytes = 1_048_576
+    static let maximumJSONBlueprintBytes = 16 * 1_048_576
 
     private let directoryOverride: URL?
     private let fileManager: FileManager
@@ -67,6 +68,7 @@ struct WorkspaceBlueprintStore: Sendable {
         case writeFailed(String, underlying: String)
         case readFailed(String, underlying: String)
         case decodeFailed(String, underlying: String)
+        case sizeLimitExceeded(String, actual: Int, limit: Int)
 
         var code: String {
             switch self {
@@ -75,6 +77,7 @@ struct WorkspaceBlueprintStore: Sendable {
             case .writeFailed:            return "blueprint_write_failed"
             case .readFailed:             return "blueprint_read_failed"
             case .decodeFailed:           return "blueprint_decode_failed"
+            case .sizeLimitExceeded:      return "blueprint_size_limit_exceeded"
             }
         }
 
@@ -90,6 +93,8 @@ struct WorkspaceBlueprintStore: Sendable {
                 return "blueprint read failed at \(path): \(err)"
             case .decodeFailed(let path, let err):
                 return "blueprint decode failed at \(path): \(err)"
+            case .sizeLimitExceeded(let path, let actual, let limit):
+                return "blueprint at \(path) is \(actual) bytes; limit is \(limit) bytes"
             }
         }
     }
@@ -224,22 +229,34 @@ struct WorkspaceBlueprintStore: Sendable {
     /// are parsed by `WorkspaceBlueprintMarkdown`; everything else is read
     /// as JSON.
     func read(url: URL) throws -> WorkspaceBlueprintFile {
+        let limit = Self.maximumBytes(for: url)
         let data: Data
         switch MailboxPanelMail.readRegularFilePrefix(
             path: url.path,
-            limit: Self.maximumBlueprintBytes,
+            limit: limit,
             followSymlinks: true
         ) {
         case .failure(let failure):
-            if case .notRegularFile = failure.referenceContent {
-                throw StoreError.decodeFailed(url.path, underlying: failure.description)
+            let detail: String
+            switch failure.kind {
+            case .missing:
+                detail = "file not found"
+            case .notRegularFile:
+                detail = "not a regular file"
+            case .permissionDenied:
+                detail = "permission denied"
+            case .other:
+                detail = failure.description
             }
-            throw StoreError.readFailed(url.path, underlying: failure.description)
+            if failure.kind == .notRegularFile {
+                throw StoreError.decodeFailed(url.path, underlying: detail)
+            }
+            throw StoreError.readFailed(url.path, underlying: detail)
         case .success(let read):
             guard !read.truncated else {
                 throw StoreError.decodeFailed(
                     url.path,
-                    underlying: "blueprint exceeds \(Self.maximumBlueprintBytes)-byte limit"
+                    underlying: "blueprint exceeds \(limit)-byte limit"
                 )
             }
             data = read.data
@@ -286,11 +303,21 @@ struct WorkspaceBlueprintStore: Sendable {
                 throw StoreError.encodeFailed("\(error)")
             }
         }
+        let limit = Self.maximumBytes(for: url)
+        guard data.count <= limit else {
+            throw StoreError.sizeLimitExceeded(url.path, actual: data.count, limit: limit)
+        }
         do {
             try data.write(to: url, options: .atomic)
         } catch {
             throw StoreError.writeFailed(url.path, underlying: "\(error)")
         }
+    }
+
+    private static func maximumBytes(for url: URL) -> Int {
+        url.pathExtension.lowercased() == "md"
+            ? maximumMarkdownBlueprintBytes
+            : maximumJSONBlueprintBytes
     }
 
     // MARK: - Private helpers

@@ -13,6 +13,10 @@ import Security
 import Sentry
 #endif
 
+// Keep these aligned with WorkspaceBlueprintStore's per-format read limits.
+private let maximumMarkdownBlueprintBytes = 1_048_576
+private let maximumJSONBlueprintBytes = 16 * 1_048_576
+
 extension CMUXCLI {
 
     /// Classification of an executor `ApplyFailure` for human-readable
@@ -199,9 +203,7 @@ extension CMUXCLI {
         let planObject: Any
         if let bpArg = blueprintOpt {
             let resolved = resolvePath(bpArg)
-            guard let data = FileManager.default.contents(atPath: resolved) else {
-                throw CLIError(message: "workspace new: could not read '\(resolved)'")
-            }
+            let data = try readBlueprintFile(at: resolved)
             planObject = try blueprintPlanFromFile(at: resolved, data: data, client: client)
         } else {
             planObject = try workspaceBlueprintPicker(client: client, jsonOutput: jsonOutput)
@@ -422,10 +424,41 @@ extension CMUXCLI {
             throw CLIError(message: "workspace new: selected blueprint has no url")
         }
         let resolved = resolvePath(url)
-        guard let data = FileManager.default.contents(atPath: resolved) else {
-            throw CLIError(message: "workspace new: could not read blueprint at '\(resolved)'")
-        }
+        let data = try readBlueprintFile(at: resolved)
         return try blueprintPlanFromFile(at: resolved, data: data, client: client)
+    }
+
+    /// Check the open file's size before reading it, then retain a hard bound
+    /// on the bytes read in case the file grows concurrently.
+    private func readBlueprintFile(at path: String) throws -> Data {
+        let isMarkdown = (path as NSString).pathExtension.lowercased() == "md"
+        let limit = isMarkdown ? maximumMarkdownBlueprintBytes : maximumJSONBlueprintBytes
+        do {
+            let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+            defer { try? handle.close() }
+            var info = stat()
+            guard fstat(handle.fileDescriptor, &info) == 0,
+                  (info.st_mode & S_IFMT) == S_IFREG else {
+                throw CLIError(message: "workspace new: could not read blueprint at '\(path)'")
+            }
+            guard info.st_size >= 0, info.st_size <= Int64(limit) else {
+                throw CLIError(message: "workspace new: blueprint at '\(path)' exceeds the \(limit)-byte limit")
+            }
+            var data = Data()
+            while data.count <= limit {
+                let chunk = try handle.read(upToCount: limit + 1 - data.count) ?? Data()
+                if chunk.isEmpty { break }
+                data.append(chunk)
+            }
+            guard data.count <= limit else {
+                throw CLIError(message: "workspace new: blueprint at '\(path)' exceeds the \(limit)-byte limit")
+            }
+            return data
+        } catch let error as CLIError {
+            throw error
+        } catch {
+            throw CLIError(message: "workspace new: could not read blueprint at '\(path)'")
+        }
     }
 
     /// Resolve a blueprint file's bytes to a layout plan dict suitable for
@@ -507,9 +540,7 @@ extension CMUXCLI {
         let reserved = isReservedBlueprintReference(trimmed, aliases: aliases, entries: blueprints)
         if !reserved, blueprintReferenceLooksLikePath(trimmed) {
             let pathToTry = resolvePath(trimmed)
-            guard let data = FileManager.default.contents(atPath: pathToTry) else {
-                throw CLIError(message: "new-workspace: could not read blueprint file '\(pathToTry)'")
-            }
+            let data = try readBlueprintFile(at: pathToTry)
             return ["plan": try blueprintPlanFromFile(at: pathToTry, data: data, client: client)]
         }
         let match: [String: Any]?
@@ -526,10 +557,10 @@ extension CMUXCLI {
             }
         }
         guard let match,
-              let url = match["url"] as? String,
-              let data = FileManager.default.contents(atPath: resolvePath(url)) else {
+              let url = match["url"] as? String else {
             throw CLIError(message: "new-workspace: blueprint '\(ref)' not found (tried as path and name)")
         }
+        let data = try readBlueprintFile(at: resolvePath(url))
         return ["plan": try blueprintPlanFromFile(at: url, data: data, client: client)]
     }
 

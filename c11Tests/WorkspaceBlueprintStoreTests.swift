@@ -146,7 +146,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         let crashURL = blueprintDir.appendingPathComponent("crash.md")
         try Data("""
         ---
-        title: crash
+        title: hostile
         ---
 
         ## Layout
@@ -351,6 +351,17 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(read.plan.surfaces.count, 1)
     }
 
+    func testReadAcceptsJSONBlueprintLargerThanOneMiB() throws {
+        let blueprint = sampleBlueprint(name: String(repeating: "x", count: 600_000))
+        let data = try JSONEncoder().encode(blueprint)
+        XCTAssertGreaterThan(data.count, WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes)
+        XCTAssertLessThanOrEqual(data.count, WorkspaceBlueprintStore.maximumJSONBlueprintBytes)
+        let url = tmpRoot.appendingPathComponent("large.json")
+        try data.write(to: url)
+
+        XCTAssertEqual(try makeStore().read(url: url), blueprint)
+    }
+
     func testReadRejectsBlueprintNested200Levels() throws {
         var layoutLines = ["layout:", "  - type: terminal"]
         var indent = 4
@@ -373,7 +384,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
 
     func testReadRejectsMarkdownLargerThanOneMiB() throws {
         var data = try WorkspaceBlueprintMarkdown.serialize(sampleBlueprint(name: "Large"))
-        let sizeLimit = 1_048_576
+        let sizeLimit = WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes
         data.append(Data(repeating: 0x20, count: sizeLimit + 1 - data.count))
         let url = tmpRoot.appendingPathComponent("large.md")
         try data.write(to: url)
@@ -402,9 +413,20 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
 
         XCTAssertThrowsError(try makeStore().read(url: directoryURL)) { error in
-            guard case WorkspaceBlueprintStore.StoreError.decodeFailed = error else {
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
                 return XCTFail("expected a non-regular-file decode failure, got \(error)")
             }
+            XCTAssertEqual(detail, "not a regular file")
+        }
+    }
+
+    func testReadUsesBlueprintWordingForMissingFiles() {
+        let missingURL = tmpRoot.appendingPathComponent("missing.md")
+        XCTAssertThrowsError(try makeStore().read(url: missingURL)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.readFailed(_, let detail) = error else {
+                return XCTFail("expected a missing-file read failure, got \(error)")
+            }
+            XCTAssertEqual(detail, "file not found")
         }
     }
 
@@ -420,6 +442,24 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "file must exist after write")
         let readBack = try store.read(url: url)
         XCTAssertEqual(readBack, blueprint)
+    }
+
+    func testWriteRejectsMarkdownBlueprintOverFormatLimit() throws {
+        var blueprint = sampleBlueprint(name: "Oversized export")
+        blueprint.description = String(repeating: "x", count: 600_000)
+        let url = tmpRoot.appendingPathComponent("oversized.md")
+        let encoded = try WorkspaceBlueprintMarkdown.serialize(blueprint)
+        XCTAssertGreaterThan(encoded.count, WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes)
+
+        XCTAssertThrowsError(try makeStore().write(blueprint, to: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.sizeLimitExceeded(_, let actual, let limit) = error else {
+                return XCTFail("expected an oversize export failure, got \(error)")
+            }
+            XCTAssertGreaterThan(actual, limit)
+            XCTAssertEqual(limit, WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes)
+            XCTAssertTrue(String(describing: error).contains("limit is"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
     func testWriteCreatesIntermediateDirectories() throws {

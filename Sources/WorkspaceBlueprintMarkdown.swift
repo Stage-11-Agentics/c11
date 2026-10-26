@@ -342,11 +342,21 @@ enum WorkspaceBlueprintMarkdown {
             return
         }
         if let listKey = panelListKey(in: keys) {
+            // `buildLayoutTree` builds every panel-list item as a leaf and
+            // ignores any `tabs:`/`panels:`/`children:` it carries, so the
+            // reserve walk must treat the item the same way.
             for panelNode in node.lookup(listKey)?.asList ?? [] {
-                try reserveExplicitSurfaceIDs(in: panelNode, reserved: &reserved)
+                try reserveLeafID(of: panelNode, reserved: &reserved)
             }
             return
         }
+        try reserveLeafID(of: node, reserved: &reserved)
+    }
+
+    private static func reserveLeafID(
+        of node: YAML.Value,
+        reserved: inout Set<String>
+    ) throws {
         guard let id = nullIfEmpty(node.lookup("id")?.asScalar) else { return }
         guard reserved.insert(id).inserted else {
             throw ParseError.duplicateSurfaceID(id)
@@ -457,7 +467,14 @@ enum WorkspaceBlueprintMarkdown {
     }
 
     private static func validateCompanionFields(in surfaces: [PanelSpec]) throws {
-        let byID = Dictionary(uniqueKeysWithValues: surfaces.map { ($0.id, $0) })
+        // Duplicate IDs can come from untrusted blueprint files; never let
+        // Dictionary(uniqueKeysWithValues:) turn them into a process trap.
+        var byID: [String: PanelSpec] = [:]
+        for surface in surfaces {
+            guard byID.updateValue(surface, forKey: surface.id) == nil else {
+                throw ParseError.duplicateSurfaceID(surface.id)
+            }
+        }
         for surface in surfaces {
             if let declaredKind = surface.declaredAgentKind,
                surface.kind != .terminal || !AgentIdentityPolicy.isAgentKind(declaredKind) {
@@ -505,7 +522,11 @@ enum WorkspaceBlueprintMarkdown {
                   (lhs + rhs) > 0 else {
                 throw ParseError.malformedSplitRatio(raw)
             }
-            return lhs / (lhs + rhs)
+            let result = lhs / (lhs + rhs)
+            guard result.isFinite else {
+                throw ParseError.malformedSplitRatio(raw)
+            }
+            return result
         }
         guard let v = Double(trimmed), v > 0, v < 1 else {
             throw ParseError.malformedSplitRatio(raw)

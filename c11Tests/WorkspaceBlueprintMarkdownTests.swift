@@ -105,6 +105,80 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         }
     }
 
+    func testPanelListItemsWithNestedKeysStillRejectDuplicateIDs() {
+        for nestedKey in ["tabs:", "panels:", "children:", "direction: vertical"] {
+            let nestedLines = nestedKey == "direction: vertical"
+                ? ["        direction: vertical"]
+                : ["        \(nestedKey)", "          - type: terminal"]
+            let sourceLines = [
+                "## Layout",
+                "",
+                "```yaml",
+                "layout:",
+                "  - panels:",
+                "      - id: a",
+                "        type: terminal",
+                "      - id: a",
+                "        type: terminal",
+            ] + nestedLines + ["```"]
+
+            XCTAssertThrowsError(
+                try WorkspaceBlueprintMarkdown.parse(Data(sourceLines.joined(separator: "\n").utf8)),
+                "nested key \(nestedKey)"
+            ) { error in
+                guard case WorkspaceBlueprintMarkdown.ParseError.duplicateSurfaceID(let id) = error else {
+                    return XCTFail("expected duplicateSurfaceID for \(nestedKey), got \(error)")
+                }
+                XCTAssertEqual(id, "a")
+            }
+        }
+    }
+
+    func testNestedPanelKeyReservesExplicitIDBeforeMintingAnonymousIDs() throws {
+        let source = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - direction: horizontal
+            split: 50/50
+            children:
+              - type: terminal
+              - panels:
+                  - id: s1
+                    type: terminal
+                    tabs:
+                      - type: terminal
+        ```
+        """
+
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))
+        XCTAssertEqual(parsed.plan.surfaces.map(\.id), ["s2", "s1"])
+        XCTAssertEqual(Set(parsed.plan.surfaces.map(\.id)).count, 2)
+    }
+
+    func testParseRejectsNonfiniteSplitRatio() {
+        let source = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - direction: horizontal
+            split: inf/1
+            children:
+              - type: terminal
+              - type: terminal
+        ```
+        """
+
+        XCTAssertThrowsError(try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))) { error in
+            guard case WorkspaceBlueprintMarkdown.ParseError.malformedSplitRatio(let raw) = error else {
+                return XCTFail("expected malformedSplitRatio, got \(error)")
+            }
+            XCTAssertEqual(raw, "inf/1")
+        }
+    }
+
     // MARK: - C11-337 `panels:` list key (legacy `tabs:` accepted forever)
 
     private func multiPanelSource(listKey: String) -> String {

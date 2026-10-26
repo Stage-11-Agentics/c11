@@ -8,6 +8,29 @@ import ImageIO
 #endif
 
 final class BrowserFaviconTests: XCTestCase {
+    func testDiscoveredURLTrimsSmallInputs() {
+        XCTAssertEqual(BrowserFavicon.discoveredURL(from: " \nhttps://example.com/icon.png\t")?.absoluteString, "https://example.com/icon.png")
+        XCTAssertNil(BrowserFavicon.discoveredURL(from: " \n\t"))
+    }
+
+    func testDiscoveredURLAcceptsExactHrefLimit() {
+        let prefix = "https://example.com/"
+        let href = prefix + String(repeating: "a", count: BrowserFavicon.maximumDiscoveredURLCharacters - prefix.utf16.count)
+        XCTAssertEqual(BrowserFavicon.discoveredURL(from: href)?.absoluteString, href)
+    }
+
+    func testDiscoveredURLRejectsOversizedInputsBeforeParsing() {
+        let limit = BrowserFavicon.maximumDiscoveredURLCharacters
+        for href in [
+            "data:image/png;base64," + String(repeating: "A", count: limit),
+            "https://example.com/" + String(repeating: "a", count: 2 * limit),
+            String(repeating: " ", count: limit) + "https://example.com/icon.png",
+            "data:," + String(repeating: "😀", count: limit / 2),
+        ] {
+            XCTAssertNil(BrowserFavicon.discoveredURL(from: href))
+        }
+    }
+
     func testRejectsOversizedPixelDimensionsBeforeDecode() throws {
         for (width, height) in [(10000, 1), (2049, 2049)] {
             let data = try Self.raster(width: width, height: height)

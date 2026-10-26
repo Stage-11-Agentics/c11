@@ -6,6 +6,7 @@ import Bonsplit
 /// Bounds untrusted favicon input before ImageIO decodes it, away from the UI actor.
 enum BrowserFavicon {
     static let maximumBytes = 1 << 20
+    static let maximumDiscoveredURLCharacters = 1_500_000
 
     static let directSession: URLSession = {
         let configuration = URLSessionConfiguration.default
@@ -22,6 +23,14 @@ enum BrowserFavicon {
 
     static func isFetchable(_ url: URL) -> Bool {
         ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    }
+
+    static func discoveredURL(from href: String) -> URL? {
+        // Match JavaScript's UTF-16 length and stop counting at the boundary.
+        guard href.utf16.prefix(maximumDiscoveredURLCharacters + 1).count <= maximumDiscoveredURLCharacters else { return nil }
+        let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: trimmed)
     }
 
     // URLSession decodes Content-Encoding before delivering bytes, so this cap

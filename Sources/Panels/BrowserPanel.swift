@@ -4135,6 +4135,7 @@ final class BrowserPanel: Panel, ObservableObject {
               const links = Array.from(document.querySelectorAll(
                 'link[rel~=\"icon\"], link[rel=\"shortcut icon\"], link[rel=\"apple-touch-icon\"], link[rel=\"apple-touch-icon-precomposed\"]'
               )).filter(link => {
+                if (link.href.length > \(BrowserFavicon.maximumDiscoveredURLCharacters)) return false;
                 if ((link.type || '').toLowerCase() === 'image/svg+xml') return false;
                 try { return !new URL(link.href).pathname.toLowerCase().endsWith('.svg'); }
                 catch { return false; }
@@ -4164,10 +4165,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 in: webView,
                 timeoutNanoseconds: 400_000_000
             ) {
-                let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty, let u = URL(string: trimmed) {
-                    discoveredURL = u
-                }
+                discoveredURL = BrowserFavicon.discoveredURL(from: href)
             }
             guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID) else { return }
             guard self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }

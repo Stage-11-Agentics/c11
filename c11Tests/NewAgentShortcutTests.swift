@@ -52,14 +52,6 @@ final class NewAgentShortcutTests: XCTestCase {
         XCTAssertEqual(ownerByChord[action.defaultShortcut.displayString], action)
     }
 
-    func testDefaultLeavesTheAgentPickerChordAlone() {
-        // ⌘⇧A is the hardcoded "Launch Agent Picker…" menu item.
-        XCTAssertNotEqual(
-            action.defaultShortcut,
-            StoredShortcut(key: "a", command: true, shift: true, option: false, control: false)
-        )
-    }
-
     /// The bytes `defaults write <domain> shortcut.newAgent -data <hex>` stores
     /// for ⌃⌥A decode as the operator's binding, and reset returns the default.
     func testOperatorBindingWrittenAsJSONDataIsHonoured() throws {

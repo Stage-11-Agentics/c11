@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import Bonsplit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -1323,6 +1324,70 @@ final class WindowRoutingShortcutTests: ShortcutRoutingTestSupport {
         XCTAssertEqual(firstManager.workspaces.count, firstCount, "Cmd+N must not add a workspace to the stale active window")
         XCTAssertEqual(secondManager.workspaces.count, secondCount, "Cmd+N creates workspaces from the picker, not on keyDown")
         XCTAssertTrue(appDelegate.workspaceManager === secondManager, "Cmd+N routing should retarget the active manager to the event window")
+    }
+
+    /// New Agent (⌥⌘A, then a rebound ⌃⌥A) targets the focused pane of the
+    /// event window's selected workspace, even when another window is key.
+    func testNewAgentShortcutTargetsEventWindowFocusedPane() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let firstWindowId = appDelegate.createMainWindow()
+        let secondWindowId = appDelegate.createMainWindow()
+        var captured: [(workspace: Workspace, pane: PaneID, window: NSWindow?)] = []
+        appDelegate.debugNewAgentLaunchHandler = { workspace, pane, window in
+            captured.append((workspace, pane, window))
+        }
+        defer {
+            appDelegate.debugNewAgentLaunchHandler = nil
+            closeWindow(withId: firstWindowId)
+            closeWindow(withId: secondWindowId)
+        }
+
+        guard let secondManager = appDelegate.workspaceManagerFor(windowId: secondWindowId),
+              let secondWindow = window(withId: secondWindowId),
+              let secondWorkspace = secondManager.selectedWorkspace,
+              let secondPane = secondWorkspace.bonsplitController.focusedPaneId else {
+            XCTFail("Expected the second window's workspace and focused pane")
+            return
+        }
+        XCTAssertTrue(appDelegate.focusMainWindow(windowId: firstWindowId))
+
+        func press(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+            guard let event = makeKeyDownEvent(
+                key: "a",
+                modifiers: modifiers,
+                keyCode: 0, // kVK_ANSI_A
+                windowNumber: secondWindow.windowNumber
+            ) else {
+                XCTFail("Failed to construct the New Agent key event")
+                return false
+            }
+#if DEBUG
+            return appDelegate.debugHandleCustomShortcut(event: event)
+#else
+            XCTFail("debugHandleCustomShortcut is only available in DEBUG")
+            return false
+#endif
+        }
+
+        XCTAssertTrue(press([.command, .option]), "⌥⌘A should be consumed as New Agent")
+        XCTAssertEqual(captured.count, 1)
+        XCTAssertTrue(captured.first?.workspace === secondWorkspace)
+        XCTAssertEqual(captured.first?.pane, secondPane)
+        XCTAssertEqual(captured.first?.window?.windowNumber, secondWindow.windowNumber)
+
+        withTemporaryShortcut(
+            action: .newAgent,
+            shortcut: StoredShortcut(key: "a", command: false, shift: false, option: true, control: true)
+        ) {
+            XCTAssertTrue(press([.control, .option]), "A rebound ⌃⌥A should be consumed as New Agent")
+            XCTAssertEqual(captured.count, 2)
+            XCTAssertTrue(captured.last?.workspace === secondWorkspace)
+            XCTAssertEqual(captured.last?.pane, secondPane)
+        }
     }
 
     func testAddWorkspaceInPreferredMainWindowIgnoresStaleWorkspaceManagerPointer() {

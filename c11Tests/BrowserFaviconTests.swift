@@ -170,9 +170,8 @@ final class BrowserFaviconTests: XCTestCase {
         let source = try XCTUnwrap(CGImageSourceCreateWithData(gif as CFData, nil))
         XCTAssertEqual(CGImageSourceGetType(source) as String?, "com.compuserve.gif")
         XCTAssertEqual(CGImageSourceGetCount(source), 1)
-        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 16)
-        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 16)
+        // The deliberately tiny LZW stream need not expose ImageIO properties.
+        // Inspect the real descriptor directly before any thumbnail work.
         let frame = try XCTUnwrap(BrowserFavicon.firstGIFFrameDimensions(gif))
         XCTAssertEqual(frame.width, 4096)
         XCTAssertEqual(frame.height, 4096)

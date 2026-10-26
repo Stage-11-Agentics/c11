@@ -122,7 +122,7 @@ enum BrowserFavicon {
         return result
     }
 
-    /// ImageIO reports the logical GIF screen, which can hide a larger frame.
+    /// ImageIO need not expose the real GIF frame size in its image properties.
     static func firstGIFFrameDimensions(_ data: Data) -> (width: Int, height: Int)? {
         guard data.count <= maximumBytes else { return nil }
         let bytes = Array(data)

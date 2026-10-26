@@ -518,12 +518,37 @@ enum MailboxPanelMail {
             return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
         }
         guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
-        let wanted = max(0, limit) + 1
-        var buffer = [UInt8](repeating: 0, count: wanted)
+        let byteLimit = max(0, limit)
+        let (wanted, overflow) = byteLimit.addingReportingOverflow(1)
+        guard !overflow else {
+            let reason = "read limit is too large"
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+        let fileSize = max(off_t(0), info.st_size)
+        let initialCapacity = fileSize >= off_t(wanted) ? wanted : Int(fileSize) + 1
+        var buffer = Data(count: initialCapacity)
         var filled = 0
-        while filled < wanted {
+        while true {
+            if filled == buffer.count {
+                guard buffer.count < wanted else { break }
+                // The file grew after fstat. Expand only on that uncommon path;
+                // ordinary small envelopes allocate only their actual size.
+                var expanded = Data(count: wanted)
+                if filled > 0 {
+                    buffer.withUnsafeBytes { source in
+                        expanded.withUnsafeMutableBytes { destination in
+                            destination.baseAddress!.copyMemory(
+                                from: source.baseAddress!,
+                                byteCount: filled
+                            )
+                        }
+                    }
+                }
+                buffer = expanded
+            }
+            let remaining = buffer.count - filled
             let count = buffer.withUnsafeMutableBytes { raw in
-                read(fd, raw.baseAddress!.advanced(by: filled), wanted - filled)
+                read(fd, raw.baseAddress!.advanced(by: filled), remaining)
             }
             if count < 0 {
                 if errno == EINTR { continue }
@@ -533,8 +558,8 @@ enum MailboxPanelMail {
             if count == 0 { break }
             filled += count
         }
-        let data = Data(buffer[0..<min(filled, max(0, limit))])
-        return .success(PrefixRead(data: data, truncated: filled > limit, size: Int(info.st_size)))
+        let data = Data(buffer.prefix(min(filled, byteLimit)))
+        return .success(PrefixRead(data: data, truncated: filled > byteLimit, size: Int(info.st_size)))
     }
 
     /// Opens a regular file without blocking, seeks to its last `limit` bytes,
@@ -582,17 +607,26 @@ enum MailboxPanelMail {
         }
         guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
 
+        let (readLimit, overflow) = limit.addingReportingOverflow(1)
+        guard !overflow else {
+            let reason = "read limit is too large"
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
         let startOffset = max(0, info.st_size - off_t(limit))
-        guard lseek(fd, startOffset, SEEK_SET) >= 0 else {
+        let readOffset = startOffset > 0 ? startOffset - 1 : 0
+        guard lseek(fd, readOffset, SEEK_SET) >= 0 else {
             let reason = String(cString: strerror(errno))
             return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
         }
 
-        var buffer = [UInt8](repeating: 0, count: limit)
+        let available = max(off_t(0), info.st_size - readOffset)
+        let capacity = Int(min(available, off_t(readLimit)))
+        var buffer = Data(count: capacity)
         var filled = 0
-        while filled < limit {
+        while filled < capacity {
+            let remaining = capacity - filled
             let count = buffer.withUnsafeMutableBytes { raw in
-                read(fd, raw.baseAddress!.advanced(by: filled), limit - filled)
+                read(fd, raw.baseAddress!.advanced(by: filled), remaining)
             }
             if count < 0 {
                 if errno == EINTR { continue }
@@ -603,15 +637,12 @@ enum MailboxPanelMail {
             filled += count
         }
 
-        var data = Data(buffer[0..<filled])
+        var resultStart = 0
         if startOffset > 0 {
-            if let newline = data.firstIndex(of: 0x0A) {
-                data = Data(data.suffix(from: data.index(after: newline)))
-            } else {
-                data.removeAll(keepingCapacity: false)
-            }
+            guard let newline = buffer[..<filled].firstIndex(of: 0x0A) else { return .success(Data()) }
+            resultStart = buffer.index(after: newline)
         }
-        return .success(data)
+        return .success(Data(buffer[resultStart..<filled]))
     }
 
     private static var notRegular: ReadFailure {

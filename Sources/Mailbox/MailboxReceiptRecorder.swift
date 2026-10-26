@@ -209,7 +209,7 @@ final class MailboxReceiptRecorder {
         logged: inout Set<String>?,
         loggedSince: inout Date?
     ) {
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey])
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
         guard values?.isRegularFile == true else { return }
         // Claim it: another c11 process sharing this state directory may be
         // sweeping the same spool. The rename keeps the mtime.
@@ -217,9 +217,12 @@ final class MailboxReceiptRecorder {
             ".\(url.lastPathComponent).\(getpid()).\(Self.claimSuffix)"
         )
         guard rename(url.path, claimed.path) == 0 else { return }
-        guard (values?.fileSize ?? 0) <= MailboxDeliveryReceipt.maxBytes,
-              let data = try? Data(contentsOf: claimed),
-              let decoded = MailboxDeliveryReceipt.decode(data) else {
+        guard case .success(let read) = MailboxPanelMail.readRegularFilePrefix(
+            path: claimed.path,
+            limit: MailboxDeliveryReceipt.maxBytes,
+            followSymlinks: false
+        ), !read.truncated,
+              let decoded = MailboxDeliveryReceipt.decode(read.data) else {
             reject(claimed, as: url.lastPathComponent, spool: spool)
             return
         }
@@ -352,7 +355,11 @@ final class MailboxReceiptRecorder {
         for file in files where file.lastPathComponent.hasPrefix(EventLogLayout.logFilePrefix) {
             let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             guard let modified, modified >= since.addingTimeInterval(-2),
-                  let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+                  let data = MessagesPageSource.boundedFileData(
+                    at: file,
+                    limit: MessagesPageSource.maxEventLogFileBytes
+                  ),
+                  let text = String(data: data, encoding: .utf8) else { continue }
             for line in text.split(separator: "\n") where line.contains("\"drain\"") && line.contains("mailbox.delivered") {
                 guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
                       object["type"] as? String == "mailbox.delivered",

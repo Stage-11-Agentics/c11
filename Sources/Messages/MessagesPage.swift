@@ -935,12 +935,10 @@ enum MessagesPageSource {
             path: url.path,
             limit: maxDispatchLogFileBytes,
             followSymlinks: false
-        ),
-              let text = String(data: data, encoding: .utf8) else { return [:] }
+        ) else { return [:] }
         var result: [String: DispatchHistory] = [:]
-        for line in text.split(whereSeparator: \.isNewline) {
-            guard let data = String(line).data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data),
+        for line in data.split(separator: 0x0A) {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line)),
                   let dictionary = object as? [String: Any],
                   let id = MessagesPageJSON.string(dictionary["id"]),
                   let event = MessagesPageJSON.string(dictionary["event"]) else { continue }

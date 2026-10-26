@@ -705,6 +705,54 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertTrue(events.contains("cleaned"))
     }
 
+    func testSymlinkOutboxEntryIsRejectedWithoutFollowingIt() throws {
+        let dispatcher = makeDispatcher(surfaces: [])
+        let id = "01K3A2B7X8PQRTVWYZ0123456M"
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+        let link = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        let target = tempState.appendingPathComponent("outside.msg")
+        try Data("not an envelope".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        let started = ProcessInfo.processInfo.systemUptime
+        dispatcher.dispatchOne(url: link)
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        dispatcher.log.flush()
+
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        XCTAssertLessThan(elapsed, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
+        XCTAssertEqual(
+            try FileManager.default.attributesOfItem(atPath: rejected.path)[.type] as? FileAttributeType,
+            .typeSymbolicLink
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "not an envelope")
+    }
+
+    func testFIFOOutboxEntryIsRejectedWithoutBlocking() throws {
+        let dispatcher = makeDispatcher(surfaces: [])
+        let id = "01K3A2B7X8PQRTVWYZ0123456N"
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+        let fifo = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+
+        let started = ProcessInfo.processInfo.systemUptime
+        dispatcher.dispatchOne(url: fifo)
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        dispatcher.log.flush()
+
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        XCTAssertLessThan(elapsed, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
+        XCTAssertEqual(
+            try FileManager.default.attributesOfItem(atPath: rejected.path)[.type] as? FileAttributeType,
+            .typeFifo
+        )
+    }
+
     // MARK: - Unknown recipient
 
     /// A `to`-addressed envelope that resolves to nobody must NOT be silently

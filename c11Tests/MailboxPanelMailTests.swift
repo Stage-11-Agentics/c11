@@ -300,6 +300,36 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(read.size, 4 * 1024 * 1024 * 1024)
     }
 
+    func testRegularFileTailKeepsACompleteLineAtTheWindowBoundary() throws {
+        let file = root.appendingPathComponent("dispatch.log")
+        try Data("x\nAAAAAAA\nBBBBBBB\n".utf8).write(to: file)
+
+        guard case .success(let data) = MailboxPanelMail.readRegularFileTail(
+            path: file.path,
+            limit: 16,
+            followSymlinks: false
+        ) else {
+            return XCTFail("expected a bounded tail read")
+        }
+
+        XCTAssertEqual(String(data: data, encoding: .utf8), "AAAAAAA\nBBBBBBB\n")
+    }
+
+    func testRegularFileTailReturnsEmptyWhenTheWindowHasNoNewline() throws {
+        let file = root.appendingPathComponent("long-line.log")
+        try Data("prefix-AAAAAAA-BBBBBBBB".utf8).write(to: file)
+
+        guard case .success(let data) = MailboxPanelMail.readRegularFileTail(
+            path: file.path,
+            limit: 8,
+            followSymlinks: false
+        ) else {
+            return XCTFail("expected a bounded tail read")
+        }
+
+        XCTAssertTrue(data.isEmpty)
+    }
+
     // MARK: - Copy text (C11-400)
 
     func testCopyTextDropsTrailingNewlineAndKeepsInnerOnes() throws {

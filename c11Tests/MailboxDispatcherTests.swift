@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -747,10 +748,9 @@ final class MailboxDispatcherTests: XCTestCase {
             .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
         XCTAssertLessThan(elapsed, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
-        XCTAssertEqual(
-            try FileManager.default.attributesOfItem(atPath: rejected.path)[.type] as? FileAttributeType,
-            .typeFifo
-        )
+        var fileInfo = stat()
+        XCTAssertEqual(lstat(rejected.path, &fileInfo), 0)
+        XCTAssertEqual(fileInfo.st_mode & mode_t(S_IFMT), mode_t(S_IFIFO))
     }
 
     // MARK: - Unknown recipient

@@ -537,6 +537,83 @@ enum MailboxPanelMail {
         return .success(PrefixRead(data: data, truncated: filled > limit, size: Int(info.st_size)))
     }
 
+    /// Opens a regular file without blocking, seeks to its last `limit` bytes,
+    /// and reads no more than that many bytes. If the read starts mid-file,
+    /// the first partial line is discarded before the bytes are returned.
+    static func readRegularFileTail(path: String, limit: Int, followSymlinks: Bool) -> Result<Data, ReadFailure> {
+        guard limit > 0 else {
+            let reason = "read limit must be positive"
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+
+        var flags = O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC
+        if !followSymlinks { flags |= O_NOFOLLOW }
+        let fd = open(path, flags)
+        guard fd >= 0 else {
+            let code = errno
+            switch code {
+            case ENOENT, ENOTDIR:
+                return .failure(ReadFailure(
+                    description: String(
+                        localized: "mailbox.drawer.problem.gone",
+                        defaultValue: "This message was moved before it could be read."
+                    ),
+                    referenceContent: .missing
+                ))
+            case ELOOP:
+                return .failure(notRegular)
+            case EACCES, EPERM:
+                let reason = String(
+                    localized: "mailbox.drawer.problem.permission",
+                    defaultValue: "c11 does not have permission to read it."
+                )
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            default:
+                let reason = String(cString: strerror(code))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            }
+        }
+        defer { close(fd) }
+
+        var info = stat()
+        guard fstat(fd, &info) == 0 else {
+            let reason = String(cString: strerror(errno))
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
+
+        let startOffset = max(0, info.st_size - off_t(limit))
+        guard lseek(fd, startOffset, SEEK_SET) >= 0 else {
+            let reason = String(cString: strerror(errno))
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+
+        var buffer = [UInt8](repeating: 0, count: limit)
+        var filled = 0
+        while filled < limit {
+            let count = buffer.withUnsafeMutableBytes { raw in
+                read(fd, raw.baseAddress!.advanced(by: filled), limit - filled)
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                let reason = String(cString: strerror(errno))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            }
+            if count == 0 { break }
+            filled += count
+        }
+
+        var data = Data(buffer[0..<filled])
+        if startOffset > 0 {
+            if let newline = data.firstIndex(of: 0x0A) {
+                data = Data(data.suffix(from: data.index(after: newline)))
+            } else {
+                data.removeAll(keepingCapacity: false)
+            }
+        }
+        return .success(data)
+    }
+
     private static var notRegular: ReadFailure {
         ReadFailure(
             description: String(

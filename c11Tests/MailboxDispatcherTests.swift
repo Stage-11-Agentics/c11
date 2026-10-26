@@ -656,6 +656,55 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(events, ["rejected"])
     }
 
+    func testOversizedOutboxEnvelopeIsRejectedAndNextEnvelopeDispatches() throws {
+        let recipient = seedSurface(name: "bounded-recipient")
+        let dispatcher = makeDispatcher(surfaces: [recipient])
+
+        let oversized = try MailboxEnvelope.build(
+            from: "sender",
+            to: "bounded-recipient",
+            body: "valid envelope prefix",
+            id: "01K3A2B7X8PQRTVWYZ0123456X"
+        )
+        var oversizedBytes = try oversized.encode()
+        oversizedBytes.append(contentsOf: Data(repeating: 0x20, count: 1024 * 1024 + 1 - oversizedBytes.count))
+        XCTAssertNoThrow(try MailboxEnvelope.validate(data: oversizedBytes))
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+        let oversizedURL = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: oversized.id))
+        try oversizedBytes.write(to: oversizedURL)
+
+        dispatcher.dispatchOne(url: oversizedURL)
+
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: oversized.id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
+        XCTAssertThrowsError(try readInboxFile(panel: recipient, id: oversized.id))
+
+        let valid = try MailboxEnvelope.build(
+            from: "sender",
+            to: "bounded-recipient",
+            body: "NEXT_ENVELOPE_DELIVERED",
+            id: "01K3A2B7X8PQRTVWYZ0123456Y"
+        )
+        try writeEnvelope(valid)
+        dispatcher.dispatchOne(
+            url: outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: valid.id))
+        )
+        dispatcher.log.flush()
+
+        let delivered = try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: valid.id))
+        XCTAssertEqual(delivered.body, "NEXT_ENVELOPE_DELIVERED")
+        let history = try XCTUnwrap(
+            MessagesPageSource.load(stateURL: tempState).mailboxArtifacts.first { $0.id == oversized.id }
+        )
+        XCTAssertNil(history.body)
+        XCTAssertEqual(history.fileState, "rejected")
+        XCTAssertEqual(history.lifecycle.map(\.state), ["rejected"])
+        let events = try readLog().compactMap { $0["event"] as? String }
+        XCTAssertEqual(events.first, "rejected")
+        XCTAssertTrue(events.contains("cleaned"))
+    }
+
     // MARK: - Unknown recipient
 
     /// A `to`-addressed envelope that resolves to nobody must NOT be silently

@@ -57,6 +57,7 @@ final class MailboxDispatcher {
     static let gcSweepInterval: TimeInterval = 60
     /// How old a `.tmp` file must be before the sweep deletes it. Plan: 5 min.
     static let gcStaleThreshold: TimeInterval = 300
+    private static let maxEnvelopeFileBytes = 1024 * 1024
 
     init(
         workspaceId: UUID,
@@ -304,8 +305,27 @@ final class MailboxDispatcher {
 
         // Step 2: validate.
         var envelope: MailboxEnvelope
+        let data: Data
+        switch MailboxPanelMail.readRegularFilePrefix(
+            path: processingURL.path,
+            limit: Self.maxEnvelopeFileBytes,
+            followSymlinks: false
+        ) {
+        case .failure(let failure):
+            quarantine(id: id, processingURL: processingURL, reason: failure.description)
+            return
+        case .success(let read):
+            guard !read.truncated else {
+                quarantine(
+                    id: id,
+                    processingURL: processingURL,
+                    reason: "mailbox envelope exceeds the \(Self.maxEnvelopeFileBytes)-byte limit"
+                )
+                return
+            }
+            data = read.data
+        }
         do {
-            let data = try Data(contentsOf: processingURL)
             envelope = try MailboxEnvelope.validate(data: data)
         } catch {
             quarantine(

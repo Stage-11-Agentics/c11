@@ -649,6 +649,10 @@ fileprivate struct MessagesPageEventLogSignature: Equatable {
 }
 
 enum MessagesPageSource {
+    static let maxEnvelopeFileBytes = 1024 * 1024
+    static let maxEventLogFileBytes = 16 * 1024 * 1024
+    static let maxDispatchLogFileBytes = 16 * 1024 * 1024
+
     /// Raw-byte prefilters for the send event: the v2 spelling and the v1
     /// spelling old logs keep (C11-337).
     private static let sendEventMarkers = [
@@ -677,7 +681,15 @@ enum MessagesPageSource {
         fileManager: FileManager = .default,
         eventLogCache: inout MessagesPageEventLogCache,
         mailboxArtifacts: [MessagesPageMailboxArtifact]? = nil,
-        readEventData: (URL) throws -> Data = { try Data(contentsOf: $0) }
+        readEventData: (URL) throws -> Data = { url in
+            guard let data = MessagesPageSource.boundedFileData(
+                at: url,
+                limit: MessagesPageSource.maxEventLogFileBytes
+            ) else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            return data
+        }
     ) -> MessagesPageSourceData {
         MessagesPageSourceData(
             events: readEvents(
@@ -788,8 +800,7 @@ enum MessagesPageSource {
             let mailboxRoot = workspaceURL.appendingPathComponent(MailboxLayout.mailboxesDirectoryName, isDirectory: true)
             guard fileManager.fileExists(atPath: mailboxRoot.path) else { continue }
             let dispatch = readDispatchLog(
-                at: mailboxRoot.appendingPathComponent(MailboxLayout.dispatchLogFileName),
-                fileManager: fileManager
+                at: mailboxRoot.appendingPathComponent(MailboxLayout.dispatchLogFileName)
             )
             var seenIDs = Set<String>()
             if let enumerator = fileManager.enumerator(at: mailboxRoot, includingPropertiesForKeys: nil) {
@@ -801,7 +812,7 @@ enum MessagesPageSource {
                     // pending record for a file that disappeared or could not
                     // be decoded during that race.
                     guard fileManager.fileExists(atPath: url.path),
-                          let object = jsonObject(at: url, fileManager: fileManager) else {
+                          let object = jsonObject(at: url) else {
                         continue
                     }
                     let state = fileState(for: url)
@@ -892,11 +903,22 @@ enum MessagesPageSource {
         )
     }
 
-    private static func jsonObject(at url: URL, fileManager: FileManager) -> [String: Any]? {
-        guard let data = try? Data(contentsOf: url),
+    private static func jsonObject(at url: URL) -> [String: Any]? {
+        guard let data = boundedFileData(at: url, limit: maxEnvelopeFileBytes),
               let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any] else { return nil }
         return dictionary
+    }
+
+    static func boundedFileData(at url: URL, limit: Int) -> Data? {
+        guard case .success(let read) = MailboxPanelMail.readRegularFilePrefix(
+            path: url.path,
+            limit: limit,
+            followSymlinks: false
+        ), !read.truncated else {
+            return nil
+        }
+        return read.data
     }
 
     private static func fileState(for url: URL) -> String {
@@ -908,11 +930,12 @@ enum MessagesPageSource {
         return "pending"
     }
 
-    private static func readDispatchLog(
-        at url: URL,
-        fileManager: FileManager
-    ) -> [String: DispatchHistory] {
-        guard let data = try? Data(contentsOf: url),
+    private static func readDispatchLog(at url: URL) -> [String: DispatchHistory] {
+        guard case .success(let data) = MailboxPanelMail.readRegularFileTail(
+            path: url.path,
+            limit: maxDispatchLogFileBytes,
+            followSymlinks: false
+        ),
               let text = String(data: data, encoding: .utf8) else { return [:] }
         var result: [String: DispatchHistory] = [:]
         for line in text.split(whereSeparator: \.isNewline) {

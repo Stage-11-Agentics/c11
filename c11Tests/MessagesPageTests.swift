@@ -6,6 +6,23 @@ import XCTest
 @testable import c11
 #endif
 
+private final class LockedMessagesPageSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: MessagesPageSourceData?
+
+    func store(_ source: MessagesPageSourceData) {
+        lock.lock()
+        stored = source
+        lock.unlock()
+    }
+
+    var value: MessagesPageSourceData? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+}
+
 final class MessagesPageTests: XCTestCase {
     private let c1Line = #"{"instance":"com.stage11.c11.debug.c11.257.a-81821","payload":{"bytes":18,"caller_tab_id":"32B556C8-A907-4B4E-BC22-5A7ED82DA08C","caller_title":"~","kind":"text","submitted":true,"target_title":"~","text":"C11_257_TEXT_PROOF"},"seq":14,"surface":"92D986CC-57AA-48D2-8FB1-E991E569C144","ts":"2026-10-02T00:32:50.042Z","type":"tab.input_sent","v":1,"workspace":"63916DB4-C544-4057-8755-F290FDCA0B12"}"#
     private let acceptedLine = #"{"instance":"com.stage11.c11.debug.c11.257.a-81821","payload":{"body":"C11_257_MAILBOX_BODY_PROOF","from":"C11-257-Lane-A","id":"01K3A2B7X8PQRTVWYZ0123456J","reply_to":"C11-257-Lane-A","to":"C11-257-Mailbox-Target","topic":"c11_257_lane_a","urgent":true},"seq":22,"ts":"2026-10-02T00:35:58.461Z","type":"mailbox.accepted","v":1,"workspace":"63916DB4-C544-4057-8755-F290FDCA0B12"}"#
@@ -21,6 +38,23 @@ final class MessagesPageTests: XCTestCase {
 
     override func tearDownWithError() throws {
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+    }
+
+    private func writeSparseFile(
+        at url: URL,
+        size: UInt64,
+        writes: [(offset: UInt64, data: Data)]
+    ) throws {
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: size)
+        for write in writes {
+            try handle.seek(toOffset: write.offset)
+            try handle.write(contentsOf: write.data)
+        }
     }
 
     func testRedactedEventOverridesDurableMailboxBodyAndReference() throws {
@@ -392,7 +426,7 @@ final class MessagesPageTests: XCTestCase {
             "from": "rejected-sender",
             "to": "missing-recipient",
             "ts": "2026-10-01T23:00:00.000Z",
-            "body": String(repeating: "x", count: 2 * 1024 * 1024),
+            "body": String(repeating: "x", count: 512 * 1024),
         ]
         try JSONSerialization.data(withJSONObject: oversizedEnvelope)
             .write(to: rejectedInbox.appendingPathComponent("\(oversizedID).msg"))
@@ -415,6 +449,153 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(snapshot.messages.first?.body, "OLDER_HISTORY_SURVIVES")
         XCTAssertEqual(snapshot.messages.first?.status, "read")
         XCTAssertFalse(snapshot.messages.first?.truncated ?? true)
+    }
+
+    func testSparseAndOversizedMailboxArtifactsAreSkippedByLoad() throws {
+        let workspaceId = UUID()
+        let mailboxRoot = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: workspaceId)
+        let blobs = mailboxRoot.appendingPathComponent("blobs", isDirectory: true)
+        let rejected = mailboxRoot.appendingPathComponent(MailboxLayout.rejectedDirectoryName, isDirectory: true)
+        let read = mailboxRoot.appendingPathComponent("_read", isDirectory: true)
+        for directory in [blobs, rejected, read] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        let sparseID = "01K3A2B7X8PQRTVWYZ0123456R"
+        try writeSparseFile(
+            at: blobs.appendingPathComponent("\(sparseID).msg"),
+            size: 4 * 1024 * 1024 * 1024,
+            writes: []
+        )
+
+        let oversizedID = "01K3A2B7X8PQRTVWYZ0123456S"
+        let oversized = try JSONSerialization.data(withJSONObject: [
+            "version": 1,
+            "id": oversizedID,
+            "from": "rejected-sender",
+            "to": "missing-recipient",
+            "ts": "2026-10-01T23:00:00.000Z",
+            "body": String(repeating: "x", count: MessagesPageSource.maxEnvelopeFileBytes + 1024),
+        ])
+        XCTAssertGreaterThan(oversized.count, MessagesPageSource.maxEnvelopeFileBytes)
+        try oversized.write(to: rejected.appendingPathComponent("\(oversizedID).msg"))
+
+        let siblingID = "01K3A2B7X8PQRTVWYZ0123456T"
+        let sibling: [String: Any] = [
+            "version": 1,
+            "id": siblingID,
+            "from": "history-sender",
+            "to": "history-recipient",
+            "ts": "2026-10-01T22:00:00.000Z",
+            "body": "SIBLING_BODY_SURVIVES",
+        ]
+        try JSONSerialization.data(withJSONObject: sibling)
+            .write(to: read.appendingPathComponent("\(siblingID).msg"))
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.mailboxArtifacts.map(\.id), [siblingID])
+        XCTAssertEqual(source.mailboxArtifacts.first?.body, "SIBLING_BODY_SURVIVES")
+    }
+
+    func testFifoAndSymlinkMailboxArtifactsDoNotBlockLoad() throws {
+        let mailboxRoot = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+        let read = mailboxRoot.appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: read, withIntermediateDirectories: true)
+
+        let fifoID = "01K3A2B7X8PQRTVWYZ0123456U"
+        let fifo = read.appendingPathComponent("\(fifoID).msg")
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+
+        let symlinkID = "01K3A2B7X8PQRTVWYZ0123456V"
+        let target = tempDir.appendingPathComponent("symlink-target.msg")
+        try JSONSerialization.data(withJSONObject: [
+            "version": 1, "id": symlinkID, "from": "sender", "ts": "2026-10-01T22:00:00Z",
+            "body": "SYMLINK_BODY_MUST_NOT_LOAD",
+        ]).write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: read.appendingPathComponent("\(symlinkID).msg"),
+            withDestinationURL: target
+        )
+
+        let siblingID = "01K3A2B7X8PQRTVWYZ0123456W"
+        try JSONSerialization.data(withJSONObject: [
+            "version": 1, "id": siblingID, "from": "sender", "ts": "2026-10-01T22:00:00Z",
+            "body": "SIBLING_BODY_SURVIVES",
+        ]).write(to: read.appendingPathComponent("\(siblingID).msg"))
+
+        let result = LockedMessagesPageSource()
+        let completed = expectation(description: "mailbox load completes without opening the FIFO")
+        let stateURL = tempDir!
+        DispatchQueue.global(qos: .utility).async {
+            result.store(MessagesPageSource.load(stateURL: stateURL))
+            completed.fulfill()
+        }
+
+        wait(for: [completed], timeout: 5)
+        let source = try XCTUnwrap(result.value)
+        XCTAssertEqual(source.mailboxArtifacts.map(\.id), [siblingID])
+        XCTAssertEqual(source.mailboxArtifacts.first?.body, "SIBLING_BODY_SURVIVES")
+    }
+
+    func testOversizedSparseEventLogIsSkippedWhileSiblingLogParses() throws {
+        let events = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+
+        let oversized = events.appendingPathComponent("events-oversized.ndjson")
+        try writeSparseFile(
+            at: oversized,
+            size: UInt64(MessagesPageSource.maxEventLogFileBytes + 128),
+            writes: [(offset: 0, data: Data((acceptedLine + "\n").utf8))]
+        )
+
+        let sibling = events.appendingPathComponent("events-normal.ndjson")
+        try Data((deliveredLine + "\n").utf8).write(to: sibling)
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.events.count, 1)
+        XCTAssertEqual(source.events.first?.type, "mailbox.delivered")
+    }
+
+    func testDispatchLogTailKeepsNewestLifecycleAndDropsCutPartialLine() throws {
+        let mailboxRoot = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+        try FileManager.default.createDirectory(at: mailboxRoot, withIntermediateDirectories: true)
+        let dispatchLog = mailboxRoot.appendingPathComponent(MailboxLayout.dispatchLogFileName)
+        let headID = "old-head-event"
+        let tailID = "new-tail-event"
+
+        func line(id: String, event: String) throws -> Data {
+            var data = try JSONSerialization.data(withJSONObject: [
+                "event": event,
+                "id": id,
+                "ts": "2026-10-01T22:00:00.000Z",
+            ])
+            data.append(0x0A)
+            return data
+        }
+
+        let head = try line(id: headID, event: "received")
+        let tail = try line(id: tailID, event: "rejected")
+        let cap = MessagesPageSource.maxDispatchLogFileBytes
+        let startOffset: UInt64 = 1024 * 1024
+        let fileSize = UInt64(cap) + startOffset
+        let tailOffset = fileSize - UInt64(tail.count)
+        try writeSparseFile(
+            at: dispatchLog,
+            size: fileSize,
+            writes: [
+                (offset: 0, data: head),
+                // The tail starts on the continuation byte of this UTF-8 scalar.
+                (offset: startOffset - 1, data: Data([0xE2, 0x82])),
+                (offset: tailOffset - 1, data: Data([0x0A])),
+                (offset: tailOffset, data: tail),
+            ]
+        )
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertFalse(source.mailboxArtifacts.contains { $0.id == headID })
+        let tailArtifact = try XCTUnwrap(source.mailboxArtifacts.first { $0.id == tailID })
+        XCTAssertEqual(tailArtifact.lifecycle.map(\.state), ["rejected"])
+        XCTAssertEqual(tailArtifact.fileState, "rejected")
     }
 
     func testMailboxOnlyEventLogIsReadWithoutASeparateSendMarker() throws {

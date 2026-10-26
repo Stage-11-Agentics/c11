@@ -82,7 +82,7 @@ enum PrivateFileWriter {
         let flags = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC
         let descriptor = openx_np(url.path, flags, fileSecurity)
         guard descriptor < 0 else { return descriptor }
-        if errno == EINVAL {
+        if errno == EINVAL || isACLUnsupported(errno) {
             let fallbackDescriptor = open(url.path, flags, mode_t(0o600))
             guard fallbackDescriptor >= 0 else { throw posixError() }
             return fallbackDescriptor

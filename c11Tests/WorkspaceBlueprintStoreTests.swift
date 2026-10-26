@@ -254,6 +254,55 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         }
     }
 
+    func testReservedReferencesNormalizeCaseAndWhitespace() throws {
+        let store = makeStore()
+        let cwd = tmpRoot.appendingPathComponent("repo", isDirectory: true)
+        for name in ["basic-terminal", "quad-terminal", "agent-room"] {
+            try store.write(sampleBlueprint(name: name), to: tmpRoot.appendingPathComponent("Blueprints/\(name).json"))
+        }
+        for name in ["Single", "Quad", "Basic-Terminal", "AGENT-ROOM", "starter:unknown", "saved:missing"] {
+            var shadow = sampleBlueprint(name: name)
+            shadow.plan.surfaces[0].command = "echo shadow"
+            shadow.plan.surfaces[0].submitCommand = true
+            try store.write(shadow, to: cwd.appendingPathComponent(".c11/blueprints/\(name).json"))
+        }
+        for (reference, name) in [" Single ": "basic-terminal", "Quad": "quad-terminal",
+                                  "quad \n": "quad-terminal", " Basic-Terminal ": "basic-terminal",
+                                  "STARTER:QUAD": "quad-terminal", "AGENT-ROOM": "agent-room"] {
+            let entry = try XCTUnwrap(store.resolveLayoutReference(reference, cwd: cwd), reference)
+            XCTAssertEqual(entry.source, .builtIn, reference)
+            XCTAssertEqual(entry.name, name, reference)
+            XCTAssertTrue(store.isReservedLayoutReference(reference), reference)
+            XCTAssertNil(try store.read(url: URL(fileURLWithPath: entry.url)).plan.surfaces.first?.command)
+        }
+        for reference in ["starter:unknown", " STARTER:missing.json ", "saved:missing", "SAVED:/missing.json"] {
+            XCTAssertTrue(store.isReservedLayoutReference(reference), reference)
+            XCTAssertNil(store.resolveLayoutReference(reference, cwd: cwd), reference)
+        }
+        XCTAssertFalse(store.isReservedLayoutReference("./quad"))
+        XCTAssertFalse(store.isReservedLayoutReference("repo-only"))
+    }
+
+    func testOnlyExplicitPathShapesAllowFileFallback() {
+        for reference in ["./quad", "/tmp/quad", "~/quad", ".quad", "layout.JSON", "layout.MD", "repo/layout"] {
+            XCTAssertTrue(WorkspaceBlueprintStore.looksLikeLayoutPath(reference), reference)
+        }
+        for reference in ["quad", "unknown", "single ", "agent-room"] {
+            XCTAssertFalse(WorkspaceBlueprintStore.looksLikeLayoutPath(reference), reference)
+        }
+    }
+
+    func testStoredDefaultsAcceptOnlyKnownStarterIds() {
+        for stored in [nil, "saved:/tmp/repo.json", "/tmp/repo.json", "repo-only", "quad", "starter:unknown"] {
+            XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: nil, stored: stored), "starter:one-column")
+        }
+        for stored in ["starter:one-column", "starter:two-columns", "starter:quad", "starter:two-by-three"] {
+            XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: nil, stored: stored), stored)
+        }
+        XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: "saved:/tmp/repo.json", stored: "starter:quad"), "saved:/tmp/repo.json")
+        XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: "Single", stored: "starter:quad"), "Single")
+    }
+
     // MARK: - read
 
     func testReadCorrectlyDecodesABlueprintJSONFile() throws {

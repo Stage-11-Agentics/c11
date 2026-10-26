@@ -1116,6 +1116,9 @@ extension TerminalController {
         guard let name = params["name"] as? String, !name.isEmpty else {
             return .err(code: "invalid_params", message: "Missing or empty 'name'", data: nil)
         }
+        guard !WorkspaceBlueprintStore().isReservedLayoutReference(name) else {
+            return .err(code: "invalid_params", message: "Blueprint name '\(name)' is reserved for starter layouts or saved references", data: nil)
+        }
         let description = params["description"] as? String
         let force = params["force"] as? Bool ?? false
         let formatRaw = (params["format"] as? String)?.lowercased() ?? "md"

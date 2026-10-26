@@ -369,10 +369,15 @@ with both programs runs neither, including on git that predates
 `cd`.
 
 Repository blueprint files under `.c11/blueprints` and `.cmux/blueprints`
-are untrusted. Starter ids, aliases and built-in names always resolve to
-the app bundle; other names prefer user and built-in blueprints over a
-repo file. A repo blueprint applies only when chosen by its own name,
-`saved:<path>` or a path, and then its commands run as written.
+are untrusted. Starter ids, aliases and built-in names ignore case and
+surrounding whitespace and always resolve to the app bundle before any
+path lookup; other names prefer user and built-in blueprints over a repo
+file. A repo blueprint applies only when chosen by its own non-reserved
+name, `saved:<path>` or an explicit path, and then its commands run as
+written. An unknown bare word is never looked up as a file in the cwd;
+pass a path containing `/`, starting with `~` or `.`, or ending in `.json`
+or `.md`. The remembered default accepts only known starter ids, and
+exports reject reserved names.
 
 The workspace git probes (#650) run through the same helper, automatically
 and with no click: when a workspace opens or is restored in a directory,
@@ -445,8 +450,9 @@ Sources/MarkdownCorpusIndex.swift:839-891              (read-only .lattice ticke
 Sources/UntrustedRepositoryGit.swift:45-59             (git -c overrides)
 Sources/UntrustedRepositoryGit.swift:86-123            (git environment; work-tree pin for .topLevel)
 Sources/UntrustedRepositoryGit.swift:176-256           (filter.* scan and overrides for status)
-Sources/WorkspaceBlueprintStore.swift:165-168          (builtInEntry: app-bundle-only starter lookup)
-Sources/WorkspaceBlueprintStore.swift:172-185          (resolveLayoutReference: saved URL and name precedence)
+Sources/WorkspaceBlueprintStore.swift:30-49            (reference normalization, path shape and safe default)
+Sources/WorkspaceBlueprintStore.swift:187-196          (builtInEntry and reserved reference lookup)
+Sources/WorkspaceBlueprintStore.swift:200-216          (resolveLayoutReference: saved URL and name precedence)
 Sources/WorkspaceManager.swift:1922-1983               (workspace git probe, hardened status)
 Sources/Metadata/GitContextResolver.swift:198-266      (ProcessGitRunner via UntrustedRepositoryGit)
 Sources/SocketHandlers/MarkdownFeedbackHandlers.swift:295-315   (markdown socket methods)

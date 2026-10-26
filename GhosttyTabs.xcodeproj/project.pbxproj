@@ -382,9 +382,11 @@
 		C1124400000000000000B022 /* AgentLaunchModelTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */; };
 		C11250C0A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11250C1A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift */; };
 		C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */; };
+		2FD1F7F6DC68CA5CCF91C2E2 /* PrivateFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */; };
 		C1125800A1B2C3D4E5F60002 /* AgentStartupProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */; };
 		C1125800A1B2C3D4E5F60003 /* LaunchPromptDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */; };
 		C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */; };
+		53A3535E6025F8D6F0741FCC /* PrivateFileWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */; };
 		C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */; };
 		C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */; };
 		C1125801A1B2C3D4E5F60001 /* LaunchPostBootAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1125801A1B2C3D4E5F60011 /* LaunchPostBootAttachmentTests.swift */; };
@@ -686,8 +688,6 @@
 		C11317B58D56971501F930D0 /* CMUXCLI+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */; };
 		C11317BCFB3B1ED9789925EF /* CMUXCLI+Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */; };
 		C11317B7F5BDB77DA49F81F3 /* CMUXCLI+WorkspaceGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */; };
-		2FD1F7F6DC68CA5CCF91C2E2 /* PrivateFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */; };
-		53A3535E6025F8D6F0741FCC /* PrivateFileWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1065,9 +1065,11 @@
 		C1124400000000000000B021 /* AgentLaunchModelTierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentLaunchModelTierTests.swift; sourceTree = "<group>"; };
 		C11250C1A1B2C3D4E5F60701 /* AreaInteractionCardRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AreaInteractionCardRenderTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStore.swift; sourceTree = "<group>"; };
+		23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrivateFileWriter.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStartupProbe.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptDelivery.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptStoreTests.swift; sourceTree = "<group>"; };
+		15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrivateFileWriterTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentStartupProbeTests.swift; sourceTree = "<group>"; };
 		C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPromptDeliveryTests.swift; sourceTree = "<group>"; };
 		C1125801A1B2C3D4E5F60011 /* LaunchPostBootAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchPostBootAttachmentTests.swift; sourceTree = "<group>"; };
@@ -1391,8 +1393,6 @@
 		C11317F9042208A993627C60 /* CMUXCLI+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Usage.swift"; sourceTree = "<group>"; };
 		C11317F1F43E89C510F80BAF /* CMUXCLI+Version.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Version.swift"; sourceTree = "<group>"; };
 		C11317FC89736AE1560B641B /* CMUXCLI+WorkspaceGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+WorkspaceGroup.swift"; sourceTree = "<group>"; };
-		15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrivateFileWriterTests.swift; sourceTree = "<group>"; };
-		23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PrivateFileWriter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1593,6 +1593,7 @@
 				C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */,
 				C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */,
 				C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */,
+				23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
 				D7010BF1A1B2C3D4E5F60718 /* AreaMetadataStore.swift */,
 				D7C24002A1B2C3D4E5F60718 /* PanelManifestView.swift */,
@@ -1797,7 +1798,6 @@
 				70A6F529ED5EF993BB54103F /* PanelLineage.swift */,
 				272E746324754FAF16B14175 /* PanelCloseForGoodPolicy.swift */,
 				9E121A213A31C49006AEBFDD /* PanelLineageStore.swift */,
-				23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -2062,6 +2062,7 @@
 				C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */,
 				C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */,
 				C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */,
+				15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */,
 				A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */,
@@ -2149,7 +2150,6 @@
 				7F9CD81A501C496DECFAB3F2 /* ModelCostCatalogTests.swift */,
 				C1120300000000000000F041 /* ModelCatalogTests.swift */,
 				5A17F22C82057A0196EEC4A2 /* MarkdownCorpusIndexTests.swift */,
-				15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */,
 			);
 			path = c11Tests;
 			sourceTree = "<group>";
@@ -2412,6 +2412,7 @@
 				C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */,
+				53A3535E6025F8D6F0741FCC /* PrivateFileWriterTests.swift in Sources */,
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
 				C1128000A1B2C3D4E5F60003 /* CreateInitialInputTests.swift in Sources */,
 				C11282000000000000000004 /* SelectionReadTests.swift in Sources */,
@@ -2557,7 +2558,6 @@
 				32E8C6DFC5D1745577BCD85C /* PanelCloseForGoodPolicy.swift in Sources */,
 				4126FE0A41180AF029CA62D0 /* PanelLineageStore.swift in Sources */,
 				C46400000000000000000002 /* C11LogicTestsBundleBootstrap.swift in Sources */,
-				53A3535E6025F8D6F0741FCC /* PrivateFileWriterTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2641,6 +2641,7 @@
 				C1125800A1B2C3D4E5F60003 /* LaunchPromptDelivery.swift in Sources */,
 				C1125800A1B2C3D4E5F60002 /* AgentStartupProbe.swift in Sources */,
 				C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */,
+				2FD1F7F6DC68CA5CCF91C2E2 /* PrivateFileWriter.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
 				D7010BF0A1B2C3D4E5F60718 /* AreaMetadataStore.swift in Sources */,
 				D7C24001A1B2C3D4E5F60718 /* PanelManifestView.swift in Sources */,
@@ -2865,7 +2866,6 @@
 				1F7D58FBB534D28986BCFF0F /* PanelLineage.swift in Sources */,
 				B2037CBED0FB9D356FD1BB9A /* PanelCloseForGoodPolicy.swift in Sources */,
 				744C86277D36D47EAAAD42FA /* PanelLineageStore.swift in Sources */,
-				2FD1F7F6DC68CA5CCF91C2E2 /* PrivateFileWriter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

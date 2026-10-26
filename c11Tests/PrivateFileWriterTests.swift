@@ -96,6 +96,21 @@ final class PrivateFileWriterTests: XCTestCase {
         defer { acl_free(UnsafeMutableRawPointer(directoryACL)) }
         XCTAssertEqual(acl_set_file(sandbox.path, ACL_TYPE_EXTENDED, directoryACL), 0)
 
+        let probe = sandbox.appendingPathComponent(".c11-state.probe.tmp")
+        let descriptor = try PrivateFileWriter.openPrivateTemporaryFile(at: probe)
+        defer {
+            Darwin.close(descriptor)
+            unlink(probe.path)
+        }
+        errno = 0
+        let descriptorACL = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED)
+        if let descriptorACL {
+            acl_free(UnsafeMutableRawPointer(descriptorACL))
+            XCTFail("temporary file inherited an extended ACL at creation")
+        } else {
+            XCTAssertEqual(errno, ENOENT)
+        }
+
         let destination = sandbox.appendingPathComponent("inherited.json")
         try PrivateFileWriter.write(Data("private state".utf8), to: destination)
 

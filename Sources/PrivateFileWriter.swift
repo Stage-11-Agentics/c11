@@ -12,7 +12,7 @@ enum PrivateFileWriter {
             case .invalidSizeLimit:
                 return String(localized: "browser.state.file.invalidSizeLimit", defaultValue: "State file size limit must be nonnegative")
             case .unsafeFile:
-                return String(localized: "browser.state.file.unsafe", defaultValue: "State file must be a regular file owned by the current user and not writable by group or others")
+                return String(localized: "browser.state.file.unsafeWithACL", defaultValue: "State file must be a regular file (not a symlink) owned by the current user, not writable by group or others, and without allow ACLs")
             case .tooLarge:
                 return String(localized: "browser.state.file.tooLarge", defaultValue: "State file exceeds the maximum allowed size")
             }
@@ -22,12 +22,7 @@ enum PrivateFileWriter {
     static func write(_ data: Data, to url: URL) throws {
         let temporaryURL = url.deletingLastPathComponent()
             .appendingPathComponent(".c11-state.\(UUID().uuidString).tmp")
-        let descriptor = open(
-            temporaryURL.path,
-            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
-            mode_t(0o600)
-        )
-        guard descriptor >= 0 else { throw posixError() }
+        let descriptor = try openPrivateTemporaryFile(at: temporaryURL)
 
         var descriptorIsOpen = true
         var temporaryFileExists = true
@@ -38,7 +33,10 @@ enum PrivateFileWriter {
 
         guard let emptyACL = acl_init(0) else { throw posixError() }
         defer { acl_free(UnsafeMutableRawPointer(emptyACL)) }
-        guard acl_set_fd_np(descriptor, emptyACL, ACL_TYPE_EXTENDED) == 0 else { throw posixError() }
+        if acl_set_fd_np(descriptor, emptyACL, ACL_TYPE_EXTENDED) != 0,
+           !isACLUnsupported(errno) {
+            throw posixError()
+        }
         guard fchmod(descriptor, mode_t(0o600)) == 0 else { throw posixError() }
         try data.withUnsafeBytes { bytes in
             var offset = 0
@@ -60,6 +58,36 @@ enum PrivateFileWriter {
         guard closeResult == 0 else { throw posixError() }
         guard rename(temporaryURL.path, url.path) == 0 else { throw posixError() }
         temporaryFileExists = false
+    }
+
+    static func openPrivateTemporaryFile(at url: URL) throws -> Int32 {
+        guard let emptyACL = acl_init(0) else { throw posixError() }
+        defer { acl_free(UnsafeMutableRawPointer(emptyACL)) }
+
+        var flagset: acl_flagset_t?
+        guard acl_get_flagset_np(UnsafeMutableRawPointer(emptyACL), &flagset) == 0,
+              let flagset else {
+            throw posixError()
+        }
+        guard acl_add_flag_np(flagset, ACL_FLAG_NO_INHERIT) == 0 else { throw posixError() }
+
+        guard let fileSecurity = filesec_init() else { throw posixError() }
+        defer { filesec_free(fileSecurity) }
+
+        var aclValue: acl_t? = emptyACL
+        guard filesec_set_property(fileSecurity, FILESEC_ACL, &aclValue) == 0 else { throw posixError() }
+        var mode = mode_t(0o600)
+        guard filesec_set_property(fileSecurity, FILESEC_MODE, &mode) == 0 else { throw posixError() }
+
+        let flags = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC
+        let descriptor = openx_np(url.path, flags, fileSecurity)
+        guard descriptor < 0 else { return descriptor }
+        if errno == EINVAL {
+            let fallbackDescriptor = open(url.path, flags, mode_t(0o600))
+            guard fallbackDescriptor >= 0 else { throw posixError() }
+            return fallbackDescriptor
+        }
+        throw posixError()
     }
 
     static func readPrivateFile(at url: URL, maxBytes: Int) throws -> Data {
@@ -106,9 +134,13 @@ enum PrivateFileWriter {
         POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
 
+    private static func isACLUnsupported(_ error: Int32) -> Bool {
+        error == ENOTSUP || error == EOPNOTSUPP
+    }
+
     private static func hasExtendedAllowACL(_ descriptor: Int32) throws -> Bool {
         guard let acl = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED) else {
-            if errno == ENOENT { return false }
+            if errno == ENOENT || isACLUnsupported(errno) { return false }
             throw posixError()
         }
         defer { acl_free(UnsafeMutableRawPointer(acl)) }

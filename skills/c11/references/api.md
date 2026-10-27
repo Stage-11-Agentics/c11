@@ -174,10 +174,12 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # candidates; a missing directory fails and creates nothing. Records the open in recents. --layout takes
     # quad | two-columns | two-by-three | one-column (or starter:<name>), saved:<url>, or a blueprint name
     # (default: the picker's last layout). No agent is launched unless --agent. Does not steal focus.
-    # Starter names ignore case and surrounding whitespace and always mean shipped layouts. Choose a repo blueprint
+    # Starter names and shipped blueprint names (such as agent-room) ignore case and surrounding whitespace and
+    # always mean the app's own layouts, ahead of user and repo files. Choose a repo blueprint
     # by its own non-reserved name, saved:<path>, or an explicit path (./quad, ~/layout, layout.json, layout.md).
     # An unknown bare word is never looked up as a file in the cwd; pass a path. Only known starter ids are remembered defaults.
-    # The server resolves a relative path-like layout against the target directory.
+    # The CLI resolves a relative path-like layout against your shell's cwd; over the socket, a relative
+    # path-like layout resolves against the target directory.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
 c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal

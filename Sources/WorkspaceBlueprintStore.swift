@@ -18,6 +18,7 @@ import Foundation
 /// into CI.
 struct WorkspaceBlueprintStore: Sendable {
 
+    // CLI/CMUXCLI+Blueprint.swift mirrors these reference rules; keep both in sync.
     static let starterLayoutFiles: [String: String] = [
         "starter:one-column": "basic-terminal", "one-column": "basic-terminal", "single": "basic-terminal",
         "starter:two-columns": "side-by-side", "two-columns": "side-by-side",

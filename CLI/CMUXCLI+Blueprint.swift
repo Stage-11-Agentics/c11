@@ -458,6 +458,9 @@ extension CMUXCLI {
         return plan
     }
 
+    // The CLI does not link Sources: keep these four helpers in sync with
+    // WorkspaceBlueprintStore's normalizedLayoutReference, looksLikeLayoutPath,
+    // starterLayoutFiles and isReservedLayoutReference.
     func normalizedBlueprintReference(_ reference: String) -> String {
         reference.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))

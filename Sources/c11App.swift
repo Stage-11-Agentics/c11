@@ -7341,6 +7341,9 @@ private struct ShortcutSettingRow: View {
     var body: some View {
         KeyboardShortcutRecorder(label: action.label, action: action, shortcut: $shortcut)
             .onChange(of: shortcut) { newValue in
+                // A change that arrived by notification is already stored; writing it
+                // back would pin a reset action to today's default as a custom value.
+                guard newValue != KeyboardShortcutSettings.shortcut(for: action) else { return }
                 KeyboardShortcutSettings.setShortcut(newValue, for: action)
             }
             .onReceive(NotificationCenter.default.publisher(for: KeyboardShortcutSettings.didChangeNotification)) { _ in

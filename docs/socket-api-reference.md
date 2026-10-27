@@ -312,9 +312,12 @@ Dotted v2 methods, grouped by domain. Method names are stable identifiers; argum
 
 - `sidebar.state`
 
-### Settings (`settings.*`) — 1
+### Settings (`settings.*`) — 4
 
 - `settings.open`
+- `settings.shortcuts.list` (every action: `action`, `label`, `shortcut`, `display`, `default_shortcut`, `default_display`, `customized`)
+- `settings.shortcuts.set` (`action`, `shortcut` as a combo such as `ctrl+opt+cmd+x` or `none`; applies live through the Settings path and returns `previous` and `conflicts`)
+- `settings.shortcuts.reset` (`action`, or `all: true`)
 
 ### Session (`session.*`) — 1
 

@@ -37,7 +37,7 @@ extension CMUXCLI {
 
         Commands:
           welcome
-          shortcuts
+          shortcuts [list|set|reset]                                  keyboard shortcuts (live)
           feedback [--email <email> --body <text> [--image <path> ...]]
           themes [list|get|set|clear|reload|path|dump|validate|diff]  c11 chrome themes
           terminal-theme [list|set|clear]                             Ghostty terminal themes

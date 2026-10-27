@@ -644,3 +644,135 @@ private class ShortcutRecorderNSButton: NSButton {
         stopRecording()
     }
 }
+
+// MARK: - Scripting names and combo strings (`c11 shortcuts`, `settings.shortcuts.*`)
+
+extension KeyboardShortcutSettings.Action {
+    /// Kebab-case name the CLI and socket use (`toggle-sidebar`). Derived from the
+    /// case name, so legacy raw values (`newTab`, `renameTab`) never reach scripts.
+    var scriptName: String {
+        var result = ""
+        for character in String(describing: self) {
+            if character.isUppercase {
+                result.append("-")
+                result.append(contentsOf: character.lowercased())
+            } else {
+                result.append(character)
+            }
+        }
+        return result
+    }
+
+    /// Resolves a script name. Case, dashes and underscores are ignored, and the
+    /// legacy raw values are accepted as hidden aliases (`new-tab` → `new-workspace`).
+    static func resolve(scriptName: String) -> Self? {
+        func normalized(_ value: String) -> String {
+            value.lowercased().filter { $0 != "-" && $0 != "_" }
+        }
+        let wanted = normalized(scriptName.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !wanted.isEmpty else { return nil }
+        return allCases.first { normalized(String(describing: $0)) == wanted }
+            ?? allCases.first { normalized($0.rawValue) == wanted }
+    }
+}
+
+extension StoredShortcut {
+    private static let namedKeys: [String: String] = [
+        "left": "←", "right": "→", "up": "↑", "down": "↓",
+        "tab": "\t", "return": "\r", "enter": "\r",
+    ]
+    private static let punctuationKeys: Set<Character> = ["[", "]", "-", "=", ",", ".", "/", ";", "'", "`", "\\"]
+
+    /// Parses a combo such as `ctrl+opt+cmd+x`, `cmd+shift+]`, `cmd+left`, or the
+    /// display form `⌃⌥⌘X`. Requires at least one modifier and one key the recorder
+    /// knows: a letter, digit, arrow, tab, return or unshifted punctuation key.
+    init?(combo: String) {
+        let raw = combo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+
+        var command = false, shift = false, option = false, control = false
+        var keyToken: String
+
+        if raw.count > 1, raw.contains("+") {
+            var tokens = raw.split(separator: "+", omittingEmptySubsequences: false).map {
+                $0.trimmingCharacters(in: .whitespaces).lowercased()
+            }
+            keyToken = tokens.removeLast()
+            for token in tokens {
+                switch token {
+                case "cmd", "command", "⌘": command = true
+                case "shift", "⇧": shift = true
+                case "opt", "option", "alt", "⌥": option = true
+                case "ctrl", "control", "⌃": control = true
+                default: return nil
+                }
+            }
+        } else {
+            var rest = Substring(raw)
+            while let glyph = rest.first, "⌃⌥⇧⌘".contains(glyph), rest.count > 1 {
+                switch glyph {
+                case "⌘": command = true
+                case "⇧": shift = true
+                case "⌥": option = true
+                default: control = true
+                }
+                rest = rest.dropFirst()
+            }
+            keyToken = String(rest).lowercased()
+        }
+
+        guard command || shift || option || control else { return nil }
+
+        let key: String
+        if let named = Self.namedKeys[keyToken] {
+            key = named
+        } else if ["←", "→", "↑", "↓", "↩"].contains(keyToken) {
+            key = keyToken == "↩" ? "\r" : keyToken
+        } else if keyToken.count == 1, let character = keyToken.first,
+                  (character.isASCII && (character.isLetter || character.isNumber))
+                    || Self.punctuationKeys.contains(character) {
+            key = keyToken
+        } else {
+            return nil
+        }
+        self.init(key: key, command: command, shift: shift, option: option, control: control)
+    }
+
+    /// Combos a script may not bind, keyed by canonical combo string: fixed app
+    /// shortcuts that win before any customizable one, editing keys, and the
+    /// system's app switcher.
+    private static let reservedCombos: [String: String] = [
+        "cmd+q": "Quit", "cmd+p": "the command palette", "shift+cmd+p": "the command palette",
+        "shift+cmd+,": "Reload Configuration", "ctrl+cmd+f": "full screen",
+        "cmd+c": "Copy", "cmd+v": "Paste", "cmd+x": "Cut", "cmd+a": "Select All",
+        "cmd+z": "Undo", "shift+cmd+z": "Redo", "cmd+tab": "the app switcher",
+    ]
+
+    /// Why a script may not bind this combo, or nil when it may. The Settings
+    /// recorder does not apply these rules: there the operator presses the keys.
+    var scriptingRefusal: String? {
+        guard !key.isEmpty else { return nil }
+        if let owner = Self.reservedCombos[comboString] {
+            return "\(displayString) is reserved for \(owner)"
+        }
+        let printable = key.count == 1 && !["←", "→", "↑", "↓", "\t", "\r"].contains(key)
+        if printable, shift, !command, !option, !control {
+            return "\(displayString) would take over typing"
+        }
+        return nil
+    }
+
+    /// Canonical combo string (`ctrl+opt+cmd+x`), or `none` when unbound.
+    /// `StoredShortcut(combo: shortcut.comboString)` round-trips every bound shortcut.
+    var comboString: String {
+        guard !key.isEmpty else { return "none" }
+        var parts: [String] = []
+        if control { parts.append("ctrl") }
+        if option { parts.append("opt") }
+        if shift { parts.append("shift") }
+        if command { parts.append("cmd") }
+        let keyName = Self.namedKeys.first { $0.value == key && $0.key != "enter" }?.key ?? key
+        parts.append(keyName)
+        return parts.joined(separator: "+")
+    }
+}

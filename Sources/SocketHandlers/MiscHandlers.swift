@@ -14,6 +14,12 @@ extension TerminalController {
         switch method {
         case "settings.open":
             return v2Result(id: id, self.v2SettingsOpen(params: params))
+        case "settings.shortcuts.list":
+            return v2Result(id: id, self.v2SettingsShortcutsList(params: params))
+        case "settings.shortcuts.set":
+            return v2Result(id: id, self.v2SettingsShortcutsSet(params: params))
+        case "settings.shortcuts.reset":
+            return v2Result(id: id, self.v2SettingsShortcutsReset(params: params))
         case "panel.action":
             return v2Result(id: id, self.v2RejectUnresolvedTargetRefs(params) ?? self.v2PanelAction(params: params))
         case "session.save":
@@ -575,6 +581,120 @@ extension TerminalController {
             "opened": true,
             "target": navigationTarget?.rawValue ?? "general",
         ])
+    }
+
+    private func v2ShortcutPayload(_ action: KeyboardShortcutSettings.Action) -> [String: Any] {
+        let current = KeyboardShortcutSettings.shortcut(for: action)
+        let fallback = action.defaultShortcut
+        return [
+            "action": action.scriptName,
+            "label": action.label,
+            "shortcut": current.comboString,
+            "display": current.displayString,
+            "default_shortcut": fallback.comboString,
+            "default_display": fallback.displayString,
+            "customized": current != fallback,
+        ]
+    }
+
+    private func v2ResolveShortcutAction(_ params: [String: Any]) -> Result<KeyboardShortcutSettings.Action, V2CallResult> {
+        let raw = v2String(params, "action") ?? ""
+        guard let action = KeyboardShortcutSettings.Action.resolve(scriptName: raw) else {
+            return .failure(.err(
+                code: raw.isEmpty ? "invalid_params" : "not_found",
+                message: raw.isEmpty ? "Missing action" : "Unknown shortcut action",
+                data: [
+                    "action": raw,
+                    "actions": KeyboardShortcutSettings.Action.allCases.map(\.scriptName),
+                ]
+            ))
+        }
+        return .success(action)
+    }
+
+    /// Other actions bound to the same combo as `action`; only one of them fires.
+    private func v2ShortcutConflicts(_ action: KeyboardShortcutSettings.Action) -> [String] {
+        let shortcut = KeyboardShortcutSettings.shortcut(for: action)
+        guard shortcut != .unbound else { return [] }
+        return KeyboardShortcutSettings.Action.allCases
+            .filter { $0 != action && KeyboardShortcutSettings.shortcut(for: $0) == shortcut }
+            .map(\.scriptName)
+    }
+
+    private func v2SettingsShortcutsList(params: [String: Any]) -> V2CallResult {
+        let customizedOnly = v2Bool(params, "customized") == true
+        let rows = KeyboardShortcutSettings.Action.allCases.map(v2ShortcutPayload)
+            .filter { !customizedOnly || ($0["customized"] as? Bool ?? false) }
+        return .ok(["shortcuts": rows])
+    }
+
+    /// Rebinds one action through the same path as the Settings recorder, so the
+    /// menu, key handling, tooltips and an open Settings window update at once.
+    private func v2SettingsShortcutsSet(params: [String: Any]) -> V2CallResult {
+        let action: KeyboardShortcutSettings.Action
+        switch v2ResolveShortcutAction(params) {
+        case .success(let resolved): action = resolved
+        case .failure(let error): return error
+        }
+        let comboRaw = (v2String(params, "shortcut") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let shortcut: StoredShortcut
+        if comboRaw.lowercased() == "none" {
+            shortcut = .unbound
+        } else if let parsed = StoredShortcut(combo: comboRaw) {
+            shortcut = parsed
+        } else {
+            return .err(
+                code: "invalid_params",
+                message: "Invalid shortcut; use modifiers and one key, e.g. ctrl+opt+cmd+x, or none",
+                data: ["shortcut": comboRaw]
+            )
+        }
+        if let refusal = shortcut.scriptingRefusal {
+            return .err(code: "invalid_params", message: refusal, data: ["shortcut": comboRaw])
+        }
+        // Same rule as the Settings recorder: Cmd+[ / Cmd+] stay browser navigation.
+        if action == .focusHistoryBack || action == .focusHistoryForward,
+           shortcut.key == "[" || shortcut.key == "]",
+           shortcut.command, !shortcut.shift, !shortcut.option, !shortcut.control {
+            return .err(
+                code: "invalid_params",
+                message: "Cmd+[ and Cmd+] are reserved for browser Back/Forward",
+                data: ["shortcut": comboRaw]
+            )
+        }
+        let previous = KeyboardShortcutSettings.shortcut(for: action)
+        // Main thread: the change notification drives SwiftUI menu and Settings state.
+        // This is an operator configuration write, never telemetry.
+        v2MainSync { KeyboardShortcutSettings.setShortcut(shortcut, for: action) }
+        var payload = v2ShortcutPayload(action)
+        payload["previous"] = previous.comboString
+        payload["conflicts"] = v2ShortcutConflicts(action)
+        return .ok(payload)
+    }
+
+    private func v2SettingsShortcutsReset(params: [String: Any]) -> V2CallResult {
+        let actions: [KeyboardShortcutSettings.Action]
+        if v2Bool(params, "all") == true {
+            actions = KeyboardShortcutSettings.Action.allCases
+        } else {
+            switch v2ResolveShortcutAction(params) {
+            case .success(let resolved): actions = [resolved]
+            case .failure(let error): return error
+            }
+        }
+        // Main thread for the same reason as settings.shortcuts.set.
+        v2MainSync {
+            if actions.count == KeyboardShortcutSettings.Action.allCases.count {
+                KeyboardShortcutSettings.resetAll()
+            } else {
+                actions.forEach { KeyboardShortcutSettings.resetShortcut(for: $0) }
+            }
+        }
+        return .ok(["shortcuts": actions.map { action -> [String: Any] in
+            var payload = v2ShortcutPayload(action)
+            payload["conflicts"] = v2ShortcutConflicts(action)
+            return payload
+        }])
     }
 
     /// Structured `sidebar_state` — JSON variant that includes the M3 `agent_chip` block.

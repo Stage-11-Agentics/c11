@@ -666,6 +666,10 @@ enum WorkspaceBlueprintMarkdown {
     /// the result rounds cleanly; fall back to a four-digit decimal when the
     /// integer form would lose precision.
     private static func formatSplitRatio(_ p: Double) -> String {
+        // The parser accepts only ratios strictly inside (0, 1). Clamping here
+        // keeps every emitted value there, so near 0 or 1 neither the N/M form
+        // nor four decimal places can round to an endpoint.
+        let p = p.isFinite ? min(max(p, 0.0001), 0.9999) : 0.5
         let scaled = p * 100.0
         let rounded = (scaled).rounded()
         if abs(scaled - rounded) < 0.001 {

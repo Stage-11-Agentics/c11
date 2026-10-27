@@ -434,8 +434,14 @@ extension CMUXCLI {
         let isMarkdown = (path as NSString).pathExtension.lowercased() == "md"
         let limit = isMarkdown ? maximumMarkdownBlueprintBytes : maximumJSONBlueprintBytes
         do {
-            let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
-            defer { try? handle.close() }
+            // O_NONBLOCK keeps a FIFO from blocking the open; the regular-file
+            // check below then refuses it.
+            let descriptor = Darwin.open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+            guard descriptor >= 0 else {
+                throw CLIError(message: "workspace new: could not read blueprint at '\(path)'")
+            }
+            defer { Darwin.close(descriptor) }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
             var info = stat()
             guard fstat(handle.fileDescriptor, &info) == 0,
                   (info.st_mode & S_IFMT) == S_IFREG else {

@@ -217,6 +217,36 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         }
     }
 
+    func testSerializedSplitRatiosNearTheEndpointsParseBack() throws {
+        for position in [0.999999, 0.99996, 0.00004, 1.0, 0.0, 0.25, 0.12345] {
+            let file = WorkspaceBlueprintFile(
+                name: "Edge Split",
+                description: nil,
+                plan: WorkspaceApplyPlan(
+                    version: 1,
+                    workspace: WorkspaceSpec(title: "Edge Split"),
+                    layout: .split(.init(
+                        orientation: .horizontal,
+                        dividerPosition: position,
+                        first: .pane(.init(surfaceIds: ["s1"])),
+                        second: .pane(.init(surfaceIds: ["s2"]))
+                    )),
+                    surfaces: [
+                        PanelSpec(id: "s1", kind: .terminal),
+                        PanelSpec(id: "s2", kind: .terminal)
+                    ]
+                )
+            )
+            let parsed = try roundTrip(file)
+            guard case .split(let split) = parsed.plan.layout else {
+                return XCTFail("expected a split for \(position)")
+            }
+            XCTAssertGreaterThan(split.dividerPosition, 0, "\(position)")
+            XCTAssertLessThan(split.dividerPosition, 1, "\(position)")
+            XCTAssertEqual(split.dividerPosition, position, accuracy: 0.0002, "\(position)")
+        }
+    }
+
     func testParseRejectsSplitRatiosOutsideUnitInterval() {
         for ratio in ["-1/2", "3/-1"] {
             let source = """

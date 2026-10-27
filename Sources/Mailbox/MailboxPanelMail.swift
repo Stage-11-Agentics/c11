@@ -518,12 +518,37 @@ enum MailboxPanelMail {
             return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
         }
         guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
-        let wanted = max(0, limit) + 1
-        var buffer = [UInt8](repeating: 0, count: wanted)
+        let byteLimit = max(0, limit)
+        let (wanted, overflow) = byteLimit.addingReportingOverflow(1)
+        guard !overflow else {
+            let reason = "read limit is too large"
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+        let fileSize = max(off_t(0), info.st_size)
+        let initialCapacity = fileSize >= off_t(wanted) ? wanted : Int(fileSize) + 1
+        var buffer = Data(count: initialCapacity)
         var filled = 0
-        while filled < wanted {
+        while true {
+            if filled == buffer.count {
+                guard buffer.count < wanted else { break }
+                // The file grew after fstat. Expand only on that uncommon path;
+                // ordinary small envelopes allocate only their actual size.
+                var expanded = Data(count: wanted)
+                if filled > 0 {
+                    buffer.withUnsafeBytes { source in
+                        expanded.withUnsafeMutableBytes { destination in
+                            destination.baseAddress!.copyMemory(
+                                from: source.baseAddress!,
+                                byteCount: filled
+                            )
+                        }
+                    }
+                }
+                buffer = expanded
+            }
+            let remaining = buffer.count - filled
             let count = buffer.withUnsafeMutableBytes { raw in
-                read(fd, raw.baseAddress!.advanced(by: filled), wanted - filled)
+                read(fd, raw.baseAddress!.advanced(by: filled), remaining)
             }
             if count < 0 {
                 if errno == EINTR { continue }
@@ -533,8 +558,95 @@ enum MailboxPanelMail {
             if count == 0 { break }
             filled += count
         }
-        let data = Data(buffer[0..<min(filled, max(0, limit))])
-        return .success(PrefixRead(data: data, truncated: filled > limit, size: Int(info.st_size)))
+        let truncated = filled > byteLimit
+        let byteCount = min(filled, byteLimit)
+        if byteCount < buffer.count {
+            buffer.removeSubrange(byteCount..<buffer.endIndex)
+        }
+        return .success(PrefixRead(data: buffer, truncated: truncated, size: Int(info.st_size)))
+    }
+
+    /// Opens a regular file without blocking, seeks to its last `limit` bytes,
+    /// and reads no more than that many bytes. If the read starts mid-file,
+    /// the first partial line is discarded before the bytes are returned.
+    static func readRegularFileTail(path: String, limit: Int, followSymlinks: Bool) -> Result<Data, ReadFailure> {
+        guard limit > 0 else {
+            let reason = "read limit must be positive"
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+
+        var flags = O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC
+        if !followSymlinks { flags |= O_NOFOLLOW }
+        let fd = open(path, flags)
+        guard fd >= 0 else {
+            let code = errno
+            switch code {
+            case ENOENT, ENOTDIR:
+                return .failure(ReadFailure(
+                    description: String(
+                        localized: "mailbox.drawer.problem.gone",
+                        defaultValue: "This message was moved before it could be read."
+                    ),
+                    referenceContent: .missing
+                ))
+            case ELOOP:
+                return .failure(notRegular)
+            case EACCES, EPERM:
+                let reason = String(
+                    localized: "mailbox.drawer.problem.permission",
+                    defaultValue: "c11 does not have permission to read it."
+                )
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            default:
+                let reason = String(cString: strerror(code))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            }
+        }
+        defer { close(fd) }
+
+        var info = stat()
+        guard fstat(fd, &info) == 0 else {
+            let reason = String(cString: strerror(errno))
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(notRegular) }
+
+        let (readLimit, overflow) = limit.addingReportingOverflow(1)
+        guard !overflow else {
+            let reason = "read limit is too large"
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+        let startOffset = max(0, info.st_size - off_t(limit))
+        let readOffset = startOffset > 0 ? startOffset - 1 : 0
+        guard lseek(fd, readOffset, SEEK_SET) >= 0 else {
+            let reason = String(cString: strerror(errno))
+            return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+        }
+
+        let available = max(off_t(0), info.st_size - readOffset)
+        let capacity = Int(min(available, off_t(readLimit)))
+        var buffer = Data(count: capacity)
+        var filled = 0
+        while filled < capacity {
+            let remaining = capacity - filled
+            let count = buffer.withUnsafeMutableBytes { raw in
+                read(fd, raw.baseAddress!.advanced(by: filled), remaining)
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                let reason = String(cString: strerror(errno))
+                return .failure(ReadFailure(description: reason, referenceContent: .unreadable(reason)))
+            }
+            if count == 0 { break }
+            filled += count
+        }
+
+        var resultStart = 0
+        if startOffset > 0 {
+            guard let newline = buffer[..<filled].firstIndex(of: 0x0A) else { return .success(Data()) }
+            resultStart = buffer.index(after: newline)
+        }
+        return .success(Data(buffer[resultStart..<filled]))
     }
 
     private static var notRegular: ReadFailure {

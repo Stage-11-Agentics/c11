@@ -273,6 +273,48 @@ final class MailboxReceiptRecorderTests: XCTestCase {
         XCTAssertEqual(names(spool(workspace)), [])
     }
 
+    func testSparseOversizedEventLogIsSkippedWhenCheckingPriorReceipts() throws {
+        let receiptURL = try XCTUnwrap(writeReceipt([idA]))
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)],
+            ofItemAtPath: receiptURL.path
+        )
+
+        let eventLog = eventsDir.appendingPathComponent("events-oversized.ndjson")
+        XCTAssertTrue(FileManager.default.createFile(atPath: eventLog.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: eventLog)
+        try handle.truncate(atOffset: UInt64(MessagesPageSource.maxEventLogFileBytes + 128))
+        try handle.seek(toOffset: 0)
+        let priorDelivery = #"{"payload":{"id":"\#(idA)","via":"drain"},"type":"mailbox.delivered"}"#
+        try handle.write(contentsOf: Data((priorDelivery + "\n").utf8))
+        try handle.close()
+
+        let sink = Sink()
+        let recorder = makeRecorder(sink, startedAt: Date())
+        sweep(recorder)
+
+        XCTAssertEqual(sink.snapshot.map(\.id), [idA], "an over-cap log is ignored, so the receipt is recorded")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: receiptURL.path))
+    }
+
+    func testOversizedClaimedReceiptIsRejected() throws {
+        let receiptURL = try XCTUnwrap(writeReceipt([idA]))
+        let handle = try FileHandle(forWritingTo: receiptURL)
+        try handle.truncate(atOffset: UInt64(MailboxDeliveryReceipt.maxBytes + 1))
+        try handle.close()
+
+        let sink = Sink()
+        let recorder = makeRecorder(sink)
+        sweep(recorder)
+
+        XCTAssertEqual(sink.snapshot, [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: receiptURL.path))
+        XCTAssertEqual(
+            names(spool(workspace).appendingPathComponent(MailboxDeliveryReceipt.rejectedDirectoryName)),
+            [receiptURL.lastPathComponent]
+        )
+    }
+
     func testANewReceiptIsNeverCheckedAgainstOldLogs() throws {
         // Same id already in a log, but the receipt is from this run: a new
         // delivery of a re-sent id is still recorded.

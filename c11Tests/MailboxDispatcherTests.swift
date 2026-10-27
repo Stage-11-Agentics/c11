@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -654,6 +655,96 @@ final class MailboxDispatcherTests: XCTestCase {
         // Log event is `rejected`, not `received`.
         let events = try readLog().compactMap { $0["event"] as? String }
         XCTAssertEqual(events, ["rejected"])
+    }
+
+    func testOversizedOutboxEnvelopeIsRejectedAndNextEnvelopeDispatches() throws {
+        let recipient = seedSurface(name: "bounded-recipient")
+        let dispatcher = makeDispatcher(surfaces: [recipient])
+
+        let oversized = try MailboxEnvelope.build(
+            from: "sender",
+            to: "bounded-recipient",
+            body: "valid envelope prefix",
+            id: "01K3A2B7X8PQRTVWYZ0123456X"
+        )
+        var oversizedBytes = try oversized.encode()
+        oversizedBytes.append(contentsOf: Data(repeating: 0x20, count: 1024 * 1024 + 1 - oversizedBytes.count))
+        XCTAssertNoThrow(try MailboxEnvelope.validate(data: oversizedBytes))
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+        let oversizedURL = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: oversized.id))
+        try oversizedBytes.write(to: oversizedURL)
+
+        dispatcher.dispatchOne(url: oversizedURL)
+
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: oversized.id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
+        XCTAssertThrowsError(try readInboxFile(panel: recipient, id: oversized.id))
+
+        let valid = try MailboxEnvelope.build(
+            from: "sender",
+            to: "bounded-recipient",
+            body: "NEXT_ENVELOPE_DELIVERED",
+            id: "01K3A2B7X8PQRTVWYZ0123456Y"
+        )
+        try writeEnvelope(valid)
+        dispatcher.dispatchOne(
+            url: outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: valid.id))
+        )
+        dispatcher.log.flush()
+
+        let delivered = try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: valid.id))
+        XCTAssertEqual(delivered.body, "NEXT_ENVELOPE_DELIVERED")
+        let history = try XCTUnwrap(
+            MessagesPageSource.load(stateURL: tempState).mailboxArtifacts.first { $0.id == oversized.id }
+        )
+        XCTAssertNil(history.body)
+        XCTAssertEqual(history.fileState, "rejected")
+        XCTAssertEqual(history.lifecycle.map(\.state), ["rejected"])
+        let events = try readLog().compactMap { $0["event"] as? String }
+        XCTAssertEqual(events.first, "rejected")
+        XCTAssertTrue(events.contains("cleaned"))
+    }
+
+    func testSymlinkOutboxEntryIsRejectedWithoutFollowingIt() throws {
+        let dispatcher = makeDispatcher(surfaces: [])
+        let id = "01K3A2B7X8PQRTVWYZ0123456M"
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+        let link = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        let target = tempState.appendingPathComponent("outside.msg")
+        try Data("not an envelope".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        dispatcher.dispatchOne(url: link)
+        dispatcher.log.flush()
+
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
+        XCTAssertEqual(
+            try FileManager.default.attributesOfItem(atPath: rejected.path)[.type] as? FileAttributeType,
+            .typeSymbolicLink
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "not an envelope")
+    }
+
+    func testFIFOOutboxEntryIsRejectedWithoutBlocking() throws {
+        let dispatcher = makeDispatcher(surfaces: [])
+        let id = "01K3A2B7X8PQRTVWYZ0123456N"
+        let outbox = MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+        let fifo = outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+
+        dispatcher.dispatchOne(url: fifo)
+        dispatcher.log.flush()
+
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rejected.path))
+        var fileInfo = stat()
+        XCTAssertEqual(lstat(rejected.path, &fileInfo), 0)
+        XCTAssertEqual(fileInfo.st_mode & mode_t(S_IFMT), mode_t(S_IFIFO))
     }
 
     // MARK: - Unknown recipient

@@ -281,6 +281,55 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(text.utf8.count, MailboxPanelMail.maxReferencedBytes)
     }
 
+    func testRegularFilePrefixBoundsReadsFromSparseFile() throws {
+        let file = root.appendingPathComponent("large-sparse.msg")
+        XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: 4 * 1024 * 1024 * 1024)
+        try handle.close()
+
+        guard case .success(let read) = MailboxPanelMail.readRegularFilePrefix(
+            path: file.path,
+            limit: 64 * 1024,
+            followSymlinks: false
+        ) else {
+            return XCTFail("expected a bounded prefix read")
+        }
+        XCTAssertTrue(read.truncated)
+        XCTAssertEqual(read.data.count, 64 * 1024)
+        XCTAssertEqual(read.size, 4 * 1024 * 1024 * 1024)
+    }
+
+    func testRegularFileTailKeepsACompleteLineAtTheWindowBoundary() throws {
+        let file = root.appendingPathComponent("dispatch.log")
+        try Data("x\nAAAAAAA\nBBBBBBB\n".utf8).write(to: file)
+
+        guard case .success(let data) = MailboxPanelMail.readRegularFileTail(
+            path: file.path,
+            limit: 16,
+            followSymlinks: false
+        ) else {
+            return XCTFail("expected a bounded tail read")
+        }
+
+        XCTAssertEqual(String(data: data, encoding: .utf8), "AAAAAAA\nBBBBBBB\n")
+    }
+
+    func testRegularFileTailReturnsEmptyWhenTheWindowHasNoNewline() throws {
+        let file = root.appendingPathComponent("long-line.log")
+        try Data("prefix-AAAAAAA-BBBBBBBB".utf8).write(to: file)
+
+        guard case .success(let data) = MailboxPanelMail.readRegularFileTail(
+            path: file.path,
+            limit: 8,
+            followSymlinks: false
+        ) else {
+            return XCTFail("expected a bounded tail read")
+        }
+
+        XCTAssertTrue(data.isEmpty)
+    }
+
     // MARK: - Copy text (C11-400)
 
     func testCopyTextDropsTrailingNewlineAndKeepsInnerOnes() throws {

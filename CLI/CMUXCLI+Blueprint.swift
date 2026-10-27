@@ -436,7 +436,7 @@ extension CMUXCLI {
         do {
             // O_NONBLOCK keeps a FIFO from blocking the open; the regular-file
             // check below then refuses it.
-            let descriptor = Darwin.open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+            let descriptor = Darwin.open(path, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC)
             guard descriptor >= 0 else {
                 throw CLIError(message: "workspace new: could not read blueprint at '\(path)'")
             }
@@ -497,9 +497,10 @@ extension CMUXCLI {
         return plan
     }
 
-    // The CLI does not link Sources: keep these four helpers in sync with
-    // WorkspaceBlueprintStore's normalizedLayoutReference, looksLikeLayoutPath,
-    // starterLayoutFiles and isReservedLayoutReference.
+    // The CLI target does not compile WorkspaceBlueprintStore.swift: keep these
+    // four helpers in sync with its normalizedLayoutReference, looksLikeLayoutPath,
+    // starterLayoutFiles and isReservedLayoutReference, and resolveBlueprintPlan's
+    // lookup order with resolveLayoutReference.
     func normalizedBlueprintReference(_ reference: String) -> String {
         reference.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))

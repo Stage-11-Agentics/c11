@@ -54,9 +54,10 @@ struct WorkspaceBlueprintStore: Sendable {
 
     /// JSONDecoder recurses once per nesting level, so JSON blueprints and plans
     /// are checked for raw nesting before decoding, and their layouts get the
-    /// markdown format's 64-level cap. A 64-level layout sits about 135 levels
-    /// deep in JSON.
-    static let maximumJSONNestingDepth = 160
+    /// markdown format's 64-level cap. A 64-level layout sits 133 levels deep in
+    /// a blueprint and 132 in a plan; the cap leaves panel metadata, which costs
+    /// about twice the stack per level, well inside a 512 KiB thread stack.
+    static let maximumJSONNestingDepth = 136
     static let maximumLayoutDepth = 64
 
     static func decodeJSONBlueprint(_ data: Data) throws -> WorkspaceBlueprintFile {
@@ -79,6 +80,15 @@ struct WorkspaceBlueprintStore: Sendable {
             var inString = false
             var escaped = false
             for byte in bytes {
+                // JSONDecoder also accepts UTF-16 and UTF-32, whose bytes this
+                // scan would misread. Each of those carries a zero byte beside
+                // every ASCII character, while valid UTF-8 JSON never has one.
+                guard byte != 0 else {
+                    throw DecodingError.dataCorrupted(.init(
+                        codingPath: [],
+                        debugDescription: "JSON blueprint must be UTF-8 without NUL bytes"
+                    ))
+                }
                 if inString {
                     if escaped {
                         escaped = false

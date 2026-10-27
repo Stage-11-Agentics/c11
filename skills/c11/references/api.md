@@ -181,8 +181,8 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # An unknown bare word is never looked up as a file in the cwd; pass a path. Only known starter ids are remembered defaults.
     # The CLI resolves a relative path-like layout against your shell's cwd; over the socket, a relative
     # path-like layout resolves against the target directory.
-    # Only regular files are read as blueprints. A blueprint over 1 MiB (.md) or 16 MiB (.json), or nested
-    # deeper than 64 levels, is refused with an error.
+    # Only regular files are read as blueprints, and JSON ones must be UTF-8. A blueprint over 1 MiB (.md) or
+    # 16 MiB (.json), or with a layout nested deeper than 64 levels, is refused with an error.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
 c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal

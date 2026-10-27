@@ -84,25 +84,84 @@ extension CMUXCLI {
         jsonOutput: Bool
     ) throws {
         let remaining = commandArgs.filter { $0 != "--" }
-        if let unknown = remaining.first {
-            throw CLIError(message: "shortcuts: unknown flag '\(unknown)'")
+        let verb = remaining.first
+        let words = Array(remaining.dropFirst())
+
+        var params: [String: Any] = [:]
+        let method: String
+        switch verb {
+        case nil:
+            method = "settings.open"
+            params = ["target": "keyboardShortcuts", "activate": true]
+        case "list":
+            if let extra = words.first(where: { $0 != "--customized" }) {
+                throw CLIError(message: "shortcuts list: unexpected argument '\(extra)'")
+            }
+            method = "settings.shortcuts.list"
+            if words.contains("--customized") { params = ["customized": true] }
+        case "set":
+            guard words.count == 2 else {
+                throw CLIError(message: "Usage: c11 shortcuts set <action> <combo|none>")
+            }
+            method = "settings.shortcuts.set"
+            params = ["action": words[0], "shortcut": words[1]]
+        case "reset":
+            if words == ["--all"] {
+                params = ["all": true]
+            } else if words.count == 1, !words[0].hasPrefix("-") {
+                params = ["action": words[0]]
+            } else {
+                throw CLIError(message: "Usage: c11 shortcuts reset <action> | --all")
+            }
+            method = "settings.shortcuts.reset"
+        case let other?:
+            throw CLIError(message: "shortcuts: unknown verb or flag '\(other)'; see c11 shortcuts --help")
         }
 
         let client = try connectClient(
             socketPath: socketPath,
             explicitPassword: explicitPassword,
-            launchIfNeeded: true
+            launchIfNeeded: verb == nil
         )
         defer { client.close() }
 
-        let response = try client.sendV2(method: "settings.open", params: [
-            "target": "keyboardShortcuts",
-            "activate": true,
-        ])
+        let response = try client.sendV2(method: method, params: params)
         if jsonOutput {
             print(jsonString(response))
-        } else {
-            print("OK")
+            return
         }
+
+        switch verb {
+        case nil:
+            print("OK")
+        case "set":
+            printShortcutRow(response)
+        default:
+            let rows = response["shortcuts"] as? [[String: Any]] ?? []
+            if rows.isEmpty, verb == "list" {
+                print("No customized shortcuts")
+            }
+            rows.forEach(printShortcutRow)
+        }
+    }
+
+    private func printShortcutRow(_ row: [String: Any]) {
+        print(shortcutLine(row))
+        let conflicts = row["conflicts"] as? [String] ?? []
+        if !conflicts.isEmpty {
+            print("warning: \(row["display"] as? String ?? "") is also bound to \(conflicts.joined(separator: ", ")); only one of them fires")
+        }
+    }
+
+    private func shortcutLine(_ row: [String: Any]) -> String {
+        let action = row["action"] as? String ?? "?"
+        let display = row["display"] as? String ?? "?"
+        let combo = row["shortcut"] as? String ?? "?"
+        var line = "\(action.padding(toLength: max(32, action.count + 1), withPad: " ", startingAt: 0))"
+            + "\(display.padding(toLength: max(8, display.count + 1), withPad: " ", startingAt: 0))\(combo)"
+        if row["customized"] as? Bool == true {
+            line += "  (default \(row["default_display"] as? String ?? "?"))"
+        }
+        return line
     }
 }

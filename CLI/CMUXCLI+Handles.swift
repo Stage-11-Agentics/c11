@@ -1056,6 +1056,8 @@ extension CMUXCLI {
             return CLIFlagPreflightSpec(valueOptions: ["--bundle-id"])
         case "feedback":
             return CLIFlagPreflightSpec(valueOptions: ["--email", "--body", "--image"])
+        case "shortcuts":
+            return CLIFlagPreflightSpec(flags: ["--customized", "--all"])
         case "rpc", "guide", "sidebar-state":
             return CLIFlagPreflightSpec()
         case "identify":

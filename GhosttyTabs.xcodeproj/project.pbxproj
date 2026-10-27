@@ -87,6 +87,7 @@
 		4EE5E828CC9D3BA957B86380 /* copilot in Copy CLI */ = {isa = PBXBuildFile; fileRef = D13A1E9CE25B945CC90A8D02 /* copilot */; };
 		505E486F8B252007A3CFE688 /* WorkspaceContentViewVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7000001A1B2C3D4E5F60718 /* WorkspaceContentViewVisibilityTests.swift */; };
 		53A8353DD72E0C6954D5F42A /* ChromeScaleSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C116000400A1B2C3D4E5F011 /* ChromeScaleSettingsTests.swift */; };
+		C11380000000000000000102 /* KeyboardShortcutScriptingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11380000000000000000101 /* KeyboardShortcutScriptingTests.swift */; };
 		53D5E057358DF622C3B16996 /* ChromeScaleObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C116000800A1B2C3D4E5F013 /* ChromeScaleObserverTests.swift */; };
 		5535B0220F7520ADFB17EC99 /* HangBacktrace.c in Sources */ = {isa = PBXBuildFile; fileRef = 51C0D2C1212976BCF837B620 /* HangBacktrace.c */; };
 		55741FF81E130E9AB8AE64FB /* WorkspaceSnapshotConverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8008BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotConverterTests.swift */; };
@@ -1138,6 +1139,7 @@
 		C11349000000000000000001 /* ActivityAnalysisCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityAnalysisCommand.swift; sourceTree = "<group>"; };
 		C116000200A1B2C3D4E5F010 /* ChromeScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome/ChromeScale.swift; sourceTree = "<group>"; };
 		C116000400A1B2C3D4E5F011 /* ChromeScaleSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeScaleSettingsTests.swift; sourceTree = "<group>"; };
+		C11380000000000000000101 /* KeyboardShortcutScriptingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutScriptingTests.swift; sourceTree = "<group>"; };
 		C116000600A1B2C3D4E5F012 /* ChromeScaleTokensTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeScaleTokensTests.swift; sourceTree = "<group>"; };
 		C116000800A1B2C3D4E5F013 /* ChromeScaleObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeScaleObserverTests.swift; sourceTree = "<group>"; };
 		C116000A00A1B2C3D4E5F014 /* WorkspaceApplyChromeScaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceApplyChromeScaleTests.swift; sourceTree = "<group>"; };
@@ -2011,6 +2013,7 @@
 				D7012BF1A1B2C3D4E5F60718 /* AreaMetadataPersistenceTests.swift */,
 				D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */,
 				C116000400A1B2C3D4E5F011 /* ChromeScaleSettingsTests.swift */,
+				C11380000000000000000101 /* KeyboardShortcutScriptingTests.swift */,
 				C116000600A1B2C3D4E5F012 /* ChromeScaleTokensTests.swift */,
 				C116000800A1B2C3D4E5F013 /* ChromeScaleObserverTests.swift */,
 				C116000A00A1B2C3D4E5F014 /* WorkspaceApplyChromeScaleTests.swift */,
@@ -2399,6 +2402,7 @@
 				5AEB95ABF100C21BFCDB40E4 /* C11ThemeLoaderTests.swift in Sources */,
 				53D5E057358DF622C3B16996 /* ChromeScaleObserverTests.swift in Sources */,
 				53A8353DD72E0C6954D5F42A /* ChromeScaleSettingsTests.swift in Sources */,
+				C11380000000000000000102 /* KeyboardShortcutScriptingTests.swift in Sources */,
 				9C51A1CE6AEEBF2E0B4C3E61 /* ChromeScaleTokensTests.swift in Sources */,
 				C1126900A1B2C3D4E5F60001 /* SkillInstallerPluginBoundaryTests.swift in Sources */,
 				3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */,

@@ -19,6 +19,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Sidebar reporting](#sidebar-reporting)
 - [Spatial layout (`c11 tree`)](#spatial-layout-c11-tree)
 - [Notifications](#notifications)
+- [Keyboard shortcuts](#keyboard-shortcuts)
 - [Prompt cache reports](#prompt-cache-reports)
 - [Skill installation (`c11 skill install`)](#skill-installation-c11-skill-install)
 - [Troubleshooting](#troubleshooting)
@@ -944,6 +945,19 @@ turn boundary may open the existing mailbox prompt gate.
 See [journal semantics](conversation.md#lifecycle-journal) for blocked evidence,
 restart confirmation, and retention. Query/export and broader provider hooks
 are separate consumers of this append seam.
+
+## Keyboard shortcuts
+
+`c11 shortcuts` reads and rebinds c11's own keyboard shortcuts in the running app. A change applies at once (menu, key handling, an open Settings window), exactly as if the operator recorded it in Settings → Keyboard Shortcuts, and persists on this machine only.
+
+```bash
+c11 shortcuts list [--customized]                  # action, display, combo; customized rows show the default
+c11 shortcuts set toggle-sidebar ctrl+opt+cmd+x    # or the display form ⌃⌥⌘X; `none` unbinds
+c11 shortcuts reset toggle-sidebar                 # or --all
+c11 shortcuts                                      # open Settings → Keyboard Shortcuts
+```
+
+Action names are the kebab-case names `list` prints. A combo is modifiers (`ctrl`, `opt`, `shift`, `cmd`) and one key: a letter, digit, arrow (`left|right|up|down`), `tab`, `return`, or punctuation (`[`, `]`, `-`, `=`, `,`, `.`, `/`, `;`, `'`, backtick, `\`). `set` refuses combos c11 or macOS keeps (Quit, Copy, Paste, the command palette and the like) and Shift plus a printable key, which would take over typing; `set` and `reset` warn when another action holds the same combo, since only one of them fires. Scripts read `shortcut` (stable); `display` is localized. Never `defaults write` a `shortcut.*` key while c11 runs: the app does not see it until relaunch. Socket: `settings.shortcuts.list|set|reset`.
 
 ## Prompt cache reports
 

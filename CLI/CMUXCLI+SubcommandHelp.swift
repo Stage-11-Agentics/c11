@@ -134,8 +134,24 @@ extension CMUXCLI {
         case "shortcuts":
             return """
             Usage: c11 shortcuts
+                   c11 shortcuts list [--customized]
+                   c11 shortcuts set <action> <combo|none>
+                   c11 shortcuts reset <action> | --all
 
-            Open the Settings window to Keyboard Shortcuts.
+            Without a verb, open the Settings window to Keyboard Shortcuts.
+            Changes apply live: the menu, key handling and an open Settings window
+            update at once, exactly as if recorded in Settings.
+
+            Actions use list's names (toggle-sidebar, split-right, ...).
+            Combos take modifiers plus one key: ctrl, opt, shift, cmd joined by +,
+            then a letter, digit, arrow (left|right|up|down), tab, return, or one
+            of [ ] - = , . / ; ' ` \\. The display form (⌃⌥⌘X) also works.
+            "none" leaves the action without a shortcut.
+
+            Examples:
+              c11 shortcuts list --customized
+              c11 shortcuts set toggle-sidebar ctrl+opt+cmd+x
+              c11 shortcuts reset toggle-sidebar
             """
         case "feedback":
             return """

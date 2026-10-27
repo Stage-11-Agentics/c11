@@ -1686,9 +1686,9 @@ extension TerminalController {
 
             do {
                 let data = try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys])
-                try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+                try PrivateFileWriter.write(data, to: URL(fileURLWithPath: path))
             } catch {
-                return .err(code: "internal_error", message: "Failed to write state file", data: ["path": path, "error": error.localizedDescription])
+                return .err(code: "internal_error", message: "Failed to write state file", data: ["path": path, "error": error.localizedDescription, "hint": error.localizedDescription])
             }
 
             var response = target.responseEnvelope
@@ -1706,13 +1706,15 @@ extension TerminalController {
         let url = URL(fileURLWithPath: path)
         let raw: [String: Any]
         do {
-            let data = try Data(contentsOf: url)
+            let data = try PrivateFileWriter.readPrivateFile(at: url, maxBytes: 64 * 1024 * 1024)
             guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return .err(code: "invalid_params", message: "State file must contain a JSON object", data: ["path": path])
             }
             raw = object
+        } catch let error as PrivateFileWriter.ReadError {
+            return .err(code: "unsafe_state_file", message: error.localizedDescription, data: ["path": path, "hint": error.localizedDescription])
         } catch {
-            return .err(code: "not_found", message: "Failed to read state file", data: ["path": path, "error": error.localizedDescription])
+            return .err(code: "not_found", message: "Failed to read state file", data: ["path": path, "error": error.localizedDescription, "hint": error.localizedDescription])
         }
 
         let restoredURL: URL?

@@ -14367,6 +14367,42 @@
         }
       }
     },
+    "browser.state.file.invalidSizeLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "State file size limit must be nonnegative"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "状態ファイルのサイズ上限は 0 以上である必要があります"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Обмеження розміру файлу стану має бути невід’ємним"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "상태 파일 크기 제한은 음수가 아니어야 합니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "状态文件大小限制必须为非负数"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態檔案大小限制必須為非負數"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ограничение размера файла состояния должно быть неотрицательным"}}
+      }
+    },
+    "browser.state.file.tooLarge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "State file exceeds the maximum allowed size"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "状態ファイルが許可されている最大サイズを超えています"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Файл стану перевищує максимально дозволений розмір"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "상태 파일이 허용된 최대 크기를 초과했습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "状态文件超过了允许的最大大小"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態檔案超過允許的最大大小"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Файл состояния превышает максимально допустимый размер"}}
+      }
+    },
+    "browser.state.file.unsafeWithACL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "State file must be a regular file (not a symlink) owned by the current user, not writable by group or others, and without allow ACLs"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "状態ファイルはシンボリックリンクではない通常のファイルで、現在のユーザーが所有し、グループや他のユーザーから書き込み可能でなく、許可エントリを含む ACL を持たない必要があります"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Файл стану має бути звичайним файлом (не символічним посиланням), належати поточному користувачу, не бути доступним для запису групі чи іншим користувачам і не містити ACL із дозволом доступу"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "상태 파일은 심볼릭 링크가 아닌 일반 파일이어야 하며 현재 사용자가 소유하고 그룹 또는 다른 사용자가 쓸 수 없어야 하며 허용 ACL이 없어야 합니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "状态文件必须是由当前用户拥有的普通文件（不是符号链接），组用户或其他用户不可写，且不包含允许访问的 ACL"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態檔案必須是由目前使用者擁有的普通檔案（不是符號連結），群組或其他使用者不可寫入，且不包含允許存取的 ACL"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Файл состояния должен быть обычным файлом (не символической ссылкой), принадлежать текущему пользователю, не быть доступным для записи группе или другим пользователям и не содержать разрешающих записей ACL"}}
+      }
+    },
     "browser.stop": {
       "extractionState": "manual",
       "localizations": {

@@ -184,9 +184,12 @@ website data and history and require confirmation; an empty, malformed
 or unknown `--profile` fails instead of falling back to the default
 profile. `browser cookies clear` honors host, domain, path and secure
 scope and needs an explicit `all: true` to clear a whole profile.
-`browser state load` writes cookies for the target URL only, and writes
-local and session storage only after navigation settles on the expected
-origin; a wrong-origin redirect returns `navigation_failed`.
+`browser state load` restores every cookie row in the state file under that
+cookie's own domain, and writes local and session storage only after navigation
+settles on the expected origin; a wrong-origin redirect returns
+`navigation_failed`. State files are written with mode `0600`, and load refuses
+files not owned by the current user, writable by group or others, or carrying
+an allow ACL.
 
 Every socket-driven browser wait, eval and script injection runs off the
 main thread (1.0, C11-311 B006). `browser addinitscript|addscript|addstyle`
@@ -215,8 +218,8 @@ Evidence:
 Resources/Info.plist:204-218                           (NSAppTransportSecurity)
 Sources/Panels/BrowserPanel.swift                      (browser substrate; websiteDataStore(for:) per profile)
 Sources/Panels/BrowserPanel.swift:17-38                (openC11WebLink, shared terminal/markdown link router)
-Sources/SocketHandlers/BrowserHandlers.swift           (cookies, state load, profiles)
-Sources/SocketHandlers/BrowserQueryHandlers.swift      (init scripts and styles, off-main JS)
+Sources/SocketHandlers/BrowserQueryHandlers.swift      (cookies, state load, profiles, init scripts and styles)
+Sources/PrivateFileWriter.swift                        (private state file read/write)
 Sources/Messages/MessagesPage.swift                    (messages page renderer, CSP, JSON escaping)
 Sources/Panels/BrowserPanelView.swift                  (panel host)
 Sources/BrowserWindowPortal.swift                      (popout / portal layer)

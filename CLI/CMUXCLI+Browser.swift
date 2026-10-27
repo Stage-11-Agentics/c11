@@ -1312,7 +1312,7 @@ extension CMUXCLI {
             guard subArgs.count >= 2 else {
                 throw CLIError(message: "browser state \(stateVerb) requires a file path")
             }
-            let path = subArgs[1]
+            let path = resolvePath(subArgs[1])
             let method: String
             switch stateVerb {
             case "save":

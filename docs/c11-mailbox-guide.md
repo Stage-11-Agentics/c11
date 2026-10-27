@@ -484,7 +484,7 @@ real model calls made. Focused transport/acceptance guards run with
 
 If your `mailbox.delivery` includes `stdin` and c11 recognizes your composer, you will see one submitted line:
 
-`You have mail: run c11 mailbox recv --ack when you want to receive it.`
+`c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.`
 
 That line is not the message. Run the command. The body comes back on stdout, and the envelope moves to `_read/`. Claude's Stop hook can also print the message into hook context. That hook is not typed input.
 
@@ -559,7 +559,7 @@ Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows 
 
 Every `mailbox.delivery=stdin` panel whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. That includes omp and GitHub Copilot. Those seats get no typed doorbell; omp is rung only through its native route (above). `c11 send` still refuses a Claude-style draft or dialog on that panel. An empty prompt there stays unknown. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
 
-`You have mail: run c11 mailbox recv --ack when you want to receive it.`
+`c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.`
 
 The moment is the stdin gate: the agent is at its prompt, or it just returned there at the end of a turn. A working agent is not rung. Mail that arrived during the turn rings once at that next prompt edge. The line uses the same empty-or-suggestion prompt check as `c11 feed answer`. A suggestion is ghost text the harness drew: Claude Code's faint auto-suggest, Codex's placeholder, or Grok's italic next-prompt suggestion (every character italic, cursor on its first cell). Typing or pasting over Grok's suggestion replaces it. A click in a Grok transcript moves Grok's focus off its composer: Grok dims the box, hides the cursor and parks it outside the box (on the footer, or far above after a hover), and shows a dim `Build anything` placeholder. A paste still lands in that composer and refocuses it, so c11 reads the placeholder as a suggestion when every character is below 3:1 contrast against its own background. A typed draft that lost focus is drawn brighter and stays a draft; without color in the read, it stays a draft too. Grok panels also read the screen's last 16 rows, so the composer is found wherever the cursor is parked. A draft, a dialog, or an unreadable prompt is not typed into.
 

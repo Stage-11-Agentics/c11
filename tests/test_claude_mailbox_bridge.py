@@ -17,7 +17,7 @@ import time
 import unittest
 import uuid
 
-INVITATION = "You have mail: run c11 mailbox recv --ack when you want to receive it."
+INVITATION = "c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it."
 
 
 class Peer:

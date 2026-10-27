@@ -18,7 +18,7 @@ import time
 import uuid
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
-DOORBELL = "You have mail: run c11 mailbox recv --ack when you want to receive it."
+DOORBELL = "c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it."
 
 FIXTURE = r'''
 import json, os, pathlib, select, socket, sys, termios, time, tty, uuid

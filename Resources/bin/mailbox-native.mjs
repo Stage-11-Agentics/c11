@@ -2,7 +2,7 @@
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 
-export const doorbellText = 'You have mail: run c11 mailbox recv --ack when you want to receive it.';
+export const doorbellText = 'c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.';
 
 export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionID, route, canQueue = false, deliver }) {
   let stopped = false;

@@ -107,7 +107,7 @@ final class MailboxDoorbellTests: XCTestCase {
     func testInvitationIsTheFixedSentenceWithoutANewline() {
         XCTAssertEqual(
             MailboxDoorbell.text,
-            "You have mail: run c11 mailbox recv --ack when you want to receive it."
+            "c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it."
         )
         XCTAssertNil(FeedAnswerTextPolicy.refusalCode(for: MailboxDoorbell.text))
     }

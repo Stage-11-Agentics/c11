@@ -15,7 +15,7 @@ import subprocess
 import time
 import uuid
 
-DOORBELL = 'You have mail: run c11 mailbox recv --ack when you want to receive it.'
+DOORBELL = 'c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.'
 SCRIPTS = pathlib.Path(__file__).resolve().parent
 ROUTES = {'pi': 'pi_extension', 'omp': 'omp_extension'}
 

@@ -52,6 +52,79 @@ struct WorkspaceBlueprintStore: Sendable {
     static let maximumMarkdownBlueprintBytes = 1_048_576
     static let maximumJSONBlueprintBytes = 16 * 1_048_576
 
+    /// JSONDecoder recurses once per nesting level, so JSON blueprints and plans
+    /// are checked for raw nesting before decoding, and their layouts get the
+    /// markdown format's 64-level cap. A 64-level layout sits about 135 levels
+    /// deep in JSON.
+    static let maximumJSONNestingDepth = 160
+    static let maximumLayoutDepth = 64
+
+    static func decodeJSONBlueprint(_ data: Data) throws -> WorkspaceBlueprintFile {
+        try validateJSONNesting(data)
+        let file = try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
+        try validateLayoutDepth(file.plan.layout)
+        return file
+    }
+
+    static func decodeJSONPlan(_ data: Data) throws -> WorkspaceApplyPlan {
+        try validateJSONNesting(data)
+        let plan = try JSONDecoder().decode(WorkspaceApplyPlan.self, from: data)
+        try validateLayoutDepth(plan.layout)
+        return plan
+    }
+
+    private static func validateJSONNesting(_ data: Data) throws {
+        try data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            var depth = 0
+            var inString = false
+            var escaped = false
+            for byte in bytes {
+                if inString {
+                    if escaped {
+                        escaped = false
+                    } else if byte == UInt8(ascii: "\\") {
+                        escaped = true
+                    } else if byte == UInt8(ascii: "\"") {
+                        inString = false
+                    }
+                    continue
+                }
+                switch byte {
+                case UInt8(ascii: "\""):
+                    inString = true
+                case UInt8(ascii: "{"), UInt8(ascii: "["):
+                    depth += 1
+                    guard depth <= maximumJSONNestingDepth else {
+                        throw DecodingError.dataCorrupted(.init(
+                            codingPath: [],
+                            debugDescription: "JSON nesting depth exceeds \(maximumJSONNestingDepth)"
+                        ))
+                    }
+                case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                    depth -= 1
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    private static func validateLayoutDepth(_ layout: LayoutTreeSpec) throws {
+        var pending: [(node: LayoutTreeSpec, depth: Int)] = [(layout, 0)]
+        while let entry = pending.popLast() {
+            guard entry.depth <= maximumLayoutDepth else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "layout nesting depth exceeds \(maximumLayoutDepth)"
+                ))
+            }
+            if case .split(let split) = entry.node {
+                pending.append((split.first, entry.depth + 1))
+                pending.append((split.second, entry.depth + 1))
+            }
+        }
+    }
+
     private let directoryOverride: URL?
     private let fileManager: FileManager
 
@@ -269,7 +342,7 @@ struct WorkspaceBlueprintStore: Sendable {
             }
         }
         do {
-            return try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
+            return try Self.decodeJSONBlueprint(data)
         } catch {
             throw StoreError.decodeFailed(url.path, underlying: "\(error)")
         }

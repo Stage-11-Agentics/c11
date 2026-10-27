@@ -382,6 +382,86 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         }
     }
 
+    private func nestedLayoutBlueprint(depth: Int) -> WorkspaceBlueprintFile {
+        var layout = LayoutTreeSpec.pane(.init(surfaceIds: ["a"]))
+        for _ in 0..<depth {
+            layout = .split(.init(
+                orientation: .horizontal,
+                dividerPosition: 0.5,
+                first: layout,
+                second: .pane(.init(surfaceIds: ["a"]))
+            ))
+        }
+        return WorkspaceBlueprintFile(
+            name: "Deep",
+            description: nil,
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Deep"),
+                layout: layout,
+                surfaces: [PanelSpec(id: "a", kind: .terminal)]
+            )
+        )
+    }
+
+    func testReadRejectsDeeplyNestedJSONBeforeDecoding() throws {
+        let depth = 100_000
+        let shapes = [
+            ("objects.json", String(repeating: #"{"a":"#, count: depth) + "1" + String(repeating: "}", count: depth)),
+            ("arrays.json", String(repeating: "[", count: depth) + String(repeating: "]", count: depth)),
+        ]
+        for (name, source) in shapes {
+            let url = tmpRoot.appendingPathComponent(name)
+            try Data(source.utf8).write(to: url)
+            XCTAssertThrowsError(try makeStore().read(url: url), name) { error in
+                guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                    return XCTFail("expected a bounded JSON decode failure, got \(error)")
+                }
+                XCTAssertTrue(detail.contains("JSON nesting depth exceeds"), detail)
+            }
+            XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONPlan(Data(source.utf8)), name)
+        }
+    }
+
+    func testJSONNestingIgnoresBracketsInsideStrings() throws {
+        var blueprint = sampleBlueprint(name: String(repeating: "{[", count: 400) + #" \"{ "#)
+        blueprint.description = String(repeating: "\\[", count: 400)
+        let url = tmpRoot.appendingPathComponent("brackets.json")
+        try JSONEncoder().encode(blueprint).write(to: url)
+
+        XCTAssertEqual(try makeStore().read(url: url), blueprint)
+    }
+
+    func testReadRejectsJSONLayoutDeeperThanSixtyFourLevels() throws {
+        let url = tmpRoot.appendingPathComponent("deep-layout.json")
+        try JSONEncoder().encode(nestedLayoutBlueprint(depth: 65)).write(to: url)
+
+        XCTAssertThrowsError(try makeStore().read(url: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected a bounded layout decode failure, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("layout nesting depth exceeds 64"), detail)
+        }
+        let plan = try JSONEncoder().encode(nestedLayoutBlueprint(depth: 65).plan)
+        XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONPlan(plan))
+    }
+
+    func testSixtyFourLevelJSONLayoutDecodesOnASecondaryThreadStack() throws {
+        let blueprint = nestedLayoutBlueprint(depth: 64)
+        let data = try JSONEncoder().encode(blueprint)
+        let outcome = JSONDecodeOutcome()
+        let done = expectation(description: "decoded on a 512 KiB stack")
+        let thread = Thread {
+            outcome.result = Result { try WorkspaceBlueprintStore.decodeJSONBlueprint(data) }
+            done.fulfill()
+        }
+        thread.stackSize = 512 * 1024
+        thread.start()
+        wait(for: [done], timeout: 30)
+
+        XCTAssertEqual(try XCTUnwrap(outcome.result).get(), blueprint)
+    }
+
     func testReadRejectsMarkdownLargerThanOneMiB() throws {
         var data = try WorkspaceBlueprintMarkdown.serialize(sampleBlueprint(name: "Large"))
         let sizeLimit = WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes
@@ -637,4 +717,8 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         }
     }
 
+}
+
+private final class JSONDecodeOutcome: @unchecked Sendable {
+    var result: Result<WorkspaceBlueprintFile, Error>?
 }

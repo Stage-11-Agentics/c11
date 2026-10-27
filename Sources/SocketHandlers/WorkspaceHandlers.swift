@@ -985,7 +985,7 @@ extension TerminalController {
         let plan: WorkspaceApplyPlan
         do {
             let planData = try JSONSerialization.data(withJSONObject: planRaw, options: [])
-            plan = try JSONDecoder().decode(WorkspaceApplyPlan.self, from: planData)
+            plan = try WorkspaceBlueprintStore.decodeJSONPlan(planData)
         } catch {
             return .err(
                 code: "invalid_params",
@@ -1226,7 +1226,7 @@ extension TerminalController {
         let file: WorkspaceBlueprintFile
         do {
             if formatRaw == "json" {
-                file = try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
+                file = try WorkspaceBlueprintStore.decodeJSONBlueprint(data)
             } else {
                 file = try WorkspaceBlueprintMarkdown.parse(data)
             }

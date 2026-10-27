@@ -159,6 +159,150 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(merged[1].name, "Older")
     }
 
+    // MARK: - Layout reference resolution
+
+    func testStarterReferencesIgnoreRepoAndUserShadows() throws {
+        let store = makeStore()
+        let cwd = tmpRoot.appendingPathComponent("repo/sub", isDirectory: true)
+        try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
+        let repoURL = tmpRoot.appendingPathComponent("repo/.c11/blueprints/layout.json")
+        var shadow = sampleBlueprint(name: "basic-terminal")
+        shadow.plan.surfaces[0].command = "echo repo-blueprint-command"
+        shadow.plan.surfaces[0].submitCommand = true
+        try store.write(shadow, to: repoURL)
+        try store.write(shadow, to: tmpRoot.appendingPathComponent("user-shadow.json"))
+
+        let references = [
+            "starter:one-column": "basic-terminal", "single": "basic-terminal", "one-column": "basic-terminal",
+            "basic-terminal": "basic-terminal", "starter:two-columns": "side-by-side",
+            "two-columns": "side-by-side", "side-by-side": "side-by-side",
+            "starter:quad": "quad-terminal", "quad": "quad-terminal", "quad-terminal": "quad-terminal",
+            "starter:two-by-three": "two-by-three", "two-by-three": "two-by-three", "agent-room": "agent-room",
+        ]
+        for name in Set(references.values) {
+            try store.write(
+                sampleBlueprint(name: name),
+                to: tmpRoot.appendingPathComponent("Blueprints/\(name).json")
+            )
+        }
+        var agentShadow = shadow
+        agentShadow.name = "agent-room"
+        try store.write(agentShadow, to: tmpRoot.appendingPathComponent("repo/.c11/blueprints/agent.json"))
+        try store.write(agentShadow, to: tmpRoot.appendingPathComponent("agent-shadow.json"))
+
+        let first = try XCTUnwrap(store.merged(cwd: cwd).first { $0.name == "basic-terminal" })
+        XCTAssertEqual(first.source, .repo, "merged listing retains the repo-first picker order")
+        XCTAssertEqual(try store.read(url: URL(fileURLWithPath: first.url)), shadow)
+        let attackPlan = try store.read(url: URL(fileURLWithPath: first.url)).plan
+        XCTAssertNotNil(attackPlan.surfaces.first?.command)
+        XCTAssertEqual(attackPlan.surfaces.first?.submitCommand, true)
+
+        let builtIn = try XCTUnwrap(store.builtInEntry(named: "basic-terminal"))
+        XCTAssertEqual(builtIn.source, .builtIn)
+        XCTAssertEqual(try store.read(url: URL(fileURLWithPath: builtIn.url)), sampleBlueprint(name: "basic-terminal"))
+        for (reference, name) in references {
+            let resolved = try XCTUnwrap(store.resolveLayoutReference(reference, cwd: cwd), reference)
+            XCTAssertEqual(resolved.source, .builtIn, reference)
+            XCTAssertEqual(resolved.name, name, reference)
+            let plan = try store.read(url: URL(fileURLWithPath: resolved.url)).plan
+            XCTAssertEqual(plan.surfaces.count, 1, reference)
+            XCTAssertEqual(plan.surfaces.first?.kind, .terminal, reference)
+            XCTAssertNil(plan.surfaces.first?.command, reference)
+            XCTAssertEqual(plan.surfaces.first?.submitCommand, false, reference)
+        }
+
+        let explicit = try XCTUnwrap(store.resolveLayoutReference("saved:\(first.url)", cwd: cwd))
+        XCTAssertEqual(explicit.source, .repo)
+        XCTAssertEqual(explicit.url, first.url)
+        XCTAssertEqual(try store.read(url: URL(fileURLWithPath: explicit.url)), shadow)
+    }
+
+    func testLayoutNamesPreferUserAndKeepRepoOnlyBlueprints() throws {
+        let store = makeStore()
+        let cwd = tmpRoot.appendingPathComponent("repo/sub", isDirectory: true)
+        try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
+        let repoOnlyURL = tmpRoot.appendingPathComponent("repo/.c11/blueprints/repo-only.json")
+        let repoSharedURL = tmpRoot.appendingPathComponent("repo/.c11/blueprints/shared.json")
+        let userURL = tmpRoot.appendingPathComponent("shared.json")
+        try store.write(sampleBlueprint(name: "repo-only"), to: repoOnlyURL)
+        try store.write(sampleBlueprint(name: "shared-layout"), to: repoSharedURL)
+        try store.write(sampleBlueprint(name: "shared-layout"), to: userURL)
+
+        let repoEntry = try XCTUnwrap(store.merged(cwd: cwd).first { $0.name == "repo-only" })
+        for reference in ["repo-only", "saved:\(repoEntry.url)"] {
+            let resolved = try XCTUnwrap(store.resolveLayoutReference(reference, cwd: cwd))
+            XCTAssertEqual(resolved.source, .repo)
+            XCTAssertEqual(resolved, repoEntry)
+            XCTAssertEqual(try store.read(url: URL(fileURLWithPath: resolved.url)), sampleBlueprint(name: "repo-only"))
+        }
+        let shared = try XCTUnwrap(store.resolveLayoutReference("shared-layout", cwd: cwd))
+        XCTAssertEqual(shared.source, .user)
+        let userEntry = try XCTUnwrap(store.merged(cwd: cwd).first { $0.name == "shared-layout" && $0.source == .user })
+        XCTAssertEqual(shared, userEntry)
+        XCTAssertNil(store.resolveLayoutReference("missing-layout", cwd: cwd))
+    }
+
+    func testMissingBuiltInStarterNeverFallsBackToRepoOrUser() throws {
+        let store = makeStore()
+        let cwd = tmpRoot.appendingPathComponent("repo", isDirectory: true)
+        try store.write(sampleBlueprint(name: "basic-terminal"), to: cwd.appendingPathComponent(".c11/blueprints/layout.json"))
+        try store.write(sampleBlueprint(name: "basic-terminal"), to: tmpRoot.appendingPathComponent("user.json"))
+
+        XCTAssertNil(store.builtInEntry(named: "basic-terminal"))
+        for reference in ["starter:one-column", "single", "one-column", "basic-terminal"] {
+            XCTAssertNil(store.resolveLayoutReference(reference, cwd: cwd), reference)
+        }
+    }
+
+    func testReservedReferencesNormalizeCaseAndWhitespace() throws {
+        let store = makeStore()
+        let cwd = tmpRoot.appendingPathComponent("repo", isDirectory: true)
+        for name in ["basic-terminal", "quad-terminal", "agent-room"] {
+            try store.write(sampleBlueprint(name: name), to: tmpRoot.appendingPathComponent("Blueprints/\(name).json"))
+        }
+        for name in ["Single", "Quad", "Basic-Terminal", "AGENT-ROOM", "starter:unknown", "saved:missing"] {
+            var shadow = sampleBlueprint(name: name)
+            shadow.plan.surfaces[0].command = "echo shadow"
+            shadow.plan.surfaces[0].submitCommand = true
+            try store.write(shadow, to: cwd.appendingPathComponent(".c11/blueprints/\(name).json"))
+        }
+        for (reference, name) in [" Single ": "basic-terminal", "Quad": "quad-terminal",
+                                  "quad \n": "quad-terminal", " Basic-Terminal ": "basic-terminal",
+                                  "STARTER:QUAD": "quad-terminal", "AGENT-ROOM": "agent-room"] {
+            let entry = try XCTUnwrap(store.resolveLayoutReference(reference, cwd: cwd), reference)
+            XCTAssertEqual(entry.source, .builtIn, reference)
+            XCTAssertEqual(entry.name, name, reference)
+            XCTAssertTrue(store.isReservedLayoutReference(reference), reference)
+            XCTAssertNil(try store.read(url: URL(fileURLWithPath: entry.url)).plan.surfaces.first?.command)
+        }
+        for reference in ["starter:unknown", " STARTER:missing.json ", "saved:missing", "SAVED:/missing.json"] {
+            XCTAssertTrue(store.isReservedLayoutReference(reference), reference)
+            XCTAssertNil(store.resolveLayoutReference(reference, cwd: cwd), reference)
+        }
+        XCTAssertFalse(store.isReservedLayoutReference("./quad"))
+        XCTAssertFalse(store.isReservedLayoutReference("repo-only"))
+    }
+
+    func testOnlyExplicitPathShapesAllowFileFallback() {
+        for reference in ["./quad", "/tmp/quad", "~/quad", ".quad", "layout.JSON", "layout.MD", "repo/layout"] {
+            XCTAssertTrue(WorkspaceBlueprintStore.looksLikeLayoutPath(reference), reference)
+        }
+        for reference in ["quad", "unknown", "single ", "agent-room"] {
+            XCTAssertFalse(WorkspaceBlueprintStore.looksLikeLayoutPath(reference), reference)
+        }
+    }
+
+    func testStoredDefaultsAcceptOnlyKnownStarterIds() {
+        for stored in [nil, "saved:/tmp/repo.json", "/tmp/repo.json", "repo-only", "quad", "starter:unknown"] {
+            XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: nil, stored: stored), "starter:one-column")
+        }
+        for stored in ["starter:one-column", "starter:two-columns", "starter:quad", "starter:two-by-three"] {
+            XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: nil, stored: stored), stored)
+        }
+        XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: "saved:/tmp/repo.json", stored: "starter:quad"), "saved:/tmp/repo.json")
+        XCTAssertEqual(WorkspaceBlueprintStore.defaultLayoutReference(explicit: "Single", stored: "starter:quad"), "Single")
+    }
+
     // MARK: - read
 
     func testReadCorrectlyDecodesABlueprintJSONFile() throws {

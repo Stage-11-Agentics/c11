@@ -266,10 +266,13 @@ extension CMUXCLI {
             "launch_agent": launchAgent,
         ]
         if let layoutOpt {
-            // A layout file path is resolved against this shell's directory, not
-            // the app's.
-            let asPath = resolvePath(layoutOpt)
-            params["layout"] = FileManager.default.fileExists(atPath: asPath) ? asPath : layoutOpt
+            let listing = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": FileManager.default.currentDirectoryPath])
+            let reference = layoutOpt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let aliases = blueprintStarterAliases(listing)
+            let entries = listing["blueprints"] as? [[String: Any]] ?? []
+            // Reserved names remain names even when the repository has a matching file.
+            params["layout"] = !isReservedBlueprintReference(reference, aliases: aliases, entries: entries)
+                && blueprintReferenceLooksLikePath(reference) ? resolvePath(reference) : reference
         }
         if let nameOpt { params["name"] = nameOpt }
         try addCallingPanel(to: &params)
@@ -435,14 +438,14 @@ extension CMUXCLI {
         let ext = (path as NSString).pathExtension.lowercased()
         if ext == "md" {
             guard let content = String(data: data, encoding: .utf8) else {
-                throw CLIError(message: "workspace new: '\(path)' is not valid UTF-8")
+                throw CLIError(message: "blueprint: '\(path)' is not valid UTF-8")
             }
             let parsed = try client.sendV2(
                 method: "workspace.parse_blueprint",
                 params: ["format": "md", "content": content]
             )
             guard let plan = parsed["plan"] else {
-                throw CLIError(message: "workspace new: '\(path)' parse returned no plan")
+                throw CLIError(message: "blueprint: '\(path)' parse returned no plan")
             }
             return plan
         }
@@ -450,40 +453,84 @@ extension CMUXCLI {
             let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let plan = file["plan"]
         else {
-            throw CLIError(message: "workspace new: '\(path)' is not a valid blueprint file (missing 'plan' key)")
+            throw CLIError(message: "blueprint: '\(path)' is not a valid blueprint file (missing 'plan' key)")
         }
         return plan
+    }
+
+    // The CLI does not link Sources: keep these four helpers in sync with
+    // WorkspaceBlueprintStore's normalizedLayoutReference, looksLikeLayoutPath,
+    // starterLayoutFiles and isReservedLayoutReference.
+    func normalizedBlueprintReference(_ reference: String) -> String {
+        reference.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    func blueprintReferenceLooksLikePath(_ reference: String) -> Bool {
+        let name = normalizedBlueprintReference(reference)
+        return name.contains("/") || name.hasPrefix("~") || name.hasPrefix(".")
+            || name.hasSuffix(".json") || name.hasSuffix(".md")
+    }
+
+    func blueprintStarterAliases(_ payload: [String: Any]) -> [String: String] {
+        // Keep the reserved set when an older app omits aliases or a payload is malformed.
+        var aliases = [
+            "starter:one-column": "basic-terminal", "one-column": "basic-terminal", "single": "basic-terminal",
+            "starter:two-columns": "side-by-side", "two-columns": "side-by-side",
+            "starter:quad": "quad-terminal", "quad": "quad-terminal",
+            "starter:two-by-three": "two-by-three", "two-by-three": "two-by-three",
+            "basic-terminal": "basic-terminal", "side-by-side": "side-by-side", "quad-terminal": "quad-terminal",
+        ]
+        for (key, value) in payload["starter_aliases"] as? [String: Any] ?? [:] {
+            if let value = value as? String {
+                aliases[normalizedBlueprintReference(key)] = normalizedBlueprintReference(value)
+            }
+        }
+        return aliases
+    }
+
+    func isReservedBlueprintReference(_ reference: String, aliases: [String: String], entries: [[String: Any]]) -> Bool {
+        let name = normalizedBlueprintReference(reference)
+        return name.hasPrefix("starter:") || name.hasPrefix("saved:") || aliases[name] != nil
+            || entries.contains { ($0["source"] as? String) == "built-in"
+                && normalizedBlueprintReference($0["name"] as? String ?? "") == name }
     }
 
     /// Resolve a blueprint reference (file path or name) to a layout dict
     /// `{plan: ...}` suitable for `workspace.create`'s `layout` param.
     func resolveBlueprintPlan(_ ref: String, client: SocketClient) throws -> [String: Any] {
-        let pathToTry = resolvePath(ref)
-        if FileManager.default.fileExists(atPath: pathToTry) {
+        let payload = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": FileManager.default.currentDirectoryPath])
+        let blueprints = payload["blueprints"] as? [[String: Any]] ?? []
+        let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = normalizedBlueprintReference(trimmed)
+        let aliases = blueprintStarterAliases(payload)
+        let reserved = isReservedBlueprintReference(trimmed, aliases: aliases, entries: blueprints)
+        if !reserved, blueprintReferenceLooksLikePath(trimmed) {
+            let pathToTry = resolvePath(trimmed)
             guard let data = FileManager.default.contents(atPath: pathToTry) else {
                 throw CLIError(message: "new-workspace: could not read blueprint file '\(pathToTry)'")
             }
-            guard let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' is not a valid JSON object")
-            }
-            guard let plan = file["plan"] else {
-                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' does not contain a 'plan' key")
-            }
-            return ["plan": plan]
+            return ["plan": try blueprintPlanFromFile(at: pathToTry, data: data, client: client)]
         }
-        // Not a direct path — search by name in the blueprint store.
-        let cwd = FileManager.default.currentDirectoryPath
-        let payload = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": cwd])
-        let blueprints = payload["blueprints"] as? [[String: Any]] ?? []
-        let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let match = blueprints.first(where: { ($0["name"] as? String) == trimmed }),
+        let match: [String: Any]?
+        if normalized.hasPrefix("saved:") {
+            let url = String(trimmed.dropFirst("saved:".count))
+            match = blueprints.first { ($0["url"] as? String) == url }
+        } else {
+            let name = aliases[normalized] ?? normalized
+            let matches = blueprints.filter { normalizedBlueprintReference($0["name"] as? String ?? "") == name }
+            if reserved {
+                match = matches.first { ($0["source"] as? String) == "built-in" }
+            } else {
+                match = matches.first { ($0["source"] as? String) != "repo" } ?? matches.first
+            }
+        }
+        guard let match,
               let url = match["url"] as? String,
-              let data = FileManager.default.contents(atPath: resolvePath(url)),
-              let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let plan = file["plan"] else {
+              let data = FileManager.default.contents(atPath: resolvePath(url)) else {
             throw CLIError(message: "new-workspace: blueprint '\(ref)' not found (tried as path and name)")
         }
-        return ["plan": plan]
+        return ["plan": try blueprintPlanFromFile(at: url, data: data, client: client)]
     }
 
     /// `c11 workspace export-blueprint --name <name> [--workspace <ref>]

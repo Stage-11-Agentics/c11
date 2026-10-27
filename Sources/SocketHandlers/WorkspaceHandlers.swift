@@ -1084,7 +1084,7 @@ extension TerminalController {
 
     /// `workspace.list_blueprints`: returns a merged index of all discovered
     /// blueprint files. Optional `cwd` param enables per-repo discovery.
-    /// Returns `{blueprints: [...WorkspaceBlueprintIndex...]}`.
+    /// Returns `{blueprints: [...WorkspaceBlueprintIndex...], starter_aliases: {...}}`.
     private func v2WorkspaceListBlueprints(params: [String: Any]) -> V2CallResult {
         let cwdURL: URL?
         if let cwdStr = params["cwd"] as? String, !cwdStr.isEmpty {
@@ -1099,7 +1099,7 @@ extension TerminalController {
         do {
             let encoded = try encoder.encode(entries)
             let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
-            return .ok(["blueprints": asAny])
+            return .ok(["blueprints": asAny, "starter_aliases": WorkspaceBlueprintStore.starterLayoutFiles])
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
         }
@@ -1115,6 +1115,12 @@ extension TerminalController {
     private func v2WorkspaceExportBlueprint(params: [String: Any]) -> V2CallResult {
         guard let name = params["name"] as? String, !name.isEmpty else {
             return .err(code: "invalid_params", message: "Missing or empty 'name'", data: nil)
+        }
+        guard !WorkspaceBlueprintStore().isReservedLayoutReference(name) else {
+            return .err(code: "invalid_params", message: "Blueprint name '\(name)' is reserved for starter layouts or saved references", data: nil)
+        }
+        guard !WorkspaceBlueprintStore.looksLikeLayoutPath(name) else {
+            return .err(code: "invalid_params", message: "Blueprint name '\(name)' must not look like a file path", data: nil)
         }
         let description = params["description"] as? String
         let force = params["force"] as? Bool ?? false

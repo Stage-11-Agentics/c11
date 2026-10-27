@@ -204,36 +204,22 @@ extension TerminalController {
 
     // MARK: workspace.create_in_directory
 
-    private static let starterLayoutFiles: [String: String] = [
-        "starter:one-column": "basic-terminal", "one-column": "basic-terminal", "single": "basic-terminal",
-        "starter:two-columns": "side-by-side", "two-columns": "side-by-side",
-        "starter:quad": "quad-terminal", "quad": "quad-terminal",
-        "starter:two-by-three": "two-by-three", "two-by-three": "two-by-three",
-    ]
-
     /// A blueprint id (`starter:quad`, `saved:<url>`), starter short name,
     /// blueprint name, or file path.
     private func v2LayoutPlan(_ layout: String?, directory: String) -> Result<WorkspaceApplyPlan, V2CallResult> {
         let store = WorkspaceBlueprintStore()
-        let index = store.merged(cwd: URL(fileURLWithPath: directory))
-        let wanted = (layout?.isEmpty == false ? layout : nil)
-            ?? CreateWorkspaceLastLayout.load()
-            ?? "starter:one-column"
-        var match: WorkspaceBlueprintIndex?
-        if wanted.hasPrefix("saved:") {
-            let url = String(wanted.dropFirst("saved:".count))
-            match = index.first(where: { $0.url == url })
-        } else {
-            let name = Self.starterLayoutFiles[wanted] ?? wanted
-            match = index.first(where: { $0.name == name })
-        }
+        let wanted = WorkspaceBlueprintStore.defaultLayoutReference(explicit: layout, stored: CreateWorkspaceLastLayout.load())
+        let match = store.resolveLayoutReference(wanted, cwd: URL(fileURLWithPath: directory))
         do {
             if let match {
                 return .success(try store.read(url: URL(fileURLWithPath: match.url)).plan)
             }
-            let path = (wanted as NSString).expandingTildeInPath
-            if FileManager.default.fileExists(atPath: path) {
-                return .success(try store.read(url: URL(fileURLWithPath: path)).plan)
+            if !store.isReservedLayoutReference(wanted), WorkspaceBlueprintStore.looksLikeLayoutPath(wanted) {
+                let expanded = (wanted as NSString).expandingTildeInPath
+                let url = URL(fileURLWithPath: expanded, relativeTo: URL(fileURLWithPath: directory, isDirectory: true))
+                if FileManager.default.fileExists(atPath: url.path) {
+                    return .success(try store.read(url: url).plan)
+                }
             }
         } catch {
             return .failure(.err(code: "layout_unreadable", message: "Could not load layout '\(wanted)': \(error)", data: nil))
@@ -241,7 +227,7 @@ extension TerminalController {
         return .failure(.err(
             code: "layout_not_found",
             message: "No layout '\(wanted)'. Try a starter (quad, two-columns, two-by-three, one-column) or a blueprint name.",
-            data: ["known": index.map(\.name)]
+            data: ["known": store.merged(cwd: URL(fileURLWithPath: directory)).map(\.name)]
         ))
     }
 

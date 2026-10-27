@@ -449,6 +449,15 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(try makeStore().read(url: url).name, "\"" + opening + "\\\"丢" + closing)
     }
 
+    func testJSONStringEndingInAnEscapedBackslashCannotHideLaterNesting() {
+        // A scan that read the closing quote of "x\\" as escaped would stay
+        // inside the string and miss the 200 arrays after it.
+        let source = #"["x\\","# + String(repeating: "[", count: 200) + String(repeating: "]", count: 200) + "]"
+        XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONBlueprint(Data(source.utf8))) { error in
+            XCTAssertTrue("\(error)".contains("JSON nesting depth exceeds"), "\(error)")
+        }
+    }
+
     private func deepMetadataBlueprint(levels: Int, name: String = "Deep Metadata") -> WorkspaceBlueprintFile {
         var value = PersistedJSONValue.string("leaf")
         for _ in 0..<levels {
@@ -464,12 +473,14 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         // scan, which would then miss the 300 nested metadata objects after it.
         let utf8 = try JSONEncoder().encode(deepMetadataBlueprint(levels: 300, name: "丢"))
         let text = try XCTUnwrap(String(data: utf8, encoding: .utf8))
-        let encodings: [(String, String.Encoding)] = [
-            ("utf16-bom", .utf16), ("utf16le", .utf16LittleEndian), ("utf16be", .utf16BigEndian),
-            ("utf32-bom", .utf32), ("utf32le", .utf32LittleEndian),
+        let encodings: [(String, String.Encoding, [UInt8])] = [
+            ("utf16-bom", .utf16, []), ("utf16le", .utf16LittleEndian, []),
+            ("utf16be", .utf16BigEndian, []), ("utf16be-bom", .utf16BigEndian, [0xFE, 0xFF]),
+            ("utf32le", .utf32LittleEndian, []), ("utf32be", .utf32BigEndian, []),
+            ("utf32be-bom", .utf32BigEndian, [0x00, 0x00, 0xFE, 0xFF]),
         ]
-        for (name, encoding) in encodings {
-            let data = try XCTUnwrap(text.data(using: encoding), name)
+        for (name, encoding, byteOrderMark) in encodings {
+            let data = try Data(byteOrderMark) + XCTUnwrap(text.data(using: encoding), name)
             let url = tmpRoot.appendingPathComponent("\(name).json")
             try data.write(to: url)
             XCTAssertThrowsError(try makeStore().read(url: url), name) { error in

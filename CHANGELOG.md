@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Security
+
+- **A repository can no longer replace a starter layout.** Starter layouts and every shipped blueprint name, `agent-room` included, always come from the app: in the New Workspace sheet, `workspace.create_in_directory` and both CLI routes. A project blueprint applies only when you choose it by its own name, by `saved:` or by a path. An unknown bare word is never read as a file in the current directory; pass `./name`. A user blueprint named like a shipped one no longer overrides it by name. ([#756](https://github.com/Stage-11-Agentics/c11/pull/756))
+- **A malformed workspace blueprint is refused instead of stopping c11.** Duplicate panel ids, invalid split ratios, and YAML or JSON nested past the limits now return an error. Blueprint files must be regular files, at most 1 MiB (`.md`) or 16 MiB (`.json`), and JSON blueprints must be UTF-8. `workspace.apply` plans get the same nesting limit. ([#758](https://github.com/Stage-11-Agentics/c11/pull/758))
+- **Browser favicons are fetched and decoded within limits, off the main thread.** Icons load over http(s) only, within 1 MiB and 4 seconds, and decode through a raster allowlist with size checks. SVG icons are skipped. ([#759](https://github.com/Stage-11-Agentics/c11/pull/759))
+- **Saved browser state is private to you.** `browser state save` writes mode 0600 with no inherited ACL. `state load` refuses symlinks, files owned by someone else, files others can change, and files over 64 MiB, with `unsafe_state_file`. ([#760](https://github.com/Stage-11-Agentics/c11/pull/760))
+- **The Messages page and the mailbox dispatcher read a bounded amount of each mailbox file.** ([#761](https://github.com/Stage-11-Agentics/c11/pull/761))
+
+### Fixed
+
+- **Markdown corpus indexing stays fast on very large or unusual documents.** Long or numerous headings, dense links and long ticket-prefix lists no longer slow the index. ([#762](https://github.com/Stage-11-Agentics/c11/pull/762))
+
 ## [1.4.0] - 2026-10-26
 
 Headline: **c11 1.4.0. New Agent has a keyboard shortcut.**

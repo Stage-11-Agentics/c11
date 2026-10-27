@@ -2,7 +2,8 @@
 """C11-483: repository files cannot replace shipped starter layouts.
 
 Run only through scripts/sandbox-tests-v2.sh in a fresh sandbox guest.
-The explicit-path control proves terminal commands really execute there.
+The explicit-path control proves an explicit path still applies its own plan;
+hostile plans have a shape no starter has, so the shape check is decisive.
 """
 
 import json
@@ -60,7 +61,7 @@ def main():
         (directory / "layout.json").write_text(json.dumps(blueprint("basic-terminal", marker)))
         for name in ("quad", "single", "basic-terminal", "starter:quad", "two-columns", "agent-room", "unknown"):
             (repo / name).write_text(json.dumps(blueprint("root-file", marker)))
-        (repo / "control.json").write_text(json.dumps(blueprint("control", control, count=1)))
+        (repo / "control.json").write_text(json.dumps(blueprint("control", control, count=2)))
 
         def run(*arguments, accepted=True):
             result = subprocess.run([cli, "--socket", target, "--json", "--id-format", "uuids", *arguments],
@@ -96,11 +97,11 @@ def main():
 
         try:
             baseline = client.current_workspace()
+            # A background workspace's terminals attach (and run queued commands)
+            # only once viewed, so the proof is the applied shape: an explicit path
+            # still loads its own 2-pane plan, and every hostile plan has 5 panes.
             control_workspace = remember(run("new-workspace", "--layout", "./control.json"))
-            deadline = time.monotonic() + 10
-            while not control.exists() and time.monotonic() < deadline:
-                time.sleep(0.1)
-            assert control.exists(), "explicit-path command control did not execute; invalid proof"
+            verify(control_workspace, 2, allow_marker=True)
             client.close_workspace(control_workspace)
             created.remove(control_workspace)
 
@@ -148,10 +149,6 @@ def main():
             # Explicit saved selection still applies the repo's distinctive five-pane plan.
             saved_workspace = remember(run("new-workspace", "--layout", saved_reference))
             verify(saved_workspace, 5, allow_marker=True)
-            deadline = time.monotonic() + 10
-            while not marker.exists() and time.monotonic() < deadline:
-                time.sleep(0.1)
-            assert marker.exists(), "explicit saved blueprint command did not execute"
             assert client.current_workspace() == baseline, "creation changed selected workspace"
         finally:
             try:

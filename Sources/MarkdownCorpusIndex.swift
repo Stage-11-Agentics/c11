@@ -205,6 +205,23 @@ struct MarkdownCorpusFSEventStreamDriver {
     )
 }
 
+private final class MarkdownCorpusScanCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+}
+
 /// A bounded, root-shared Markdown corpus. Directory discovery and every read
 /// happen on its utility queue; renderer callbacks only receive immutable
 /// snapshots. FSEvents drives refreshes and unchanged files reuse parsed data.
@@ -255,7 +272,10 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     private struct IndexedFile {
         let signature: Signature
         let document: MarkdownCorpusDocument
-        let linkSlotsUsed: Int
+        let headingTextAttempts: Int
+        let headingAttemptsTruncated: Bool
+        let maximumLinkMatchesPerLine: Int
+        let linkSlotLimitPerLine: Int
         let headingsTruncated: Bool
         let linksTruncated: Bool
         let ticketIDsTruncated: Bool
@@ -269,8 +289,11 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     let rootURL: URL
     private let rootAccess: MarkdownAssetRoot?
     private let queue = DispatchQueue(label: "com.stage11.c11.markdown-corpus", qos: .utility)
+    private let scanCancellation = MarkdownCorpusScanCancellation()
     private let limits: Limits
     private let streamDriver: MarkdownCorpusFSEventStreamDriver
+    // Lets the cancellation test pause between files without timing assumptions.
+    private let afterCandidateIndexed: (@Sendable (String) -> Void)?
     private let onUpdate: @Sendable (MarkdownCorpusSnapshot) -> Void
     private var stream: FSEventStreamRef?
     private var indexedFiles: [String: IndexedFile] = [:]
@@ -286,6 +309,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         limits: Limits = Limits(),
         priorityFileURLs: [URL] = [],
         streamDriver: MarkdownCorpusFSEventStreamDriver = .system,
+        afterCandidateIndexed: (@Sendable (String) -> Void)? = nil,
         onUpdate: @escaping @Sendable (MarkdownCorpusSnapshot) -> Void
     ) {
         let canonicalRoot = rootURL.resolvingSymlinksInPath().standardizedFileURL
@@ -293,6 +317,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
         rootAccess = MarkdownAssetRoot(directory: canonicalRoot)
         self.limits = limits
         self.streamDriver = streamDriver
+        self.afterCandidateIndexed = afterCandidateIndexed
         self.onUpdate = onUpdate
         priorityRelativePaths = Self.relativePaths(for: priorityFileURLs, under: canonicalRoot)
     }
@@ -364,6 +389,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     }
 
     func stop() {
+        scanCancellation.cancel()
         queue.async { [self] in
             guard !stopped else { return }
             stopped = true
@@ -569,22 +595,26 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
     }
 
     private func scanAndPublish() {
+        guard !scanCancellation.isCancelled else { return }
         guard let rootAccess else {
+            guard !scanCancellation.isCancelled else { return }
             updateSnapshot(rootPath: rootURL.path, documents: [], links: [], tickets: [:], truncated: false)
             return
         }
 
         let discovery = discoverFiles(rootURL: rootURL)
+        guard !scanCancellation.isCancelled else { return }
         let boardIndex = loadBoardIndex(rootAccess: rootAccess, rootURL: rootURL)
         let old = indexedFiles
         var updated: [String: IndexedFile] = [:]
         var bytesUsed = 0
-        var headingCount = 0
+        var headingAttemptsUsed = 0
         var linkCount = 0
         var ticketIDCount = 0
         var truncated = discovery.truncated
 
         for candidate in discovery.files {
+            guard !scanCancellation.isCancelled else { return }
             guard updated.count < limits.maximumDocuments else { truncated = true; break }
             guard candidate.signature.size <= limits.maximumFileBytes,
                   bytesUsed + candidate.signature.size <= limits.maximumTotalBytes else {
@@ -592,23 +622,24 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 continue
             }
             bytesUsed += candidate.signature.size
-            let maximumHeadings = min(limits.maximumHeadingsPerDocument, max(0, limits.maximumTotalHeadings - headingCount))
+            let maximumHeadings = min(limits.maximumHeadingsPerDocument, max(0, limits.maximumTotalHeadings - headingAttemptsUsed))
             let maximumLinks = min(limits.maximumLinksPerDocument, max(0, limits.maximumTotalLinks - linkCount))
             let maximumTicketIDs = min(limits.maximumTicketIDsPerDocument, max(0, limits.maximumTotalTicketIDs - ticketIDCount))
             if let cached = old[candidate.relativePath], cached.signature == candidate.signature {
+                let oldEffectiveLinkLimit = min(cached.maximumLinkMatchesPerLine, cached.linkSlotLimitPerLine)
+                let newEffectiveLinkLimit = min(cached.maximumLinkMatchesPerLine, maximumLinks)
                 let needsReparse =
                     cached.document.headings.count > maximumHeadings ||
-                    cached.linkSlotsUsed > maximumLinks ||
+                    oldEffectiveLinkLimit != newEffectiveLinkLimit ||
                     cached.document.ticketIDs.count > maximumTicketIDs ||
                     (cached.headingsTruncated && maximumHeadings > cached.document.headings.count) ||
-                    (cached.linksTruncated && maximumLinks > cached.linkSlotsUsed) ||
                     (cached.ticketIDsTruncated && maximumTicketIDs > cached.document.ticketIDs.count)
                 if !needsReparse {
                     updated[candidate.relativePath] = cached
-                    headingCount += cached.document.headings.count
+                    headingAttemptsUsed += cached.headingTextAttempts
                     linkCount += cached.document.links.count
                     ticketIDCount += cached.document.ticketIDs.count
-                    truncated = truncated || cached.headingsTruncated || cached.linksTruncated || cached.ticketIDsTruncated
+                    truncated = truncated || cached.headingsTruncated || cached.headingAttemptsTruncated || cached.linksTruncated || cached.ticketIDsTruncated
                     continue
                 }
             }
@@ -639,20 +670,25 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
                 ticketPrefixes: boardIndex?.prefixes ?? []
             )
             filesReparsed += 1
-            headingCount += parsed.document.headings.count
+            headingAttemptsUsed += parsed.headingTextAttempts
             linkCount += parsed.document.links.count
             ticketIDCount += parsed.document.ticketIDs.count
-            if parsed.headingsTruncated || parsed.linksTruncated || parsed.ticketIDsTruncated { truncated = true }
+            if parsed.headingsTruncated || parsed.headingAttemptsTruncated || parsed.linksTruncated || parsed.ticketIDsTruncated { truncated = true }
             updated[candidate.relativePath] = IndexedFile(
                 signature: candidate.signature,
                 document: parsed.document,
-                linkSlotsUsed: parsed.linkSlotsUsed,
+                headingTextAttempts: parsed.headingTextAttempts,
+                headingAttemptsTruncated: parsed.headingAttemptsTruncated,
+                maximumLinkMatchesPerLine: parsed.maximumLinkMatchesPerLine,
+                linkSlotLimitPerLine: maximumLinks,
                 headingsTruncated: parsed.headingsTruncated,
                 linksTruncated: parsed.linksTruncated,
                 ticketIDsTruncated: parsed.ticketIDsTruncated
             )
+            afterCandidateIndexed?(candidate.relativePath)
         }
 
+        guard !scanCancellation.isCancelled else { return }
         indexedFiles = updated
         let orderedDocuments = discovery.files.compactMap { updated[$0.relativePath]?.document }
         let indexedPaths = Set(orderedDocuments.map(\.path))
@@ -667,6 +703,7 @@ final class MarkdownCorpusIndexer: @unchecked Sendable {
             if ticketIDs.count >= limits.maximumTotalTicketIDs { break }
         }
         let tickets = loadTicketCards(for: ticketIDs, boardIndex: boardIndex, rootAccess: rootAccess)
+        guard !scanCancellation.isCancelled else { return }
         updateSnapshot(
             rootPath: rootURL.path,
             documents: orderedDocuments,
@@ -1107,6 +1144,28 @@ actor MarkdownCorpusIndexRegistry {
 }
 
 enum MarkdownCorpusParser {
+    // The board loader accepts ticket prefixes matching [A-Z][A-Z0-9]{0,15};
+    // keep this capture in sync so every accepted prefix remains linkable.
+    private static let ticketIDPattern = try! NSRegularExpression(
+        pattern: #"\b([A-Z][A-Z0-9]{0,15})-[0-9]{1,9}\b"#
+    )
+    private static let linkPattern = try! NSRegularExpression(
+        pattern: #"\[([^\]]+)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)"#
+    )
+    private static let codePattern = try! NSRegularExpression(pattern: #"`+[^`]*`+"#)
+    private static let headingCodeSpanPattern = try! NSRegularExpression(pattern: #"(?<!`)(?:`+)([^`]+)`+"#)
+    private static let readableHeadingPatterns: [(NSRegularExpression, String)] = [
+        (try! NSRegularExpression(pattern: #"!?\[([^\]]*)\]\([^)]*\)"#), "$1"),
+        (try! NSRegularExpression(pattern: #"<[^>]+>"#), ""),
+        (try! NSRegularExpression(pattern: #"\*\*(?=\S)(.+?)(?<=\S)\*\*"#), "$1"),
+        (try! NSRegularExpression(pattern: #"__(?=\S)(.+?)(?<=\S)__"#), "$1"),
+        (try! NSRegularExpression(pattern: #"~~(?=\S)(.+?)(?<=\S)~~"#), "$1"),
+        (try! NSRegularExpression(pattern: #"(?<!\\)\*(?=\S)(.+?)(?<=\S)\*"#), "$1"),
+        (try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}_])_(?=\S)(.+?)(?<=\S)_(?![\p{L}\p{N}_])"#), "$1"),
+        (try! NSRegularExpression(pattern: #"[`~]"#), ""),
+        (try! NSRegularExpression(pattern: #"\\([\\`*_{}\[\]()#+.!<>|])"#), "$1")
+    ]
+
     private struct RawLink {
         let line: Int
         let text: String
@@ -1116,7 +1175,9 @@ enum MarkdownCorpusParser {
 
     struct Parsed {
         let document: MarkdownCorpusDocument
-        let linkSlotsUsed: Int
+        let headingTextAttempts: Int
+        let headingAttemptsTruncated: Bool
+        let maximumLinkMatchesPerLine: Int
         let headingsTruncated: Bool
         let linksTruncated: Bool
         let ticketIDsTruncated: Bool
@@ -1131,6 +1192,12 @@ enum MarkdownCorpusParser {
         maximumTicketIDs: Int,
         ticketPrefixes: Set<String> = []
     ) -> Parsed {
+        let sourceByteCount = source.utf8.count
+        let (scaledLinkWorkBudget, linkBudgetOverflow) = sourceByteCount.multipliedReportingOverflow(by: 16)
+        let maximumLinkPatternWork = max(262_144, linkBudgetOverflow ? Int.max : scaledLinkWorkBudget)
+        let maximumHeadingCount = max(0, maximumHeadings)
+        let (scaledHeadingAttemptLimit, headingAttemptLimitOverflow) = maximumHeadingCount.multipliedReportingOverflow(by: 2)
+        let maximumHeadingTextAttempts = headingAttemptLimitOverflow ? Int.max : scaledHeadingAttemptLimit
         let lines = source.components(separatedBy: .newlines)
         let frontmatterRange: ClosedRange<Int>? = {
             guard let first = lines.first,
@@ -1146,9 +1213,16 @@ enum MarkdownCorpusParser {
         var inFence: (character: Character, length: Int)?
         var headingCounts: [String: Int] = [:]
         var headingsTruncated = false
+        var headingTextAttempts = 0
+        var headingAttemptsTruncated = false
 
         func addHeading(text raw: String, level: Int, line: Int) {
             guard headings.count < maximumHeadings else { headingsTruncated = true; return }
+            guard headingTextAttempts < maximumHeadingTextAttempts else {
+                headingAttemptsTruncated = true
+                return
+            }
+            headingTextAttempts += 1
             let text = readableHeadingText(raw)
             guard !text.isEmpty else { return }
             let base = slugify(text)
@@ -1201,16 +1275,8 @@ enum MarkdownCorpusParser {
         var currentSection: MarkdownCorpusHeading?
         inFence = nil
         var ids: Set<String> = []
-        let ticketPattern: NSRegularExpression? = {
-            let prefixes = ticketPrefixes.sorted { $0.count == $1.count ? $0 < $1 : $0.count > $1.count }
-                .map(NSRegularExpression.escapedPattern(for:))
-            guard !prefixes.isEmpty else { return nil }
-            return try? NSRegularExpression(pattern: #"\b(?:"# + prefixes.joined(separator: "|") + #")-[0-9]{1,9}\b"#)
-        }()
-        let linkPattern = try! NSRegularExpression(
-            pattern: #"\[([^\]]+)\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)"#
-        )
-        let codePattern = try! NSRegularExpression(pattern: #"`+[^`]*`+"#)
+        var linkPatternWork = 0
+        var maximumLinkMatchesPerLine = 0
 
         for (index, line) in lines.enumerated() {
             if frontmatterRange?.contains(index) == true || isIndentedCodeLine(line) { continue }
@@ -1225,18 +1291,32 @@ enum MarkdownCorpusParser {
             let range = NSRange(line.startIndex..<line.endIndex, in: line)
             let withoutCode = codePattern.stringByReplacingMatches(in: line, range: range, withTemplate: " ")
             let visibleRange = NSRange(withoutCode.startIndex..<withoutCode.endIndex, in: withoutCode)
-            for match in ticketPattern?.matches(in: withoutCode, range: visibleRange) ?? [] {
+            let ticketMatches = ticketPrefixes.isEmpty ? [] : ticketIDPattern.matches(in: withoutCode, range: visibleRange)
+            for match in ticketMatches {
+                guard let prefixRange = Range(match.range(at: 1), in: withoutCode),
+                      ticketPrefixes.contains(String(withoutCode[prefixRange])) else { continue }
                 guard let valueRange = Range(match.range, in: withoutCode) else { continue }
                 let id = String(withoutCode[valueRange])
                 if ids.contains(id) { continue }
                 guard ids.count < maximumTicketIDs else { ticketIDsTruncated = true; continue }
                 ids.insert(id)
             }
-            guard line.utf8.count <= 16 * 1024 else {
+            let lineByteCount = line.utf8.count
+            guard lineByteCount <= 16 * 1024 else {
                 linksTruncated = true
                 continue
             }
+            let openBracketCount = withoutCode.utf8.reduce(into: 0) { count, byte in
+                if byte == 0x5B { count += 1 }
+            }
+            let lineWork = openBracketCount * lineByteCount
+            guard lineWork <= maximumLinkPatternWork - linkPatternWork else {
+                linksTruncated = true
+                continue
+            }
+            linkPatternWork += lineWork
             let linkMatches = linkPattern.matches(in: withoutCode, range: visibleRange)
+            maximumLinkMatchesPerLine = max(maximumLinkMatchesPerLine, linkMatches.count)
             for match in linkMatches.prefix(maximumLinks) {
                 guard let labelRange = Range(match.range(at: 1), in: withoutCode),
                       let hrefRange = Range(match.range(at: match.range(at: 2).location != NSNotFound ? 2 : 3), in: withoutCode) else { continue }
@@ -1280,7 +1360,9 @@ enum MarkdownCorpusParser {
         )
         return Parsed(
             document: document,
-            linkSlotsUsed: rawLinks.count,
+            headingTextAttempts: headingTextAttempts,
+            headingAttemptsTruncated: headingAttemptsTruncated,
+            maximumLinkMatchesPerLine: maximumLinkMatchesPerLine,
             headingsTruncated: headingsTruncated,
             linksTruncated: linksTruncated,
             ticketIDsTruncated: ticketIDsTruncated
@@ -1333,41 +1415,31 @@ enum MarkdownCorpusParser {
     }
 
     private static func readableHeadingText(_ source: String) -> String {
-        let codeSpanPattern = try? NSRegularExpression(pattern: #"`+([^`]+)`+"#)
-        var value = source
+        // Long headings intentionally slug from their first 512 scalars.
+        // A palette jump may not match the viewer's full anchor.
+        let boundedSource = String(source.unicodeScalars.prefix(512))
+        var value = boundedSource
         var codeSegments: [String] = []
-        if let codeSpanPattern {
-            let matches = codeSpanPattern.matches(in: source, range: NSRange(source.startIndex..<source.endIndex, in: source))
-            var rebuilt = ""
-            var cursor = source.startIndex
-            for match in matches {
-                guard let wholeRange = Range(match.range, in: source),
-                      let contentRange = Range(match.range(at: 1), in: source) else { continue }
-                rebuilt += source[cursor..<wholeRange.lowerBound]
-                let marker = "\u{E000}\(codeSegments.count)\u{E001}"
-                rebuilt += marker
-                codeSegments.append(String(source[contentRange]).trimmingCharacters(in: .whitespacesAndNewlines))
-                cursor = wholeRange.upperBound
-            }
-            rebuilt += source[cursor...]
-            value = rebuilt
+        let codeMatches = headingCodeSpanPattern.matches(
+            in: boundedSource,
+            range: NSRange(boundedSource.startIndex..<boundedSource.endIndex, in: boundedSource)
+        )
+        var rebuilt = ""
+        var cursor = boundedSource.startIndex
+        for match in codeMatches {
+            guard let wholeRange = Range(match.range, in: boundedSource),
+                  let contentRange = Range(match.range(at: 1), in: boundedSource) else { continue }
+            rebuilt += boundedSource[cursor..<wholeRange.lowerBound]
+            let marker = "\u{E000}\(codeSegments.count)\u{E001}"
+            rebuilt += marker
+            codeSegments.append(String(boundedSource[contentRange]).trimmingCharacters(in: .whitespacesAndNewlines))
+            cursor = wholeRange.upperBound
         }
-        let patterns: [(String, String)] = [
-            (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),
-            (#"<[^>]+>"#, ""),
-            (#"\*\*(?=\S)(.+?)(?<=\S)\*\*"#, "$1"),
-            (#"__(?=\S)(.+?)(?<=\S)__"#, "$1"),
-            (#"~~(?=\S)(.+?)(?<=\S)~~"#, "$1"),
-            (#"(?<!\\)\*(?=\S)(.+?)(?<=\S)\*"#, "$1"),
-            (#"(?<![\p{L}\p{N}_])_(?=\S)(.+?)(?<=\S)_(?![\p{L}\p{N}_])"#, "$1"),
-            (#"[`~]"#, ""),
-            (#"\\([\\`*_{}\[\]()#+.!<>|])"#, "$1")
-        ]
-        for (pattern, replacement) in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern) {
-                let range = NSRange(value.startIndex..<value.endIndex, in: value)
-                value = regex.stringByReplacingMatches(in: value, range: range, withTemplate: replacement)
-            }
+        rebuilt += boundedSource[cursor...]
+        value = rebuilt
+        for (regex, replacement) in readableHeadingPatterns {
+            let range = NSRange(value.startIndex..<value.endIndex, in: value)
+            value = regex.stringByReplacingMatches(in: value, range: range, withTemplate: replacement)
         }
         for (index, code) in codeSegments.enumerated() {
             value = value.replacingOccurrences(of: "\u{E000}\(index)\u{E001}", with: code)

@@ -985,7 +985,7 @@ extension TerminalController {
         let plan: WorkspaceApplyPlan
         do {
             let planData = try JSONSerialization.data(withJSONObject: planRaw, options: [])
-            plan = try JSONDecoder().decode(WorkspaceApplyPlan.self, from: planData)
+            plan = try WorkspaceBlueprintStore.decodeJSONPlan(planData)
         } catch {
             return .err(
                 code: "invalid_params",
@@ -1200,22 +1200,35 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing 'content'", data: nil)
         }
         let formatRaw = ((params["format"] as? String) ?? "md").lowercased()
+        let limit: Int
+        switch formatRaw {
+        case "md", "markdown":
+            limit = WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes
+        case "json":
+            limit = WorkspaceBlueprintStore.maximumJSONBlueprintBytes
+        default:
+            return .err(
+                code: "invalid_params",
+                message: "Unsupported format '\(formatRaw)'. Expected 'md' or 'json'.",
+                data: nil
+            )
+        }
+        guard content.utf8.count <= limit else {
+            return .err(
+                code: "invalid_params",
+                message: "Blueprint content exceeds the \(limit)-byte limit",
+                data: nil
+            )
+        }
         guard let data = content.data(using: .utf8) else {
             return .err(code: "invalid_params", message: "Content is not valid UTF-8", data: nil)
         }
         let file: WorkspaceBlueprintFile
         do {
-            switch formatRaw {
-            case "md", "markdown":
+            if formatRaw == "json" {
+                file = try WorkspaceBlueprintStore.decodeJSONBlueprint(data)
+            } else {
                 file = try WorkspaceBlueprintMarkdown.parse(data)
-            case "json":
-                file = try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
-            default:
-                return .err(
-                    code: "invalid_params",
-                    message: "Unsupported format '\(formatRaw)'. Expected 'md' or 'json'.",
-                    data: nil
-                )
             }
         } catch {
             return .err(code: "blueprint_decode_failed", message: "\(error)", data: nil)

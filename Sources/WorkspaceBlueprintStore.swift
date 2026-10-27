@@ -49,6 +49,92 @@ struct WorkspaceBlueprintStore: Sendable {
         return "starter:one-column"
     }
 
+    static let maximumMarkdownBlueprintBytes = 1_048_576
+    static let maximumJSONBlueprintBytes = 16 * 1_048_576
+
+    /// JSONDecoder recurses once per nesting level, so JSON blueprints and plans
+    /// are checked for raw nesting before decoding, and their layouts get the
+    /// markdown format's 64-level cap. A 64-level layout sits 133 levels deep in
+    /// a blueprint and 132 in a plan; the cap leaves panel metadata, which costs
+    /// about twice the stack per level, well inside a 512 KiB thread stack.
+    static let maximumJSONNestingDepth = 136
+    static let maximumLayoutDepth = 64
+
+    static func decodeJSONBlueprint(_ data: Data) throws -> WorkspaceBlueprintFile {
+        try validateJSONNesting(data)
+        let file = try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
+        try validateLayoutDepth(file.plan.layout)
+        return file
+    }
+
+    static func decodeJSONPlan(_ data: Data) throws -> WorkspaceApplyPlan {
+        try validateJSONNesting(data)
+        let plan = try JSONDecoder().decode(WorkspaceApplyPlan.self, from: data)
+        try validateLayoutDepth(plan.layout)
+        return plan
+    }
+
+    private static func validateJSONNesting(_ data: Data) throws {
+        try data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            var depth = 0
+            var inString = false
+            var escaped = false
+            for byte in bytes {
+                // JSONDecoder also accepts UTF-16 and UTF-32, whose bytes this
+                // scan would misread. Each of those carries a zero byte beside
+                // every ASCII character, while valid UTF-8 JSON never has one.
+                guard byte != 0 else {
+                    throw DecodingError.dataCorrupted(.init(
+                        codingPath: [],
+                        debugDescription: "JSON blueprint must be UTF-8 without NUL bytes"
+                    ))
+                }
+                if inString {
+                    if escaped {
+                        escaped = false
+                    } else if byte == UInt8(ascii: "\\") {
+                        escaped = true
+                    } else if byte == UInt8(ascii: "\"") {
+                        inString = false
+                    }
+                    continue
+                }
+                switch byte {
+                case UInt8(ascii: "\""):
+                    inString = true
+                case UInt8(ascii: "{"), UInt8(ascii: "["):
+                    depth += 1
+                    guard depth <= maximumJSONNestingDepth else {
+                        throw DecodingError.dataCorrupted(.init(
+                            codingPath: [],
+                            debugDescription: "JSON nesting depth exceeds \(maximumJSONNestingDepth)"
+                        ))
+                    }
+                case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                    depth -= 1
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    private static func validateLayoutDepth(_ layout: LayoutTreeSpec) throws {
+        var pending: [(node: LayoutTreeSpec, depth: Int)] = [(layout, 0)]
+        while let entry = pending.popLast() {
+            guard entry.depth <= maximumLayoutDepth else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "layout nesting depth exceeds \(maximumLayoutDepth)"
+                ))
+            }
+            if case .split(let split) = entry.node {
+                pending.append((split.first, entry.depth + 1))
+                pending.append((split.second, entry.depth + 1))
+            }
+        }
+    }
+
     private let directoryOverride: URL?
     private let fileManager: FileManager
 
@@ -65,6 +151,7 @@ struct WorkspaceBlueprintStore: Sendable {
         case writeFailed(String, underlying: String)
         case readFailed(String, underlying: String)
         case decodeFailed(String, underlying: String)
+        case sizeLimitExceeded(String, actual: Int, limit: Int)
 
         var code: String {
             switch self {
@@ -73,6 +160,7 @@ struct WorkspaceBlueprintStore: Sendable {
             case .writeFailed:            return "blueprint_write_failed"
             case .readFailed:             return "blueprint_read_failed"
             case .decodeFailed:           return "blueprint_decode_failed"
+            case .sizeLimitExceeded:      return "blueprint_size_limit_exceeded"
             }
         }
 
@@ -88,6 +176,8 @@ struct WorkspaceBlueprintStore: Sendable {
                 return "blueprint read failed at \(path): \(err)"
             case .decodeFailed(let path, let err):
                 return "blueprint decode failed at \(path): \(err)"
+            case .sizeLimitExceeded(let path, let actual, let limit):
+                return "blueprint at \(path) is \(actual) bytes; limit is \(limit) bytes"
             }
         }
     }
@@ -222,11 +312,37 @@ struct WorkspaceBlueprintStore: Sendable {
     /// are parsed by `WorkspaceBlueprintMarkdown`; everything else is read
     /// as JSON.
     func read(url: URL) throws -> WorkspaceBlueprintFile {
+        let limit = Self.maximumBytes(for: url)
         let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch {
-            throw StoreError.readFailed(url.path, underlying: "\(error)")
+        switch MailboxPanelMail.readRegularFilePrefix(
+            path: url.path,
+            limit: limit,
+            followSymlinks: true
+        ) {
+        case .failure(let failure):
+            let detail: String
+            switch failure.referenceContent {
+            case .missing:
+                detail = "file not found"
+            case .notRegularFile:
+                detail = "not a regular file"
+            case .unreadable(let reason):
+                detail = reason
+            default:
+                detail = failure.description
+            }
+            if case .notRegularFile = failure.referenceContent {
+                throw StoreError.decodeFailed(url.path, underlying: detail)
+            }
+            throw StoreError.readFailed(url.path, underlying: detail)
+        case .success(let read):
+            guard !read.truncated else {
+                throw StoreError.decodeFailed(
+                    url.path,
+                    underlying: "blueprint exceeds \(limit)-byte limit"
+                )
+            }
+            data = read.data
         }
         if url.pathExtension.lowercased() == "md" {
             do {
@@ -236,7 +352,7 @@ struct WorkspaceBlueprintStore: Sendable {
             }
         }
         do {
-            return try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
+            return try Self.decodeJSONBlueprint(data)
         } catch {
             throw StoreError.decodeFailed(url.path, underlying: "\(error)")
         }
@@ -270,11 +386,21 @@ struct WorkspaceBlueprintStore: Sendable {
                 throw StoreError.encodeFailed("\(error)")
             }
         }
+        let limit = Self.maximumBytes(for: url)
+        guard data.count <= limit else {
+            throw StoreError.sizeLimitExceeded(url.path, actual: data.count, limit: limit)
+        }
         do {
             try data.write(to: url, options: .atomic)
         } catch {
             throw StoreError.writeFailed(url.path, underlying: "\(error)")
         }
+    }
+
+    private static func maximumBytes(for url: URL) -> Int {
+        url.pathExtension.lowercased() == "md"
+            ? maximumMarkdownBlueprintBytes
+            : maximumJSONBlueprintBytes
     }
 
     // MARK: - Private helpers

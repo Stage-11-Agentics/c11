@@ -139,6 +139,39 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(merged[2].source, .builtIn, "built-in entries come last")
     }
 
+    func testMergedFallsBackToFilenameForDuplicatePanelIDsWithoutTrapping() throws {
+        let repoRoot = tmpRoot.appendingPathComponent("repo", isDirectory: true)
+        let blueprintDir = repoRoot.appendingPathComponent(".c11/blueprints", isDirectory: true)
+        try FileManager.default.createDirectory(at: blueprintDir, withIntermediateDirectories: true)
+        let crashURL = blueprintDir.appendingPathComponent("crash.md")
+        try Data("""
+        ---
+        title: hostile
+        ---
+
+        ## Layout
+
+        ```yaml
+        layout:
+          - panels:
+              - id: a
+                type: terminal
+                tabs:
+              - id: a
+                type: terminal
+                tabs:
+        ```
+        """.utf8).write(to: crashURL)
+
+        let merged = makeStore().merged(cwd: repoRoot)
+
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged[0].name, "crash")
+        XCTAssertEqual(URL(fileURLWithPath: merged[0].url).lastPathComponent, "crash.md")
+        XCTAssertEqual(merged[0].source, .repo)
+        XCTAssertNil(merged[0].description)
+    }
+
     func testMergedSortsByModifiedAtDescWithinEachGroup() throws {
         let userDir: URL = tmpRoot
         let store = WorkspaceBlueprintStore(directoryOverride: userDir)
@@ -318,6 +351,246 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(read.plan.surfaces.count, 1)
     }
 
+    func testReadAcceptsJSONBlueprintLargerThanOneMiB() throws {
+        let blueprint = sampleBlueprint(name: String(repeating: "x", count: 600_000))
+        let data = try JSONEncoder().encode(blueprint)
+        XCTAssertGreaterThan(data.count, WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes)
+        XCTAssertLessThanOrEqual(data.count, WorkspaceBlueprintStore.maximumJSONBlueprintBytes)
+        let url = tmpRoot.appendingPathComponent("large.json")
+        try data.write(to: url)
+
+        XCTAssertEqual(try makeStore().read(url: url), blueprint)
+    }
+
+    func testReadRejectsBlueprintNested200Levels() throws {
+        var layoutLines = ["layout:", "  - type: terminal"]
+        var indent = 4
+        for _ in 0..<200 {
+            layoutLines.append(String(repeating: " ", count: indent) + "ignored:")
+            indent += 2
+        }
+        layoutLines.append(String(repeating: " ", count: indent) + "leaf: value")
+        let sourceLines = ["## Layout", "", "```yaml"] + layoutLines + ["```"]
+        let url = tmpRoot.appendingPathComponent("deep.md")
+        try Data(sourceLines.joined(separator: "\n").utf8).write(to: url)
+
+        XCTAssertThrowsError(try makeStore().read(url: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected a bounded YAML decode failure, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("YAML nesting depth"), detail)
+        }
+    }
+
+    private func nestedLayoutBlueprint(depth: Int) -> WorkspaceBlueprintFile {
+        var layout = LayoutTreeSpec.pane(.init(surfaceIds: ["a"]))
+        for _ in 0..<depth {
+            layout = .split(.init(
+                orientation: .horizontal,
+                dividerPosition: 0.5,
+                first: layout,
+                second: .pane(.init(surfaceIds: ["a"]))
+            ))
+        }
+        return WorkspaceBlueprintFile(
+            name: "Deep",
+            description: nil,
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Deep"),
+                layout: layout,
+                surfaces: [PanelSpec(id: "a", kind: .terminal)]
+            )
+        )
+    }
+
+    func testReadRejectsDeeplyNestedJSONBeforeDecoding() throws {
+        let depth = 100_000
+        let shapes = [
+            ("objects.json", String(repeating: #"{"a":"#, count: depth) + "1" + String(repeating: "}", count: depth)),
+            ("arrays.json", String(repeating: "[", count: depth) + String(repeating: "]", count: depth)),
+        ]
+        for (name, source) in shapes {
+            let url = tmpRoot.appendingPathComponent(name)
+            try Data(source.utf8).write(to: url)
+            XCTAssertThrowsError(try makeStore().read(url: url), name) { error in
+                guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                    return XCTFail("expected a bounded JSON decode failure, got \(error)")
+                }
+                XCTAssertTrue(detail.contains("JSON nesting depth exceeds"), detail)
+            }
+            XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONPlan(Data(source.utf8)), name) { error in
+                XCTAssertTrue("\(error)".contains("JSON nesting depth exceeds"), "\(error)")
+            }
+        }
+    }
+
+    func testJSONNestingIgnoresBracketsInsideStrings() throws {
+        var blueprint = sampleBlueprint(name: String(repeating: "{[", count: 400) + #" \"{ "#)
+        blueprint.description = String(repeating: "\\[", count: 400)
+        let url = tmpRoot.appendingPathComponent("brackets.json")
+        try JSONEncoder().encode(blueprint).write(to: url)
+
+        XCTAssertEqual(try makeStore().read(url: url), blueprint)
+    }
+
+    func testJSONNestingFollowsEscapesAndMultibyteText() throws {
+        // An escaped quote, an escaped backslash, a \u0022 quote and a multibyte
+        // character must not end the string early, or the brackets after them
+        // would count and push the scan past its cap.
+        let opening = String(repeating: "[", count: 200)
+        let closing = String(repeating: "{", count: 200)
+        let rawName = #"\""# + opening + #"\\\u0022丢"# + closing
+        let encoded = try XCTUnwrap(String(data: try JSONEncoder().encode(sampleBlueprint(name: "Raw")), encoding: .utf8))
+        XCTAssertEqual(encoded.components(separatedBy: #""name":"Raw""#).count, 2)
+        let url = tmpRoot.appendingPathComponent("escapes.json")
+        try Data(encoded.replacingOccurrences(of: #""name":"Raw""#, with: #""name":""# + rawName + #"""#).utf8).write(to: url)
+
+        XCTAssertEqual(try makeStore().read(url: url).name, "\"" + opening + "\\\"丢" + closing)
+    }
+
+    func testJSONStringEndingInAnEscapedBackslashCannotHideLaterNesting() {
+        // A scan that read the closing quote of "x\\" as escaped would stay
+        // inside the string and miss the 200 arrays after it.
+        let source = #"["x\\","# + String(repeating: "[", count: 200) + String(repeating: "]", count: 200) + "]"
+        XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONBlueprint(Data(source.utf8))) { error in
+            XCTAssertTrue("\(error)".contains("JSON nesting depth exceeds"), "\(error)")
+        }
+    }
+
+    private func deepMetadataBlueprint(levels: Int, name: String = "Deep Metadata") -> WorkspaceBlueprintFile {
+        var value = PersistedJSONValue.string("leaf")
+        for _ in 0..<levels {
+            value = .object(["k": value])
+        }
+        var blueprint = sampleBlueprint(name: name)
+        blueprint.plan.surfaces = [PanelSpec(id: "a", kind: .terminal, metadata: ["deep": value])]
+        return blueprint
+    }
+
+    func testNonUTF8JSONIsRejectedBeforeDecoding() throws {
+        // "丢" is U+4E22: in UTF-16 one of its bytes is 0x22, a quote to a UTF-8
+        // scan, which would then miss the 300 nested metadata objects after it.
+        let utf8 = try JSONEncoder().encode(deepMetadataBlueprint(levels: 300, name: "丢"))
+        let text = try XCTUnwrap(String(data: utf8, encoding: .utf8))
+        let encodings: [(String, String.Encoding, [UInt8])] = [
+            ("utf16-bom", .utf16, []), ("utf16le", .utf16LittleEndian, []),
+            ("utf16be", .utf16BigEndian, []), ("utf16be-bom", .utf16BigEndian, [0xFE, 0xFF]),
+            ("utf32le", .utf32LittleEndian, []), ("utf32be", .utf32BigEndian, []),
+            ("utf32be-bom", .utf32BigEndian, [0x00, 0x00, 0xFE, 0xFF]),
+        ]
+        for (name, encoding, byteOrderMark) in encodings {
+            let data = try Data(byteOrderMark) + XCTUnwrap(text.data(using: encoding), name)
+            let url = tmpRoot.appendingPathComponent("\(name).json")
+            try data.write(to: url)
+            XCTAssertThrowsError(try makeStore().read(url: url), name) { error in
+                guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                    return XCTFail("expected a bounded JSON decode failure, got \(error)")
+                }
+                XCTAssertTrue(detail.contains("must be UTF-8"), detail)
+            }
+            XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONPlan(data), name) { error in
+                XCTAssertTrue("\(error)".contains("must be UTF-8"), "\(error)")
+            }
+        }
+    }
+
+    func testReadRejectsJSONLayoutDeeperThanSixtyFourLevels() throws {
+        let url = tmpRoot.appendingPathComponent("deep-layout.json")
+        try JSONEncoder().encode(nestedLayoutBlueprint(depth: 65)).write(to: url)
+
+        XCTAssertThrowsError(try makeStore().read(url: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected a bounded layout decode failure, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("layout nesting depth exceeds 64"), detail)
+        }
+        let plan = try JSONEncoder().encode(nestedLayoutBlueprint(depth: 65).plan)
+        XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONPlan(plan)) { error in
+            XCTAssertTrue("\(error)".contains("layout nesting depth exceeds 64"), "\(error)")
+        }
+    }
+
+    /// Socket handlers run on secondary threads with 512 KiB stacks.
+    private func decodeOnSecondaryThreadStack(_ data: Data) throws -> WorkspaceBlueprintFile {
+        let outcome = JSONDecodeOutcome()
+        let done = expectation(description: "decoded on a 512 KiB stack")
+        let thread = Thread {
+            outcome.result = Result { try WorkspaceBlueprintStore.decodeJSONBlueprint(data) }
+            done.fulfill()
+        }
+        thread.stackSize = 512 * 1024
+        thread.start()
+        wait(for: [done], timeout: 30)
+        return try XCTUnwrap(outcome.result).get()
+    }
+
+    func testSixtyFourLevelJSONLayoutDecodesOnASecondaryThreadStack() throws {
+        let blueprint = nestedLayoutBlueprint(depth: 64)
+
+        XCTAssertEqual(try decodeOnSecondaryThreadStack(try JSONEncoder().encode(blueprint)), blueprint)
+    }
+
+    func testMetadataNestedToTheCapDecodesOnASecondaryThreadStack() throws {
+        // Panel metadata sits five levels into a blueprint, so 131 nested
+        // objects reach the 136-level cap exactly.
+        let atCap = deepMetadataBlueprint(levels: WorkspaceBlueprintStore.maximumJSONNestingDepth - 5)
+        XCTAssertEqual(try decodeOnSecondaryThreadStack(try JSONEncoder().encode(atCap)), atCap)
+
+        let overCap = try JSONEncoder().encode(deepMetadataBlueprint(levels: WorkspaceBlueprintStore.maximumJSONNestingDepth - 4))
+        XCTAssertThrowsError(try WorkspaceBlueprintStore.decodeJSONBlueprint(overCap)) { error in
+            XCTAssertTrue("\(error)".contains("JSON nesting depth exceeds"), "\(error)")
+        }
+    }
+
+    func testReadRejectsMarkdownLargerThanOneMiB() throws {
+        var data = try WorkspaceBlueprintMarkdown.serialize(sampleBlueprint(name: "Large"))
+        let sizeLimit = WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes
+        data.append(Data(repeating: 0x20, count: sizeLimit + 1 - data.count))
+        let url = tmpRoot.appendingPathComponent("large.md")
+        try data.write(to: url)
+
+        XCTAssertThrowsError(try makeStore().read(url: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected an oversized blueprint decode failure, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("byte limit"), detail)
+        }
+    }
+
+    func testReadFollowsBlueprintSymlinks() throws {
+        let store = makeStore()
+        let blueprint = sampleBlueprint(name: "Symlinked Blueprint")
+        let targetURL = tmpRoot.appendingPathComponent("target.md")
+        let symlinkURL = tmpRoot.appendingPathComponent("linked.md")
+        try store.write(blueprint, to: targetURL)
+        try FileManager.default.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: targetURL.path)
+
+        XCTAssertEqual(try store.read(url: symlinkURL), blueprint)
+    }
+
+    func testReadRejectsNonRegularBlueprintFileAsDecodeFailure() throws {
+        let directoryURL = tmpRoot.appendingPathComponent("not-a-file.md", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(try makeStore().read(url: directoryURL)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.decodeFailed(_, let detail) = error else {
+                return XCTFail("expected a non-regular-file decode failure, got \(error)")
+            }
+            XCTAssertEqual(detail, "not a regular file")
+        }
+    }
+
+    func testReadUsesBlueprintWordingForMissingFiles() {
+        let missingURL = tmpRoot.appendingPathComponent("missing.md")
+        XCTAssertThrowsError(try makeStore().read(url: missingURL)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.readFailed(_, let detail) = error else {
+                return XCTFail("expected a missing-file read failure, got \(error)")
+            }
+            XCTAssertEqual(detail, "file not found")
+        }
+    }
+
     // MARK: - write
 
     func testWriteCreatesFileAtomicallyAndIsReadableAfterWrite() throws {
@@ -330,6 +603,24 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "file must exist after write")
         let readBack = try store.read(url: url)
         XCTAssertEqual(readBack, blueprint)
+    }
+
+    func testWriteRejectsMarkdownBlueprintOverFormatLimit() throws {
+        var blueprint = sampleBlueprint(name: "Oversized export")
+        blueprint.description = String(repeating: "x", count: 600_000)
+        let url = tmpRoot.appendingPathComponent("oversized.md")
+        let encoded = try WorkspaceBlueprintMarkdown.serialize(blueprint)
+        XCTAssertGreaterThan(encoded.count, WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes)
+
+        XCTAssertThrowsError(try makeStore().write(blueprint, to: url)) { error in
+            guard case WorkspaceBlueprintStore.StoreError.sizeLimitExceeded(_, let actual, let limit) = error else {
+                return XCTFail("expected an oversize export failure, got \(error)")
+            }
+            XCTAssertGreaterThan(actual, limit)
+            XCTAssertEqual(limit, WorkspaceBlueprintStore.maximumMarkdownBlueprintBytes)
+            XCTAssertTrue(String(describing: error).contains("limit is"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
     func testWriteCreatesIntermediateDirectories() throws {
@@ -507,4 +798,8 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         }
     }
 
+}
+
+private final class JSONDecodeOutcome: @unchecked Sendable {
+    var result: Result<WorkspaceBlueprintFile, Error>?
 }

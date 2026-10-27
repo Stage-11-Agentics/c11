@@ -69,6 +69,44 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         XCTAssertEqual(r, file)
     }
 
+    func testTwentyLevelNestedSplitLayoutParsesAndRoundTrips() throws {
+        var surfaces: [PanelSpec] = []
+        var nextPanelId = 0
+        func nestedLayout(depth: Int) -> LayoutTreeSpec {
+            if depth == 0 {
+                let id = "panel-\(nextPanelId)"
+                nextPanelId += 1
+                surfaces.append(PanelSpec(id: id, kind: .terminal))
+                return .pane(.init(surfaceIds: [id]))
+            }
+            let first = nestedLayout(depth: depth - 1)
+            let second = nestedLayout(depth: 0)
+            return .split(.init(
+                orientation: .horizontal,
+                dividerPosition: 0.5,
+                first: first,
+                second: second
+            ))
+        }
+
+        let layout = nestedLayout(depth: 20)
+        let file = WorkspaceBlueprintFile(
+            name: "Nested 20",
+            description: nil,
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Nested 20"),
+                layout: layout,
+                surfaces: surfaces
+            )
+        )
+
+        let serialized = try WorkspaceBlueprintMarkdown.serialize(file)
+        let parsed = try WorkspaceBlueprintMarkdown.parse(serialized)
+        XCTAssertEqual(parsed, file)
+        XCTAssertEqual(try roundTrip(parsed), file)
+    }
+
     func testExplicitIDsReserveFallbackNamespaceAndAllowBrowserBeforeAgent() throws {
         let parsed = try WorkspaceBlueprintMarkdown.parse(fixture("browser-before-agent"))
         XCTAssertEqual(parsed.version, 1)
@@ -102,6 +140,134 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
             }
             XCTAssertEqual(id, "agent")
             XCTAssertTrue(String(describing: error).contains("blueprint_duplicate_panel_id"))
+        }
+    }
+
+    func testPanelListItemsWithNestedKeysStillRejectDuplicateIDs() {
+        for nestedKey in ["tabs:", "panels:", "children:", "direction: vertical"] {
+            let nestedLines = nestedKey == "direction: vertical"
+                ? ["        direction: vertical"]
+                : ["        \(nestedKey)", "          - type: terminal"]
+            let sourceLines = [
+                "## Layout",
+                "",
+                "```yaml",
+                "layout:",
+                "  - panels:",
+                "      - id: a",
+                "        type: terminal",
+                "      - id: a",
+                "        type: terminal",
+            ] + nestedLines + ["```"]
+
+            XCTAssertThrowsError(
+                try WorkspaceBlueprintMarkdown.parse(Data(sourceLines.joined(separator: "\n").utf8)),
+                "nested key \(nestedKey)"
+            ) { error in
+                guard case WorkspaceBlueprintMarkdown.ParseError.duplicateSurfaceID(let id) = error else {
+                    return XCTFail("expected duplicateSurfaceID for \(nestedKey), got \(error)")
+                }
+                XCTAssertEqual(id, "a")
+            }
+        }
+    }
+
+    func testNestedPanelKeyReservesExplicitIDBeforeMintingAnonymousIDs() throws {
+        let source = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - direction: horizontal
+            split: 50/50
+            children:
+              - type: terminal
+              - panels:
+                  - id: s1
+                    type: terminal
+                    tabs:
+                      - type: terminal
+        ```
+        """
+
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))
+        XCTAssertEqual(parsed.plan.surfaces.map(\.id), ["s2", "s1"])
+        XCTAssertEqual(Set(parsed.plan.surfaces.map(\.id)).count, 2)
+    }
+
+    func testParseRejectsNonfiniteSplitRatio() {
+        let source = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - direction: horizontal
+            split: inf/1
+            children:
+              - type: terminal
+              - type: terminal
+        ```
+        """
+
+        XCTAssertThrowsError(try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))) { error in
+            guard case WorkspaceBlueprintMarkdown.ParseError.malformedSplitRatio(let raw) = error else {
+                return XCTFail("expected malformedSplitRatio, got \(error)")
+            }
+            XCTAssertEqual(raw, "inf/1")
+        }
+    }
+
+    func testSerializedSplitRatiosNearTheEndpointsParseBack() throws {
+        for position in [0.999999, 0.99996, 0.00004, 1.0, 0.0, 0.25, 0.12345] {
+            let file = WorkspaceBlueprintFile(
+                name: "Edge Split",
+                description: nil,
+                plan: WorkspaceApplyPlan(
+                    version: 1,
+                    workspace: WorkspaceSpec(title: "Edge Split"),
+                    layout: .split(.init(
+                        orientation: .horizontal,
+                        dividerPosition: position,
+                        first: .pane(.init(surfaceIds: ["s1"])),
+                        second: .pane(.init(surfaceIds: ["s2"]))
+                    )),
+                    surfaces: [
+                        PanelSpec(id: "s1", kind: .terminal),
+                        PanelSpec(id: "s2", kind: .terminal)
+                    ]
+                )
+            )
+            let parsed = try roundTrip(file)
+            guard case .split(let split) = parsed.plan.layout else {
+                return XCTFail("expected a split for \(position)")
+            }
+            XCTAssertGreaterThan(split.dividerPosition, 0, "\(position)")
+            XCTAssertLessThan(split.dividerPosition, 1, "\(position)")
+            XCTAssertEqual(split.dividerPosition, position, accuracy: 0.0002, "\(position)")
+        }
+    }
+
+    func testParseRejectsSplitRatiosOutsideUnitInterval() {
+        for ratio in ["-1/2", "3/-1"] {
+            let source = """
+            ## Layout
+
+            ```yaml
+            layout:
+              - direction: horizontal
+                split: \(ratio)
+                children:
+                  - type: terminal
+                  - type: terminal
+            ```
+            """
+
+            XCTAssertThrowsError(try WorkspaceBlueprintMarkdown.parse(Data(source.utf8)), ratio) { error in
+                guard case WorkspaceBlueprintMarkdown.ParseError.malformedSplitRatio(let raw) = error else {
+                    return XCTFail("expected malformedSplitRatio for \(ratio), got \(error)")
+                }
+                XCTAssertEqual(raw, ratio)
+            }
         }
     }
 

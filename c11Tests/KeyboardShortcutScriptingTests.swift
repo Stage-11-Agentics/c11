@@ -14,6 +14,7 @@ final class KeyboardShortcutScriptingTests: XCTestCase {
         XCTAssertEqual(Action.toggleSidebar.scriptName, "toggle-sidebar")
         XCTAssertEqual(Action.newWorkspace.scriptName, "new-workspace")
         XCTAssertEqual(Action.renamePanel.scriptName, "rename-panel")
+        XCTAssertEqual(Action.showBrowserJavaScriptConsole.scriptName, "show-browser-javascript-console")
     }
 
     func testEveryScriptNameIsUniqueAndResolvesToItsAction() {
@@ -29,6 +30,7 @@ final class KeyboardShortcutScriptingTests: XCTestCase {
         XCTAssertEqual(Action.resolve(scriptName: "TOGGLE_SIDEBAR"), .toggleSidebar)
         XCTAssertEqual(Action.resolve(scriptName: "new-tab"), .newWorkspace)
         XCTAssertEqual(Action.resolve(scriptName: "renameTab"), .renamePanel)
+        XCTAssertEqual(Action.resolve(scriptName: "show-browser-java-script-console"), .showBrowserJavaScriptConsole)
         XCTAssertNil(Action.resolve(scriptName: ""))
         XCTAssertNil(Action.resolve(scriptName: "toggle-sidebars"))
     }

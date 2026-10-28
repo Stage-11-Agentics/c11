@@ -381,6 +381,7 @@ jobs:
           launch_cli_test focus-history env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
           launch_cli_test window-scope env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
           launch_cli_test activity-analysis env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py
+          launch_cli_test shortcuts-columns env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_shortcuts_columns.py
           launch_cli_test mailbox-body env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_mailbox_body_cli.py "$CLI_BINARY"
           launch_cli_test moved-panel-caller env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_moved_panel_caller.py
           launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline

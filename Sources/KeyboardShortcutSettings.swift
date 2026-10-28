@@ -650,9 +650,11 @@ private class ShortcutRecorderNSButton: NSButton {
 extension KeyboardShortcutSettings.Action {
     /// Kebab-case name the CLI and socket use (`toggle-sidebar`). Derived from the
     /// case name, so legacy raw values (`newTab`, `renameTab`) never reach scripts.
+    /// Product names keep their one-word spelling (`javascript`); `resolve` ignores
+    /// dashes, so the split spelling still resolves.
     var scriptName: String {
         var result = ""
-        for character in String(describing: self) {
+        for character in String(describing: self).replacingOccurrences(of: "JavaScript", with: "Javascript") {
             if character.isUppercase {
                 result.append("-")
                 result.append(contentsOf: character.lowercased())

@@ -135,30 +135,35 @@ extension CMUXCLI {
         case nil:
             print("OK")
         case "set":
-            printShortcutRow(response)
+            printShortcutRows([response])
         default:
             let rows = response["shortcuts"] as? [[String: Any]] ?? []
             if rows.isEmpty, verb == "list" {
                 print("No customized shortcuts")
             }
-            rows.forEach(printShortcutRow)
+            printShortcutRows(rows)
         }
     }
 
-    private func printShortcutRow(_ row: [String: Any]) {
-        print(shortcutLine(row))
-        let conflicts = row["conflicts"] as? [String] ?? []
-        if !conflicts.isEmpty {
-            print("warning: \(row["display"] as? String ?? "") is also bound to \(conflicts.joined(separator: ", ")); only one of them fires")
+    /// Prints rows as columns sized to the widest action and display in this response.
+    private func printShortcutRows(_ rows: [[String: Any]]) {
+        let actionWidth = rows.map { (($0["action"] as? String) ?? "?").count }.max() ?? 0
+        let displayWidth = rows.map { (($0["display"] as? String) ?? "?").count }.max() ?? 0
+        for row in rows {
+            print(shortcutLine(row, actionWidth: actionWidth, displayWidth: displayWidth))
+            let conflicts = row["conflicts"] as? [String] ?? []
+            if !conflicts.isEmpty {
+                print("warning: \(row["display"] as? String ?? "") is also bound to \(conflicts.joined(separator: ", ")); only one of them fires")
+            }
         }
     }
 
-    private func shortcutLine(_ row: [String: Any]) -> String {
+    private func shortcutLine(_ row: [String: Any], actionWidth: Int, displayWidth: Int) -> String {
         let action = row["action"] as? String ?? "?"
         let display = row["display"] as? String ?? "?"
         let combo = row["shortcut"] as? String ?? "?"
-        var line = "\(action.padding(toLength: max(32, action.count + 1), withPad: " ", startingAt: 0))"
-            + "\(display.padding(toLength: max(8, display.count + 1), withPad: " ", startingAt: 0))\(combo)"
+        var line = action.padding(toLength: actionWidth + 2, withPad: " ", startingAt: 0)
+            + display.padding(toLength: displayWidth + 2, withPad: " ", startingAt: 0) + combo
         if row["customized"] as? Bool == true {
             line += "  (default \(row["default_display"] as? String ?? "?"))"
         }

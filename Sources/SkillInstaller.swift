@@ -163,6 +163,8 @@ struct SkillInstallerRemoveResult: Equatable {
     let target: SkillInstallerTarget
     let removed: [String]
     let skipped: [String]
+    /// Local copies (`SkillInstallerState.isLocalCopy`) left in place.
+    let keptLocal: [String]
     let destDir: URL
 }
 
@@ -619,7 +621,12 @@ enum SkillInstaller {
             func present(_ key: String) -> Bool {
                 !(environment[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
-            return ["C11_TAG", "CMUX_TAG", "C11_SKILLS_SOURCE", "CMUX_SKILLS_SOURCE"].contains(where: present)
+            if ["C11_TAG", "CMUX_TAG"].contains(where: present) { return true }
+            // An override counts only when `defaultSourceURL` would use it.
+            return ["C11_SKILLS_SOURCE", "CMUX_SKILLS_SOURCE"].contains { key in
+                guard present(key), let raw = environment[key] else { return false }
+                return FileManager.default.fileExists(atPath: (raw as NSString).expandingTildeInPath)
+            }
         }
 
         static var isCompiledDebug: Bool {
@@ -777,6 +784,7 @@ enum SkillInstaller {
         let destRoot = target.skillsDir(home: home)
         var removed: [String] = []
         var skipped: [String] = []
+        var keptLocal: [String] = []
         let localCopies = force ? [] : Set(
             try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
                 .filter { $0.state.isLocalCopy }
@@ -786,7 +794,7 @@ enum SkillInstaller {
         for pkg in packages {
             let dest = destRoot.appendingPathComponent(pkg.name, isDirectory: true)
             if localCopies.contains(pkg.name) {
-                skipped.append(pkg.name)
+                keptLocal.append(pkg.name)
                 continue
             }
             let manifest = dest.appendingPathComponent(manifestFilename, isDirectory: false)
@@ -830,6 +838,7 @@ enum SkillInstaller {
             target: target,
             removed: removed,
             skipped: skipped,
+            keptLocal: keptLocal,
             destDir: destRoot
         )
     }

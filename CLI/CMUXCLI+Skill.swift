@@ -452,6 +452,7 @@ extension CMUXCLI {
                 "dest": result.destDir.path,
                 "removed": result.removed,
                 "skipped": result.skipped,
+                "kept_local": result.keptLocal,
             ]))
         } else {
             print("Removed skill for \(target.displayName) from \(result.destDir.path)")
@@ -460,6 +461,9 @@ extension CMUXCLI {
             }
             if !result.skipped.isEmpty {
                 print("  skipped: \(result.skipped.joined(separator: ", "))")
+            }
+            if !result.keptLocal.isEmpty {
+                print("  kept (local copy; --force removes): \(result.keptLocal.joined(separator: ", "))")
             }
         }
 

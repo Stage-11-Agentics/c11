@@ -1291,13 +1291,18 @@ final class SkillInstallerLocalCopyTests: XCTestCase {
         XCTAssertFalse(Identity.isDevelopmentBuild(environment: [:], isDebug: false))
         XCTAssertFalse(Identity.isDevelopmentBuild(environment: ["C11_TAG": "  "], isDebug: false))
         XCTAssertTrue(Identity.isDevelopmentBuild(environment: ["C11_TAG": "fix"], isDebug: false))
-        XCTAssertTrue(Identity.isDevelopmentBuild(environment: ["C11_SKILLS_SOURCE": "/repo/skills"], isDebug: false))
+        let existing = FileManager.default.temporaryDirectory.path
+        XCTAssertTrue(Identity.isDevelopmentBuild(environment: ["C11_SKILLS_SOURCE": existing], isDebug: false))
+        // A missing override falls back to the bundle, so it isn't a dev source.
+        XCTAssertFalse(Identity.isDevelopmentBuild(
+            environment: ["C11_SKILLS_SOURCE": "/nonexistent/c11-skills-\(UUID().uuidString)"], isDebug: false))
     }
 
     func testPackageFolderLinkedIntoACheckoutIsKept() throws {
         let h = try makeHarness(skills: ["foo": "bundled"])
         defer { h.cleanup() }
         let checkout = h.home.deletingLastPathComponent().appendingPathComponent("checkout/foo", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: checkout.deletingLastPathComponent()) }
         try writeSkill(root: checkout.deletingLastPathComponent(), name: "foo",
                        contents: "---\nname: foo\nversion: 1\n---\nmine\n")
         let skills = SkillInstallerTarget.claude.skillsDir(home: h.home)
@@ -1322,7 +1327,14 @@ final class SkillInstallerLocalCopyTests: XCTestCase {
             destinationDir: SkillInstallerTarget.claude.skillsDir(home: h.home),
             packages: statuses, statusError: nil, sharedWithTarget: .claude)
         XCTAssertEqual(shared.offeredPackageNames, [])
-        XCTAssertEqual(try row(h).offeredPackageNames, ["foo"])
+        let owner = try row(h)
+        XCTAssertEqual(owner.offeredPackageNames, ["foo"])
+
+        // The shared row's hidden checkbox follows its owner: unchecking the
+        // owner dismisses both, so the sheet does not return for the shared target.
+        let rows = [owner, shared]
+        XCTAssertEqual(AgentSkillsOnboarding.selectedKeys(rows: rows, optedIn: [.codex]), [])
+        XCTAssertEqual(AgentSkillsOnboarding.selectedKeys(rows: rows, optedIn: [.claude]), ["claude.foo", "codex.foo"])
     }
 
     func testRemoveKeepsLocalCopiesUnlessForced() throws {
@@ -1331,7 +1343,7 @@ final class SkillInstallerLocalCopyTests: XCTestCase {
         let dest = SkillInstallerTarget.claude.skillsDir(home: h.home).appendingPathComponent("foo")
         let kept = try SkillInstaller.remove(target: .claude, home: h.home, sourceDir: h.source)
         XCTAssertEqual(kept.removed, [])
-        XCTAssertEqual(kept.skipped, ["foo"])
+        XCTAssertEqual(kept.keptLocal, ["foo"])
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
         let forced = try SkillInstaller.remove(target: .claude, home: h.home, sourceDir: h.source, force: true)
         XCTAssertEqual(forced.removed, ["foo"])

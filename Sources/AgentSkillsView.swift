@@ -271,7 +271,7 @@ final class AgentSkillsModel: ObservableObject {
     }
 
     private func formatRemoveMessage(result: SkillInstallerRemoveResult) -> String {
-        if result.removed.isEmpty && result.skipped.isEmpty {
+        if result.removed.isEmpty && result.skipped.isEmpty && result.keptLocal.isEmpty {
             return AgentSkillsLocalized.envelope(
                 target: result.target.displayName,
                 body: AgentSkillsLocalized.nothingToRemove()
@@ -280,6 +280,7 @@ final class AgentSkillsModel: ObservableObject {
         var parts: [String] = []
         if !result.removed.isEmpty { parts.append(AgentSkillsLocalized.removedFragment(result.removed)) }
         if !result.skipped.isEmpty { parts.append(AgentSkillsLocalized.skippedFragment(result.skipped)) }
+        if !result.keptLocal.isEmpty { parts.append(AgentSkillsLocalized.keptLocalFragment(result.keptLocal)) }
         return AgentSkillsLocalized.envelope(target: result.target.displayName, body: parts.joined(separator: "; "))
     }
 }
@@ -1056,13 +1057,8 @@ struct AgentSkillsOnboardingSheet: View {
             (.pi, piOptIn),
             (.omp, ompOptIn),
         ]
-        var selectedKeys: Set<String> = []
-        for (target, _) in selections.filter({ $0.1 }) {
-            guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
-            for status in row.packages where AgentSkillsOnboarding.shouldRowOffer(status) {
-                selectedKeys.insert(AgentSkillsOnboarding.dismissalKey(for: target, skillName: status.package.name))
-            }
-        }
+        let optedIn = Set(selections.filter { $0.1 }.map(\.0))
+        let selectedKeys = AgentSkillsOnboarding.selectedKeys(rows: model.rows, optedIn: optedIn)
         let offered = model.rows.filter(\.detected).flatMap(\.packages)
         AgentSkillsOnboarding.recordDismissalsForUncheckedRows(
             offered: offered,
@@ -1489,6 +1485,22 @@ enum AgentSkillsOnboarding {
             ), list))
         }
         return lines
+    }
+
+    /// Dismissal keys for the rows the operator chose to install. A shared row's
+    /// checkbox is hidden, so it follows its owner's choice: unchecking the owner
+    /// dismisses both, and the sheet does not return for the shared target.
+    static func selectedKeys(
+        rows: [AgentSkillsModel.TargetRow],
+        optedIn: Set<SkillInstallerTarget>
+    ) -> Set<String> {
+        var keys: Set<String> = []
+        for row in rows where row.detected && optedIn.contains(row.sharedWithTarget ?? row.target) {
+            for status in row.packages where shouldRowOffer(status) {
+                keys.insert(dismissalKey(for: row.target, skillName: status.package.name))
+            }
+        }
+        return keys
     }
 
     static func dismissalKey(for target: SkillInstallerTarget, skillName: String) -> String {

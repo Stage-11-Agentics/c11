@@ -11,8 +11,11 @@ await mkdir(output,{recursive:true});
 const temporary=await mkdtemp(path.join(os.tmpdir(),'c11-md-prototype-'));
 const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 const page=await browser.newPage({viewport:{width:1200,height:820}});
-const errors=[],requests=[];
-page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+const errors=[],requests=[],blockedHandlers=[];
+// The page CSP blocking a hostile fixture's inline handler is the defense working, not a
+// renderer error; the hostile scenarios assert those payloads stay inert. Any other report counts.
+const blockedHandler="Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''.";
+page.on('console',m=>{if(m.type()!=='error')return;(m.text().startsWith(blockedHandler)?blockedHandlers:errors).push(m.text());});
 page.on('pageerror',e=>errors.push(e.message));
 page.on('request',r=>{if(!r.url().startsWith('file:')&&!r.url().startsWith('c11md-asset:'))requests.push(r.url());});
 await page.addInitScript(()=>{window.testMessages=[];window.webkit={messageHandlers:{c11md:{postMessage:m=>window.testMessages.push(m)}}};});
@@ -21,7 +24,7 @@ const settings=async s=>page.evaluate(s=>c11md.setSettings(s),s);
 const fixtures=path.join(root,'docs/design-prototypes/markdown-viewer/fixtures');
 const files=(await readdir(fixtures)).filter(x=>x.endsWith('.md')).map(x=>path.join(fixtures,x));
 files.push(path.join(root,'docs/c11-messaging-primitive-design.md'),path.join(root,'docs/design-prototypes/markdown-viewer/reader/specimen.md'));
-const report={browser:await browser.version(),matrices:[],scenarios:[],screenshots:[],consoleErrors:errors,networkRequests:requests};
+const report={browser:await browser.version(),matrices:[],scenarios:[],screenshots:[],consoleErrors:errors,networkRequests:requests,blockedInlineHandlers:blockedHandlers};
 const scenario=(name,details={})=>{report.scenarios.push({name,...details});console.log('PASS '+name);};
 try {
   await page.goto(pathToFileURL(path.join(bundle,'index.html')).href);
@@ -530,6 +533,27 @@ try {
   const listResult=await page.evaluate(()=>c11md.scrollToLine(43).lines),listTop=await readLineTop('List line40');
   assert.equal(listResult.first,43);assert.ok(Math.abs(listTop)<1,'list source line was not placed at the viewport top');
   scenario('source line mapping also targets interior paragraph and list lines');
+  // Line metrics once measured every line of a block up front, and a range rect inside one
+  // long text node costs time in proportion to the node. The same lines split into 100-line
+  // blocks cancel machine speed. Alternating the filler keeps unchanged-block reuse out.
+  const longBlocks=await page.evaluate(async()=>{
+    let revision=9000;
+    const once=async markdown=>{const t0=performance.now();await c11md.load({markdown,documentPath:'/synthetic/long-block.md',baseURL:'file:///synthetic/long-block.md',revision:revision++});return performance.now()-t0;};
+    const time=async make=>Math.round(Math.min(await once(make('x')),await once(make('y'))));
+    const fence=(c,n)=>'```\n'+`${c}\n`.repeat(n)+'```\n';
+    return {
+      soft:await time(c=>`${c}\n`.repeat(100000)),softControl:await time(c=>(`${c}\n`.repeat(100)+'\n').repeat(1000)),
+      hard:await time(c=>`${c}\\\n`.repeat(10000)),hardControl:await time(c=>(`${c}\\\n`.repeat(100)+'\n').repeat(100)),
+      fence:await time(c=>fence(c,10000)),fenceControl:await time(c=>(fence(c,100)+'\n').repeat(100)),
+    };
+  });
+  for(const shape of ['soft','hard','fence'])
+    assert.ok(longBlocks[shape]<4*longBlocks[shape+'Control']+250,`one ${shape} block loaded in ${longBlocks[shape]}ms against ${longBlocks[shape+'Control']}ms for 100-line blocks`);
+  const longLines=Array.from({length:4000},(_,i)=>`Long line${String(i).padStart(4,'0')}`).join('\n');
+  await load(`# Long block line mapping\n\n${longLines}\n`,'/synthetic/long-lines.md');
+  await page.evaluate(()=>c11md.scrollToLine(3003));
+  assert.ok(Math.abs(await readLineTop('Long line3000'))<1,'interior line of a long paragraph was not placed at the viewport top');
+  scenario('one long paragraph or fence loads in linear time and still places an interior line',longBlocks);
   const diagramAbove='```mermaid\nflowchart TD\n  A[Input] --> B[Output]\n```\n\n'+long;
   await settings({theme:'system',osAppearance:'dark',typeface:'serif',scale:1});await load(diagramAbove,'/synthetic/diagram-theme.md',1);
   await page.evaluate(()=>c11md.scrollToHeading('Section 30'));
@@ -553,6 +577,10 @@ try {
   const hostileMermaid=[
     '%%{init: {"securityLevel":"loose","htmlLabels":true}}%%\nflowchart LR\n  A --> B',
     '---\nconfig:\n  securityLevel: loose\n---\nflowchart LR\n  A --> B',
+    // Mermaid's own grammar: initialize, no colon, any prefix ending in init, mid-line.
+    '%%{initialize: {"htmlLabels":true}}%%\nflowchart LR\n  A --> B',
+    'flowchart LR\n  A --> B\n%%{init {"htmlLabels":true}}%%',
+    'flowchart LR\n  A --> B %%{preinit: {"htmlLabels":true}}%%',
     'flowchart LR\n  A[Alpha] --> B[Beta]\n  click A href "javascript:alert(1)" "unsafe"',
     'sequenceDiagram\n  participant Alice\n  participant Bob\n  link Alice: "javascript:alert(1)" "unsafe"\n  Alice->>Bob: hello',
     'classDiagram\n  class Alpha\n  link Alpha "javascript:alert(1)" "unsafe"',
@@ -563,9 +591,10 @@ try {
   await load(hostileMarkdown,'/synthetic/hostile-mermaid.md');
   assert.equal(await page.locator('.diagram').count(),hostileMermaid.length);
   const directiveFallbacks=await page.locator('.diagram-err pre').allTextContents();
-  assert.equal(directiveFallbacks.length>=2,true,'Mermaid init and frontmatter config directives were not refused');
-  assert.ok(directiveFallbacks.some(x=>x.includes('%%{init:')));assert.ok(directiveFallbacks.some(x=>x.includes('securityLevel')));
-  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),2);
+  assert.equal(directiveFallbacks.length>=5,true,'Mermaid init and frontmatter config directives were not refused');
+  for(const directive of ['%%{init:','%%{initialize:','%%{init {','%%{preinit:'])assert.ok(directiveFallbacks.some(x=>x.includes(directive)),`${directive} was not refused`);
+  assert.ok(directiveFallbacks.some(x=>x.includes('securityLevel')));
+  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),5);
   assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().securityLevel),'strict');
   assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().htmlLabels),false);
   const activeDiagramFindings=await page.evaluate(()=>{

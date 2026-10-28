@@ -654,6 +654,17 @@ final class PanelAttentionService {
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
+        remove(workspaceId: workspaceId, surfaceId: surfaceId, closing: true)
+    }
+
+    /// C11-490: a panel leaving for another workspace. The source drops it as
+    /// `remove` does, but its open ask stays in the feed: the ask follows its
+    /// journal owner to the destination, so a move neither closes nor reopens it.
+    func detach(workspaceId: UUID, surfaceId: UUID) {
+        remove(workspaceId: workspaceId, surfaceId: surfaceId, closing: false)
+    }
+
+    private func remove(workspaceId: UUID, surfaceId: UUID, closing: Bool) {
         let attention = PanelAttentionIndex.shared.snapshot(
             workspaceId: workspaceId,
             surfaceId: surfaceId
@@ -676,7 +687,11 @@ final class PanelAttentionService {
         let descendants = PanelAttentionIndex.shared.delegateDescendants(of: surfaceId)
         PanelAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
         refreshDelegationDepths(of: descendants)
-        feedProjection.removePanel(workspaceID: workspaceId, panelID: surfaceId)
+        if closing {
+            feedProjection.removePanel(workspaceID: workspaceId, panelID: surfaceId)
+        } else {
+            feedProjection.detachPanel(workspaceID: workspaceId, panelID: surfaceId)
+        }
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces.first(where: { $0.id == workspaceId })?
             .setAttentionSnapshot(nil, forSurface: surfaceId)

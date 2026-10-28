@@ -231,11 +231,13 @@ extension CMUXCLI {
                 method: "panel.get_metadata",
                 params: ["panel_id": surfaceIdStr]
             )
-        } catch let error as CLIError where error.message.hasPrefix("surface_not_found:") {
+        } catch let error as CLIError
+            where error.message.hasPrefix("not_found:") || error.message.hasPrefix("surface_not_found:") {
+            // An unknown panel UUID is refused before lookup (`not_found`).
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.caller-not-open",
-                    defaultValue: "Your panel %@ (C11_PANEL_ID) is not open in c11, in any workspace."
+                    defaultValue: "Your panel %@ (`C11_PANEL_ID`) is not open in c11, in any workspace."
                 ).replacingOccurrences(of: "%@", with: surfaceIdStr)
             )
         }
@@ -246,7 +248,7 @@ extension CMUXCLI {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.caller-untitled",
-                    defaultValue: "Your panel %@ (C11_PANEL_ID) has no title. Name it with c11 rename-panel, or pass --from <name>."
+                    defaultValue: "Your panel %@ (`C11_PANEL_ID`) has no title. Name it with `c11 rename-panel`, or pass `--from <name>`."
                 ).replacingOccurrences(of: "%@", with: surfaceIdStr)
             )
         }
@@ -617,16 +619,20 @@ extension CMUXCLI {
             panelId: panelId,
             panelName: panelName
         )
-        // C11-491: mail delivered before the panel moved is still in the inbox
-        // of the workspace its shell started in.
+        // C11-491: mail delivered before a move stays in the inbox of each
+        // workspace the panel passed through, so a moved panel reads them all.
         if surfaceOverride == nil, let panelId,
            let startWorkspaceId = Self.envWorkspaceId(ProcessInfo.processInfo.environment),
            startWorkspaceId != workspaceId {
-            let startInbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: startWorkspaceId, panelId: panelId)
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: startInbox.path, isDirectory: &isDirectory),
-               isDirectory.boolValue {
-                inboxURLs.append(startInbox)
+            let retained = MailboxDrain.panelInboxURLs(
+                workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true),
+                preferredWorkspaceId: startWorkspaceId,
+                currentWorkspaceId: workspaceId,
+                panelId: panelId
+            )
+            for inbox in retained
+            where !inboxURLs.contains(where: { $0.standardizedFileURL == inbox.standardizedFileURL }) {
+                inboxURLs.append(inbox)
             }
         }
         guard drain else {

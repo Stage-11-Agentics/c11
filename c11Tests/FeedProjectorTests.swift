@@ -69,6 +69,53 @@ final class FeedProjectorTests: XCTestCase {
         XCTAssertTrue(rows().isEmpty)
     }
 
+    /// C11-490: closing the workspace a panel moved out of keeps the panel's
+    /// open ask, with no ask events: the journal now writes under the
+    /// destination, though the snapshot still names the source.
+    @MainActor
+    func testPruningAMovedPanelsSourceKeepsItsOpenAsk() throws {
+        final class Target: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value: UUID
+            init(_ value: UUID) { self.value = value }
+            func get() -> UUID { lock.lock(); defer { lock.unlock() }; return value }
+            func set(_ next: UUID) { lock.lock(); value = next; lock.unlock() }
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("feed-move-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let logURL = directory.appendingPathComponent("events.ndjson")
+        let log = EventLog(url: logURL, instance: "synthetic-feed-move")
+        EventEmitter.shared.startForTesting(log: log, instance: "synthetic-feed-move")
+        defer {
+            EventEmitter.shared.resetForTesting()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        func askEvents() throws -> [String] {
+            log.flush()
+            let text = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
+            return text.split(separator: "\n").compactMap {
+                (try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["type"] as? String
+            }.filter { $0.hasPrefix("ask.") }
+        }
+        let source = UUID(), destination = UUID(), panel = UUID()
+        let target = Target(source)
+        let bridge = FeedProjectionBridge(journalTarget: { _ in target.get() })
+        let service = PanelAttentionService(feedProjection: bridge)
+        let ask = try blocked(.questionRequested, request: "move", panel: panel, workspace: source)
+        bridge.noteJournal(panelID: panel, snapshot: ask)
+        func rows() -> [[String: Any]] { bridge.list(scope: .attention)["rows"] as? [[String: Any]] ?? [] }
+        XCTAssertEqual(rows().count, 1)
+        let before = try askEvents()
+
+        service.detach(workspaceId: source, surfaceId: panel)
+        target.set(destination)
+        bridge.noteJournal(panelID: panel, snapshot: ask)
+        service.prune(workspaceId: source, validSurfaceIds: [])
+
+        XCTAssertEqual(rows().map { $0["panel_id"] as? String }, [panel.uuidString])
+        XCTAssertEqual(try askEvents(), before)
+    }
+
     func testCapturedBypassAndAnsweredAsksThroughFeedRowsAndEvents() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/lifecycle/normalized")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("feed-corpus-" + UUID().uuidString)

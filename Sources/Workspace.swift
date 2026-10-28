@@ -5082,13 +5082,18 @@ final class Workspace: Identifiable, ObservableObject {
                 JournalCoordinator.shared.register(panelID: panelID, workspaceID: id)
             }
             for panelID in oldValue.keys where panels[panelID] == nil {
-                // A tab move may already have installed its new workspace target.
-                if JournalCoordinator.shared.target(panelID: panelID) == id { JournalCoordinator.shared.remove(panelID: panelID) }
+                // A tab move may already have installed its new workspace target,
+                // and a moving tab keeps this one until it attaches (C11-490).
+                if !movingPanelIds.contains(panelID), JournalCoordinator.shared.target(panelID: panelID) == id {
+                    JournalCoordinator.shared.remove(panelID: panelID)
+                }
                 journalByPanel.removeValue(forKey: panelID)
             }
         }
     }
     private(set) var journalByPanel: [UUID: JournalSnapshot] = [:]
+    /// Panels leaving `panels` to attach elsewhere: not a close (C11-490).
+    private var movingPanelIds: Set<UUID> = []
 
     func setJournalSnapshot(_ value: JournalSnapshot?, forPanel panelID: UUID) {
         guard panels[panelID] != nil else { return }
@@ -11299,9 +11304,6 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             panelCustomColors.removeValue(forKey: detached.panelId)
         }
-        // The live tab color owns the `color` key; the restored entry
-        // normally agrees and this writes nothing.
-        mirrorPanelColorToMetadata(panelId: detached.panelId)
         if detached.isPinned {
             pinnedPanelIds.insert(detached.panelId)
         } else {
@@ -11367,7 +11369,10 @@ final class Workspace: Identifiable, ObservableObject {
             ),
             inPane: paneId
         ) else {
+            // The caller rolls the transfer back elsewhere: still a move.
+            movingPanelIds.insert(detached.panelId)
             panels.removeValue(forKey: detached.panelId)
+            movingPanelIds.remove(detached.panelId)
             panelDirectories.removeValue(forKey: detached.panelId)
             panelTitles.removeValue(forKey: detached.panelId)
             panelCustomTitles.removeValue(forKey: detached.panelId)
@@ -11379,7 +11384,7 @@ final class Workspace: Identifiable, ObservableObject {
             coldAgentSurfaceIds.remove(detached.panelId)
             detectedTerminalTypesByPanel.removeValue(forKey: detached.panelId)
             panelTTYNames.removeValue(forKey: detached.panelId)
-            PanelAttentionService.shared.remove(workspaceId: id, surfaceId: detached.panelId)
+            PanelAttentionService.shared.detach(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
             dlog(
@@ -13924,7 +13929,10 @@ extension Workspace: BonsplitDelegate {
         // and increments `sidebarFlashToken` for a panel that no longer exists.
         cancelPersistentFlash(panelId: panelId)
 
+        let isMoving = isDetaching && panel != nil
+        if isMoving { movingPanelIds.insert(panelId) }
         panels.removeValue(forKey: panelId)
+        movingPanelIds.remove(panelId)
         untrackRemoteTerminalSurface(panelId)
         bonsplitTabIdToTabId.removeValue(forKey: bonsplitTabId)
         panelDirectories.removeValue(forKey: panelId)
@@ -13953,7 +13961,11 @@ extension Workspace: BonsplitDelegate {
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
         panelSheetStatusEntered.removeValue(forKey: panelId)
-        PanelAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
+        if isMoving {
+            PanelAttentionService.shared.detach(workspaceId: id, surfaceId: panelId)
+        } else {
+            PanelAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
+        }
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
         AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
         terminalInheritanceFontPointsByPanelId.removeValue(forKey: panelId)

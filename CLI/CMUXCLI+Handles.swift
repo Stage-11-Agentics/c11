@@ -198,7 +198,8 @@ extension CMUXCLI {
     func envWorkspaceForPanelTarget(_ panel: String?) -> String? {
         let trimmed = panel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if isUUID(trimmed) || isHandleRef(trimmed) { return nil }
-        return ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let env = ProcessInfo.processInfo.environment
+        return env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]
     }
 
     func normalizeWindowHandle(_ raw: String?, client: SocketClient, allowCurrent: Bool = false) throws -> String? {

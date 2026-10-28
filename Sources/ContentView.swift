@@ -9105,7 +9105,8 @@ struct WorkspaceSidebar: View {
                         flagged: attention.isFlagged,
                         suppressed: attention.suppressed,
                         flagReason: attention.flagReason,
-                        activityHelp: activityHelp
+                        activityHelp: activityHelp,
+                        lineageDepth: attention.delegated ? ws.delegationDepth(panelId: panelId) : 0
                     )
                 )
             }
@@ -11730,23 +11731,18 @@ private struct WorkspacePulseMark: View {
             alpha: 1
         )
     )
-    private static let delegatedLightColor = Color(
-        nsColor: NSColor(hex: Workspace.delegatedActivityHex(lightBackground: true)) ?? .secondaryLabelColor
-    )
-    private static let delegatedDarkColor = Color(
-        nsColor: NSColor(hex: Workspace.delegatedActivityHex(lightBackground: false)) ?? .secondaryLabelColor
-    )
 
     let state: WorkspacePulseState
     let lifecycleColor: Color
     let phaseId: UUID
     let flagged: Bool
     let suppressed: Bool
+    /// Delegate hops; draws one baseline rule per hop, capped at two.
+    let lineageDepth: Int
     let animationEligible: Bool
 
     @AppStorage(ActivityMarkSettings.staticMarksKey)
     private var staticMarks = ActivityMarkSettings.defaultStaticMarks
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var clockToken: UUID?
@@ -11759,12 +11755,14 @@ private struct WorkspacePulseMark: View {
         suppressed && !flagged && state == .waiting ? .idle : state
     }
 
+    /// Flag violet, else the caller's lifecycle color (already cache blue for
+    /// a cache-cold mark). Delegation never recolors; it draws the baseline.
     private var color: Color {
-        if flagged { return Self.flaggedColor }
-        if suppressed {
-            return colorScheme == .light ? Self.delegatedLightColor : Self.delegatedDarkColor
-        }
-        return lifecycleColor
+        flagged ? Self.flaggedColor : lifecycleColor
+    }
+
+    private var displayedLineageDepth: Int {
+        BonsplitActivityMarkLineage.displayedDepth(lineageDepth)
     }
 
     private var motion: BonsplitActivityMarkMotion? {
@@ -11805,6 +11803,85 @@ private struct WorkspacePulseMark: View {
 
     @ViewBuilder
     private var markShape: some View {
+        if displayedLineageDepth > 0 {
+            lineageMarkShape
+        } else {
+            fullCellMarkShape
+        }
+    }
+
+    /// A delegate's mark: the lifecycle shape shortened above one 1pt rule per
+    /// delegate hop, the same whole-point geometry as Bonsplit's tab mark.
+    private var lineageMarkShape: some View {
+        let depth = displayedLineageDepth
+        let height = BonsplitActivityMarkLineage.markHeight(depth: depth)
+        return ZStack(alignment: .topLeading) {
+            lineageLifecycleShape(depth: depth, height: height)
+                .frame(width: 9, height: height)
+            ForEach(BonsplitActivityMarkLineage.ruleOffsets(depth: depth), id: \.self) { y in
+                Rectangle()
+                    .fill(color)
+                    .frame(width: 9, height: BonsplitActivityMarkLineage.ruleThickness)
+                    .offset(y: y)
+            }
+        }
+        .frame(width: 9, height: 9, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func lineageLifecycleShape(depth: Int, height: CGFloat) -> some View {
+        switch presentedState {
+        case .working:
+            let rows = BonsplitActivityMarkLineage.workingDotRows(depth: depth)
+            ZStack {
+                Rectangle()
+                    .fill(color.opacity(0.25))
+                VStack(spacing: 1) {
+                    ForEach(0..<rows, id: \.self) { row in
+                        HStack(spacing: 1) {
+                            ForEach(0..<3, id: \.self) { column in
+                                let rank = (rows - 1 - row) * 3 + column
+                                Rectangle()
+                                    .fill(color)
+                                    .frame(width: 2, height: 2)
+                                    .opacity(rank < visibleWorkingDots ? 1 : 0)
+                            }
+                        }
+                    }
+                }
+            }
+
+        case .waiting:
+            let coreHeight = BonsplitActivityMarkLineage.waitingCoreHeight(depth: depth)
+            ZStack {
+                Rectangle()
+                    .strokeBorder(color, lineWidth: 1.5)
+                Rectangle()
+                    .fill(color)
+                    .frame(width: 4, height: coreHeight)
+                    .opacity(flagged ? 1 : waitingCoreOpacity)
+                if flagged {
+                    Rectangle()
+                        .fill(Color.white)
+                        .frame(width: 4, height: coreHeight)
+                        .opacity(flaggedWaitingShowsWhite ? 1 : 0)
+                }
+            }
+
+        case .idle:
+            Rectangle()
+                .strokeBorder(color, lineWidth: 1)
+
+        case .cold:
+            Rectangle()
+                .fill(color)
+                .frame(width: 9, height: 2)
+                .frame(width: 9, height: height)
+        }
+    }
+
+    @ViewBuilder
+    private var fullCellMarkShape: some View {
         switch presentedState {
         case .working:
             ZStack {
@@ -12298,6 +12375,7 @@ private struct WorkspaceRowView: View, Equatable {
             phaseId: agent.surfaceId,
             flagged: agent.flagged,
             suppressed: agent.suppressed,
+            lineageDepth: agent.lineageDepth,
             animationEligible: isActive
         )
     }

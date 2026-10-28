@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delegate Mark Options</title>
+<style>
+  :root {
+    --bg: #0c0d0f; --panel: #141518; --rule: #2a2c31; --ink: #e8e8e8; --dim: #8a8f98;
+    --accent: #ff6a1a; --strip: #1b1c20; --tabsel: #24262b;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f4f2; --panel: #ffffff; --rule: #d6d6d2; --ink: #1d2024; --dim: #646a73;
+    --accent: #d2500a; --strip: #ebebe8; --tabsel: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace; }
+  header { padding: 20px 16px 12px; border-bottom: 1px solid var(--rule); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .04em; text-transform: uppercase; }
+  header p { margin: 0; color: var(--dim); flex: 1 1 360px; }
+  button { font: inherit; background: none; color: var(--ink); border: 1px solid var(--rule); padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  main { padding: 16px; display: grid; gap: 16px; max-width: 1180px; }
+  .legend { color: var(--dim); border: 1px solid var(--rule); padding: 10px 12px; }
+  .legend b { color: var(--ink); font-weight: 600; }
+  .opt { border: 1px solid var(--rule); background: var(--panel); }
+  .opt h2 { margin: 0; font-size: 13px; padding: 10px 12px; border-bottom: 1px solid var(--rule); display: flex; gap: 10px; }
+  .opt h2 .id { color: var(--accent); }
+  .opt .why { padding: 8px 12px 0; color: var(--dim); }
+  .grid { display: grid; grid-template-columns: 120px repeat(6, minmax(70px, 1fr)); padding: 10px 12px; gap: 6px 4px; align-items: center; overflow-x: auto; }
+  .grid .lab { color: var(--dim); font-size: 11px; text-align: center; }
+  .grid .rowlab { color: var(--dim); font-size: 11px; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .cell .zoom { width: 45px; height: 45px; image-rendering: pixelated; }
+  .cell .true { width: 9px; height: 9px; }
+  .strip { margin: 0 12px 12px; background: var(--strip); display: flex; overflow-x: auto; border: 1px solid var(--rule); }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; white-space: nowrap; border-right: 1px solid var(--rule); font-size: 11px; color: var(--dim); }
+  .tab.sel { background: var(--tabsel); color: var(--ink); }
+  .tab .n { color: var(--dim); }
+  .tab svg { width: 9px; height: 9px; flex: none; }
+  .note { margin: 0 12px 12px; color: var(--dim); font-size: 12px; }
+  @keyframes breathe { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+  .breathe { animation: breathe 2.4s ease-in-out infinite; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 90px repeat(6, 64px); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Delegate mark options</h1>
+  <p>Teal out. Color keeps its meaning (gray lifecycle, blue cache-cold, violet flag, gold needs you); the delegate cue is shape only. Delegates never show waiting and never animate unless flagged, as today.</p>
+  <button id="theme">Light / Dark</button>
+</header>
+<main>
+  <div class="legend">
+    Each option: top row a <b>normal</b> agent, bottom row a <b>delegate</b>. Left in each cell is 5× zoom, right is true 9pt size.
+    Below, a panel strip mocked on Workspace 4 (Veem): two normal Claude agents, five Codex delegates, one delegate whose cache expired, one flagged delegate.
+  </div>
+  <div id="opts"></div>
+</main>
+<script>
+const PAL = {
+  dark:  { running:"#E8E8E8", idle:"#9AA0A9", cold:"#62676F", waiting:"#D0AA45", cache:"#5287D6", flag:"#9D8AD9", teal:"#54C8BE" },
+  light: { running:"#1D2024", idle:"#585D66", cold:"#8D939C", waiting:"#9B7415", cache:"#2C5597", flag:"#9D8AD9", teal:"#006D67" },
+};
+let theme = "dark";
+try { theme = localStorage.getItem("dm-theme") || "dark"; } catch (e) {}
+
+// A mark spec: { s: working|waiting|idle|cold, d: delegate, f: flagged, cc: cache cold }
+function color(m, P, teal) {
+  if (m.f) return P.flag;
+  if (teal && m.d) return P.teal;
+  if (m.s === "cold" && m.cc) return P.cache;
+  return P[{working:"running", waiting:"waiting", idle:"idle", cold:"cold"}[m.s]];
+}
+const R = (x,y,w,h,c,o=1) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}" opacity="${o}"/>`;
+const O = (x,y,w,h,c,sw=1,extra="") => `<rect x="${x+sw/2}" y="${y+sw/2}" width="${w-sw}" height="${h-sw}" fill="none" stroke="${c}" stroke-width="${sw}" ${extra}/>`;
+function dots(c, x0=0.5, y0=0.5, cols=3, rows=3) {
+  let s = ""; for (let r=0;r<rows;r++) for (let k=0;k<cols;k++) s += R(x0+k*3, y0+r*3, 2, 2, c); return s;
+}
+// Today's 9pt vocabulary (ContentView WorkspacePulseMark).
+function base(m, c) {
+  switch (m.s) {
+    case "working": return R(0,0,9,9,c,.25) + dots(c);
+    case "waiting": return O(0,0,9,9,c,1.5) + R(2.5,2.5,4,4,c);
+    case "idle":    return O(0,0,9,9,c,1);
+    case "cold":    return R(0,3.5,9,2,c);
+  }
+}
+const dashBar = (c, y=3.5, h=2) => R(0,y,2,h,c) + R(3.5,y,2,h,c) + R(7,y,2,h,c);
+function corners(c) {
+  // four 3px L brackets, 1px stroke
+  return R(0,0,3,1,c)+R(0,0,1,3,c)+R(6,0,3,1,c)+R(8,0,1,3,c)+R(0,8,3,1,c)+R(0,6,1,3,c)+R(6,8,3,1,c)+R(8,6,1,3,c);
+}
+
+const OPTIONS = [
+  { id:"0", name:"Today: teal", why:"Baseline. Teal paints every delegate state, so a cold delegate reads as a teal bar and blue stops meaning cold.",
+    draw:(m,P)=>base(m,color(m,P,true)) },
+  { id:"A", name:"Flat: half-height delegates", why:"Your idea. A delegate's mark is squashed to a 9×4 strip: lower, quieter, still shows state. Cold is already a flat bar, so a cold delegate becomes a dashed bar to stay distinct from a cold normal.",
+    draw:(m,P)=>{ const c=color(m,P); if(!m.d) return base(m,c);
+      switch(m.s){ case "working": return R(0,2.5,9,4,c,.25)+dots(c,0.5,3.5,3,1);
+        case "idle": case "waiting": return O(0,2.5,9,4,c,1);
+        case "cold": return dashBar(c); } } },
+  { id:"B", name:"Dashed: broken outline", why:"Same footprint as today; 'broken line' means delegate. Idle is a dashed square, working drops its backing fill, cold is a dashed bar.",
+    draw:(m,P)=>{ const c=color(m,P); if(!m.d) return base(m,c);
+      switch(m.s){ case "working": return dots(c);
+        case "idle": case "waiting": return O(0,0,9,9,c,1,'stroke-dasharray="2 1.5"');
+        case "cold": return dashBar(c); } } },
+  { id:"C", name:"Corners: bracketed", why:"A delegate keeps only the corners of its square, like a framed-but-open box. Working keeps its dots inside the corners; cold is a bar between two end ticks.",
+    draw:(m,P)=>{ const c=color(m,P); if(!m.d) return base(m,c);
+      switch(m.s){ case "working": return corners(c)+R(3.5,3.5,2,2,c);
+        case "idle": case "waiting": return corners(c);
+        case "cold": return R(0,2.5,1,4,c)+R(8,2.5,1,4,c)+R(2,3.5,5,2,c); } } },
+  { id:"D", name:"Small: 5pt delegates", why:"A delegate is the same mark at about half size, centered in the 9pt slot. Subordinate by scale; shapes and colors unchanged.",
+    draw:(m,P)=>{ const c=color(m,P); if(!m.d) return base(m,c);
+      switch(m.s){ case "working": return R(2,2,5,5,c,.25)+R(2.5,2.5,1.5,1.5,c)+R(5,2.5,1.5,1.5,c)+R(2.5,5,1.5,1.5,c)+R(5,5,1.5,1.5,c);
+        case "idle": case "waiting": return O(2,2,5,5,c,1);
+        case "cold": return R(2,3.5,5,2,c); } } },
+  { id:"E", name:"Underline: mark over a baseline", why:"Normal mark shrunk to 9×6 sitting on a 1pt rule, read as 'reports to something'. Cold delegate is a bar over the rule.",
+    draw:(m,P)=>{ const c=color(m,P); if(!m.d) return base(m,c);
+      const rule = R(0,8,9,1,c);
+      switch(m.s){ case "working": return R(0,0,9,6,c,.25)+dots(c,0.5,0.5,3,2)+rule;
+        case "idle": case "waiting": return O(0,0,9,6,c,1)+rule;
+        case "cold": return R(0,3,9,2,c)+rule; } } },
+  { id:"E+", name:"Baseline lineage: one line per delegate hop", depth2:true,
+    why:"E carried through. Shape is lifecycle, lines are lineage, color is attention. A delegate of a delegate gets two lines (display capped at two; tooltip carries the true depth). The waiting shape means waiting on you, so a stopped delegate shows idle; only a flagged delegate shows waiting, in violet, with its lines kept.",
+    draw:(m,P)=>{ const c=color(m,P); const d = m.d|0; if(!d) return base(m,c);
+      // Depth 2: mark 0-4, rules at 5 and 8, so 2pt of air between the lines.
+      const h = d >= 2 ? 4 : 6;
+      const rules = d >= 2 ? R(0,5,9,1,c)+R(0,8,9,1,c) : R(0,8,9,1,c);
+      const mid = (h-2)/2;
+      switch(m.s){
+        case "working": return R(0,0,9,h,c,.25)+dots(c,0.5,d>=2?1:0.5,3,d>=2?1:2)+rules;
+        case "waiting": return O(0,0,9,h,c,1.5)+R(2.5,mid,4,2,c)+rules;
+        case "idle":    return O(0,0,9,h,c,1)+rules;
+        case "cold":    return R(0,mid,9,2,c)+rules; } } },
+];
+
+const NORMAL = [
+  {lab:"working", m:{s:"working"}}, {lab:"waiting", m:{s:"waiting"}}, {lab:"idle", m:{s:"idle"}},
+  {lab:"cold (dormant)", m:{s:"cold"}}, {lab:"cold (cache)", m:{s:"cold",cc:1}}, {lab:"flagged idle", m:{s:"idle",f:1}},
+];
+const DELEG = [
+  {lab:"working", m:{s:"working",d:1}}, {lab:"stopped → idle", m:{s:"idle",d:1}}, {lab:"idle", m:{s:"idle",d:1}},
+  {lab:"cold (dormant)", m:{s:"cold",d:1}}, {lab:"cold (cache)", m:{s:"cold",d:1,cc:1}}, {lab:"flagged idle", m:{s:"idle",d:1,f:1}},
+];
+// E+ shows delegates at their true waiting shape (gray unless flagged).
+const DELEG_LINEAGE = (depth) => [
+  {lab:"working", m:{s:"working",d:depth}}, {lab:"stopped → idle", m:{s:"idle",d:depth}}, {lab:"idle", m:{s:"idle",d:depth}},
+  {lab:"cold (dormant)", m:{s:"cold",d:depth}}, {lab:"cold (cache)", m:{s:"cold",d:depth,cc:1}}, {lab:"flagged waiting", m:{s:"waiting",d:depth,f:1}},
+];
+const STRIP = [
+  {n:24, t:"Security Lead", m:{s:"idle"}},
+  {n:98, t:"Signoff Readiness", m:{s:"idle",d:1}},
+  {n:97, t:"Security Review", m:{s:"idle",d:1}},
+  {n:96, t:"Traceability Audit", m:{s:"working",d:1}},
+  {n:102, t:"Trace Subcheck", m:{s:"idle",d:2}},
+  {n:95, t:"Fidelity Audit", m:{s:"cold",d:1,cc:1}},
+  {n:94, t:"Flow Audit", m:{s:"idle",d:1,f:1}},
+  {n:93, t:"UX audit", m:{s:"idle",d:1}, sel:1},
+  {n:86, t:"Veem Screen Flow", m:{s:"waiting"}},
+  {n:91, t:"State Design", m:{s:"cold",cc:1}},
+];
+
+const svg = (inner, cls, m) => `<svg class="${cls}${m && m.f ? " breathe":""}" viewBox="0 0 9 9" shape-rendering="crispEdges">${inner}</svg>`;
+
+function render() {
+  document.documentElement.dataset.theme = theme;
+  const P = PAL[theme];
+  document.getElementById("opts").innerHTML = OPTIONS.map(o => {
+    const row = (items) => items.map(it => `<div class="cell"><div style="display:flex;gap:10px;align-items:center">${svg(o.draw(it.m,P),"zoom",it.m)}${svg(o.draw(it.m,P),"true",it.m)}</div></div>`).join("");
+    const labs = NORMAL.map(it=>`<div class="lab">${it.lab}</div>`).join("");
+    const deleg = o.depth2 ? DELEG_LINEAGE(1) : DELEG;
+    const dlabs = deleg.map(it=>`<div class="lab">${it.lab}</div>`).join("");
+    const depth2 = o.depth2 ? `<div class="rowlab">delegate of delegate</div>${row(DELEG_LINEAGE(2))}` : "";
+    const strip = STRIP.map(t => `<div class="tab${t.sel?" sel":""}">${svg(o.draw(t.m,P),"",t.m)}<span class="n">${t.n}:</span> ${t.t}</div>`).join("");
+    return `<section class="opt"><h2><span class="id">${o.id}</span>${o.name}</h2>
+      <div class="why">${o.why}</div>
+      <div class="grid">
+        <div></div>${labs}
+        <div class="rowlab">normal</div>${row(NORMAL)}
+        <div></div>${dlabs}
+        <div class="rowlab">delegate</div>${row(deleg)}
+        ${depth2}
+      </div>
+      <div class="strip">${strip}</div></section>`;
+  }).join("");
+}
+document.getElementById("theme").onclick = () => {
+  theme = theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem("dm-theme", theme); } catch (e) {}
+  render();
+};
+render();
+</script>
+</body>
+</html>

@@ -396,8 +396,8 @@ yours in three ways:
   parent can't or shouldn't judge it, raise a c11 flag."* Without that instruction a delegate
   reads its quiet as a gag, and a worker that believes it has been gagged will sit blocked in
   silence.
-- **Visibility.** Its teal mark distinguishes a quiet delegate from a plain idle panel; a flag
-  overrides that mark in violet.
+- **Visibility.** A baseline under its mark (one rule per delegate hop, two at most) distinguishes
+  a quiet delegate from a plain idle panel; a flag turns the mark violet and keeps the baseline.
 
 c11 releases delegates when their owner panel closes. A re-tasked delegate releases itself with
 `c11 undelegate --panel "$C11_PANEL_ID"`.

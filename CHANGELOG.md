@@ -10,6 +10,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 - **A panel moved to another workspace keeps its metadata and its identity.** Its title, description, model, mailbox address and every other key move with it, with their sources, as do its flag, delegation, open ask and tty. Its shell still identifies, mails and reads as that panel, though its `C11_WORKSPACE_ID` names the workspace it started in, and `mailbox recv` also reads mail left in the workspaces it passed through. ([#780](https://github.com/Stage-11-Agentics/c11/pull/780))
 
+### Security
+
+- **Download Image and Download Linked File send only the cookies for that address.** The browser panel's context menu hands the download to WebKit, which attaches the cookies it would send to that URL, instead of every cookie in the panel's profile. ([#777](https://github.com/Stage-11-Agentics/c11/pull/777))
+
 ## [1.5.0] - 2026-10-28
 
 Headline: **c11 1.5.0. Rebind keyboard shortcuts live from the CLI, a delegate's mark shows its lineage instead of teal, markdown docs open beside the agent that opened them and no longer go blank after area changes, and a round of security hardening.**

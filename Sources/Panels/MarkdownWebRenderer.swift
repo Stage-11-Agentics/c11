@@ -61,6 +61,8 @@ final class MarkdownWKWebView: WKWebView {
     weak var renderer: MarkdownWebRenderer?
     var onShowPanelDetails: (() -> Void)?
     var onViewportSizeChange: ((NSSize) -> Void)?
+    /// SwiftUI hosts that may show this web view; see `MarkdownWebViewContainer`.
+    let hostContainers = NSHashTable<MarkdownWebViewContainer>.weakObjects()
     private var pointerFocus = false
     private var retainedViewport: NSSize?
 

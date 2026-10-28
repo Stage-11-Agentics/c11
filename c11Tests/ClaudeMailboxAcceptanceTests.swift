@@ -42,6 +42,12 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
         try file.write(contentsOf: data)
     }
 
+    /// The app's native deliver frame carries `MailboxDoorbell.text`; the
+    /// Claude bridge rejects any other text as `unsupported_invitation`.
+    func testInvitationIsTheAppDoorbell() {
+        XCTAssertEqual(ClaudeMailboxAcceptance.invitation, MailboxDoorbell.text)
+    }
+
     func testOnlyNewRecordConfirmsOffer() throws {
         try append(record())
         let observer = try ClaudeMailboxAcceptance(path: transcript.path, sessionID: session)

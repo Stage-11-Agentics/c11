@@ -23,8 +23,9 @@ def row(action: str, display: str, combo: str, **extra) -> dict:
             "default_display": display, "default_shortcut": combo, "customized": False, **extra}
 
 
-# The 32-character name that broke the fixed 32-column layout, one longer still,
-# and a display wider than the old 8-column minimum.
+# A name exactly as wide as the old fixed 32-column action field (the 1.5.0
+# spelling that exposed it), one longer still, and a display wider than the old
+# 8-column minimum.
 ROWS = [
     row("toggle-sidebar", "⌘B", "cmd+b"),
     row("show-browser-java-script-console", "⌥⌘C", "opt+cmd+c"),

@@ -105,6 +105,51 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
     }
 }
 
+/// Delegate lineage read from the live `delegated_by` links. Nothing here is
+/// persisted: depth is recomputed from the current delegate records.
+enum DelegateLineage {
+    /// Consecutive delegate hops ending at `surfaceId`. A panel that is not a
+    /// delegate is 0; a delegate of a normal panel is 1; each delegate
+    /// ancestor adds one. `owners` maps every delegated surface to its owner
+    /// (nil for a legacy delegate with no recorded owner). A cycle stops the
+    /// walk at the first repeated surface.
+    static func depth(of surfaceId: UUID, owners: [UUID: UUID?]) -> Int {
+        var depth = 0
+        var current = surfaceId
+        var visited: Set<UUID> = []
+        while let entry = owners[current], visited.insert(current).inserted {
+            depth += 1
+            guard let owner = entry else { break }
+            current = owner
+        }
+        return depth
+    }
+
+    /// Every delegate whose lineage passes through `surfaceId`, nearest first.
+    /// Their depth changes when that panel's delegation changes.
+    static func descendants(of surfaceId: UUID, owners: [UUID: UUID?]) -> [UUID] {
+        var children: [UUID: [UUID]] = [:]
+        for (delegate, owner) in owners {
+            if let owner { children[owner, default: []].append(delegate) }
+        }
+        var result: [UUID] = []
+        var visited: Set<UUID> = [surfaceId]
+        var frontier = [surfaceId]
+        while !frontier.isEmpty {
+            var next: [UUID] = []
+            for owner in frontier {
+                let sorted = (children[owner] ?? []).sorted { $0.uuidString < $1.uuidString }
+                for child in sorted where visited.insert(child).inserted {
+                    result.append(child)
+                    next.append(child)
+                }
+            }
+            frontier = next
+        }
+        return result
+    }
+}
+
 enum AttentionJumpSelector {
     static func orderedFlags(_ snapshots: [PanelAttentionSnapshot]) -> [PanelAttentionSnapshot] {
         snapshots.filter(\.isFlagged).sorted {
@@ -251,6 +296,8 @@ final class PanelAttentionIndex: ObservableObject {
 
     @Published private(set) var snapshots: [String: PanelAttentionSnapshot] = [:]
     private var delegateKeysByOwner: [UUID: Set<String>] = [:]
+    /// Every delegated surface and its owner, for lineage depth.
+    private(set) var delegationOwners: [UUID: UUID?] = [:]
 
     var flaggedCount: Int { snapshots.values.lazy.filter(\.isFlagged).count }
     var oldestFlags: [PanelAttentionSnapshot] {
@@ -283,12 +330,29 @@ final class PanelAttentionIndex: ObservableObject {
         if snapshot.delegated, let ownerPanelId = snapshot.delegatedBy {
             delegateKeysByOwner[ownerPanelId, default: []].insert(key)
         }
+        if snapshot.delegated {
+            delegationOwners[snapshot.surfaceId] = .some(snapshot.delegatedBy)
+        } else {
+            delegationOwners.removeValue(forKey: snapshot.surfaceId)
+        }
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
         let key = Self.key(workspaceId: workspaceId, surfaceId: surfaceId)
         let prior = snapshots.removeValue(forKey: key)
         removeDelegateKey(key, ownerPanelId: prior?.delegatedBy)
+        if prior != nil {
+            delegationOwners.removeValue(forKey: surfaceId)
+        }
+    }
+
+    /// Delegate hops ending at this surface (0 when it is not a delegate).
+    func delegationDepth(of surfaceId: UUID) -> Int {
+        DelegateLineage.depth(of: surfaceId, owners: delegationOwners)
+    }
+
+    func delegateDescendants(of surfaceId: UUID) -> [UUID] {
+        DelegateLineage.descendants(of: surfaceId, owners: delegationOwners)
     }
 
     func delegatesOwned(by ownerPanelId: UUID) -> [PanelAttentionSnapshot] {
@@ -320,10 +384,12 @@ final class PanelAttentionIndex: ObservableObject {
 
     private func rebuildDelegateIndex() {
         delegateKeysByOwner.removeAll(keepingCapacity: true)
+        delegationOwners.removeAll(keepingCapacity: true)
         for (key, snapshot) in snapshots where snapshot.delegated {
             if let ownerPanelId = snapshot.delegatedBy {
                 delegateKeysByOwner[ownerPanelId, default: []].insert(key)
             }
+            delegationOwners[snapshot.surfaceId] = .some(snapshot.delegatedBy)
         }
     }
 
@@ -538,6 +604,9 @@ final class PanelAttentionService {
             livePanelIds: livePanelIds,
             attention: candidateSnapshots
         )
+        // Restore replays panels before their workspaces are registered, so a
+        // delegate restored ahead of its delegate owner missed its depth.
+        refreshAllDelegationDepths()
         let releasedIds = Set(releases.map(\.surfaceId))
         for snapshot in candidateSnapshots
         where snapshot.delegated && !releasedIds.contains(snapshot.surfaceId) {
@@ -567,6 +636,23 @@ final class PanelAttentionService {
         }
     }
 
+    /// Re-read every delegate's depth; for restores that replay panels before
+    /// their workspaces are registered.
+    func refreshAllDelegationDepths() {
+        refreshDelegationDepths(of: Array(PanelAttentionIndex.shared.delegationOwners.keys))
+    }
+
+    private func refreshDelegationDepths(below surfaceId: UUID) {
+        refreshDelegationDepths(of: PanelAttentionIndex.shared.delegateDescendants(of: surfaceId))
+    }
+
+    private func refreshDelegationDepths(of surfaceIds: [UUID]) {
+        for surfaceId in surfaceIds {
+            AppDelegate.shared?.workspaceContainingPanel(panelId: surfaceId)?
+                .workspace.refreshDelegationDepth(forSurface: surfaceId)
+        }
+    }
+
     func remove(workspaceId: UUID, surfaceId: UUID) {
         let attention = PanelAttentionIndex.shared.snapshot(
             workspaceId: workspaceId,
@@ -587,7 +673,9 @@ final class PanelAttentionService {
             surfaceId: surfaceId
         )
         PanelMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
+        let descendants = PanelAttentionIndex.shared.delegateDescendants(of: surfaceId)
         PanelAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
+        refreshDelegationDepths(of: descendants)
         feedProjection.removePanel(workspaceID: workspaceId, panelID: surfaceId)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces.first(where: { $0.id == workspaceId })?
@@ -616,10 +704,18 @@ final class PanelAttentionService {
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
+        // Only delegates below a dropped panel change depth; most prunes drop
+        // nothing and skip the refresh.
+        let droppedDescendants = PanelAttentionIndex.shared.snapshots.values
+            .filter { $0.workspaceId == workspaceId && !validSurfaceIds.contains($0.surfaceId) }
+            .flatMap { PanelAttentionIndex.shared.delegateDescendants(of: $0.surfaceId) }
         PanelAttentionIndex.shared.prune(
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
+        if !droppedDescendants.isEmpty {
+            refreshDelegationDepths(of: Array(Set(droppedDescendants)))
+        }
         feedProjection.pruneWorkspace(workspaceID: workspaceId, validPanelIDs: validSurfaceIds)
     }
 
@@ -716,6 +812,12 @@ final class PanelAttentionService {
     }
 
     private func publishProjection(_ snapshot: PanelAttentionSnapshot) {
+        let prior = PanelAttentionIndex.shared.snapshot(
+            workspaceId: snapshot.workspaceId,
+            surfaceId: snapshot.surfaceId
+        )
+        let lineageChanged = prior.delegated != snapshot.delegated
+            || prior.delegatedBy != snapshot.delegatedBy
         PanelAttentionIndex.shared.publish(snapshot)
         let workspace = AppDelegate.shared?.workspaceContainingPanel(
             panelId: snapshot.surfaceId,
@@ -732,6 +834,11 @@ final class PanelAttentionService {
             workspace?.setDelegationOwnerTitle(nil, forSurface: snapshot.surfaceId)
         }
         workspace?.setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
+        // A delegation change moves every delegate below this panel up or
+        // down one hop; they can live in other workspaces.
+        if lineageChanged {
+            refreshDelegationDepths(below: snapshot.surfaceId)
+        }
         // Copy the snapshot off main. Do not project the feed row here.
         feedProjection.noteAttention(snapshot)
     }

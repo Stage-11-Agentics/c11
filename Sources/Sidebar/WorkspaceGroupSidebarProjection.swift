@@ -23,6 +23,8 @@ struct WorkspaceGroupPanelAttention: Equatable {
 struct WorkspaceGroupPanelLifecycle: Equatable {
     let state: BonsplitTabActivityState
     let promptCacheExpired: Bool
+    /// Delegate hops, so a lineage change above this panel redraws its baseline.
+    var lineageDepth: Int = 0
 }
 
 struct WorkspaceGroupMemberAttention: Equatable {
@@ -243,7 +245,8 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
                                 if let state {
                                     lifecycle[panelId] = WorkspaceGroupPanelLifecycle(
                                         state: state,
-                                        promptCacheExpired: workspace.promptCacheExpiredAgentIds.contains(panelId))
+                                        promptCacheExpired: workspace.promptCacheExpiredAgentIds.contains(panelId),
+                                        lineageDepth: workspace.delegationDepth(panelId: panelId))
                                 }
                                 return WorkspaceGroupPanelAttention(isFlagged: attention.isFlagged,
                                                                   isWaiting: state == .waiting,

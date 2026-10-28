@@ -777,30 +777,60 @@ final class PanelLivenessDeriverTests: XCTestCase {
     func testTheFlagVioletBeatsTheCacheBlueInBothThemes() {
         for light in [false, true] {
             XCTAssertEqual(Workspace.activityColorOverrideHex(isFlagged: true, promptCacheExpired: true, lightBackground: light), "#9D8AD9")
-            XCTAssertEqual(
-                Workspace.activityColorOverrideHex(
-                    isFlagged: false,
-                    isDelegated: true,
-                    promptCacheExpired: true,
-                    lightBackground: light
-                ),
-                Workspace.delegatedActivityHex(lightBackground: light)
-            )
-            XCTAssertEqual(
-                Workspace.activityColorOverrideHex(
-                    isFlagged: true,
-                    isDelegated: true,
-                    promptCacheExpired: true,
-                    lightBackground: light
-                ),
-                "#9D8AD9",
-                "flags override the delegate color"
-            )
+            XCTAssertEqual(Workspace.activityColorOverrideHex(isFlagged: true, promptCacheExpired: false, lightBackground: light), "#9D8AD9")
             XCTAssertEqual(Workspace.activityColorOverrideHex(isFlagged: false, promptCacheExpired: true, lightBackground: light),
                            Workspace.promptCacheColdHex(lightBackground: light))
             XCTAssertNil(Workspace.activityColorOverrideHex(isFlagged: false, promptCacheExpired: false, lightBackground: light))
         }
         XCTAssertNotEqual(Workspace.promptCacheColdHex(lightBackground: true), Workspace.promptCacheColdHex(lightBackground: false))
+    }
+
+    func testMarkTintPrecedenceIsFlagThenCacheBlueThenLifecycle() {
+        XCTAssertEqual(ActivityMarkTint.resolve(flagged: true, promptCacheExpired: true), .flag)
+        XCTAssertEqual(ActivityMarkTint.resolve(flagged: true, promptCacheExpired: false), .flag)
+        XCTAssertEqual(ActivityMarkTint.resolve(flagged: false, promptCacheExpired: true), .promptCacheCold)
+        XCTAssertEqual(ActivityMarkTint.resolve(flagged: false, promptCacheExpired: false), .lifecycle)
+    }
+
+    /// C11-486: a delegate has no color of its own. Blue still means cold, and
+    /// a stopped delegate presents idle, never gold.
+    func testADelegateMarkTakesTheSameColorsAsANormalAgent() {
+        let now = Date(timeIntervalSince1970: 95_000)
+        let expired = PromptCacheObservation(requestAt: now.addingTimeInterval(-4_000), basis: .ttl(3_600), promptTokens: nil)
+        func agent(
+            _ state: WorkspacePulseState,
+            flagged: Bool = false,
+            depth: Int,
+            cache: PromptCacheObservation?
+        ) -> WorkspacePulseAgent {
+            WorkspacePulseAgent(
+                surfaceId: UUID(), state: state, context: nil, flagged: flagged,
+                suppressed: depth > 0,
+                flagReason: flagged ? "synthetic" : nil,
+                activityHelp: AgentActivityHelpProjection.project(
+                    state: state, lastActivityAt: now.addingTimeInterval(-4_000), waitingStartedAt: nil,
+                    coldAfterSeconds: 600, flagReason: nil, flagRaisedAt: nil, suppressed: depth > 0,
+                    now: now, promptCache: cache
+                ),
+                lineageDepth: depth
+            )
+        }
+        for depth in [0, 1, 2, 5] {
+            XCTAssertEqual(agent(.cold, depth: depth, cache: expired).markTint, .promptCacheCold, "depth \(depth): cache cold is blue")
+            XCTAssertEqual(agent(.cold, depth: depth, cache: nil).markTint, .lifecycle, "depth \(depth): dormancy cold is gray")
+            XCTAssertEqual(agent(.working, depth: depth, cache: nil).markTint, .lifecycle)
+            XCTAssertEqual(agent(.idle, depth: depth, cache: nil).markTint, .lifecycle)
+            XCTAssertEqual(agent(.cold, flagged: true, depth: depth, cache: expired).markTint, .flag, "depth \(depth): violet wins")
+            XCTAssertEqual(agent(.cold, depth: depth, cache: expired).lineageDepth, depth, "the lineage survives the tint")
+        }
+        let stoppedDelegate = agent(.waiting, depth: 1, cache: nil)
+        XCTAssertEqual(stoppedDelegate.presentedState, .idle, "gold means waiting on the operator only")
+        XCTAssertEqual(stoppedDelegate.markTint, .lifecycle)
+        let flaggedDelegate = agent(.waiting, flagged: true, depth: 2, cache: nil)
+        XCTAssertEqual(flaggedDelegate.presentedState, .waiting, "a flagged delegate keeps the waiting shape")
+        XCTAssertEqual(flaggedDelegate.markTint, .flag)
+        XCTAssertEqual(flaggedDelegate.lineageDepth, 2, "and its lines")
+        XCTAssertEqual(agent(.idle, depth: 0, cache: nil).lineageDepth, 0)
     }
 
     func testTheSidebarMarkIsBlueOnlyForAnUnflaggedCacheCold() {

@@ -14,6 +14,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 - **Saved browser state is private to you.** `browser state save` writes mode 0600 with no inherited ACL. `state load` refuses symlinks, files owned by someone else, files others can change, and files over 64 MiB, with `unsafe_state_file`. ([#760](https://github.com/Stage-11-Agentics/c11/pull/760))
 - **The Messages page and the mailbox dispatcher read a bounded amount of each mailbox file.** ([#761](https://github.com/Stage-11-Agentics/c11/pull/761))
 
+### Changed
+
+- **A delegate's mark shows its lineage, not teal.** A delegate now draws a thin rule under its mark, two for a delegate of a delegate, so the mark keeps its usual colors: gray by state, blue when the prompt cache expired, violet when flagged. A cold delegate whose cache expired now reads blue. The tooltip and panel list state the depth past two.
+
 ### Fixed
 
 - **Markdown corpus indexing stays fast on very large or unusual documents.** Long or numerous headings, dense links and long ticket-prefix lists no longer slow the index. ([#762](https://github.com/Stage-11-Agentics/c11/pull/762))

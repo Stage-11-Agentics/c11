@@ -47,9 +47,11 @@ final class AgentSkillsModel: ObservableObject {
             sharedWithTarget != nil
         }
         /// The packages an Update or the sheet's install touches: exactly the
-        /// offered ones, so a local copy beside them is never swept along.
+        /// offered ones, so a local copy beside them is never swept along. A
+        /// shared destination offers nothing; its owner row acts for it.
         var offeredPackageNames: Set<String> {
-            Set(packages.filter { AgentSkillsOnboarding.shouldRowOffer($0) }.map(\.package.name))
+            guard !isSharedDestination else { return [] }
+            return Set(packages.filter { AgentSkillsOnboarding.shouldRowOffer($0) }.map(\.package.name))
         }
         var currentPackageNames: Set<String> {
             Set(packages.filter { $0.state == .installedCurrent }.map(\.package.name))
@@ -721,8 +723,12 @@ struct AgentSkillsOnboardingSheet: View {
         }
     }
 
+    /// Any row that would change is checked. A shared or current row's
+    /// checkbox is disabled, so its default opt-in must not count.
     private var anySelected: Bool {
-        initializedDefaultOptIns && (claudeOptIn || codexOptIn || grokOptIn || kimiOptIn || opencodeOptIn || copilotOptIn || piOptIn || ompOptIn)
+        initializedDefaultOptIns && detectedRows.contains {
+            $0.needsInstallOrUpdate && optInBinding(for: $0.target).wrappedValue
+        }
     }
 
     private var hasActionNeeded: Bool {

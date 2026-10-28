@@ -144,7 +144,7 @@ extension CMUXCLI {
                                          are kept unless --force replaces them.
                   [--home PATH]          Override $HOME (useful for tests).
           remove  [--tool NAME]          Remove c11-installed skills from the tool.
-                  [--home PATH]
+                  [--home PATH] [--force]  Local copies are kept unless --force.
 
         Tools: claude, codex, kimi, opencode.
 
@@ -437,13 +437,15 @@ extension CMUXCLI {
             SkillFlagSpec(name: "--tool", kind: .value),
             SkillFlagSpec(name: "--home", kind: .value),
             SkillFlagSpec(name: "--json", kind: .flag),
+            SkillFlagSpec(name: "--force", kind: .flag),
         ])
         let source = try resolveSkillSource(jsonOutput: jsonOutput)
         let home = homeFromParsedSkillArgs(parsed)
         let target = try targetFromParsedSkillArgs(parsed, defaultTarget: .claude)
         let emitJSON = jsonOutput || parsed.has("--json")
 
-        let result = try SkillInstaller.remove(target: target, home: home, sourceDir: source)
+        let result = try SkillInstaller.remove(
+            target: target, home: home, sourceDir: source, force: parsed.has("--force"))
         if emitJSON {
             print(skillJSONString([
                 "tool": target.rawValue,

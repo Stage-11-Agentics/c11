@@ -1061,10 +1061,13 @@ final class AgentSkillsLegacyMigrationTests: XCTestCase {
     }
 
     func testLegacyFlagSetButOutdatedSkillIsNotSilenced() throws {
-        // Bundled "foo" is v2-content; local copy is v1-content. Migration
+        // Installed "foo" is the v1 bundle; the bundle is now v2. Migration
         // must NOT silence this row — that's the v0.49.0 bug.
-        let h = try makeHarness(skills: ["foo": "v2-content"], installLocalCopies: ["foo": "v1-content"])
+        let h = try makeHarness(skills: ["foo": "v1-content"], installLocalCopies: ["foo": "v1-content"])
         defer { h.cleanup() }
+        try writeSkill(root: h.source, name: "foo", contents: "---\nname: foo\nversion: 1\n---\nv2-content")
+        XCTAssertEqual(try SkillInstaller.status(for: .claude, home: h.home, sourceDir: h.source).first?.state,
+                       .installedOutdated)
         h.defaults.set(true, forKey: AgentSkillsOnboarding.legacyOnboardingShownKey)
         AgentSkillsOnboarding.migrateLegacyDismissalsIfNeeded(
             home: h.home, sourceDir: h.source, defaults: h.defaults)
@@ -1270,6 +1273,85 @@ final class SkillInstallerLocalCopyTests: XCTestCase {
         XCTAssertEqual(try status(h, "foo").state, .installedCurrent)
     }
 
+    func testDevelopmentBuildCopiesAreCheckoutCopies() throws {
+        let h = try makeHarness(skills: ["foo": "checkout content"])
+        defer { h.cleanup() }
+        let dev = SkillInstaller.AppIdentity(version: "1.5.0", build: "1", commitShort: "dev", isDevelopmentBuild: true)
+        _ = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false, appIdentity: dev)
+        XCTAssertEqual(try status(h, "foo").record?.installedBy, SkillInstallerRecord.installedByDev)
+        // A release bundle that differs is not offered over it.
+        try writeSkill(root: h.source, name: "foo", contents: "---\nname: foo\nversion: 1\n---\nrelease content\n")
+        XCTAssertEqual(try status(h, "foo").state, .installedFromCheckout)
+        XCTAssertFalse(shouldPresent(h))
+    }
+
+    func testDevelopmentBuildDetection() {
+        typealias Identity = SkillInstaller.AppIdentity
+        XCTAssertTrue(Identity.isDevelopmentBuild(environment: [:], isDebug: true))
+        XCTAssertFalse(Identity.isDevelopmentBuild(environment: [:], isDebug: false))
+        XCTAssertFalse(Identity.isDevelopmentBuild(environment: ["C11_TAG": "  "], isDebug: false))
+        XCTAssertTrue(Identity.isDevelopmentBuild(environment: ["C11_TAG": "fix"], isDebug: false))
+        XCTAssertTrue(Identity.isDevelopmentBuild(environment: ["C11_SKILLS_SOURCE": "/repo/skills"], isDebug: false))
+    }
+
+    func testPackageFolderLinkedIntoACheckoutIsKept() throws {
+        let h = try makeHarness(skills: ["foo": "bundled"])
+        defer { h.cleanup() }
+        let checkout = h.home.deletingLastPathComponent().appendingPathComponent("checkout/foo", isDirectory: true)
+        try writeSkill(root: checkout.deletingLastPathComponent(), name: "foo",
+                       contents: "---\nname: foo\nversion: 1\n---\nmine\n")
+        let skills = SkillInstallerTarget.claude.skillsDir(home: h.home)
+        try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: skills.appendingPathComponent("foo"), withDestinationURL: checkout)
+
+        XCTAssertEqual(try status(h, "foo").state, .installedFromCheckout)
+        XCTAssertFalse(shouldPresent(h))
+        let result = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                                appIdentity: identity)
+        XCTAssertEqual(result.keptLocal, ["foo"])
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: skills.appendingPathComponent("foo").path))
+    }
+
+    func testSharedDestinationOffersNothing() throws {
+        let h = try makeHarness(skills: ["foo": "v1-content"])
+        defer { h.cleanup() }
+        let statuses = try SkillInstaller.status(for: .claude, home: h.home, sourceDir: h.source)
+        XCTAssertEqual(statuses.first?.state, .notInstalled)
+        let shared = AgentSkillsModel.TargetRow(
+            id: "codex", target: .codex, detected: true,
+            destinationDir: SkillInstallerTarget.claude.skillsDir(home: h.home),
+            packages: statuses, statusError: nil, sharedWithTarget: .claude)
+        XCTAssertEqual(shared.offeredPackageNames, [])
+        XCTAssertEqual(try row(h).offeredPackageNames, ["foo"])
+    }
+
+    func testRemoveKeepsLocalCopiesUnlessForced() throws {
+        let h = try makeHarness(skills: ["foo": "v1-content"], installLocalCopies: ["foo": "my own edits"])
+        defer { h.cleanup() }
+        let dest = SkillInstallerTarget.claude.skillsDir(home: h.home).appendingPathComponent("foo")
+        let kept = try SkillInstaller.remove(target: .claude, home: h.home, sourceDir: h.source)
+        XCTAssertEqual(kept.removed, [])
+        XCTAssertEqual(kept.skipped, ["foo"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
+        let forced = try SkillInstaller.remove(target: .claude, home: h.home, sourceDir: h.source, force: true)
+        XCTAssertEqual(forced.removed, ["foo"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.path))
+    }
+
+    func testSyncSkipsAFolderLinkedToThisCheckout() throws {
+        let root = try makeTempSkillsRoot(name: "c11-sync-linked")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try repoScript().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("skills/c11-fanout", isDirectory: true)
+        let stamp = source.appendingPathComponent(SkillInstaller.manifestFilename)
+        let stampExisted = FileManager.default.fileExists(atPath: stamp.path)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("c11-fanout"), withDestinationURL: source)
+        try runSyncScript(skill: "c11-fanout", root: root)
+        let wroteIntoCheckout = !stampExisted && FileManager.default.fileExists(atPath: stamp.path)
+        if wroteIntoCheckout { try? FileManager.default.removeItem(at: stamp) }
+        XCTAssertFalse(wroteIntoCheckout, "the sync wrote a stamp into the checkout's own skill folder")
+    }
+
     private func repoScript() throws -> URL {
         let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("scripts/sync-installed-skills.sh")
@@ -1347,7 +1429,10 @@ private func makeHarness(
         // If the caller asked for installed local copies, use the real
         // installer so the manifest matches what production writes.
         if !installLocalCopies.isEmpty {
-            _ = try SkillInstaller.install(target: .claude, home: home, sourceDir: source, force: true)
+            // A release identity: the logic tests compile Debug, which would stamp `dev`.
+            _ = try SkillInstaller.install(
+                target: .claude, home: home, sourceDir: source, force: true,
+                appIdentity: SkillInstaller.AppIdentity(version: "1.0", build: "1", commitShort: "fixture"))
             // Overwrite SKILL.md per the caller's `installLocalCopies`
             // map. This lets us simulate "operator edited the local copy."
             for (name, content) in installLocalCopies {

@@ -146,6 +146,11 @@ for name in "${INSTALLABLE[@]}"; do
     real="$(cd "$dest" && pwd -P)"
     case "$seen" in *":${real}:"*) continue ;; esac
     seen="${seen}${real}:"
+    if [ "$real" = "$(cd "$src" && pwd -P)" ]; then
+      echo "skip  ${name} → ${dest}: linked to this checkout"
+      skipped=$((skipped+1))
+      continue
+    fi
     # Mirror source → installed copy. --delete keeps removed files from lingering.
     # The stamp is excluded from the mirror and rewritten as a sync stamp.
     rsync -a --delete --exclude='.c11-skill.json' "${src}/" "${dest}/"

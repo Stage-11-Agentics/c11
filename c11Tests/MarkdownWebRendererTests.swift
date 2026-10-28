@@ -485,6 +485,7 @@ final class MarkdownWebRendererTests: XCTestCase {
             let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.contentView = NSView(frame: frame)
+            window.orderFrontRegardless()
             return window
         }
         let visibleWindow = makeWindow(), replacementWindow = makeWindow()
@@ -513,6 +514,23 @@ final class MarkdownWebRendererTests: XCTestCase {
         try await waitUntil("web view returns to the visible host") { visible.holdsWebView }
         XCTAssertTrue(webView.window === visibleWindow)
         XCTAssertEqual(webView.frame.size, frame.size)
+
+        // A replacement that joins and leaves the same window gives it back too.
+        let sibling = MarkdownWebViewContainer(webView: webView)
+        sibling.frame = frame
+        visibleWindow.contentView?.addSubview(sibling)
+        XCTAssertTrue(sibling.holdsWebView)
+        sibling.removeFromSuperview()
+        try await waitUntil("web view returns after a same-window replacement") { visible.holdsWebView }
+
+        // A host in a window that has closed does not count as showing, so the
+        // web view goes to the host still on screen.
+        replacementWindow.contentView?.addSubview(replacement)
+        XCTAssertTrue(replacement.holdsWebView)
+        replacementWindow.orderOut(nil)
+        XCTAssertFalse(replacement.isShowing)
+        visible.claimIfOrphaned()
+        XCTAssertTrue(visible.holdsWebView)
     }
 
     private func waitUntil(_ label: String, timeout: TimeInterval = 2, _ condition: () -> Bool) async throws {

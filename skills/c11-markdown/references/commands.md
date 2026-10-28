@@ -12,13 +12,14 @@ c11 markdown <path>          # shorthand (implicit "open")
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--workspace <id\|ref\|index>` | Target workspace | `$C11_WORKSPACE_ID` |
-| `--panel <id\|ref\|index>` | Existing Markdown panel to navigate in place | None; opens a new panel |
+| `--panel <id\|ref>` | A Markdown panel navigates in place; a terminal or browser panel is the anchor to place beside | The caller's panel (`$C11_PANEL_ID`) as anchor |
+| `--area <id\|ref>` | Add the doc as a panel in this area, no split | None |
 | `--window <id\|ref>` | Target window | Current window |
 
 ### Output
 
 ```
-OK panel=panel:8 area=area:3 path=/absolute/path/to/file.md
+OK panel=panel:8 area=area:3 placement=split path=/absolute/path/to/file.md
 ```
 
 With `--json`:
@@ -48,7 +49,7 @@ c11 markdown open /Users/me/project/plan.md
 
 ## Panel Behavior
 
-- Without `--panel`, the command opens a new Markdown panel in the target workspace.
+- Without `--panel` or `--area`, the doc goes beside the caller's panel: the first splits beside it (size-aware), later ones join the markdown area it already opened (`placement=reuse_markdown_area`). A caller outside the target workspace adds a panel to an existing area instead (`existing_area`); the focused panel is never split.
 - With `--panel`, the command navigates that existing Markdown panel in place and records bounded back/forward history.
 - The panel title shows the filename (e.g., `plan.md`).
 - The panel icon is a document icon.

@@ -408,7 +408,8 @@ extension CMUXCLI {
         if let explicit = optionValue(args, name: "--workspace") { return explicit }
         // When --window is explicitly targeted, don't fall back to env workspace from a different window
         if windowOverride != nil { return nil }
-        return ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let environment = ProcessInfo.processInfo.environment
+        return environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"]
     }
 
     // MARK: - Module 1 / Module 2 metadata CLI

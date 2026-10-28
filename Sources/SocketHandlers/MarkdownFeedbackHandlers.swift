@@ -1179,36 +1179,68 @@ extension TerminalController {
                 return
             }
 
-            let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
-            guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused panel to split", data: nil)
+            // Placement anchors on an explicit source panel, else the caller's own
+            // panel when it lives in this workspace. Never on the focused panel:
+            // many agents opening docs would otherwise halve one area again and again.
+            let callerPanelId = v2UUID(params, "caller_panel_id").flatMap { ws.panels[$0] != nil ? $0 : nil }
+            let explicitSourceId = v2UUID(params, "surface_id")
+            if let explicitSourceId, ws.panels[explicitSourceId] == nil {
+                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": explicitSourceId.uuidString])
                 return
             }
-            guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": sourceSurfaceId.uuidString])
-                return
-            }
+            let sourceSurfaceId = explicitSourceId ?? callerPanelId
+            let sourcePaneUUID = sourceSurfaceId.flatMap { ws.paneId(forPanelId: $0)?.id }
 
-            let sourcePaneUUID = ws.paneId(forPanelId: sourceSurfaceId)?.id
-
-            let createdPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
-                ws.newMarkdownSplit(
-                    from: sourceSurfaceId,
-                    orientation: .horizontal,
-                    filePath: filePath,
-                    fragment: fragment,
-                    focus: v2FocusAllowed()
-                )
+            var placementStrategy = "split"
+            var warningText: String?
+            let createdPanel: MarkdownPanel? = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
+                guard let sourceSurfaceId else {
+                    // No anchor in this workspace (cross-workspace open or no caller):
+                    // add a panel to an existing area instead of splitting one.
+                    placementStrategy = "existing_area"
+                    guard let pane = ws.bonsplitController.allPaneIds.first(where: { ws.isMarkdownOnlyPane($0) })
+                        ?? ws.bonsplitController.focusedPaneId else { return nil }
+                    return ws.newMarkdownPanel(inPane: pane, filePath: filePath, fragment: fragment, focus: v2FocusAllowed())
+                }
+                if let pane = ws.preferredMarkdownTargetPane(fromPanelId: sourceSurfaceId) {
+                    placementStrategy = "reuse_markdown_area"
+                    return ws.newMarkdownPanel(inPane: pane, filePath: filePath, fragment: fragment, focus: v2FocusAllowed())
+                }
+                switch planSizeAwareSplit(ws: ws, sourcePanelId: sourceSurfaceId, requested: .right, newIsTerminal: false, force: false) {
+                case .split(let direction, _, let warning):
+                    placementStrategy = "split"
+                    warningText = warning
+                    return ws.newMarkdownSplit(
+                        from: sourceSurfaceId,
+                        orientation: direction.orientation,
+                        insertFirst: direction.insertFirst,
+                        filePath: filePath,
+                        fragment: fragment,
+                        focus: v2FocusAllowed()
+                    )
+                case .panel, .refuse:
+                    // No room to split: join any markdown area here before stacking
+                    // the doc over the anchor's own panel.
+                    placementStrategy = "panel_in_area"
+                    guard let pane = ws.bonsplitController.allPaneIds.first(where: { ws.isMarkdownOnlyPane($0) })
+                        ?? ws.paneId(forPanelId: sourceSurfaceId) else { return nil }
+                    warningText = "no room to split beside the source panel; opened as a panel in an existing area"
+                    return ws.newMarkdownPanel(inPane: pane, filePath: filePath, fragment: fragment, focus: v2FocusAllowed())
+                }
             }
 
             guard let markdownPanelId = createdPanel?.id else {
                 result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
                 return
             }
+            if let sourceSurfaceId {
+                ws.markdownDocAnchors = ws.markdownDocAnchors.filter { ws.panels[$0.key] != nil }
+                ws.markdownDocAnchors[markdownPanelId] = sourceSurfaceId
+            }
 
             let targetPaneUUID = ws.paneId(forPanelId: markdownPanelId)?.id
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
-            result = .ok([
+            var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -1217,14 +1249,18 @@ extension TerminalController {
                 "pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
                 "surface_id": markdownPanelId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: markdownPanelId),
-                "source_surface_id": sourceSurfaceId.uuidString,
+                "source_surface_id": v2OrNull(sourceSurfaceId?.uuidString),
                 "source_surface_ref": v2Ref(kind: .surface, uuid: sourceSurfaceId),
                 "source_pane_id": v2OrNull(sourcePaneUUID?.uuidString),
                 "source_pane_ref": v2Ref(kind: .pane, uuid: sourcePaneUUID),
                 "target_pane_id": v2OrNull(targetPaneUUID?.uuidString),
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
+                "created_split": placementStrategy == "split",
+                "placement_strategy": placementStrategy,
                 "path": filePath
-            ])
+            ]
+            if let warningText { payload["size_warning"] = warningText }
+            result = .ok(payload)
         }
         return result
     }

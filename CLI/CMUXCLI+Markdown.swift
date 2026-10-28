@@ -59,7 +59,7 @@ extension CMUXCLI {
             if let first = args.first, first.hasPrefix("-") {
                 throw CLIError(
                     message:
-                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path>[#fragment] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
                 )
             } else if let first = args.first, looksLikePath(first) || first.contains(".") {
                 subArgs = args
@@ -77,13 +77,13 @@ extension CMUXCLI {
         if let unknownFlag = trailingArgs.first(where: { $0.hasPrefix("-") }) {
             throw CLIError(
                 message:
-                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path>[#fragment] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
             )
         }
         if let extraArg = trailingArgs.first {
             throw CLIError(
                 message:
-                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path>[#fragment] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
             )
         }
 
@@ -103,7 +103,18 @@ extension CMUXCLI {
             }
             var params: [String: Any] = ["panel_id": panelID, "path": absolutePath]
             if let fragment { params["fragment"] = fragment }
-            let payload = try client.sendV2(method: "markdown.navigate", params: params)
+            let payload: [String: Any]
+            do {
+                payload = try client.sendV2(method: "markdown.navigate", params: params)
+            } catch let error as CLIError where error.message.contains("Panel is not a markdown panel") {
+                // A terminal or browser panel is a placement anchor: open the doc beside it.
+                try addCallingPanel(to: &params)
+                try printMarkdownOpenResult(
+                    client.sendV2(method: "markdown.open", params: params),
+                    absolutePath: absolutePath, jsonOutput: jsonOutput, idFormat: idFormat
+                )
+                return
+            }
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
@@ -115,7 +126,8 @@ extension CMUXCLI {
         // Build params
         var params: [String: Any] = ["path": absolutePath]
         if let fragment { params["fragment"] = fragment }
-        let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+        let environment = ProcessInfo.processInfo.environment
+        let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"] : nil)
         if let workspaceRaw {
             if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
                 params["workspace_id"] = workspace
@@ -134,15 +146,22 @@ extension CMUXCLI {
         }
 
         try addCallingPanel(to: &params)
-        let payload = try client.sendV2(method: "markdown.open", params: params)
+        try printMarkdownOpenResult(
+            client.sendV2(method: "markdown.open", params: params),
+            absolutePath: absolutePath, jsonOutput: jsonOutput, idFormat: idFormat
+        )
+    }
 
+    func printMarkdownOpenResult(_ payload: [String: Any], absolutePath: String, jsonOutput: Bool, idFormat: CLIIDFormat) {
+        printSizeWarning(payload)
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
             let surfaceText = formatHandle(payload, kind: "panel", idFormat: idFormat) ?? "unknown"
             let paneText = formatHandle(payload, kind: "area", idFormat: idFormat) ?? "unknown"
             let filePath = (payload["path"] as? String) ?? absolutePath
-            print("OK panel=\(surfaceText) area=\(paneText) path=\(filePath)")
+            let placement = (payload["placement_strategy"] as? String).map { " placement=\($0)" } ?? ""
+            print("OK panel=\(surfaceText) area=\(paneText)\(placement) path=\(filePath)")
         }
     }
 

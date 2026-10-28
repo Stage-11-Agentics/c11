@@ -625,6 +625,11 @@ extension TerminalController {
                 if let paneUUID {
                     return ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID })
                 }
+                // Default to the caller's own area when it lives in this workspace.
+                if let callerPanelId = self.v2UUID(params, "caller_panel_id"),
+                   let callerPane = ws.paneId(forPanelId: callerPanelId) {
+                    return callerPane
+                }
                 return ws.bonsplitController.focusedPaneId
             }()
 

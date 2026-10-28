@@ -890,13 +890,14 @@ extension CMUXCLI {
             return """
             Usage: c11 new-area [flags]
 
-            Create a new area in the workspace.
+            Create a new area in the workspace by splitting the caller's area
+            ($C11_PANEL_ID) when it is in the target workspace, else the focused area.
 
             Flags:
               --command <text>                    Queue text+Return into the new terminal shell
               --type <terminal|browser|markdown>  Area type (default: terminal)
               --direction <left|right|up|down>    Split direction (default: right)
-              --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>                Target workspace (default: $C11_WORKSPACE_ID)
               --url <url>                         URL for browser areas
               --profile <name|id>                 Browser profile for browser areas (one-shot)
               --file <path>                       File path for markdown areas
@@ -999,8 +1000,9 @@ extension CMUXCLI {
             Flags:
               --command <text>                    Queue text+Return into the new terminal shell
               --type <terminal|browser|markdown>  Panel type (default: terminal)
-              --area <id|ref>                     Target area
-              --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
+              --area <id|ref>                     Target area (default: the caller's area when it is
+                                                  in the target workspace, else the focused area)
+              --workspace <id|ref>                Target workspace (default: $C11_WORKSPACE_ID)
               --url <url>                         URL for browser panels
               --profile <name|id>                 Browser profile for browser panels (one-shot)
               --file <path>                       File path for markdown panels
@@ -2079,20 +2081,33 @@ extension CMUXCLI {
             lists, blockquotes) and automatically updates when the file changes on disk.
 
             Options:
-              --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
-              --panel <id|ref|index>   Source panel to split from (default: focused panel)
+              --panel <id|ref>             A markdown panel navigates in place. A terminal or
+                                           browser panel is the anchor to place the doc beside.
+                                           Not combinable with --workspace, --window, or --area.
+              --area <id|ref>              Add the doc as a panel in this area (no split)
+              --workspace <id|ref|index>   Target workspace (default: $C11_WORKSPACE_ID)
               --window <id|ref|index>      Target window
+
+            Placement without --area:
+              The doc goes beside its anchor: --panel, else the calling panel
+              ($C11_PANEL_ID) when it is in the target workspace. The first doc splits the
+              anchor's area (size-aware); later docs join the markdown area that first doc
+              made. With no anchor in the target workspace (a cross-workspace
+              --workspace open, or a shell outside c11), the doc becomes a panel in an
+              existing markdown area, else the focused area. It never splits the focused
+              panel. Pass --panel "$C11_PANEL_ID" or --area to choose explicitly.
 
             Examples:
               c11 markdown open plan.md
               c11 markdown ~/project/CHANGELOG.md
-              c11 markdown open ./docs/design.md --workspace 0
+              c11 markdown open plan.md --panel "$C11_PANEL_ID"
+              c11 markdown open ./docs/design.md --workspace workspace:2
 
-            Use --panel with open to navigate a markdown reader in place. It does
-            not switch the visible workspace or change c11 focus. The panel
-            validates navigation targets and keeps bounded back/forward history.
+            Navigating a markdown reader with --panel does not switch the visible
+            workspace or change c11 focus. The panel validates navigation targets
+            and keeps bounded back/forward history.
 
-            Agent commands require an explicit --panel target:
+            Reader commands require an explicit --panel <markdown panel>:
               c11 markdown open <path>[#fragment] --panel <id|ref>
               c11 markdown scroll --panel <id|ref> --heading <text>
               c11 markdown visible --panel <id|ref> --json [--watch]

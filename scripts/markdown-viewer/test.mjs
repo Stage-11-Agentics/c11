@@ -762,6 +762,17 @@ try {
   const boundedLinkIndex=await page.evaluate(()=>c11md.linkIndex());
   assert.equal(boundedLinkIndex.links.length,128);assert.equal(boundedLinkIndex.linkCount,130);assert.equal(boundedLinkIndex.linksTruncated,true);
   scenario('page link metadata and aggregate heading inspection remain within their declared bounds');
+  // markdown-it 15.0.0-15.0.2 parses an unclosed multi-line link reference definition in
+  // quadratic time (GHSA-gfr2-rv44-r23c). Plain lines of the same length cancel machine speed.
+  const parseCost=await page.evaluate(()=>{
+    const once=markdown=>{const t0=performance.now();c11md.inspectMarkdowns([markdown]);return performance.now()-t0;};
+    const time=markdown=>Math.round(Math.min(once(markdown),once(markdown)));
+    const lines='x\n'.repeat(200000);
+    return {titleControl:time(lines),title:time('[a]: /u "'+lines),labelControl:time(lines),label:time('['+lines)};
+  });
+  assert.ok(parseCost.title<4*parseCost.titleControl+250,`unclosed reference title: ${parseCost.title}ms against ${parseCost.titleControl}ms for plain lines`);
+  assert.ok(parseCost.label<4*parseCost.labelControl+250,`unclosed reference label: ${parseCost.label}ms against ${parseCost.labelControl}ms for plain lines`);
+  scenario('unclosed multi-line reference definitions parse in linear time',parseCost);
   await load('# Article\n\n## Source\n\n## Target\n\n## Target\n');
   for(const name of ['article','source','target','target-1'])assert.equal(await page.evaluate(name=>c11md.scrollToHeading(name).ok,name),true);
   assert.equal(await page.locator('article#article').count(),1);assert.equal(await page.locator('#source.source').count(),1);

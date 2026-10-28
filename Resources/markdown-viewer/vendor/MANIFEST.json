@@ -1,8 +1,8 @@
 {
   "packages": {
     "markdown-it": {
-      "version": "15.0.2",
-      "source": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
+      "version": "15.0.3",
+      "source": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz",
       "license": "MIT"
     },
     "markdown-it-anchor": {
@@ -37,8 +37,8 @@
       "license": "MIT"
     },
     "dompurify": {
-      "version": "3.4.16",
-      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
+      "version": "3.4.17",
+      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
       "license": "(MPL-2.0 OR Apache-2.0)"
     },
     "@fontsource-variable/literata": {
@@ -150,8 +150,8 @@
     "katex/fonts/KaTeX_Typewriter-Regular.woff2": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b",
     "katex/katex.min.css": "d4ab5b8ee16989b070cdb0ea24bd6ad48fc8df1b787f280f29d3ae4f959f2c00",
     "katex/katex.min.js": "103a53763cc033bba8d175bf3f0ba597c3505c9b6747dd3f2c7bc2a6bfcc8ae7",
-    "markdown.js": "4053c168b9f9c1da1e7a2c3ca9754dfc0af92a2516ae8fd2617824360d32a285",
+    "markdown.js": "cfa70690f0f26975f76acd310b56c4d58b0a8776f00dd67bcd0b375d4c8c6a9b",
     "mermaid.min.js": "a8a6a6f805b074a8261a2825c86f99c8054acb3b35f50bb7e24a4f9f2c3c3b9f",
-    "purify.min.js": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+    "purify.min.js": "cd37898f9782adf54820c413191b5691803f0f137c799d6edcfd38523b4c2c31"
   }
 }

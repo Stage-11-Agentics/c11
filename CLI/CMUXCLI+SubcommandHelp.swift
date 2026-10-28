@@ -2091,8 +2091,8 @@ extension CMUXCLI {
             Placement without --area:
               The doc goes beside its anchor: --panel, else the calling panel
               ($C11_PANEL_ID) when it is in the target workspace. The first doc splits the
-              anchor's area (size-aware); later docs join the markdown-only area already on
-              its right. With no anchor in the target workspace (a cross-workspace
+              anchor's area (size-aware); later docs join the markdown area that first doc
+              made. With no anchor in the target workspace (a cross-workspace
               --workspace open, or a shell outside c11), the doc becomes a panel in an
               existing markdown area, else the focused area. It never splits the focused
               panel. Pass --panel "$C11_PANEL_ID" or --area to choose explicitly.

@@ -59,7 +59,7 @@ extension CMUXCLI {
             if let first = args.first, first.hasPrefix("-") {
                 throw CLIError(
                     message:
-                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path>[#fragment] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
                 )
             } else if let first = args.first, looksLikePath(first) || first.contains(".") {
                 subArgs = args
@@ -77,13 +77,13 @@ extension CMUXCLI {
         if let unknownFlag = trailingArgs.first(where: { $0.hasPrefix("-") }) {
             throw CLIError(
                 message:
-                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path>[#fragment] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
             )
         }
         if let extraArg = trailingArgs.first {
             throw CLIError(
                 message:
-                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path>[#fragment] [--workspace <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path>[#fragment] [--panel <id|ref> | --area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
             )
         }
 

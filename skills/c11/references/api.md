@@ -298,7 +298,7 @@ For these four create commands, `--command` queues literal text plus Return into
 
 ### Create commands anchor on the caller
 
-`new-split`, `new-area`, `new-panel` and `markdown open` place relative to the **caller's** panel (`$C11_PANEL_ID`) when it is in the target workspace, never the focused one. `new-split` / `new-area` split the caller's area, `new-panel` adds to it, and `markdown open` splits beside the caller once, then adds later docs to the markdown area on its right. A caller outside the target workspace (or a shell outside c11) falls back to the focused area; `markdown open` then adds a panel instead of splitting. To place elsewhere, name the target:
+`new-split`, `new-area`, `new-panel` and `markdown open` place relative to the **caller's** panel (`$C11_PANEL_ID`) when it is in the target workspace, never the focused one. `new-split` / `new-area` split the caller's area, `new-panel` adds to it, and `markdown open` splits beside the caller once, then adds later docs to the markdown area that first doc made. A caller outside the target workspace (or a shell outside c11) falls back to the focused area; `markdown open` then adds a panel instead of splitting. To place elsewhere, name the target:
 
 ```bash
 c11 new-split down --panel panel:10        # splits the area containing panel:10

@@ -1218,16 +1218,13 @@ extension TerminalController {
                         fragment: fragment,
                         focus: v2FocusAllowed()
                     )
-                case .panel(let pane, let warning):
+                case .panel, .refuse:
+                    // No room to split: join any markdown area here before stacking
+                    // the doc over the anchor's own panel.
                     placementStrategy = "panel_in_area"
-                    warningText = warning
-                    return ws.newMarkdownPanel(inPane: pane, filePath: filePath, fragment: fragment, focus: v2FocusAllowed())
-                case .refuse(let message, _):
-                    // Too small to split either way: a doc still opens, as a panel
-                    // in the source's own area.
-                    placementStrategy = "panel_in_area"
-                    warningText = message
-                    guard let pane = ws.paneId(forPanelId: sourceSurfaceId) else { return nil }
+                    guard let pane = ws.bonsplitController.allPaneIds.first(where: { ws.isMarkdownOnlyPane($0) })
+                        ?? ws.paneId(forPanelId: sourceSurfaceId) else { return nil }
+                    warningText = "no room to split beside the source panel; opened as a panel in an existing area"
                     return ws.newMarkdownPanel(inPane: pane, filePath: filePath, fragment: fragment, focus: v2FocusAllowed())
                 }
             }

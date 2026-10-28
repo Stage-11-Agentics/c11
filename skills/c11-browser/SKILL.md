@@ -191,6 +191,8 @@ These commands currently return `not_supported` because they rely on Chrome/CDP-
 
 Use supported high-level commands (`click`, `fill`, `press`, `scroll`, `wait`, `snapshot`) instead.
 
+**`file://` pages see only their own folder.** A local HTML page opened in a c11 browser panel can load files from its own directory and below; `../vendor/x.js` or `../shots/y.png` fail silently (broken images, undefined libraries) while the same page passes in Chrome and headless Playwright. Keep every asset of a local HTML deliverable inside the page's folder or inlined, and before calling it done load it in a c11 browser panel and check `document.images` for `naturalWidth === 0`.
+
 ## Troubleshooting
 
 ### `js_error` on `snapshot --interactive` or `eval`

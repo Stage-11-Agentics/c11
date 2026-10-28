@@ -534,6 +534,21 @@ try {
   const listResult=await page.evaluate(()=>c11md.scrollToLine(43).lines),listTop=await readLineTop('List line40');
   assert.equal(listResult.first,43);assert.ok(Math.abs(listTop)<1,'list source line was not placed at the viewport top');
   scenario('source line mapping also targets interior paragraph and list lines');
+  // A hard break renders as <br> plus the source newline. Counting both as line starts doubled
+  // the line map, so scrollToLine and reading-position restore landed far from the line.
+  const hardDocument=`# Hard break line mapping\n\n${Array.from({length:120},(_,i)=>`Hard line${String(i).padStart(3,'0')} keeps its place.\\`).join('\n')}\n`;
+  await load(hardDocument,'/synthetic/hard-lines.md');
+  const hardScroll=await page.evaluate(()=>c11md.scrollToLine(63).lines),hardTop=await readLineTop('Hard line060');
+  assert.equal(hardScroll.first,63);assert.ok(Math.abs(hardTop)<1,`hard-break line was placed at ${hardTop}px, not the viewport top`);
+  await page.evaluate(async top=>{document.querySelector('#scroller').scrollTop+=top;},await readLineTop('Hard line060')+8.25);
+  const hardCapture=await page.evaluate(()=>c11md.visible().lines);
+  assert.equal(hardCapture.first,63);assert.ok(Math.abs(hardCapture.offset-8.25)<=1,`captured offset ${hardCapture.offset}`);
+  await page.reload();await page.waitForFunction(()=>window.testMessages.some(m=>m.type==='ready'));
+  await settings({theme:'light',typeface:'serif',scale:1});await load(hardDocument,'/synthetic/hard-lines.md',2);
+  await page.evaluate(({first,offset})=>c11md.scrollToLine(first,offset),hardCapture);
+  const hardRestoredTop=await readLineTop('Hard line060');
+  assert.ok(Math.abs(hardRestoredTop+8.25)<=1,`restored hard-break line sits at ${hardRestoredTop}px, not -8.25px`);
+  scenario('hard-break paragraphs map one line per source line and restore their reading position');
   // Line metrics once measured every line of a block up front, and a range rect inside one
   // long text node costs time in proportion to the node. The same lines split into 100-line
   // blocks cancel machine speed. Alternating the filler keeps unchanged-block reuse out.

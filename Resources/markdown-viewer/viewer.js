@@ -184,16 +184,18 @@ function lineTree(root) {
 }
 function textLinePoints(root,skipLeadingWhitespace=false) {
   if(!root)return [];
-  const points=[],walker=lineTree(root);let n,offset=0,lineStarted=false,nonWhitespace=false,contentSeen=false;
+  const points=[],walker=lineTree(root);let n,offset=0,lineStarted=false,nonWhitespace=false,contentSeen=false,afterBreak=false;
   while((n=walker.nextNode())) {
     if(n.nodeType===Node.ELEMENT_NODE) {
       if(!lineStarted&&(!skipLeadingWhitespace||contentSeen))points.push(offset);
-      lineStarted=false;nonWhitespace=false;offset++;continue;
+      lineStarted=false;nonWhitespace=false;afterBreak=true;offset++;continue;
     }
     // Read data once: the DOM getter per character is quadratic on a long paragraph.
     const data=n.data;
     for(let i=0;i<data.length;i++) {
       const ch=data[i];
+      // A hard break renders as <br> plus the source newline; together they end one line.
+      if(afterBreak){afterBreak=false;if(ch==='\n'){offset++;continue;}}
       if(ch==='\n') {if(!lineStarted&&(!skipLeadingWhitespace||contentSeen))points.push(offset);lineStarted=false;nonWhitespace=false;offset++;continue;}
       if(!lineStarted) {
         if(skipLeadingWhitespace&&!contentSeen&&/\s/.test(ch)){offset++;continue;}

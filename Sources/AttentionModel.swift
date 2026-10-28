@@ -606,7 +606,7 @@ final class PanelAttentionService {
         )
         // Restore replays panels before their workspaces are registered, so a
         // delegate restored ahead of its delegate owner missed its depth.
-        refreshDelegationDepths(of: Array(PanelAttentionIndex.shared.delegationOwners.keys))
+        refreshAllDelegationDepths()
         let releasedIds = Set(releases.map(\.surfaceId))
         for snapshot in candidateSnapshots
         where snapshot.delegated && !releasedIds.contains(snapshot.surfaceId) {
@@ -634,6 +634,12 @@ final class PanelAttentionService {
                 by: .c11
             )
         }
+    }
+
+    /// Re-read every delegate's depth; for restores that replay panels before
+    /// their workspaces are registered.
+    func refreshAllDelegationDepths() {
+        refreshDelegationDepths(of: Array(PanelAttentionIndex.shared.delegationOwners.keys))
     }
 
     private func refreshDelegationDepths(below surfaceId: UUID) {
@@ -698,11 +704,18 @@ final class PanelAttentionService {
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
+        // Only delegates below a dropped panel change depth; most prunes drop
+        // nothing and skip the refresh.
+        let droppedDescendants = PanelAttentionIndex.shared.snapshots.values
+            .filter { $0.workspaceId == workspaceId && !validSurfaceIds.contains($0.surfaceId) }
+            .flatMap { PanelAttentionIndex.shared.delegateDescendants(of: $0.surfaceId) }
         PanelAttentionIndex.shared.prune(
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
-        refreshDelegationDepths(of: Array(PanelAttentionIndex.shared.delegationOwners.keys))
+        if !droppedDescendants.isEmpty {
+            refreshDelegationDepths(of: Array(Set(droppedDescendants)))
+        }
         feedProjection.pruneWorkspace(workspaceID: workspaceId, validPanelIDs: validSurfaceIds)
     }
 

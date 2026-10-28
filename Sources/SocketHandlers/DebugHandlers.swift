@@ -1140,6 +1140,7 @@ extension TerminalController {
             before = workspace.panels.keys.map { $0.uuidString }.sorted()
             let snapshot = workspace.sessionSnapshot(includeScrollback: false)
             workspace.restoreSessionSnapshot(snapshot)
+            PanelAttentionService.shared.refreshAllDelegationDepths()
             after = workspace.panels.keys.map { $0.uuidString }.sorted()
         }
         if let failureMessage {
@@ -1165,6 +1166,7 @@ extension TerminalController {
             before = workspaceManager.workspaces.map { $0.id.uuidString }
             let snapshot = workspaceManager.sessionSnapshot(includeScrollback: false)
             workspaceManager.restoreSessionSnapshot(snapshot)
+            PanelAttentionService.shared.refreshAllDelegationDepths()
             after = workspaceManager.workspaces.map { $0.id.uuidString }
         }
         return .ok([

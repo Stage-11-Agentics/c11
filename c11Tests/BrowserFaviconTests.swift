@@ -1,6 +1,7 @@
 import XCTest
 import CoreGraphics
 import ImageIO
+import Network
 #if canImport(c11_DEV)
 @testable import c11_DEV
 #elseif canImport(c11)
@@ -314,6 +315,38 @@ final class BrowserFaviconTests: XCTestCase {
         XCTAssertEqual(actual, expected)
     }
 
+    /// C11-496. Pages choose favicon URLs, so a cookie one favicon response
+    /// sets must never be sent with a later favicon fetch, from this or any
+    /// other profile, and must not land in the app-wide jar.
+    func testFaviconResponseCannotSetACookieForLaterFetches() async throws {
+        let server = try FaviconCookieListener()
+        defer {
+            server.stop()
+            for cookie in HTTPCookieStorage.shared.cookies ?? [] where cookie.name == FaviconCookieListener.cookieName {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+        }
+        let base = "http://127.0.0.1:\(server.port)"
+
+        _ = try await BrowserFavicon.fetch(
+            URLRequest(url: URL(string: "\(base)/sets-cookie.ico")!),
+            session: BrowserFavicon.directSession,
+            maximumBytes: BrowserFavicon.maximumBytes
+        )
+        _ = try await BrowserFavicon.fetch(
+            URLRequest(url: URL(string: "\(base)/next.ico")!),
+            session: BrowserFavicon.directSession,
+            maximumBytes: BrowserFavicon.maximumBytes
+        )
+
+        let next = try XCTUnwrap(server.requests.last { $0.path == "/next.ico" })
+        XCTAssertNil(next.cookie, "A later favicon fetch sent the cookie an earlier response set")
+        XCTAssertFalse(
+            (HTTPCookieStorage.shared.cookies ?? []).contains { $0.name == FaviconCookieListener.cookieName },
+            "A favicon response stored its cookie in the app-wide jar"
+        )
+    }
+
     func testAspectFitKeepsTransparentPadding() throws {
         let input = try Self.raster(width: 32, height: 16)
         let png = try XCTUnwrap(BrowserFavicon.decodePNG(input, targetPx: 32))
@@ -403,5 +436,95 @@ private final class FaviconTestURLProtocol: URLProtocol {
         lock.lock()
         stopped = true
         lock.unlock()
+    }
+}
+
+/// A loopback HTTP/1.1 listener for favicon fetches. `/sets-cookie.ico`
+/// answers with a Set-Cookie header; every path answers with a few bytes.
+/// Records each request's path and Cookie header.
+private final class FaviconCookieListener: @unchecked Sendable {
+    struct Request {
+        let path: String
+        let cookie: String?
+    }
+
+    static let cookieName = "c11_496_tracker"
+
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "c11.tests.c11-496.listener")
+    private let lock = NSLock()
+    private var recorded: [Request] = []
+    private(set) var port: UInt16 = 0
+
+    var requests: [Request] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredInterfaceType = .loopback
+        listener = try NWListener(using: parameters, on: .any)
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready, .failed, .cancelled: ready.signal()
+            default: break
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.serve(connection)
+        }
+        listener.start(queue: queue)
+        guard ready.wait(timeout: .now() + 5) == .success, let port = listener.port?.rawValue else {
+            listener.cancel()
+            throw NWError.posix(.ETIMEDOUT)
+        }
+        self.port = port
+    }
+
+    func stop() {
+        listener.cancel()
+    }
+
+    private func serve(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        receiveHead(on: connection, buffer: Data())
+    }
+
+    private func receiveHead(on connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] chunk, _, isComplete, error in
+            guard let self else { return connection.cancel() }
+            var buffer = buffer
+            if let chunk { buffer.append(chunk) }
+            if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
+                self.respond(on: connection, head: buffer.subdata(in: buffer.startIndex..<end.lowerBound))
+            } else if isComplete || error != nil {
+                connection.cancel()
+            } else {
+                self.receiveHead(on: connection, buffer: buffer)
+            }
+        }
+    }
+
+    private func respond(on connection: NWConnection, head: Data) {
+        let lines = String(decoding: head, as: UTF8.self).components(separatedBy: "\r\n")
+        let requestLine = lines.first?.split(separator: " ") ?? []
+        let path = requestLine.count > 1 ? String(requestLine[1]) : "/"
+        let cookie = lines.dropFirst().first { $0.lowercased().hasPrefix("cookie:") }
+            .map { String($0.dropFirst("cookie:".count)).trimmingCharacters(in: .whitespaces) }
+        lock.lock()
+        recorded.append(Request(path: path, cookie: cookie))
+        lock.unlock()
+
+        let body = Data("icon".utf8)
+        var headers = ["Content-Type: image/x-icon", "Content-Length: \(body.count)", "Connection: close"]
+        if path == "/sets-cookie.ico" {
+            headers.append("Set-Cookie: \(Self.cookieName)=linked; Path=/; Max-Age=3600")
+        }
+        var response = Data(("HTTP/1.1 200 OK\r\n" + headers.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+        response.append(body)
+        connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
 }

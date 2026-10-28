@@ -8,8 +8,15 @@ enum BrowserFavicon {
     static let maximumBytes = 1 << 20
     static let maximumDiscoveredURLCharacters = 1_500_000
 
+    /// Pages choose favicon URLs, so these fetches keep no state that could
+    /// follow the operator between sites or browser profiles: no cookies and
+    /// no cache shared with the rest of the app (C11-496).
     static let directSession: URLSession = {
-        let configuration = URLSessionConfiguration.default
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 2
         configuration.timeoutIntervalForResource = 4
         return URLSession(configuration: configuration)

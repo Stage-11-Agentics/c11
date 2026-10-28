@@ -213,6 +213,25 @@ struct PanelActivityDetailsSnapshot: Equatable {
     var isBeingSeen: Bool = false
 }
 
+/// Which color a 9pt activity mark takes. Color means attention only: the
+/// flag's violet wins, then blue on a cold mark whose prompt cache expired,
+/// else the gray/gold lifecycle ramp. Delegation is not a color; it draws a
+/// lineage baseline (`BonsplitActivityMarkLineage`).
+enum ActivityMarkTint: Equatable {
+    case flag
+    case promptCacheCold
+    case lifecycle
+
+    /// `promptCacheExpired` is set only for a cold mark
+    /// (`AgentActivityHelpProjection.promptCacheExpired`); a waiting agent
+    /// keeps its gold.
+    static func resolve(flagged: Bool, promptCacheExpired: Bool) -> ActivityMarkTint {
+        if flagged { return .flag }
+        if promptCacheExpired { return .promptCacheCold }
+        return .lifecycle
+    }
+}
+
 struct WorkspacePulseAgent: Equatable, Identifiable {
     let surfaceId: UUID
     let state: WorkspacePulseState
@@ -224,13 +243,23 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     let suppressed: Bool
     let flagReason: String?
     let activityHelp: AgentActivityHelpProjection?
+    /// Delegate hops above this agent (0 for a normal agent). The mark draws
+    /// one baseline rule per hop, capped at two.
+    let lineageDepth: Int
 
     var id: UUID { surfaceId }
+
+    var markTint: ActivityMarkTint {
+        ActivityMarkTint.resolve(
+            flagged: flagged,
+            promptCacheExpired: presentedState == .cold && activityHelp?.promptCacheExpired == true
+        )
+    }
 
     /// The cold line turns blue when the agent's prompt cache expired; the
     /// flag's violet wins over it.
     var showsPromptCacheColor: Bool {
-        !flagged && presentedState == .cold && activityHelp?.promptCacheExpired == true
+        markTint == .promptCacheCold
     }
 
     init(
@@ -240,7 +269,8 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         flagged: Bool = false,
         suppressed: Bool = false,
         flagReason: String? = nil,
-        activityHelp: AgentActivityHelpProjection? = nil
+        activityHelp: AgentActivityHelpProjection? = nil,
+        lineageDepth: Int = 0
     ) {
         self.surfaceId = surfaceId
         self.state = state
@@ -249,6 +279,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         self.suppressed = suppressed
         self.flagReason = flagReason
         self.activityHelp = activityHelp
+        self.lineageDepth = suppressed ? max(1, lineageDepth) : 0
     }
 
     /// Suppression is a lifecycle projection, and a flag wins when both

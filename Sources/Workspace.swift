@@ -5295,6 +5295,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// Owner display names precomputed by `PanelAttentionService`; view bodies
     /// never resolve a delegate across workspace boundaries.
     @Published private(set) var delegationOwnerTitlesByPanel: [UUID: String] = [:]
+    /// Delegate hops per delegated panel, read from `PanelAttentionIndex` so
+    /// view bodies never walk a lineage across workspace boundaries.
+    @Published private(set) var delegationDepthByPanel: [UUID: Int] = [:]
     /// Live-agent dormancy is a reversible presentation projection, kept
     /// separate from the durable working/idle metadata truth.
     @Published private(set) var coldAgentSurfaceIds: Set<UUID> = []
@@ -5512,20 +5515,19 @@ final class Workspace: Identifiable, ObservableObject {
         lightBackground ? "#2C5597" : "#5287D6"
     }
 
-    nonisolated static func delegatedActivityHex(lightBackground: Bool) -> String {
-        lightBackground ? "#006D67" : "#54C8BE"
-    }
-
-    /// The mark's recolor: flag violet wins, then delegate teal, then cache blue.
+    /// The mark's recolor: flag violet wins, then cache blue; nil keeps the
+    /// lifecycle color. Delegation never recolors a mark; its baseline carries
+    /// lineage (`ActivityMarkTint`).
     nonisolated static func activityColorOverrideHex(
         isFlagged: Bool,
-        isDelegated: Bool = false,
         promptCacheExpired: Bool,
         lightBackground: Bool
     ) -> String? {
-        if isFlagged { return "#9D8AD9" }
-        if isDelegated { return delegatedActivityHex(lightBackground: lightBackground) }
-        return promptCacheExpired ? promptCacheColdHex(lightBackground: lightBackground) : nil
+        switch ActivityMarkTint.resolve(flagged: isFlagged, promptCacheExpired: promptCacheExpired) {
+        case .flag: return "#9D8AD9"
+        case .promptCacheCold: return promptCacheColdHex(lightBackground: lightBackground)
+        case .lifecycle: return nil
+        }
     }
 
     /// Agent-state palette shared by sidebar workspace pulse marks, the card
@@ -5534,8 +5536,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// running/idle/cold are a neutral white-to-gray ramp (running most present,
     /// cold most receded) so `waiting` gold stays the only chromatic lifecycle
     /// color in the chrome: the brand's deliberate "needs you" signal. Two
-    /// Modifiers recolor a mark: flag violet wins, then delegate teal, then
-    /// blue on a cold mark whose prompt cache expired.
+    /// modifiers recolor a mark: flag violet wins, then blue on a cold mark
+    /// whose prompt cache expired. Delegates keep these colors and draw a
+    /// lineage baseline instead.
     nonisolated static func resolvedSurfaceTabActivityColors(
         from backgroundColor: NSColor
     ) -> BonsplitConfiguration.Appearance.TabActivityColors {
@@ -7959,8 +7962,34 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             attentionByPanel.removeValue(forKey: surfaceId)
         }
+        storeDelegationDepth(forSurface: surfaceId)
         syncSurfacePanelActivityStateForPanel(surfaceId)
         (panels[surfaceId] as? TerminalPanel)?.surface.hostedView.updateFlagBanner()
+    }
+
+    /// Re-read a delegate's depth after a delegation change above it.
+    func refreshDelegationDepth(forSurface surfaceId: UUID) {
+        guard storeDelegationDepth(forSurface: surfaceId) else { return }
+        syncSurfacePanelActivityStateForPanel(surfaceId)
+    }
+
+    /// Delegate hops ending at this panel: 0 when it is not a delegate.
+    func delegationDepth(panelId: UUID) -> Int {
+        delegationDepthByPanel[panelId] ?? 0
+    }
+
+    @discardableResult
+    private func storeDelegationDepth(forSurface surfaceId: UUID) -> Bool {
+        let depth = attentionByPanel[surfaceId]?.delegated == true
+            ? max(1, PanelAttentionIndex.shared.delegationDepth(of: surfaceId))
+            : 0
+        guard (delegationDepthByPanel[surfaceId] ?? 0) != depth else { return false }
+        if depth > 0 {
+            delegationDepthByPanel[surfaceId] = depth
+        } else {
+            delegationDepthByPanel.removeValue(forKey: surfaceId)
+        }
+        return true
     }
 
     func setDelegationOwnerTitle(_ title: String?, forSurface surfaceId: UUID) {
@@ -8010,7 +8039,6 @@ final class Workspace: Identifiable, ObservableObject {
         return BonsplitTabActivityPresentation(
             colorOverrideHex: Self.activityColorOverrideHex(
                 isFlagged: attention.isFlagged,
-                isDelegated: attention.delegated,
                 promptCacheExpired: help?.promptCacheExpired == true,
                 lightBackground: bonsplitController.configuration.appearance.chromeColors.backgroundHex
                     .flatMap { NSColor(hex: $0) }?.isLightColor ?? false
@@ -8023,7 +8051,8 @@ final class Workspace: Identifiable, ObservableObject {
                 : nil,
             suppressesDefaultMotion: attention.isFlagged || attention.suppressed,
             accessibilityValue: help?.accessibilityValue,
-            help: help?.help
+            help: help?.help,
+            lineageDepth: attention.delegated ? delegationDepth(panelId: panelId) : nil
         )
     }
 
@@ -8073,13 +8102,35 @@ final class Workspace: Identifiable, ObservableObject {
     func delegationLabel(panelId: UUID) -> String? {
         let attention = attentionSnapshot(panelId: panelId)
         guard attention.delegated else { return nil }
-        guard let title = delegationOwnerTitlesByPanel[panelId] else {
-            return String(localized: "surface.activity.delegate", defaultValue: "Delegate")
-        }
-        return String(
-            localized: "surface.activity.delegateOf",
-            defaultValue: "Delegate of \(title)"
+        return Self.delegationLabel(
+            ownerTitle: delegationOwnerTitlesByPanel[panelId],
+            depth: delegationDepth(panelId: panelId)
         )
+    }
+
+    /// The mark draws at most two lineage rules, so a deeper delegate states
+    /// its true depth in words.
+    nonisolated static func delegationLabel(ownerTitle: String?, depth: Int) -> String {
+        let showsDepth = depth > BonsplitActivityMarkLineage.maximumDisplayedDepth
+        switch (ownerTitle, showsDepth) {
+        case (nil, false):
+            return String(localized: "surface.activity.delegate", defaultValue: "Delegate")
+        case (let title?, false):
+            return String(
+                localized: "surface.activity.delegateOf",
+                defaultValue: "Delegate of \(title)"
+            )
+        case (nil, true):
+            return String(
+                localized: "surface.activity.delegateDepth",
+                defaultValue: "Delegate, depth \(depth)"
+            )
+        case (let title?, true):
+            return String(
+                localized: "surface.activity.delegateOfDepth",
+                defaultValue: "Delegate of \(title), depth \(depth)"
+            )
+        }
     }
 
     func panelActivityDetailsSnapshot(
@@ -9352,6 +9403,7 @@ final class Workspace: Identifiable, ObservableObject {
         derivedActivityByPanel = derivedActivityByPanel.filter { validSurfaceIds.contains($0.key) }
         attentionByPanel = attentionByPanel.filter { validSurfaceIds.contains($0.key) }
         delegationOwnerTitlesByPanel = delegationOwnerTitlesByPanel.filter { validSurfaceIds.contains($0.key) }
+        delegationDepthByPanel = delegationDepthByPanel.filter { validSurfaceIds.contains($0.key) }
         coldAgentSurfaceIds = coldAgentSurfaceIds.filter { validSurfaceIds.contains($0) }
         promptCacheExpiredAgentIds = promptCacheExpiredAgentIds.filter { validSurfaceIds.contains($0) }
         detectedTerminalTypesByPanel = detectedTerminalTypesByPanel.filter {
@@ -13897,6 +13949,7 @@ extension Workspace: BonsplitDelegate {
         derivedActivityByPanel.removeValue(forKey: panelId)
         attentionByPanel.removeValue(forKey: panelId)
         delegationOwnerTitlesByPanel.removeValue(forKey: panelId)
+        delegationDepthByPanel.removeValue(forKey: panelId)
         coldAgentSurfaceIds.remove(panelId)
         promptCacheExpiredAgentIds.remove(panelId)
         detectedTerminalTypesByPanel.removeValue(forKey: panelId)

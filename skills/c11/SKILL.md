@@ -146,9 +146,13 @@ fall back to the raw UUID after the caller closes. `flag.raised` events carry th
 
 A **delegate** is an agent you launched whose results you will handle. Its routine stops go to
 you, not the operator: on stop its mark reads idle, and it stays out of waiting counts, ⌥V and
-routine notifications (the record still lands in the store). Its distinct teal mark identifies a
-quiet delegate; a flag overrides it in violet. The operator hears that *you* are waiting, never
-that your worker finished. Parent/child is a creation fact: every delegate is a
+routine notifications (the record still lands in the store). Its mark sits on a **baseline**: one
+thin rule under the mark per delegate hop, two for a delegate of a delegate (the display stops at
+two; the tooltip and panel list give the true depth). The baseline is the only delegate cue; color
+still means attention (gray lifecycle, blue cache-cold, violet flag), so a cold delegate is gray or
+blue like any agent. **Gold and the waiting shape mean waiting on the operator, nothing else:** a
+stopped delegate shows idle, and the only waiting-shaped delegate is a flagged one, in violet, with
+its baseline kept. The operator hears that *you* are waiting, never that your worker finished. Parent/child is a creation fact: every delegate is a
 child, but not every child is a delegate. Use the delegate vocabulary for new work; `--suppressed`,
 `suppress`/`unsuppress`, and reads of `suppressed` remain aliases for compatibility:
 
@@ -168,8 +172,8 @@ handing the work off for good. A delegate is yours in three ways:
 - **Escalation.** Put this in its prompt: *"Report results and recoverable blockers to your
   parent by mailbox. If something needs the operator, or your parent can't or shouldn't judge
   it, raise a c11 flag."*
-- **Visibility.** The teal delegate mark distinguishes a quiet worker from an ordinary idle
-  panel; a flag overrides it in violet.
+- **Visibility.** The baseline under its mark distinguishes a quiet worker from an ordinary
+  idle panel; a flag turns the mark and its baseline violet.
 
 c11 releases a delegate when its owner panel closes. A re-tasked delegate releases itself with
 `c11 undelegate --panel "$C11_PANEL_ID"`.

@@ -1,4 +1,5 @@
 import XCTest
+import Bonsplit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -204,6 +205,135 @@ final class AttentionModelTests: XCTestCase {
             callerPanelId: nil,
             isLegacyOwnerlessSuppression: false
         ))
+    }
+
+    func testDelegateDepthCountsConsecutiveDelegateHops() {
+        let root = UUID(), first = UUID(), second = UUID(), third = UUID(), legacy = UUID()
+        let owners: [UUID: UUID?] = [
+            first: .some(root),
+            second: .some(first),
+            third: .some(second),
+            legacy: UUID?.none,
+        ]
+        XCTAssertEqual(DelegateLineage.depth(of: root, owners: owners), 0, "the owner is not a delegate")
+        XCTAssertEqual(DelegateLineage.depth(of: first, owners: owners), 1)
+        XCTAssertEqual(DelegateLineage.depth(of: second, owners: owners), 2)
+        XCTAssertEqual(DelegateLineage.depth(of: third, owners: owners), 3, "true depth beyond the two drawn lines")
+        XCTAssertEqual(DelegateLineage.depth(of: legacy, owners: owners), 1, "a legacy ownerless delegate is one hop")
+        XCTAssertEqual(DelegateLineage.depth(of: UUID(), owners: owners), 0)
+    }
+
+    func testDelegateDepthStopsAtAnOwnerThatIsNotADelegate() {
+        let normal = UUID(), delegateOfNormal = UUID(), childOfThat = UUID()
+        // `normal` launched a delegate but is not one itself.
+        let owners: [UUID: UUID?] = [delegateOfNormal: .some(normal), childOfThat: .some(delegateOfNormal)]
+        XCTAssertEqual(DelegateLineage.depth(of: childOfThat, owners: owners), 2)
+        var released = owners
+        released.removeValue(forKey: delegateOfNormal)
+        XCTAssertEqual(DelegateLineage.depth(of: childOfThat, owners: released), 1,
+                       "releasing the middle delegate breaks the run of hops")
+    }
+
+    func testDelegateDepthSurvivesAnOwnershipCycle() {
+        let a = UUID(), b = UUID()
+        let owners: [UUID: UUID?] = [a: .some(b), b: .some(a)]
+        XCTAssertEqual(DelegateLineage.depth(of: a, owners: owners), 2)
+        XCTAssertEqual(DelegateLineage.depth(of: b, owners: owners), 2)
+        XCTAssertEqual(Set(DelegateLineage.descendants(of: a, owners: owners)), [b])
+    }
+
+    func testDelegateDescendantsAreEveryDelegateBelowAPanel() {
+        let root = UUID(), first = UUID(), sibling = UUID(), second = UUID(), unrelated = UUID()
+        let owners: [UUID: UUID?] = [
+            first: .some(root),
+            sibling: .some(root),
+            second: .some(first),
+            unrelated: .some(UUID()),
+        ]
+        let descendants = DelegateLineage.descendants(of: root, owners: owners)
+        XCTAssertEqual(Set(descendants), [first, sibling, second])
+        XCTAssertEqual(descendants.last, second, "nearest hops first")
+        XCTAssertEqual(DelegateLineage.descendants(of: second, owners: owners), [])
+    }
+
+    func testAttentionIndexDerivesDepthFromPublishedDelegations() {
+        let index = PanelAttentionIndex()
+        let workspace = UUID(), otherWorkspace = UUID()
+        let owner = UUID(), first = UUID(), second = UUID()
+        func delegated(_ surface: UUID, by owner: UUID, in workspace: UUID, flag: String? = nil) -> PanelAttentionSnapshot {
+            PanelAttentionSnapshot(
+                workspaceId: workspace, surfaceId: surface, flagReason: flag,
+                flagRaisedAt: flag == nil ? nil : Date(), delegated: true, delegatedBy: owner
+            )
+        }
+        index.publish(delegated(second, by: first, in: otherWorkspace))
+        XCTAssertEqual(index.delegationDepth(of: second), 1, "its owner is not known to be a delegate yet")
+        index.publish(delegated(first, by: owner, in: workspace))
+        XCTAssertEqual(index.delegationDepth(of: second), 2, "lineage crosses workspaces")
+        XCTAssertEqual(index.delegationDepth(of: owner), 0)
+        XCTAssertEqual(index.delegateDescendants(of: first), [second])
+
+        index.publish(delegated(first, by: owner, in: workspace, flag: "needs a call"))
+        XCTAssertEqual(index.delegationDepth(of: second), 2, "a flag does not change lineage")
+
+        index.publish(PanelAttentionSnapshot(
+            workspaceId: workspace, surfaceId: first, flagReason: nil, flagRaisedAt: nil, delegated: false
+        ))
+        XCTAssertEqual(index.delegationDepth(of: first), 0)
+        XCTAssertEqual(index.delegationDepth(of: second), 1, "undelegating the middle panel shortens the lineage")
+
+        index.publish(delegated(first, by: owner, in: workspace))
+        index.remove(workspaceId: workspace, surfaceId: first)
+        XCTAssertEqual(index.delegationDepth(of: second), 1)
+
+        index.publish(delegated(first, by: owner, in: workspace))
+        index.prune(workspaceId: workspace, validSurfaceIds: [])
+        XCTAssertEqual(index.delegationDepth(of: second), 1, "pruning a workspace drops its delegates from the lineage")
+        XCTAssertEqual(index.delegationDepth(of: first), 0)
+    }
+
+    func testDelegationLabelStatesTheTrueDepthOnlyBeyondTwoLines() {
+        XCTAssertEqual(Workspace.delegationLabel(ownerTitle: nil, depth: 1), "Delegate")
+        XCTAssertEqual(Workspace.delegationLabel(ownerTitle: "Lead", depth: 2), "Delegate of Lead")
+        XCTAssertEqual(Workspace.delegationLabel(ownerTitle: "Lead", depth: 3), "Delegate of Lead, depth 3")
+        XCTAssertEqual(Workspace.delegationLabel(ownerTitle: nil, depth: 4), "Delegate, depth 4")
+    }
+
+    func testLineageGeometryUsesWholePointsAndCapsAtTwoLines() {
+        XCTAssertEqual(BonsplitActivityMarkLineage.displayedDepth(0), 0)
+        XCTAssertEqual(BonsplitActivityMarkLineage.displayedDepth(1), 1)
+        XCTAssertEqual(BonsplitActivityMarkLineage.displayedDepth(2), 2)
+        XCTAssertEqual(BonsplitActivityMarkLineage.displayedDepth(7), 2)
+        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 0), 9)
+        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 1), 6, "rows 0-6")
+        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 2), 4, "rows 0-4")
+        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 5), 4)
+        XCTAssertEqual(BonsplitActivityMarkLineage.ruleOffsets(depth: 0), [])
+        XCTAssertEqual(BonsplitActivityMarkLineage.ruleOffsets(depth: 1), [8])
+        XCTAssertEqual(BonsplitActivityMarkLineage.ruleOffsets(depth: 2), [5, 8])
+        XCTAssertEqual(BonsplitActivityMarkLineage.ruleOffsets(depth: 9), [5, 8])
+        XCTAssertEqual(BonsplitActivityMarkLineage.workingDotRows(depth: 1), 2, "3x2 dot grid")
+        XCTAssertEqual(BonsplitActivityMarkLineage.workingDotRows(depth: 2), 1, "one row of three")
+        for depth in 0...3 {
+            let height = BonsplitActivityMarkLineage.markHeight(depth: depth)
+            XCTAssertEqual(height, height.rounded())
+            for y in BonsplitActivityMarkLineage.ruleOffsets(depth: depth) {
+                XCTAssertEqual(y, y.rounded(), "no half-point lines")
+                XCTAssertGreaterThan(y, height - 1, "rules sit below the mark")
+                XCTAssertLessThanOrEqual(y + BonsplitActivityMarkLineage.ruleThickness, 9)
+            }
+        }
+    }
+
+    func testPresentationWithoutLineageDepthStillDecodes() throws {
+        let legacy = Data(#"{"alternatesWithBaseColor":false,"suppressesDefaultMotion":true}"#.utf8)
+        let decoded = try JSONDecoder().decode(BonsplitTabActivityPresentation.self, from: legacy)
+        XCTAssertNil(decoded.lineageDepth)
+        let roundTrip = try JSONDecoder().decode(
+            BonsplitTabActivityPresentation.self,
+            from: JSONEncoder().encode(BonsplitTabActivityPresentation(lineageDepth: 3))
+        )
+        XCTAssertEqual(roundTrip.lineageDepth, 3)
     }
 
     func testDelegateIndexTracksOwnerAdoptionTransferAndRemoval() {

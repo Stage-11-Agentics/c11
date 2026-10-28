@@ -23,7 +23,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 ### Fixed
 
 - **Markdown corpus indexing stays fast on very large or unusual documents.** Long or numerous headings, dense links and long ticket-prefix lists no longer slow the index. ([#762](https://github.com/Stage-11-Agentics/c11/pull/762))
-- **Workspace metadata commands no longer mistake the `--workspace` value for a key.** `get-workspace-metadata --workspace <ref>` lists every key instead of printing `(unset)`. `set-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` use the key or value you typed, so `set-workspace-description --workspace workspace:1 hello` sets the description to `hello`, not `workspace:1`.
+- **Workspace metadata commands no longer mistake the `--workspace` value for a key.** `get-workspace-metadata --workspace <ref>` lists every key instead of printing `(unset)`. `set-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` use the key or value you typed, so `set-workspace-description --workspace workspace:1 hello` sets the description to `hello`, not `workspace:1`. ([#774](https://github.com/Stage-11-Agentics/c11/pull/774))
 
 ## [1.4.0] - 2026-10-26
 

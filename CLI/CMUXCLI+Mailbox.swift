@@ -190,12 +190,14 @@ extension CMUXCLI {
     // MARK: - Caller resolution
 
     /// Returns the caller's workspace UUID, panel title, panel UUID and
-    /// mailbox address. Workspace
-    /// UUID comes from the C11_WORKSPACE_ID env var that every panel shell
-    /// inherits; the legacy environment alias remains a fallback. The panel
-    /// title is looked up via `panel.get_metadata`.
+    /// mailbox address. The panel UUID (C11_PANEL_ID) is the identity, and
+    /// `panel.get_metadata` returns its title and its live workspace.
+    /// C11_WORKSPACE_ID is only where the shell started: a panel moved since
+    /// then keeps the old value (C11-491), so it is used only when c11 does
+    /// not report a workspace. The legacy environment aliases remain fallbacks.
     /// Pass an override when scripting without a live c11 panel; its UUID is
-    /// then the override itself when it is a UUID, else nil.
+    /// then the override itself when it is a UUID, else nil, and the
+    /// workspace is the environment's.
     /// Inboxes are keyed on the panel UUID; sender-from chooses between the
     /// existing title and exact UUID form using the mailbox address.
     func resolveMailboxCaller(
@@ -204,46 +206,57 @@ extension CMUXCLI {
         surfaceOverride: String?
     ) throws -> (workspaceId: UUID, panelName: String, panelId: UUID?, mailboxAddress: String?) {
         let env = ProcessInfo.processInfo.environment
-        let workspaceIdStr = env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]
-        guard
-            let workspaceIdStr,
-            let workspaceId = UUID(uuidString: workspaceIdStr)
-        else {
-            throw CLIError(
-                message: String(
-                    localized: "mailbox.cli.error.workspace-not-set",
-                    defaultValue: "C11_WORKSPACE_ID is not set. Run from a c11 panel or set it for a script."
-                )
+        let envWorkspaceId = Self.envWorkspaceId(env)
+        let workspaceNotSet = CLIError(
+            message: String(
+                localized: "mailbox.cli.error.workspace-not-set",
+                defaultValue: "C11_WORKSPACE_ID is not set. Run from a c11 panel or set it for a script."
             )
-        }
+        )
 
         if let name = fromOverride ?? surfaceOverride, !name.isEmpty {
-            return (workspaceId, name, UUID(uuidString: name), nil)
+            guard let envWorkspaceId else { throw workspaceNotSet }
+            return (envWorkspaceId, name, UUID(uuidString: name), nil)
         }
 
         let surfaceIdStr = Self.callerPanelEnv(env)
         guard let surfaceIdStr, let surfaceId = UUID(uuidString: surfaceIdStr) else {
+            guard envWorkspaceId != nil else { throw workspaceNotSet }
             throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
         }
 
-        let payload = try client.sendV2(
-            method: "panel.get_metadata",
-            params: [
-                "workspace_id": workspaceIdStr,
-                "panel_id": surfaceIdStr
-            ]
-        )
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(
+                method: "panel.get_metadata",
+                params: ["panel_id": surfaceIdStr]
+            )
+        } catch let error as CLIError where error.message.hasPrefix("surface_not_found:") {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.caller-not-open",
+                    defaultValue: "Your panel %@ (C11_PANEL_ID) is not open in c11, in any workspace."
+                ).replacingOccurrences(of: "%@", with: surfaceIdStr)
+            )
+        }
+        guard let workspaceId = (payload["workspace_id"] as? String).flatMap(UUID.init(uuidString:))
+            ?? envWorkspaceId else { throw workspaceNotSet }
         let metadata = (payload["metadata"] as? [String: Any]) ?? [:]
         guard let title = metadata["title"] as? String, !title.isEmpty else {
             throw CLIError(
                 message: String(
-                    localized: "mailbox.cli.error.surface-not-found",
-                    defaultValue: "No panel named %@ in this workspace."
-                ).replacingOccurrences(of: "%@", with: "(untitled)")
+                    localized: "mailbox.cli.error.caller-untitled",
+                    defaultValue: "Your panel %@ (C11_PANEL_ID) has no title. Name it with c11 rename-panel, or pass --from <name>."
+                ).replacingOccurrences(of: "%@", with: surfaceIdStr)
             )
         }
         let mailboxAddress = metadata["mailbox.address"] as? String
         return (workspaceId, title, surfaceId, mailboxAddress)
+    }
+
+    /// C11_WORKSPACE_ID, or its legacy alias: where the caller's shell started.
+    static func envWorkspaceId(_ env: [String: String]) -> UUID? {
+        (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:))
     }
 
     /// The tab UUID whose inbox `recv` / `inbox-dir` should read. A caller
@@ -598,12 +611,24 @@ extension CMUXCLI {
         // The UUID-keyed inbox plus, when one exists on disk, the title-keyed
         // inbox an older build wrote, merged in ULID (send) order.
         let stateURL = try MailboxLayout.defaultStateURL()
-        let inboxURLs = MailboxLayout.recvInboxURLs(
+        var inboxURLs = MailboxLayout.recvInboxURLs(
             state: stateURL,
             workspaceId: workspaceId,
             panelId: panelId,
             panelName: panelName
         )
+        // C11-491: mail delivered before the panel moved is still in the inbox
+        // of the workspace its shell started in.
+        if surfaceOverride == nil, let panelId,
+           let startWorkspaceId = Self.envWorkspaceId(ProcessInfo.processInfo.environment),
+           startWorkspaceId != workspaceId {
+            let startInbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: startWorkspaceId, panelId: panelId)
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: startInbox.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                inboxURLs.append(startInbox)
+            }
+        }
         guard drain else {
             let entries = inboxURLs
                 .flatMap { MailboxDrain.pendingEntries(inbox: $0) }

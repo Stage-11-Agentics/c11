@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""
+C11-491: a panel moved to another workspace keeps the C11_WORKSPACE_ID its
+shell started with. The CLI must find the caller by its panel UUID, against a
+fake c11 that answers like the app after a move to another window: a request
+that pins the start workspace finds no such panel there.
+
+  1. `mailbox send` asks for the caller by panel only, then names the live
+     workspace to `mailbox.resolve` and in the envelope's sender claim. The
+     envelope's `from` is the caller's mailbox address.
+  2. `mailbox panel-name` and `mailbox outbox-dir` follow the live workspace.
+  3. `mailbox recv --peek` reads the live inbox and the one left in the start
+     workspace.
+  4. A caller panel c11 cannot find, or one with no title, gets an error that
+     names its UUID and says why, never "(untitled)".
+  5. `capture-pane --surface panel:N` and a bare `read-screen` send no
+     workspace beside the panel, so c11 finds it wherever it is.
+
+Run: C11_CLI_BIN=<path to c11> python3 tests/test_cli_moved_panel_caller.py
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import pathlib
+import shutil
+import sys
+import tempfile
+
+HERE = pathlib.Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location("drain", HERE / "test_mailbox_hook_drain_cli.py")
+drain = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(drain)
+
+START = drain.WORKSPACE     # C11_WORKSPACE_ID in the caller's environment
+LIVE = drain.MOVED_TO       # where the panel is now
+PANEL = drain.TAB           # C11_PANEL_ID
+RECIPIENT = drain.SIBLING
+
+
+class MovedPanelServer(drain.FakeC11):
+    """`metadata` is what c11 holds for the caller panel; None means the
+    panel is open nowhere."""
+
+    def __init__(self, path: str, metadata: dict | None):
+        self.metadata = metadata
+        super().__init__(path, False)
+
+    def answer(self, method: str, params: dict) -> tuple[dict | None, dict | None]:
+        pinned = params.get("workspace_id")
+        if method == "system.capabilities":
+            return {"methods": ["panel.list", "mailbox.resolve", "panel.read_text"],
+                    "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}, None
+        if method == "panel.get_metadata":
+            if self.metadata is None or (pinned and pinned.upper() != LIVE):
+                return None, {"code": "surface_not_found", "message": "Panel not found"}
+            return {"workspace_id": LIVE, "surface_id": PANEL, "metadata": self.metadata}, None
+        if method == "mailbox.resolve":
+            return {"resolution": "unique", "target_workspace_id": START, "panel_ids": [RECIPIENT]}, None
+        if method == "panel.read_text":
+            if pinned and pinned.upper() != LIVE:
+                return None, {"code": "invalid_params", "message": "Panel is not a terminal"}
+            return {"text": "moved screen"}, None
+        return {}, None
+
+    def _serve(self, conn):
+        try:
+            with conn, conn.makefile("rb") as handle:
+                for line in handle:
+                    try:
+                        request = json.loads(line)
+                    except ValueError:
+                        conn.sendall(b"OK\n")
+                        continue
+                    self.requests.append(request)
+                    result, error = self.answer(request.get("method"), request.get("params") or {})
+                    reply = {"id": request.get("id"), "ok": error is None}
+                    reply.update({"error": error} if error else {"result": result})
+                    conn.sendall(json.dumps(reply).encode() + b"\n")
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    def params_of(self, method: str) -> list[dict]:
+        return [r.get("params") or {} for r in self.requests if r.get("method") == method]
+
+
+FAILURES: list[str] = []
+
+
+def check(condition: bool, label: str, detail: str = "") -> None:
+    print(("PASS: " if condition else "FAIL: ") + label + (f" ({detail})" if detail and not condition else ""))
+    if not condition:
+        FAILURES.append(label)
+
+
+def outbox_envelopes(fixture: drain.Fixture) -> list[dict]:
+    files = pathlib.Path(fixture.home).glob(
+        "Library/Application Support/c11/workspaces/*/mailboxes/_outbox/*.msg"
+    )
+    return [json.loads(path.read_text()) for path in files]
+
+
+def main() -> int:
+    cli = drain.resolve_cli()
+    tmp = tempfile.mkdtemp(prefix="c11-moved-sock-")
+    titled = {"title": "Move fixer", "mailbox.address": "c11-move-fixer"}
+    try:
+        # 1. send
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "send.sock"), titled)
+        try:
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "send", "--to", "watcher", "hello"],
+                                fixture.env(server.path))
+            detail = f"rc={proc.returncode} stderr={proc.stderr[:300]!r}"
+            check(proc.returncode == 0, "send from a moved panel succeeds", detail)
+            lookups = server.params_of("panel.get_metadata")
+            check(bool(lookups) and all("workspace_id" not in p for p in lookups),
+                  "send looks the caller up by panel only", repr(lookups))
+            resolves = server.params_of("mailbox.resolve")
+            check([p.get("sender_workspace_id", "").upper() for p in resolves] == [LIVE],
+                  "mailbox.resolve names the live workspace", repr(resolves))
+            envelopes = outbox_envelopes(fixture)
+            claim = (envelopes[0].get("ext") or {}).get("c11_sender_claim") if len(envelopes) == 1 else None
+            check(len(envelopes) == 1 and envelopes[0].get("from") == "c11-move-fixer",
+                  "envelope from is the caller's mailbox address", repr(envelopes))
+            check(claim == {"panel": PANEL.lower(), "workspace": LIVE.lower()},
+                  "sender claim names the live workspace", repr(claim))
+        finally:
+            fixture.cleanup()
+
+        # 2. panel-name, outbox-dir
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "name.sock"), titled)
+        try:
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "panel-name"], fixture.env(server.path))
+            check(proc.returncode == 0 and proc.stdout.decode().strip() == "Move fixer",
+                  "panel-name prints the moved panel's title", f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "outbox-dir"], fixture.env(server.path))
+            out = proc.stdout.decode().strip()
+            check(proc.returncode == 0 and LIVE in out.upper() and START not in out.upper(),
+                  "outbox-dir is in the live workspace", f"rc={proc.returncode} out={out!r} err={proc.stderr!r}")
+        finally:
+            fixture.cleanup()
+
+        # 3. recv reads the live inbox and the start workspace's
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "recv.sock"), titled)
+        try:
+            fixture.deliver(PANEL.lower(), body="before the move", workspace=START)
+            fixture.deliver(PANEL.lower(), body="after the move", workspace=LIVE)
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--peek"], fixture.env(server.path))
+            out = proc.stdout.decode()
+            check(proc.returncode == 0 and "before the move" in out and "after the move" in out,
+                  "recv shows mail from both inboxes", f"rc={proc.returncode} out={out[:300]!r} err={proc.stderr!r}")
+        finally:
+            fixture.cleanup()
+
+        # 4. errors name the panel
+        for index, (label, metadata, reason) in enumerate((
+            ("caller open nowhere", None, "not open"),
+            ("caller with no title", {}, "no title"),
+        )):
+            fixture = drain.Fixture()
+            server = MovedPanelServer(os.path.join(tmp, f"err-{index}.sock"), metadata)
+            try:
+                proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "send", "--to", "watcher", "hi"],
+                                    fixture.env(server.path))
+                err = proc.stderr.decode()
+                check(proc.returncode != 0 and PANEL in err and reason in err and "(untitled)" not in err
+                      and not outbox_envelopes(fixture),
+                      f"{label}: error names the panel and why", f"rc={proc.returncode} err={err!r}")
+            finally:
+                fixture.cleanup()
+
+        # 5. panel-ref reads
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "read.sock"), titled)
+        try:
+            for argv in (["capture-pane", "--surface", "panel:7"], ["read-screen"]):
+                before = len(server.params_of("panel.read_text"))
+                proc, _ = drain.run(cli, ["--socket", server.path, *argv], fixture.env(server.path))
+                sent = server.params_of("panel.read_text")[before:]
+                check(proc.returncode == 0 and proc.stdout.decode().strip() == "moved screen"
+                      and sent and all("workspace_id" not in p for p in sent),
+                      f"{argv[0]} finds a moved panel", f"rc={proc.returncode} sent={sent!r} err={proc.stderr!r}")
+        finally:
+            fixture.cleanup()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    if FAILURES:
+        print(f"{len(FAILURES)} check(s) failed")
+        return 1
+    print("all checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

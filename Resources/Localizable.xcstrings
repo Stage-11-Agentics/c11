@@ -308,6 +308,30 @@
         "en": {"stringUnit": {"state": "translated", "value": "C11_WORKSPACE_ID is not set. Run from a c11 panel or set it for a script."}}
       }
     },
+    "mailbox.cli.error.caller-not-open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Your panel %@ (C11_PANEL_ID) is not open in c11, in any workspace."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "あなたのパネル %@（`C11_PANEL_ID`）は、どのワークスペースでも c11 で開かれていません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Вашу панель %@ (`C11_PANEL_ID`) не відкрито в c11 в жодному робочому просторі."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "사용자의 패널 %@(`C11_PANEL_ID`)이(가) 어떤 작업 공간에서도 c11에 열려 있지 않습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "你的面板 %@（`C11_PANEL_ID`）未在 c11 的任何工作区中打开。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "你的面板 %@（`C11_PANEL_ID`）未在 c11 的任何工作區中開啟。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ваша панель %@ (`C11_PANEL_ID`) не открыта в c11 ни в одном рабочем пространстве."}}
+      }
+    },
+    "mailbox.cli.error.caller-untitled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Your panel %@ (C11_PANEL_ID) has no title. Name it with c11 rename-panel, or pass --from <name>."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "あなたのパネル %@（`C11_PANEL_ID`）にはタイトルがありません。`c11 rename-panel` で名前を付けるか、`--from <name>` を指定してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "У вашої панелі %@ (`C11_PANEL_ID`) немає назви. Назвіть її за допомогою `c11 rename-panel` або передайте `--from <name>`."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "패널 %@(`C11_PANEL_ID`)에 제목이 없습니다. `c11 rename-panel`로 이름을 지정하거나 `--from <name>`을 전달하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "你的面板 %@（`C11_PANEL_ID`）没有标题。请用 `c11 rename-panel` 为其命名，或传入 `--from <name>`。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "你的面板 %@（`C11_PANEL_ID`）沒有標題。請用 `c11 rename-panel` 為其命名，或傳入 `--from <name>`。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "У вашей панели %@ (`C11_PANEL_ID`) нет названия. Назовите её с помощью `c11 rename-panel` или передайте `--from <name>`."}}
+      }
+    },
     "mailbox.drawer.age.ago": {
       "extractionState": "manual",
       "localizations": {

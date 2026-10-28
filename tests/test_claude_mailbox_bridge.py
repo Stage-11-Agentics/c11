@@ -2,6 +2,7 @@
 """Exercise the shipped CLI bridge against two disposable Unix peers.
 Run on Atlas: C11_TEST_CLI=/absolute/path/to/built/c11 python3 tests/test_claude_mailbox_bridge.py
 The live c11 app and all tenant configuration are outside this test.
+Needs node: the invitation is read from the shipped native-mail transport.
 """
 from __future__ import annotations
 
@@ -17,7 +18,18 @@ import time
 import unittest
 import uuid
 
-INVITATION = "c11 mail waiting: run c11 mailbox recv --ack"
+TRANSPORT = Path(__file__).resolve().parents[1] / "Resources" / "bin" / "mailbox-native.mjs"
+
+
+def transport_doorbell() -> str:
+    # The omp, Pi and OpenCode transport accepts only this text. Every test
+    # below sends it, so the Claude bridge must accept the same line.
+    script = f"import {{ doorbellText }} from {json.dumps(TRANSPORT.as_uri())}; process.stdout.write(doorbellText)"
+    return subprocess.run(["node", "--input-type=module", "-e", script],
+                          check=True, capture_output=True, text=True, timeout=10).stdout
+
+
+INVITATION = transport_doorbell()
 
 
 class Peer:

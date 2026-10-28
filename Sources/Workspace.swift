@@ -10859,8 +10859,8 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// The markdown area a repeated `markdown open` from this panel should join:
     /// its nearest right-side neighbor when that area holds nothing but markdown,
-    /// else a markdown-only area holding a doc this panel opened (the split may
-    /// have flipped below it). A nil result means split beside the panel instead.
+    /// else a markdown-only area holding a doc placed beside this panel (the split
+    /// may have flipped below it). A nil result means split beside the panel instead.
     /// Joining keeps repeated opens from halving the source area again and again.
     func preferredMarkdownTargetPane(fromPanelId panelId: UUID) -> PaneID? {
         if let pane = preferredBrowserTargetPane(fromPanelId: panelId), isMarkdownOnlyPane(pane) {
@@ -10869,10 +10869,14 @@ final class Workspace: Identifiable, ObservableObject {
         return bonsplitController.allPaneIds.first { pane in
             isMarkdownOnlyPane(pane) && bonsplitController.tabs(inPane: pane).contains { tab in
                 guard let docId = bonsplitTabIdToTabId[tab.id] else { return false }
-                return PanelLineage.shared.node(panelId: docId)?.parentPanelId == panelId
+                return markdownDocAnchors[docId] == panelId
             }
         }
     }
+
+    /// Doc panel id -> the panel `markdown open` placed it beside. In memory only;
+    /// after a restart placement falls back to the right-neighbor check.
+    var markdownDocAnchors: [UUID: UUID] = [:]
 
     /// Returns the nearest right-side sibling pane for browser placement.
     /// The search is local to the source pane's ancestry in the split tree:

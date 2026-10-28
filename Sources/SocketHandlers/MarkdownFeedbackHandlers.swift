@@ -1233,6 +1233,10 @@ extension TerminalController {
                 result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
                 return
             }
+            if let sourceSurfaceId {
+                ws.markdownDocAnchors = ws.markdownDocAnchors.filter { ws.panels[$0.key] != nil }
+                ws.markdownDocAnchors[markdownPanelId] = sourceSurfaceId
+            }
 
             let targetPaneUUID = ws.paneId(forPanelId: markdownPanelId)?.id
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)

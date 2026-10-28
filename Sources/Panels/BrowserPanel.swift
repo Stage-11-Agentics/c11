@@ -3069,6 +3069,7 @@ final class BrowserPanel: Panel, ObservableObject {
         }
         configureNavigationDelegateCallbacks()
         webView.navigationDelegate = navigationDelegate
+        webView.contextMenuDownloadDelegate = downloadDelegate
         webView.uiDelegate = uiDelegate
         setupObservers(for: webView)
         // C11-25: refresh the cached WebContent pid for the metrics sampler

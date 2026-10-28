@@ -59,6 +59,9 @@ final class CmuxWebView: WKWebView {
     var onShowSurfaceManifest: (() -> Void)?
     var contextMenuLinkURLProvider: ((CmuxWebView, NSPoint, @escaping (URL?) -> Void) -> Void)?
     var contextMenuDefaultBrowserOpener: ((URL) -> Bool)?
+    /// Receives the http(s) downloads started from the context menu. The owning
+    /// panel or popup sets it to the delegate its navigation downloads use.
+    weak var contextMenuDownloadDelegate: WKDownloadDelegate?
     /// Guard against background panes stealing first responder (e.g. page autofocus).
     /// BrowserPanelView updates this as pane focus state changes.
     var allowsFirstResponderAcquisition: Bool = true
@@ -992,7 +995,7 @@ final class CmuxWebView: WKWebView {
         }
     }
 
-    private func downloadURLViaSession(
+    private func downloadContextMenuURL(
         _ url: URL,
         suggestedFilename: String?,
         sender: Any?,
@@ -1017,6 +1020,18 @@ final class CmuxWebView: WKWebView {
         debugContextDownload(
             "browser.ctxdl.request trace=\(traceID) stage=start scheme=\(scheme) url=\(url.absoluteString)"
         )
+
+        if scheme == "http" || scheme == "https" {
+            startWebKitContextMenuDownload(
+                url,
+                sender: sender,
+                fallbackAction: fallbackAction,
+                fallbackTarget: fallbackTarget,
+                traceID: traceID
+            )
+            return
+        }
+
         notifyContextMenuDownloadState(true)
         debugContextDownload("browser.ctxdl.state trace=\(traceID) downloading=1")
 
@@ -1134,95 +1149,55 @@ final class CmuxWebView: WKWebView {
             }
             return
         }
+    }
 
-        let cookieStore = configuration.websiteDataStore.httpCookieStore
-        cookieStore.getAllCookies { cookies in
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            let cookieHeaders = HTTPCookie.requestHeaderFields(with: cookies)
-            for (key, value) in cookieHeaders {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
-            if let referer = self.url?.absoluteString, !referer.isEmpty {
-                request.setValue(referer, forHTTPHeaderField: "Referer")
-            }
-            if let ua = self.customUserAgent, !ua.isEmpty {
-                request.setValue(ua, forHTTPHeaderField: "User-Agent")
-            }
-            self.debugContextDownload(
-                "browser.ctxdl.request trace=\(traceID) stage=dispatch method=\(request.httpMethod ?? "GET") cookies=\(cookies.count) referer=\(request.value(forHTTPHeaderField: "Referer") ?? "nil") uaSet=\(request.value(forHTTPHeaderField: "User-Agent") == nil ? 0 : 1)"
+    /// Hands an http(s) context-menu download to WebKit. The page chose this
+    /// URL, so the request must carry only the cookies WebKit itself would
+    /// send to it: matched by domain, path, Secure and expiry, with the page
+    /// as first party, and matched again on every redirect. Copying the jar
+    /// into the request sent every site's cookies to the page's host (C11-487).
+    private func startWebKitContextMenuDownload(
+        _ url: URL,
+        sender: Any?,
+        fallbackAction: Selector?,
+        fallbackTarget: AnyObject?,
+        traceID: String
+    ) {
+        guard let downloadDelegate = contextMenuDownloadDelegate else {
+            debugContextDownload(
+                "browser.ctxdl.request trace=\(traceID) stage=noDownloadDelegate"
             )
-
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                DispatchQueue.main.async {
-                    guard let data, error == nil else {
-                        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-                        let mime = response?.mimeType ?? "nil"
-                        let hasResponse = response == nil ? 0 : 1
-                        self.debugContextDownload(
-                            "browser.ctxdl.response trace=\(traceID) stage=failure hasResponse=\(hasResponse) status=\(statusCode) mime=\(mime) error=\(error?.localizedDescription ?? "unknown")"
-                        )
-                        self.notifyContextMenuDownloadState(false)
-                        self.runContextMenuFallback(
-                            action: fallbackAction,
-                            target: fallbackTarget,
-                            sender: sender,
-                            traceID: traceID,
-                            reason: "network_error"
-                        )
-                        return
-                    }
-                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-                    let mime = response?.mimeType ?? "nil"
-                    let expectedLength = response?.expectedContentLength ?? -1
-                    self.debugContextDownload(
-                        "browser.ctxdl.response trace=\(traceID) stage=success hasResponse=1 status=\(statusCode) mime=\(mime) bytes=\(data.count) expected=\(expectedLength)"
-                    )
-                    let filenameCandidate = suggestedFilename
-                        ?? response?.suggestedFilename
-                        ?? url.lastPathComponent
-                    let saveName = filenameCandidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "download" : filenameCandidate
-
-                    let savePanel = NSSavePanel()
-                    savePanel.nameFieldStringValue = saveName
-                    savePanel.canCreateDirectories = true
-                    savePanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-                    // Download is already complete; we're now waiting for user save choice.
-                    self.notifyContextMenuDownloadState(false)
-                    self.debugContextDownload(
-                        "browser.ctxdl.response trace=\(traceID) stage=savePrompt shown=1 defaultName=\(saveName)"
-                    )
-                    savePanel.begin { result in
-                        guard result == .OK, let destURL = savePanel.url else {
-                            self.debugContextDownload(
-                                "browser.ctxdl.response trace=\(traceID) stage=savePrompt result=cancel"
-                            )
-                            return
-                        }
-                        do {
-                            try data.write(to: destURL, options: .atomic)
-                            self.debugContextDownload(
-                                "browser.ctxdl.response trace=\(traceID) stage=saveSuccess path=\(destURL.path)"
-                            )
-                        } catch {
-                            self.debugContextDownload(
-                                "browser.ctxdl.response trace=\(traceID) stage=saveFailure error=\(error.localizedDescription)"
-                            )
-                            self.runContextMenuFallback(
-                                action: fallbackAction,
-                                target: fallbackTarget,
-                                sender: sender,
-                                traceID: traceID,
-                                reason: "save_write_error"
-                            )
-                        }
-                    }
-                }
-            }.resume()
+            runContextMenuFallback(
+                action: fallbackAction,
+                target: fallbackTarget,
+                sender: sender,
+                traceID: traceID,
+                reason: "no_download_delegate"
+            )
+            return
+        }
+        var request = URLRequest(url: url)
+        if let referer = self.url?.absoluteString, !referer.isEmpty {
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if let ua = customUserAgent, !ua.isEmpty {
+            request.setValue(ua, forHTTPHeaderField: "User-Agent")
+        }
+        debugContextDownload(
+            "browser.ctxdl.request trace=\(traceID) stage=dispatch via=webkit referer=\(request.value(forHTTPHeaderField: "Referer") ?? "nil") uaSet=\(request.value(forHTTPHeaderField: "User-Agent") == nil ? 0 : 1)"
+        )
+        // WKDownload holds its delegate weakly; the panel or popup owns it.
+        // The delegate reports start, save and failure like any other
+        // download in this panel.
+        startDownload(using: request) { [weak self] download in
+            download.delegate = downloadDelegate
+            self?.debugContextDownload(
+                "browser.ctxdl.request trace=\(traceID) stage=handedToWebKit"
+            )
         }
     }
 
-    private func startContextMenuDownload(
+    func startContextMenuDownload(
         _ url: URL,
         sender: Any?,
         fallbackAction: Selector?,
@@ -1230,7 +1205,7 @@ final class CmuxWebView: WKWebView {
         traceID: String
     ) {
         debugContextDownload("browser.ctxdl.start trace=\(traceID) url=\(url.absoluteString)")
-        downloadURLViaSession(
+        downloadContextMenuURL(
             url,
             suggestedFilename: nil,
             sender: sender,

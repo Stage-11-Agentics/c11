@@ -474,6 +474,55 @@ final class MarkdownWebRendererTests: XCTestCase {
         XCTAssertEqual(substring["total"] as? Int, 4)
     }
 
+    /// C11-485: a replacement host SwiftUI builds and then discards must not
+    /// leave the visible host without its web view.
+    func testDiscardedReplacementHostReturnsWebViewToVisibleHost() async throws {
+        let panel = MarkdownPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let webView = panel.ensureRenderer().webView
+        let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        func makeWindow() -> NSWindow {
+            let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSView(frame: frame)
+            return window
+        }
+        let visibleWindow = makeWindow(), replacementWindow = makeWindow()
+        defer { visibleWindow.close(); replacementWindow.close() }
+
+        let visible = MarkdownWebViewContainer(webView: webView)
+        visible.frame = frame
+        visibleWindow.contentView?.addSubview(visible)
+        XCTAssertTrue(visible.holdsWebView)
+        XCTAssertEqual(webView.frame.size, frame.size)
+
+        // An off-window replacement never takes it, even when laid out or updated.
+        let replacement = MarkdownWebViewContainer(webView: webView)
+        replacement.frame = frame
+        replacement.layoutSubtreeIfNeeded()
+        replacement.claimIfOrphaned()
+        XCTAssertTrue(visible.holdsWebView)
+
+        // Once it joins a window it is the host being shown, and takes it.
+        replacementWindow.contentView?.addSubview(replacement)
+        XCTAssertTrue(replacement.holdsWebView)
+        XCTAssertFalse(visible.holdsWebView)
+
+        // Discarding it hands the web view back to the host still on screen.
+        replacement.removeFromSuperview()
+        try await waitUntil("web view returns to the visible host") { visible.holdsWebView }
+        XCTAssertTrue(webView.window === visibleWindow)
+        XCTAssertEqual(webView.frame.size, frame.size)
+    }
+
+    private func waitUntil(_ label: String, timeout: TimeInterval = 2, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { return XCTFail("Timed out: \(label)") }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     func testSourceModeEvictionRestoresPositionModeFindAndLatestContent() async throws {
         try await evictionRestoresReadingState(sourceMode: true)
     }

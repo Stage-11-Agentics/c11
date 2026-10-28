@@ -711,9 +711,68 @@ private struct MarkdownOmnibarButtonStyleBody: View {
 }
 
 private struct MarkdownWebViewHost: NSViewRepresentable {
-    let webView: WKWebView
-    func makeNSView(context: Context) -> WKWebView { webView }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    let webView: MarkdownWKWebView
+    func makeNSView(context: Context) -> MarkdownWebViewContainer { MarkdownWebViewContainer(webView: webView) }
+    func updateNSView(_ nsView: MarkdownWebViewContainer, context: Context) { nsView.claimIfOrphaned() }
+}
+
+/// One renderer's WKWebView, shared by every SwiftUI host of its panel. Split
+/// and area churn can build a replacement host, sometimes off-window, while the
+/// visible one stays mounted. A host takes the web view only while it is in a
+/// window, and a host that leaves its window gives it back to one still there,
+/// so a discarded replacement never leaves the visible reader empty (C11-485).
+final class MarkdownWebViewContainer: NSView {
+    let webView: MarkdownWKWebView
+
+    init(webView: MarkdownWKWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+        webView.hostContainers.add(self)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    var holdsWebView: Bool { webView.superview === self }
+
+    /// A host that just joined a window is the one SwiftUI is showing, so it
+    /// takes the web view even from a host that has not left yet.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            claim()
+        } else if holdsWebView {
+            // Reparenting inside the removal pass is unsafe; hand off next turn.
+            DispatchQueue.main.async { [webView] in webView.returnToVisibleHost() }
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        claimIfOrphaned()
+        if holdsWebView { webView.frame = bounds }
+    }
+
+    /// Takes the web view only when no host in a window holds it.
+    func claimIfOrphaned() {
+        guard !holdsWebView, webView.window == nil else { return }
+        claim()
+    }
+
+    func claim() {
+        guard window != nil, !holdsWebView else { return }
+        webView.removeFromSuperview()
+        webView.frame = bounds
+        webView.autoresizingMask = [.width, .height]
+        addSubview(webView)
+    }
+}
+
+extension MarkdownWKWebView {
+    func returnToVisibleHost() {
+        guard window == nil else { return }
+        hostContainers.allObjects.first { $0.window != nil }?.claim()
+    }
 }
 
 private struct MarkdownPointerObserver: NSViewRepresentable {

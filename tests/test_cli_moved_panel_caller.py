@@ -57,8 +57,13 @@ class MovedPanelServer(drain.FakeC11):
         if method == "system.capabilities":
             return {"methods": ["panel.list", "mailbox.resolve", "panel.read_text"],
                     "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}, None
-        if method == "panel.get_metadata" and params.get("panel_id") == "panel:136":
-            return {"workspace_id": PASSED_THROUGH, "surface_id": RECIPIENT, "metadata": {"title": "Recipient"}}, None
+        target = str(params.get("panel_id", ""))
+        if method == "panel.get_metadata" and target.upper() in ("PANEL:136", RECIPIENT):
+            # The app's reply after wire alias completion names the panel `panel_id`.
+            return {"workspace_id": PASSED_THROUGH, "panel_id": RECIPIENT, "metadata": {"title": "Recipient"}}, None
+        if method == "panel.get_metadata" and target.startswith("panel:"):
+            return None, {"code": "not_found", "message": f"Unknown panel_id: {target}; commands with "
+                          "explicit targets never fall back to the focused target"}
         if method == "panel.get_metadata":
             if self.metadata is None:
                 # What the app answers for a panel UUID it does not know.
@@ -193,6 +198,29 @@ def main() -> int:
                                 fixture.env(server.path))
             check(proc.returncode == 0 and "for the recipient" in proc.stdout.decode(),
                   "recv --panel <ref> reads that panel's inbox", f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir", "--panel", RECIPIENT.upper()],
+                                fixture.env(server.path))
+            out = proc.stdout.decode().strip()
+            check(proc.returncode == 0 and PASSED_THROUGH in out.upper() and RECIPIENT.lower() in out,
+                  "inbox-dir --panel <UUID> prints that panel's live inbox", f"rc={proc.returncode} out={out!r} err={proc.stderr!r}")
+            fixture.deliver(RECIPIENT.lower(), body="left behind", workspace=START)
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--drain", "--ack", "--panel", "panel:136"],
+                                fixture.env(server.path))
+            out = proc.stdout.decode()
+            remaining = [fixture.listing(RECIPIENT.lower(), workspace=ws)[0] for ws in (START, PASSED_THROUGH)]
+            check(proc.returncode == 0 and "for the recipient" in out and "left behind" in out and remaining == [[], []],
+                  "recv --drain --panel <ref> claims that panel's mail in every workspace",
+                  f"rc={proc.returncode} out={out[:300]!r} remaining={remaining!r} err={proc.stderr!r}")
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--peek", "--panel", "panel:999"],
+                                fixture.env(server.path))
+            check(proc.returncode != 0 and "panel:999" in proc.stderr.decode(),
+                  "recv --panel <unknown ref> is an error, not an empty inbox",
+                  f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir", "--panel", "watcher"],
+                                fixture.env(server.path))
+            out = proc.stdout.decode().strip()
+            check(proc.returncode == 0 and START in out.upper() and RECIPIENT.lower() in out,
+                  "inbox-dir --panel <name> still matches by name", f"rc={proc.returncode} out={out!r} err={proc.stderr!r}")
         finally:
             fixture.cleanup()
 

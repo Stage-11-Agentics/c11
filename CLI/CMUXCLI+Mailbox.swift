@@ -218,13 +218,25 @@ extension CMUXCLI {
             // A `--panel` UUID or ref names one panel app-wide: take its live
             // workspace and title from c11 rather than matching it as a name
             // in the caller's workspace (C11-491).
-            if fromOverride == nil, isUUID(name) || isHandleRef(name),
-               let payload = try? client.sendV2(method: "panel.get_metadata", params: ["panel_id": name]),
-               let panelId = ((payload["panel_id"] ?? payload["surface_id"]) as? String).flatMap(UUID.init(uuidString:)),
-               let workspaceId = (payload["workspace_id"] as? String).flatMap(UUID.init(uuidString:)) {
-                let metadata = (payload["metadata"] as? [String: Any]) ?? [:]
-                let title = (metadata["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? name
-                return (workspaceId, title, panelId, metadata["mailbox.address"] as? String)
+            // A ref names only a live panel, so an unknown one is an error
+            // (the app's `not_found`), never an empty inbox. A UUID may name a
+            // closed panel's retained inbox and falls back to the name path.
+            let isPanelRef = isHandleRef(name)
+                && ["panel:", "tab:", "surface:"].contains(where: name.lowercased().hasPrefix)
+            if fromOverride == nil, isPanelRef || isUUID(name) {
+                let payload: [String: Any]?
+                if isPanelRef {
+                    payload = try client.sendV2(method: "panel.get_metadata", params: ["panel_id": name])
+                } else {
+                    payload = try? client.sendV2(method: "panel.get_metadata", params: ["panel_id": name])
+                }
+                if let payload,
+                   let panelId = ((payload["panel_id"] ?? payload["surface_id"]) as? String).flatMap(UUID.init(uuidString:)),
+                   let workspaceId = (payload["workspace_id"] as? String).flatMap(UUID.init(uuidString:)) {
+                    let metadata = (payload["metadata"] as? [String: Any]) ?? [:]
+                    let title = (metadata["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? panelId.uuidString
+                    return (workspaceId, title, panelId, metadata["mailbox.address"] as? String)
+                }
             }
             guard let envWorkspaceId else { throw workspaceNotSet }
             return (envWorkspaceId, name, UUID(uuidString: name), nil)
@@ -632,13 +644,15 @@ extension CMUXCLI {
         )
         // C11-491: mail delivered before a move stays in the inbox of each
         // workspace the panel passed through, so a moved panel reads them all.
-        if surfaceOverride == nil, let panelId,
-           let startWorkspaceId = Self.envWorkspaceId(ProcessInfo.processInfo.environment),
-           startWorkspaceId != workspaceId {
+        // The caller's own panel moved when its start workspace is not its
+        // live one; another panel's history is unknown, so its are searched.
+        let startWorkspaceId = Self.envWorkspaceId(ProcessInfo.processInfo.environment)
+        if let panelId, surfaceOverride != nil || (startWorkspaceId != nil && startWorkspaceId != workspaceId) {
             let retained = MailboxDrain.panelInboxURLs(
                 workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true),
-                preferredWorkspaceId: startWorkspaceId,
-                currentWorkspaceId: workspaceId,
+                preferredWorkspaceId: surfaceOverride == nil ? startWorkspaceId : workspaceId,
+                currentWorkspaceId: surfaceOverride == nil ? workspaceId : nil,
+                scanWhenOwnerUnknown: true,
                 panelId: panelId
             )
             for inbox in retained

@@ -6,17 +6,27 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
-### Fixed
+## [1.5.1] - 2026-10-28
 
-- **A panel moved to another workspace keeps its metadata and its identity.** Its title, description, model, mailbox address and every other key move with it, with their sources, as do its flag, delegation, open ask and tty. Its shell still identifies, mails and reads as that panel, though its `C11_WORKSPACE_ID` names the workspace it started in, and `mailbox recv` also reads mail left in the workspaces it passed through. ([#780](https://github.com/Stage-11-Agentics/c11/pull/780))
+Headline: **c11 1.5.1. A panel moved to another workspace keeps its metadata and its mail, browser downloads stop sending another site's cookies, the Agent Skills sheet no longer replaces newer skill copies, and the markdown viewer loads long documents fast.**
 
 ### Security
 
 - **Download Image and Download Linked File send only the cookies for that address.** The browser panel's context menu hands the download to WebKit, which attaches the cookies it would send to that URL, instead of every cookie in the panel's profile. ([#777](https://github.com/Stage-11-Agentics/c11/pull/777))
+- **The markdown viewer's bundled libraries are updated.** markdown-it 15.0.3 fixes a slow parse of unclosed reference definitions that could stall a markdown panel on a crafted file. DOMPurify is 3.4.17. ([#779](https://github.com/Stage-11-Agentics/c11/pull/779))
+- **Mermaid diagrams in markdown panels can no longer change the renderer's configuration.** The viewer refuses `%%{init}%%`-style directives in every form Mermaid accepts, and frontmatter keys other than `title` and `displayMode`. ([#781](https://github.com/Stage-11-Agentics/c11/pull/781))
 
 ### Fixed
 
-- **The Agent Skills sheet no longer replaces a newer skill copy with the app's older one.** A copy synced from a checkout by `scripts/sync-installed-skills.sh`, or edited by hand, is a local copy: the sheet, Update and Remove leave it alone and say so, `c11 skill install` keeps it, and only Settings → Agent Skills → Replace Local Copies or `--force` replaces it. Copies a development build installs, and skill folders linked into a checkout, count as local copies too. Each row in the sheet now lists what it will update, install or replace.
+- **A panel moved to another workspace keeps its metadata and its identity.** Its title, description, model, mailbox address and every other key move with it, with their sources, as do its flag, delegation, open ask and tty. Its shell still identifies, mails and reads as that panel, though its `C11_WORKSPACE_ID` names the workspace it started in, and `mailbox recv` also reads mail left in the workspaces it passed through. ([#780](https://github.com/Stage-11-Agentics/c11/pull/780))
+- **The Agent Skills sheet no longer replaces a newer skill copy with the app's older one.** A copy synced from a checkout by `scripts/sync-installed-skills.sh`, or edited by hand, is a local copy: the sheet, Update and Remove leave it alone and say so, `c11 skill install` keeps it, and only Settings → Agent Skills → Replace Local Copies or `--force` replaces it. Copies a development build installs, and skill folders linked into a checkout, count as local copies too. Each row in the sheet now lists what it will update, install or replace. ([#778](https://github.com/Stage-11-Agentics/c11/pull/778))
+- **A markdown panel keeps its reading position in paragraphs with hard line breaks.** Scrolling to a line, the visible-lines report and the restore after a relaunch now land on the right line. ([#782](https://github.com/Stage-11-Agentics/c11/pull/782))
+- **The markdown viewer loads one very long paragraph or code block in linear time.** In tests, a 40,000-line paragraph that took minutes now opens in under half a second. ([#781](https://github.com/Stage-11-Agentics/c11/pull/781))
+- **`c11 shortcuts list` aligns every row.** Its columns are sized to the widest row. The browser console action is now spelled `show-browser-javascript-console`; the old spelling still works for `set` and `reset`. ([#776](https://github.com/Stage-11-Agentics/c11/pull/776))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.5.0] - 2026-10-28
 

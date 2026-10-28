@@ -400,6 +400,10 @@ final class CmuxWebView: WKWebView {
 
     /// The last context-menu point in view coordinates.
     private var lastContextMenuPoint: NSPoint = .zero
+    /// The page the context menu opened on, when it was settled. `url` alone
+    /// would already report a pending navigation while the previous document
+    /// still answers the menu's JavaScript.
+    private var contextMenuPageURL: URL?
     /// Saved native WebKit action for "Download Image".
     private var fallbackDownloadImageTarget: AnyObject?
     private var fallbackDownloadImageAction: Selector?
@@ -1097,45 +1101,34 @@ final class CmuxWebView: WKWebView {
         }
 
         if scheme == "file" {
-            // The page's own JavaScript resolved this URL, so a web page could
-            // name any local path. WebKit never lets an http(s) page load a
-            // file: URL, so only a page that is itself a local file may save
-            // one (C11-495).
-            guard self.url?.isFileURL == true else {
-                notifyContextMenuDownloadState(false)
+            // The page's own JavaScript resolved this URL, and WebKit never
+            // lets a web page load a file: URL. Only a local page that was
+            // settled when the menu opened may save a file, and only one
+            // inside the folder WebKit lets that page read (C11-495).
+            let indicator = onContextMenuDownloadStateChanged
+            guard let pageURL = contextMenuPageURL, pageURL.isFileURL,
+                  !isLoading, self.url == pageURL else {
+                indicator?(false)
                 debugContextDownload(
-                    "browser.ctxdl.file trace=\(traceID) stage=rejectNonFilePage pageScheme=\(self.url?.scheme ?? "nil")"
-                )
-                runContextMenuFallback(
-                    action: fallbackAction,
-                    target: fallbackTarget,
-                    sender: sender,
-                    traceID: traceID,
-                    reason: "file_from_non_file_page"
+                    "browser.ctxdl.file trace=\(traceID) stage=rejectPage menuPage=\(contextMenuPageURL?.scheme ?? "nil") loading=\(isLoading ? 1 : 0)"
                 )
                 return
             }
-            let source = url.resolvingSymlinksInPath()
             let filename = suggestedFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
             let saveName = filename?.isEmpty == false
                 ? filename!
-                : (source.lastPathComponent.isEmpty ? "download" : source.lastPathComponent)
-            // stat and copy stay off main: a FIFO, a device or a slow volume
-            // must not block the app, and the copy streams from disk.
+                : (url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent)
+            // Path resolution, stat and copy stay off main: an automount, a
+            // slow volume or a FIFO must not block the app.
             DispatchQueue.global(qos: .userInitiated).async {
-                let fileType = (try? FileManager.default.attributesOfItem(atPath: source.path))?[.type] as? FileAttributeType
+                let source = url.resolvingSymlinksInPath()
+                let allowed = Self.isInsideReadAccess(of: pageURL, source)
+                    && Self.isRegularFile(atPath: source.path)
                 DispatchQueue.main.async {
-                    self.notifyContextMenuDownloadState(false)
-                    guard fileType == .typeRegular else {
+                    indicator?(false)
+                    guard allowed else {
                         self.debugContextDownload(
-                            "browser.ctxdl.file trace=\(traceID) stage=rejectNotRegular type=\(fileType?.rawValue ?? "missing") path=\(source.path)"
-                        )
-                        self.runContextMenuFallback(
-                            action: fallbackAction,
-                            target: fallbackTarget,
-                            sender: sender,
-                            traceID: traceID,
-                            reason: "file_not_regular"
+                            "browser.ctxdl.file trace=\(traceID) stage=rejectSource path=\(source.path)"
                         )
                         return
                     }
@@ -1149,20 +1142,18 @@ final class CmuxWebView: WKWebView {
                             )
                             return
                         }
-                        self.notifyContextMenuDownloadState(true)
+                        indicator?(true)
                         DispatchQueue.global(qos: .userInitiated).async {
-                            let outcome = Result { try Self.copyContextMenuFile(from: source, to: destURL) }
+                            let outcome = Result { try Self.copyRegularFile(atPath: source.path, to: destURL) }
                             DispatchQueue.main.async {
-                                self.notifyContextMenuDownloadState(false)
+                                indicator?(false)
                                 switch outcome {
                                 case .success:
                                     self.debugContextDownload(
                                         "browser.ctxdl.file trace=\(traceID) stage=saveSuccess path=\(destURL.path)"
                                     )
                                 case .failure(let error):
-                                    self.debugContextDownload(
-                                        "browser.ctxdl.file trace=\(traceID) stage=saveFailure error=\(error.localizedDescription)"
-                                    )
+                                    NSLog("BrowserPanel context-menu save failed: %@", error.localizedDescription)
                                 }
                             }
                         }
@@ -1190,24 +1181,57 @@ final class CmuxWebView: WKWebView {
         }
     }
 
-    /// Copies a local file to the destination the operator chose, replacing
-    /// an existing file there as the save panel already confirmed.
-    private static func copyContextMenuFile(from source: URL, to destination: URL) throws {
-        let fileManager = FileManager.default
-        let staging = try fileManager.url(
-            for: .itemReplacementDirectory,
-            in: .userDomainMask,
-            appropriateFor: destination,
-            create: true
-        )
-        defer { try? fileManager.removeItem(at: staging) }
-        let staged = staging.appendingPathComponent(destination.lastPathComponent, isDirectory: false)
-        try fileManager.copyItem(at: source, to: staged)
-        if fileManager.fileExists(atPath: destination.path) {
-            _ = try fileManager.replaceItemAt(destination, withItemAt: staged)
-        } else {
-            try fileManager.moveItem(at: staged, to: destination)
+    /// Records the page the context menu opened on, for `file:` saves.
+    func noteContextMenuOpened() {
+        contextMenuPageURL = isLoading ? nil : url
+    }
+
+    /// True when `source`, already resolved, lies inside the folder WebKit
+    /// lets `pageURL` read (`browserLoadRequest` grants the same folder).
+    private static func isInsideReadAccess(of pageURL: URL, _ source: URL) -> Bool {
+        guard let root = browserReadAccessURL(forLocalFileURL: pageURL)?
+            .resolvingSymlinksInPath().standardizedFileURL.path else { return false }
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        return source.standardizedFileURL.path.hasPrefix(prefix)
+    }
+
+    /// Checks the file type without opening it, so a FIFO or device is never
+    /// opened.
+    private static func isRegularFile(atPath path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
+    /// Copies a regular file's bytes to the destination the operator chose,
+    /// replacing a file there as the save panel already confirmed. The file
+    /// is checked again through the descriptor that is copied, so a file
+    /// swapped for a FIFO or symlink after the first check is refused.
+    private static func copyRegularFile(atPath sourcePath: String, to destination: URL) throws {
+        func posixError() -> POSIXError {
+            POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
+        guard isRegularFile(atPath: sourcePath) else { throw POSIXError(.EFTYPE) }
+        let source = open(sourcePath, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard source >= 0 else { throw posixError() }
+        defer { close(source) }
+        var info = stat()
+        guard fstat(source, &info) == 0 else { throw posixError() }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { throw POSIXError(.EFTYPE) }
+
+        let staged = destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).c11-\(UUID().uuidString)", isDirectory: false)
+        let target = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
+        guard target >= 0 else { throw posixError() }
+        var placed = false
+        defer {
+            if !placed { unlink(staged.path) }
+        }
+        let copied = fcopyfile(source, target, nil, copyfile_flags_t(COPYFILE_DATA))
+        let copyError = posixError()
+        close(target)
+        guard copied == 0 else { throw copyError }
+        guard rename(staged.path, destination.path) == 0 else { throw posixError() }
+        placed = true
     }
 
     /// Hands an http(s) context-menu download to WebKit. The page chose this
@@ -1314,6 +1338,7 @@ final class CmuxWebView: WKWebView {
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         lastContextMenuPoint = convert(event.locationInWindow, from: nil)
+        noteContextMenuOpened()
         debugContextDownload(
             "browser.ctxdl.menu open itemCount=\(menu.items.count) point=(\(Int(lastContextMenuPoint.x)),\(Int(lastContextMenuPoint.y)))"
         )

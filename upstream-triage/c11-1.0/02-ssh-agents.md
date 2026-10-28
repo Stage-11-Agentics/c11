@@ -113,7 +113,7 @@ How it works [R: PR body and diff]:
 | Mailbox | Files in the local App Support directory with FSEvents. Delivery to a recipient is PTY injection, so it reaches a remote agent; sending from one does not | `Sources/Mailbox/MailboxLayout.swift:24-36` |
 | Pure c11-side verbs | `read-screen`, `send`, `send-key`, and `set-metadata`/`set-status`/flags called from outside all work on an ssh tab today, because the PTY is local | §6 of the c11 inventory, [R] |
 | Tmux line (C11-36) | `Resources/bin/c11-spawn-agent` (C11-37, done) runs Claude in `tmux -L agents` on Atlas. C11-38 and C11-39 are in the backlog | `notes/c11-37-atlas-validation.md` |
-| Design doc | `docs/c11d-cloud-host-design.md`: persistent `c11d`, mTLS over the tailnet, daemon-owned workspaces, federated sidebar (phases P1 to P5). Not built | file |
+| Design doc | `docs/c11v-design.md`: a `c11d` on every host owns the terminals, and c11 attaches to local and remote hosts alike (steps 0 to 6). Not built | file |
 | Doc drift | The skill says "c11 is a local multiplexer… install tmux on the remote" | `skills/c11/references/api.md:431` |
 
 A side finding, inferred from #14974's Linux test and not checked in c11: `Resources/bin/claude:233-236` puts its `--settings` before `"$@"`. A launcher that passes its own `--settings` would therefore win, and c11's hooks would silently drop.
@@ -160,7 +160,7 @@ The doctrine gap is narrower than it looks. cmux's two remote-status paths split
 | Risk | Inherited code, unexercised since the fork | Inverts state of record (design doc §3) | Tracks a moving upstream with 100 PRs a day |
 | Converges to | B, if c11d-remote later becomes the PTY owner for local tabs too | (already there) | A fork of cmux's platform |
 
-**Recommendation: A for 1.0, built so B follows.** The PTY holder in A is the same component C11-186 and `c11d-cloud-host-design.md` P1 need. Once Atlas's own c11.app runs its tabs through that holder, Hyperion attaching to Atlas tabs is the federation step, not a rewrite.
+**Recommendation: A for 1.0, built so B follows.** The PTY holder in A is the same component C11-186 and `c11v-design.md` step 1 needs. Once Atlas's own c11.app runs its tabs through that holder, Hyperion attaching to Atlas tabs is the federation step, not a rewrite.
 
 ### A in detail
 

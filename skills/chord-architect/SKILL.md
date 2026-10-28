@@ -1,7 +1,7 @@
 ---
 name: chord-architect
 version: 1
-description: Stage 3 of the Chord workflow (chord-initiation → chord-prototype → chord-architect → lattice-orchestrator ×K) — codifies K loved designs into K build contracts under one shared rulebook, authors the pre-registered resolution book, then conducts the ×K build (fresh lattice-orchestrator run per candidate) through to the handoff of K live, instrumented probes. Inherits tone-architect by reference. Invoke when the operator says "chord architect," "codify the portfolio," "spec the candidates," or when a portfolio of loved prototypes needs its build contracts — and stay seated: this skill also owns the conductor's build-and-handoff playbook.
+description: 'Stage 3 of the Chord workflow (chord-initiation → chord-prototype → chord-architect → lattice-orchestrator ×K) — codifies K loved designs into K build contracts under one shared rulebook, authors the pre-registered resolution book, then conducts the ×K build (fresh lattice-orchestrator run per candidate) through to the handoff of K live, instrumented probes. Inherits tone-architect by reference. Invoke when the operator says "chord architect," "codify the portfolio," "spec the candidates," or when a portfolio of loved prototypes needs its build contracts — and stay seated: this skill also owns the conductor’s build-and-handoff playbook.'
 ---
 
 # Chord — Architect & Conduct

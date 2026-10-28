@@ -1,7 +1,7 @@
 ---
 name: tone-prototype
 version: 1
-description: Stage 2 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — prototype discovery: exploration directions pinned down with the client (by default three, each resting on a different core assumption), a clickable HTML prototype per direction on realistic mock data, iterated with the client until they love it. The full design, UX and UI, is discovered here; the build later reproduces it one-to-one. Invoke when the operator says "tone prototype," "prototype this," "prototype discovery," or standalone whenever a scoped idea needs its design discovered — even outside a full Tone run.
+description: 'Stage 2 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — prototype discovery: exploration directions pinned down with the client (by default three, each resting on a different core assumption), a clickable HTML prototype per direction on realistic mock data, iterated with the client until they love it. The full design, UX and UI, is discovered here; the build later reproduces it one-to-one. Invoke when the operator says "tone prototype," "prototype this," "prototype discovery," or standalone whenever a scoped idea needs its design discovered — even outside a full Tone run.'
 ---
 
 # Tone — Prototype

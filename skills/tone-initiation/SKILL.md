@@ -1,7 +1,7 @@
 ---
 name: tone-initiation
 version: 1
-description: Stage 1 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — the client-facing initiation of a project: commission, landscape research, idea refinement, economics, philosophy, and user stories. You are initiating a project with a client — part interviewer, part researcher, part product thinker; the largest, most dialogue-heavy stage of the pipeline. Invoke when the operator says "tone," "start a new project," "project initiation," "new project from scratch," or brings a raw idea at its very beginning. Each Tone stage is independently invocable when its inputs already exist.
+description: 'Stage 1 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — the client-facing initiation of a project: commission, landscape research, idea refinement, economics, philosophy, and user stories. You are initiating a project with a client — part interviewer, part researcher, part product thinker; the largest, most dialogue-heavy stage of the pipeline. Invoke when the operator says "tone," "start a new project," "project initiation," "new project from scratch," or brings a raw idea at its very beginning. Each Tone stage is independently invocable when its inputs already exist.'
 ---
 
 # Tone — Initiation

@@ -1,7 +1,7 @@
 ---
 name: chord-initiation
 version: 1
-description: Stage 1 of the Chord workflow (chord-initiation → chord-prototype → chord-architect → lattice-orchestrator ×K) — Tone in plural: the portfolio initiation of one problem with several complete answers. Commission a portfolio, research to enumerate, generate ~N candidate bets, voice K uncorrelated ones with a champion each, and write the two-tier philosophy & stories. Inherits tone-initiation by reference. Invoke when the operator says "chord," "chord this," "portfolio this," "build several answers," or when a keystone fork resists resolution by research and dialogue.
+description: 'Stage 1 of the Chord workflow (chord-initiation → chord-prototype → chord-architect → lattice-orchestrator ×K) — Tone in plural: the portfolio initiation of one problem with several complete answers. Commission a portfolio, research to enumerate, generate ~N candidate bets, voice K uncorrelated ones with a champion each, and write the two-tier philosophy & stories. Inherits tone-initiation by reference. Invoke when the operator says "chord," "chord this," "portfolio this," "build several answers," or when a keystone fork resists resolution by research and dialogue.'
 ---
 
 # Chord — Initiation

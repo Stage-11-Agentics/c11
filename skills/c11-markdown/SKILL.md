@@ -32,9 +32,11 @@ without changing panel or workspace selection.
 2. Open it in a markdown panel.
 3. The panel auto-updates when the file changes on disk.
 
+**Place docs by anchor, never by focus.** An agent opening a doc for itself passes `--panel "$C11_PANEL_ID"` (or `--area <ref>`). The first doc splits beside that panel and later ones join the markdown area already beside it; a cross-workspace `--workspace` open adds a panel to an existing area instead of splitting.
+
 ```bash
-# Open a markdown file as a split next to the current terminal
-c11 markdown open plan.md
+# Open beside your own panel
+c11 markdown open plan.md --panel "$C11_PANEL_ID"
 
 # Absolute path
 c11 markdown open /path/to/PLAN.md
@@ -158,8 +160,11 @@ c11 markdown open plan.md
 # Open in a specific workspace
 c11 markdown open plan.md --workspace workspace:2
 
-# Navigate an existing Markdown panel in place
+# Navigate an existing Markdown panel in place (a terminal --panel is a placement anchor)
 c11 markdown open plan.md --panel panel:5
+
+# Add it as a panel in a specific area, no split
+c11 markdown open plan.md --area area:3
 
 # Open in a specific window
 c11 markdown open plan.md --window window:1

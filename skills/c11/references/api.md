@@ -296,17 +296,14 @@ For these four create commands, `--command` queues literal text plus Return into
 - **`new-area`** — creates a new area with more options (supports `--type browser|markdown`, `--url`).
 - **`new-panel`** — creates a new **panel** inside an existing area. Use this to add panels to an area that already exists — essential for orchestration (create one area, then add agent panels).
 
-### `new-split` targeting
+### Create commands anchor on the caller
 
-`new-split` defaults to the **caller's** area, not the focused area. To split a different area, pass `--panel`:
+`new-split`, `new-area`, `new-panel` and `markdown open` place relative to the **caller's** panel (`$C11_PANEL_ID`) when it is in the target workspace, never the focused one. `new-split` / `new-area` split the caller's area, `new-panel` adds to it, and `markdown open` splits beside the caller once, then adds later docs to the markdown area on its right. A caller outside the target workspace (or a shell outside c11) falls back to the focused area; `markdown open` then adds a panel instead of splitting. To place elsewhere, name the target:
 
 ```bash
-# WRONG — splits the caller's area regardless of focus
-c11 focus-area --area area:5
-c11 new-split down
-
-# RIGHT — splits the area containing panel:10
-c11 new-split down --panel panel:10
+c11 new-split down --panel panel:10        # splits the area containing panel:10
+c11 new-panel --type terminal --area area:4
+c11 markdown open plan.md --area area:4
 ```
 
 ### Move a panel into a split
@@ -357,15 +354,6 @@ c11 new-panel --cwd .                          # a new panel in your current dir
 - Browser/markdown panels have no shell, so `--cwd` has no effect there (it's still validated if supplied).
 
 This removes the orchestrator habit of prefixing every spawned command with `cd /path && …` just to keep a sub-agent out of `~`.
-
-### `new-panel` targeting (gotcha — opposite of `new-split`)
-
-`new-panel` does **not** default to the caller's area. With no `--area`, it adds the panel to whichever area is currently *focused* — often **not** the area your agent is running in. To add a panel to your own area, read `caller.area_ref` from `c11 identify` and pass it:
-
-```bash
-CALLER_AREA=$(c11 identify --panel "$C11_PANEL_ID" | grep -o '"area_ref" : "area:[0-9]*"' | head -1 | cut -d'"' -f4)
-c11 new-panel --type terminal --area "$CALLER_AREA"
-```
 
 ## Workspace groups and batch order
 

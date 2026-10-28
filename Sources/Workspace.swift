@@ -10847,6 +10847,26 @@ final class Workspace: Identifiable, ObservableObject {
         return bonsplitController.tabs(inPane: paneId).firstIndex(where: { $0.id == bonsplitTabId })
     }
 
+    /// True when the area holds at least one panel and every panel in it is markdown.
+    func isMarkdownOnlyPane(_ paneId: PaneID) -> Bool {
+        let tabs = bonsplitController.tabs(inPane: paneId)
+        guard !tabs.isEmpty else { return false }
+        return tabs.allSatisfy { tab in
+            guard let panelId = bonsplitTabIdToTabId[tab.id] else { return false }
+            return panels[panelId] is MarkdownPanel
+        }
+    }
+
+    /// The markdown area a repeated `markdown open` from this panel should join:
+    /// its nearest right-side neighbor, only when that area holds nothing but
+    /// markdown. A nil result means split beside the panel instead. Joining the
+    /// neighbor keeps repeated opens from halving the source area again and again.
+    func preferredMarkdownTargetPane(fromPanelId panelId: UUID) -> PaneID? {
+        guard let pane = preferredBrowserTargetPane(fromPanelId: panelId),
+              isMarkdownOnlyPane(pane) else { return nil }
+        return pane
+    }
+
     /// Returns the nearest right-side sibling pane for browser placement.
     /// The search is local to the source pane's ancestry in the split tree:
     /// use the closest horizontal ancestor where the source is in the first (left) branch.

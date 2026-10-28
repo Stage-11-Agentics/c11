@@ -238,14 +238,17 @@ extension TerminalController {
             }
             self.v2MaybeFocusWindow(for: workspaceManager)
             self.v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
-            guard let focusedPanelId = ws.focusedPanelId else {
+            // Split beside the caller when it lives in this workspace; the focused
+            // panel is only the fallback for callers outside it.
+            let callerPanelId = self.v2UUID(params, "caller_panel_id").flatMap { ws.panels[$0] != nil ? $0 : nil }
+            guard let sourcePanelId = callerPanelId ?? ws.focusedPanelId else {
                 result = .err(code: "not_found", message: "No focused panel to split", data: nil)
                 return
             }
 
             let plan = self.planSizeAwareSplit(
                 ws: ws,
-                sourcePanelId: focusedPanelId,
+                sourcePanelId: sourcePanelId,
                 requested: direction,
                 newIsTerminal: panelType == .terminal,
                 force: force
@@ -292,7 +295,7 @@ extension TerminalController {
                     switch panelType {
                     case .browser:
                         return ws.newBrowserSplit(
-                            from: focusedPanelId,
+                            from: sourcePanelId,
                             orientation: orientation,
                             insertFirst: insertFirst,
                             url: url,
@@ -301,9 +304,9 @@ extension TerminalController {
                             focus: self.v2FocusAllowed()
                         )?.id
                     case .markdown:
-                        return ws.newMarkdownSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                        return ws.newMarkdownSplit(from: sourcePanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                     case .terminal:
-                        return ws.newTerminalSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                        return ws.newTerminalSplit(from: sourcePanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
                     }
                 }
             }

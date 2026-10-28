@@ -12,7 +12,7 @@ import path from "node:path";
 
 const bin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../Resources/bin");
 const { default: extension } = await import(pathToFileURL(path.join(bin, "omp-native-mail.ts")));
-const DOORBELL = "You have mail: run c11 mailbox recv --ack when you want to receive it.";
+const DOORBELL = "c11 mail waiting: run c11 mailbox recv --ack";
 const PANEL = "11111111-1111-4111-8111-111111111111";
 
 async function until(predicate, label) {

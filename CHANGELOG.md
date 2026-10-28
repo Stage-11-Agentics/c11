@@ -18,6 +18,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 ### Changed
 
 - **A delegate's mark shows its lineage, not teal.** A delegate now draws a thin rule under its mark, two for a delegate of a delegate, so the mark keeps its usual colors: gray by state, blue when the prompt cache expired, violet when flagged. A cold delegate whose cache expired now reads blue. The tooltip and panel list state the depth past two.
+- **The mail doorbell is shorter and names the c11 mailbox.** The line now reads `c11 mail waiting: run c11 mailbox recv --ack`. Claude Code frames native-inbox input as "Another Claude session sent a message:", so the line says where the mail actually came from.
 
 ### Fixed
 

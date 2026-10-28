@@ -193,6 +193,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         navDel.downloadDelegate = dlDel
         webView.uiDelegate = uiDel
         webView.navigationDelegate = navDel
+        webView.contextMenuDownloadDelegate = dlDel
 
         // Context menu "Open Link in New Tab" → open in opener's workspace,
         // not as a nested popup. Falls back to system browser if opener is gone.

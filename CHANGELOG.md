@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Fixed
+
+- **A panel moved to another workspace keeps its metadata and its identity.** Its title, description, model, mailbox address and every other key move with it, with their sources, as do its flag, delegation, open ask and tty. Its shell still identifies, mails and reads as that panel, though its `C11_WORKSPACE_ID` names the workspace it started in, and `mailbox recv` also reads mail left in the workspaces it passed through. ([#780](https://github.com/Stage-11-Agentics/c11/pull/780))
+
 ## [1.5.0] - 2026-10-28
 
 Headline: **c11 1.5.0. Rebind keyboard shortcuts live from the CLI, a delegate's mark shows its lineage instead of teal, markdown docs open beside the agent that opened them and no longer go blank after area changes, and a round of security hardening.**

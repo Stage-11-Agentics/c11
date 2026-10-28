@@ -16,8 +16,13 @@
 # source. Idempotent. Only touches skills that are (a) marked installable in
 # skills/MANIFEST.json AND (b) already installed in that harness's folder. It
 # never installs a skill a harness doesn't already have; first installs go
-# through c11 Settings → Agent Skills. The `.c11-skill.json` install marker is
-# preserved (the app owns it).
+# through c11 Settings → Agent Skills.
+#
+# Each synced copy gets its own `.c11-skill.json` stamp: `installed_by: "sync"`,
+# the checkout commit, and the content hash it wrote. The app treats a copy that
+# still matches that hash as checkout-managed and never offers to replace it with
+# its (possibly older) bundled copy; Settings → Agent Skills replaces it only on
+# an explicit Replace Local Copies.
 #
 # Usage:
 #   scripts/sync-installed-skills.sh           # sync all installed installable skills
@@ -26,8 +31,72 @@
 # C11_SKILL_ROOTS overrides the harness folder list (colon-separated), for tests.
 set -euo pipefail
 
-REPO_SKILLS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/skills"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_SKILLS="${REPO_ROOT}/skills"
 MANIFEST="${REPO_SKILLS}/MANIFEST.json"
+COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+if [ -n "$COMMIT" ] && [ -n "$(git -C "$REPO_ROOT" status --porcelain -- skills 2>/dev/null)" ]; then
+  COMMIT="${COMMIT}-dirty"
+fi
+
+# Writes the sync stamp into an installed copy. The hash matches
+# SkillInstaller.contentHash(of:skipInstallerManifest: true) in
+# Sources/SkillInstaller.swift; keep the two in step.
+write_stamp() {
+  python3 - "$1" "$2" "$COMMIT" <<'PY'
+import datetime, hashlib, json, os, struct, sys
+
+dest, name, commit = sys.argv[1:4]
+entries = []
+for root, _, files in os.walk(dest):
+    for filename in files:
+        path = os.path.join(root, filename)
+        rel = os.path.relpath(path, dest)
+        if rel == ".c11-skill.json" or filename == ".DS_Store":
+            continue
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        entries.append((rel, path))
+digest = hashlib.sha256()
+for rel, path in sorted(entries):
+    rel_bytes = rel.encode()
+    with open(path, "rb") as handle:
+        data = handle.read()
+    digest.update(struct.pack(">Q", len(rel_bytes)) + rel_bytes)
+    digest.update(struct.pack(">Q", len(data)) + data)
+
+version = None
+with open(os.path.join(dest, "SKILL.md"), encoding="utf-8") as handle:
+    lines = handle.read().splitlines()
+if lines and lines[0].strip() == "---":
+    for line in lines[1:]:
+        line = line.strip()
+        if line == "---":
+            break
+        if line.startswith("version:"):
+            version = line[len("version:"):].strip().strip("\"'") or None
+            break
+
+stamp = {
+    "c11_skill_schema": 1,
+    "package": name,
+    "skill_version": version,
+    "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "installed_by": "sync",
+    "app_version": "",
+    "app_build": "",
+    "commit": commit,
+    "source_sha256": "sha256:" + digest.hexdigest(),
+}
+if version is None:
+    del stamp["skill_version"]
+path = os.path.join(dest, ".c11-skill.json")
+with open(path + ".tmp", "w", encoding="utf-8") as handle:
+    json.dump(stamp, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+os.replace(path + ".tmp", path)
+PY
+}
 
 [ -f "$MANIFEST" ] || { echo "error: no MANIFEST.json at $MANIFEST" >&2; exit 1; }
 
@@ -78,8 +147,9 @@ for name in "${INSTALLABLE[@]}"; do
     case "$seen" in *":${real}:"*) continue ;; esac
     seen="${seen}${real}:"
     # Mirror source → installed copy. --delete keeps removed files from lingering.
-    # Preserve the app's install marker.
+    # The stamp is excluded from the mirror and rewritten as a sync stamp.
     rsync -a --delete --exclude='.c11-skill.json' "${src}/" "${dest}/"
+    write_stamp "$dest" "$name"
     echo "sync  ${name} → ${dest}"
     synced=$((synced+1))
   done

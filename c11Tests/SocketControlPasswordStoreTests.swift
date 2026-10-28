@@ -1145,6 +1145,156 @@ final class BundledSkillsManifestTests: XCTestCase {
     }
 }
 
+// MARK: - C11-488: local skill copies are never replaced by an older bundle
+
+/// A copy synced from a checkout, or edited by hand, may be newer than the
+/// app's bundled copy. The onboarding sheet must not offer it as an update,
+/// and nothing replaces it without an explicit action that names it.
+@MainActor
+final class SkillInstallerLocalCopyTests: XCTestCase {
+    private let identity = SkillInstaller.AppIdentity(version: "1.4.0", build: "139", commitShort: "fixture")
+
+    override func setUp() {
+        super.setUp()
+        AgentSkillsOnboarding._resetDismissedThisLaunchForTests()
+    }
+
+    private func status(_ h: SkillsHarness, _ name: String) throws -> SkillInstallerPackageStatus {
+        try XCTUnwrap(SkillInstaller.status(for: .claude, home: h.home, sourceDir: h.source)
+            .first { $0.package.name == name })
+    }
+
+    private func shouldPresent(_ h: SkillsHarness) -> Bool {
+        AgentSkillsOnboarding.shouldPresent(
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            environment: [:], isLocalDevBuild: false)
+    }
+
+    private func installedSkill(_ h: SkillsHarness, _ name: String) throws -> String {
+        try String(contentsOf: SkillInstallerTarget.claude.skillsDir(home: h.home)
+            .appendingPathComponent("\(name)/SKILL.md"), encoding: .utf8)
+    }
+
+    private func row(_ h: SkillsHarness) throws -> AgentSkillsModel.TargetRow {
+        AgentSkillsModel.TargetRow(
+            id: "claude", target: .claude, detected: true,
+            destinationDir: SkillInstallerTarget.claude.skillsDir(home: h.home),
+            packages: try SkillInstaller.status(for: .claude, home: h.home, sourceDir: h.source),
+            statusError: nil, sharedWithTarget: nil)
+    }
+
+    /// The 2026-10-27 incident, end to end: an app install, then the real
+    /// `scripts/sync-installed-skills.sh` from this checkout, then the sheet.
+    func testCheckoutSyncedCopyIsNeverOfferedOrSweptAlong() throws {
+        let synced = "c11-fanout"
+        let h = try makeHarness(skills: [synced: "older bundled copy", "foo": "v1-content"])
+        defer { h.cleanup() }
+        _ = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                       packages: [synced], appIdentity: identity)
+        XCTAssertEqual(try status(h, synced).state, .installedCurrent)
+
+        try runSyncScript(skill: synced, root: SkillInstallerTarget.claude.skillsDir(home: h.home))
+        let repoSkill = try String(contentsOf: try repoScript().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("skills/\(synced)/SKILL.md"), encoding: .utf8)
+        XCTAssertEqual(try installedSkill(h, synced), repoSkill)
+
+        // The sync stamp's hash matches the Swift hash of what it wrote.
+        let st = try status(h, synced)
+        XCTAssertEqual(st.state, .installedFromCheckout)
+        XCTAssertEqual(st.record?.installedBy, SkillInstallerRecord.installedBySync)
+        XCTAssertFalse(AgentSkillsOnboarding.shouldRowOffer(st))
+
+        // "foo" is missing, so the sheet still appears, but only for "foo".
+        XCTAssertTrue(shouldPresent(h))
+        let sheetRow = try row(h)
+        XCTAssertEqual(sheetRow.offeredPackageNames, ["foo"])
+        XCTAssertEqual(sheetRow.localCopies.map(\.package.name), [synced])
+        let summary = AgentSkillsOnboarding.changeSummary(for: sheetRow.packages)
+        XCTAssertEqual(summary.count, 2, summary.joined(separator: " | "))
+        XCTAssertTrue(summary[0].contains("foo") && !summary[0].contains(synced), summary[0])
+        XCTAssertTrue(summary[1].contains(synced), summary[1])
+
+        // The sheet's Update all installs exactly the offered rows.
+        let sheet = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: true,
+                                               packages: sheetRow.offeredPackageNames, appIdentity: identity)
+        XCTAssertEqual(sheet.installed, ["foo"])
+        XCTAssertEqual(try installedSkill(h, synced), repoSkill)
+        XCTAssertFalse(shouldPresent(h))
+
+        // A plain install keeps it; only a forced, named replacement replaces it.
+        let plain = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                               appIdentity: identity)
+        XCTAssertEqual(plain.keptLocal, [synced])
+        XCTAssertEqual(try installedSkill(h, synced), repoSkill)
+        let replaced = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: true,
+                                                  packages: [synced], appIdentity: identity)
+        XCTAssertEqual(replaced.refreshed, [synced])
+        XCTAssertEqual(try status(h, synced).state, .installedCurrent)
+        XCTAssertEqual(try status(h, synced).record?.installedBy, SkillInstallerRecord.installedByApp)
+    }
+
+    func testCopyFromAnOlderBundleIsStillOffered() throws {
+        let h = try makeHarness(skills: ["foo": "v1-content"])
+        defer { h.cleanup() }
+        _ = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                       appIdentity: identity)
+        XCTAssertFalse(shouldPresent(h))
+        try writeSkill(root: h.source, name: "foo", contents: "---\nname: foo\nversion: 1\n---\nv2-content\n")
+
+        XCTAssertEqual(try status(h, "foo").state, .installedOutdated)
+        XCTAssertTrue(shouldPresent(h))
+        let result = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                                appIdentity: identity)
+        XCTAssertEqual(result.refreshed, ["foo"])
+        XCTAssertEqual(try status(h, "foo").state, .installedCurrent)
+    }
+
+    func testHandEditedCopyIsNotOfferedOrReplaced() throws {
+        let h = try makeHarness(skills: ["foo": "v2-content"], installLocalCopies: ["foo": "my own edits"])
+        defer { h.cleanup() }
+        XCTAssertEqual(try status(h, "foo").state, .installedModified)
+        XCTAssertFalse(shouldPresent(h))
+        let result = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                                appIdentity: identity)
+        XCTAssertEqual(result.keptLocal, ["foo"])
+        XCTAssertTrue(try installedSkill(h, "foo").contains("my own edits"))
+    }
+
+    func testFinderMetadataDoesNotMakeACopyLookEdited() throws {
+        let h = try makeHarness(skills: ["foo": "v1-content"])
+        defer { h.cleanup() }
+        _ = try SkillInstaller.install(target: .claude, home: h.home, sourceDir: h.source, force: false,
+                                       appIdentity: identity)
+        let dest = SkillInstallerTarget.claude.skillsDir(home: h.home).appendingPathComponent("foo")
+        try Data([0, 0, 0, 1]).write(to: dest.appendingPathComponent(".DS_Store"))
+        XCTAssertEqual(try status(h, "foo").state, .installedCurrent)
+    }
+
+    private func repoScript() throws -> URL {
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("scripts/sync-installed-skills.sh")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: script.path), "Missing \(script.path)")
+        return script
+    }
+
+    private func runSyncScript(skill: String, root: URL) throws {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [try repoScript().path, skill]
+        var environment = ProcessInfo.processInfo.environment
+        environment["C11_SKILL_ROOTS"] = root.path
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:" + (environment["PATH"] ?? "")
+        process.environment = environment
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0, String(decoding: data, as: UTF8.self))
+    }
+}
+
 // MARK: - C11-111 test helpers
 
 private func makeTempSkillsRoot(name: String) throws -> URL {

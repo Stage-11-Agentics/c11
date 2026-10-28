@@ -140,6 +140,8 @@ extension CMUXCLI {
           status [--tool NAME] [--json]  Show detection + install status per tool.
           install [--tool NAME]          Install (default: claude only).
                   [--dry-run] [--force]  Dry-run, or force re-copy even if hash matches.
+                                         Copies synced from a checkout or edited
+                                         are kept unless --force replaces them.
                   [--home PATH]          Override $HOME (useful for tests).
           remove  [--tool NAME]          Remove c11-installed skills from the tool.
                   [--home PATH]
@@ -235,6 +237,8 @@ extension CMUXCLI {
                             row["installed_sha256"] = record.sourceContentHash
                             row["installed_at"] = record.installedAt
                             row["app_version"] = record.appVersion
+                            row["installed_by"] = record.installedBy ?? SkillInstallerRecord.installedByApp
+                            row["commit"] = record.commitShort
                         }
                         return row
                     }
@@ -295,7 +299,12 @@ extension CMUXCLI {
             for pkg in packageRows {
                 let name = (pkg["package"] as? String) ?? "?"
                 let state = (pkg["state"] as? String) ?? "?"
-                let version = (pkg["app_version"] as? String).map { " v\($0)" } ?? ""
+                let version: String
+                if pkg["installed_by"] as? String == SkillInstallerRecord.installedBySync {
+                    version = " synced from \((pkg["commit"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "a checkout")"
+                } else {
+                    version = (pkg["app_version"] as? String).map { " v\($0)" } ?? ""
+                }
                 let installed = (pkg["installed_at"] as? String).map { " @ \($0)" } ?? ""
                 print("  - \(name): \(state)\(version)\(installed)")
             }
@@ -328,14 +337,17 @@ extension CMUXCLI {
 
         if dryRun {
             let statuses = try SkillInstaller.status(for: target, home: home, sourceDir: source)
-            let planned = statuses.filter { force || $0.state != .installedCurrent }.map { $0.package.name }
+            let planned = statuses.filter { force || ($0.state != .installedCurrent && !$0.state.isLocalCopy) }
+                .map { $0.package.name }
             let skipped = statuses.filter { !force && $0.state == .installedCurrent }.map { $0.package.name }
+            let kept = statuses.filter { !force && $0.state.isLocalCopy }.map { $0.package.name }
             if emitJSON {
                 print(skillJSONString([
                     "dry_run": true,
                     "tool": target.rawValue,
                     "planned": planned,
                     "skipped": skipped,
+                    "kept_local": kept,
                     "dest": target.skillsDir(home: home).path,
                 ]))
             } else {
@@ -347,6 +359,9 @@ extension CMUXCLI {
                 }
                 if !skipped.isEmpty {
                     print("  would skip (up-to-date): \(skipped.joined(separator: ", "))")
+                }
+                if !kept.isEmpty {
+                    print("  would keep (local copy; --force replaces): \(kept.joined(separator: ", "))")
                 }
             }
             return
@@ -366,6 +381,7 @@ extension CMUXCLI {
                 "installed": result.installed,
                 "refreshed": result.refreshed,
                 "skipped": result.skipped,
+                "kept_local": result.keptLocal,
             ]))
         } else {
             print("Installed skill for \(target.displayName) at \(result.destDir.path)")
@@ -377,6 +393,9 @@ extension CMUXCLI {
             }
             if !result.skipped.isEmpty {
                 print("  skipped (up-to-date): \(result.skipped.joined(separator: ", "))")
+            }
+            if !result.keptLocal.isEmpty {
+                print("  kept (local copy; --force replaces): \(result.keptLocal.joined(separator: ", "))")
             }
         }
 

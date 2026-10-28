@@ -777,6 +777,14 @@ c11 skill install --tool opencode --dry-run   # Show what would be written
 c11 skill remove --tool opencode       # Removes c11-installed skills only
 ```
 
+An installed copy that `scripts/sync-installed-skills.sh` wrote from a checkout
+(`installedFromCheckout`), or that changed after it was installed
+(`installedModified`), is a local copy. It may be newer than the app's bundled
+copy, so `install` keeps it (`kept_local` in `--json`), the Agent Skills sheet
+never offers it as an update, and only `install --force` or Settings → Agent
+Skills → Replace Local Copies replaces it. `status` names who wrote each copy
+(`installed_by`: `app` or `sync`).
+
 OpenCode's bundled PATH wrapper loads the notification/status plugin per process
 inside a live c11 terminal. It uses a free `OPENCODE_CONFIG_CONTENT` slot, or
 `OPENCODE_CONFIG=/dev/fd/3` while preserving existing inline content. If both

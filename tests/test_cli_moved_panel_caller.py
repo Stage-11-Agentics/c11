@@ -11,6 +11,7 @@ that pins the start workspace finds no such panel there.
   2. `mailbox panel-name` and `mailbox outbox-dir` follow the live workspace.
   3. `mailbox recv` reads the live inbox and the ones left in each workspace
      the panel passed through, and only this panel's.
+     A `--panel` ref names that panel wherever it is, not a panel title.
   4. A caller panel c11 cannot find, or one with no title, gets an error that
      names its UUID and says why, never "(untitled)".
   5. Panel-targeted commands (`capture-pane --surface panel:N`, a bare
@@ -56,6 +57,8 @@ class MovedPanelServer(drain.FakeC11):
         if method == "system.capabilities":
             return {"methods": ["panel.list", "mailbox.resolve", "panel.read_text"],
                     "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}, None
+        if method == "panel.get_metadata" and params.get("panel_id") == "panel:136":
+            return {"workspace_id": PASSED_THROUGH, "surface_id": RECIPIENT, "metadata": {"title": "Recipient"}}, None
         if method == "panel.get_metadata":
             if self.metadata is None:
                 # What the app answers for a panel UUID it does not know.
@@ -65,6 +68,8 @@ class MovedPanelServer(drain.FakeC11):
                 return None, {"code": "surface_not_found", "message": "Panel not found"}
             return {"workspace_id": LIVE, "surface_id": PANEL, "metadata": self.metadata}, None
         if method == "mailbox.resolve":
+            if str(params.get("to", "")).startswith("panel:"):
+                return {"resolution": "none", "panel_ids": []}, None   # a ref is no panel's name
             return {"resolution": "unique", "target_workspace_id": START, "panel_ids": [RECIPIENT]}, None
         if method == "panel.read_text":
             if pinned and pinned.upper() != LIVE:
@@ -171,6 +176,23 @@ def main() -> int:
             check(proc.returncode == 0 and remaining == [[], [], []],
                   "recv --drain claims the mail in every one of them",
                   f"rc={proc.returncode} remaining={remaining!r} err={proc.stderr!r}")
+        finally:
+            fixture.cleanup()
+
+        # 3b. a --panel ref is that panel, wherever it is, not a name
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "ref.sock"), titled)
+        try:
+            fixture.deliver(RECIPIENT.lower(), body="for the recipient", workspace=PASSED_THROUGH)
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir", "--panel", "panel:136"],
+                                fixture.env(server.path))
+            out = proc.stdout.decode().strip()
+            check(proc.returncode == 0 and PASSED_THROUGH in out.upper() and RECIPIENT.lower() in out,
+                  "inbox-dir --panel <ref> prints that panel's inbox", f"rc={proc.returncode} out={out!r} err={proc.stderr!r}")
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--peek", "--panel", "panel:136"],
+                                fixture.env(server.path))
+            check(proc.returncode == 0 and "for the recipient" in proc.stdout.decode(),
+                  "recv --panel <ref> reads that panel's inbox", f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
         finally:
             fixture.cleanup()
 

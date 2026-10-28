@@ -272,9 +272,14 @@ function lineMetrics(root,points) {
 }
 // Measured on demand: a range rect inside a long text node costs time in proportion to
 // the node, so measuring every line of a long paragraph up front is quadratic.
-function lineTop(root,points,index,sc) {
+function lineTop(root,points,index,sc,retried=false) {
   const metrics=lineMetrics(root,points),mark=metrics?.marks[index];
   if(!mark)return null;
+  // One rebuild, as liveMark does, when a DOM change missed the epoch.
+  if(!root.contains(mark.node)) {
+    if(retried)return null;
+    root._lineTops=null;return lineTop(root,points,index,sc,true);
+  }
   if(metrics.tops[index]!==undefined)return metrics.tops[index];
   const {node,offset}=mark,range=document.createRange();
   if(node.nodeType===Node.ELEMENT_NODE)range.setStart(node.parentNode,[...node.parentNode.childNodes].indexOf(node)),range.collapse(true);
@@ -996,17 +1001,20 @@ function diagramSource(raw,mathLabels=false) {
   const decoded=source.replace(/&(?:lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,m=>{
     const el=document.createElement('textarea');el.innerHTML=m;return el.value;
   });
-  // Mermaid reads a %%{type args}%% directive anywhere, colon optional, and applies it when
-  // the type matches /init\b|initialize\b/ unanchored, so "preinit" counts too.
-  const initDirective=/%%\s*\{\s*\w*init(?:ialize)?\b/i.test(decoded);
-  const frontmatter=/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(decoded);
-  const configFrontmatter=!!frontmatter&&/^\s*config\s*:/im.test(frontmatter[1]);
-  if(initDirective||configFrontmatter)throw new Error('Unsupported diagram directive');
+  // Mermaid reads YAML frontmatter after leading whitespace, indented fences included, with
+  // any YAML spelling of the key (quoted, flow style), so refuse frontmatter mentioning config.
+  const frontmatter=/^\s*---[^\n]*\n([\s\S]*?)(?:\n[ \t]*---[ \t]*(?:\n|$)|$)/.exec(decoded);
+  if(initDirective(decoded)||frontmatter&&/config/i.test(frontmatter[1]))throw new Error('Unsupported diagram directive');
   const encoded=source.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name));
-  if(!mathLabels)return encoded;
-  return encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
-    .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name)));
+  const labelled=mathLabels?encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
+    .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name))):encoded;
+  // Math labels render to text Mermaid scans too.
+  if(initDirective(labelled))throw new Error('Unsupported diagram directive');
+  return labelled;
 }
+// Mermaid reads a %%{type args}%% directive anywhere, colon optional, and applies it when
+// the type matches /init\b|initialize\b/ unanchored, so "preinit" counts too.
+const initDirective=text=>/%%\s*\{\s*\w*init(?:ialize)?\b/i.test(text);
 function diagramSupportsMathLabels(source) {
   const header=source.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('%%'))||'';
   return /^(?:flowchart|graph)\b|^stateDiagram(?:-v2)?\b/i.test(header);

@@ -12,10 +12,11 @@ const temporary=await mkdtemp(path.join(os.tmpdir(),'c11-md-prototype-'));
 const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 const page=await browser.newPage({viewport:{width:1200,height:820}});
 const errors=[],requests=[],blockedHandlers=[];
-// The page CSP blocking a hostile fixture's inline handler is the defense working, not a
-// renderer error; the hostile scenarios assert those payloads stay inert. Any other report counts.
+// Inside the hostile-fixture scenarios, the page CSP blocking a fixture's inline handler is the
+// defense working; those scenarios assert the payloads stay inert. Anywhere else it is an error.
 const blockedHandler="Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''.";
-page.on('console',m=>{if(m.type()!=='error')return;(m.text().startsWith(blockedHandler)?blockedHandlers:errors).push(m.text());});
+let hostileFixtures=false;
+page.on('console',m=>{if(m.type()!=='error')return;(hostileFixtures&&m.text().startsWith(blockedHandler)?blockedHandlers:errors).push(m.text());});
 page.on('pageerror',e=>errors.push(e.message));
 page.on('request',r=>{if(!r.url().startsWith('file:')&&!r.url().startsWith('c11md-asset:'))requests.push(r.url());});
 await page.addInitScript(()=>{window.testMessages=[];window.webkit={messageHandlers:{c11md:{postMessage:m=>window.testMessages.push(m)}}};});
@@ -564,6 +565,7 @@ try {
   await settings({osAppearance:'dark'});
   assert.ok(Math.abs(appearanceStart-await diagramWitness())<1,'OS appearance flip moved reader below diagram');
   scenario('diagram theme changes and OS appearance flips preserve reader position');
+  hostileFixtures=true;
   const literalDiagrams=[
     'flowchart LR\n  A["literal <img src=x onerror=alert(1)> label"] --> B',
     'flowchart LR\n  A["literal <image> label"] --> B',
@@ -581,6 +583,12 @@ try {
     '%%{initialize: {"htmlLabels":true}}%%\nflowchart LR\n  A --> B',
     'flowchart LR\n  A --> B\n%%{init {"htmlLabels":true}}%%',
     'flowchart LR\n  A --> B %%{preinit: {"htmlLabels":true}}%%',
+    // Mermaid's frontmatter grammar: indented fences, quoted keys, YAML flow style.
+    '  ---\n  config:\n    theme: forest\n  ---\nflowchart LR\n  A --> B',
+    '---\n"config":\n  theme: forest\n---\nflowchart LR\n  A --> B',
+    '---\n{config: {theme: forest}}\n---\nflowchart LR\n  A --> B',
+    // A math label renders to text Mermaid scans for directives too.
+    'flowchart LR\n  A["$$\\text{\\%\\%\\{init: \\{\\}\\}}$$"] --> B',
     'flowchart LR\n  A[Alpha] --> B[Beta]\n  click A href "javascript:alert(1)" "unsafe"',
     'sequenceDiagram\n  participant Alice\n  participant Bob\n  link Alice: "javascript:alert(1)" "unsafe"\n  Alice->>Bob: hello',
     'classDiagram\n  class Alpha\n  link Alpha "javascript:alert(1)" "unsafe"',
@@ -591,10 +599,10 @@ try {
   await load(hostileMarkdown,'/synthetic/hostile-mermaid.md');
   assert.equal(await page.locator('.diagram').count(),hostileMermaid.length);
   const directiveFallbacks=await page.locator('.diagram-err pre').allTextContents();
-  assert.equal(directiveFallbacks.length>=5,true,'Mermaid init and frontmatter config directives were not refused');
+  assert.equal(directiveFallbacks.length>=9,true,'Mermaid init and frontmatter config directives were not refused');
   for(const directive of ['%%{init:','%%{initialize:','%%{init {','%%{preinit:'])assert.ok(directiveFallbacks.some(x=>x.includes(directive)),`${directive} was not refused`);
   assert.ok(directiveFallbacks.some(x=>x.includes('securityLevel')));
-  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),5);
+  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),9);
   assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().securityLevel),'strict');
   assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().htmlLabels),false);
   const activeDiagramFindings=await page.evaluate(()=>{
@@ -665,6 +673,9 @@ try {
   assert.equal(await page.locator('.diagram-stage [style*="fixed"],.diagram-stage [style*="inset"],.diagram-stage [style*="z-index"],.diagram-stage [style*="background"],.diagram-stage [style*="9999"]').count(),0,'unsafe math-label styles survived');
   assert.equal(await page.evaluate(()=>window.__owned),undefined);
   scenario('Math labels preserve MathML while dropping active HTML and external references');
+  // Let a late handler error from the last hostile render land inside the window.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,250))));
+  hostileFixtures=false;
   // Async diagram replacement above an unchanged lower section holds its position.
   const graph='```mermaid\nflowchart TD\n A --> B\n```\n\n', above='# Async\n\n'+graph+long;
   await settings({scale:1,typeface:'serif'});await load(above,'/synthetic/async.md');await page.evaluate(()=>c11md.scrollToHeading('Section 30'));

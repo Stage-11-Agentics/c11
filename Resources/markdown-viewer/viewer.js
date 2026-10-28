@@ -190,8 +190,10 @@ function textLinePoints(root,skipLeadingWhitespace=false) {
       if(!lineStarted&&(!skipLeadingWhitespace||contentSeen))points.push(offset);
       lineStarted=false;nonWhitespace=false;offset++;continue;
     }
-    for(let i=0;i<n.data.length;i++) {
-      const ch=n.data[i];
+    // Read data once: the DOM getter per character is quadratic on a long paragraph.
+    const data=n.data;
+    for(let i=0;i<data.length;i++) {
+      const ch=data[i];
       if(ch==='\n') {if(!lineStarted&&(!skipLeadingWhitespace||contentSeen))points.push(offset);lineStarted=false;nonWhitespace=false;offset++;continue;}
       if(!lineStarted) {
         if(skipLeadingWhitespace&&!contentSeen&&/\s/.test(ch)){offset++;continue;}
@@ -251,41 +253,46 @@ function lineForText(block,text) {
   const offset=textOffsetAt(block,text.node,text.offset),index=lineIndexAt(block._linePoints,offset);
   return index===null?null:(block._lineBase||+block.dataset.ls)+index;
 }
-function lineTops(root,points,sc) {
-  if(!root||!points?.length)return [];
+function lineMetrics(root,points) {
+  if(!root||!points?.length)return null;
   const cached=root._lineTops;
-  if(cached&&cached.epoch===lineMetricEpoch&&cached.points===points)return cached.tops;
-  const tops=new Array(points.length).fill(null),marks=new Array(points.length).fill(null);
+  if(cached&&cached.epoch===lineMetricEpoch&&cached.points===points)return cached;
+  const marks=new Array(points.length).fill(null);
   const walker=lineTree(root);let n,offset=0,index=0;
-  const range=document.createRange();
-  const box=sc.getBoundingClientRect(),base=sc.scrollTop-box.top;
-  const measure=()=>{const rect=range.getBoundingClientRect();return rect.height?rect.top+base:null;};
   while((n=walker.nextNode())&&index<points.length) {
     if(n.nodeType===Node.ELEMENT_NODE) {
-      const at=[...n.parentNode.childNodes].indexOf(n);
-      while(index<points.length&&points[index]<=offset) {
-        range.setStart(n.parentNode,at);range.collapse(true);
-        tops[index]=measure();marks[index]={node:n,offset:0};index++;
-      }
+      while(index<points.length&&points[index]<=offset)marks[index++]={node:n,offset:0};
       offset++;continue;
     }
     const end=offset+n.data.length;
-    while(index<points.length&&points[index]<end) {
-      const local=points[index]-offset,stop=Math.min(local+1,n.data.length);
-      if(stop>local)range.setStart(n,local),range.setEnd(n,stop);else range.setStart(n,local),range.collapse(true);
-      tops[index]=measure();marks[index]={node:n,offset:local};index++;
-    }
+    while(index<points.length&&points[index]<end){marks[index]={node:n,offset:points[index]-offset};index++;}
     offset=end;
   }
-  root._lineTops={epoch:lineMetricEpoch,points,tops,marks};
-  return tops;
+  return root._lineTops={epoch:lineMetricEpoch,points,marks,tops:new Array(points.length)};
+}
+// Measured on demand: a range rect inside a long text node costs time in proportion to
+// the node, so measuring every line of a long paragraph up front is quadratic.
+function lineTop(root,points,index,sc,retried=false) {
+  const metrics=lineMetrics(root,points),mark=metrics?.marks[index];
+  if(!mark)return null;
+  // One rebuild, as liveMark does, when a DOM change missed the epoch.
+  if(!root.contains(mark.node)) {
+    if(retried)return null;
+    root._lineTops=null;return lineTop(root,points,index,sc,true);
+  }
+  if(metrics.tops[index]!==undefined)return metrics.tops[index];
+  const {node,offset}=mark,range=document.createRange();
+  if(node.nodeType===Node.ELEMENT_NODE)range.setStart(node.parentNode,[...node.parentNode.childNodes].indexOf(node)),range.collapse(true);
+  else if(offset<node.length)range.setStart(node,offset),range.setEnd(node,offset+1);
+  else range.setStart(node,offset),range.collapse(true);
+  const rect=range.getBoundingClientRect(),box=sc.getBoundingClientRect();
+  return metrics.tops[index]=rect.height?rect.top-box.top+sc.scrollTop:null;
 }
 function lineAtOrBefore(root,points,base,scrollY,sc) {
   if(!points?.length)return null;
-  const tops=lineTops(root,points,sc);
   let low=0,high=points.length;
   while(low<high) {
-    const mid=(low+high)>>1,top=tops[mid];
+    const mid=(low+high)>>1,top=lineTop(root,points,mid,sc);
     if(top!==null&&top<=scrollY+.25)low=mid+1;else high=mid;
   }
   return low?base+low-1:null;
@@ -306,7 +313,7 @@ function lineAtY(block,scrollY,sc) {
 }
 function liveMark(root,points,index,sc) {
   if(!root||!points||index<0||index>=points.length)return null;
-  const read=()=>{lineTops(root,points,sc);return root._lineTops?.marks?.[index]?.node||null;};
+  const read=()=>lineMetrics(root,points)?.marks[index]?.node||null;
   const node=read();
   // One rebuild. A detached mark must not send every scroll frame back to the block root.
   if(!node||root.contains(node))return node;
@@ -765,7 +772,7 @@ function lineOrigin(line,block=null,sc=activeScroller()) {
   const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
   const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
   if(code) {
-    const index=line-code._sourceLineStart,tops=lineTops($('pre code',code),code._linePoints,sc),top=tops[index];
+    const top=lineTop($('pre code',code),code._linePoints,line-code._sourceLineStart,sc);
     if(top!==null&&top!==undefined)return top;
   } else if(block.matches('.code')) {
     if(line<block._sourceLineStart)return topIn(block,sc);
@@ -773,7 +780,7 @@ function lineOrigin(line,block=null,sc=activeScroller()) {
   }
   const base=block._lineBase||+block.dataset.ls,points=block._linePoints,index=line-base;
   if(index>=0&&index<points?.length) {
-    const top=lineTops(block,points,sc)[index];if(top!==null&&top!==undefined)return top;
+    const top=lineTop(block,points,index,sc);if(top!==null&&top!==undefined)return top;
   }
   return estimateLineOrigin(line,block,sc);
 }
@@ -994,15 +1001,22 @@ function diagramSource(raw,mathLabels=false) {
   const decoded=source.replace(/&(?:lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,m=>{
     const el=document.createElement('textarea');el.innerHTML=m;return el.value;
   });
-  const initDirective=/^\s*%%\s*\{\s*init\s*:/im.test(decoded);
-  const frontmatter=/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(decoded);
-  const configFrontmatter=!!frontmatter&&/^\s*config\s*:/im.test(frontmatter[1]);
-  if(initDirective||configFrontmatter)throw new Error('Unsupported diagram directive');
+  // Mermaid reads YAML frontmatter after leading whitespace, indented fences included, and YAML
+  // can spell config many ways (quoted, escaped, flow style), so allow only title and displayMode.
+  const frontmatter=/^\s*---[^\n]*\n([\s\S]*?)(?:\n[ \t]*---[ \t]*(?:\n|$)|$)/.exec(decoded);
+  const unsafeFrontmatter=!!frontmatter&&frontmatter[1].split('\n')
+    .some(line=>line.trim()&&!/^\s*#/.test(line)&&!/^\s*(?:title|displayMode)\s*:/.test(line));
+  if(initDirective(decoded)||unsafeFrontmatter)throw new Error('Unsupported diagram directive');
   const encoded=source.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name));
-  if(!mathLabels)return encoded;
-  return encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
-    .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name)));
+  const labelled=mathLabels?encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
+    .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name))):encoded;
+  // Math labels render to text Mermaid scans too.
+  if(initDirective(labelled))throw new Error('Unsupported diagram directive');
+  return labelled;
 }
+// Mermaid reads a %%{type args}%% directive anywhere, colon optional, and applies it when
+// the type matches /init\b|initialize\b/ unanchored, so "preinit" counts too.
+const initDirective=text=>/%%\s*\{\s*\w*init(?:ialize)?\b/i.test(text);
 function diagramSupportsMathLabels(source) {
   const header=source.split(/\r?\n/).map(line=>line.trim()).find(line=>line&&!line.startsWith('%%'))||'';
   return /^(?:flowchart|graph)\b|^stateDiagram(?:-v2)?\b/i.test(header);

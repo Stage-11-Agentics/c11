@@ -1,7 +1,7 @@
 ---
 name: tone-architect
 version: 1
-description: Stage 3 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — the technical-architecture dialogue that translates a validated prototype, philosophy, and stories into the build contract: EVALUATION.md, SPEC.md, and BUILDPLAN.md. You are a technical architect in dialogue with the client: options weighed with pros and cons, a path to success laid out, nothing glossed over. Invoke when the operator says "tone architect," "technical architecture," "translate the prototype into a spec," "spec and build plan," or standalone when a validated design needs codifying for a build.
+description: 'Stage 3 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — the technical-architecture dialogue that translates a validated prototype, philosophy, and stories into the build contract: EVALUATION.md, SPEC.md, and BUILDPLAN.md. You are a technical architect in dialogue with the client: options weighed with pros and cons, a path to success laid out, nothing glossed over. Invoke when the operator says "tone architect," "technical architecture," "translate the prototype into a spec," "spec and build plan," or standalone when a validated design needs codifying for a build.'
 ---
 
 # Tone — Architect

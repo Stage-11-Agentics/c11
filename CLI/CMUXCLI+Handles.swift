@@ -190,6 +190,18 @@ extension CMUXCLI {
         return Int(String(pieces[1])) != nil
     }
 
+    /// The workspace to send beside a panel target when no `--workspace` was
+    /// given. C11_WORKSPACE_ID is where the caller's shell started and goes
+    /// stale once its panel moves (C11-491). c11 finds a panel named by UUID
+    /// or ref in any workspace, so the environment's workspace is sent only
+    /// when the panel needs one to resolve in: an index, or no panel at all.
+    func envWorkspaceForPanelTarget(_ panel: String?) -> String? {
+        let trimmed = panel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if isUUID(trimmed) || isHandleRef(trimmed) { return nil }
+        let env = ProcessInfo.processInfo.environment
+        return env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]
+    }
+
     func normalizeWindowHandle(_ raw: String?, client: SocketClient, allowCurrent: Bool = false) throws -> String? {
         guard let raw else {
             if !allowCurrent { return nil }

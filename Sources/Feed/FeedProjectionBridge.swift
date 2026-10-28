@@ -64,7 +64,13 @@ final class FeedProjectionBridge: @unchecked Sendable {
         if projectionChanged { changes.send(next) }
     }
 
-    init() {}
+    /// The workspace a panel's journal now writes under. A moved panel's
+    /// snapshot names its old workspace until its next event (C11-490).
+    private let journalTarget: @Sendable (UUID) -> UUID?
+
+    init(journalTarget: @escaping @Sendable (UUID) -> UUID? = { JournalCoordinator.shared.target(panelID: $0) }) {
+        self.journalTarget = journalTarget
+    }
 
     func noteJournal(panelID: UUID, snapshot: JournalSnapshot?, eventID: UUID? = nil) {
         let snapshot = snapshot
@@ -150,10 +156,20 @@ final class FeedProjectionBridge: @unchecked Sendable {
         }
     }
 
+    /// A panel moving to another workspace (C11-490): only its attention
+    /// fact leaves with the source; its ask stays with its journal owner.
+    func detachPanel(workspaceID: UUID, panelID: UUID) {
+        queue.async { [self] in
+            if attention[panelID]?.workspaceID == workspaceID { attention.removeValue(forKey: panelID) }
+            refreshProjection()
+        }
+    }
+
     func pruneWorkspace(workspaceID: UUID, validPanelIDs: Set<UUID>) {
         queue.async { [self] in
             let removed = Set(attention.values.filter { $0.workspaceID == workspaceID }.map(\.panelID))
-                .union(journal.values.filter { $0.workspaceID == workspaceID }.map { $0.owner.panelID })
+                .union(journal.values.filter { (journalTarget($0.owner.panelID) ?? $0.workspaceID) == workspaceID }
+                    .map { $0.owner.panelID })
                 .subtracting(validPanelIDs)
             for panelID in removed {
                 attention.removeValue(forKey: panelID)

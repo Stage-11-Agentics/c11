@@ -538,7 +538,9 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         let read = socket.requests.first(where: { $0["method"] as? String == "panel.read_text" })
         let params = read?["params"] as? [String: Any]
         XCTAssertEqual(params?["panel_id"] as? String, codexID)
-        XCTAssertEqual(params?["workspace_id"] as? String, workspaceID)
+        // C11-491: the environment's workspace goes stale when the panel
+        // moves, and c11 finds a panel UUID in any workspace.
+        XCTAssertNil(params?["workspace_id"])
 
         guard let socket = try? CapturedCLISocket() else {
             XCTFail("Could not create a fake CLI socket")

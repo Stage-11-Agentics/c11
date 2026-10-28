@@ -960,8 +960,9 @@ final class PanelMetadataStore: @unchecked Sendable {
     }
 
     /// Restore metadata + sources for a surface from a session snapshot
-    /// (Tier 1 Phase 2). Bypasses the precedence chain — the snapshot IS
-    /// the prior session's source of truth. A `.heuristic` value in the
+    /// (Tier 1 Phase 2), or from the entry a panel move carried (C11-490).
+    /// Bypasses the precedence chain — the snapshot IS the prior session's
+    /// source of truth. A `.heuristic` value in the
     /// snapshot restores as `.heuristic` with its original `ts`, even if
     /// the newly-initialized surface has already written a `.declare`
     /// value to the same key: the snapshot wins.
@@ -987,6 +988,23 @@ final class PanelMetadataStore: @unchecked Sendable {
             // fingerprint differ from the pre-restore state, writing the
             // restored contents back to disk with a fresh createdAt.
             metadataStoreRevision &+= 1
+        }
+    }
+
+    /// One surface's stored values and source records, unconverted.
+    struct SurfaceEntry {
+        var values: [String: Any] = [:]
+        var sources: [String: SourceRecord] = [:]
+    }
+
+    /// The surface's entry as stored, for a move to carry to another
+    /// workspace and put back with `restoreFromSnapshot` (C11-490).
+    func surfaceEntry(workspaceId: UUID, surfaceId: UUID) -> SurfaceEntry {
+        queue.sync {
+            SurfaceEntry(
+                values: metadata[workspaceId]?[surfaceId] ?? [:],
+                sources: sources[workspaceId]?[surfaceId] ?? [:]
+            )
         }
     }
 

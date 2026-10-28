@@ -633,8 +633,8 @@ extension CMUXCLI {
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
             let (linesArg, rem2) = parseOption(rem1, name: "--lines")
-            let workspaceArg = wsArg ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowOverride == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = wsArg ?? (windowOverride == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
 
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)

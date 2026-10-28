@@ -408,13 +408,21 @@ extension TerminalController {
         }
 
         // Optionally validate a caller-provided location (useful for agents calling from inside a surface).
+        // C11-491: the panel UUID is the caller's identity. A panel moved since
+        // its shell started still reports the old workspace from its
+        // environment, so the workspace is only a hint when the panel is found.
         var resolvedCaller: [String: Any]? = nil
-        if let callerObj = params["caller"] as? [String: Any],
-           let wsId = v2UUIDAny(callerObj["workspace_id"]) {
+        if let callerObj = params["caller"] as? [String: Any] {
+            let hintedWorkspaceId = v2UUIDAny(callerObj["workspace_id"])
             let surfaceId = v2UUIDAny(callerObj["panel_id"]) ?? v2UUIDAny(callerObj["surface_id"])
                 ?? v2UUIDAny(callerObj["tab_id"])
             v2MainSync {
-                let callerWorkspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) ?? workspaceManager
+                let located = surfaceId.flatMap {
+                    AppDelegate.shared?.workspaceContainingPanel(panelId: $0, preferredWorkspaceId: hintedWorkspaceId)
+                }
+                guard let wsId = located?.workspace.id ?? hintedWorkspaceId else { return }
+                let callerWorkspaceManager = located?.workspaceManager
+                    ?? AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) ?? workspaceManager
                 if let ws = callerWorkspaceManager.workspaces.first(where: { $0.id == wsId }) {
                     let callerWindowId = v2ResolveWindowId(workspaceManager: callerWorkspaceManager)
                     var payload: [String: Any] = [

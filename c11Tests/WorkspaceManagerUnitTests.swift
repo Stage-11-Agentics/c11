@@ -1886,6 +1886,55 @@ final class AgentWorkspaceSelectionTests: XCTestCase {
     }
 }
 
+/// C11-491: `system.identify` finds a caller by its panel UUID. A panel moved
+/// after its shell started still sends the start workspace from its environment.
+@MainActor
+final class MovedPanelIdentifyTests: XCTestCase {
+    private func registerWindow() throws -> (WorkspaceManager, NSWindow) {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let manager = WorkspaceManager()
+        let windowId = UUID()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.main.\(windowId.uuidString)")
+        app.registerMainWindow(window, windowId: windowId, workspaceManager: manager,
+                               sidebarState: SidebarState(), sidebarSelectionState: SidebarSelectionState())
+        return (manager, window)
+    }
+
+    private func identifyCaller(workspaceId: UUID?, panelId: UUID) throws -> [String: Any] {
+        var caller = ["panel_id": panelId.uuidString]
+        if let workspaceId { caller["workspace_id"] = workspaceId.uuidString }
+        let request = try JSONSerialization.data(withJSONObject: [
+            "id": 491, "method": "system.identify", "params": ["caller": caller],
+        ])
+        let response = TerminalController.shared.processV2Command(String(decoding: request, as: UTF8.self))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+        let result = try XCTUnwrap(object["result"] as? [String: Any], response)
+        return try XCTUnwrap(result["caller"] as? [String: Any], response)
+    }
+
+    func testIdentifyFollowsAPanelMovedToAnotherWindow() throws {
+        let (sourceManager, sourceWindow) = try registerWindow()
+        defer { sourceWindow.close() }
+        let (destinationManager, destinationWindow) = try registerWindow()
+        defer { destinationWindow.close() }
+        let source = sourceManager.addWorkspace(select: false)
+        let panelId = try XCTUnwrap(source.focusedPanelId)
+        let destination = try XCTUnwrap(destinationManager.selectedWorkspace)
+        let pane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        let detached = try XCTUnwrap(source.detachPanel(panelId: panelId))
+        XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: pane, focus: false), panelId)
+
+        for hint in [source.id, nil] {
+            let caller = try identifyCaller(workspaceId: hint, panelId: panelId)
+            XCTAssertEqual(caller["workspace_id"] as? String, destination.id.uuidString, "hint \(String(describing: hint))")
+            XCTAssertEqual((caller["panel_id"] ?? caller["surface_id"]) as? String, panelId.uuidString)
+        }
+    }
+}
+
 /// Call-site proof for the panel-confirm watchdog, pending reveal, focused-key
 /// consume, and the Ghostty close path. These construct a Workspace.
 @MainActor

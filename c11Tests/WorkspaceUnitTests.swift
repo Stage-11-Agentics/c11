@@ -3603,6 +3603,131 @@ final class WorkspacePanelIconColorTests: XCTestCase {
         XCTAssertEqual(color(destination, panelId), "#7B3F00")
     }
 
+    /// C11-490: a move carries every metadata key with its source and
+    /// timestamp, the flag and delegation included, plus the shell's tty.
+    func testDetachAttachCarriesWholeMetadataEntryAttentionAndTTY() throws {
+        let source = Workspace()
+        let panelId = try XCTUnwrap(source.focusedPanelId)
+        let callerPanelId = UUID()
+        let ownerPanelId = UUID()
+        _ = try store.setMetadata(
+            workspaceId: source.id, surfaceId: panelId,
+            partial: [
+                MetadataKey.title: "Move fixer",
+                MetadataKey.description: "Carrying metadata across a move",
+                MetadataKey.role: "fixer",
+                MetadataKey.model: "claude-opus-5-5",
+                MetadataKey.lifecycleState: "active",
+                MetadataKey.mailboxAddress: "c11-move-fixer",
+                "mailbox.delivery": "stdin",
+                "custom.note": ["kept": true],
+            ],
+            mode: .merge, source: .explicit
+        )
+        store.setInternal(
+            workspaceId: source.id, surfaceId: panelId,
+            key: MetadataKey.terminalType, value: "claude-code", source: .heuristic
+        )
+        store.setInternal(
+            workspaceId: source.id, surfaceId: panelId,
+            key: "model_detected", value: "claude-opus-5-5", source: .heuristic
+        )
+        _ = try store.mutateAttention(
+            workspaceId: source.id, surfaceId: panelId,
+            flag: .raise("Need a call on the move"),
+            delegation: .delegate(ownerPanelId: ownerPanelId),
+            callerPanelId: callerPanelId,
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        source.panelTTYNames[panelId] = "ttys042"
+        let before = store.getMetadata(workspaceId: source.id, surfaceId: panelId)
+
+        let detached = try XCTUnwrap(source.detachPanel(panelId: panelId))
+        XCTAssertTrue(store.getMetadata(workspaceId: source.id, surfaceId: panelId).metadata.isEmpty)
+        let destination = Workspace()
+        let pane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        defer {
+            PanelAttentionService.shared.remove(workspaceId: destination.id, surfaceId: panelId)
+            PortScanner.shared.unregisterPanel(workspaceId: destination.id, panelId: panelId)
+            AgentDetector.shared.unregister(workspaceId: destination.id, panelId: panelId)
+        }
+        XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: pane, focus: false), panelId)
+
+        let after = store.getMetadata(workspaceId: destination.id, surfaceId: panelId)
+        XCTAssertEqual(NSDictionary(dictionary: after.metadata), NSDictionary(dictionary: before.metadata))
+        XCTAssertEqual(NSDictionary(dictionary: after.sources), NSDictionary(dictionary: before.sources))
+
+        let attention = destination.attentionSnapshot(panelId: panelId)
+        XCTAssertEqual(attention.flagReason, "Need a call on the move")
+        XCTAssertEqual(attention.flagRaisedAt, Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertEqual(attention.flagCallerPanelId, callerPanelId)
+        XCTAssertTrue(attention.delegated)
+        XCTAssertEqual(attention.delegatedBy, ownerPanelId)
+        XCTAssertEqual(destination.panelTTYNames[panelId], "ttys042")
+    }
+
+    /// C11-490: a move keeps a flagged panel's flag and open ask exactly once,
+    /// with no flag or ask events, and its journal target follows it.
+    func testDetachAttachKeepsFlagAndOpenAskWithoutAttentionEvents() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11-490-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let logURL = directory.appendingPathComponent("events.ndjson")
+        let log = EventLog(url: logURL, instance: "c11-490")
+        EventEmitter.shared.startForTesting(log: log, instance: "c11-490")
+        defer {
+            EventEmitter.shared.resetForTesting()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        func attentionEvents() -> [String] {
+            log.flush()
+            let text = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
+            return text.split(separator: "\n").compactMap {
+                (try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])?["type"] as? String
+            }.filter { $0.hasPrefix("flag.") || $0.hasPrefix("ask.") }
+        }
+
+        let source = Workspace()
+        let panelId = try XCTUnwrap(source.focusedPanelId)
+        _ = try store.mutateAttention(workspaceId: source.id, surfaceId: panelId, flag: .raise("Need a call on the move"))
+        PanelAttentionService.shared.syncFromMetadata(workspaceId: source.id, surfaceId: panelId)
+        var draft = JournalDraft(kind: .questionRequested, emittedAtMs: 1_000, panelID: panelId, workspaceID: source.id,
+                                 sessionID: "c11-490-session", agentKind: "claude-code", source: .hook,
+                                 adapter: .claudeHook, nativeEvent: "PreToolUse")
+        draft.requestID = "c11-490-ask"
+        let ask = try XCTUnwrap(JournalReducer.fold(
+            previous: nil, draft: draft, sequence: 1, committedAtMs: 10_001, tick: 1, instanceID: UUID(),
+            context: JournalContext(eligible: true, verifiedNativeClock: true)
+        ).snapshot)
+        let feed = FeedProjectionBridge.shared
+        feed.noteJournal(panelID: panelId, snapshot: ask)
+        func rows() -> [[String: Any]] {
+            (feed.list(scope: .attention)["rows"] as? [[String: Any]] ?? [])
+                .filter { $0["panel_id"] as? String == panelId.uuidString }
+        }
+        XCTAssertEqual(rows().map { $0["request_id"] as? String }, ["c11-490-ask"])
+        let before = attentionEvents()
+
+        let detached = try XCTUnwrap(source.detachPanel(panelId: panelId))
+        XCTAssertEqual(JournalCoordinator.shared.target(panelID: panelId), source.id,
+                       "A moving panel keeps its journal target until it attaches")
+        let destination = Workspace()
+        let pane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        defer {
+            feed.noteJournal(panelID: panelId, snapshot: nil)
+            PanelAttentionService.shared.remove(workspaceId: destination.id, surfaceId: panelId)
+            JournalCoordinator.shared.remove(panelID: panelId)
+        }
+        XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: pane, focus: false), panelId)
+        feed.noteJournal(panelID: panelId, snapshot: ask)   // the journal's republish under its new target
+
+        XCTAssertEqual(JournalCoordinator.shared.target(panelID: panelId), destination.id)
+        XCTAssertEqual(rows().map { $0["request_id"] as? String }, ["c11-490-ask"])
+        XCTAssertEqual(PanelAttentionIndex.shared.snapshots.values.filter { $0.surfaceId == panelId }.map(\.workspaceId),
+                       [destination.id])
+        XCTAssertTrue(destination.attentionSnapshot(panelId: panelId).isFlagged)
+        XCTAssertEqual(attentionEvents(), before)
+    }
+
     func testIconAndColorSurviveSessionSnapshotRoundTrip() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("c11-tab-icon-color-\(UUID())", isDirectory: true)

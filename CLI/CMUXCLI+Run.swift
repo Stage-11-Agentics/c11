@@ -908,8 +908,8 @@ extension CMUXCLI {
             let rem5 = rem4
             let createCommand = createCommandText
             let initialInput = try resolvedCreateInput(raw: createCommand, panelType: "terminal")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = panelValues.first ?? (wsArg == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = wsArg ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceRaw) : nil)
             // The direction is the first non-flag token (so `--allow-undersized` can
             // appear on either side of it).
             guard let direction = rem5.first(where: { !$0.hasPrefix("-") }) else {
@@ -1337,9 +1337,9 @@ extension CMUXCLI {
         case "close-panel":
             try rejectEmptyTargetFlags(commandArgs)
             let csWsFlag = try resolvedSelfCloseTarget(optionValue(commandArgs, name: "--workspace"), kind: "workspace")
-            let workspaceArg = csWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             // Preflight requires --panel; `self` is the caller's own panel.
             let surfaceRaw = try resolvedSelfCloseTarget(optionValue(commandArgs, name: "--panel"), kind: "panel")
+            let workspaceArg = csWsFlag ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceRaw) : nil)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -1481,8 +1481,8 @@ extension CMUXCLI {
 
         case "trigger-flash":
             let tfWsFlag = optionValue(commandArgs, name: "--workspace")
-            let workspaceArg = tfWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = optionValue(commandArgs, name: "--panel") ?? (tfWsFlag == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = tfWsFlag ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
             let colorArg = optionValue(commandArgs, name: "--color")
             if let colorArg, !isValidFlashColorHex(colorArg) {
                 throw CLIError(message: "--color must be a hex value like #F5C518.")
@@ -1500,8 +1500,8 @@ extension CMUXCLI {
 
         case "cancel-flash":
             let cfWsFlag = optionValue(commandArgs, name: "--workspace")
-            let workspaceArg = cfWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = optionValue(commandArgs, name: "--panel") ?? (cfWsFlag == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = cfWsFlag ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -1670,8 +1670,8 @@ extension CMUXCLI {
             }
             let wsArg = try requireNonEmptyHandle(wsRaw, flag: "--workspace", command: "read-selection")
             let tabArg = try requireNonEmptyHandle(tabRaw, flag: "--panel", command: "read-selection")
-            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
             let surfaceArg = tabArg ?? (wsArg == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = wsArg ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
             var params: [String: Any] = [:]
             let wsID = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsID { params["workspace_id"] = wsID }
@@ -1705,7 +1705,7 @@ extension CMUXCLI {
             guard let explicitPanel else {
                 throw CLIError(message: String(localized: "cli.input_state.tab_required", defaultValue: "input-state requires --panel <id|ref>"))
             }
-            let workspaceArg = wsRaw ?? nonEmptyEnv("C11_WORKSPACE_ID")
+            let workspaceArg = wsRaw ?? envWorkspaceForPanelTarget(explicitPanel)
             var params: [String: Any] = [:]
             let workspaceID = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let workspaceID { params["workspace_id"] = workspaceID }
@@ -1733,8 +1733,8 @@ extension CMUXCLI {
                 throw CLIError(message: "read-screen: unexpected arguments: \(trailing.joined(separator: " "))")
             }
 
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = wsArg ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
 
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
@@ -1867,8 +1867,8 @@ extension CMUXCLI {
             let body = optionValue(commandArgs, name: "--body") ?? ""
 
             let notifyWsFlag = optionValue(commandArgs, name: "--workspace")
-            let workspaceArg = notifyWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = optionValue(commandArgs, name: "--panel") ?? (notifyWsFlag == nil && windowId == nil ? Self.callerPanelEnv() : nil)
+            let workspaceArg = notifyWsFlag ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
 
             var params: [String: Any] = ["title": title, "subtitle": subtitle, "body": body]
             if let payload = nonEmptyEnv("C11_CODEX_NOTIFY_PAYLOAD_B64") {

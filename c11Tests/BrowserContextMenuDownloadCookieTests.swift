@@ -15,7 +15,8 @@ import Network
 /// A loopback listener stands in for two sites: `localhost` and `127.0.0.1`
 /// reach the same port but are different hosts. The page on `localhost` sets a
 /// session cookie, then each test downloads from one host and reads the Cookie
-/// header the listener received.
+/// header the listener received. A redirect from `localhost` to `127.0.0.1`
+/// must drop the cookie at the hop.
 ///
 /// Host-required (`c11Tests`): WebKit needs the app's main bundle to start its
 /// network process.
@@ -29,7 +30,7 @@ final class BrowserContextMenuDownloadCookieTests: XCTestCase {
         let fixture = try loadPageThatSetsSessionCookie(server: server)
 
         let target = URL(string: "http://127.0.0.1:\(server.port)/cross-site.bin")!
-        let header = try cookieHeaderForContextMenuDownload(of: target, fixture: fixture, server: server)
+        let header = try contextMenuDownload(of: target, fixture: fixture, server: server)[target.path] ?? ""
 
         XCTAssertFalse(
             header.contains(Self.cookieName),
@@ -44,12 +45,61 @@ final class BrowserContextMenuDownloadCookieTests: XCTestCase {
         let fixture = try loadPageThatSetsSessionCookie(server: server)
 
         let target = URL(string: "http://localhost:\(server.port)/same-site.bin")!
-        let header = try cookieHeaderForContextMenuDownload(of: target, fixture: fixture, server: server)
+        let header = try contextMenuDownload(of: target, fixture: fixture, server: server)[target.path] ?? ""
 
         XCTAssertTrue(
             header.contains("\(Self.cookieName)=secret-a"),
             "A download from the page's own site lost its session cookie: \(header)"
         )
+    }
+
+    @MainActor
+    func testRedirectToAnotherSiteDropsThePageSiteCookie() throws {
+        let server = try RecordingHTTPListener()
+        defer { server.stop() }
+        let fixture = try loadPageThatSetsSessionCookie(server: server)
+
+        // /hop on the page's own host answers 302 to /after-hop on 127.0.0.1.
+        let start = URL(string: "http://localhost:\(server.port)/hop")!
+        let headers = try contextMenuDownload(
+            of: start,
+            until: RecordingHTTPListener.redirectTargetPath,
+            fixture: fixture,
+            server: server
+        )
+
+        XCTAssertTrue(
+            (headers["/hop"] ?? "").contains("\(Self.cookieName)=secret-a"),
+            "The first hop, on the page's own site, lost its session cookie: \(headers)"
+        )
+        XCTAssertFalse(
+            (headers[RecordingHTTPListener.redirectTargetPath] ?? "").contains(Self.cookieName),
+            "The redirect to another site carried the page site's cookie: \(headers)"
+        )
+    }
+
+    /// A browser panel hands its context-menu downloads to its own download
+    /// delegate: a failed one reaches the panel's `browser.download` events and
+    /// leaves no download activity behind.
+    @MainActor
+    func testBrowserPanelReceivesItsContextMenuDownloads() throws {
+        let server = try RecordingHTTPListener()
+        defer { server.stop() }
+        let panel = BrowserPanel(workspaceId: UUID())
+        let webView = try XCTUnwrap(panel.webView as? CmuxWebView)
+
+        let failed = expectation(forNotification: .browserDownloadEventDidArrive, object: panel) { note in
+            ((note.userInfo?["event"] as? [String: Any])?["type"] as? String) == "failed"
+        }
+        webView.startContextMenuDownload(
+            URL(string: "http://127.0.0.1:\(server.port)\(RecordingHTTPListener.resetPath)")!,
+            sender: nil,
+            fallbackAction: nil,
+            fallbackTarget: nil,
+            traceID: "c11-487-panel"
+        )
+        wait(for: [failed], timeout: 15)
+        XCTAssertFalse(panel.isDownloading)
     }
 
     // MARK: - Fixture
@@ -93,15 +143,21 @@ final class BrowserContextMenuDownloadCookieTests: XCTestCase {
         return Fixture(webView: webView, downloads: downloads, navigation: navigation)
     }
 
+    /// Starts a context-menu download of `target`, waits for the listener to
+    /// receive `finalPath` (the target's own path unless a redirect moves it)
+    /// and for the download to settle, and returns each path's Cookie header.
     @MainActor
-    private func cookieHeaderForContextMenuDownload(
+    private func contextMenuDownload(
         of target: URL,
+        until finalPath: String? = nil,
         fixture: Fixture,
         server: RecordingHTTPListener
-    ) throws -> String {
-        let received = expectation(description: "listener received \(target.path)")
+    ) throws -> [String: String] {
+        let finalPath = finalPath ?? target.path
+        let received = expectation(description: "listener received \(finalPath)")
+        received.assertForOverFulfill = false
         server.onRequest = { request in
-            if request.path == target.path { received.fulfill() }
+            if request.path == finalPath { received.fulfill() }
         }
         let finished = expectation(description: "download finished")
         fixture.downloads.onSettled = { finished.fulfill() }
@@ -115,10 +171,13 @@ final class BrowserContextMenuDownloadCookieTests: XCTestCase {
         )
 
         wait(for: [received], timeout: 15)
-        let request = try XCTUnwrap(server.requests.last { $0.path == target.path })
         wait(for: [finished], timeout: 15)
         XCTAssertNil(fixture.downloads.failure, "The download failed: \(String(describing: fixture.downloads.failure))")
-        return request.headers["cookie"] ?? ""
+        var cookies: [String: String] = [:]
+        for request in server.requests where request.path != "/page" {
+            cookies[request.path] = request.headers["cookie"] ?? ""
+        }
+        return cookies
     }
 }
 
@@ -180,8 +239,10 @@ private final class RecordingDownloadDelegate: NSObject, WKDownloadDelegate {
 }
 
 /// A loopback-only HTTP/1.1 listener that records each request's path and
-/// headers. `/page` answers with HTML that sets the session cookie; every other
-/// path answers with a small binary body. Callbacks arrive on the main queue.
+/// headers. `/page` answers with HTML that sets the session cookie, `/hop`
+/// redirects to `redirectTargetPath` on 127.0.0.1, `resetPath` drops the
+/// connection without a response, and every other path answers with a small
+/// binary body. Callbacks arrive on the main queue.
 private final class RecordingHTTPListener {
     struct Request {
         let path: String
@@ -190,6 +251,8 @@ private final class RecordingHTTPListener {
     }
 
     static let cookieName = "site_a_session"
+    static let redirectTargetPath = "/after-hop.bin"
+    static let resetPath = "/reset.bin"
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "c11.tests.c11-487.listener")
@@ -270,22 +333,33 @@ private final class RecordingHTTPListener {
             self.requests.append(request)
             self.onRequest?(request)
         }
+        if path == Self.resetPath {
+            connection.forceCancel()
+            return
+        }
 
+        let status: String
         let body: Data
         var responseHeaders: [String]
-        if path == "/page" {
+        if path == "/hop" {
+            status = "302 Found"
+            body = Data()
+            responseHeaders = ["Location: http://127.0.0.1:\(port)\(Self.redirectTargetPath)"]
+        } else if path == "/page" {
+            status = "200 OK"
             body = Data("<!doctype html><title>site a</title><p>site a</p>".utf8)
             responseHeaders = [
                 "Content-Type: text/html; charset=utf-8",
                 "Set-Cookie: \(Self.cookieName)=secret-a; Path=/",
             ]
         } else {
+            status = "200 OK"
             body = Data("c11-487 download body".utf8)
             responseHeaders = ["Content-Type: application/octet-stream"]
         }
         responseHeaders.append("Content-Length: \(body.count)")
         responseHeaders.append("Connection: close")
-        var response = Data(("HTTP/1.1 200 OK\r\n" + responseHeaders.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+        var response = Data(("HTTP/1.1 \(status)\r\n" + responseHeaders.joined(separator: "\r\n") + "\r\n\r\n").utf8)
         response.append(body)
         connection.send(content: response, completion: .contentProcessed { _ in
             connection.cancel()

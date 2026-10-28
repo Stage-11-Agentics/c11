@@ -3276,9 +3276,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 ]
             )
         }
-        dlDelegate.onDownloadFailed = { [weak self] error in
+        dlDelegate.onDownloadFailed = { [weak self] error, started in
             guard let self else { return }
-            self.endDownloadActivity()
+            // A download that failed before its response never began activity.
+            if started {
+                self.endDownloadActivity()
+            }
             NotificationCenter.default.post(
                 name: .browserDownloadEventDidArrive,
                 object: self,
@@ -3663,6 +3666,7 @@ final class BrowserPanel: Panel, ObservableObject {
         previousWebView.uiDelegate = nil
         if let previousCmuxWebView = previousWebView as? CmuxWebView {
             previousCmuxWebView.onContextMenuDownloadStateChanged = nil
+            previousCmuxWebView.contextMenuDownloadDelegate = nil
         }
 
         profileID = resolvedProfileID
@@ -3934,6 +3938,7 @@ final class BrowserPanel: Panel, ObservableObject {
         oldWebView.uiDelegate = nil
         if let oldCmuxWebView = oldWebView as? CmuxWebView {
             oldCmuxWebView.onContextMenuDownloadStateChanged = nil
+            oldCmuxWebView.contextMenuDownloadDelegate = nil
         }
 
         let replacement = Self.makeWebView(
@@ -4901,6 +4906,7 @@ extension BrowserPanel {
         oldWebView.uiDelegate = nil
         if let oldCmuxWebView = oldWebView as? CmuxWebView {
             oldCmuxWebView.onContextMenuDownloadStateChanged = nil
+            oldCmuxWebView.contextMenuDownloadDelegate = nil
         }
 
         let replacement = Self.makeWebView(
@@ -6682,7 +6688,9 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
     private let activeDownloadsLock = NSLock()
     var onDownloadStarted: ((String) -> Void)?
     var onDownloadReadyToSave: (() -> Void)?
-    var onDownloadFailed: ((Error) -> Void)?
+    /// `started` is false when the download failed before WebKit asked for a
+    /// destination, so `onDownloadStarted` never fired for it.
+    var onDownloadFailed: ((Error, _ started: Bool) -> Void)?
 
     private static let tempDir: URL = {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-downloads", isDirectory: true)
@@ -6794,11 +6802,13 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        if let info = removeState(for: download) {
+        let info = removeState(for: download)
+        if let info {
             try? FileManager.default.removeItem(at: info.tempURL)
         }
+        let started = info != nil
         notifyOnMain { [weak self] in
-            self?.onDownloadFailed?(error)
+            self?.onDownloadFailed?(error, started)
         }
         #if DEBUG
         dlog("download.failed error=\(error.localizedDescription)")

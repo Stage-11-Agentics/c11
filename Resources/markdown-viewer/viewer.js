@@ -1001,10 +1001,12 @@ function diagramSource(raw,mathLabels=false) {
   const decoded=source.replace(/&(?:lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,m=>{
     const el=document.createElement('textarea');el.innerHTML=m;return el.value;
   });
-  // Mermaid reads YAML frontmatter after leading whitespace, indented fences included, with
-  // any YAML spelling of the key (quoted, flow style), so refuse frontmatter mentioning config.
+  // Mermaid reads YAML frontmatter after leading whitespace, indented fences included, and YAML
+  // can spell config many ways (quoted, escaped, flow style), so allow only title and displayMode.
   const frontmatter=/^\s*---[^\n]*\n([\s\S]*?)(?:\n[ \t]*---[ \t]*(?:\n|$)|$)/.exec(decoded);
-  if(initDirective(decoded)||frontmatter&&/config/i.test(frontmatter[1]))throw new Error('Unsupported diagram directive');
+  const unsafeFrontmatter=!!frontmatter&&frontmatter[1].split('\n')
+    .some(line=>line.trim()&&!/^\s*#/.test(line)&&!/^\s*(?:title|displayMode)\s*:/.test(line));
+  if(initDirective(decoded)||unsafeFrontmatter)throw new Error('Unsupported diagram directive');
   const encoded=source.replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name));
   const labelled=mathLabels?encoded.replace(/\$\$([\s\S]*?)\$\$/g,(_,content)=>inlineMathML(content)
     .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi,(_,name)=>mermaidEntity(name))):encoded;

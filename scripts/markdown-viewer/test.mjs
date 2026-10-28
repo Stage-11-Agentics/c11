@@ -571,6 +571,7 @@ try {
     'flowchart LR\n  A["literal <image> label"] --> B',
     'flowchart LR\n  A["literal url(https://example.invalid/) and @import label"] --> B',
     'flowchart LR\n  A["first line\n---\nlast line"] --> B',
+    '---\ntitle: Config service\n---\nflowchart LR\n  A --> B',
   ];
   await load(literalDiagrams.map(x=>['```mermaid',x,'```'].join('\n')).join('\n\n'),'/synthetic/diagram-literals.md');
   assert.equal(await page.locator('.diagram-stage > svg').count(),literalDiagrams.length);
@@ -587,6 +588,7 @@ try {
     '  ---\n  config:\n    theme: forest\n  ---\nflowchart LR\n  A --> B',
     '---\n"config":\n  theme: forest\n---\nflowchart LR\n  A --> B',
     '---\n{config: {theme: forest}}\n---\nflowchart LR\n  A --> B',
+    '---\n"\\u0063onfig":\n  theme: forest\n---\nflowchart LR\n  A --> B',
     // A math label renders to text Mermaid scans for directives too.
     'flowchart LR\n  A["$$\\text{\\%\\%\\{init: \\{\\}\\}}$$"] --> B',
     'flowchart LR\n  A[Alpha] --> B[Beta]\n  click A href "javascript:alert(1)" "unsafe"',
@@ -599,10 +601,10 @@ try {
   await load(hostileMarkdown,'/synthetic/hostile-mermaid.md');
   assert.equal(await page.locator('.diagram').count(),hostileMermaid.length);
   const directiveFallbacks=await page.locator('.diagram-err pre').allTextContents();
-  assert.equal(directiveFallbacks.length>=9,true,'Mermaid init and frontmatter config directives were not refused');
+  assert.equal(directiveFallbacks.length>=10,true,'Mermaid init and frontmatter config directives were not refused');
   for(const directive of ['%%{init:','%%{initialize:','%%{init {','%%{preinit:'])assert.ok(directiveFallbacks.some(x=>x.includes(directive)),`${directive} was not refused`);
   assert.ok(directiveFallbacks.some(x=>x.includes('securityLevel')));
-  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),9);
+  assert.equal(await page.evaluate(()=>testMessages.filter(x=>x.type==='error'&&x.message.includes('Unsupported diagram directive')).length),10);
   assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().securityLevel),'strict');
   assert.equal(await page.evaluate(()=>mermaid.mermaidAPI.getConfig().htmlLabels),false);
   const activeDiagramFindings=await page.evaluate(()=>{
@@ -676,6 +678,8 @@ try {
   // Let a late handler error from the last hostile render land inside the window.
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,250))));
   hostileFixtures=false;
+  // Each is a fixture handler reaching the live DOM; a change means a sanitizer path changed.
+  assert.equal(blockedHandlers.length,11,`blocked inline handler count changed: ${blockedHandlers.length}`);
   // Async diagram replacement above an unchanged lower section holds its position.
   const graph='```mermaid\nflowchart TD\n A --> B\n```\n\n', above='# Async\n\n'+graph+long;
   await settings({scale:1,typeface:'serif'});await load(above,'/synthetic/async.md');await page.evaluate(()=>c11md.scrollToHeading('Section 30'));

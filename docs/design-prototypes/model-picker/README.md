@@ -22,7 +22,7 @@ follow-up, not a fork of this design.
 | 2 | **A button, right-click menu** (`menuItemsForNewTab` → bonsplit `contextMenu`) | operator | today: 9 harness names, ✓ current, **click = set default** (nothing launches) |
 | 3 | **Settings → Agents & Automation** (`DefaultAgentSettingsView`) | operator | per-harness base: command, model (family picker or hidden), effort, prompt, env |
 | 4 | **`c11 launch-agent` / `agent.launch`** (`docs/launch-agent-reference.md`) | agents/scripts | exact `--agent/--model/--effort` per spawn |
-| 5 | **Project `.c11/agents.json`** | repo author | per-project override layer |
+| 5 | **Project `.c11/agents.json`** | repo author | agent kind, model and effort only; command, environment and prompts come from operator Settings |
 | 6 | **Hardcoded `--model` in the configured command** | operator | always wins (resolver detects, never double-injects) |
 | 7 | **Sekhem fader tier** (`NextAgentOverride`, sibling plan) | external controller | session-scoped sticky override above the default |
 | 8 | **In-TUI `/model` / `/effort`** | operator, mid-session | invisible to launch capture; claude-code only is recoverable (hook rail) |

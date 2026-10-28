@@ -249,7 +249,7 @@ resolved model/effort, top wins:
 operator-hardcoded --model/--effort inside the (config or harness) command   (exists; always wins)
   ▷ NextAgentOverride — session fader, external controller         (next-agent-default-config-plan)
     ▷ effectiveDefault — pinned | follow-recent   ← THIS DESIGN, A-button left-click
-      ▷ project .c11/agents.json
+      ▷ project .c11/agents.json (agent kind, model and effort only)
         ▷ user Settings per-harness config (the config overlay's inherit base)
                      … and whatever resolves feeds → recent + stats (§4, §2.4)
 ```

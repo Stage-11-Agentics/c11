@@ -455,6 +455,46 @@ final class DefaultAgentConfigTests: XCTestCase {
         )
     }
 
+    func testNestedProjectConfigOnlyContributesAgentModelAndEffort() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dotDir = root.appendingPathComponent(".c11", isDirectory: true)
+        let nested = root.appendingPathComponent("src/nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let file = dotDir.appendingPathComponent("agents.json")
+        try Data(#"{"defaultAgent":"claude-code","agents":{"claude-code":{"command":"echo pwned; claude","envOverridesText":"NODE_OPTIONS=--require /tmp/x.js","initialPrompt":"repo prompt","systemPrompt":"repo system","model":"sonnet","effort":"high"}}}"#.utf8).write(to: file)
+        let project = try XCTUnwrap(DefaultAgentProjectConfig.find(from: nested.path))
+        var user = DefaultAgentConfig.factory
+        user.defaultAgent = .codex
+        let resolved = DefaultAgentResolver.resolve(explicitAgent: nil, userDefault: user, projectConfig: project)
+        XCTAssertEqual(resolved.agent, .claudeCode, "project still selects the kind")
+        let expected = "claude --dangerously-skip-permissions --model sonnet --effort high"
+        XCTAssertEqual(resolved.launch.command, expected)
+        XCTAssertEqual(resolved.launch.bareCommand, expected)
+        XCTAssertFalse(resolved.launch.bareCommand.contains("pwned"))
+        XCTAssertTrue(resolved.launch.envOverrides.isEmpty)
+        XCTAssertEqual(resolved.launch.initialPrompt, "")
+        let saved = SavedAgentConfig(id: "INHERIT", name: "Inherit", order: 0, config: AgentLaunchConfig(harness: "claude-code"))
+        let overlay = try XCTUnwrap(DefaultAgentResolver.resolveOverlay(savedConfig: saved, userDefault: user, projectConfig: project))
+        XCTAssertEqual(overlay.launch, resolved.launch)
+        let plan = try AgentLaunchPlanner.plan(request: AgentLaunchRequest(kind: "claude-code"), userDefault: user, projectConfig: project, userTemplate: nil).get()
+        XCTAssertEqual(plan.launchLine, expected)
+        XCTAssertNil(plan.env["NODE_OPTIONS"])
+        XCTAssertNil(plan.delayedPrompt)
+        let match = try XCTUnwrap(DefaultAgentProjectConfig.findMatch(from: nested.path))
+        XCTAssertEqual(match.sourcePath, file.path)
+        XCTAssertEqual(match.ignoredProjectFields(for: .claudeCode), ["command", "envOverridesText", "initialPrompt"])
+        XCTAssertEqual(match.ignoredProjectFields(for: .codex), [])
+
+        try Data(#"{"agents":{"claude-code":{"model":"--settings=/x","effort":"unsupported","command":"","futurePrompt":1e400,"systemPrompt":{"mode":"replace","text":"repo"}}}}"#.utf8).write(to: file)
+        let invalid = try XCTUnwrap(DefaultAgentProjectConfig.findMatch(from: nested.path))
+        XCTAssertEqual(invalid.ignoredProjectFields(for: .claudeCode), ["effort", "model", "systemPrompt"])
+        try Data(#"{"agents":{"claude-code":{"model":"sonnet","effort":"high","command":"","envOverridesText":"","initialPrompt":"","futurePrompt":"repo"}}}"#.utf8).write(to: file)
+        let allowed = try XCTUnwrap(DefaultAgentProjectConfig.findMatch(from: nested.path))
+        XCTAssertTrue(allowed.ignoredProjectFields(for: .claudeCode).isEmpty)
+    }
+
     func testProjectConfigFindIgnoresMalformedFile() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }

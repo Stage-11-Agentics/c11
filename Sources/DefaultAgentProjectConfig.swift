@@ -2,8 +2,8 @@ import Foundation
 
 /// Walks up from a starting directory looking for `.c11/agents.json`. The first
 /// match wins (deepest directory first). When the file exists and parses, it
-/// overrides the user-level `DefaultAgentConfigStore.shared.current` for any
-/// terminal surface launched within that directory tree.
+/// supplies agent kind, model and effort for terminals launched within that
+/// directory tree. Commands, environment and prompts stay operator-owned.
 ///
 /// Matches the precedence/walk pattern used by `WorkspaceBlueprintStore`.
 enum DefaultAgentProjectConfig {
@@ -11,6 +11,23 @@ enum DefaultAgentProjectConfig {
     struct Match {
         let config: DefaultAgentConfig
         let sourcePath: String
+        /// Best-effort; lists decoded fields c11 ignored.
+        func ignoredProjectFields(for agent: AgentType?) -> [String] {
+            guard let agent, let entry = config.agents[agent] else { return [] }
+            var ignored: [String] = []
+            if !entry.command.isEmpty { ignored.append("command") }
+            if !entry.envOverridesText.isEmpty { ignored.append("envOverridesText") }
+            if !entry.initialPrompt.isEmpty { ignored.append("initialPrompt") }
+            if entry.systemPrompt != nil { ignored.append("systemPrompt") }
+            if !entry.model.isEmpty, !DefaultAgentResolver.isValidProjectChoice(entry.model) {
+                ignored.append("model")
+            }
+            let efforts = AgentRegistry.shared.manifest(for: agent)?.launch.effortValues ?? []
+            if !entry.effort.isEmpty, !DefaultAgentResolver.isValidProjectChoice(entry.effort, allowedValues: efforts) {
+                ignored.append("effort")
+            }
+            return ignored.sorted()
+        }
     }
 
     /// Launch-rail entry point. Keeping the C11-194 resolution intact here

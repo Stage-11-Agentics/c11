@@ -6349,8 +6349,8 @@ struct SettingsView: View {
         ))
         .id(SettingsNavigationTarget.agents)
         SettingsCardNote(String(
-            localized: "settings.defaultAgent.note",
-            defaultValue: "the A button on every area launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
+            localized: "settings.defaultAgent.projectChoicesNote",
+            defaultValue: "the A button on every area launches this. new terminal still opens bash. a repo `.c11/agents.json` can pick the agent, model and effort for terminals opened there. the command, environment and prompts always come from these settings."
         ))
         SettingsCard {
             DefaultAgentSettingsSection()

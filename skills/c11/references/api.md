@@ -218,7 +218,11 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # launching-panel cwd is inherited. warning_details carries code/path/source
     # in --json, and the coded warning is also printed once to stderr.
     # Project .c11/agents.json lookup uses that resolved cwd (never the GUI process
-    # cwd); config_source reports the matched file path or null in --json.
+    # cwd); it supplies only agent kind, model and effort. Command, environment
+    # and prompts come from operator Settings. config_source reports the matched
+    # file path or null in --json. ignored_project_fields is a best-effort list
+    # of decoded fields c11 ignored for the selected agent, omitted when empty;
+    # unknown keys and undecodable values are not listed.
 
 # Saved agent configs (the model picker's CLI, design §6)
 c11 config list [--json]                          # saved configs + pinned default + most-recent

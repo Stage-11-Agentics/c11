@@ -84,6 +84,9 @@ def main() -> int:
         }})
         c._call("flag.raise", {"surface_id": mover, "reason": "Need a call on the move", "by": "operator"})
         c._call("flag.delegate", {"surface_id": mover, "by": "agent", "caller_surface_id": recipient})
+        # Agent detection classifies the shell shortly after its tty report
+        # and again after the move; let it settle so "before" is complete.
+        _wait(lambda: _metadata(c, mover)[0].get("terminal_type"), 20, "agent detection of the mover's shell")
         before, before_sources = _metadata(c, mover)
         if before.get("flag") != "Need a call on the move" or before.get("delegated") is not True:
             raise cmuxError(f"Setup did not flag and delegate the mover: {before}")

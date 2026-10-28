@@ -372,13 +372,23 @@ final class CmuxWebView: WKWebView {
         super.otherMouseUp(with: event)
     }
 
+    /// Converts a point in this view's coordinates to the CSS viewport point
+    /// that `elementFromPoint` expects: origin at the top left, in CSS pixels.
+    /// WKWebView is flipped, so its y already runs downward; page zoom scales
+    /// CSS pixels to points.
+    private func cssViewportPoint(forViewPoint point: NSPoint) -> CGPoint {
+        let top = isFlipped ? point.y : bounds.height - point.y
+        let zoom = pageZoom > 0 ? pageZoom : 1
+        return CGPoint(x: point.x / zoom, y: top / zoom)
+    }
+
     /// Finds the nearest anchor element at a given view-local point.
     /// Used as a context-menu download fallback.
     private func findLinkAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
-        let flippedY = bounds.height - point.y
+        let cssPoint = cssViewportPoint(forViewPoint: point)
         let js = """
         (() => {
-            let el = document.elementFromPoint(\(point.x), \(flippedY));
+            let el = document.elementFromPoint(\(cssPoint.x), \(cssPoint.y));
             while (el) {
                 if (el.tagName === 'A' && el.href) return el.href;
                 el = el.parentElement;
@@ -688,12 +698,12 @@ final class CmuxWebView: WKWebView {
     }
 
     /// Resolve the topmost image URL near a point, accounting for overlay layers.
-    private func findImageURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
-        let flippedY = bounds.height - point.y
+    func findImageURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
+        let cssPoint = cssViewportPoint(forViewPoint: point)
         let js = """
         (() => {
-            const x = \(point.x);
-            const y = \(flippedY);
+            const x = \(cssPoint.x);
+            const y = \(cssPoint.y);
             const normalize = (raw) => {
                 if (!raw || typeof raw !== 'string') return '';
                 const trimmed = raw.trim();
@@ -820,12 +830,12 @@ final class CmuxWebView: WKWebView {
     }
 
     /// Resolve the topmost link URL near a point, accounting for overlay layers.
-    private func findLinkURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
-        let flippedY = bounds.height - point.y
+    func findLinkURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
+        let cssPoint = cssViewportPoint(forViewPoint: point)
         let js = """
         (() => {
-            const x = \(point.x);
-            const y = \(flippedY);
+            const x = \(cssPoint.x);
+            const y = \(cssPoint.y);
             const normalize = (raw) => {
                 if (!raw || typeof raw !== 'string') return '';
                 const trimmed = raw.trim();
@@ -901,7 +911,7 @@ final class CmuxWebView: WKWebView {
 
     private func debugInspectElementsAtPoint(_ point: NSPoint, traceID: String, kind: String) {
 #if DEBUG
-        let flippedY = bounds.height - point.y
+        let cssPoint = cssViewportPoint(forViewPoint: point)
         let js = """
         (() => {
             const clip = (value, max = 180) => {
@@ -909,8 +919,8 @@ final class CmuxWebView: WKWebView {
                 const s = String(value);
                 return s.length > max ? s.slice(0, max) + '…' : s;
             };
-            const x = \(point.x);
-            const y = \(flippedY);
+            const x = \(cssPoint.x);
+            const y = \(cssPoint.y);
             const nodes = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
             const entries = [];
             const limit = Math.min(nodes.length, 8);

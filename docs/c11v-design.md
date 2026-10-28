@@ -1,6 +1,6 @@
 # c11v: terminals anywhere, one c11
 
-Status: design draft, 2026-10-24; decisions 6 and 7 added 2026-10-28. Owner: Atin. Working project name: **c11v** ("c11 Plus" is the alternative).
+Status: design draft, 2026-10-24; decisions 6 and 7 and the step 0 results added 2026-10-28. Owner: Atin. Working project name: **c11v** ("c11 Plus" is the alternative).
 Related: `docs/remote-daemon-spec.md` (today's `c11 ssh` and `c11d-remote`), `upstream-triage/c11-1.0/02-ssh-agents.md` (remote agent research), `upstream-triage/c11-1.0/04-ios-companion.md` (phone view).
 
 ## Decisions so far
@@ -264,13 +264,31 @@ Each step ships on its own, behind the rules in Keeping c11 workable.
 
 | Step | Scope | Operators see | Done when |
 |---|---|---|---|
-| 0 Spike | Tagged build: one terminal on the manual IO backend fed by a stub local daemon. Latency, the manual-IO checklist, the TCC check, a separability read of cmux-tui's terminal host | Nothing | Build-or-adopt and language decided, with numbers |
+| 0 Spike | Tagged build: one terminal on the manual IO backend fed by a stub local daemon. Latency, the manual-IO checklist, the TCC check, a separability read of cmux-tui's terminal host | Nothing | Build-or-adopt and language decided, with numbers. Ran 2026-10-28 (Step 0 results); the decisions wait on Atin |
 | 1 Hidden backend | Real `c11d` on this Mac; the daemon backend behind an off-by-default setting. Reattach replay, close grace and reopen, Quit and End All, fd-handoff upgrade, `SMAppService` on opt-in, per-tag isolation, fallback to exec | Nothing unless they opt in | Force-quit c11 mid-run with 20 agents on Atin's machine; relaunch; every agent is still running with its exact screen |
 | 2 Hosts | `c11d` on Atlas, Linux and Prime boxes; tailnet transport and SSH fallback; host badges; New Terminal On; `--host` | Opt-in remote terminals beside local ones | A workspace mixes Hyperion and Atlas terminals; close the laptop for an hour; Atlas work continues; reopen and it is live |
 | 3 Default | New terminals use the daemon by default; exec stays as a fallback setting; existing terminals finish on exec | Terminals survive quits and crashes | A release cycle on the default with no regression reports that trace to it |
 | 4 Agent state | CLI agent verbs answered by the host daemon; metadata, flags, mailbox, events, journal, conversation scraping and prompt cache per host; checked input; doorbell in the daemon | Remote agents get full sidebar status, flags and mail | The full c11 skill works from an Atlas terminal, and with c11 closed as far as agent-owned verbs go |
 | 5 Provisioning | One command to create a Prime sandbox with `c11d`, skills, CLIs and dotfiles; other providers as plug-ins | A new box in one command | A new box is a usable host in one command |
 | 6 More viewers | Web and phone viewers; several viewers on one host at once | Steer the fleet from a phone | A blocked agent on Atlas is answered from the phone |
+
+## Step 0 results
+
+Run 2026-10-28 as a spike, on the local branch `spike/c11v-manual-io` (never pushed or merged). The full reports, the stub daemon and the evidence are in `spike/c11v/` on that branch.
+
+1. **Manual IO works end to end.** A tagged build ran its terminals on Ghostty's manual IO backend, with a separate Rust stub daemon owning each PTY, in an Atlas sandbox guest. Passed: typing and echo, `stty size` after a resize, title, OSC 7, mouse, kitty keyboard, OSC 52 write, query replies, child exit, the find overlay, splits, fallback to exec when the daemon is unreachable, and reattach to the same shell after both Quit and a kill. Not proven: IME and bell (the guest probes failed on an exec panel too) and OSC 52 read.
+2. **The hop is cheap.** The daemon adds 8.6 µs at p50 and 16.6 µs at p99 to a single-byte input-to-echo round trip on Hyperion (50,000 samples, load 11.8), against the 1 ms budget. Bulk output is about 22% slower (150 against 190 MiB/s).
+3. **One defect: full-screen programs after a resize.** Forwarding the size at once lets vim redraw onto Ghostty's old grid. A 40 ms debounce fixes the terminal state, but the frame stays stale until the next render trigger. Cause not isolated.
+4. **Ghostty hooks step 1 needs in the fork:** a child-exit call (`ghostty_surface_child_exited`), a resize callback ordered with Ghostty's reflow, a starting working directory, the environment Exec builds, and splits that stop inheriting their parent's `io_*` fields.
+5. **Threading rules.** `io_write_cb` runs on Ghostty's IO thread, sometimes under the renderer lock, and must never block or wait on main. Daemon output goes to `ghostty_surface_process_output` from a background thread, never from main.
+6. **c11 assumptions that break.** The socket access gate admits only descendants of c11, so CLI calls from daemon shells fail after a restart. The tty and pid features (`TerminalPIDResolver`, `AgentDetector`, `PortScanner`, mailbox stdin) need the daemon to report tty, child pid and foreground process group. c11's scrollback restore must skip daemon terminals, or history shows twice. The Quit dialog's copy is wrong for them.
+7. **Raw replay is not enough.** Replaying a raw output ring garbles cursor-addressed output, so the headless VT snapshot in this design is required.
+8. **cmux-tui's terminal host separates.** A 178-line harness against `cmux-tui-core`'s public API, built on Atlas, survived its launcher's death, reattached from a new process with an exact screen, served two viewers, arbitrated a resize and reported the exit code. Each terminal gets its own host process (7.6 MB RSS in a debug build) that outlives the daemon, so a daemon upgrade needs no fd handoff. The protocol (CMTH v4) has been stable since 2026-08-04, and the host files have had no commits for three weeks. The host sits in a 176k-line crate with 155 dependencies, so adopting it means copying about 8k lines of host code plus about 14k of PTY and VT wrapper.
+9. **c11's Ghostty fork has no headless VT API.** 77 of the 90 `ghostty_*` functions cmux's VT wrapper uses are missing. Upstream Ghostty has them and needs Zig 0.16. This holds on every path.
+10. **Licenses.** cmux-tui is GPL-3.0-or-later per its LICENSE (its Cargo metadata says MIT); section 13 of both GPLv3 and AGPLv3 allows combining it into AGPL c11. Mux has no license grant, and its daemon forks Indexable code that is not public, so it is reference only. Agent detection can come from herdr (Apache-2.0).
+11. **TCC moves to the daemon.** Confirmed on Hyperion: shells under a daemon started by launchd are attributed to the daemon's own code identity, keyed by path for a bare binary. `AssociatedBundleIdentifiers` does not change that. Untested: a daemon registered with `SMAppService`, which Apple says may attribute to the app.
+
+**Recommendation, waiting on Atin:** build `c11d` in Rust around a forked copy of cmux-tui's terminal host that stays compatible with CMTH, and pin `c11d` to its own newer Ghostty until c11's fork catches up.
 
 ## Build, adopt, or both
 
@@ -286,22 +304,24 @@ Three bodies of work already solve parts of this.
 
 ## Costs and risks
 
-1. **A hop on every keystroke.** Measure input-to-echo latency in step 0 against today's exec path; budget: no perceptible change, under 1 ms added at p99 on Hyperion. The typing-latency rules in `CLAUDE.md` apply to the new path.
-2. **Manual IO completeness.** Exec mode is what every Ghostty user exercises. Step 0 must prove resize, title, OSC 7, mouse, kitty keyboard, IME, clipboard (OSC 52), bell, child exit and the find overlay in manual mode.
+1. **A hop on every keystroke.** Budget: no perceptible change, under 1 ms added at p99 on Hyperion. Step 0 measured 16.6 µs. The typing-latency rules in `CLAUDE.md` apply to the new path.
+2. **Manual IO completeness.** Exec mode is what every Ghostty user exercises. Step 0 proved most of the checklist; resize in full-screen programs, IME, bell and OSC 52 read remain (Step 0 results 1 and 3).
 3. **The daemon is the new single point of failure.** A `c11d` crash takes the host's terminals with it. It has to be small, boring and off the main-thread patterns that hurt the app.
-4. **TCC moves.** Processes spawned by `c11d` have `c11d`, not the app, as their responsible process, so Full Disk Access, microphone, camera and Automation grants attach to it. The existing Full Disk Access flow (`FullDiskAccessProbe`) must point at the daemon. Verify in step 0.
+4. **TCC moves.** Processes spawned by `c11d` have `c11d`, not the app, as their responsible process, so Full Disk Access, microphone, camera and Automation grants attach to it. The existing Full Disk Access flow (`FullDiskAccessProbe`) must run in the daemon, the daemon needs c11's usage-description strings, and each tagged build's daemon needs its own grant. Confirmed in step 0 for a launchd daemon; an `SMAppService` registration is still to test.
 5. **Quit no longer means stop** for daemon terminals. Operators who opt in need the explicit menu item and a one-time note.
 6. **Closed terminals and scrollback cost memory** until they expire. Bound the grace period and scrollback per terminal.
 
 ## Open questions
 
-1. **Build or adopt?** Decided in step 0. Lean: adopt cmux-tui's terminal host if it separates cleanly, else build in Rust.
+1. **Build or adopt?** Step 0 recommends a Rust `c11d` around a forked, CMTH-compatible copy of cmux-tui's terminal host (Step 0 results 8). Waiting on Atin.
 2. **Where does a workspace's structure live once agents create panels with no viewer attached?** Lean: `c11d` records terminals, lineage and placement hints; c11 owns geometry and applies hints. Upstream's "frontend projections" are the heavier alternative.
 3. **How does mail cross hosts?** Lean: daemon to daemon over the authenticated transport, so Atlas agents can reach Prime agents with the laptop shut. This is the one place a host dials another host, and it needs its own allowlist.
 4. **Remote transport:** TLS on the tailnet (lean) versus QUIC like mux. QUIC adds roaming the tailnet already gives us.
 5. **Grace period default:** 60 s like mux, or longer for agents? Lean: 60 s, configurable.
 6. **Multi-viewer size policy:** most recently focused viewer owns size (lean), or smallest wins as `c11d-remote` does today.
 7. **Project name:** c11v or c11 Plus.
+8. **Which Ghostty does `c11d` use for screen state?** c11's fork lacks the headless VT API. Lean: `c11d` pins a newer upstream Ghostty (Zig 0.16) now, and c11's renderer fork moves to the same commit later. Waiting on Atin.
+9. **Is one host process per terminal acceptable?** About 7.6 MB each in a debug build, so roughly 1.5 GB at 200 terminals before scrollback. Lean: yes; measure a release build in step 1.
 
 ## Non-goals
 

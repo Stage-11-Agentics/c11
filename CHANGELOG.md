@@ -6,6 +6,14 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-28
+
+Headline: **c11 1.5.0. Rebind keyboard shortcuts live from the CLI, a delegate's mark shows its lineage instead of teal, markdown docs open beside the agent that opened them and no longer go blank after area changes, and a round of security hardening.**
+
+### Added
+
+- **`c11 shortcuts list|set|reset` rebinds keyboard shortcuts live.** `list [--customized]` shows every action and its chord, `set <action> <combo|none>` rebinds or clears one, and `reset <action>` or `reset --all` restores defaults. Changes reach the menus, key handling and an open Settings window at once, with no relaunch. Bare `c11 shortcuts` still opens Settings. ([#763](https://github.com/Stage-11-Agentics/c11/pull/763))
+
 ### Security
 
 - **A repository can no longer replace a starter layout.** Starter layouts and every shipped blueprint name, `agent-room` included, always come from the app: in the New Workspace sheet, `workspace.create_in_directory` and both CLI routes. A project blueprint applies only when you choose it by its own name, by `saved:` or by a path. An unknown bare word is never read as a file in the current directory; pass `./name`. A user blueprint named like a shipped one no longer overrides it by name. ([#756](https://github.com/Stage-11-Agentics/c11/pull/756))
@@ -17,13 +25,19 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ### Changed
 
-- **A delegate's mark shows its lineage, not teal.** A delegate now draws a thin rule under its mark, two for a delegate of a delegate, so the mark keeps its usual colors: gray by state, blue when the prompt cache expired, violet when flagged. A cold delegate whose cache expired now reads blue. The tooltip and panel list state the depth past two.
-- **The mail doorbell is shorter and names the c11 mailbox.** The line now reads `c11 mail waiting: run c11 mailbox recv --ack`. Claude Code frames native-inbox input as "Another Claude session sent a message:", so the line says where the mail actually came from.
+- **A delegate's mark shows its lineage, not teal.** A delegate now draws a thin rule under its mark, two for a delegate of a delegate, so the mark keeps its usual colors: gray by state, blue when the prompt cache expired, violet when flagged. A cold delegate whose cache expired now reads blue. The tooltip and panel list state the depth past two. ([#767](https://github.com/Stage-11-Agentics/c11/pull/767))
+- **`c11 markdown open` places a doc beside the panel that opened it, not the focused area.** The first doc splits beside the caller (or `--panel`/`--area`), and later docs join the markdown area already beside it, so several agents opening docs no longer halve one area again and again. A `--workspace` open with no anchor there adds a panel to an existing area instead of splitting. A terminal `--panel` now places beside that panel instead of erroring. `new-area` and `new-panel` also default to the caller's area. ([#775](https://github.com/Stage-11-Agentics/c11/pull/775))
+- **The mail doorbell is shorter and names the c11 mailbox.** The line now reads `c11 mail waiting: run c11 mailbox recv --ack`. Claude Code frames native-inbox input as "Another Claude session sent a message:", so the line says where the mail actually came from. ([#766](https://github.com/Stage-11-Agentics/c11/pull/766))
 
 ### Fixed
 
+- **A markdown panel no longer shows an empty body after area changes.** Closing a sibling area or splitting could leave a markdown panel with its toolbar but a blank page until you switched panels. The rendered page now stays in the panel on screen. ([#768](https://github.com/Stage-11-Agentics/c11/pull/768))
 - **Markdown corpus indexing stays fast on very large or unusual documents.** Long or numerous headings, dense links and long ticket-prefix lists no longer slow the index. ([#762](https://github.com/Stage-11-Agentics/c11/pull/762))
 - **Workspace metadata commands no longer mistake the `--workspace` value for a key.** `get-workspace-metadata --workspace <ref>` lists every key instead of printing `(unset)`. `set-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` use the key or value you typed, so `set-workspace-description --workspace workspace:1 hello` sets the description to `hello`, not `workspace:1`. ([#774](https://github.com/Stage-11-Agentics/c11/pull/774))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.4.0] - 2026-10-26
 

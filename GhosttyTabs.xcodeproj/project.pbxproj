@@ -367,6 +367,7 @@
 		C11209A001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */; };
 		C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11209D001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift */; };
 		C11487C001B2C3D4E5F60718 /* BrowserContextMenuDownloadCookieTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11487D001B2C3D4E5F60718 /* BrowserContextMenuDownloadCookieTests.swift */; };
+		C11495C001B2C3D4E5F60718 /* BrowserContextMenuFileDownloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11495D001B2C3D4E5F60718 /* BrowserContextMenuFileDownloadTests.swift */; };
 		C11220A0000000000000B001 /* HangLogRotatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11220A0000000000000F001 /* HangLogRotatorTests.swift */; };
 		C11222A001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11222B001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift */; };
 		C11222C001B2C3D4E5F60718 /* DownloadPathWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11222D001B2C3D4E5F60718 /* DownloadPathWatcher.swift */; };
@@ -1056,6 +1057,7 @@
 		C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAwaitPolicyTests.swift; sourceTree = "<group>"; };
 		C11209D001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CmuxWebViewLoadTrackingTests.swift; sourceTree = "<group>"; };
 		C11487D001B2C3D4E5F60718 /* BrowserContextMenuDownloadCookieTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserContextMenuDownloadCookieTests.swift; sourceTree = "<group>"; };
+		C11495D001B2C3D4E5F60718 /* BrowserContextMenuFileDownloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserContextMenuFileDownloadTests.swift; sourceTree = "<group>"; };
 		C11220A0000000000000F001 /* HangLogRotatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HangLogRotatorTests.swift; sourceTree = "<group>"; };
 		C11222B001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPathWatcherTests.swift; sourceTree = "<group>"; };
 		C11222D001B2C3D4E5F60718 /* DownloadPathWatcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DownloadPathWatcher.swift; sourceTree = "<group>"; };
@@ -1983,6 +1985,7 @@
 				C11222B001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift */,
 				C11209D001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift */,
 				C11487D001B2C3D4E5F60718 /* BrowserContextMenuDownloadCookieTests.swift */,
+				C11495D001B2C3D4E5F60718 /* BrowserContextMenuFileDownloadTests.swift */,
 				A5008382 /* CommandPaletteSearchEngineTests.swift */,
 				970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */,
 				58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */,
@@ -3016,6 +3019,7 @@
 				DE686C76120208E59FAE152A /* PanelIdentityRestoreTests.swift in Sources */,
 				C11209C001B2C3D4E5F60718 /* CmuxWebViewLoadTrackingTests.swift in Sources */,
 				C11487C001B2C3D4E5F60718 /* BrowserContextMenuDownloadCookieTests.swift in Sources */,
+				C11495C001B2C3D4E5F60718 /* BrowserContextMenuFileDownloadTests.swift in Sources */,
 				F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
 				F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */,
 				F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,

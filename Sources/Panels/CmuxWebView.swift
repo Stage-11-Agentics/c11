@@ -62,6 +62,9 @@ final class CmuxWebView: WKWebView {
     /// Receives the http(s) downloads started from the context menu. The owning
     /// panel or popup sets it to the delegate its navigation downloads use.
     weak var contextMenuDownloadDelegate: WKDownloadDelegate?
+    /// Picks where a data: or file: context-menu download is saved, calling
+    /// back with nil on cancel. Tests replace the save panel with it.
+    var contextMenuSaveDestinationProvider: ((_ suggestedName: String, _ completion: @escaping (URL?) -> Void) -> Void)?
     /// Guard against background panes stealing first responder (e.g. page autofocus).
     /// BrowserPanelView updates this as pane focus state changes.
     var allowsFirstResponderAcquisition: Bool = true
@@ -1060,16 +1063,12 @@ final class CmuxWebView: WKWebView {
                     "browser.ctxdl.data trace=\(traceID) stage=parseSuccess mime=\(parsed.mimeType ?? "nil") bytes=\(parsed.data.count)"
                 )
 
-                let savePanel = NSSavePanel()
-                savePanel.nameFieldStringValue = saveName
-                savePanel.canCreateDirectories = true
-                savePanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
                 self.notifyContextMenuDownloadState(false)
                 self.debugContextDownload(
                     "browser.ctxdl.data trace=\(traceID) stage=savePrompt shown=1 defaultName=\(saveName)"
                 )
-                savePanel.begin { result in
-                    guard result == .OK, let destURL = savePanel.url else {
+                self.chooseContextMenuSaveDestination(suggestedName: saveName) { destURL in
+                    guard let destURL else {
                         self.debugContextDownload(
                             "browser.ctxdl.data trace=\(traceID) stage=savePrompt result=cancel"
                         )
@@ -1098,56 +1097,116 @@ final class CmuxWebView: WKWebView {
         }
 
         if scheme == "file" {
-            DispatchQueue.main.async {
-                do {
-                    let data = try Data(contentsOf: url)
-                    self.debugContextDownload(
-                        "browser.ctxdl.file trace=\(traceID) stage=readSuccess bytes=\(data.count) path=\(url.path)"
-                    )
-                    let filename = suggestedFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let saveName = (filename?.isEmpty == false ? filename! : url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent)
-                    let savePanel = NSSavePanel()
-                    savePanel.nameFieldStringValue = saveName
-                    savePanel.canCreateDirectories = true
-                    savePanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-                    // Download is already complete; we're now waiting for user save choice.
+            // The page's own JavaScript resolved this URL, so a web page could
+            // name any local path. WebKit never lets an http(s) page load a
+            // file: URL, so only a page that is itself a local file may save
+            // one (C11-495).
+            guard self.url?.isFileURL == true else {
+                notifyContextMenuDownloadState(false)
+                debugContextDownload(
+                    "browser.ctxdl.file trace=\(traceID) stage=rejectNonFilePage pageScheme=\(self.url?.scheme ?? "nil")"
+                )
+                runContextMenuFallback(
+                    action: fallbackAction,
+                    target: fallbackTarget,
+                    sender: sender,
+                    traceID: traceID,
+                    reason: "file_from_non_file_page"
+                )
+                return
+            }
+            let source = url.resolvingSymlinksInPath()
+            let filename = suggestedFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let saveName = filename?.isEmpty == false
+                ? filename!
+                : (source.lastPathComponent.isEmpty ? "download" : source.lastPathComponent)
+            // stat and copy stay off main: a FIFO, a device or a slow volume
+            // must not block the app, and the copy streams from disk.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fileType = (try? FileManager.default.attributesOfItem(atPath: source.path))?[.type] as? FileAttributeType
+                DispatchQueue.main.async {
                     self.notifyContextMenuDownloadState(false)
+                    guard fileType == .typeRegular else {
+                        self.debugContextDownload(
+                            "browser.ctxdl.file trace=\(traceID) stage=rejectNotRegular type=\(fileType?.rawValue ?? "missing") path=\(source.path)"
+                        )
+                        self.runContextMenuFallback(
+                            action: fallbackAction,
+                            target: fallbackTarget,
+                            sender: sender,
+                            traceID: traceID,
+                            reason: "file_not_regular"
+                        )
+                        return
+                    }
                     self.debugContextDownload(
                         "browser.ctxdl.file trace=\(traceID) stage=savePrompt shown=1 defaultName=\(saveName)"
                     )
-                    savePanel.begin { result in
-                        guard result == .OK, let destURL = savePanel.url else {
+                    self.chooseContextMenuSaveDestination(suggestedName: saveName) { destURL in
+                        guard let destURL else {
                             self.debugContextDownload(
                                 "browser.ctxdl.file trace=\(traceID) stage=savePrompt result=cancel"
                             )
                             return
                         }
-                        do {
-                            try data.write(to: destURL, options: .atomic)
-                            self.debugContextDownload(
-                                "browser.ctxdl.file trace=\(traceID) stage=saveSuccess path=\(destURL.path)"
-                            )
-                        } catch {
-                            self.debugContextDownload(
-                                "browser.ctxdl.file trace=\(traceID) stage=saveFailure error=\(error.localizedDescription)"
-                            )
+                        self.notifyContextMenuDownloadState(true)
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            let outcome = Result { try Self.copyContextMenuFile(from: source, to: destURL) }
+                            DispatchQueue.main.async {
+                                self.notifyContextMenuDownloadState(false)
+                                switch outcome {
+                                case .success:
+                                    self.debugContextDownload(
+                                        "browser.ctxdl.file trace=\(traceID) stage=saveSuccess path=\(destURL.path)"
+                                    )
+                                case .failure(let error):
+                                    self.debugContextDownload(
+                                        "browser.ctxdl.file trace=\(traceID) stage=saveFailure error=\(error.localizedDescription)"
+                                    )
+                                }
+                            }
                         }
                     }
-                } catch {
-                    self.notifyContextMenuDownloadState(false)
-                    self.debugContextDownload(
-                        "browser.ctxdl.file trace=\(traceID) stage=readFailure error=\(error.localizedDescription)"
-                    )
-                    self.runContextMenuFallback(
-                        action: fallbackAction,
-                        target: fallbackTarget,
-                        sender: sender,
-                        traceID: traceID,
-                        reason: "file_read_error"
-                    )
                 }
             }
             return
+        }
+    }
+
+    private func chooseContextMenuSaveDestination(
+        suggestedName: String,
+        completion: @escaping (URL?) -> Void
+    ) {
+        if let contextMenuSaveDestinationProvider {
+            contextMenuSaveDestinationProvider(suggestedName, completion)
+            return
+        }
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = suggestedName
+        savePanel.canCreateDirectories = true
+        savePanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        savePanel.begin { result in
+            completion(result == .OK ? savePanel.url : nil)
+        }
+    }
+
+    /// Copies a local file to the destination the operator chose, replacing
+    /// an existing file there as the save panel already confirmed.
+    private static func copyContextMenuFile(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        let staging = try fileManager.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: destination,
+            create: true
+        )
+        defer { try? fileManager.removeItem(at: staging) }
+        let staged = staging.appendingPathComponent(destination.lastPathComponent, isDirectory: false)
+        try fileManager.copyItem(at: source, to: staged)
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: staged)
+        } else {
+            try fileManager.moveItem(at: staged, to: destination)
         }
     }
 

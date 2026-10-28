@@ -802,6 +802,45 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         )
     }
 
+    func testWorkspaceMetadataCommandsDoNotReadTheWorkspaceValueAsAKey() {
+        let workspaceID = "11111111-2222-3333-4444-555566667777"
+        let cases: [(command: [String], method: String, check: ([String: Any]) -> Void)] = [
+            (["get-workspace-metadata", "--workspace", workspaceID], "workspace.get_metadata", { params in
+                XCTAssertNil(params["key"], "a listing must not filter by the --workspace value: \(params)")
+            }),
+            (["get-workspace-metadata", "--workspace", workspaceID, "goal"], "workspace.get_metadata", { params in
+                XCTAssertEqual(params["key"] as? String, "goal")
+            }),
+            (["set-workspace-metadata", "--workspace", workspaceID, "goal", "ship", "it"], "workspace.set_metadata", { params in
+                XCTAssertEqual(params["key"] as? String, "goal")
+                XCTAssertEqual(params["value"] as? String, "ship it")
+            }),
+            (["clear-workspace-metadata", "--workspace", workspaceID, "goal"], "workspace.clear_metadata", { params in
+                XCTAssertEqual(params["keys"] as? [String], ["goal"])
+            }),
+            (["set-workspace-description", "--workspace", workspaceID, "hello"], "workspace.set_metadata", { params in
+                XCTAssertEqual(params["key"] as? String, "description")
+                XCTAssertEqual(params["value"] as? String, "hello")
+            }),
+        ]
+        for item in cases {
+            guard let socket = try? CapturedCLISocket() else {
+                XCTFail("Could not create a fake CLI socket")
+                return
+            }
+            guard let result = runCLI(item.command, socketPath: socket.path) else { return }
+            XCTAssertEqual(result.status, 0, "\(item.command): \(result.stderr)")
+            XCTAssertTrue(socket.waitUntilFinished(), "fake socket did not finish serving \(item.command)")
+            guard let request = socket.requests.first(where: { $0["method"] as? String == item.method }) else {
+                XCTFail("Expected \(item.method) for \(item.command), got \(socket.requests)")
+                continue
+            }
+            let params = request["params"] as? [String: Any] ?? [:]
+            XCTAssertEqual(params["workspace_id"] as? String, workspaceID, "\(item.command)")
+            item.check(params)
+        }
+    }
+
     func testStateSaveRejectsUnexpectedArgumentAfterEndOfOptionsBeforeMutation() {
         guard let socket = try? CapturedCLISocket() else {
             XCTFail("Could not create a fake CLI socket")

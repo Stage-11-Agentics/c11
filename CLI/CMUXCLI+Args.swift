@@ -437,4 +437,23 @@ extension CMUXCLI {
         }
         return out
     }
+
+    /// The words that are neither `--` options nor the value of one of
+    /// `valueOptions`, in order. Preflight has already split `--name=value`,
+    /// so `--workspace workspace:1 goal` yields `["goal"]`.
+    func positionalWords(_ args: [String], valueOptions: [String]) -> [String] {
+        let values = Set(valueOptions.flatMap(Self.flagSpellings))
+        var words: [String] = []
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if values.contains(arg) {
+                i += 2
+                continue
+            }
+            if !arg.hasPrefix("--") { words.append(arg) }
+            i += 1
+        }
+        return words
+    }
 }

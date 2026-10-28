@@ -514,7 +514,7 @@ extension CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--key", "--value", "--json"])
         var metadata: [String: String] = [:]
         var singleKey: String?
         var singleValue: String?
@@ -568,7 +568,7 @@ extension CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--key"])
         let keyFilter = optionValue(commandArgs, name: "--key") ?? positional.first
 
         let workspaceId = try resolveWorkspaceMetadataTarget(
@@ -611,7 +611,7 @@ extension CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--key"])
         var keys: [String] = collectRepeatedOption(commandArgs, name: "--key")
         if keys.isEmpty, let first = positional.first {
             keys = [first]
@@ -640,7 +640,7 @@ extension CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--value"])
         guard let value = optionValue(commandArgs, name: "--value") ?? positional.first else {
             throw CLIError(message: "set-workspace-\(key) requires a value")
         }

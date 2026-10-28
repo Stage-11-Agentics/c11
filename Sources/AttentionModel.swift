@@ -604,6 +604,9 @@ final class PanelAttentionService {
             livePanelIds: livePanelIds,
             attention: candidateSnapshots
         )
+        // Restore replays panels before their workspaces are registered, so a
+        // delegate restored ahead of its delegate owner missed its depth.
+        refreshDelegationDepths(of: Array(PanelAttentionIndex.shared.delegationOwners.keys))
         let releasedIds = Set(releases.map(\.surfaceId))
         for snapshot in candidateSnapshots
         where snapshot.delegated && !releasedIds.contains(snapshot.surfaceId) {
@@ -633,6 +636,17 @@ final class PanelAttentionService {
         }
     }
 
+    private func refreshDelegationDepths(below surfaceId: UUID) {
+        refreshDelegationDepths(of: PanelAttentionIndex.shared.delegateDescendants(of: surfaceId))
+    }
+
+    private func refreshDelegationDepths(of surfaceIds: [UUID]) {
+        for surfaceId in surfaceIds {
+            AppDelegate.shared?.workspaceContainingPanel(panelId: surfaceId)?
+                .workspace.refreshDelegationDepth(forSurface: surfaceId)
+        }
+    }
+
     func remove(workspaceId: UUID, surfaceId: UUID) {
         let attention = PanelAttentionIndex.shared.snapshot(
             workspaceId: workspaceId,
@@ -653,7 +667,9 @@ final class PanelAttentionService {
             surfaceId: surfaceId
         )
         PanelMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
+        let descendants = PanelAttentionIndex.shared.delegateDescendants(of: surfaceId)
         PanelAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
+        refreshDelegationDepths(of: descendants)
         feedProjection.removePanel(workspaceID: workspaceId, panelID: surfaceId)
         AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
             .workspaces.first(where: { $0.id == workspaceId })?
@@ -686,6 +702,7 @@ final class PanelAttentionService {
             workspaceId: workspaceId,
             validSurfaceIds: validSurfaceIds
         )
+        refreshDelegationDepths(of: Array(PanelAttentionIndex.shared.delegationOwners.keys))
         feedProjection.pruneWorkspace(workspaceID: workspaceId, validPanelIDs: validSurfaceIds)
     }
 
@@ -782,6 +799,12 @@ final class PanelAttentionService {
     }
 
     private func publishProjection(_ snapshot: PanelAttentionSnapshot) {
+        let prior = PanelAttentionIndex.shared.snapshot(
+            workspaceId: snapshot.workspaceId,
+            surfaceId: snapshot.surfaceId
+        )
+        let lineageChanged = prior.delegated != snapshot.delegated
+            || prior.delegatedBy != snapshot.delegatedBy
         PanelAttentionIndex.shared.publish(snapshot)
         let workspace = AppDelegate.shared?.workspaceContainingPanel(
             panelId: snapshot.surfaceId,
@@ -800,9 +823,8 @@ final class PanelAttentionService {
         workspace?.setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
         // A delegation change moves every delegate below this panel up or
         // down one hop; they can live in other workspaces.
-        for descendant in PanelAttentionIndex.shared.delegateDescendants(of: snapshot.surfaceId) {
-            AppDelegate.shared?.workspaceContainingPanel(panelId: descendant)?
-                .workspace.refreshDelegationDepth(forSurface: descendant)
+        if lineageChanged {
+            refreshDelegationDepths(below: snapshot.surfaceId)
         }
         // Copy the snapshot off main. Do not project the feed row here.
         feedProjection.noteAttention(snapshot)

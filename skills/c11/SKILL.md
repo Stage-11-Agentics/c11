@@ -152,9 +152,10 @@ two; the tooltip and panel list give the true depth). The baseline is the only d
 still means attention (gray lifecycle, blue cache-cold, violet flag), so a cold delegate is gray or
 blue like any agent. **Gold and the waiting shape mean waiting on the operator, nothing else:** a
 stopped delegate shows idle, and the only waiting-shaped delegate is a flagged one, in violet, with
-its baseline kept. The operator hears that *you* are waiting, never that your worker finished. Parent/child is a creation fact: every delegate is a
-child, but not every child is a delegate. Use the delegate vocabulary for new work; `--suppressed`,
-`suppress`/`unsuppress`, and reads of `suppressed` remain aliases for compatibility:
+its baseline kept. The operator hears that *you* are waiting, never that your worker finished.
+Parent/child is a creation fact: every delegate is a child, but not every child is a delegate.
+Use the delegate vocabulary for new work; `--suppressed`, `suppress`/`unsuppress`, and reads
+of `suppressed` remain aliases for compatibility:
 
 ```bash
 c11 launch-agent ... --delegated             # launch as your delegate

@@ -305,8 +305,8 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(BonsplitActivityMarkLineage.displayedDepth(2), 2)
         XCTAssertEqual(BonsplitActivityMarkLineage.displayedDepth(7), 2)
         XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 0), 9)
-        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 1), 6, "rows 0-6")
-        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 2), 4, "rows 0-4")
+        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 1), 6)
+        XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 2), 4)
         XCTAssertEqual(BonsplitActivityMarkLineage.markHeight(depth: 5), 4)
         XCTAssertEqual(BonsplitActivityMarkLineage.ruleOffsets(depth: 0), [])
         XCTAssertEqual(BonsplitActivityMarkLineage.ruleOffsets(depth: 1), [8])
@@ -319,7 +319,7 @@ final class AttentionModelTests: XCTestCase {
             XCTAssertEqual(height, height.rounded())
             for y in BonsplitActivityMarkLineage.ruleOffsets(depth: depth) {
                 XCTAssertEqual(y, y.rounded(), "no half-point lines")
-                XCTAssertGreaterThan(y, height - 1, "rules sit below the mark")
+                XCTAssertGreaterThanOrEqual(y, height + 1, "a point of air between the mark and its rules")
                 XCTAssertLessThanOrEqual(y + BonsplitActivityMarkLineage.ruleThickness, 9)
             }
         }

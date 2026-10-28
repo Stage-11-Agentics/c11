@@ -7568,24 +7568,23 @@ final class Workspace: Identifiable, ObservableObject {
         let cachedTitle: String?
         let customTitle: String?
         let customColor: String?
-        /// Tab `icon` metadata and its source, carried so a moved tab keeps its badge.
+        /// Tab `icon` metadata, for the badge of the re-created tab.
         let panelIcon: String?
-        let panelIconSource: MetadataSource?
-        /// Source tier of the `color` mirror, so a moved tab keeps who set it.
-        let panelColorSource: MetadataSource?
+        /// C11-490: the panel's whole metadata entry with its sources, flag
+        /// and delegation included, restored as-is under the new workspace.
+        let metadata: PanelMetadataStore.SurfaceEntry
         let manuallyUnread: Bool
-        let terminalType: String?
-        let terminalTypeSource: MetadataSource?
         let derivedActivity: SidebarActivityState?
-        let derivedActivitySource: MetadataSource?
         let isAgentCold: Bool
         let detectedTerminalType: String?
         let activityState: BonsplitTabActivityState?
-        let attention: PanelAttentionSnapshot
         /// When the surface entered its sheet-visible state, so a moved tab keeps its clock.
         let panelSheetStatusEntered: PanelSheetStatusEntry?
         /// The last command start/finish, so a moved terminal keeps its `active` clock.
         let shellEdgeAt: Date?
+        /// The shell reports its tty once, so a moved terminal keeps it for
+        /// the tree, port scanning, agent detection and the mailbox doorbell.
+        let ttyName: String?
     }
 
     private var detachingBonsplitTabIds: Set<TabID> = []
@@ -11267,6 +11266,12 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         panels[detached.panelId] = detached.panel
+        PanelMetadataStore.shared.restoreFromSnapshot(
+            workspaceId: id,
+            surfaceId: detached.panelId,
+            values: detached.metadata.values,
+            sources: detached.metadata.sources
+        )
         if let terminalPanel = detached.panel as? TerminalPanel {
             terminalPanel.updateWorkspaceId(id)
         } else if let browserPanel = detached.panel as? BrowserPanel {
@@ -11294,24 +11299,9 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             panelCustomColors.removeValue(forKey: detached.panelId)
         }
-        if let customColor = detached.customColor {
-            _ = PanelMetadataStore.shared.setInternal(
-                workspaceId: id,
-                surfaceId: detached.panelId,
-                key: MetadataKey.color,
-                value: customColor,
-                source: detached.panelColorSource ?? .explicit
-            )
-        }
-        if let panelIcon = detached.panelIcon {
-            _ = PanelMetadataStore.shared.setInternal(
-                workspaceId: id,
-                surfaceId: detached.panelId,
-                key: MetadataKey.icon,
-                value: panelIcon,
-                source: detached.panelIconSource ?? .explicit
-            )
-        }
+        // The live tab color owns the `color` key; the restored entry
+        // normally agrees and this writes nothing.
+        mirrorPanelColorToMetadata(panelId: detached.panelId)
         if detached.isPinned {
             pinnedPanelIds.insert(detached.panelId)
         } else {
@@ -11324,42 +11314,28 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
         }
-        if let terminalType = detached.terminalType {
-            _ = PanelMetadataStore.shared.setInternal(
-                workspaceId: id,
-                surfaceId: detached.panelId,
-                key: MetadataKey.terminalType,
-                value: terminalType,
-                source: detached.terminalTypeSource ?? .heuristic
-            )
-        }
         if let entered = detached.panelSheetStatusEntered {
             panelSheetStatusEntered[detached.panelId] = entered
         }
         if let edge = detached.shellEdgeAt {
             panelShellEdgeAt[detached.panelId] = edge
         }
+        if let ttyName = detached.ttyName {
+            panelTTYNames[detached.panelId] = ttyName
+        }
         if let derivedActivity = detached.derivedActivity {
             derivedActivityByPanel[detached.panelId] = derivedActivity
-            _ = PanelMetadataStore.shared.setInternal(
-                workspaceId: id,
-                surfaceId: detached.panelId,
-                key: MetadataKey.activity,
-                value: derivedActivity.rawValue,
-                source: detached.derivedActivitySource ?? .derived
-            )
         } else {
             derivedActivityByPanel.removeValue(forKey: detached.panelId)
         }
-        let restoredAttention = PanelAttentionSnapshot(
-            workspaceId: id,
-            surfaceId: detached.panelId,
-            flagReason: detached.attention.flagReason,
-            flagRaisedAt: detached.attention.flagRaisedAt,
-            delegated: detached.attention.delegated,
-            delegatedBy: detached.attention.delegatedBy
+        // Project the restored flag and delegation without attention events:
+        // nothing was raised. The local cache is set directly, as on session
+        // restore, for a workspace the service lookup cannot find.
+        PanelAttentionService.shared.syncFromMetadata(workspaceId: id, surfaceId: detached.panelId)
+        setAttentionSnapshot(
+            PanelMetadataStore.shared.attentionSnapshot(workspaceId: id, surfaceId: detached.panelId),
+            forSurface: detached.panelId
         )
-        PanelAttentionService.shared.restore(restoredAttention)
         if detached.isAgentCold {
             coldAgentSurfaceIds.insert(detached.panelId)
         } else {
@@ -11402,6 +11378,7 @@ final class Workspace: Identifiable, ObservableObject {
             derivedActivityByPanel.removeValue(forKey: detached.panelId)
             coldAgentSurfaceIds.remove(detached.panelId)
             detectedTerminalTypesByPanel.removeValue(forKey: detached.panelId)
+            panelTTYNames.removeValue(forKey: detached.panelId)
             PanelAttentionService.shared.remove(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
@@ -11414,6 +11391,11 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         bonsplitTabIdToTabId[newBonsplitTabId] = detached.panelId
+        if let ttyName = detached.ttyName {
+            // Detach unregistered both under the source workspace.
+            PortScanner.shared.registerTTY(workspaceId: id, panelId: detached.panelId, ttyName: ttyName)
+            AgentDetector.shared.registerTTY(workspaceId: id, panelId: detached.panelId, ttyName: ttyName)
+        }
         if let index {
             _ = bonsplitController.reorderTab(newBonsplitTabId, toIndex: index)
         }
@@ -13904,38 +13886,18 @@ extension Workspace: BonsplitDelegate {
                 customTitle: panelCustomTitles[panelId],
                 customColor: panelCustomColors[panelId],
                 panelIcon: panelIcon(panelId: panelId),
-                panelIconSource: PanelMetadataStore.shared.getSource(
-                    workspaceId: id,
-                    surfaceId: panelId,
-                    key: MetadataKey.icon
-                ),
-                panelColorSource: PanelMetadataStore.shared.getSource(
-                    workspaceId: id,
-                    surfaceId: panelId,
-                    key: MetadataKey.color
-                ),
+                metadata: PanelMetadataStore.shared.surfaceEntry(workspaceId: id, surfaceId: panelId),
                 manuallyUnread: manualUnreadPanelIds.contains(panelId),
-                terminalType: surfaceTerminalKind(panelId: panelId),
-                terminalTypeSource: PanelMetadataStore.shared.getSource(
-                    workspaceId: id,
-                    surfaceId: panelId,
-                    key: MetadataKey.terminalType
-                ),
                 derivedActivity: derivedActivityByPanel[panelId],
-                derivedActivitySource: PanelMetadataStore.shared.getSource(
-                    workspaceId: id,
-                    surfaceId: panelId,
-                    key: MetadataKey.activity
-                ),
                 isAgentCold: coldAgentSurfaceIds.contains(panelId),
                 detectedTerminalType: detectedTerminalTypesByPanel[panelId],
                 activityState: resolvedSurfacePanelActivityState(
                     panelId: panelId,
                     hasExactSurfaceNotification: false
                 ),
-                attention: attentionSnapshot(panelId: panelId),
                 panelSheetStatusEntered: panelSheetStatusEntered[panelId],
-                shellEdgeAt: panelShellEdgeAt[panelId]
+                shellEdgeAt: panelShellEdgeAt[panelId],
+                ttyName: panelTTYNames[panelId]
             )
         } else {
             if panel != nil {

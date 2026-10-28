@@ -46,6 +46,24 @@ final class AgentSkillsModel: ObservableObject {
         var isSharedDestination: Bool {
             sharedWithTarget != nil
         }
+        /// The packages an Update or the sheet's install touches: exactly the
+        /// offered ones, so a local copy beside them is never swept along. A
+        /// shared destination offers nothing; its owner row acts for it.
+        var offeredPackageNames: Set<String> {
+            guard !isSharedDestination else { return [] }
+            return Set(packages.filter { AgentSkillsOnboarding.shouldRowOffer($0) }.map(\.package.name))
+        }
+        var currentPackageNames: Set<String> {
+            Set(packages.filter { $0.state == .installedCurrent }.map(\.package.name))
+        }
+        /// Copies synced from a checkout or edited after install. Replaced only
+        /// by the explicit Replace Local Copies action in Settings.
+        var localCopies: [SkillInstallerPackageStatus] {
+            packages.filter { $0.state.isLocalCopy }
+        }
+        var hasLocalCopies: Bool {
+            packages.contains { $0.state.isLocalCopy }
+        }
     }
 
     @Published private(set) var sourceDir: URL?
@@ -157,7 +175,7 @@ final class AgentSkillsModel: ObservableObject {
         return RefreshSnapshot(sourceDir: source, sourceError: nil, rows: newRows)
     }
 
-    func install(target: SkillInstallerTarget, force: Bool) {
+    func install(target: SkillInstallerTarget, force: Bool, packages: Set<String>? = nil) {
         guard let source = sourceDir else { return }
         do {
             let result = try SkillInstaller.install(
@@ -165,6 +183,7 @@ final class AgentSkillsModel: ObservableObject {
                 home: home,
                 sourceDir: source,
                 force: force,
+                packages: packages,
                 fileManager: fileManager
             )
             // Any package this call touched is now `.installedCurrent`;
@@ -246,12 +265,13 @@ final class AgentSkillsModel: ObservableObject {
         if !result.installed.isEmpty { parts.append(AgentSkillsLocalized.installedFragment(result.installed)) }
         if !result.refreshed.isEmpty { parts.append(AgentSkillsLocalized.refreshedFragment(result.refreshed)) }
         if !result.skipped.isEmpty { parts.append(AgentSkillsLocalized.skippedFragment(result.skipped)) }
+        if !result.keptLocal.isEmpty { parts.append(AgentSkillsLocalized.keptLocalFragment(result.keptLocal)) }
         if parts.isEmpty { parts.append(AgentSkillsLocalized.noOpFragment()) }
         return AgentSkillsLocalized.envelope(target: result.target.displayName, body: parts.joined(separator: "; "))
     }
 
     private func formatRemoveMessage(result: SkillInstallerRemoveResult) -> String {
-        if result.removed.isEmpty && result.skipped.isEmpty {
+        if result.removed.isEmpty && result.skipped.isEmpty && result.keptLocal.isEmpty {
             return AgentSkillsLocalized.envelope(
                 target: result.target.displayName,
                 body: AgentSkillsLocalized.nothingToRemove()
@@ -260,6 +280,7 @@ final class AgentSkillsModel: ObservableObject {
         var parts: [String] = []
         if !result.removed.isEmpty { parts.append(AgentSkillsLocalized.removedFragment(result.removed)) }
         if !result.skipped.isEmpty { parts.append(AgentSkillsLocalized.skippedFragment(result.skipped)) }
+        if !result.keptLocal.isEmpty { parts.append(AgentSkillsLocalized.keptLocalFragment(result.keptLocal)) }
         return AgentSkillsLocalized.envelope(target: result.target.displayName, body: parts.joined(separator: "; "))
     }
 }
@@ -298,6 +319,14 @@ enum AgentSkillsLocalized {
         let fmt = String(
             localized: "agentSkills.action.skippedFragment",
             defaultValue: "skipped: %@"
+        )
+        return String(format: fmt, items.joined(separator: ", "))
+    }
+
+    static func keptLocalFragment(_ items: [String]) -> String {
+        let fmt = String(
+            localized: "agentSkills.action.keptLocalFragment",
+            defaultValue: "kept local copies: %@"
         )
         return String(format: fmt, items.joined(separator: ", "))
     }
@@ -453,6 +482,7 @@ struct AgentSkillsSettingsSection: View {
 private struct AgentSkillsRow: View {
     let row: AgentSkillsModel.TargetRow
     @ObservedObject var model: AgentSkillsModel
+    @State private var confirmingReplace = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -467,6 +497,12 @@ private struct AgentSkillsRow: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if row.detected && !row.isSharedDestination && row.hasLocalCopies {
+                    Text(localCopiesText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let err = row.statusError {
                     Text(err)
                         .font(.caption)
@@ -480,6 +516,37 @@ private struct AgentSkillsRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .alert(
+            String(localized: "agentSkills.replaceLocal.title", defaultValue: "Replace local skill copies?"),
+            isPresented: $confirmingReplace
+        ) {
+            Button(String(localized: "agentSkills.replaceLocal.confirm", defaultValue: "Replace"), role: .destructive) {
+                model.install(target: row.target, force: true, packages: Set(row.localCopies.map(\.package.name)))
+            }
+            Button(String(localized: "agentSkills.replaceLocal.cancel", defaultValue: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(replaceMessage)
+        }
+    }
+
+    private var localCopyNames: String {
+        ListFormatter.localizedString(byJoining: row.localCopies.map(\.package.name))
+    }
+
+    private var localCopiesText: String {
+        let format = String(
+            localized: "agentSkills.status.localCopies",
+            defaultValue: "Local copies, left as they are: %@"
+        )
+        return String(format: format, localCopyNames)
+    }
+
+    private var replaceMessage: String {
+        let format = String(
+            localized: "agentSkills.replaceLocal.message",
+            defaultValue: "%1$@ in %2$@ were synced from a checkout or edited after install, and may be newer than the copies bundled with this c11. Replacing installs the bundled copies and discards those changes."
+        )
+        return String(format: format, localCopyNames, row.target.displayName)
     }
 
     @ViewBuilder
@@ -508,6 +575,9 @@ private struct AgentSkillsRow: View {
         }
         if row.allCurrent {
             return (String(localized: "agentSkills.status.installed", defaultValue: "installed"), .green)
+        }
+        if row.hasLocalCopies && row.packages.allSatisfy({ $0.state == .installedCurrent || $0.state.isLocalCopy }) {
+            return (String(localized: "agentSkills.status.local", defaultValue: "local copies"), .blue)
         }
         if row.anyInstalled {
             return (String(localized: "agentSkills.status.partial", defaultValue: "partial"), .orange)
@@ -554,7 +624,7 @@ private struct AgentSkillsRow: View {
     private var skillManagementButtons: some View {
         if row.allCurrent {
             Button(String(localized: "agentSkills.button.refresh", defaultValue: "Refresh")) {
-                model.install(target: row.target, force: true)
+                model.install(target: row.target, force: true, packages: row.currentPackageNames)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -564,11 +634,20 @@ private struct AgentSkillsRow: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
         } else if row.anyInstalled {
-            Button(String(localized: "agentSkills.button.update", defaultValue: "Update")) {
-                model.install(target: row.target, force: true)
+            if row.needsInstallOrUpdate {
+                Button(String(localized: "agentSkills.button.update", defaultValue: "Update")) {
+                    model.install(target: row.target, force: true, packages: row.offeredPackageNames)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            if row.hasLocalCopies {
+                Button(String(localized: "agentSkills.button.replaceLocal", defaultValue: "Replace Local Copies…")) {
+                    confirmingReplace = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
             Button(String(localized: "agentSkills.button.remove", defaultValue: "Remove")) {
                 model.remove(target: row.target)
             }
@@ -645,8 +724,12 @@ struct AgentSkillsOnboardingSheet: View {
         }
     }
 
+    /// Any row that would change is checked. A shared or current row's
+    /// checkbox is disabled, so its default opt-in must not count.
     private var anySelected: Bool {
-        initializedDefaultOptIns && (claudeOptIn || codexOptIn || grokOptIn || kimiOptIn || opencodeOptIn || copilotOptIn || piOptIn || ompOptIn)
+        initializedDefaultOptIns && detectedRows.contains {
+            $0.needsInstallOrUpdate && optInBinding(for: $0.target).wrappedValue
+        }
     }
 
     private var hasActionNeeded: Bool {
@@ -740,6 +823,12 @@ struct AgentSkillsOnboardingSheet: View {
     }
 
     private var headerBody: String {
+        if !detectedRows.isEmpty && !hasActionNeeded && detectedRows.contains(where: \.hasLocalCopies) {
+            return String(
+                localized: "agentSkills.onboarding.body.celebratoryLocal",
+                defaultValue: "Nothing to update. c11 leaves skill copies synced from a checkout or edited by hand as they are; replace them from Settings → Agent Skills."
+            )
+        }
         if !detectedRows.isEmpty && !hasActionNeeded {
             return String(
                 localized: "agentSkills.onboarding.body.celebratory",
@@ -823,6 +912,7 @@ struct AgentSkillsOnboardingSheet: View {
                 Text(detectionLabel(for: row))
                     .font(.system(size: 11))
                     .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.58))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
@@ -836,28 +926,27 @@ struct AgentSkillsOnboardingSheet: View {
                 defaultValue: "Not detected — install the agent first, or enable from Settings later."
             )
         }
+        if let sharedWithTarget = row.sharedWithTarget {
+            let format = String(
+                localized: "agentSkills.status.sharedWith",
+                defaultValue: "Uses the %@ skill files"
+            )
+            return String(format: format, sharedWithTarget.displayName)
+        }
         if row.allCurrent {
             return String(
                 localized: "agentSkills.onboarding.alreadyInstalled",
                 defaultValue: "Already current"
             )
         }
-        if row.hasOutdated {
+        let changes = AgentSkillsOnboarding.changeSummary(for: row.packages)
+        guard !changes.isEmpty else {
             return String(
-                localized: "agentSkills.onboarding.updateAvailable",
-                defaultValue: "Will update the installed skill"
+                localized: "agentSkills.onboarding.willInstall",
+                defaultValue: "Will install the skill"
             )
         }
-        if row.anyInstalled {
-            return String(
-                localized: "agentSkills.onboarding.partialInstalled",
-                defaultValue: "Will install the missing skills"
-            )
-        }
-        return String(
-            localized: "agentSkills.onboarding.willInstall",
-            defaultValue: "Will install the skill"
-        )
+        return changes.joined(separator: "\n")
     }
 
     private var notDetectedSummary: String {
@@ -968,13 +1057,8 @@ struct AgentSkillsOnboardingSheet: View {
             (.pi, piOptIn),
             (.omp, ompOptIn),
         ]
-        var selectedKeys: Set<String> = []
-        for (target, _) in selections.filter({ $0.1 }) {
-            guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
-            for status in row.packages where AgentSkillsOnboarding.shouldRowOffer(status) {
-                selectedKeys.insert(AgentSkillsOnboarding.dismissalKey(for: target, skillName: status.package.name))
-            }
-        }
+        let optedIn = Set(selections.filter { $0.1 }.map(\.0))
+        let selectedKeys = AgentSkillsOnboarding.selectedKeys(rows: model.rows, optedIn: optedIn)
         let offered = model.rows.filter(\.detected).flatMap(\.packages)
         AgentSkillsOnboarding.recordDismissalsForUncheckedRows(
             offered: offered,
@@ -982,7 +1066,10 @@ struct AgentSkillsOnboardingSheet: View {
         )
         for (target, _) in selections.filter({ $0.1 }) {
             guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
-            model.install(target: target, force: true)
+            // Only the rows the sheet offered; a local copy beside them stays.
+            let names = row.offeredPackageNames
+            guard !names.isEmpty else { continue }
+            model.install(target: target, force: true, packages: names)
         }
         onDismiss()
     }
@@ -1003,8 +1090,8 @@ struct AgentSkillsOnboardingSheet: View {
     /// rewrite local skill files without leaving the sheet, useful when
     /// they suspect tampering even though hashes happen to match.
     private func refreshAll() {
-        for row in detectedRows {
-            model.install(target: row.target, force: true)
+        for row in detectedRows where !row.currentPackageNames.isEmpty {
+            model.install(target: row.target, force: true, packages: row.currentPackageNames)
         }
     }
 
@@ -1358,9 +1445,62 @@ enum AgentSkillsOnboarding {
         switch status.state {
         case .notInstalled, .installedOutdated, .installedNoManifest, .schemaMismatch:
             return true
-        case .installedCurrent:
+        case .installedCurrent, .installedFromCheckout, .installedModified:
+            // A local copy may be newer than the bundle; only Settings'
+            // Replace Local Copies, which names the replacement, touches it.
             return false
         }
+    }
+
+    /// What installing a row's offered packages would change, one line per kind,
+    /// for the onboarding sheet. Local copies are named as kept.
+    static func changeSummary(for statuses: [SkillInstallerPackageStatus]) -> [String] {
+        func names(_ states: Set<SkillInstallerState>) -> String? {
+            let matching = statuses.filter { states.contains($0.state) }.map(\.package.name)
+            return matching.isEmpty ? nil : ListFormatter.localizedString(byJoining: matching)
+        }
+        var lines: [String] = []
+        if let list = names([.installedOutdated]) {
+            lines.append(String(format: String(
+                localized: "agentSkills.onboarding.change.update",
+                defaultValue: "Updates %@"
+            ), list))
+        }
+        if let list = names([.notInstalled]) {
+            lines.append(String(format: String(
+                localized: "agentSkills.onboarding.change.install",
+                defaultValue: "Installs %@"
+            ), list))
+        }
+        if let list = names([.installedNoManifest, .schemaMismatch]) {
+            lines.append(String(format: String(
+                localized: "agentSkills.onboarding.change.replaceUnmanaged",
+                defaultValue: "Replaces %@, which c11 didn't install"
+            ), list))
+        }
+        if let list = names([.installedFromCheckout, .installedModified]) {
+            lines.append(String(format: String(
+                localized: "agentSkills.onboarding.change.keepLocal",
+                defaultValue: "Keeps your local copies of %@"
+            ), list))
+        }
+        return lines
+    }
+
+    /// Dismissal keys for the rows the operator chose to install. A shared row's
+    /// checkbox is hidden, so it follows its owner's choice: unchecking the owner
+    /// dismisses both, and the sheet does not return for the shared target.
+    static func selectedKeys(
+        rows: [AgentSkillsModel.TargetRow],
+        optedIn: Set<SkillInstallerTarget>
+    ) -> Set<String> {
+        var keys: Set<String> = []
+        for row in rows where row.detected && optedIn.contains(row.sharedWithTarget ?? row.target) {
+            for status in row.packages where shouldRowOffer(status) {
+                keys.insert(dismissalKey(for: row.target, skillName: status.package.name))
+            }
+        }
+        return keys
     }
 
     static func dismissalKey(for target: SkillInstallerTarget, skillName: String) -> String {

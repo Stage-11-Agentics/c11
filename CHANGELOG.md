@@ -10,6 +10,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 - **Download Image and Download Linked File send only the cookies for that address.** The browser panel's context menu hands the download to WebKit, which attaches the cookies it would send to that URL, instead of every cookie in the panel's profile. ([#777](https://github.com/Stage-11-Agentics/c11/pull/777))
 
+### Fixed
+
+- **The Agent Skills sheet no longer replaces a newer skill copy with the app's older one.** A copy synced from a checkout by `scripts/sync-installed-skills.sh`, or edited by hand, is a local copy: the sheet, Update and Remove leave it alone and say so, `c11 skill install` keeps it, and only Settings → Agent Skills → Replace Local Copies or `--force` replaces it. Copies a development build installs, and skill folders linked into a checkout, count as local copies too. Each row in the sheet now lists what it will update, install or replace.
+
 ## [1.5.0] - 2026-10-28
 
 Headline: **c11 1.5.0. Rebind keyboard shortcuts live from the CLI, a delegate's mark shows its lineage instead of teal, markdown docs open beside the agent that opened them and no longer go blank after area changes, and a round of security hardening.**

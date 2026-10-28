@@ -91,6 +91,20 @@ struct SkillInstallerRecord: Codable, Equatable {
     let appBuild: String
     let commitShort: String
     let sourceContentHash: String
+    /// Who wrote the copy: `app` (a release c11), `sync`
+    /// (`scripts/sync-installed-skills.sh`, from a checkout) or `dev` (a local
+    /// development build, or a `C11_SKILLS_SOURCE` override). Absent on stamps
+    /// written before the field existed, which were all written by the app.
+    var installedBy: String? = nil
+
+    static let installedByApp = "app"
+    static let installedBySync = "sync"
+    static let installedByDev = "dev"
+
+    /// Written from a checkout rather than a release bundle.
+    var isFromCheckout: Bool {
+        installedBy == Self.installedBySync || installedBy == Self.installedByDev
+    }
 
     enum CodingKeys: String, CodingKey {
         case schema = "c11_skill_schema"
@@ -101,15 +115,29 @@ struct SkillInstallerRecord: Codable, Equatable {
         case appBuild = "app_build"
         case commitShort = "commit"
         case sourceContentHash = "source_sha256"
+        case installedBy = "installed_by"
     }
 }
 
 enum SkillInstallerState: String, Equatable, CaseIterable {
     case notInstalled
     case installedCurrent
+    /// The copy is what c11 installed, and the bundle now differs from it.
     case installedOutdated
+    /// The copy came from a checkout: the sync script or a development build
+    /// wrote it and it is unchanged since, or the folder is a symlink.
+    case installedFromCheckout
+    /// The copy changed after it was stamped: a hand edit, or a sync by a
+    /// script that kept the app's stamp.
+    case installedModified
     case installedNoManifest
     case schemaMismatch
+
+    /// A copy someone other than this bundle put in place. c11 keeps it unless
+    /// the operator asks for it to be replaced; the bundle may be older.
+    var isLocalCopy: Bool {
+        self == .installedFromCheckout || self == .installedModified
+    }
 }
 
 struct SkillInstallerPackageStatus: Equatable {
@@ -126,6 +154,8 @@ struct SkillInstallerApplyResult: Equatable {
     let installed: [String]
     let refreshed: [String]
     let skipped: [String]
+    /// Local copies (`SkillInstallerState.isLocalCopy`) left in place.
+    let keptLocal: [String]
     let destDir: URL
 }
 
@@ -133,6 +163,8 @@ struct SkillInstallerRemoveResult: Equatable {
     let target: SkillInstallerTarget
     let removed: [String]
     let skipped: [String]
+    /// Local copies (`SkillInstallerState.isLocalCopy`) left in place.
+    let keptLocal: [String]
     let destDir: URL
 }
 
@@ -362,6 +394,9 @@ enum SkillInstaller {
     /// to a running SHA-256. Length-prefixing ensures the hash is unambiguous
     /// for arbitrary file bytes — two different directory shapes cannot
     /// produce colliding byte streams the way NUL-delimited framing could.
+    /// Finder's `.DS_Store` files are not content and are skipped, so opening
+    /// an installed copy in Finder doesn't make it look edited.
+    /// `scripts/sync-installed-skills.sh` computes the same hash; keep them in step.
     ///
     /// - Parameters:
     ///   - dir: directory to hash.
@@ -394,6 +429,7 @@ enum SkillInstaller {
             let rel = String(resolved.path.dropFirst(basePath.count).drop(while: { $0 == "/" }))
             if rel.isEmpty { continue }
             if skipInstallerManifest && rel == manifestFilename { continue }
+            if resolved.lastPathComponent == ".DS_Store" { continue }
             let values = try resolved.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
             entries.append((rel, resolved))
@@ -435,6 +471,10 @@ enum SkillInstaller {
             var destExists: ObjCBool = false
             let destPresent = fileManager.fileExists(atPath: destDir.path, isDirectory: &destExists) && destExists.boolValue
             let manifestPresent = fileManager.fileExists(atPath: manifest.path)
+            // A package folder linked into a checkout is managed there; replacing
+            // it would delete the link.
+            let destIsLink = (try? fileManager.attributesOfItem(atPath: destDir.path))?[.type] as? FileAttributeType
+                == .typeSymbolicLink
 
             if !destPresent {
                 return SkillInstallerPackageStatus(
@@ -443,6 +483,18 @@ enum SkillInstaller {
                     destinationDir: destDir,
                     state: .notInstalled,
                     record: nil,
+                    sourceContentHash: sourceHash
+                )
+            }
+            if destIsLink {
+                return SkillInstallerPackageStatus(
+                    package: package,
+                    target: target,
+                    destinationDir: destDir,
+                    state: .installedFromCheckout,
+                    record: manifestPresent
+                        ? (try? JSONDecoder().decode(SkillInstallerRecord.self, from: Data(contentsOf: manifest)))
+                        : nil,
                     sourceContentHash: sourceHash
                 )
             }
@@ -492,11 +544,14 @@ enum SkillInstaller {
                     sourceContentHash: sourceHash
                 )
             }
-            // Idempotency: `.installedCurrent` iff the manifest says our source
-            // hash AND the on-disk destination content (excluding the
-            // manifest itself) also hashes to our source hash. If either
-            // diverges — manifest lies, or user edited a file — treat as
-            // outdated so the next install refreshes.
+            // `.installedCurrent` iff the manifest says our source hash AND the
+            // on-disk destination content (excluding the manifest itself) also
+            // hashes to it. Otherwise the stamp decides who owns the copy: one
+            // that still matches its stamp's hash is unchanged since it was
+            // written, so an app-written copy is outdated and a sync-written one
+            // came from a checkout. A copy that no longer matches its stamp was
+            // edited after it was written. Neither local kind is offered as an
+            // update, because the bundle may be the older copy.
             let destHash: String
             do {
                 destHash = try contentHash(
@@ -514,8 +569,19 @@ enum SkillInstaller {
                     sourceContentHash: sourceHash
                 )
             }
-            let matches = (record.sourceContentHash == sourceHash) && (destHash == sourceHash)
-            let state: SkillInstallerState = matches ? .installedCurrent : .installedOutdated
+            let state: SkillInstallerState
+            if record.sourceContentHash == sourceHash && destHash == sourceHash {
+                state = .installedCurrent
+            } else if destHash == sourceHash {
+                // Bundled content under a stale stamp: rewriting it changes no file.
+                state = .installedOutdated
+            } else if destHash != record.sourceContentHash {
+                state = .installedModified
+            } else if record.isFromCheckout {
+                state = .installedFromCheckout
+            } else {
+                state = .installedOutdated
+            }
             return SkillInstallerPackageStatus(
                 package: package,
                 target: target,
@@ -533,24 +599,56 @@ enum SkillInstaller {
         let version: String
         let build: String
         let commitShort: String
+        /// A Debug or tagged build, or a `C11_SKILLS_SOURCE` override: its skills
+        /// come from a checkout, so its copies are stamped `dev`, not `app`.
+        var isDevelopmentBuild: Bool = false
 
         static var current: AppIdentity {
             let info = Bundle.main.infoDictionary ?? [:]
             let version = (info["CFBundleShortVersionString"] as? String) ?? "0.0.0"
             let build = (info["CFBundleVersion"] as? String) ?? "0"
             let commit = (info["CMUXCommit"] as? String) ?? ""
-            return AppIdentity(version: version, build: build, commitShort: commit)
+            return AppIdentity(
+                version: version,
+                build: build,
+                commitShort: commit,
+                isDevelopmentBuild: isDevelopmentBuild(environment: ProcessInfo.processInfo.environment)
+            )
+        }
+
+        static func isDevelopmentBuild(environment: [String: String], isDebug: Bool = isCompiledDebug) -> Bool {
+            if isDebug { return true }
+            func present(_ key: String) -> Bool {
+                !(environment[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if ["C11_TAG", "CMUX_TAG"].contains(where: present) { return true }
+            // An override counts only when `defaultSourceURL` would use it.
+            return ["C11_SKILLS_SOURCE", "CMUX_SKILLS_SOURCE"].contains { key in
+                guard present(key), let raw = environment[key] else { return false }
+                return FileManager.default.fileExists(atPath: (raw as NSString).expandingTildeInPath)
+            }
+        }
+
+        static var isCompiledDebug: Bool {
+            #if DEBUG
+            true
+            #else
+            false
+            #endif
         }
     }
 
     /// Copy every bundled package into `<home>/.<target>/skills/<package>/`, writing
     /// a manifest per package. Idempotent: packages whose source hash matches the
-    /// manifest are skipped unless `force` is true.
+    /// manifest are skipped unless `force` is true. Local copies (synced from a
+    /// checkout, or edited) are kept unless `force` is true. `packages` limits
+    /// the call to those names; the UI always passes the rows it showed.
     static func install(
         target: SkillInstallerTarget,
         home: URL,
         sourceDir: URL,
         force: Bool,
+        packages: Set<String>? = nil,
         appIdentity: AppIdentity = .current,
         now: () -> Date = Date.init,
         fileManager: FileManager = .default
@@ -581,12 +679,18 @@ enum SkillInstaller {
         var installed: [String] = []
         var refreshed: [String] = []
         var skipped: [String] = []
+        var keptLocal: [String] = []
 
         for st in statuses {
+            if let packages, !packages.contains(st.package.name) { continue }
             let dest = st.destinationDir
             let isUpToDate = (st.state == .installedCurrent)
             if isUpToDate && !force {
                 skipped.append(st.package.name)
+                continue
+            }
+            if st.state.isLocalCopy && !force {
+                keptLocal.append(st.package.name)
                 continue
             }
 
@@ -634,7 +738,10 @@ enum SkillInstaller {
                 appVersion: appIdentity.version,
                 appBuild: appIdentity.build,
                 commitShort: appIdentity.commitShort,
-                sourceContentHash: st.sourceContentHash
+                sourceContentHash: st.sourceContentHash,
+                installedBy: appIdentity.isDevelopmentBuild
+                    ? SkillInstallerRecord.installedByDev
+                    : SkillInstallerRecord.installedByApp
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -644,7 +751,8 @@ enum SkillInstaller {
             switch st.state {
             case .notInstalled:
                 installed.append(st.package.name)
-            case .installedCurrent, .installedOutdated, .installedNoManifest, .schemaMismatch:
+            case .installedCurrent, .installedOutdated, .installedFromCheckout, .installedModified,
+                 .installedNoManifest, .schemaMismatch:
                 refreshed.append(st.package.name)
             }
         }
@@ -654,6 +762,7 @@ enum SkillInstaller {
             installed: installed,
             refreshed: refreshed,
             skipped: skipped,
+            keptLocal: keptLocal,
             destDir: destRoot
         )
     }
@@ -662,20 +771,32 @@ enum SkillInstaller {
 
     /// Remove c11-installed skill packages from a target. Only removes a
     /// package dir if its `.c11-skill.json` manifest is present — protects
-    /// directories the user created themselves.
+    /// directories the user created themselves. Local copies (synced from a
+    /// checkout, or edited) are kept unless `force` is true.
     static func remove(
         target: SkillInstallerTarget,
         home: URL,
         sourceDir: URL,
+        force: Bool = false,
         fileManager: FileManager = .default
     ) throws -> SkillInstallerRemoveResult {
         let packages = try discoverPackages(sourceDir: sourceDir, fileManager: fileManager)
         let destRoot = target.skillsDir(home: home)
         var removed: [String] = []
         var skipped: [String] = []
+        var keptLocal: [String] = []
+        let localCopies = force ? [] : Set(
+            try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
+                .filter { $0.state.isLocalCopy }
+                .map(\.package.name)
+        )
 
         for pkg in packages {
             let dest = destRoot.appendingPathComponent(pkg.name, isDirectory: true)
+            if localCopies.contains(pkg.name) {
+                keptLocal.append(pkg.name)
+                continue
+            }
             let manifest = dest.appendingPathComponent(manifestFilename, isDirectory: false)
             guard fileManager.fileExists(atPath: dest.path) else {
                 skipped.append(pkg.name)
@@ -717,6 +838,7 @@ enum SkillInstaller {
             target: target,
             removed: removed,
             skipped: skipped,
+            keptLocal: keptLocal,
             destDir: destRoot
         )
     }

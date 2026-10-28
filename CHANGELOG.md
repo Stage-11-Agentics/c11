@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Security
+
+- **Download Image and Download Linked File send only the cookies for that address.** The browser panel's context menu hands the download to WebKit, which attaches the cookies it would send to that URL, instead of every cookie in the panel's profile. ([#777](https://github.com/Stage-11-Agentics/c11/pull/777))
+
 ## [1.5.0] - 2026-10-28
 
 Headline: **c11 1.5.0. Rebind keyboard shortcuts live from the CLI, a delegate's mark shows its lineage instead of teal, markdown docs open beside the agent that opened them and no longer go blank after area changes, and a round of security hardening.**
@@ -22,7 +26,6 @@ Headline: **c11 1.5.0. Rebind keyboard shortcuts live from the CLI, a delegate's
 - **Browser favicons are fetched and decoded within limits, off the main thread.** Icons load over http(s) only, within 1 MiB and 4 seconds, and decode through a raster allowlist with size checks. SVG icons are skipped. ([#759](https://github.com/Stage-11-Agentics/c11/pull/759))
 - **Saved browser state is private to you.** `browser state save` writes mode 0600 with no inherited ACL. `state load` refuses symlinks, files owned by someone else, files others can change, and files over 64 MiB, with `unsafe_state_file`. ([#760](https://github.com/Stage-11-Agentics/c11/pull/760))
 - **The Messages page and the mailbox dispatcher read a bounded amount of each mailbox file.** ([#761](https://github.com/Stage-11-Agentics/c11/pull/761))
-- **Download Image and Download Linked File send only the cookies for that address.** The browser panel's context menu hands the download to WebKit, which attaches the cookies it would send to that URL, instead of every cookie in the panel's profile. ([#777](https://github.com/Stage-11-Agentics/c11/pull/777))
 
 ### Changed
 

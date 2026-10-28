@@ -15,7 +15,7 @@ import time
 import uuid
 
 SCRIPTS = Path(__file__).resolve().parent
-DOORBELL = 'c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.'
+DOORBELL = 'c11 mail waiting: run c11 mailbox recv --ack'
 
 
 def main():

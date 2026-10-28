@@ -3,7 +3,7 @@ import Foundation
 /// A short-lived, forward-only transcript observer. It never returns transcript
 /// contents to the caller and never scans session history for an old invitation.
 final class ClaudeMailboxAcceptance {
-    static let invitation = "c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it."
+    static let invitation = "c11 mail waiting: run c11 mailbox recv --ack"
     private let path: String
     private let sessionID: String
     private let earliestNewFileRecord: Date?

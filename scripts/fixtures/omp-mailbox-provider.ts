@@ -25,7 +25,7 @@ export default function (omp: any) {
         stream.push({type: 'start', partial: message});
         stream.push({type: 'text_start', contentIndex: 0, partial: message});
         setTimeout(() => {
-          message.content[0].text = text === 'c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.' ? 'C11_OMP_DOORBELL_ACCEPTED' : 'COMPLETED: ' + text;
+          message.content[0].text = text === 'c11 mail waiting: run c11 mailbox recv --ack' ? 'C11_OMP_DOORBELL_ACCEPTED' : 'COMPLETED: ' + text;
           stream.push({type: 'text_delta', contentIndex: 0, delta: message.content[0].text, partial: message});
           stream.push({type: 'text_end', contentIndex: 0, content: message.content[0].text, partial: message});
           stream.push({type: 'done', reason: 'stop', message});

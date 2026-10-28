@@ -694,8 +694,8 @@ final class FeedAnswerSafetyTests: XCTestCase {
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .suggestion, composer: nil, expected: body), .notVisible)
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "FEED-ANSWER", expected: body), .notVisible)
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: "operator text", expected: body), .changed)
-        let wrapped = "c11 mailbox: you have mail. Run c11 mailbox recv --ack when\n  you want to receive it."
-        let doorbell = "c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it."
+        let wrapped = "c11 mail waiting: run c11 mailbox\n  recv --ack"
+        let doorbell = "c11 mail waiting: run c11 mailbox recv --ack"
         XCTAssertEqual(FeedAnswerComposerCheck.compare(state: .draft, composer: wrapped, expected: doorbell), .matches)
         XCTAssertEqual(
             FeedAnswerComposerCheck.compare(state: .draft, composer: wrapped + " extra", expected: doorbell),
@@ -984,12 +984,12 @@ extension PromptInputClassifierTests {
         )
     }
 
-    /// OpenCode at 60 columns wraps the invitation. The joined composer submits.
+    /// A narrow OpenCode panel wraps the invitation. The joined composer submits.
     func testRV394BOpenCodeWrappedInvitationSubmits() {
         let rows = [
             Row(y: 0, spans: [Span(text: "  ┃")]),
-            Row(y: 1, spans: [Span(text: "  ┃  c11 mailbox: you have mail. Run c11 mailbox recv")]),
-            Row(y: 2, spans: [Span(text: "  ┃  --ack when you want to receive it.")]),
+            Row(y: 1, spans: [Span(text: "  ┃  c11 mail waiting: run c11 mailbox")]),
+            Row(y: 2, spans: [Span(text: "  ┃  recv --ack")]),
             Row(y: 3, spans: [Span(text: "  ┃")]),
             Row(y: 4, spans: [Span(text: "  ┃  K3-256k · K3-256k Kimi For Coding · high")]),
             Row(y: 5, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 55))]),
@@ -1005,13 +1005,13 @@ extension PromptInputClassifierTests {
         XCTAssertNil(outcome, "wrapped OpenCode invitation reads \(state) composer=\(composer ?? "nil")")
     }
 
-    /// Pi at 60 columns wraps the invitation onto two rows between the rules.
+    /// Pi at 30 columns wraps the invitation onto two rows between the rules.
     func testRV394BPiWrappedInvitationSubmits() {
-        let rule = String(repeating: "─", count: 60)
+        let rule = String(repeating: "─", count: 30)
         let rows = [
             Row(y: 0, spans: [Span(text: rule)]),
-            Row(y: 1, spans: [Span(text: "c11 mailbox: you have mail. Run c11 mailbox recv --ack ")]),
-            Row(y: 2, spans: [Span(text: "when you want to receive it.")]),
+            Row(y: 1, spans: [Span(text: "c11 mail waiting: run c11 ")]),
+            Row(y: 2, spans: [Span(text: "mailbox recv --ack")]),
             Row(y: 3, spans: [Span(text: rule)]),
         ]
         let input = region(rows, cursorY: 2)
@@ -1804,7 +1804,7 @@ private enum GrokCaptures {
     ])
 
     /// The doorbell line pasted over the suggestion replaces it.
-    static let doorbellPasted = GrokCapture(cursorX: 89, cursorY: 25, rows: [
+    static let doorbellPasted = GrokCapture(cursorX: 50, cursorY: 25, rows: [
         (16, [S("                                                                                                   █")]),
         (17, [S("                                                                                                   █")]),
         (18, [S("                                                                                                   █")]),
@@ -1814,7 +1814,7 @@ private enum GrokCaptures {
         (22, [S("                                                                                                   █")]),
         (23, [S("                                                                                                    ")]),
         (24, [S("  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  ")]),
-        (25, [S("  │ ❯ c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.        │  ")]),
+        (25, [S("  │ ❯ c11 mail waiting: run c11 mailbox recv --ack                                               │  ")]),
         (26, [S("  ╰─────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯  ")]),
         (27, [S("                                                                                                    ")]),
         (28, [S("  Enter:send"), S("  │  ", faint: true), S("Shift+Enter/Opt+Enter:newline"), S("  │  ", faint: true), S("Shift+Tab:mode"), S("  │  ", faint: true), S("Ctrl+.:shortcuts              ")]),
@@ -1968,7 +1968,7 @@ private enum GrokUnfocusedCaptures {
         (22, [S("  ", bg: 0x141414), S("Read Terms and Privacy Policy.", fg: 0x6C6C6C, bg: 0x141414), S("                                                                    ", bg: 0x141414)]),
         (23, [S("                                                                                                    ", bg: 0x141414)]),
         (24, [S("  ", bg: 0x141414), S("╭──────────────────────────────────────────────────────────────────────────────────────────────╮", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
-        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it.        ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
+        (25, [S("  ", bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S(" ", fg: 0x9B9B9B, bg: 0x141414), S("❯ ", fg: 0x414141, bg: 0x141414), S("c11 mail waiting: run c11 mailbox recv --ack                                               ", fg: 0x9B9B9B, bg: 0x141414), S("│", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
         (26, [S("  ", bg: 0x141414), S("╰──────────────────────────────────────────────────────────────────────────── ", fg: 0x323237, bg: 0x141414), S("Grok 4.7 (high)", fg: 0x5C5C5C, bg: 0x141414), S(" ─╯", fg: 0x323237, bg: 0x141414), S("  ", bg: 0x141414)]),
         (27, [S("                                                                                                    ", bg: 0x141414)]),
         (28, [S("  ", bg: 0x141414), S("Ctrl+e", fg: 0xC8C8C8, bg: 0x141414), S(":collapse thinking", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Space", fg: 0xC8C8C8, bg: 0x141414), S(":prompt", fg: 0x6C6C6C, bg: 0x141414), S("  │  ", faint: true, fg: 0x6C6C6C, bg: 0x141414), S("Ctrl+.", fg: 0xC8C8C8, bg: 0x141414), S(":shortcuts                                  ", fg: 0x6C6C6C, bg: 0x141414), S("  ", bg: 0x141414)]),

@@ -17,7 +17,7 @@ enum MailboxDoorbell {
     /// so this only catches a panel that keeps submitting the line.
     static let rateCap = 20
     /// Typed into the agent. Not chrome, so it is not localized.
-    static let text = "c11 mailbox: you have mail. Run c11 mailbox recv --ack when you want to receive it."
+    static let text = "c11 mail waiting: run c11 mailbox recv --ack"
 
     enum Decision: Equatable {
         case ring

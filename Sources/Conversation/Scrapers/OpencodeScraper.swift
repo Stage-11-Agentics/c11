@@ -192,7 +192,9 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
             }
             queriedSupportedSchema = true
             switch exactIDExists(id, table: table, in: database) {
-            case .some(true): return true
+            case .some(true):
+                // An exact hit is conclusive; absence is not without every schema.
+                return true
             case .some(false): break
             case .none: encounteredUnsupportedSchema = true
             }

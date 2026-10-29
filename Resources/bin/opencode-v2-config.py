@@ -58,7 +58,7 @@ def probe(binary: str) -> int:
             pass
         result = subprocess.run([str(real), "--version"], stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                text=True, timeout=0.8, check=False, env=os.environ.copy())
+                                text=True, timeout=1.5, check=False, env=os.environ.copy())
         if result.returncode != 0:
             return 2
         match = VERSION_RE.search(result.stdout)

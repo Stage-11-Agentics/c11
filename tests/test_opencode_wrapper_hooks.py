@@ -66,6 +66,7 @@ def run_wrapper(
     version: str = "1.15.9",
     cli_content: str | None = None,
     cli_file: str | None = None,
+    python_failure: bool = False,
     claim_succeeds: bool = True,
     claim_not_ready_attempts: int = 0,
     version_delay: float = 0,
@@ -88,6 +89,8 @@ def run_wrapper(
         shutil.copytree(SOURCE_V2_PLUGIN, plugin_dir / "c11-opencode-v2")
         shutil.copy2(SOURCE_CONFIG_HELPER, wrapper_dir / SOURCE_CONFIG_HELPER.name)
         (wrapper_dir / "opencode").chmod(0o755)
+        if python_failure:
+            executable(wrapper_dir / "python3", "#!/bin/sh\nexit 1\n")
 
         args_log = tmp / "args.log"
         env_log = tmp / "env.json"
@@ -226,7 +229,7 @@ fi
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
-                timeout=5,
+                timeout=8,
             )
             deadline = time.monotonic() + 2
             while live and in_c11 and ping_succeeds and time.monotonic() < deadline:
@@ -520,10 +523,9 @@ def test_v2_native_mail_disable_keeps_identity_capture_plugin() -> None:
     assert json.loads(state["cli_content"])["plugins"][-1]["package"].endswith("/c11-opencode-v2"), state
 
 
-def test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection() -> None:
+def test_unknown_versions_keep_baseline_without_plugin_injection() -> None:
     for options in ({"version": "2.0.26"}, {"version": "2.0.25-beta"},
-                    {"version": "2.0.25+build.1"}, {"version": "garbage"},
-                    {"version": "2.0.25", "version_delay": 2}):
+                    {"version": "2.0.25+build.1"}, {"version": "garbage"}):
         code, argv, state, c11_log, stderr = run_wrapper(
             live=True, argv=["--continue"], interactive=True, **options,
         )
@@ -534,6 +536,46 @@ def test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection() 
         assert int(state["interactive_pid"]) > 1, state
         assert any("set-agent --type opencode" in line for line in c11_log), c11_log
         assert any("agent-hook idle" in line for line in c11_log), c11_log
+        if options.get("version") == "garbage" or options.get("version_delay"):
+            assert "c11 could not verify the OpenCode version" in stderr, stderr
+
+
+def test_v1_tui_plugins_survive_python_version_probe_failure() -> None:
+    code, _, state, c11_log, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True,
+        version="1.15.9", python_failure=True,
+    )
+    assert code == 0, stderr
+    config = json.loads(state["content"])
+    assert config["plugin"][0].endswith("/c11-notify.js"), config
+    assert "c11-mailbox.mjs" in (state["tui_content"] or ""), state
+    assert not any("conversation.claim" in line for line in c11_log), c11_log
+    assert "version-specific plugin integration is disabled" not in stderr, stderr
+
+
+def test_v1_tui_plugins_survive_slow_python_version_probe() -> None:
+    code, _, state, c11_log, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True,
+        version="1.15.9", version_delay=2,
+    )
+    assert code == 0, stderr
+    config = json.loads(state["content"])
+    assert config["plugin"][0].endswith("/c11-notify.js"), config
+    assert "c11-mailbox.mjs" in (state["tui_content"] or ""), state
+    assert "c11 could not verify the OpenCode version" not in stderr, stderr
+    assert not any("conversation.claim" in line for line in c11_log), c11_log
+
+
+def test_v2_plugin_recovers_when_python_version_probe_times_out() -> None:
+    code, _, state, c11_log, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True,
+        version="2.0.25", version_delay=2,
+    )
+    assert code == 0, stderr
+    assert state["tui_claimed"] == "1", state
+    assert json.loads(state["cli_content"])["plugins"][-1]["package"].endswith("/c11-opencode-v2"), state
+    assert any("rpc conversation.claim" in line for line in c11_log), c11_log
+    assert not any("agent-hook idle" in line for line in c11_log), c11_log
 
 
 def test_version_probe_ignores_stale_suffix_normalization_cache() -> None:
@@ -572,6 +614,9 @@ if __name__ == "__main__":
     test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch()
     test_v2_falls_back_for_invalid_config_and_failed_reservation()
     test_v2_native_mail_disable_keeps_identity_capture_plugin()
-    test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection()
+    test_unknown_versions_keep_baseline_without_plugin_injection()
+    test_v1_tui_plugins_survive_python_version_probe_failure()
+    test_v1_tui_plugins_survive_slow_python_version_probe()
+    test_v2_plugin_recovers_when_python_version_probe_times_out()
     test_version_probe_ignores_stale_suffix_normalization_cache()
     print("PASS: OpenCode v1/v2 wrappers preserve tenant config and fail closed")

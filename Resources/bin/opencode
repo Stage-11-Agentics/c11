@@ -41,6 +41,35 @@ c11_socket_available() {
         "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
 }
 
+probe_opencode_version_fallback() {
+    local output_file output pid attempt version_pattern
+    output_file="$(/usr/bin/mktemp /tmp/c11-opencode-version.XXXXXX)" || return 1
+    "$REAL_OPENCODE" --version >"$output_file" 2>/dev/null &
+    pid=$!
+    for ((attempt=1; attempt<=25; attempt++)); do
+        kill -0 "$pid" 2>/dev/null || break
+        /bin/sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        /bin/rm -f "$output_file"
+        return 1
+    fi
+    wait "$pid" 2>/dev/null || {
+        /bin/rm -f "$output_file"
+        return 1
+    }
+    output="$(/bin/cat "$output_file")"
+    /bin/rm -f "$output_file"
+    version_pattern='(^|[[:space:]])v?([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$)'
+    if [[ "$output" =~ $version_pattern ]]; then
+        printf '%s.%s.%s' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"
+        return 0
+    fi
+    return 1
+}
+
 REAL_OPENCODE="$(find_real_opencode)" || {
     echo "Error: opencode not found in PATH" >&2
     exit 127
@@ -66,6 +95,12 @@ esac
 opencode_version=""
 if [[ -x "$config_helper" ]] && command -v python3 >/dev/null 2>&1; then
     opencode_version="$(python3 "$config_helper" version "$REAL_OPENCODE" 2>/dev/null || true)"
+fi
+if [[ -z "$opencode_version" ]]; then
+    opencode_version="$(probe_opencode_version_fallback || true)"
+fi
+if [[ -z "$opencode_version" ]]; then
+    echo "c11 could not verify the OpenCode version; version-specific plugin integration is disabled" >&2
 fi
 
 # Advance this exact-version gate only through the requalification procedure in

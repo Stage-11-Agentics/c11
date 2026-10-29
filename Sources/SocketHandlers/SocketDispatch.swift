@@ -497,12 +497,16 @@ extension TerminalController {
         }
         // Hook-frequency parsing is worker-owned. A missing/stale association
         // is a queued no-op, never a workspace-wide clear or focus fallback.
+        // A panel that moved after its shell started follows to its workspace
+        // (C11-499).
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 guard let self,
-                      let workspace = self.workspaceForSidebarMutation(id: workspaceId),
+                      let workspace = self.workspaceFollowingPanel(
+                          panelId, named: self.workspaceForSidebarMutation(id: workspaceId)
+                      ),
                       workspace.panels[panelId] != nil else { return }
-                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspaceId, surfaceId: panelId)
+                TerminalNotificationStore.shared.clearNotifications(forWorkspaceId: workspace.id, surfaceId: panelId)
             }
         }
         return "OK"

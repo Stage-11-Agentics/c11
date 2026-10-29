@@ -34,6 +34,7 @@ import pathlib
 import shutil
 import sys
 import tempfile
+import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("drain", HERE / "test_mailbox_hook_drain_cli.py")
@@ -51,14 +52,19 @@ class MovedPanelServer(drain.FakeC11):
     """`metadata` is what c11 holds for the caller panel; None means the
     panel is open nowhere."""
 
-    def __init__(self, path: str, metadata: dict | None, locate: bool = False):
+    def __init__(self, path: str, metadata: dict | None, locate: bool = False, locate_delay: float = 0.0):
         self.metadata = metadata
         self.locate = locate   # an app with `panel.locate` (C11-499); older apps answer {}
+        self.locate_delay = locate_delay
         super().__init__(path, False)
 
     def answer(self, method: str, params: dict) -> tuple[dict | None, dict | None]:
         pinned = params.get("workspace_id")
+        if method == "system.capabilities" and self.locate:
+            return {"methods": ["panel.list", "mailbox.resolve", "panel.read_text", "panel.locate"],
+                    "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}, None
         if method == "panel.locate" and self.locate:
+            time.sleep(self.locate_delay)
             if str(params.get("panel_id", "")).upper() == PANEL:
                 return {"panel_id": PANEL, "workspace_id": LIVE}, None
             return None, {"code": "not_found", "message": "Panel not found"}
@@ -292,7 +298,9 @@ def main() -> int:
                 ["new-area"], ["markdown", "open", note], ["set-status", "build", "ok"], ["log", "hello"],
                 ["set-progress", "0.5"], ["get-titlebar-state"], ["panel-action", "rename", "--title", "x"],
                 ["workspace-action", "--workspace", "self", "rename", "--title", "x"],
-                ["send", "--panel", "panel:3", "hi"], ["pipe-pane", "--command", "cat"],
+                ["send", "--panel", "panel:3", "hi"], ["send-key", "--panel", "panel:3", "enter"],
+                ["pipe-pane", "--command", "cat"], ["clear-history"],
+                ["close-panel", "--workspace", "self", "--panel", "panel:3"],
             ):
                 before = len(server.requests)
                 proc, _ = drain.run(cli, ["--socket", server.path, *argv], fixture.env(server.path))
@@ -301,6 +309,20 @@ def main() -> int:
                 check(proc.returncode == 0 and LIVE in named and START not in named,
                       f"{' '.join(argv[:2])} follows the moved panel's workspace",
                       f"rc={proc.returncode} sent={sent!r} err={proc.stderr[:200]!r}")
+        finally:
+            fixture.cleanup()
+        # A lookup that outlasts the deadline must not leave its late reply to
+        # be read as the next command's answer: the CLI reconnects.
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "slow.sock"), titled, locate=True, locate_delay=0.8)
+        try:
+            env = dict(fixture.env(server.path), C11_DEFAULT_SOCKET_DEADLINE_MS="300")
+            proc, _ = drain.run(cli, ["--socket", server.path, "--json", "list-panels"], env)
+            out = proc.stdout.decode()
+            # The late locate reply names the panel; list-panels' own does not.
+            check(proc.returncode == 0 and PANEL not in out.upper() and len(server.params_of("panel.list")) == 1,
+                  "a slow panel.locate reconnects instead of reading its late reply",
+                  f"rc={proc.returncode} out={out[:200]!r} err={proc.stderr[:200]!r}")
         finally:
             fixture.cleanup()
         fixture = drain.Fixture()

@@ -482,8 +482,11 @@ extension CMUXCLI {
             )
             if let consumedSession {
                 let workspaceId = consumedSession.workspaceId
-                _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId)
-                _ = try? sendV1Command("clear_agent_pid claude_code --tab=\(workspaceId)", client: client)
+                // The panel lets the app follow a session whose panel moved (C11-499).
+                _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId, surfaceId: consumedSession.surfaceId)
+                _ = try? sendV1Command(
+                    "clear_agent_pid claude_code --tab=\(workspaceId) --panel=\(consumedSession.surfaceId)", client: client
+                )
                 _ = try? sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(consumedSession.surfaceId)", client: client)
                 // C11-24: SessionEnd race fix.
                 //
@@ -742,8 +745,9 @@ extension CMUXCLI {
         )
     }
 
-    func clearClaudeStatus(client: SocketClient, workspaceId: String) throws {
-        _ = try client.send(command: "clear_status claude_code --tab=\(workspaceId)")
+    func clearClaudeStatus(client: SocketClient, workspaceId: String, surfaceId: String? = nil) throws {
+        let panel = surfaceId.map { " --panel=\($0)" } ?? ""
+        _ = try client.send(command: "clear_status claude_code --tab=\(workspaceId)\(panel)")
     }
 
     func describeAskUserQuestion(_ object: [String: Any]?) -> String? {

@@ -233,8 +233,9 @@ final class JournalCoordinator: @unchecked Sendable {
         var draft = draft
         // C11-499: the panel is the identity. A hook from a panel that moved
         // after its shell started names the workspace it started in; record
-        // the workspace the panel is registered in now.
-        if let panelID = draft.panelID, draft.workspaceID != nil,
+        // the workspace the panel is registered in now. A spooled (historical)
+        // draft keeps its own: it may already be stored under it.
+        if !historical, let panelID = draft.panelID, draft.workspaceID != nil,
            let live = target(panelID: panelID), live != draft.workspaceID {
             draft.workspaceID = live
         }

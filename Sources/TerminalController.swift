@@ -6746,7 +6746,9 @@ class TerminalController {
         }
         var workspaceId: UUID?
         v2MainSync {
-            workspaceId = workspaceFollowingPanel(panelId, named: resolveWorkspaceForReport(trimmed))?.id
+            if let workspace = resolveWorkspaceForReport(trimmed) {
+                workspaceId = workspace.id
+            }
         }
         guard let workspaceId else {
             return "ERROR: Tab not found"
@@ -8992,10 +8994,12 @@ class TerminalController {
         options: [String: String]
     ) -> (workspaceId: UUID?, error: String?) {
         var workspaceId: UUID?
+        // C11-499: a report that names its panel follows it to the workspace it
+        // is in now. Its shell, or a hook's session map, may record the one it
+        // started in.
+        let panelId = normalizedOptionValue(options["panel"] ?? options["surface"]).flatMap(UUID.init(uuidString:))
         v2MainSync {
-            if let workspace = resolveWorkspaceForReport(reportArgs) {
-                workspaceId = workspace.id
-            }
+            workspaceId = workspaceFollowingPanel(panelId, named: resolveWorkspaceForReport(reportArgs))?.id
         }
         if let workspaceId {
             return (workspaceId, nil)
@@ -9218,9 +9222,11 @@ class TerminalController {
             return "ERROR: Missing metadata key — usage: \(usage)"
         }
 
+        let panelId = normalizedOptionValue(parsed.options["panel"] ?? parsed.options["surface"])
+            .flatMap(UUID.init(uuidString:))
         var result = "OK"
         v2MainSync {
-            guard let workspace = resolveWorkspaceForReport(args) else {
+            guard let workspace = workspaceFollowingPanel(panelId, named: resolveWorkspaceForReport(args)) else {
                 result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
                 return
             }

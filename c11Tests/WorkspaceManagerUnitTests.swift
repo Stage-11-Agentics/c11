@@ -1965,6 +1965,20 @@ final class MovedPanelIdentifyTests: XCTestCase {
 
         let unknown = try locate(UUID())
         XCTAssertEqual((unknown["error"] as? [String: Any])?["code"] as? String, "not_found", "\(unknown)")
+
+        // A moved agent's prompt-submit hook clears its notice through the
+        // socket worker, naming the workspace its shell started in.
+        let store = TerminalNotificationStore.shared
+        defer { store.replaceNotificationsForTesting([]) }
+        store.replaceNotificationsForTesting([TerminalNotification(
+            id: UUID(), workspaceId: destination.id, surfaceId: panelId, title: "Turn finished",
+            subtitle: "", body: "", createdAt: Date(), isRead: false
+        )])
+        XCTAssertEqual(TerminalController.shared.processCommandUsingSocketExecutionPolicy(
+            "clear_notifications --tab=\(source.id) --panel=\(panelId)"
+        ), "OK")
+        drainMainQueue()
+        XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: destination.id, surfaceId: panelId))
     }
 }
 

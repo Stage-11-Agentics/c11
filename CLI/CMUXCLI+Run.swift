@@ -532,11 +532,15 @@ extension CMUXCLI {
         }
 
         // C11-499: follow a caller panel that moved since its shell started.
-        // Turn-boundary mailbox drains keep their claim budget and find a
-        // moved inbox themselves; the journal records a hook under the
-        // panel's live workspace.
-        if !Self.isMailboxHookDrain(command: command, commandArgs: commandArgs) {
-            Self.followCallerPanelWorkspace(client: client)
+        // Hooks keep their socket budget: the app follows the panel each hook
+        // names, and turn-boundary drains find a moved inbox themselves.
+        // Commands that never default to the caller's workspace skip it.
+        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents"].contains(command),
+           !Self.isMailboxHookDrain(command: command, commandArgs: commandArgs),
+           Self.followCallerPanelWorkspace(client: client) == .connectionSuspect {
+            client.close()
+            try client.connect()
+            try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: resolvedSocketPath)
         }
 
         let idFormat = try resolvedIDFormat(jsonOutput: jsonOutput, raw: idFormatArg)

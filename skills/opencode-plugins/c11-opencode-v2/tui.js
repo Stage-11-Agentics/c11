@@ -99,10 +99,9 @@ async function claimTui(c11Bin, socketPath, panelID, agentPID) {
 
 function sessionList(value, id) {
   try {
-    if (typeof value === 'function') return value(id) ?? [];
-    if (typeof value?.list === 'function') return value.list(id) ?? [];
-  } catch {}
-  return [];
+    const result = typeof value === 'function' ? value(id) : value?.list?.(id);
+    return Array.isArray(result) ? result : undefined;
+  } catch { return undefined; }
 }
 
 function sessionConflict() {
@@ -121,10 +120,12 @@ function sessionReadyForMailbox(context, id) {
   if (!id) return false;
   try {
     const status = context.data.session.status?.(id);
+    const permissions = sessionList(context.data.session.permission, id);
+    const pending = sessionList(context.data.session.pending, id);
+    const forms = sessionList(context.data.session.form, id);
+    if (!permissions || !pending || !forms) return false;
     return status !== 'running' && status !== 'busy' && status?.type !== 'running' && status?.type !== 'retry' &&
-      !sessionList(context.data.session.permission, id).length &&
-      !sessionList(context.data.session.pending, id).length &&
-      !sessionList(context.data.session.form, id).length;
+      !permissions.length && !pending.length && !forms.length;
   } catch { return false; }
 }
 
@@ -174,6 +175,8 @@ export default {
     let statusCheckInFlight = false;
     let statusCheckRetryAt = 0;
     let lifecycleSignalRevision = 0;
+    let readinessSyncInFlight = false;
+    let readinessSyncRetryAt = 0;
     const pending = new Map();
 
     const refreshBoundSessionStatus = async (sessionID, routeGeneration) => {
@@ -203,6 +206,31 @@ export default {
         }
       } finally {
         statusCheckInFlight = false;
+      }
+    };
+
+    const refreshSessionReadiness = async (sessionID, routeGeneration) => {
+      if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
+          currentRoute(context) !== sessionID || conflict || captureState !== 'bound' ||
+          !boundStatusConfirmed || boundStatus !== 'idle' || sessionID === shutdownSessionID ||
+          readinessSyncInFlight || Date.now() < readinessSyncRetryAt) return;
+      const sources = [context.data.session.permission, context.data.session.pending, context.data.session.form];
+      const unhydrated = sources.filter(source => !sessionList(source, sessionID));
+      if (!unhydrated.length) return;
+      readinessSyncInFlight = true;
+      try {
+        const results = await Promise.allSettled(unhydrated.map(source => Promise.resolve().then(() => {
+          if (typeof source?.sync !== 'function') throw new Error('session_readiness_sync_unavailable');
+          return source.sync(sessionID);
+        })));
+        if (disposed || generation !== routeGeneration || boundID !== sessionID ||
+            visibleID !== sessionID || currentRoute(context) !== sessionID) return;
+        const stillUnhydrated = sources.some(source => !sessionList(source, sessionID));
+        readinessSyncRetryAt = results.some(result => result.status === 'rejected') || stillUnhydrated
+          ? Date.now() + 500
+          : 0;
+      } finally {
+        readinessSyncInFlight = false;
       }
     };
 
@@ -275,6 +303,7 @@ export default {
           boundStatusConfirmed = true;
           boundStatus = 'idle';
           statusCheckRetryAt = 0;
+          readinessSyncRetryAt = 0;
           lifecycleSignalRevision++;
         }
         reportRootLifecycle(event?.data?.sessionID, 'idle');
@@ -282,9 +311,11 @@ export default {
     }
     onSessionEvent('server.connected', () => {
       if (!boundID || boundID !== visibleID) return;
+      shutdownSessionID = undefined;
       boundStatusConfirmed = false;
       boundStatus = undefined;
       statusCheckRetryAt = 0;
+      readinessSyncRetryAt = 0;
       lifecycleSignalRevision++;
       nativeNotReady = true;
     });
@@ -304,12 +335,13 @@ export default {
       const streamID = `${sessionID}:${routeGeneration}:${++mailboxRevision}`.slice(0, 256);
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
-        deliver(message) {
+        async deliver(message) {
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||
               message !== doorbellText || conflict || !boundID || boundID !== visibleID) throw sessionConflict();
           if (!boundStatusConfirmed || boundStatus !== 'idle' || boundID === shutdownSessionID ||
               !sessionReadyForMailbox(context, boundID)) {
             nativeNotReady = true;
+            void refreshSessionReadiness(boundID, routeGeneration);
             throw sessionNotReady();
           }
           return new Promise((resolve, reject) => {
@@ -379,6 +411,7 @@ export default {
         boundStatusConfirmed = false;
         boundStatus = undefined;
         statusCheckRetryAt = 0;
+        readinessSyncRetryAt = 0;
         lifecycleSignalRevision++;
         nativeNotReady = false;
         captureState = candidateID ? 'waiting' : 'no-route';
@@ -507,6 +540,8 @@ export default {
         if (boundID && visibleID === boundID && currentRoute(context) === boundID && boundID !== shutdownSessionID)
           void refreshBoundSessionStatus(boundID, generation);
         flushRootLifecycle();
+        if (boundID && boundID === visibleID && boundStatusConfirmed && boundStatus === 'idle' &&
+            !sessionReadyForMailbox(context, boundID)) void refreshSessionReadiness(boundID, generation);
         if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
             !boundStatusConfirmed || boundStatus !== 'idle' || boundID === shutdownSessionID ||
             !sessionReadyForMailbox(context, boundID)) return;

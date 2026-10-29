@@ -30,6 +30,7 @@ async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
   hookFailOnce = [], hookDelayActivity = '', activeSessions, activeFailureCount = 0, holdActiveSnapshot = false,
+  permissionHydrated = true, permissionSyncResult = [], formHydrated = true, formSyncResult = [],
   promptResult = input => ({ id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } }),
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
@@ -62,7 +63,9 @@ async function fixture(t, {
   const statusBySession = new Map([[rootA, status], [rootB, 'idle'], [child, 'idle']]);
   const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], lifecycleHandlers: [],
     calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0, activeCalls: 0,
-    activeSessions: activeSessions ?? (status === 'running' ? { [rootA]: 'running' } : {}) };
+    activeSessions: activeSessions ?? (status === 'running' ? { [rootA]: 'running' } : {}),
+    permissionList: permissionHydrated ? [] : undefined, permissionSyncCalls: 0,
+    formList: formHydrated ? [] : undefined, formSyncCalls: 0, pendingList: [] };
   state.activeSnapshotGate = holdActiveSnapshot
     ? new Promise(resolve => { state.releaseActiveSnapshot = resolve; })
     : Promise.resolve();
@@ -122,7 +125,16 @@ async function fixture(t, {
           if (state.syncCalls <= syncFailureCount) throw new Error('session_sync_failed');
           if (state.syncCalls >= hydrateAfterSync) state.sessions.set(id, { id, location: { directory: '/same/cwd' } });
         }, status: id => state.statusBySession.get(id) ?? 'idle',
-        permission: { list: () => [] }, question: { list: () => [] },
+        permission: { list: () => state.permissionList, sync: async () => {
+          state.permissionSyncCalls++;
+          state.permissionList = permissionSyncResult;
+        } },
+        pending: { list: () => state.pendingList },
+        form: { list: () => state.formList, sync: async () => {
+          state.formSyncCalls++;
+          state.formList = formSyncResult;
+        } },
+        question: { list: () => [] },
       },
       on: (type, handler) => {
         const item = { type, handler };
@@ -201,6 +213,44 @@ test('v2 retries a failed active snapshot while holding mail and lifecycle idle 
   send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'snapshot-recovered', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'snapshot-recovered'));
   assert.equal(f.state.calls.length, 1, 'mail resumes only after a successful snapshot confirms idle');
+});
+
+test('v2 synchronizes unhydrated permission and form state before admitting native mail', { timeout: 5000 }, async t => {
+  const f = await fixture(t, {
+    permissionHydrated: false, permissionSyncResult: [{ id: 'permission-a' }],
+    formHydrated: false, formSyncResult: [{ id: 'form-a' }],
+  });
+  await until(() => f.subscriptions.length >= 2 && f.state.permissionSyncCalls > 0 && f.state.formSyncCalls > 0);
+  const stream = f.subscriptions.at(-1);
+  send(stream.socket, { type: 'deliver', delivery_id: 'unhydrated-readiness', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'unhydrated-readiness'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'unhydrated-readiness').reason, 'not_ready');
+  assert.equal(f.state.calls.length, 0, 'pending permission or form state cannot admit the prompt');
+
+  f.state.permissionList = [];
+  f.state.formList = [];
+  await until(() => f.subscriptions.length >= 3);
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'hydrated-readiness', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'hydrated-readiness'));
+  assert.equal(f.state.calls.length, 1, 'mail resumes after both readiness lists are hydrated and clear');
+});
+
+test('v2 reconnect reconciles a shutdown root before reopening native mail', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  await until(() => f.subscriptions.length >= 2 && f.state.activeCalls === 1);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
+  f.state.emit('session.execution.interrupted', rootA, { reason: 'shutdown' });
+  const shutdownStream = f.subscriptions.at(-1);
+  send(shutdownStream.socket, { type: 'deliver', delivery_id: 'shutdown-not-ready', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'shutdown-not-ready'));
+  assert.equal(f.state.calls.length, 0);
+
+  f.state.emit('server.connected');
+  await until(() => f.state.activeCalls >= 2);
+  await until(() => f.subscriptions.length >= 3);
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'reconnected-idle', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'reconnected-idle'));
+  assert.equal(f.state.calls.length, 1, 'a fresh idle snapshot clears shutdown suppression and reopens mail');
 });
 
 test('v2 reports only the bound displayed root execution lifecycle', { timeout: 5000 }, async t => {

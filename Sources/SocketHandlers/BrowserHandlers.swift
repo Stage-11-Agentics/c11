@@ -1374,6 +1374,7 @@ extension TerminalController {
     }
 
     func v2BrowserOpenSplitOnMain(params: [String: Any]) -> V2CallResult {
+        if let rejection = v2RejectUnresolvedTargetRefs(params) { return rejection }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }

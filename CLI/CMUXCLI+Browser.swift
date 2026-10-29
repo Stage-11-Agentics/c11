@@ -327,14 +327,15 @@ extension CMUXCLI {
 
             // An explicit browser target retains open-as-navigation. Other panel
             // types are placement anchors, as with markdown open.
-            let sourceSurface = try normalizeSurfaceHandle(surfaceRaw, client: client)
+            let validatedSource = try validatedPanelTargetValue(surfaceRaw, wasProvided: surfaceRaw != nil)
+            let sourceSurface = try normalizeSurfaceHandle(validatedSource, client: client)
             var opensExistingBrowser = false
             if let sourceSurface, subcommand == "open" {
                 let listed = try client.sendV2(method: "panel.list", params: ["panel_id": sourceSurface])
                 let panels = listed["panels"] as? [[String: Any]] ?? []
                 opensExistingBrowser = panels.contains {
                     (($0["id"] as? String)?.caseInsensitiveCompare(sourceSurface) == .orderedSame
-                     || ($0["ref"] as? String)?.caseInsensitiveCompare(sourceSurface) == .orderedSame)
+                     || ($0["ref"] as? String).map { Self.canonicalHandle($0).lowercased() == Self.canonicalHandle(sourceSurface).lowercased() } == true)
                     && ($0["type"] as? String) == "browser"
                 }
             }
@@ -385,6 +386,9 @@ extension CMUXCLI {
                 }
             }
             if let paneOpt {
+                guard !paneOpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: "empty_ref: --area requires a non-empty area handle")
+                }
                 if let pane = try normalizePaneHandle(paneOpt, client: client, workspaceHandle: params["workspace_id"] as? String) {
                     params["area_id"] = pane
                 }

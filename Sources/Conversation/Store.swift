@@ -150,13 +150,16 @@ final class ConversationStorePanelRefCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         let key = surfaceId.uuidString
-        guard var current = bySurface[key], current.authenticatedOpenCodeTuiPID == tuiPID,
+        guard let current = bySurface[key], current.authenticatedOpenCodeTuiPID == tuiPID,
               routeGeneration >= current.routeGeneration else { return false }
         if routeGeneration > current.routeGeneration {
-            current.routeGeneration = routeGeneration
-            current.routePending = true
-            current.boundRouteID = nil
-            bySurface[key] = current
+            bySurface[key] = ConversationStorePanelRefSnapshot(
+                active: current.active,
+                authenticatedOpenCodeTuiPID: current.authenticatedOpenCodeTuiPID,
+                routeGeneration: routeGeneration,
+                routePending: true,
+                boundRouteID: nil
+            )
             return true
         }
         if current.routePending { return true }

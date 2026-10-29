@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Fixed
+
+- **Commands run from a moved panel follow it to its new workspace.** A shell keeps the `C11_WORKSPACE_ID` it started with; the CLI now looks up where its panel lives, so sidebar status, `browser open`, `markdown open`, `new-area`, `new-panel`, title-bar and panel actions, `send` and the tmux shim land in the panel's workspace. A moved agent's hook lifecycle, turn-end notice and status follow it too. ([#790](https://github.com/Stage-11-Agentics/c11/pull/790))
+
 ### Security
 
 - **Browser profiles no longer share favicon cookies or cache.** Favicon fetches send and keep no cookies, and each profile caches its own icons, so a site's favicon can't link one profile to another. ([#786](https://github.com/Stage-11-Agentics/c11/pull/786))

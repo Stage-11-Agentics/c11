@@ -482,11 +482,15 @@ extension CMUXCLI {
             )
             if let consumedSession {
                 let workspaceId = consumedSession.workspaceId
-                // The panel lets the app follow a session whose panel moved (C11-499).
-                _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId, surfaceId: consumedSession.surfaceId)
-                _ = try? sendV1Command(
-                    "clear_agent_pid claude_code --tab=\(workspaceId) --panel=\(consumedSession.surfaceId)", client: client
-                )
+                // Clear where the session started, then where its panel is now:
+                // a panel that moved carries entries in both (C11-499).
+                for panel in [nil, consumedSession.surfaceId] {
+                    _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId, surfaceId: panel)
+                    _ = try? sendV1Command(
+                        "clear_agent_pid claude_code --tab=\(workspaceId)\(panel.map { " --panel=\($0)" } ?? "")",
+                        client: client
+                    )
+                }
                 _ = try? sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(consumedSession.surfaceId)", client: client)
                 // C11-24: SessionEnd race fix.
                 //

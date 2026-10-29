@@ -378,8 +378,14 @@ final class SocketClient {
     }
 
     /// Whether the app on this socket advertises `method`, probing once.
-    func advertisesMethod(_ method: String) -> Bool {
-        _ = probeServerVocabularyTier(deadline: .default)
+    /// Throws when that probe fails, so a caller can tell a probe with no
+    /// reply (whose late answer may still arrive) from an app's refusal.
+    func advertisesMethod(_ method: String) throws -> Bool {
+        if serverVocabularyTier == nil {
+            let caps = try sendV2Raw(method: "system.capabilities", params: [:], deadline: .default)
+            serverVocabularyTier = CLIVersionSkew.tier(fromCapabilities: caps)
+            serverMethods = (caps["methods"] as? [String]).map(Set.init)
+        }
         return serverMethods?.contains(method) == true
     }
 

@@ -1969,7 +1969,8 @@ final class MovedPanelIdentifyTests: XCTestCase {
         // A moved agent's prompt-submit hook clears its notice through the
         // socket worker, naming the workspace its shell started in.
         let store = TerminalNotificationStore.shared
-        defer { store.replaceNotificationsForTesting([]) }
+        let original = store.notifications
+        defer { store.replaceNotificationsForTesting(original) }
         store.replaceNotificationsForTesting([TerminalNotification(
             id: UUID(), workspaceId: destination.id, surfaceId: panelId, title: "Turn finished",
             subtitle: "", body: "", createdAt: Date(), isRead: false
@@ -1979,6 +1980,18 @@ final class MovedPanelIdentifyTests: XCTestCase {
         ), "OK")
         drainMainQueue()
         XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: destination.id, surfaceId: panelId))
+
+        // Its hook's status, from a session map that recorded the start workspace.
+        XCTAssertEqual(TerminalController.shared.setStatus(
+            "claude_code Running --tab=\(source.id) --panel=\(panelId)"
+        ), "OK")
+        drainMainQueue()
+        XCTAssertEqual(destination.statusEntries["claude_code"]?.value, "Running")
+        XCTAssertNil(source.statusEntries["claude_code"])
+        XCTAssertTrue(TerminalController.shared.clearStatus(
+            "claude_code --tab=\(source.id) --panel=\(panelId)"
+        ).hasPrefix("OK"))
+        XCTAssertNil(destination.statusEntries["claude_code"])
     }
 }
 

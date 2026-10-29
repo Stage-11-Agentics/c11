@@ -422,10 +422,11 @@ extension CMUXCLI {
     static func followCallerPanelWorkspace(client: SocketClient) -> CallerPanelFollow {
         let env = ProcessInfo.processInfo.environment
         guard let panel = callerPanelEnv(env), UUID(uuidString: panel) != nil,
-              let start = (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
-              client.advertisesMethod("panel.locate") else { return .unchanged }
+              let start = (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:))
+        else { return .unchanged }
         let payload: [String: Any]
         do {
+            guard try client.advertisesMethod("panel.locate") else { return .unchanged }
             payload = try client.sendV2(method: "panel.locate", params: ["panel_id": panel])
         } catch let error as CLIError where isServerErrorReply(error.message) {
             return .unchanged

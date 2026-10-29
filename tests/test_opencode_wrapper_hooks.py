@@ -66,6 +66,7 @@ def run_wrapper(
     cli_content: str | None = None,
     cli_file: str | None = None,
     claim_succeeds: bool = True,
+    claim_not_ready_attempts: int = 0,
     version_delay: float = 0,
     recovery_context: bool = False,
 ) -> tuple[int, list[str], dict, list[str], str]:
@@ -136,8 +137,16 @@ printf '%s\\n' "$*" >> "$FAKE_C11_LOG"
 if [[ "${!#}" == "ping" && "$FAKE_PING_STATUS" != "0" ]]; then
   exit "$FAKE_PING_STATUS"
 fi
-if [[ "$*" == *"rpc conversation.claim"* && "$FAKE_CLAIM_STATUS" != "0" ]]; then
-  exit "$FAKE_CLAIM_STATUS"
+if [[ "$*" == *"rpc conversation.claim"* ]]; then
+  if [[ "$FAKE_CLAIM_STATUS" != "0" ]]; then
+    printf 'unauthorized: claim denied\\n' >&2
+    exit "$FAKE_CLAIM_STATUS"
+  fi
+  claim_count="$(awk '/rpc conversation.claim/ { count++ } END { print count + 0 }' "$FAKE_C11_LOG")"
+  if (( claim_count <= FAKE_CLAIM_NOT_READY_ATTEMPTS )); then
+    printf 'not_ready: restore in progress\\n' >&2
+    exit 1
+  fi
 fi
 """,
         )
@@ -167,6 +176,7 @@ fi
                 "FAKE_C11_LOG": str(c11_log),
                 "FAKE_PING_STATUS": "0" if ping_succeeds else "1",
                 "FAKE_CLAIM_STATUS": "0" if claim_succeeds else "1",
+                "FAKE_CLAIM_NOT_READY_ATTEMPTS": str(claim_not_ready_attempts),
                 "FAKE_VERSION": version,
                 "FAKE_VERSION_DELAY": str(version_delay),
             }
@@ -455,6 +465,15 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     assert state["tui_claim_failed"] == "1" and state["tui_claimed"] is None, state
     assert state["cli_content"] is not None, "the TUI module self-disables on failed reservation"
     assert claim_payloads(c11_log), c11_log
+    assert sum("rpc conversation.claim" in line for line in c11_log) == 1, c11_log
+
+    code, _, state, c11_log, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True, version="2.0.25",
+        claim_not_ready_attempts=2,
+    )
+    assert code == 0, stderr
+    assert state["tui_claimed"] == "1" and state["tui_claim_failed"] is None, state
+    assert sum("rpc conversation.claim" in line for line in c11_log) == 3, c11_log
 
 
 def test_v2_native_mail_disable_keeps_identity_capture_plugin() -> None:

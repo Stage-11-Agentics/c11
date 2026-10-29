@@ -85,6 +85,26 @@ final class MailboxNativeDoorbell {
             (conversation.diagnosticReason?.hasPrefix("OpenCode displayed route ") == true)
     }
 
+    /// Typed delivery requires a fresh wrapper claim and a root capture from
+    /// the current route generation. This includes the interval after a
+    /// verified route-change request arrives but before the actor write ends.
+    static func blocksTypedForOpenCodeTUI(snapshot: ConversationStorePanelRefSnapshot?) -> Bool {
+        guard let snapshot else { return false }
+        if snapshot.authenticatedOpenCodeTuiPID != nil && snapshot.routePending { return true }
+        guard let conversation = snapshot.active, conversation.kind == "opencode",
+              conversation.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] != nil else {
+            return snapshot.authenticatedOpenCodeTuiPID != nil
+        }
+        guard case .number(let rawPID)? = conversation.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID],
+              rawPID.isFinite, rawPID > 0, rawPID <= Double(Int32.max),
+              rawPID.rounded(.towardZero) == rawPID else { return true }
+        guard let authenticatedPID = snapshot.authenticatedOpenCodeTuiPID,
+              authenticatedPID == Int32(rawPID), !snapshot.routePending,
+              snapshot.boundRouteID == conversation.id else { return true }
+        return conversation.placeholder ||
+            conversation.diagnosticReason?.hasPrefix("OpenCode displayed route ") == true
+    }
+
     static func openCodePluginPeerMatches(peerPID: pid_t?, agentPID: pid_t) -> Bool {
         peerPID == agentPID && agentPID > 1
     }

@@ -200,6 +200,19 @@ extension TerminalController {
                         message: "OpenCode resume reservations are limited to five minutes",
                         data: nil)
         }
+        if kind == "opencode", let interactivePID {
+            if let expiresAt, expiresAt <= Date() {
+                return .err(code: "request_expired",
+                            message: "claim expired before the store mutation boundary",
+                            data: nil)
+            }
+            // Close any persisted exact-route typed gate as soon as this fresh
+            // foreground claim is verified, before waiting on ConversationStore.
+            _ = ConversationStorePanelRefCache.shared.beginOpenCodeClaim(
+                surfaceId: surfaceId,
+                tuiPID: interactivePID
+            )
+        }
 
         let ref: ConversationRef
         if let expiresAt {
@@ -257,7 +270,7 @@ extension TerminalController {
         ])
     }
 
-    private func v2ConversationPush(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2ConversationPush(params: [String: Any]) -> V2CallResult {
         if ConversationStorePolicy.isDisabled {
             return .ok(["disabled": true, "kill_switch": "CMUX_DISABLE_CONVERSATION_STORE"])
         }
@@ -281,7 +294,21 @@ extension TerminalController {
                         message: "id does not match the \(kind) strategy's grammar",
                         data: ["kind": kind])
         }
-        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        // Handle refs are backed by the live c11 model, so resolve them in a
+        // short main-thread slice. Actor-store waits below remain on the socket
+        // worker and cannot freeze the UI.
+        let surfaceResult: Result<UUID, V2CallResult>
+        if Thread.isMainThread {
+            surfaceResult = MainActor.assumeIsolated {
+                self.v2ResolveSurfaceForConversation(params: params)
+            }
+        } else {
+            surfaceResult = DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    self.v2ResolveSurfaceForConversation(params: params)
+                }
+            }
+        }
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
             return .err(code: "internal_error", message: "panel resolution", data: nil)
@@ -290,12 +317,22 @@ extension TerminalController {
         let reason = v2String(params, "diagnostic_reason")
         let displayedRoot = params["displayed_root"] as? Bool ?? false
         let displayedRouteState = v2String(params, "displayed_route_state")
+        let routeGenerationValue = v2Int(params, "displayed_route_generation")
+        let hasDisplayedRouteMutation = displayedRoot || displayedRouteState != nil
         guard params["displayed_route_state"] == nil || displayedRouteState != nil,
               !(displayedRoot && displayedRouteState != nil) else {
             return .err(code: "invalid_displayed_route_state",
                         message: "displayed_route_state must be pending, child, or no-route and cannot be combined with displayed_root",
                         data: nil)
         }
+        guard params["displayed_route_generation"] == nil
+                || routeGenerationValue.map({ $0 > 0 }) == true,
+              hasDisplayedRouteMutation == (routeGenerationValue != nil) else {
+            return .err(code: "invalid_displayed_route_generation",
+                        message: "displayed route mutations require a positive displayed_route_generation",
+                        data: nil)
+        }
+        let routeGeneration = routeGenerationValue.map { Int64($0) }
         guard !displayedRoot || (kind == "opencode" && source == .hook) else {
             return .err(code: "invalid_displayed_root",
                         message: "displayed_root is reserved for OpenCode TUI root capture",
@@ -381,12 +418,25 @@ extension TerminalController {
             // SocketCommandContext is thread-local. Capture the authenticated
             // peer before conversationStoreSync moves work to a detached task.
             let callerPID = SocketCommandContext.current?.callerPID
+            guard let routeGeneration,
+                  ConversationStorePanelRefCache.shared.beginOpenCodeRouteChange(
+                    surfaceId: surfaceId,
+                    tuiPID: callerPID,
+                    routeGeneration: routeGeneration,
+                    capturesRoot: true,
+                    targetID: id
+                  ) else {
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route capture is older than the latest displayed route",
+                            data: ["surface_id": surfaceId.uuidString])
+            }
             let storeResult: DisplayedOpenCodeCaptureResult? = conversationStoreSync { store in
                 await store.captureDisplayedOpenCodeRoot(
                     surfaceId: surfaceId.uuidString,
                     id: id,
                     cwd: cwd,
-                    callerPID: callerPID
+                    callerPID: callerPID,
+                    routeGeneration: routeGeneration
                 )
             }
             guard let result = storeResult else {
@@ -409,6 +459,10 @@ extension TerminalController {
             case .unauthorized:
                 return .err(code: "displayed_root_caller_mismatch",
                             message: "displayed-root capture must come from the OpenCode TUI process reserved by this panel",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .staleRouteGeneration:
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route capture is older than the latest displayed route",
                             data: ["surface_id": surfaceId.uuidString])
             case .accepted(let ref):
                 PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
@@ -434,13 +488,26 @@ extension TerminalController {
             // Preserve the socket peer across the detached actor hop just as
             // for root capture above.
             let callerPID = SocketCommandContext.current?.callerPID
+            guard let routeGeneration,
+                  ConversationStorePanelRefCache.shared.beginOpenCodeRouteChange(
+                    surfaceId: surfaceId,
+                    tuiPID: callerPID,
+                    routeGeneration: routeGeneration,
+                    capturesRoot: false,
+                    targetID: id
+                  ) else {
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route update is older than the latest displayed route",
+                            data: ["surface_id": surfaceId.uuidString])
+            }
             let storeResult: OpenCodeUnboundRouteResult? = conversationStoreSync { store in
                 await store.markDisplayedOpenCodeRouteUnbound(
                     surfaceId: surfaceId.uuidString,
                     id: id,
                     cwd: cwd,
                     routeState: displayedRouteState,
-                    callerPID: callerPID
+                    callerPID: callerPID,
+                    routeGeneration: routeGeneration
                 )
             }
             guard let result = storeResult else {
@@ -450,6 +517,10 @@ extension TerminalController {
             case .unauthorized:
                 return .err(code: "displayed_route_caller_mismatch",
                             message: "displayed-route state must come from the OpenCode TUI process reserved by this panel",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .staleRouteGeneration:
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route update is older than the latest displayed route",
                             data: ["surface_id": surfaceId.uuidString])
             case .accepted(let ref):
                 PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)

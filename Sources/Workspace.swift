@@ -6962,12 +6962,12 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    /// The final typed-delivery identity read is bounded and runs on main.
+    /// The final typed-delivery identity read uses a lock-backed projection so
+    /// both the initial send and Return revalidation stay nonblocking on main.
     private func openCodeIdentityAllowsTypedMailbox(surfaceId: UUID) -> Bool {
         guard surfaceActivityTerminalKind(panelId: surfaceId) == "opencode" else { return true }
-        guard let conversations = Self.readConversationsByPanelIdSyncIfCompleted(timeout: 0.25) else { return false }
-        return !MailboxNativeDoorbell.blocksTypedForUnboundOpenCodeTUI(
-            conversation: conversations[surfaceId.uuidString]?.active
+        return !MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: surfaceId)
         )
     }
 

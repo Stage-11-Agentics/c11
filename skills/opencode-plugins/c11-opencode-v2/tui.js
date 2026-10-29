@@ -119,6 +119,8 @@ export default {
     let conflict = false;
     let captureState = 'no-route';
     let retryCaptureAt = 0;
+    let pendingUnbind;
+    let retryUnbindAt = 0;
     let hasObservedRoute = false;
     let stopMailbox;
     let mailboxRevision = 0;
@@ -166,7 +168,7 @@ export default {
       });
     };
 
-    const capture = async () => {
+    const performCapture = async () => {
       if (disposed) return;
       const candidateID = currentRoute(context);
       if (candidateID !== visibleID) {
@@ -180,16 +182,14 @@ export default {
         captureState = candidateID ? 'waiting' : 'no-route';
         retryCaptureAt = 0;
         if (shouldUnbind) {
-          const idToUnbind = candidateID || previousID;
-          const unbound = await c11(socketPath, 'conversation.push', {
-            panel_id: panelID,
-            kind: 'opencode',
-            id: idToUnbind,
-            source: 'hook',
-            displayed_route_state: candidateID ? 'pending' : 'no-route',
-          });
-          if (disposed || generation !== nextGeneration || currentRoute(context) !== candidateID) return;
-          if (candidateID && unbound?.outcome !== 'unbound') retryCaptureAt = Date.now() + 500;
+          pendingUnbind = {
+            generation: nextGeneration,
+            id: candidateID || previousID,
+            state: candidateID ? 'pending' : 'no-route',
+          };
+          retryUnbindAt = 0;
+        } else {
+          pendingUnbind = undefined;
         }
         clearPending();
         if (candidateID) {
@@ -199,6 +199,27 @@ export default {
           register(candidateID, nextGeneration);
           hasObservedRoute = true;
         }
+      }
+      if (pendingUnbind) {
+        if (Date.now() < retryUnbindAt) return;
+        const unbind = pendingUnbind;
+        const result = await c11(socketPath, 'conversation.push', {
+          panel_id: panelID,
+          kind: 'opencode',
+          id: unbind.id,
+          source: 'hook',
+          displayed_route_state: unbind.state,
+          displayed_route_generation: unbind.generation,
+        });
+        if (disposed || generation !== unbind.generation || currentRoute(context) !== candidateID || pendingUnbind !== unbind) return;
+        if (result?.outcome !== 'unbound') {
+          // Retry the unbind while the provisional stream rejects delivery;
+          // no new root is captured until c11 acknowledges this route change.
+          retryUnbindAt = Date.now() + 250;
+          return;
+        }
+        pendingUnbind = undefined;
+        retryUnbindAt = 0;
       }
       if (!candidateID || captureState === 'bound' ||
           captureState === 'child' || captureState === 'capturing' || Date.now() < retryCaptureAt) return;
@@ -223,6 +244,7 @@ export default {
           id: candidateID,
           source: 'hook',
           displayed_route_state: 'child',
+          displayed_route_generation: routeGeneration,
           cwd: session.location?.directory || session.directory,
         });
         if (disposed || generation !== routeGeneration || currentRoute(context) !== candidateID) return;
@@ -244,6 +266,7 @@ export default {
         id: candidateID,
         source: 'hook',
         displayed_root: true,
+        displayed_route_generation: routeGeneration,
         ...(cwd ? { cwd } : {}),
       });
       if (disposed || generation !== routeGeneration || currentRoute(context) !== candidateID) return;
@@ -266,6 +289,14 @@ export default {
         captureState = 'waiting';
         retryCaptureAt = Date.now() + 500;
       }
+    };
+
+    let captureInFlight;
+    const capture = () => {
+      if (disposed) return Promise.resolve();
+      if (captureInFlight) return captureInFlight;
+      captureInFlight = performCapture().finally(() => { captureInFlight = undefined; });
+      return captureInFlight;
     };
 
     const confirm = event => {

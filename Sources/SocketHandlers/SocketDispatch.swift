@@ -109,6 +109,8 @@ extension TerminalController {
             return v2WindowResizeWorker(id: request.id, params: request.params)
         case "conversation.resume":
             return v2Result(id: request.id, v2ConversationResume(params: request.params))
+        case "conversation.push":
+            return v2Result(id: request.id, v2ConversationPush(params: request.params))
         case "panel.send_text":
             return v2Result(id: request.id, v2PanelSendText(params: request.params))
         case "panel.send_key":

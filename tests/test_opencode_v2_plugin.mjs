@@ -18,7 +18,7 @@ async function until(predicate, timeout = 2000) {
 
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
-  nativeMailDisabled = false, status = 'idle',
+  nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0,
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
@@ -38,7 +38,7 @@ async function fixture(t, {
     [child, { id: child, parentID: rootA, location: { directory: '/same/cwd' } }],
   ]);
   const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], calls: [], syncCalls: 0,
-    conflictID: conflictID ?? '', status };
+    conflictID: conflictID ?? '', status, unbindCalls: 0 };
   const sockets = new Set();
   const subscriptions = [];
   const frames = [];
@@ -57,6 +57,12 @@ async function fixture(t, {
           send(socket, { ok: true, result: { subscription_id: 'registered' } });
         } else if (frame.method === 'conversation.push') {
           const id = frame.params.id;
+          const isUnbind = Boolean(frame.params.displayed_route_state);
+          if (isUnbind) state.unbindCalls++;
+          if (isUnbind && state.unbindCalls <= unbindFailureCount) {
+            send(socket, { id: frame.id, ok: false, error: { code: 'not_ready', message: 'restore in progress' } });
+            continue;
+          }
           const result = frame.params.displayed_route_state
             ? { outcome: 'unbound', id: `wrapper-claim:${frame.params.panel_id}:unbound-route` }
             : id === state.conflictID
@@ -103,6 +109,7 @@ test('v2 TUI owns exact displayed root capture and confirmed native mail', { tim
   await until(() => f.subscriptions.length === 2);
   const capture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.id === rootA);
   assert.equal(capture.params.displayed_root, true);
+  assert.equal(capture.params.displayed_route_generation, 1);
   assert.equal(capture.params.panel_id, 'panel-a');
   assert.equal(f.subscriptions.at(-1).frame.params.session_id.startsWith(`${rootA}:`), true);
 
@@ -175,6 +182,28 @@ test('v2 retries a route conflict until the displayed root becomes unowned', { t
   send(stream.socket, { type: 'deliver', delivery_id: 'after-release', text: doorbellText });
   await until(() => f.state.calls.length === 1);
   assert.equal(f.state.calls[0].sessionID, rootB);
+});
+
+test('v2 retries failed route unbinds and rejects mail until the new root binds', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { unbindFailureCount: 2 });
+  await until(() => f.subscriptions.length >= 2);
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
+
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.subscriptions.length >= 3);
+  const provisional = f.subscriptions.at(-1);
+  send(provisional.socket, { type: 'deliver', delivery_id: 'route-pending-mail', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'route-pending-mail'));
+  assert.equal(f.state.calls.length, 0, 'pending route mail cannot invoke promptAsync');
+  await until(() => f.state.unbindCalls >= 3);
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
+
+  const attempts = f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.displayed_route_state === 'pending');
+  assert.equal(attempts.length, 3, 'failed unbind writes are retried until c11 acknowledges the route change');
+  assert(attempts.every(frame => frame.params.displayed_route_generation === 2), 'retries retain the same route generation');
+  const nextCapture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root);
+  assert.equal(nextCapture.params.displayed_route_generation, 2, 'unbind and root capture share one generation');
+  assert(f.frames.indexOf(attempts.at(-1)) < f.frames.findIndex(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
 });
 
 test('child session is never captured or opened as a mailbox recipient', { timeout: 5000 }, async t => {

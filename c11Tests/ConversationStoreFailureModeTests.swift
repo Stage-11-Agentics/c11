@@ -401,6 +401,109 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         }
     }
 
+    func testOpenCodeTypedMailboxCacheTracksClaimBindUnbindAndClear() async {
+        let store = ConversationStore.shared
+        let panelID = UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!
+        let rootID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let nextRootID = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let childID = "ses_0fd8cb310ffe2of6OsP2qYz4Q5"
+
+        await store.claim(
+            surfaceId: panelID.uuidString, kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:\(panelID.uuidString)", interactivePID: 1001
+        )
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "a wrapper claim must synchronously block typed delivery")
+
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: panelID.uuidString, id: rootID, cwd: cwd, callerPID: 1001, routeGeneration: 1
+        ) else { return XCTFail("the authenticated TUI should bind its root") }
+        XCTAssertFalse(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "the cache must publish an accepted root before the actor write returns")
+
+        XCTAssertTrue(ConversationStorePanelRefCache.shared.beginOpenCodeRouteChange(
+            surfaceId: panelID, tuiPID: 1001, routeGeneration: 2,
+            capturesRoot: false, targetID: childID
+        ), "the verified route change closes the typed gate before the actor mutation")
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "a pending unbind blocks typed delivery even while the old exact ref remains cached")
+
+        guard case .staleRouteGeneration = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: panelID.uuidString, id: rootID, cwd: cwd, callerPID: 1001, routeGeneration: 1
+        ) else { return XCTFail("a delayed older capture must not overwrite a newer route transition") }
+
+        guard case .accepted = await store.markDisplayedOpenCodeRouteUnbound(
+            surfaceId: panelID.uuidString, id: childID, cwd: cwd,
+            routeState: "pending", callerPID: 1001, routeGeneration: 2
+        ) else { return XCTFail("the authenticated TUI should publish an unbound route") }
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "an unbound route must immediately block typed delivery")
+
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: panelID.uuidString, id: nextRootID, cwd: cwd, callerPID: 1001, routeGeneration: 2
+        ) else { return XCTFail("the new route generation should bind its exact root") }
+        XCTAssertFalse(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "only an accepted root in the current generation reopens the typed gate")
+
+        await store.clear(surfaceId: panelID.uuidString)
+        XCTAssertNil(ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID))
+
+        let persisted = ConversationRef(
+            kind: "opencode", id: nextRootID, placeholder: false, cwd: cwd,
+            capturedAt: Date(), capturedVia: .hook, state: .alive,
+            payload: [ConversationLifecyclePayloadKey.openCodeTuiPID: .number(1001)]
+        )
+        _ = await store.seed(from: [panelID.uuidString: PanelConversations(active: persisted)])
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "a persisted v2 PID marker without a fresh authenticated claim cannot authorize typed delivery")
+
+        let malformedPersisted = ConversationRef(
+            kind: "opencode", id: nextRootID, placeholder: false, cwd: cwd,
+            capturedAt: Date(), capturedVia: .hook, state: .alive,
+            payload: [ConversationLifecyclePayloadKey.openCodeTuiPID: .string("corrupt")]
+        )
+        _ = await store.seed(from: [panelID.uuidString: PanelConversations(active: malformedPersisted)])
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForOpenCodeTUI(
+            snapshot: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+        ), "a malformed persisted v2 identity marker must remain unverified")
+    }
+
+    func testOpenCodeStoreRejectsDelayedOlderRouteGeneration() async {
+        let store = ConversationStore()
+        let rootID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let nextRootID = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let childID = "ses_0fd8cb310ffe2of6OsP2qYz4Q5"
+        await store.claim(
+            surfaceId: "A", kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:A", interactivePID: 1001
+        )
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: rootID, cwd: cwd, callerPID: 1001, routeGeneration: 1
+        ) else { return XCTFail("the first route should bind") }
+        guard case .accepted = await store.markDisplayedOpenCodeRouteUnbound(
+            surfaceId: "A", id: childID, cwd: cwd, routeState: "pending",
+            callerPID: 1001, routeGeneration: 2
+        ) else { return XCTFail("the newer route transition should commit") }
+
+        guard case .staleRouteGeneration = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: rootID, cwd: cwd, callerPID: 1001, routeGeneration: 1
+        ) else { return XCTFail("a delayed older route write must not restore the prior root") }
+        let active = await store.active(for: "A")
+        XCTAssertTrue(active?.placeholder ?? false)
+
+        guard case .accepted(let rebound) = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: nextRootID, cwd: cwd, callerPID: 1001, routeGeneration: 2
+        ) else { return XCTFail("the current generation should bind its exact root") }
+        XCTAssertEqual(rebound.id, nextRootID)
+        XCTAssertFalse(rebound.placeholder)
+    }
+
     func testOpenCodeSessionConflictBlocksTypedMailboxFallback() {
         let registration = MailboxNativeDoorbell.Registration(
             id: UUID(), panelID: UUID(), agentPID: 0, processStart: 0,

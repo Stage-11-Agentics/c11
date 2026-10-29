@@ -116,8 +116,24 @@ for env_name, param_name in (
 print(json.dumps(payload, separators=(",", ":")))
 PY
             )"
-            if [[ -n "$claim_payload" ]] && C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
-                "$c11_bin" --socket "$c11_socket" rpc conversation.claim "$claim_payload" >/dev/null 2>&1; then
+            claim_accepted=0
+            if [[ -n "$claim_payload" ]]; then
+                # The socket can answer ping before restore has admitted
+                # conversation claims. Retry only that transient startup
+                # response, keeping the same expiry-bounded claim payload.
+                for ((claim_attempt=1; claim_attempt<=20; claim_attempt++)); do
+                    claim_output="$(C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+                        "$c11_bin" --socket "$c11_socket" rpc conversation.claim "$claim_payload" 2>&1)"
+                    if [[ $? -eq 0 ]]; then
+                        claim_accepted=1
+                        break
+                    fi
+                    [[ "$claim_output" == not_ready:* ]] || break
+                    ((claim_attempt < 20)) || break
+                    sleep 0.25
+                done
+            fi
+            if [[ "$claim_accepted" == "1" ]]; then
                 export C11_OPENCODE_TUI_CLAIMED=1
                 [[ -z "$expected_session" ]] || export C11_OPENCODE_RESUME_RESERVED=1
             else

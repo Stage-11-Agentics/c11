@@ -42,11 +42,130 @@ enum DisplayedOpenCodeCaptureResult: Sendable, Equatable {
     case accepted(ConversationRef)
     case conflict(ownerSurfaceIds: [String], preservedRef: ConversationRef?)
     case unauthorized
+    case staleRouteGeneration
 }
 
 enum OpenCodeUnboundRouteResult: Sendable, Equatable {
     case accepted(ConversationRef)
     case unauthorized
+    case staleRouteGeneration
+}
+
+/// Nonblocking projection of the active conversation refs used by main-thread
+/// delivery gates. The actor remains the source of truth; this cache is updated
+/// synchronously from its `bySurface` observer before each actor mutation ends.
+struct ConversationStorePanelRefSnapshot: Sendable {
+    let active: ConversationRef?
+    let authenticatedOpenCodeTuiPID: Int32?
+    let routeGeneration: Int64
+    let routePending: Bool
+    let boundRouteID: String?
+}
+
+final class ConversationStorePanelRefCache: @unchecked Sendable {
+    static let shared = ConversationStorePanelRefCache()
+
+    private let lock = NSLock()
+    private var bySurface: [String: ConversationStorePanelRefSnapshot] = [:]
+
+    private init() {}
+
+    func update(
+        surfaceId: String,
+        active: ConversationRef?,
+        authenticatedOpenCodeTuiPID: Int32?,
+        routeGeneration: Int64,
+        routePending: Bool,
+        boundRouteID: String?
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        let existing = bySurface[surfaceId]
+        let openCodeV2 = active.map(Self.hasOpenCodeV2Marker) ?? false
+        let preserveNewerPending = authenticatedOpenCodeTuiPID != nil
+            && existing?.authenticatedOpenCodeTuiPID == authenticatedOpenCodeTuiPID
+            && (existing?.routeGeneration ?? 0) > routeGeneration
+        let effectiveGeneration = preserveNewerPending
+            ? (existing?.routeGeneration ?? routeGeneration)
+            : routeGeneration
+        let effectivePending = preserveNewerPending
+            ? (existing?.routePending ?? routePending)
+            : (authenticatedOpenCodeTuiPID == nil && openCodeV2 ? true : routePending)
+        let effectiveBoundRouteID = preserveNewerPending
+            ? (existing?.boundRouteID ?? boundRouteID)
+            : boundRouteID
+        if active == nil && authenticatedOpenCodeTuiPID == nil {
+            bySurface.removeValue(forKey: surfaceId)
+            return
+        }
+        bySurface[surfaceId] = ConversationStorePanelRefSnapshot(
+            active: active,
+            authenticatedOpenCodeTuiPID: authenticatedOpenCodeTuiPID,
+            routeGeneration: effectiveGeneration,
+            routePending: effectivePending,
+            boundRouteID: effectiveBoundRouteID
+        )
+    }
+
+    func snapshot(surfaceId: UUID) -> ConversationStorePanelRefSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        return bySurface[surfaceId.uuidString]
+    }
+
+    func latestRouteGeneration(surfaceId: String) -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return bySurface[surfaceId]?.routeGeneration ?? 0
+    }
+
+    /// Close the typed gate as soon as a verified TUI reports a new claim or
+    /// route transition, before the actor-backed write can wait or time out.
+    @discardableResult
+    func beginOpenCodeClaim(surfaceId: UUID, tuiPID: Int32) -> Bool {
+        guard tuiPID > 0 else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        let key = surfaceId.uuidString
+        let active = bySurface[key]?.active
+        bySurface[key] = ConversationStorePanelRefSnapshot(
+            active: active,
+            authenticatedOpenCodeTuiPID: tuiPID,
+            routeGeneration: 0,
+            routePending: true,
+            boundRouteID: nil
+        )
+        return true
+    }
+
+    @discardableResult
+    func beginOpenCodeRouteChange(
+        surfaceId: UUID,
+        tuiPID: Int32?,
+        routeGeneration: Int64,
+        capturesRoot: Bool,
+        targetID: String
+    ) -> Bool {
+        guard let tuiPID, tuiPID > 0, routeGeneration > 0 else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        let key = surfaceId.uuidString
+        guard var current = bySurface[key], current.authenticatedOpenCodeTuiPID == tuiPID,
+              routeGeneration >= current.routeGeneration else { return false }
+        if routeGeneration > current.routeGeneration {
+            current.routeGeneration = routeGeneration
+            current.routePending = true
+            current.boundRouteID = nil
+            bySurface[key] = current
+            return true
+        }
+        if current.routePending { return true }
+        return capturesRoot && current.boundRouteID == targetID
+    }
+
+    private static func hasOpenCodeV2Marker(_ ref: ConversationRef) -> Bool {
+        ref.kind == "opencode" && ref.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] != nil
+    }
 }
 
 /// Durable, c11-owned evidence that the Codex wrapper crossed an interactive
@@ -299,10 +418,20 @@ actor ConversationStore {
     /// Per-surface mapping. v1 uses one active ref + empty history.
     private var bySurface: [String: PanelConversations] = [:] {
         didSet {
-            guard self === Self.shared, !ConversationStorePolicy.isDisabled else { return }
+            guard self === Self.shared else { return }
             for key in Set(oldValue.keys).union(bySurface.keys) {
-                guard oldValue[key]?.active != bySurface[key]?.active, let panelID = UUID(uuidString: key) else { continue }
                 let ref = bySurface[key]?.active
+                ConversationStorePanelRefCache.shared.update(
+                    surfaceId: key,
+                    active: ref,
+                    authenticatedOpenCodeTuiPID: authenticatedOpenCodeTuiPIDBySurface[key],
+                    routeGeneration: openCodeRouteGenerationBySurface[key] ?? 0,
+                    routePending: openCodeRoutePendingBySurface.contains(key),
+                    boundRouteID: openCodeBoundRouteIDBySurface[key]
+                )
+                guard oldValue[key]?.active != ref,
+                      let panelID = UUID(uuidString: key) else { continue }
+                guard !ConversationStorePolicy.isDisabled else { continue }
                 let owner = ref.flatMap { $0.isEligibleCausalOwner
                     ? JournalOwner(panelID: panelID, agentKind: $0.kind, sessionID: $0.id) : nil }
                 JournalCoordinator.shared.setOwner(panelID: panelID, owner: owner)
@@ -314,6 +443,9 @@ actor ConversationStore {
     /// a v2 ref for conservative routing after restart, but it is not proof
     /// that the current socket peer is still that TUI process.
     private var authenticatedOpenCodeTuiPIDBySurface: [String: Int32] = [:]
+    private var openCodeRouteGenerationBySurface: [String: Int64] = [:]
+    private var openCodeRoutePendingBySurface: Set<String> = []
+    private var openCodeBoundRouteIDBySurface: [String: String] = [:]
 
     init() {}
 
@@ -425,8 +557,11 @@ extension ConversationStore {
     /// snapshot restore to seed from `SessionPanelSnapshot.surfaceConversations`.
     @discardableResult
     func seed(from records: [String: PanelConversations]) -> OwnershipAuditResult {
-        bySurface = records
         authenticatedOpenCodeTuiPIDBySurface.removeAll()
+        openCodeRouteGenerationBySurface.removeAll()
+        openCodeRoutePendingBySurface.removeAll()
+        openCodeBoundRouteIDBySurface.removeAll()
+        bySurface = records
         return auditGlobalOwnership()
     }
 
@@ -500,9 +635,14 @@ extension ConversationStore {
         }
 
         authenticatedOpenCodeTuiPIDBySurface.removeValue(forKey: surfaceId)
+        openCodeRouteGenerationBySurface.removeValue(forKey: surfaceId)
+        openCodeRoutePendingBySurface.remove(surfaceId)
+        openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
         if kind == "opencode" {
             if let interactivePID, interactivePID > 0 {
                 authenticatedOpenCodeTuiPIDBySurface[surfaceId] = interactivePID
+                openCodeRouteGenerationBySurface[surfaceId] = 0
+                openCodeRoutePendingBySurface.insert(surfaceId)
             }
         }
 
@@ -680,6 +820,7 @@ extension ConversationStore {
         id: String,
         cwd: String?,
         callerPID: Int32?,
+        routeGeneration: Int64? = nil,
         capturedAt: Date = Date()
     ) -> DisplayedOpenCodeCaptureResult {
         guard let callerPID, callerPID > 0,
@@ -687,6 +828,14 @@ extension ConversationStore {
               let current = bySurface[surfaceId]?.active,
               expectedOpenCodeTuiPID(in: current) == callerPID else {
             return .unauthorized
+        }
+        let requestedGeneration = routeGeneration ?? ((openCodeRouteGenerationBySurface[surfaceId] ?? 0) + 1)
+        guard advanceOpenCodeRouteGeneration(
+            surfaceId: surfaceId,
+            routeGeneration: requestedGeneration,
+            rootID: id
+        ) else {
+            return .staleRouteGeneration
         }
         let owners = displayedOpenCodeOwners(for: id, excluding: surfaceId)
         if !owners.isEmpty {
@@ -708,6 +857,8 @@ extension ConversationStore {
                     payload: current.payload
                 )
             }
+            openCodeRoutePendingBySurface.insert(surfaceId)
+            openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
             bySurface[surfaceId] = snap
             return .conflict(ownerSurfaceIds: owners, preservedRef: snap.active)
         }
@@ -728,6 +879,8 @@ extension ConversationStore {
         )
         var snap = bySurface[surfaceId] ?? .empty
         snap.active = ref
+        openCodeRoutePendingBySurface.remove(surfaceId)
+        openCodeBoundRouteIDBySurface[surfaceId] = id
         bySurface[surfaceId] = snap
         _ = auditGlobalOwnership()
         return .accepted(bySurface[surfaceId]?.active ?? ref)
@@ -743,6 +896,7 @@ extension ConversationStore {
         cwd: String?,
         routeState: String,
         callerPID: Int32?,
+        routeGeneration: Int64? = nil,
         capturedAt: Date = Date()
     ) -> OpenCodeUnboundRouteResult {
         guard (["pending", "child", "no-route"].contains(routeState)),
@@ -752,6 +906,14 @@ extension ConversationStore {
               let current = bySurface[surfaceId]?.active,
               expectedOpenCodeTuiPID(in: current) == callerPID else {
             return .unauthorized
+        }
+        let requestedGeneration = routeGeneration ?? ((openCodeRouteGenerationBySurface[surfaceId] ?? 0) + 1)
+        guard advanceOpenCodeRouteGeneration(
+            surfaceId: surfaceId,
+            routeGeneration: requestedGeneration,
+            rootID: nil
+        ) else {
+            return .staleRouteGeneration
         }
         if routeState == "pending", !current.placeholder, current.id == id {
             return .accepted(current)
@@ -786,6 +948,8 @@ extension ConversationStore {
         )
         var snap = bySurface[surfaceId] ?? .empty
         snap.active = ref
+        openCodeRoutePendingBySurface.insert(surfaceId)
+        openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
         bySurface[surfaceId] = snap
         _ = auditGlobalOwnership()
         return .accepted(bySurface[surfaceId]?.active ?? ref)
@@ -809,6 +973,31 @@ extension ConversationStore {
             return nil
         }
         return Int32(raw)
+    }
+
+    /// A per-claim generation fences late route writes after the TUI has
+    /// advanced. The lock-backed cache is advanced at socket receipt, before
+    /// the actor mutation can queue, so an older queued write cannot land in
+    /// the gap before the newer actor call begins.
+    private func advanceOpenCodeRouteGeneration(
+        surfaceId: String,
+        routeGeneration: Int64,
+        rootID: String?
+    ) -> Bool {
+        guard routeGeneration > 0 else { return false }
+        let currentGeneration = openCodeRouteGenerationBySurface[surfaceId] ?? 0
+        let cachedGeneration = ConversationStorePanelRefCache.shared.latestRouteGeneration(surfaceId: surfaceId)
+        guard routeGeneration >= currentGeneration, routeGeneration >= cachedGeneration else { return false }
+
+        if routeGeneration > currentGeneration {
+            openCodeRouteGenerationBySurface[surfaceId] = routeGeneration
+            openCodeRoutePendingBySurface.insert(surfaceId)
+            openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
+            return true
+        }
+        if openCodeRoutePendingBySurface.contains(surfaceId) { return true }
+        guard let rootID else { return false }
+        return openCodeBoundRouteIDBySurface[surfaceId] == rootID
     }
 
     private func openCodeTuiClaim(
@@ -1123,6 +1312,9 @@ extension ConversationStore {
     /// (`c11 conversation clear`).
     func clear(surfaceId: String) {
         authenticatedOpenCodeTuiPIDBySurface.removeValue(forKey: surfaceId)
+        openCodeRouteGenerationBySurface.removeValue(forKey: surfaceId)
+        openCodeRoutePendingBySurface.remove(surfaceId)
+        openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
         bySurface.removeValue(forKey: surfaceId)
     }
 

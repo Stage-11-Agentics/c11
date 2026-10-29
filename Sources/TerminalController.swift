@@ -2605,6 +2605,9 @@ class TerminalController {
         // C11-468: store read and transcript stats off-main; one main hop
         // decides and schedules the typing.
         "conversation.resume",
+        // Conversation route writes can wait briefly on the actor store; keep
+        // that bounded wait off main and hop only for target-handle resolution.
+        "conversation.push",
         "panel.send_text",
         "panel.send_key",
         "panel.read_text",
@@ -4902,13 +4905,13 @@ class TerminalController {
     /// 64 KiB cap on the serialised payload accepted by v2 conversation
     /// push. Matches the metadata path. Defends the snapshot file against
     /// oversized hook input.
-    static let conversationPayloadMaxBytes: Int = 64 * 1024
+    nonisolated static let conversationPayloadMaxBytes: Int = 64 * 1024
 
     /// Bool detection for payload coercion. Swift `Bool` bridges to
     /// `NSNumber` on Apple platforms, so a naive `as? NSNumber` cast
     /// succeeds for booleans and silently coerces them to `.number(1.0)`.
     /// Use `CFBooleanGetTypeID` to disambiguate.
-    func conversationBoolValue(_ v: Any) -> Bool? {
+    nonisolated func conversationBoolValue(_ v: Any) -> Bool? {
         let cf = v as CFTypeRef
         if CFGetTypeID(cf) == CFBooleanGetTypeID() {
             return (v as? Bool)
@@ -4924,7 +4927,7 @@ class TerminalController {
     ///
     /// Bounded timeout (2 s); the actor never blocks on I/O so a hang
     /// here would mean a deadlock somewhere unrelated.
-    func conversationStoreSync<T: Sendable>(
+    nonisolated func conversationStoreSync<T: Sendable>(
         _ body: @escaping @Sendable (ConversationStore) async -> T
     ) -> T? {
         // C11-24: `Task.detached` so the spawned task does not inherit

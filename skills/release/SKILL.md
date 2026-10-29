@@ -9,7 +9,7 @@ Run this workflow to prepare and publish a c11 release.
 
 ## Pre-flight
 
-Surface these four facts in one batch before touching anything else:
+Surface these five facts in one batch before touching anything else:
 
 1. **Branch state.** `git branch --show-current` + `git status -s`. If HEAD
    isn't on `main`, surface it — the operator may not realize. Wrong-branch
@@ -24,7 +24,9 @@ Surface these four facts in one batch before touching anything else:
    unfinished work that belongs in the release, surface it now — not
    after the release branch is cut.
 
-If the operator says "skip pre-flight," skip. Otherwise run all four every time.
+5. **Previous release merged back.** `git fetch origin main --tags && git merge-base --is-ancestor "$(git tag -l 'v*' --sort=-v:refname | head -1)" origin/main`. If the newest `v*` tag is not on `main`, its merge-back (step 11) is outstanding. That is a blocker: `main` still carries the old version, so the next bump would reuse it, and `git describe` on `main` would skip that tag and widen the changelog range.
+
+If the operator says "skip pre-flight," skip. Otherwise run all five every time.
 
 ## Workflow
 
@@ -102,6 +104,7 @@ This is a checklist trigger, not a CI gate.
 - `git push -u origin release/vX.Y.Z`.
 
 6.5. Build the tagged staging artifact:
+- Record the commit you build: `SHA=$(git rev-parse HEAD)`. This is the tested head. Every later fix or merge on the branch replaces it, and staging, the smoke and CI then run again on the new head.
 - `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
   (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
   the operator's prod c11.
@@ -138,6 +141,7 @@ This is a checklist trigger, not a CI gate.
 8. Watch CI and resolve failures:
 - `gh pr checks --watch`
 - Fix failing checks, push, and wait for green.
+- A conflicting PR gets no `pull_request` CI. If the release PR conflicts with `main` before tagging, merge `origin/main` into the branch, push, and repeat 6.5 through 8 on the new head.
 
 The tag goes on the tested release-branch head, never on a merge into `main`. `main` keeps moving while a release is in flight: a commit that lands after the cut ships in the next release, and nothing forces a re-cut or a merge hold.
 
@@ -145,10 +149,12 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 - **Gate the tag on the exact tested commit.** The tested commit is the head the staging app was built from, the smoke ran on, and `c11/pr-swift` passed on. Verify first:
   ```bash
   git fetch origin release/vX.Y.Z
-  SHA=<tested head sha>
-  test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || echo "STOP: branch moved since it was tested"
+  # SHA is the tested head recorded in 6.5
+  test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
   git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | grep -m1 MARKETING_VERSION   # must read X.Y.Z
   git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # release.yml needs it
+  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '.statuses[]|"\(.context) \(.state)"'   # c11/pr-swift success
+  gh pr checks <release PR>                                                           # every check passing at $SHA
   ```
   A stale local tag (notably `nightly`) makes `git fetch` fail with "would clobber existing tag" and can leave refs unmoved: prune it (`git tag -d nightly` or `git fetch --prune --prune-tags origin`) and re-check.
 - `git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"` (annotated; local git config rejects a lightweight `git tag vX.Y.Z` with "no tag message?")
@@ -160,9 +166,9 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 - Confirm the release exists in GitHub Releases, is neither a draft nor a prerelease, and includes `c11-macos.dmg`.
 - `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints `vX.Y.Z`, and `releases/latest/download/appcast.xml` serves `X.Y.Z` with the new build number.
 
-11. Merge the release branch back into `main`:
+11. Merge the release branch back into `main`, right after step 10 succeeds:
 - `gh pr merge <release PR> --merge`. Use a merge commit, never a squash: the tag must stay an ancestor of `main`, and a squash leaves the shipped commit off `main`'s history.
-- Never rebase, amend or force-push the branch after tagging. If the PR conflicts, merge `origin/main` into the release branch, push, then merge the PR. Usually only `CHANGELOG.md` conflicts: keep the `[X.Y.Z]` section, and leave entries that `main` added under `[Unreleased]` there.
+- Never rebase, amend or force-push the branch after tagging. If the PR conflicts, merge `origin/main` into the release branch, push, then merge the PR. Usually only `CHANGELOG.md` conflicts. The result is `## [Unreleased]` holding the entries `main` added, followed by the `## [X.Y.Z]` section.
 - Delete the remote branch (`git push origin --delete release/vX.Y.Z`).
 - Confirm with `git fetch origin main && git merge-base --is-ancestor vX.Y.Z origin/main`.
 
@@ -174,8 +180,10 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 
 A hotfix branches from the shipped tag, not from `main`:
 
-- `git checkout -b release/vX.Y.Z+1 vX.Y.Z`, then `git cherry-pick -x` each fix from `main`.
+- `git checkout -b release/vX.Y.(Z+1) vX.Y.Z`, then `git cherry-pick -x` each fix from `main`.
 - Then run the normal flow on that branch: a patch bump, a changelog section, staging, checks, the tag gate on the tested head, and the merge back.
+- A hotfix is valid only while `vX.Y.Z` is the newest shipped release. A hotfix tag takes `releases/latest` and gets a higher build number, so Sparkle would offer it to users already on a newer release. If a newer release has shipped, stop and ask the operator.
+- On the merge back, `main`'s `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` win in `project.pbxproj`. Place the hotfix's changelog section by date, below `[Unreleased]` and any newer release sections.
 
 ## Changelog Rules
 
@@ -211,7 +219,7 @@ Updates both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (build number). T
 If not using the `/release` command:
 
 ```bash
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"   # the tested head, after the step 9 gate
 git push origin vX.Y.Z
 gh run watch --repo Stage-11-Agentics/c11
 ```
@@ -222,7 +230,7 @@ Use the annotated form (`-a -m`). A lightweight `git tag vX.Y.Z` is rejected wit
 
 When `release.yml` cannot run (runner billing, outage), `scripts/release-local.sh vX.Y.Z` performs the same job: the Release build runs on Atlas through `scripts/remote-build.sh`, and the rest (daemon assets, Sparkle keys, codesign, notarize, staple, DMG, appcast, `gh release`) runs on this Mac. Walkthrough: `.claude/commands/release-local.md`.
 
-- Tag first (step 10). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
+- Tag first (step 9). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
 - Run `--dry-run` first. It stops before notarization, rehearses the DMG and appcast with a throwaway Sparkle key, and publishes nothing.
 - A real run needs the `c11-notary` notarytool keychain profile. It also needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
 - The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`). The release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.

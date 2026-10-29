@@ -1,5 +1,7 @@
 # Release Nightly
 
+**Legacy cmux flow; do not run it.** `scripts/build-sign-upload.sh` no longer exists, and its squash-then-tag order is retired. Release with `skills/release/SKILL.md` (GitHub Actions), or with `/release-local` when Actions cannot run.
+
 End-to-end release via PR flow: bump version, update changelog, create PR, merge, tag, then build locally via `scripts/build-sign-upload.sh`.
 
 ## Steps
@@ -48,11 +50,12 @@ End-to-end release via PR flow: bump version, update changelog, create PR, merge
    - `gh pr create --title "Release vX.Y.Z" --body "...changelog..."`
    - `gh pr checks --watch`
 
-8. **Tag the tested release-branch head**
-   - Gate and tag as in `skills/release/SKILL.md` step 9: `git tag -a vX.Y.Z -m "Release vX.Y.Z" <tested head sha> && git push origin vX.Y.Z`
+8. **Merge PR**
+   - `gh pr merge --squash --delete-branch`
+   - `git checkout main && git pull`
 
-9. **Merge the branch back after the release is verified**
-   - `gh pr merge <release PR> --merge` (a merge commit, never a squash), then delete the remote branch
+9. **Create and push the tag**
+   - `git tag vX.Y.Z && git push origin vX.Y.Z`
 
 ### Phase 2: Local build, sign, notarize, upload
 

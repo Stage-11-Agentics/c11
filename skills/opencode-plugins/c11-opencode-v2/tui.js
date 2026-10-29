@@ -88,8 +88,8 @@ export default {
     const agentPID = Number(process.env.C11_AGENT_INTERACTIVE_PID);
     const socketPath = process.env.C11_SOCKET_PATH || process.env.CMUX_SOCKET_PATH;
     const c11Bin = process.env.C11_AGENT_HOOK_CLI;
+    const nativeMailDisabled = process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED === '1';
     if (!panelID || !socketPath || !c11Bin || agentPID !== process.pid ||
-        process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED === '1' ||
         process.env.C11_OPENCODE_TUI_CLAIMED !== '1' ||
         process.env.C11_OPENCODE_TUI_CLAIM_FAILED === '1' ||
         process.env.C11_OPENCODE_RESUME_RESERVATION_FAILED === '1' ||
@@ -102,6 +102,7 @@ export default {
     let conflict = false;
     let captureState = 'no-route';
     let retryCaptureAt = 0;
+    let hasObservedRoute = false;
     let stopMailbox;
     const pending = new Map();
     const userMessages = new Map();
@@ -118,7 +119,7 @@ export default {
     };
 
     const register = (sessionID, routeGeneration) => {
-      if (!sessionID || disposed) return;
+      if (!sessionID || disposed || nativeMailDisabled) return;
       const streamID = `${sessionID}:${routeGeneration}`.slice(0, 256);
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
@@ -152,17 +153,32 @@ export default {
       const candidateID = currentRoute(context);
       if (candidateID !== visibleID) {
         const nextGeneration = ++generation;
-        clearPending();
+        const previousID = visibleID;
+        const shouldUnbind = hasObservedRoute && Boolean(candidateID || previousID);
         visibleID = candidateID;
         boundID = undefined;
         conflict = Boolean(candidateID);
         captureState = candidateID ? 'waiting' : 'no-route';
         retryCaptureAt = 0;
+        if (shouldUnbind) {
+          const idToUnbind = candidateID || previousID;
+          const unbound = await c11(socketPath, 'conversation.push', {
+            panel_id: panelID,
+            kind: 'opencode',
+            id: idToUnbind,
+            source: 'hook',
+            displayed_route_state: candidateID ? 'pending' : 'no-route',
+          });
+          if (disposed || generation !== nextGeneration || currentRoute(context) !== candidateID) return;
+          if (candidateID && unbound?.outcome !== 'unbound') retryCaptureAt = Date.now() + 500;
+        }
+        clearPending();
         if (candidateID) {
           // Establish an unsafe provisional native route before waiting for TUI
           // hydration or the c11 ownership check. It rejects with a named
           // conflict so mail is held until this displayed route is verified.
           register(candidateID, nextGeneration);
+          hasObservedRoute = true;
         }
       }
       if (!candidateID || captureState === 'bound' ||
@@ -182,8 +198,23 @@ export default {
         return;
       }
       if (session.parentID) {
-        captureState = 'child'; // Child views have no root composer or identity.
-        conflict = true;
+        const result = await c11(socketPath, 'conversation.push', {
+          panel_id: panelID,
+          kind: 'opencode',
+          id: candidateID,
+          source: 'hook',
+          displayed_route_state: 'child',
+          cwd: session.location?.directory || session.directory,
+        });
+        if (disposed || generation !== routeGeneration || currentRoute(context) !== candidateID) return;
+        if (result?.outcome === 'unbound') {
+          captureState = 'child'; // Child views have no root composer or identity.
+          conflict = true;
+          retryCaptureAt = 0;
+        } else {
+          captureState = 'waiting';
+          retryCaptureAt = Date.now() + 500;
+        }
         return;
       }
 
@@ -201,6 +232,12 @@ export default {
         boundID = candidateID;
         conflict = false;
         captureState = 'bound';
+        if (!nativeMailDisabled) {
+          // Replace the provisional stream so a prior session_conflict
+          // fallback ledger clears after this route becomes authoritative.
+          clearPending();
+          register(candidateID, routeGeneration);
+        }
       } else if (result?.outcome === 'identity_conflict') {
         conflict = true;
         captureState = 'identity-conflict';

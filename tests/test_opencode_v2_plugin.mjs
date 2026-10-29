@@ -18,6 +18,7 @@ async function until(predicate, timeout = 2000) {
 
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
+  nativeMailDisabled = false,
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
@@ -29,6 +30,7 @@ async function fixture(t, {
     C11_AGENT_INTERACTIVE_PID: String(process.pid), C11_AGENT_HOOK_CLI: c11Binary,
     C11_OPENCODE_TUI_CLAIMED: '1',
   });
+  if (nativeMailDisabled) process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED = '1';
 
   const sessions = new Map([
     ...(loadRoot ? [[rootA, { id: rootA, location: { directory: '/same/cwd' } }]] : []),
@@ -55,7 +57,9 @@ async function fixture(t, {
           send(socket, { ok: true, result: { subscription_id: 'registered' } });
         } else if (frame.method === 'conversation.push') {
           const id = frame.params.id;
-          const result = id === state.conflictID
+          const result = frame.params.displayed_route_state
+            ? { outcome: 'unbound', id: `wrapper-claim:${frame.params.panel_id}:unbound-route` }
+            : id === state.conflictID
             ? { outcome: 'identity_conflict', id, owner_surface_ids: ['other'] }
             : { outcome: 'accepted', id };
           send(socket, { id: frame.id, ok: true, result });
@@ -96,12 +100,13 @@ test('v2 TUI owns exact displayed root capture and confirmed native mail', { tim
   const f = await fixture(t);
   await until(() => f.subscriptions.length === 1);
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA));
+  await until(() => f.subscriptions.length === 2);
   const capture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.id === rootA);
   assert.equal(capture.params.displayed_root, true);
   assert.equal(capture.params.panel_id, 'panel-a');
-  assert.equal(f.subscriptions[0].frame.params.session_id.startsWith(`${rootA}:`), true);
+  assert.equal(f.subscriptions.at(-1).frame.params.session_id.startsWith(`${rootA}:`), true);
 
-  send(f.subscriptions[0].socket, { type: 'deliver', delivery_id: 'mail-a', text: doorbellText });
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'mail-a', text: doorbellText });
   await until(() => f.state.calls.length === 1);
   assert.equal(f.state.calls[0].sessionID, rootA);
   const part = f.state.calls[0].parts[0];
@@ -118,16 +123,17 @@ test('v2 route retries capture after session-sync failure and delayed hydration 
   assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'early-mail').reason, 'session_conflict');
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA));
   assert(f.state.syncCalls >= 2, `expected retry after hydration, got ${f.state.syncCalls} sync call(s)`);
-  assert.equal(f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.id === rootA).length, 1);
+  assert.equal(f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root).length, 1);
 });
 
 test('v2 route ownership conflict rejects before prompting and names safe hold', { timeout: 5000 }, async t => {
   const f = await fixture(t, { conflictID: rootB });
   await until(() => f.subscriptions.length === 1);
-  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA));
-  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
   await until(() => f.subscriptions.length === 2);
-  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB));
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.subscriptions.length === 3);
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
   const latest = f.subscriptions.at(-1);
   send(latest.socket, { type: 'deliver', delivery_id: 'conflict-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'conflict-mail'));
@@ -138,12 +144,14 @@ test('v2 route ownership conflict rejects before prompting and names safe hold',
 
 test('v2 retries a route conflict until the displayed root becomes unowned', { timeout: 5000 }, async t => {
   const f = await fixture(t, { conflictID: rootB });
-  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA));
-  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
   await until(() => f.subscriptions.length === 2);
-  await until(() => f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.id === rootB).length === 1);
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.subscriptions.length === 3);
+  await until(() => f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root).length === 1);
   f.state.conflictID = '';
-  await until(() => f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.id === rootB).length >= 2);
+  await until(() => f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root).length >= 2);
+  await until(() => f.subscriptions.length === 4);
   const stream = f.subscriptions.at(-1);
   send(stream.socket, { type: 'deliver', delivery_id: 'after-release', text: doorbellText });
   await until(() => f.state.calls.length === 1);
@@ -153,12 +161,30 @@ test('v2 retries a route conflict until the displayed root becomes unowned', { t
 test('child session is never captured or opened as a mailbox recipient', { timeout: 5000 }, async t => {
   const f = await fixture(t);
   await until(() => f.subscriptions.length === 1);
-  f.state.route = { type: 'session', sessionID: child };
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
   await until(() => f.subscriptions.length === 2);
-  assert(!f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === child));
+  f.state.route = { type: 'session', sessionID: child };
+  await until(() => f.subscriptions.length === 3);
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === child &&
+    frame.params.displayed_route_state === 'child'));
+  assert(!f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === child && frame.params.displayed_root));
   const stream = f.subscriptions.at(-1);
   send(stream.socket, { type: 'deliver', delivery_id: 'child-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'child-mail'));
   assert.equal(f.state.calls.length, 0);
   assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'child-mail').reason, 'session_conflict');
+});
+
+test('native mail disabled still captures the exact root and marks child routes unbound', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { nativeMailDisabled: true });
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
+  assert.equal(f.subscriptions.length, 0);
+  f.state.route = undefined;
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA &&
+    frame.params.displayed_route_state === 'no-route'));
+  f.state.route = { type: 'session', sessionID: child };
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === child &&
+    frame.params.displayed_route_state === 'child'));
+  assert.equal(f.subscriptions.length, 0);
+  assert.equal(f.state.calls.length, 0);
 });

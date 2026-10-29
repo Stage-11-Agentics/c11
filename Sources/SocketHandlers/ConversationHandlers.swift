@@ -116,7 +116,6 @@ extension TerminalController {
         } else {
             interactivePID = nil
         }
-
         let expiresAt: Date?
         if params["expires_at_epoch_ms"] != nil {
             guard let epochMilliseconds = v2Int(params, "expires_at_epoch_ms"),
@@ -138,6 +137,17 @@ extension TerminalController {
             expiresAt = Date(timeIntervalSince1970: seconds)
         } else {
             expiresAt = nil
+        }
+        if kind == "opencode", expectedResumeId != nil, expiresAt == nil {
+            return .err(code: "expiry_required",
+                        message: "OpenCode resume reservations require expires_at_epoch_ms",
+                        data: nil)
+        }
+        if kind == "opencode", expectedResumeId != nil,
+           let expiresAt, expiresAt.timeIntervalSinceNow > 300 {
+            return .err(code: "expiry_too_long",
+                        message: "OpenCode resume reservations are limited to five minutes",
+                        data: nil)
         }
 
         let ref: ConversationRef
@@ -226,10 +236,25 @@ extension TerminalController {
         let cwd = v2String(params, "cwd")
         let reason = v2String(params, "diagnostic_reason")
         let displayedRoot = params["displayed_root"] as? Bool ?? false
+        let displayedRouteState = v2String(params, "displayed_route_state")
+        guard params["displayed_route_state"] == nil || displayedRouteState != nil,
+              !(displayedRoot && displayedRouteState != nil) else {
+            return .err(code: "invalid_displayed_route_state",
+                        message: "displayed_route_state must be pending, child, or no-route and cannot be combined with displayed_root",
+                        data: nil)
+        }
         guard !displayedRoot || (kind == "opencode" && source == .hook) else {
             return .err(code: "invalid_displayed_root",
                         message: "displayed_root is reserved for OpenCode TUI root capture",
                         data: nil)
+        }
+        if let displayedRouteState,
+           (kind != "opencode" || source != .hook || !["pending", "child", "no-route"].contains(displayedRouteState)) {
+            return .err(
+                code: "invalid_displayed_route_state",
+                message: "displayed_route_state is reserved for OpenCode TUI route state",
+                data: nil
+            )
         }
         let stateRaw = (v2String(params, "state") ?? "alive").lowercased()
         // C11-24 review (I2): strict validation. Silent fallthrough to
@@ -291,12 +316,15 @@ extension TerminalController {
         }
 
         if displayedRoot {
+            // SocketCommandContext is thread-local. Capture the authenticated
+            // peer before conversationStoreSync moves work to a detached task.
+            let callerPID = SocketCommandContext.current?.callerPID
             let storeResult: DisplayedOpenCodeCaptureResult? = conversationStoreSync { store in
                 await store.captureDisplayedOpenCodeRoot(
                     surfaceId: surfaceId.uuidString,
                     id: id,
                     cwd: cwd,
-                    callerPID: SocketCommandContext.current?.callerPID
+                    callerPID: callerPID
                 )
             }
             guard let result = storeResult else {
@@ -329,6 +357,41 @@ extension TerminalController {
                     "captured_via": ref.capturedVia.rawValue,
                     "state": ref.state.rawValue,
                     "outcome": "accepted"
+                ])
+            }
+        }
+
+        if let displayedRouteState {
+            // Preserve the socket peer across the detached actor hop just as
+            // for root capture above.
+            let callerPID = SocketCommandContext.current?.callerPID
+            let storeResult: OpenCodeUnboundRouteResult? = conversationStoreSync { store in
+                await store.markDisplayedOpenCodeRouteUnbound(
+                    surfaceId: surfaceId.uuidString,
+                    id: id,
+                    cwd: cwd,
+                    routeState: displayedRouteState,
+                    callerPID: callerPID
+                )
+            }
+            guard let result = storeResult else {
+                return .err(code: "internal_error", message: "store timeout", data: nil)
+            }
+            switch result {
+            case .unauthorized:
+                return .err(code: "displayed_route_caller_mismatch",
+                            message: "displayed-route state must come from the OpenCode TUI process reserved by this panel",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .accepted(let ref):
+                PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+                return .ok([
+                    "surface_id": surfaceId.uuidString,
+                    "kind": ref.kind,
+                    "id": ref.id,
+                    "displayed_id": id,
+                    "placeholder": ref.placeholder,
+                    "state": ref.state.rawValue,
+                    "outcome": "unbound"
                 ])
             }
         }

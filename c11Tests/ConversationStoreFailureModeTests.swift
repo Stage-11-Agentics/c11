@@ -237,9 +237,11 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let idA = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         let idB = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
         await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: 1001)
+                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: 1001,
+                          expiresAt: Date().addingTimeInterval(120))
         await store.claim(surfaceId: "B", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:B", expectedResumeId: idB, interactivePID: 1002)
+                          placeholderId: "wrapper-claim:B", expectedResumeId: idB, interactivePID: 1002,
+                          expiresAt: Date().addingTimeInterval(120))
         guard case .accepted = await store.captureDisplayedOpenCodeRoot(
             surfaceId: "A", id: idA, cwd: cwd, callerPID: 1001
         ) else { return XCTFail("A's TUI process must capture its resumed root") }
@@ -266,7 +268,8 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let idA = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         let idB = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
         await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: 1001)
+                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: 1001,
+                          expiresAt: Date().addingTimeInterval(120))
         guard case .accepted = await store.captureDisplayedOpenCodeRoot(
             surfaceId: "A", id: idA, cwd: cwd, callerPID: 1001
         ) else { return XCTFail("A's TUI process must capture its resumed root") }
@@ -276,9 +279,11 @@ final class ConversationStoreFailureModeTests: XCTestCase {
             cwd: cwd,
             placeholderId: "wrapper-claim:B:resume",
             expectedResumeId: idB,
-            interactivePID: 1002
+            interactivePID: 1002,
+            expiresAt: Date().addingTimeInterval(120)
         )
-        XCTAssertEqual(claim.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(idB))
+        guard case .accepted(let claimRef) = claim else { return XCTFail("B's resume claim should be accepted") }
+        XCTAssertEqual(claimRef.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(idB))
 
         let conflict = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: 1001)
         guard case .conflict(let owners, let preserved) = conflict else {
@@ -295,6 +300,7 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         XCTAssertEqual(ref.id, idB)
         XCTAssertFalse(ref.placeholder)
         XCTAssertNil(ref.payload?[ConversationLifecyclePayloadKey.expectedResumeID])
+        XCTAssertNil(ref.payload?[ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs])
         XCTAssertEqual(ref.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID], .number(1002))
 
         let afterCapture = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: 1001)
@@ -308,7 +314,8 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let store = ConversationStore()
         let id = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:A", expectedResumeId: id, interactivePID: 1001)
+                          placeholderId: "wrapper-claim:A", expectedResumeId: id, interactivePID: 1001,
+                          expiresAt: Date().addingTimeInterval(120))
 
         let spoofed = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: id, cwd: cwd, callerPID: 2002)
         guard case .unauthorized = spoofed else {
@@ -353,6 +360,79 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         XCTAssertTrue(MailboxNativeDoorbell.openCodePluginPeerMatches(peerPID: 1001, agentPID: 1001))
         XCTAssertFalse(MailboxNativeDoorbell.openCodePluginPeerMatches(peerPID: 2002, agentPID: 1001),
                        "a shared-server tool subprocess cannot register as the TUI peer")
+    }
+
+    func testOpenCodeChildRouteDropsExactBindingAndHoldsTypedMail() async {
+        let store = ConversationStore()
+        let rootID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let childID = "ses_0fd8cb310ffe2of6OsP2qYz4Q5"
+        await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
+                          placeholderId: "wrapper-claim:A", expectedResumeId: rootID, interactivePID: 1001,
+                          expiresAt: Date().addingTimeInterval(120))
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: rootID, cwd: cwd, callerPID: 1001
+        ) else { return XCTFail("root route should bind before switching to a child") }
+
+        let result = await store.markDisplayedOpenCodeRouteUnbound(
+            surfaceId: "A", id: childID, cwd: cwd, routeState: "child", callerPID: 1001
+        )
+        guard case .accepted(let childRef) = result else { return XCTFail("TUI child state should be accepted") }
+        XCTAssertTrue(childRef.placeholder)
+        XCTAssertTrue(childRef.diagnosticReason?.contains("child session") ?? false)
+        XCTAssertEqual(childRef.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID], .number(1001))
+        XCTAssertNil(childRef.payload?[ConversationLifecyclePayloadKey.expectedResumeID])
+        XCTAssertNil(childRef.payload?[ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs])
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForUnboundOpenCodeTUI(conversation: childRef))
+
+        let nextOwner = await store.claim(
+            surfaceId: "B", kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:B:resume", expectedResumeId: rootID,
+            interactivePID: 1002, expiresAt: Date().addingTimeInterval(120)
+        )
+        guard case .accepted(let nextOwnerRef) = nextOwner else { return XCTFail("another panel may resume the released root") }
+        XCTAssertEqual(nextOwnerRef.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(rootID),
+                       "a child display must release the prior root's ownership")
+    }
+
+    func testOpenCodeNoRouteDoesNotRetainPreviousExactRoot() async {
+        let store = ConversationStore()
+        let rootID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
+                          placeholderId: "wrapper-claim:A", expectedResumeId: rootID, interactivePID: 1001,
+                          expiresAt: Date().addingTimeInterval(120))
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: rootID, cwd: cwd, callerPID: 1001
+        ) else { return XCTFail("root route should bind before navigating home") }
+
+        let result = await store.markDisplayedOpenCodeRouteUnbound(
+            surfaceId: "A", id: rootID, cwd: cwd, routeState: "no-route", callerPID: 1001
+        )
+        guard case .accepted(let ref) = result else { return XCTFail("the home route should unbind its old root") }
+        XCTAssertTrue(ref.placeholder)
+        XCTAssertTrue(ref.diagnosticReason?.contains("no displayed session") ?? false)
+        XCTAssertTrue(MailboxNativeDoorbell.blocksTypedForUnboundOpenCodeTUI(conversation: ref))
+    }
+
+    func testExpiredOpenCodeResumeReservationDoesNotBlockAnotherPanel() async throws {
+        let store = ConversationStore()
+        let id = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let initial = await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
+                                        placeholderId: "wrapper-claim:A", expectedResumeId: id, interactivePID: 1001,
+                                        expiresAt: Date().addingTimeInterval(0.2))
+        guard case .accepted(let initialRef) = initial else { return XCTFail("initial reservation should be accepted") }
+        XCTAssertEqual(initialRef.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(id))
+        try await Task.sleep(for: .milliseconds(400))
+
+        let next = await store.claim(
+            surfaceId: "B", kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:B", expectedResumeId: id,
+            interactivePID: 1002, expiresAt: Date().addingTimeInterval(120)
+        )
+        guard case .accepted(let nextRef) = next else { return XCTFail("the next panel should be allowed to reserve after expiry") }
+        XCTAssertEqual(nextRef.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(id))
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "B", id: id, cwd: cwd, callerPID: 1002
+        ) else { return XCTFail("the expired reservation must not retain ownership") }
     }
 
     // MARK: - Row: Wrapper not on PATH (system update)

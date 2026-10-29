@@ -134,7 +134,7 @@ PY
     # the effective operator plugin list in memory and fails closed on invalid
     # or unreadable config. It never edits cli.json or an explicit override.
     if [[ -t 0 && -t 1 && "${1:-}" != "run" && -n "${C11_AGENT_INTERACTIVE_PID:-}" &&
-          "${C11_OPENCODE_NATIVE_MAIL_DISABLED:-}" != "1" && -x "$config_helper" ]]; then
+          -x "$config_helper" ]]; then
         v2_plugin_dir="$self_dir/../skills/opencode-plugins/c11-opencode-v2"
         if [[ -d "$v2_plugin_dir" ]]; then
             composed="$(python3 "$config_helper" compose "$v2_plugin_dir" 2>/dev/null)" &&

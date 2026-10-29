@@ -9,6 +9,7 @@ struct ConversationIdentity: Hashable, Sendable {
 enum ConversationLifecyclePayloadKey {
     static let invalidatedConversationID = "invalidated_conversation_id"
     static let expectedResumeID = "expected_resume_id"
+    static let resumeExpiresAtEpochMs = "resume_expires_at_epoch_ms"
     static let openCodeTuiPID = "opencode_tui_pid"
 }
 
@@ -26,6 +27,11 @@ enum ConversationClaimResult: Sendable, Equatable {
 enum DisplayedOpenCodeCaptureResult: Sendable, Equatable {
     case accepted(ConversationRef)
     case conflict(ownerSurfaceIds: [String], preservedRef: ConversationRef?)
+    case unauthorized
+}
+
+enum OpenCodeUnboundRouteResult: Sendable, Equatable {
+    case accepted(ConversationRef)
     case unauthorized
 }
 
@@ -527,10 +533,13 @@ extension ConversationStore {
             if let existing, existing.kind == kind, !existing.placeholder, !existing.id.isEmpty {
                 payload = [ConversationLifecyclePayloadKey.invalidatedConversationID: .string(existing.id)]
             }
-            if let expectedResumeId,
+            if let expectedResumeId, let expiresAt,
                displayedOpenCodeOwners(for: expectedResumeId, excluding: surfaceId).isEmpty {
                 payload = (payload ?? [:]).merging([
-                    ConversationLifecyclePayloadKey.expectedResumeID: .string(expectedResumeId)
+                    ConversationLifecyclePayloadKey.expectedResumeID: .string(expectedResumeId),
+                    ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs: .number(
+                        (expiresAt.timeIntervalSince1970 * 1_000).rounded(.down)
+                    )
                 ]) { _, new in new }
             }
             if let interactivePID, interactivePID > 0 {
@@ -650,6 +659,7 @@ extension ConversationStore {
 
         var payload = current.payload ?? [:]
         payload.removeValue(forKey: ConversationLifecyclePayloadKey.expectedResumeID)
+        payload.removeValue(forKey: ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs)
         let ref = ConversationRef(
             kind: "opencode",
             id: id,
@@ -668,9 +678,69 @@ extension ConversationStore {
         return .accepted(bySurface[surfaceId]?.active ?? ref)
     }
 
-    private func expectedOpenCodeResumeID(in ref: ConversationRef) -> String? {
+    /// Mark a route as pending or child before it can receive typed fallback.
+    /// Exact ownership is removed unless the requested route is already the
+    /// same exact root or the wrapper has reserved this exact resume ID.
+    @discardableResult
+    func markDisplayedOpenCodeRouteUnbound(
+        surfaceId: String,
+        id: String,
+        cwd: String?,
+        routeState: String,
+        callerPID: Int32?,
+        capturedAt: Date = Date()
+    ) -> OpenCodeUnboundRouteResult {
+        guard (["pending", "child", "no-route"].contains(routeState)),
+              isValidOpencodeSessionId(id),
+              let callerPID, callerPID > 0,
+              let current = bySurface[surfaceId]?.active,
+              expectedOpenCodeTuiPID(in: current) == callerPID else {
+            return .unauthorized
+        }
+        if routeState == "pending", !current.placeholder, current.id == id {
+            return .accepted(current)
+        }
+        let reservedID = expectedOpenCodeResumeID(in: current)
+        if routeState == "pending", reservedID == id {
+            return .accepted(current)
+        }
+
+        var payload = current.payload ?? [:]
+        payload.removeValue(forKey: ConversationLifecyclePayloadKey.expectedResumeID)
+        payload.removeValue(forKey: ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs)
+        if !current.placeholder, !current.id.isEmpty {
+            payload[ConversationLifecyclePayloadKey.invalidatedConversationID] = .string(current.id)
+        }
+        let detail: String
+        switch routeState {
+        case "child": detail = "is a child session"
+        case "no-route": detail = "has no displayed session"
+        default: detail = "is awaiting root verification"
+        }
+        let ref = ConversationRef(
+            kind: "opencode",
+            id: "wrapper-claim:\(surfaceId):unbound-route",
+            placeholder: true,
+            cwd: cwd ?? current.cwd,
+            capturedAt: capturedAt,
+            capturedVia: .hook,
+            state: .unknown,
+            diagnosticReason: "OpenCode displayed route \(id) \(detail); no root binding",
+            payload: payload.isEmpty ? nil : payload
+        )
+        var snap = bySurface[surfaceId] ?? .empty
+        snap.active = ref
+        bySurface[surfaceId] = snap
+        _ = auditGlobalOwnership()
+        return .accepted(bySurface[surfaceId]?.active ?? ref)
+    }
+
+    private func expectedOpenCodeResumeID(in ref: ConversationRef, now: Date = Date()) -> String? {
         guard ref.kind == "opencode", ref.placeholder,
-              case .string(let expectedID)? = ref.payload?[ConversationLifecyclePayloadKey.expectedResumeID] else {
+              case .string(let expectedID)? = ref.payload?[ConversationLifecyclePayloadKey.expectedResumeID],
+              case .number(let expiresAtMs)? = ref.payload?[ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs],
+              expiresAtMs.isFinite,
+              expiresAtMs > now.timeIntervalSince1970 * 1_000 else {
             return nil
         }
         return expectedID
@@ -694,14 +764,14 @@ extension ConversationStore {
         return refreshed
     }
 
-    private func displayedOpenCodeOwners(for id: String, excluding surfaceId: String) -> [String] {
+    private func displayedOpenCodeOwners(for id: String, excluding surfaceId: String, now: Date = Date()) -> [String] {
         bySurface.compactMap { ownerSurfaceId, conversations in
             guard ownerSurfaceId != surfaceId,
                   let ref = conversations.active,
                   ref.kind == "opencode",
                   ref.state != .tombstoned,
                   ref.state != .unsupported else { return nil }
-            if (!ref.placeholder && ref.id == id) || expectedOpenCodeResumeID(in: ref) == id {
+            if (!ref.placeholder && ref.id == id) || expectedOpenCodeResumeID(in: ref, now: now) == id {
                 return ownerSurfaceId
             }
             return nil

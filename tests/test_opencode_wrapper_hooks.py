@@ -419,6 +419,16 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     assert claim_payloads(c11_log), c11_log
 
 
+def test_v2_native_mail_disable_keeps_identity_capture_plugin() -> None:
+    code, _, state, _, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True, version="2.0.25", native_disabled=True,
+    )
+    assert code == 0, stderr
+    assert state["tui_claimed"] == "1", state
+    assert state["cli_content"] is not None, "disabling native mail must not disable exact route capture"
+    assert json.loads(state["cli_content"])["plugins"][-1]["package"].endswith("/c11-opencode-v2"), state
+
+
 def test_unknown_or_timed_out_versions_receive_no_c11_plugins() -> None:
     for options in ({"version": "2.0.26"}, {"version": "garbage"},
                     {"version": "2.0.25", "version_delay": 2}):
@@ -441,5 +451,6 @@ if __name__ == "__main__":
     test_native_tui_requires_interactive_launch_and_free_runtime_slot()
     test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch()
     test_v2_falls_back_for_invalid_config_and_failed_reservation()
+    test_v2_native_mail_disable_keeps_identity_capture_plugin()
     test_unknown_or_timed_out_versions_receive_no_c11_plugins()
     print("PASS: OpenCode v1/v2 wrappers preserve tenant config and fail closed")

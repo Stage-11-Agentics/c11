@@ -31,6 +31,25 @@ extension TerminalController {
         }
     }
 
+    /// Conversation wrapper calls carry a literal panel UUID, which can be
+    /// resolved without touching AppKit. Keep legacy handle refs working with
+    /// one short main-actor lookup, but keep the high-frequency OpenCode route
+    /// stream off main.
+    private nonisolated func v2ResolveConversationSurfaceOnWorker(
+        params: [String: Any]
+    ) -> Result<UUID, V2CallResult> {
+        if let rawSurfaceID = v2String(params, "surface_id"),
+           let surfaceID = UUID(uuidString: rawSurfaceID) {
+            return .success(surfaceID)
+        }
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { self.v2ResolveSurfaceForConversation(params: params) }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { self.v2ResolveSurfaceForConversation(params: params) }
+        }
+    }
+
     /// Accept an exact Codex conversation id reported by a tool subprocess
     /// running inside the target Codex session. Kind and provenance are fixed
     /// by this dedicated method; callers cannot relabel the report.
@@ -77,14 +96,14 @@ extension TerminalController {
         ])
     }
 
-    private func v2ConversationClaim(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2ConversationClaim(params: [String: Any]) -> V2CallResult {
         if ConversationStorePolicy.isDisabled {
             return .ok(["disabled": true, "kill_switch": "CMUX_DISABLE_CONVERSATION_STORE"])
         }
         guard let kind = v2String(params, "kind"), !kind.isEmpty else {
             return .err(code: "invalid_kind", message: "kind required", data: nil)
         }
-        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        let surfaceResult = v2ResolveConversationSurfaceOnWorker(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
             return .err(code: "internal_error", message: "panel resolution", data: nil)
@@ -105,6 +124,7 @@ extension TerminalController {
             }
         }
         let interactivePID: Int32?
+        let interactiveProcessStartTime: UInt64?
         if params["interactive_pid"] != nil {
             guard kind == "opencode", let rawPID = v2Int(params, "interactive_pid"),
                   rawPID > 0, rawPID <= Int(Int32.max) else {
@@ -122,9 +142,17 @@ extension TerminalController {
                             message: "interactive_pid must identify the foreground OpenCode TUI for this terminal",
                             data: nil)
             }
+            guard let tuiProcess = MailboxAgentForeground.processTerminalInfo(pid: claimedTuiPID),
+                  !tuiProcess.isZombie, tuiProcess.startTime > 0 else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "interactive_pid no longer identifies a live OpenCode TUI",
+                            data: nil)
+            }
             interactivePID = claimedTuiPID
+            interactiveProcessStartTime = tuiProcess.startTime
         } else {
             interactivePID = nil
+            interactiveProcessStartTime = nil
         }
         guard kind != "opencode" || interactivePID != nil else {
             return .err(
@@ -139,9 +167,10 @@ extension TerminalController {
             ("recovery_xdg_data_home", ConversationLifecyclePayloadKey.openCodeRecoveryXDGDataHome),
             ("recovery_database_override", ConversationLifecyclePayloadKey.openCodeRecoveryDatabaseOverride),
         ]
-        if kind == "opencode", interactivePID != nil {
+        if kind == "opencode", let interactivePID, let interactiveProcessStartTime {
             var recoveryPayload: [String: PersistedJSONValue] = [
-                ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion: .number(1)
+                ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion: .number(1),
+                ConversationLifecyclePayloadKey.openCodeTuiProcessStartTime: .number(Double(interactiveProcessStartTime))
             ]
             for (parameter, key) in recoveryClaimParameters {
                 guard let raw = params[parameter] else { continue }
@@ -298,17 +327,7 @@ extension TerminalController {
         // short main-thread slice. Actor-store waits below remain on the socket
         // worker and cannot freeze the UI.
         let surfaceResult: Result<UUID, V2CallResult>
-        if Thread.isMainThread {
-            surfaceResult = MainActor.assumeIsolated {
-                self.v2ResolveSurfaceForConversation(params: params)
-            }
-        } else {
-            surfaceResult = DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    self.v2ResolveSurfaceForConversation(params: params)
-                }
-            }
-        }
+        surfaceResult = v2ResolveConversationSurfaceOnWorker(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
             return .err(code: "internal_error", message: "panel resolution", data: nil)

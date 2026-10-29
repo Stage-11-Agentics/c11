@@ -75,6 +75,33 @@ if [[ "$opencode_version" == 2.0.25 ]]; then
         export C11_AGENT_INTERACTIVE_PID=$$
     fi
 
+    if [[ -n "$c11_bin" ]]; then
+        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" set-agent --type opencode >/dev/null 2>&1 ) &
+        disown 2>/dev/null || true
+        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" agent-hook idle >/dev/null 2>&1 ) &
+        disown 2>/dev/null || true
+    fi
+    export C11_AGENT_HOOK_CLI="$c11_bin"
+
+    # Validate the effective v2 plugin config before making an ownership
+    # reservation. A malformed or unavailable config must not leave a typed
+    # mail gate claiming that the TUI plugin is active.
+    v2_plugin_ready=0
+    if [[ -t 0 && -t 1 && "${1:-}" != "run" && -n "${C11_AGENT_INTERACTIVE_PID:-}" &&
+          -x "$config_helper" ]]; then
+        v2_plugin_dir="$self_dir/../skills/opencode-plugins/c11-opencode-v2"
+        if [[ -d "$v2_plugin_dir" ]]; then
+            if composed="$(python3 "$config_helper" compose "$v2_plugin_dir")"; then
+                export OPENCODE_CLI_CONFIG_CONTENT="$composed"
+                v2_plugin_ready=1
+            else
+                echo "c11 OpenCode v2 integration disabled: CLI plugin config could not be composed safely" >&2
+            fi
+        else
+            echo "c11 OpenCode v2 integration disabled: bundled TUI plugin is missing" >&2
+        fi
+    fi
+
     # Claim this exact TUI process before OpenCode initializes. The TUI plugin
     # later captures through its own socket peer PID, not environment inherited
     # by a shared-server tool subprocess.
@@ -90,7 +117,8 @@ if [[ "$opencode_version" == 2.0.25 ]]; then
             -s?*) expected_session="${launch_args[$arg_index]#-s}"; break ;;
         esac
     done
-    if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" ]]; then
+    [[ -z "$expected_session" ]] || export C11_OPENCODE_EXPECTED_RESUME_ID="$expected_session"
+    if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" && "$v2_plugin_ready" == "1" ]]; then
         if [[ -n "$c11_bin" ]] && command -v python3 >/dev/null 2>&1; then
             claim_payload="$(python3 - "$c11_panel" "$PWD" "$C11_AGENT_INTERACTIVE_PID" "$expected_session" <<'PY'
 import json, os, sys, time
@@ -146,31 +174,30 @@ PY
         fi
     fi
 
-    if [[ -n "$c11_bin" ]]; then
-        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" set-agent --type opencode >/dev/null 2>&1 ) &
-        disown 2>/dev/null || true
-        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" agent-hook idle >/dev/null 2>&1 ) &
-        disown 2>/dev/null || true
-    fi
-
-    # CLI-content plugins are the v2 TUI extension seam. The helper composes
-    # the effective operator plugin list in memory and fails closed on invalid
-    # or unreadable config. It never edits cli.json or an explicit override.
-    if [[ -t 0 && -t 1 && "${1:-}" != "run" && -n "${C11_AGENT_INTERACTIVE_PID:-}" &&
-          -x "$config_helper" ]]; then
-        v2_plugin_dir="$self_dir/../skills/opencode-plugins/c11-opencode-v2"
-        if [[ -d "$v2_plugin_dir" ]]; then
-            composed="$(python3 "$config_helper" compose "$v2_plugin_dir" 2>/dev/null)" &&
-                export OPENCODE_CLI_CONFIG_CONTENT="$composed"
-        fi
-    fi
-    export C11_AGENT_HOOK_CLI="$c11_bin"
     exec "$REAL_OPENCODE" "$@"
 fi
 
-# Unknown versions get no c11 extension, because neither panel ownership nor
-# config loading behavior is proven. v1 keeps the original supported path.
+# Unknown versions keep c11's baseline terminal lifecycle tracking, but get no
+# version-specific plugin or session identity behavior.
 if [[ "$opencode_version" != 1.* ]]; then
+    if [[ -t 0 && -t 1 && "${1:-}" != "run" ]]; then
+        export C11_AGENT_INTERACTIVE_PID=$$
+    fi
+    if [[ -n "$c11_bin" ]]; then
+        (
+            C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+                "$c11_bin" --socket "$c11_socket" set-agent --type opencode \
+                >/dev/null 2>&1
+        ) &
+        disown 2>/dev/null || true
+        (
+            C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+                "$c11_bin" --socket "$c11_socket" agent-hook idle \
+                >/dev/null 2>&1
+        ) &
+        disown 2>/dev/null || true
+    fi
+    export C11_AGENT_HOOK_CLI="$c11_bin"
     exec "$REAL_OPENCODE" "$@"
 fi
 

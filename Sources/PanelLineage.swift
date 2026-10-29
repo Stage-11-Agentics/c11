@@ -7,6 +7,7 @@ final class PanelLineage {
     static let shared = PanelLineage()
 
     private var panelClosedForGoodObservers: [(Set<UUID>) -> Void] = []
+    private var didInstallConversationStoreCloseObserver = false
     private(set) var store = PanelLineageStore()
     private var creatorPanelId: UUID?
     private var closedPanelIds: Set<UUID> = []
@@ -15,6 +16,19 @@ final class PanelLineage {
 
     func addPanelClosedForGoodObserver(_ body: @escaping (Set<UUID>) -> Void) {
         panelClosedForGoodObservers.append(body)
+    }
+
+    func installConversationStoreCloseObserver() {
+        guard !didInstallConversationStoreCloseObserver else { return }
+        didInstallConversationStoreCloseObserver = true
+        addPanelClosedForGoodObserver { panelIds in
+            Task.detached(priority: .utility) {
+                let store = ConversationStore.shared
+                for panelId in panelIds {
+                    await store.clear(surfaceId: panelId.uuidString)
+                }
+            }
+        }
     }
 
     func withCreator<T>(_ panelId: UUID?, operation: () throws -> T) rethrows -> T {

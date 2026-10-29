@@ -11,6 +11,7 @@ enum ConversationLifecyclePayloadKey {
     static let expectedResumeID = "expected_resume_id"
     static let resumeExpiresAtEpochMs = "resume_expires_at_epoch_ms"
     static let openCodeTuiPID = "opencode_tui_pid"
+    static let openCodeTuiProcessStartTime = "opencode_tui_process_start_time"
     static let openCodeRecoveryContextVersion = OpencodeRecoveryStoreContextKey.version
     static let openCodeRecoveryHome = OpencodeRecoveryStoreContextKey.home
     static let openCodeRecoveryXDGDataHome = OpencodeRecoveryStoreContextKey.xdgDataHome
@@ -20,6 +21,7 @@ enum ConversationLifecyclePayloadKey {
     /// A generic hook payload must never mint or replace them.
     static let genericPushReservedKeys: Set<String> = [
         openCodeTuiPID,
+        openCodeTuiProcessStartTime,
         openCodeRecoveryContextVersion,
         openCodeRecoveryHome,
         openCodeRecoveryXDGDataHome,
@@ -1034,11 +1036,36 @@ extension ConversationStore {
                   ref.kind == "opencode",
                   ref.state != .tombstoned,
                   ref.state != .unsupported else { return nil }
+            guard isLiveOpenCodeTUIOwner(ref) else { return nil }
             if (!ref.placeholder && ref.id == id) || expectedOpenCodeResumeID(in: ref, now: now) == id {
                 return ownerSurfaceId
             }
             return nil
         }.sorted()
+    }
+
+    /// A displayed v2 route owns its session only while the TUI process that
+    /// authenticated the claim still exists. The start-time stamp distinguishes
+    /// a dead TUI from a later process that reused its pid. Older persisted
+    /// claims lack the stamp, so their pid must still exist to retain ownership.
+    /// Legacy v1 captures have no pid marker and keep their prior ownership rule.
+    private func isLiveOpenCodeTUIOwner(_ ref: ConversationRef) -> Bool {
+        guard let rawPIDValue = ref.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] else {
+            return true
+        }
+        guard case .number(let rawPID) = rawPIDValue,
+              rawPID.isFinite, rawPID > 1, rawPID <= Double(Int32.max),
+              rawPID.rounded(.towardZero) == rawPID else { return true }
+        guard let process = MailboxAgentForeground.processTerminalInfo(pid: pid_t(rawPID)),
+              !process.isZombie else { return false }
+        if let rawStart = ref.payload?[ConversationLifecyclePayloadKey.openCodeTuiProcessStartTime] {
+            guard case .number(let expectedStart) = rawStart,
+                  expectedStart.isFinite, expectedStart > 0,
+                  expectedStart < Double(UInt64.max),
+                  expectedStart.rounded(.towardZero) == expectedStart else { return true }
+            return process.startTime == UInt64(expectedStart)
+        }
+        return true
     }
 
     /// Apply exact identity read by the target Codex subprocess. This is a

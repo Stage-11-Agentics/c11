@@ -236,20 +236,21 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let store = ConversationStore()
         let idA = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         let idB = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let livePID = Int32(ProcessInfo.processInfo.processIdentifier)
         await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: 1001,
+                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: livePID,
                           expiresAt: Date().addingTimeInterval(120))
         await store.claim(surfaceId: "B", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:B", expectedResumeId: idB, interactivePID: 1002,
+                          placeholderId: "wrapper-claim:B", expectedResumeId: idB, interactivePID: livePID,
                           expiresAt: Date().addingTimeInterval(120))
         guard case .accepted = await store.captureDisplayedOpenCodeRoot(
-            surfaceId: "A", id: idA, cwd: cwd, callerPID: 1001
+            surfaceId: "A", id: idA, cwd: cwd, callerPID: livePID
         ) else { return XCTFail("A's TUI process must capture its resumed root") }
         guard case .accepted = await store.captureDisplayedOpenCodeRoot(
-            surfaceId: "B", id: idB, cwd: cwd, callerPID: 1002
+            surfaceId: "B", id: idB, cwd: cwd, callerPID: livePID
         ) else { return XCTFail("B's TUI process must capture its resumed root") }
 
-        let result = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: 1001)
+        let result = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: livePID)
         guard case .conflict(let owners, let preserved) = result else {
             return XCTFail("a route change to another panel's session must be rejected")
         }
@@ -267,11 +268,12 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let store = ConversationStore()
         let idA = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         let idB = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let livePID = Int32(ProcessInfo.processInfo.processIdentifier)
         await store.claim(surfaceId: "A", kind: "opencode", cwd: cwd,
-                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: 1001,
+                          placeholderId: "wrapper-claim:A", expectedResumeId: idA, interactivePID: livePID,
                           expiresAt: Date().addingTimeInterval(120))
         guard case .accepted = await store.captureDisplayedOpenCodeRoot(
-            surfaceId: "A", id: idA, cwd: cwd, callerPID: 1001
+            surfaceId: "A", id: idA, cwd: cwd, callerPID: livePID
         ) else { return XCTFail("A's TUI process must capture its resumed root") }
         let claim = await store.claim(
             surfaceId: "B",
@@ -279,13 +281,13 @@ final class ConversationStoreFailureModeTests: XCTestCase {
             cwd: cwd,
             placeholderId: "wrapper-claim:B:resume",
             expectedResumeId: idB,
-            interactivePID: 1002,
+            interactivePID: livePID,
             expiresAt: Date().addingTimeInterval(120)
         )
         guard case .accepted(let claimRef) = claim else { return XCTFail("B's resume claim should be accepted") }
         XCTAssertEqual(claimRef.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(idB))
 
-        let conflict = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: 1001)
+        let conflict = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: livePID)
         guard case .conflict(let owners, let preserved) = conflict else {
             return XCTFail("B's wrapper reservation must protect its ID before TUI setup")
         }
@@ -295,15 +297,15 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let activeReservation = await store.active(for: "B")
         XCTAssertEqual(activeReservation?.placeholder, true)
 
-        let captured = await store.captureDisplayedOpenCodeRoot(surfaceId: "B", id: idB, cwd: cwd, callerPID: 1002)
+        let captured = await store.captureDisplayedOpenCodeRoot(surfaceId: "B", id: idB, cwd: cwd, callerPID: livePID)
         guard case .accepted(let ref) = captured else { return XCTFail("the reservation owner must consume its claim") }
         XCTAssertEqual(ref.id, idB)
         XCTAssertFalse(ref.placeholder)
         XCTAssertNil(ref.payload?[ConversationLifecyclePayloadKey.expectedResumeID])
         XCTAssertNil(ref.payload?[ConversationLifecyclePayloadKey.resumeExpiresAtEpochMs])
-        XCTAssertEqual(ref.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID], .number(1002))
+        XCTAssertEqual(ref.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID], .number(Double(livePID)))
 
-        let afterCapture = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: 1001)
+        let afterCapture = await store.captureDisplayedOpenCodeRoot(surfaceId: "A", id: idB, cwd: cwd, callerPID: livePID)
         guard case .conflict(let ownersAfterCapture, _) = afterCapture else {
             return XCTFail("the captured exact ref must continue protecting B from A")
         }
@@ -345,6 +347,12 @@ final class ConversationStoreFailureModeTests: XCTestCase {
             payload: [ConversationLifecyclePayloadKey.openCodeTuiPID: .number(2002)]
         )
         XCTAssertNil(forgedClaim, "generic pushes cannot write server-owned TUI claim metadata")
+
+        let forgedProcessStart = await store.push(
+            surfaceId: "A", kind: "opencode", id: attackerID, source: .hook,
+            payload: [ConversationLifecyclePayloadKey.openCodeTuiProcessStartTime: .number(1)]
+        )
+        XCTAssertNil(forgedProcessStart, "generic pushes cannot forge the authenticated TUI process generation")
 
         let forgedRecoveryContext = await store.push(
             surfaceId: "A", kind: "opencode", id: attackerID, source: .hook,
@@ -612,6 +620,36 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         guard case .accepted = await store.captureDisplayedOpenCodeRoot(
             surfaceId: "B", id: id, cwd: cwd, callerPID: 1002
         ) else { return XCTFail("the expired reservation must not retain ownership") }
+    }
+
+    func testOpenCodeProcessStartMismatchReleasesDisplayedSessionOwner() async {
+        let store = ConversationStore()
+        let id = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let pid = Int32(ProcessInfo.processInfo.processIdentifier)
+        guard let process = MailboxAgentForeground.processTerminalInfo(pid: pid) else {
+            return XCTFail("test process should be visible to the kernel")
+        }
+        let staleStart = Double(process.startTime + 1)
+        await store.claim(
+            surfaceId: "A", kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:A", interactivePID: pid,
+            openCodeRecoveryPayload: [
+                ConversationLifecyclePayloadKey.openCodeTuiProcessStartTime: .number(staleStart)
+            ]
+        )
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: id, cwd: cwd, callerPID: pid
+        ) else { return XCTFail("the first TUI should capture its route") }
+
+        let next = await store.claim(
+            surfaceId: "B", kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:B:resume", expectedResumeId: id,
+            interactivePID: pid, expiresAt: Date().addingTimeInterval(120)
+        )
+        guard case .accepted(let reservation) = next else {
+            return XCTFail("a pid reused by another process must not retain the old route")
+        }
+        XCTAssertEqual(reservation.payload?[ConversationLifecyclePayloadKey.expectedResumeID], .string(id))
     }
 
     // MARK: - Row: Wrapper not on PATH (system update)

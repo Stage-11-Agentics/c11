@@ -2605,8 +2605,10 @@ class TerminalController {
         // C11-468: store read and transcript stats off-main; one main hop
         // decides and schedules the typing.
         "conversation.resume",
-        // Conversation route writes can wait briefly on the actor store; keep
-        // that bounded wait off main and hop only for target-handle resolution.
+        // Conversation claims and route writes can wait briefly on the actor
+        // store; keep that bounded wait off main and hop only for legacy
+        // target-handle resolution. Literal panel UUIDs need no AppKit lookup.
+        "conversation.claim",
         "conversation.push",
         "panel.send_text",
         "panel.send_key",

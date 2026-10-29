@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const transportCandidates = [
   process.env.C11_AGENT_HOOK_CLI && path.join(path.dirname(process.env.C11_AGENT_HOOK_CLI), 'mailbox-native.mjs'),
@@ -67,6 +71,32 @@ function c11(socketPath, method, params, timeout = 900) {
   });
 }
 
+async function claimTui(c11Bin, socketPath, panelID, agentPID) {
+  const payload = {
+    panel_id: panelID,
+    kind: 'opencode',
+    cwd: process.cwd(),
+    placeholder_id: `wrapper-claim:${panelID}`,
+    interactive_pid: agentPID,
+    expires_at_epoch_ms: Date.now() + 120_000,
+  };
+  const expectedResumeID = process.env.C11_OPENCODE_EXPECTED_RESUME_ID;
+  if (expectedResumeID) payload.expected_resume_id = expectedResumeID;
+  for (const [environment, parameter] of [
+    ['HOME', 'recovery_home'],
+    ['XDG_DATA_HOME', 'recovery_xdg_data_home'],
+    ['OPENCODE_DB', 'recovery_database_override'],
+  ]) {
+    if (Object.hasOwn(process.env, environment)) payload[parameter] = process.env[environment];
+  }
+  try {
+    await execFileAsync(c11Bin, [
+      '--socket', socketPath, 'rpc', 'conversation.claim', JSON.stringify(payload),
+    ], { timeout: 1_000, maxBuffer: 64 * 1024 });
+    return true;
+  } catch { return false; }
+}
+
 function sessionList(value, id) {
   try {
     if (typeof value === 'function') return value(id) ?? [];
@@ -107,12 +137,13 @@ export default {
     const c11Bin = process.env.C11_AGENT_HOOK_CLI;
     const nativeMailDisabled = process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED === '1';
     if (!panelID || !socketPath || !c11Bin || agentPID !== process.pid ||
-        process.env.C11_OPENCODE_TUI_CLAIMED !== '1' ||
-        process.env.C11_OPENCODE_TUI_CLAIM_FAILED === '1' ||
-        process.env.C11_OPENCODE_RESUME_RESERVATION_FAILED === '1' ||
         !context.ui?.router?.current || !context.data?.session?.get || !context.data?.listen) return;
 
     let disposed = false;
+    let tuiClaimed = process.env.C11_OPENCODE_TUI_CLAIMED === '1';
+    let claimAttempts = 0;
+    let nextClaimAt = 0;
+    let claimWarningLogged = false;
     let generation = 0;
     let visibleID;
     let boundID;
@@ -170,6 +201,22 @@ export default {
 
     const performCapture = async () => {
       if (disposed) return;
+      if (!tuiClaimed) {
+        if (Date.now() < nextClaimAt) return;
+        if (claimAttempts >= 10) {
+          if (!claimWarningLogged) {
+            claimWarningLogged = true;
+            console.warn('c11 OpenCode route capture disabled: authenticated panel claim was not acknowledged');
+          }
+          return;
+        }
+        claimAttempts++;
+        tuiClaimed = await claimTui(c11Bin, socketPath, panelID, agentPID);
+        if (!tuiClaimed) {
+          nextClaimAt = Date.now() + Math.min(1_000 * (2 ** (claimAttempts - 1)), 5_000);
+          return;
+        }
+      }
       const candidateID = currentRoute(context);
       if (candidateID !== visibleID) {
         const nextGeneration = ++generation;

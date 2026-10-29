@@ -274,7 +274,7 @@ def test_live_tui_runtime_loads_plugin() -> None:
 
 def test_existing_content_is_preserved_via_second_runtime_source() -> None:
     existing = '{"theme":"operator-owned"}'
-    code, _, state, _, stderr = run_wrapper(
+    code, _, state, c11_log, stderr = run_wrapper(
         live=True,
         argv=[],
         existing_content=existing,
@@ -419,7 +419,7 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
                claim.get("interactive_pid") == int(state["interactive_pid"]) for claim in claims), claims
 
     file_config = '{ // preserve all operator CLI settings\n "plugins": ["operator-file"], "theme": "dark", "model": "operator/model", }\n'
-    code, _, state, _, stderr = run_wrapper(
+    code, _, state, c11_log, stderr = run_wrapper(
         live=True, argv=[], interactive=True, version="2.0.25", cli_file=file_config,
     )
     assert code == 0, stderr
@@ -438,23 +438,25 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
 def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     valid_session = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
     malformed = '{"plugins": ["operator"],'
-    code, _, state, _, stderr = run_wrapper(
+    code, _, state, c11_log, stderr = run_wrapper(
         live=True, argv=["--session", valid_session], interactive=True,
         version="2.0.25", cli_content=malformed,
     )
     assert code == 0, stderr
     assert state["cli_content"] == malformed, state
-    assert state["resume_reserved"] == "1", state
+    assert state["resume_reserved"] is None and state["tui_claimed"] is None, state
+    assert not claim_payloads(c11_log), c11_log
 
     for malformed_plugins in ('{"plugins":[{"options":[]}]}',
                               '{"plugins":[{"package":"","options":{}}]}',
                               '{"plugins":[{"package":"operator/plugin","extra":true}]}'):
-        code, _, state, _, stderr = run_wrapper(
+        code, _, state, c11_log, stderr = run_wrapper(
             live=True, argv=[], interactive=True, version="2.0.25",
             cli_content=malformed_plugins,
         )
         assert code == 0, stderr
         assert state["cli_content"] == malformed_plugins, state
+        assert not claim_payloads(c11_log), c11_log
 
     code, _, state, c11_log, stderr = run_wrapper(
         live=True, argv=["-s", valid_session], interactive=True,
@@ -463,7 +465,7 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     assert code == 0, stderr
     assert state["resume_reservation_failed"] == "1", state
     assert state["tui_claim_failed"] == "1" and state["tui_claimed"] is None, state
-    assert state["cli_content"] is not None, "the TUI module self-disables on failed reservation"
+    assert state["cli_content"] is not None, "the TUI plugin stays loaded to retry the authenticated claim"
     assert claim_payloads(c11_log), c11_log
     assert sum("rpc conversation.claim" in line for line in c11_log) == 1, c11_log
 
@@ -486,7 +488,7 @@ def test_v2_native_mail_disable_keeps_identity_capture_plugin() -> None:
     assert json.loads(state["cli_content"])["plugins"][-1]["package"].endswith("/c11-opencode-v2"), state
 
 
-def test_unknown_or_timed_out_versions_receive_no_c11_plugins() -> None:
+def test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection() -> None:
     for options in ({"version": "2.0.26"}, {"version": "garbage"},
                     {"version": "2.0.25", "version_delay": 2}):
         code, argv, state, c11_log, stderr = run_wrapper(
@@ -495,8 +497,10 @@ def test_unknown_or_timed_out_versions_receive_no_c11_plugins() -> None:
         assert code == 0, stderr
         assert argv == ["--continue"], argv
         assert state["content"] is None and state["cli_content"] is None, state
-        assert state["tui_path"] is None and state["hook_cli"] is None, state
-        assert not any("set-agent" in line or "agent-hook" in line for line in c11_log), c11_log
+        assert state["tui_path"] is None and state["hook_cli"].endswith("/bin/c11"), state
+        assert int(state["interactive_pid"]) > 1, state
+        assert any("set-agent --type opencode" in line for line in c11_log), c11_log
+        assert any("agent-hook idle" in line for line in c11_log), c11_log
 
 
 if __name__ == "__main__":
@@ -509,5 +513,5 @@ if __name__ == "__main__":
     test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch()
     test_v2_falls_back_for_invalid_config_and_failed_reservation()
     test_v2_native_mail_disable_keeps_identity_capture_plugin()
-    test_unknown_or_timed_out_versions_receive_no_c11_plugins()
+    test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection()
     print("PASS: OpenCode v1/v2 wrappers preserve tenant config and fail closed")

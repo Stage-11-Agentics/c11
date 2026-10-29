@@ -2596,6 +2596,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         super.init()
         Self.shared = self
         PanelAttentionService.shared.installCloseObserver()
+        PanelLineage.shared.installConversationStoreCloseObserver()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

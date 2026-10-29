@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
@@ -18,17 +18,25 @@ async function until(predicate, timeout = 2000) {
 
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
-  nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0,
+  nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
-  const c11Binary = process.execPath;
+  const claimLog = `${dir}/claim.log`;
+  let c11Binary = process.execPath;
+  if (claimPending) {
+    c11Binary = `${dir}/c11`;
+    await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$C11_CLAIM_LOG"\nexit 0\n');
+    await chmod(c11Binary, 0o755);
+  }
   const envBefore = { ...process.env };
   for (const key of Object.keys(process.env)) if (/^(C11_|CMUX_)/.test(key)) delete process.env[key];
   Object.assign(process.env, {
     C11_SOCKET_PATH: socketPath, C11_PANEL_ID: 'panel-a',
     C11_AGENT_INTERACTIVE_PID: String(process.pid), C11_AGENT_HOOK_CLI: c11Binary,
-    C11_OPENCODE_TUI_CLAIMED: '1',
+    ...(claimPending
+      ? { C11_OPENCODE_TUI_CLAIM_FAILED: '1', C11_OPENCODE_EXPECTED_RESUME_ID: rootA, C11_CLAIM_LOG: claimLog }
+      : { C11_OPENCODE_TUI_CLAIMED: '1' }),
   });
   if (nativeMailDisabled) process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED = '1';
 
@@ -99,7 +107,7 @@ async function fixture(t, {
   };
   const plugin = (await import(pathToFileURL(new URL('../skills/opencode-plugins/c11-opencode-v2/tui.js', import.meta.url).pathname))).default;
   dispose = await plugin.setup(context);
-  return { state, subscriptions, frames, sockets };
+  return { state, subscriptions, frames, sockets, claimLog };
 }
 
 test('v2 TUI owns exact displayed root capture and confirmed native mail', { timeout: 5000 }, async t => {
@@ -120,6 +128,20 @@ test('v2 TUI owns exact displayed root capture and confirmed native mail', { tim
   f.state.callbacks.forEach(callback => callback({ details: { type: 'message.part.updated', data: { part: { ...part, type: 'text', text: doorbellText, sessionID: rootA, messageID: 'msg-a' } } } }));
   f.state.callbacks.forEach(callback => callback({ details: { type: 'message.updated', data: { info: { id: 'msg-a', sessionID: rootA, role: 'user' } } } }));
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'mail-a'));
+});
+
+test('v2 retries a failed wrapper claim before capturing its displayed root', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { claimPending: true });
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.displayed_root));
+  const lines = (await readFile(f.claimLog, 'utf8')).trim().split('\n');
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /rpc conversation\.claim/);
+  const payload = JSON.parse(lines[0].split('rpc conversation.claim ', 2)[1]);
+  assert.equal(payload.panel_id, 'panel-a');
+  assert.equal(payload.interactive_pid, process.pid);
+  assert.equal(payload.expected_resume_id, rootA);
+  const capture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.displayed_root);
+  assert.equal(capture.params.id, rootA);
 });
 
 test('v2 route retries capture after session-sync failure and delayed hydration while holding mailbox mail', { timeout: 5000 }, async t => {

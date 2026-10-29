@@ -1475,7 +1475,7 @@ extension TerminalController {
             var placementStrategy = "existing_area"
             var warningText: String?
             let createdPanel: BrowserPanel? = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
-                func addPanel(in pane: PaneID) -> BrowserPanel? {
+                @MainActor func addPanel(in pane: PaneID) -> BrowserPanel? {
                     ws.newBrowserSurface(
                         inPane: pane, url: url, focus: v2FocusAllowed(),
                         preferredProfileID: preferredProfileID,

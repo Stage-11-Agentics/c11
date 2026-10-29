@@ -169,7 +169,42 @@ export default {
     let lifecycleInFlight = false;
     let lifecycleRetryAt = 0;
     let shutdownSessionID;
+    let boundStatusConfirmed = false;
+    let boundStatus;
+    let statusCheckInFlight = false;
+    let statusCheckRetryAt = 0;
+    let lifecycleSignalRevision = 0;
     const pending = new Map();
+
+    const refreshBoundSessionStatus = async (sessionID, routeGeneration) => {
+      if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
+          currentRoute(context) !== sessionID || conflict || captureState !== 'bound' ||
+          sessionID === shutdownSessionID || boundStatusConfirmed || statusCheckInFlight ||
+          Date.now() < statusCheckRetryAt) return;
+      const signalRevision = lifecycleSignalRevision;
+      statusCheckInFlight = true;
+      try {
+        const active = await context.client.session.active();
+        if (!active || typeof active !== 'object' || Array.isArray(active)) throw new Error('invalid_active_sessions');
+        if (disposed || generation !== routeGeneration || lifecycleSignalRevision !== signalRevision ||
+            boundID !== sessionID || visibleID !== sessionID || currentRoute(context) !== sessionID ||
+            conflict || captureState !== 'bound' || sessionID === shutdownSessionID) return;
+        boundStatusConfirmed = true;
+        statusCheckRetryAt = 0;
+        boundStatus = Object.hasOwn(active, sessionID) ? 'running' : 'idle';
+        reportRootLifecycle(sessionID, boundStatus === 'running' ? 'working' : 'idle');
+      } catch {
+        if (!disposed && generation === routeGeneration && boundID === sessionID &&
+            visibleID === sessionID && currentRoute(context) === sessionID && !boundStatusConfirmed) {
+          // `data.session.status()` defaults unseen IDs to idle while its active
+          // map hydrates. Keep mail and idle reports closed until a real snapshot
+          // arrives; retry transient client/API failures from the route monitor.
+          statusCheckRetryAt = Date.now() + 500;
+        }
+      } finally {
+        statusCheckInFlight = false;
+      }
+    };
 
     const flushRootLifecycle = () => {
       const sessionID = boundID;
@@ -177,6 +212,7 @@ export default {
       const routeGeneration = generation;
       if (disposed || !sessionID || sessionID !== visibleID || currentRoute(context) !== sessionID ||
           conflict || captureState !== 'bound' || !activity || activity === reportedLifecycle ||
+          !boundStatusConfirmed ||
           (sessionID === shutdownSessionID && activity === 'idle') ||
           lifecycleInFlight || Date.now() < lifecycleRetryAt) return;
       lifecycleInFlight = true;
@@ -201,6 +237,7 @@ export default {
     const reportRootLifecycle = (sessionID, activity) => {
       if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
           currentRoute(context) !== sessionID || conflict || captureState !== 'bound' ||
+          !boundStatusConfirmed ||
           (sessionID === shutdownSessionID && activity === 'idle')) return;
       desiredLifecycle = activity;
       flushRootLifecycle();
@@ -212,18 +249,45 @@ export default {
       if (typeof stop === 'function') stopLifecycle.push(stop);
     };
     onSessionEvent('session.execution.started', event => {
-      if (event?.data?.sessionID === boundID) shutdownSessionID = undefined;
+      if (event?.data?.sessionID === boundID) {
+        shutdownSessionID = undefined;
+        boundStatusConfirmed = true;
+        boundStatus = 'running';
+        statusCheckRetryAt = 0;
+        lifecycleSignalRevision++;
+      }
       reportRootLifecycle(event?.data?.sessionID, 'working');
     });
     for (const type of ['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']) {
       onSessionEvent(type, event => {
         if (type === 'session.execution.interrupted' && event?.data?.reason === 'shutdown') {
-          if (event?.data?.sessionID === boundID) shutdownSessionID = boundID;
+          if (event?.data?.sessionID === boundID) {
+            shutdownSessionID = boundID;
+            boundStatusConfirmed = false;
+            boundStatus = undefined;
+            statusCheckRetryAt = 0;
+            lifecycleSignalRevision++;
+          }
           return;
+        }
+        if (event?.data?.sessionID === boundID) {
+          if (shutdownSessionID === boundID) return;
+          boundStatusConfirmed = true;
+          boundStatus = 'idle';
+          statusCheckRetryAt = 0;
+          lifecycleSignalRevision++;
         }
         reportRootLifecycle(event?.data?.sessionID, 'idle');
       });
     }
+    onSessionEvent('server.connected', () => {
+      if (!boundID || boundID !== visibleID) return;
+      boundStatusConfirmed = false;
+      boundStatus = undefined;
+      statusCheckRetryAt = 0;
+      lifecycleSignalRevision++;
+      nativeNotReady = true;
+    });
 
     const clearPending = () => {
       stopMailbox?.();
@@ -243,7 +307,8 @@ export default {
         deliver(message) {
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||
               message !== doorbellText || conflict || !boundID || boundID !== visibleID) throw sessionConflict();
-          if (!sessionReadyForMailbox(context, boundID)) {
+          if (!boundStatusConfirmed || boundStatus !== 'idle' || boundID === shutdownSessionID ||
+              !sessionReadyForMailbox(context, boundID)) {
             nativeNotReady = true;
             throw sessionNotReady();
           }
@@ -311,6 +376,10 @@ export default {
         desiredLifecycle = undefined;
         lifecycleRetryAt = 0;
         shutdownSessionID = undefined;
+        boundStatusConfirmed = false;
+        boundStatus = undefined;
+        statusCheckRetryAt = 0;
+        lifecycleSignalRevision++;
         nativeNotReady = false;
         captureState = candidateID ? 'waiting' : 'no-route';
         retryCaptureAt = 0;
@@ -408,9 +477,7 @@ export default {
         conflict = false;
         nativeNotReady = false;
         captureState = 'bound';
-        const status = context.data.session.status?.(candidateID);
-        if (status === 'running') reportRootLifecycle(candidateID, 'working');
-        else if (status === 'idle') reportRootLifecycle(candidateID, 'idle');
+        void refreshBoundSessionStatus(candidateID, routeGeneration);
         if (!nativeMailDisabled) {
           // Replace the provisional stream so a prior session_conflict
           // fallback ledger clears after this route becomes authoritative.
@@ -437,13 +504,11 @@ export default {
 
     const monitor = setInterval(() => {
       void capture().then(() => {
-        if (boundID && visibleID === boundID && currentRoute(context) === boundID && boundID !== shutdownSessionID) {
-          const status = context.data.session.status?.(boundID);
-          if (status === 'running') reportRootLifecycle(boundID, 'working');
-          else if (status === 'idle') reportRootLifecycle(boundID, 'idle');
-        }
+        if (boundID && visibleID === boundID && currentRoute(context) === boundID && boundID !== shutdownSessionID)
+          void refreshBoundSessionStatus(boundID, generation);
         flushRootLifecycle();
         if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
+            !boundStatusConfirmed || boundStatus !== 'idle' || boundID === shutdownSessionID ||
             !sessionReadyForMailbox(context, boundID)) return;
         nativeNotReady = false;
         stopMailbox?.();

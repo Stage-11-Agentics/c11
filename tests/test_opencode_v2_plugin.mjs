@@ -29,7 +29,7 @@ async function untilAsync(predicate, timeout = 2000) {
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
-  hookFailOnce = [], hookDelayActivity = '',
+  hookFailOnce = [], hookDelayActivity = '', activeSessions, activeFailureCount = 0, holdActiveSnapshot = false,
   promptResult = input => ({ id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } }),
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
@@ -61,7 +61,11 @@ async function fixture(t, {
   ]);
   const statusBySession = new Map([[rootA, status], [rootB, 'idle'], [child, 'idle']]);
   const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], lifecycleHandlers: [],
-    calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0 };
+    calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0, activeCalls: 0,
+    activeSessions: activeSessions ?? (status === 'running' ? { [rootA]: 'running' } : {}) };
+  state.activeSnapshotGate = holdActiveSnapshot
+    ? new Promise(resolve => { state.releaseActiveSnapshot = resolve; })
+    : Promise.resolve();
   state.emit = (type, sessionID, extra = {}) => {
     const event = { type, data: { sessionID, ...extra } };
     for (const item of [...state.lifecycleHandlers]) if (item.type === type) item.handler(event);
@@ -127,7 +131,15 @@ async function fixture(t, {
       },
       listen: callback => { state.callbacks.push(callback); return () => { state.callbacks = state.callbacks.filter(item => item !== callback); }; },
     },
-    client: { session: { prompt: input => { state.calls.push(input); return Promise.resolve(promptResult(input)); } } },
+    client: { session: {
+      active: async () => {
+        state.activeCalls++;
+        await state.activeSnapshotGate;
+        if (state.activeCalls <= activeFailureCount) throw new Error('active_snapshot_failed');
+        return { ...state.activeSessions };
+      },
+      prompt: input => { state.calls.push(input); return Promise.resolve(promptResult(input)); },
+    } },
   };
   const plugin = (await import(pathToFileURL(new URL('../skills/opencode-plugins/c11-opencode-v2/tui.js', import.meta.url).pathname))).default;
   dispose = await plugin.setup(context);
@@ -153,14 +165,54 @@ test('v2 TUI owns exact displayed root capture and confirms native mail from its
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'mail-a'));
 });
 
+test('v2 keeps resumed running roots closed until the authoritative active snapshot arrives', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { status: 'idle', activeSessions: { [rootA]: 'running' }, holdActiveSnapshot: true });
+  await until(() => f.subscriptions.length >= 2 && f.state.activeCalls === 1);
+  const stream = f.subscriptions.at(-1);
+
+  send(stream.socket, { type: 'deliver', delivery_id: 'resume-before-snapshot', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'resume-before-snapshot'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'resume-before-snapshot').reason, 'not_ready');
+  assert.equal(f.state.calls.length, 0, 'mail cannot reach a resumed root while its activity is unknown');
+  assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'), false,
+    'an unseen local status must not emit an idle report');
+
+  f.state.releaseActiveSnapshot();
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
+  send(stream.socket, { type: 'deliver', delivery_id: 'resume-still-running', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'resume-still-running'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'resume-still-running').reason, 'not_ready');
+  assert.equal(f.state.calls.length, 0, 'confirmed running roots remain closed to native mail');
+});
+
+test('v2 retries a failed active snapshot while holding mail and lifecycle idle closed', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { activeFailureCount: 1, activeSessions: {} });
+  await until(() => f.subscriptions.length >= 2 && f.state.activeCalls === 1);
+  const stream = f.subscriptions.at(-1);
+  send(stream.socket, { type: 'deliver', delivery_id: 'snapshot-failed', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'snapshot-failed'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'snapshot-failed').reason, 'not_ready');
+  assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'), false,
+    'a failed snapshot cannot be treated as proof of idle');
+
+  await until(() => f.state.activeCalls >= 2, 2500);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
+  await until(() => f.subscriptions.length >= 3);
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'snapshot-recovered', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'snapshot-recovered'));
+  assert.equal(f.state.calls.length, 1, 'mail resumes only after a successful snapshot confirms idle');
+});
+
 test('v2 reports only the bound displayed root execution lifecycle', { timeout: 5000 }, async t => {
   const f = await fixture(t, { status: 'unknown' });
   await until(() => f.subscriptions.length >= 2 && f.frames.some(frame =>
     frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
+  const initialLifecycleLog = await readFile(f.claimLog, 'utf8');
 
   f.state.emit('session.execution.started', rootB);
   await delay(30);
-  assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook'), false,
+  assert.equal(await readFile(f.claimLog, 'utf8'), initialLifecycleLog,
     'another root in the shared server cannot change this panel lifecycle');
 
   f.state.statusBySession.set(rootA, 'running');
@@ -169,7 +221,7 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
 
   f.state.emit('session.execution.succeeded', rootB);
   await delay(30);
-  assert.equal((await readFile(f.claimLog, 'utf8')).includes('agent-hook idle'), false,
+  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 1,
     'a sibling session completion cannot release this panel');
 
   f.state.statusBySession.set(rootA, 'idle');
@@ -188,11 +240,11 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
   f.state.statusBySession.set(rootA, 'idle');
   f.state.emit('session.execution.interrupted', rootA, { reason: 'shutdown' });
   await delay(250);
-  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 2,
+  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 3,
     'shutdown keeps the idle status monitor from emitting a prompt-ready edge');
   f.state.emit('session.execution.succeeded', rootA);
   await delay(250);
-  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 2,
+  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 3,
     'a terminal event following shutdown remains suppressed for this route');
   const calls = (await readFile(f.claimLog, 'utf8')).trim().split('\n');
   assert.equal(calls.some(line => line.includes('--native-event')), false,
@@ -206,11 +258,13 @@ test('v2 ignores lifecycle events from child and former displayed routes', { tim
   f.state.route = { type: 'session', sessionID: rootB };
   await until(() => f.subscriptions.length >= 4 && f.frames.some(frame =>
     frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook idle/g)?.length >= 2);
+  const boundRootLifecycleLog = await readFile(f.claimLog, 'utf8');
 
   f.state.emit('session.execution.succeeded', rootA);
   f.state.emit('session.execution.started', child);
   await delay(30);
-  assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook'), false,
+  assert.equal(await readFile(f.claimLog, 'utf8'), boundRootLifecycleLog,
     'neither a former root nor a child session owns this panel lifecycle');
 
   f.state.statusBySession.set(rootB, 'running');

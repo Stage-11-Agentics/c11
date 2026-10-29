@@ -29,19 +29,25 @@ async function untilAsync(predicate, timeout = 2000) {
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
+  hookFailOnce = [], hookDelayActivity = '',
   promptResult = input => ({ id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } }),
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
   const claimLog = `${dir}/claim.log`;
   const c11Binary = `${dir}/c11`;
-  await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "${C11_CLI_LOG:-$C11_CLAIM_LOG}"\nexit 0\n');
+  await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "${C11_CLI_LOG:-$C11_CLAIM_LOG}"\nif [ "$3" = "agent-hook" ]; then\n  case "${C11_TEST_HOOK_FAIL_ONCE:-}" in\n    *,"$4",*)\n      marker="${C11_TEST_HOOK_FAILURE_MARKER:-}.$4"\n      if [ -n "$marker" ] && [ ! -e "$marker" ]; then : > "$marker"; exit 1; fi\n      ;;\n  esac\n  if [ "$4" = "${C11_TEST_HOOK_DELAY_ACTIVITY:-}" ]; then sleep 0.2; fi\nfi\nexit 0\n');
   await chmod(c11Binary, 0o755);
   const envBefore = { ...process.env };
   for (const key of Object.keys(process.env)) if (/^(C11_|CMUX_)/.test(key)) delete process.env[key];
   Object.assign(process.env, {
     C11_SOCKET_PATH: socketPath, C11_PANEL_ID: 'panel-a',
     C11_AGENT_INTERACTIVE_PID: String(process.pid), C11_AGENT_HOOK_CLI: c11Binary, C11_CLI_LOG: claimLog,
+    ...(hookFailOnce.length ? {
+      C11_TEST_HOOK_FAIL_ONCE: `,${hookFailOnce.join(',')},`,
+      C11_TEST_HOOK_FAILURE_MARKER: `${dir}/hook-failure`,
+    } : {}),
+    ...(hookDelayActivity ? { C11_TEST_HOOK_DELAY_ACTIVITY: hookDelayActivity } : {}),
     ...(claimPending
       ? { C11_OPENCODE_TUI_CLAIM_FAILED: '1', C11_OPENCODE_EXPECTED_RESUME_ID: rootA, C11_CLAIM_LOG: claimLog }
       : { C11_OPENCODE_TUI_CLAIMED: '1' }),
@@ -148,7 +154,7 @@ test('v2 TUI owns exact displayed root capture and confirms native mail from its
 });
 
 test('v2 reports only the bound displayed root execution lifecycle', { timeout: 5000 }, async t => {
-  const f = await fixture(t);
+  const f = await fixture(t, { status: 'unknown' });
   await until(() => f.subscriptions.length >= 2 && f.frames.some(frame =>
     frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
 
@@ -157,8 +163,10 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
   assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook'), false,
     'another root in the shared server cannot change this panel lifecycle');
 
+  f.state.statusBySession.set(rootA, 'running');
   f.state.emit('session.execution.started', rootA);
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
+  f.state.statusBySession.set(rootA, 'idle');
   f.state.emit('session.execution.interrupted', rootA, { reason: 'shutdown' });
   await delay(30);
   assert.equal((await readFile(f.claimLog, 'utf8')).includes('agent-hook idle'), false,
@@ -169,10 +177,13 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
   assert.equal((await readFile(f.claimLog, 'utf8')).includes('agent-hook idle'), false,
     'a sibling session completion cannot release this panel');
 
+  f.state.statusBySession.set(rootA, 'idle');
   f.state.emit('session.execution.failed', rootA);
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
+  f.state.statusBySession.set(rootA, 'running');
   f.state.emit('session.execution.started', rootA);
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook working/g)?.length >= 2);
+  f.state.statusBySession.set(rootA, 'idle');
   f.state.emit('session.execution.interrupted', rootA, { reason: 'user_abort' });
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook idle/g)?.length >= 2);
   const calls = (await readFile(f.claimLog, 'utf8')).trim().split('\n');
@@ -181,7 +192,7 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
 });
 
 test('v2 ignores lifecycle events from child and former displayed routes', { timeout: 5000 }, async t => {
-  const f = await fixture(t);
+  const f = await fixture(t, { status: 'unknown' });
   await until(() => f.subscriptions.length >= 2 && f.frames.some(frame =>
     frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
   f.state.route = { type: 'session', sessionID: rootB };
@@ -194,8 +205,29 @@ test('v2 ignores lifecycle events from child and former displayed routes', { tim
   assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook'), false,
     'neither a former root nor a child session owns this panel lifecycle');
 
+  f.state.statusBySession.set(rootB, 'running');
   f.state.emit('session.execution.started', rootB);
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
+});
+
+test('v2 reports the newly bound root state and retries failed lifecycle reports in order', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { status: 'running', hookFailOnce: ['working', 'idle'], hookDelayActivity: 'working' });
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook working/g)?.length >= 2);
+
+  f.state.statusBySession.set(rootA, 'idle');
+  f.state.emit('session.execution.succeeded', rootA);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook idle/g)?.length >= 2);
+
+  f.state.statusBySession.set(rootB, 'idle');
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' &&
+    frame.params.id === rootB && frame.params.displayed_root));
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook idle/g)?.length >= 3);
+
+  const activity = (await readFile(f.claimLog, 'utf8')).split('\n')
+    .filter(line => line.includes('agent-hook ')).map(line => line.split('agent-hook ')[1].trim());
+  assert.equal(activity.at(-1), 'idle', 'serialized retries leave c11 on the current bound root state');
 });
 
 test('v2 native mail is not acknowledged when session.prompt returns a different inbox item', { timeout: 5000 }, async t => {

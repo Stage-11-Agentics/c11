@@ -129,11 +129,11 @@ function sessionReadyForMailbox(context, id) {
 }
 
 function reportLifecycle(c11Bin, socketPath, activity) {
-  if (!c11Bin || !socketPath) return;
-  void execFileAsync(c11Bin, ["--socket", socketPath, "agent-hook", activity], {
+  if (!c11Bin || !socketPath) return Promise.resolve(false);
+  return execFileAsync(c11Bin, ["--socket", socketPath, "agent-hook", activity], {
     timeout: 750,
     maxBuffer: 64 * 1024,
-  }).catch(() => {});
+  }).then(() => true, () => false);
 }
 
 export default {
@@ -165,14 +165,45 @@ export default {
     let mailboxRevision = 0;
     let nativeNotReady = false;
     let reportedLifecycle;
+    let desiredLifecycle;
+    let lifecycleInFlight = false;
+    let lifecycleRetryAt = 0;
+    let shutdownSessionID;
     const pending = new Map();
+
+    const flushRootLifecycle = () => {
+      const sessionID = boundID;
+      const activity = desiredLifecycle;
+      const routeGeneration = generation;
+      if (disposed || !sessionID || sessionID !== visibleID || currentRoute(context) !== sessionID ||
+          conflict || captureState !== 'bound' || !activity || activity === reportedLifecycle ||
+          (sessionID === shutdownSessionID && activity === 'idle') ||
+          lifecycleInFlight || Date.now() < lifecycleRetryAt) return;
+      lifecycleInFlight = true;
+      void reportLifecycle(c11Bin, socketPath, activity).then(succeeded => {
+        lifecycleInFlight = false;
+        if (disposed) return;
+        if (succeeded && generation === routeGeneration && boundID === sessionID &&
+            visibleID === sessionID && currentRoute(context) === sessionID && captureState === 'bound' &&
+            !(sessionID === shutdownSessionID && activity === 'idle')) {
+          reportedLifecycle = activity;
+          lifecycleRetryAt = 0;
+        } else if (!succeeded && generation === routeGeneration && boundID === sessionID &&
+            visibleID === sessionID && currentRoute(context) === sessionID && captureState === 'bound') {
+          // Keep the desired edge unacknowledged. The route monitor retries it
+          // after a short backoff instead of latching a failed best-effort call.
+          lifecycleRetryAt = Date.now() + 500;
+        }
+        if (generation !== routeGeneration || desiredLifecycle !== reportedLifecycle) flushRootLifecycle();
+      });
+    };
 
     const reportRootLifecycle = (sessionID, activity) => {
       if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
           currentRoute(context) !== sessionID || conflict || captureState !== 'bound' ||
-          reportedLifecycle === activity) return;
-      reportedLifecycle = activity;
-      reportLifecycle(c11Bin, socketPath, activity);
+          (sessionID === shutdownSessionID && activity === 'idle')) return;
+      desiredLifecycle = activity;
+      flushRootLifecycle();
     };
 
     const stopLifecycle = [];
@@ -181,11 +212,16 @@ export default {
       if (typeof stop === 'function') stopLifecycle.push(stop);
     };
     onSessionEvent('session.execution.started', event => {
+      if (event?.data?.sessionID === boundID) shutdownSessionID = undefined;
       reportRootLifecycle(event?.data?.sessionID, 'working');
     });
     for (const type of ['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']) {
       onSessionEvent(type, event => {
-        if (type === 'session.execution.interrupted' && event?.data?.reason === 'shutdown') return;
+        if (type === 'session.execution.interrupted' && event?.data?.reason === 'shutdown') {
+          if (event?.data?.sessionID === boundID) shutdownSessionID = boundID;
+          return;
+        }
+        if (event?.data?.sessionID === shutdownSessionID) shutdownSessionID = undefined;
         reportRootLifecycle(event?.data?.sessionID, 'idle');
       });
     }
@@ -273,6 +309,9 @@ export default {
         boundID = undefined;
         conflict = Boolean(candidateID);
         reportedLifecycle = undefined;
+        desiredLifecycle = undefined;
+        lifecycleRetryAt = 0;
+        shutdownSessionID = undefined;
         nativeNotReady = false;
         captureState = candidateID ? 'waiting' : 'no-route';
         retryCaptureAt = 0;
@@ -370,9 +409,9 @@ export default {
         conflict = false;
         nativeNotReady = false;
         captureState = 'bound';
-        if (context.data.session.status?.(candidateID) === 'running') {
-          reportRootLifecycle(candidateID, 'working');
-        }
+        const status = context.data.session.status?.(candidateID);
+        if (status === 'running') reportRootLifecycle(candidateID, 'working');
+        else if (status === 'idle') reportRootLifecycle(candidateID, 'idle');
         if (!nativeMailDisabled) {
           // Replace the provisional stream so a prior session_conflict
           // fallback ledger clears after this route becomes authoritative.
@@ -399,10 +438,12 @@ export default {
 
     const monitor = setInterval(() => {
       void capture().then(() => {
-        if (boundID && visibleID === boundID && currentRoute(context) === boundID &&
-            context.data.session.status?.(boundID) === 'running') {
-          reportRootLifecycle(boundID, 'working');
+        if (boundID && visibleID === boundID && currentRoute(context) === boundID && boundID !== shutdownSessionID) {
+          const status = context.data.session.status?.(boundID);
+          if (status === 'running') reportRootLifecycle(boundID, 'working');
+          else if (status === 'idle') reportRootLifecycle(boundID, 'idle');
         }
+        flushRootLifecycle();
         if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
             !sessionReadyForMailbox(context, boundID)) return;
         nativeNotReady = false;

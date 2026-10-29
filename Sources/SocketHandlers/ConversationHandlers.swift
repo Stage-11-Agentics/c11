@@ -412,6 +412,13 @@ extension TerminalController {
                             data: ["surface_id": surfaceId.uuidString])
             case .accepted(let ref):
                 PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+                DispatchQueue.main.async {
+                    guard let located = AppDelegate.shared?.locateSurface(surfaceId: surfaceId),
+                          let workspace = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }) else {
+                        return
+                    }
+                    workspace.recheckMailboxDoorbellAfterOpenCodeRouteBound(surfaceId: surfaceId)
+                }
                 return .ok([
                     "surface_id": surfaceId.uuidString,
                     "kind": ref.kind,

@@ -6783,6 +6783,14 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// A typed fallback may have been left buffered while an OpenCode v2
+    /// route was unbound. When the TUI later confirms its exact root, schedule
+    /// one fresh gate read so mail is not stranded when native delivery is off.
+    func recheckMailboxDoorbellAfterOpenCodeRouteBound(surfaceId: UUID) {
+        guard mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0 else { return }
+        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: MailboxDoorbellSequence.shortRecheck)
+    }
+
     /// Confirm the inbox still holds the queued mail, then type the line.
     /// The check is off the main actor. It does not claim. The idle period
     /// is marked only once typing starts, so a missed surface does not

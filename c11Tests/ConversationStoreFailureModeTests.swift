@@ -360,6 +360,10 @@ final class ConversationStoreFailureModeTests: XCTestCase {
             surfaceId: "A", kind: "opencode", id: attackerID, source: .hook
         )
         XCTAssertNil(replacement, "generic pushes cannot replace a v2 displayed route")
+        let crossKindReplacement = await store.push(
+            surfaceId: "A", kind: "claude-code", id: claudeId, source: .hook
+        )
+        XCTAssertNil(crossKindReplacement, "a generic push cannot bypass v2 route protection by changing kind")
         let active = await store.active(for: "A")
         XCTAssertEqual(active?.id, rootID)
         XCTAssertEqual(active?.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID], .number(1001))

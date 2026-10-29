@@ -645,14 +645,13 @@ extension ConversationStore {
         guard payload?.keys.allSatisfy({ !ConversationLifecyclePayloadKey.genericPushReservedKeys.contains($0) }) ?? true else {
             return nil
         }
-        if kind == "opencode",
-           let current = bySurface[surfaceId]?.active,
+        if let current = bySurface[surfaceId]?.active,
            current.kind == "opencode",
            (current.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] != nil
                 || current.payload?[ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion] != nil) {
             // OpenCode v2 routes are mutated only through the authenticated
             // displayed-root/unbound-route or wrapper-claim seams. A generic
-            // OpenCode push can neither replace the route nor erase its
+            // push of any kind can neither replace the route nor erase its
             // ownership marker.
             return nil
         }

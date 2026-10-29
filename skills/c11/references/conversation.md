@@ -70,7 +70,7 @@ c11 conversation resume (--panel <id> | --all-skipped) [--dry-run] [--json]
 |------|-----|
 | `capture-runtime` | Codex-only exact capture. Run from the target agent's own tool subprocess with no arguments; reads `CODEX_THREAD_ID`, agreeing c11 panel aliases, and actual cwd from that process. |
 | `claim` | Wrapper launch boundary. OpenCode requires a socket-authenticated foreground TUI claim; that claim alone writes its TUI PID and recovery-store metadata. Codex plain/mismatch invalidates its prior exact lifecycle while a matching internal expected-resume id preserves it. |
-| `push` | Hook or operator push of the real id. Accepts only `hook`, `scrape`, or `manual`; runtime capture and wrapper claims use dedicated verbs. Reserved OpenCode TUI/recovery keys are rejected, and generic OpenCode pushes cannot replace an authenticated v2 route. |
+| `push` | Hook or operator push of the real id. Accepts only `hook`, `scrape`, or `manual`; runtime capture and wrapper claims use dedicated verbs. Reserved OpenCode TUI/recovery keys are rejected, and generic pushes of any kind cannot replace an authenticated v2 route. |
 | `tombstone` | Mark the panel's active ref as tombstoned. Operator-initiated; not auto-resumable. |
 | `list` | List captured conversations (process-wide; v1 has no per-workspace partitioning). Filter with `--panel`. `--json` for structured output. |
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a panel. The debugging entry point. |
@@ -137,7 +137,7 @@ The contract: after a crash, **every conversation either resumes exactly per its
 - **claude-code** — resumes when the hook-captured (or scrape-recovered) id has a transcript on disk; otherwise `transcript not found`.
 - **codex / pi** — the scraper resolves the placeholder to the real id at restore, then reclassify verifies it. A panel whose session file is absent stays a placeholder and simply skips (no wrong resume).
 - **omp / grok** — their PATH wrappers publish exact causal identity only after the first message creates the durable JSONL/session directory. Dirty restore stats that exact payload path. An empty session never reaches this tier and skips.
-- **opencode** — the client-owned TUI process captures the exact root; the socket peer PID must match a fresh, in-memory wrapper claim. Generic OpenCode pushes cannot forge the reserved TUI PID/recovery keys or replace an authenticated v2 route. The claim records that launch's `HOME`, `XDG_DATA_HOME`, and `OPENCODE_DB`; restore verifies the exact ID in that same store. Invalid, empty, `:memory:`, or unsupported stores remain unverifiable, with no fallback to c11's own database; c11 never substitutes the newest same-directory session.
+- **opencode** — the client-owned TUI process captures the exact root; the socket peer PID must match a fresh, in-memory wrapper claim. Generic pushes cannot forge the reserved TUI PID/recovery keys or replace an authenticated v2 route. Binding the exact root schedules a fresh gate read for buffered typed mail. The claim records that launch's `HOME`, `XDG_DATA_HOME`, and `OPENCODE_DB`; restore verifies the exact ID in that same store. Invalid, empty, `:memory:`, or unsupported stores remain unverifiable, with no fallback to c11's own database; c11 never substitutes the newest same-directory session.
 - **kimi / github-copilot** — no exact-resume rail; a fresh launch is the honest outcome (placeholders skip).
 
 ### Codex real-cwd disambiguation

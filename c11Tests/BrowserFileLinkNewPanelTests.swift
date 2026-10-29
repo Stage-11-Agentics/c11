@@ -83,6 +83,14 @@ final class BrowserFileLinkNewPanelTests: XCTestCase {
         let localPage = try loadedWebView { $0.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent()) }
         let fromLocal = try navigationAction(in: localPage, startedBy: "location.href = '\(other.absoluteString)'")
         XCTAssertTrue(browserNewPanelRequestAllowed(notes, initiatedBy: fromLocal))
+
+        // A sandboxed frame inside a local page has an opaque origin.
+        let framed = try writeFile("framed.html", contents: """
+            <iframe sandbox="allow-scripts" srcdoc="<script>addEventListener('message', () => { location.href = 'https://site-c.test/'; });</script>"></iframe>
+            """)
+        let framedPage = try loadedWebView { $0.loadFileURL(framed, allowingReadAccessTo: framed.deletingLastPathComponent()) }
+        let fromSandbox = try navigationAction(in: framedPage, startedBy: "document.querySelector('iframe').contentWindow.postMessage('go', '*')")
+        XCTAssertFalse(browserNewPanelRequestAllowed(notes, initiatedBy: fromSandbox), "A sandboxed frame in a local page may open a local file")
     }
 
     // MARK: - Fixture
@@ -90,11 +98,17 @@ final class BrowserFileLinkNewPanelTests: XCTestCase {
     /// Runs `script` in the page and returns the navigation action WebKit
     /// asks about, cancelling the navigation.
     private func navigationAction(in webView: CmuxWebView, startedBy script: String) throws -> WKNavigationAction {
+        try navigationAction(in: webView) { $0.evaluateJavaScript(script, completionHandler: nil) }
+    }
+
+    /// Starts a navigation with `start` and returns the action WebKit asks
+    /// about, cancelling the navigation.
+    private func navigationAction(in webView: CmuxWebView, _ start: (CmuxWebView) -> Void) throws -> WKNavigationAction {
         let recorder = ActionRecorder()
         webView.navigationDelegate = recorder
         let asked = expectation(description: "navigation action")
         recorder.onAction = { asked.fulfill() }
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        start(webView)
         wait(for: [asked], timeout: 10)
         webView.navigationDelegate = nil
         return try XCTUnwrap(recorder.action)

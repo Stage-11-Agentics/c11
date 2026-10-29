@@ -6918,8 +6918,12 @@ func browserNavigationShouldCreatePopup(
 
 /// Whether a page's request to open `url` in a new panel may go ahead. A
 /// `file:` URL needs a frame from a local page as the initiator: WebKit never
-/// lets a web page load one, but it hands window.open requests and modified
-/// clicks to the delegates before checking (C11-505).
+/// lets a web page load one, but it hands window.open requests to the UI
+/// delegate before checking; the click routes check too, to not depend on
+/// WebKit (C11-505). Sandboxed frames have an opaque origin and are refused.
+/// The SDK marks the source frame nonnull, so the optional is not a real
+/// check; were it nil, the protocol would read empty and be refused.
+@MainActor
 func browserNewPanelRequestAllowed(_ url: URL, initiatedBy action: WKNavigationAction) -> Bool {
     guard url.isFileURL else { return true }
     let source: WKFrameInfo? = action.sourceFrame

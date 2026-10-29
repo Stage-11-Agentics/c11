@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pty
@@ -535,6 +536,32 @@ def test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection() 
         assert any("agent-hook idle" in line for line in c11_log), c11_log
 
 
+def test_version_probe_ignores_stale_suffix_normalization_cache() -> None:
+    cache_dir = Path("/tmp") / f"c11-opencode-version-{os.getuid()}"
+    cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for suffix in ("-beta", "+build.1"):
+        with tempfile.TemporaryDirectory(prefix="c11-opencode-version-cache-test-") as td:
+            binary = Path(td) / "opencode"
+            executable(binary, f"#!/bin/sh\nprintf 'opencode v2.0.25{suffix}\\n'\n")
+            real = binary.resolve(strict=True)
+            info = real.stat()
+            legacy_key = hashlib.sha256(
+                f"{real}\0{info.st_mtime_ns}\0{info.st_size}".encode()
+            ).hexdigest()
+            legacy_cache = cache_dir / legacy_key
+            legacy_cache.write_text("2.0.25\n", encoding="ascii")
+            legacy_cache.chmod(0o600)
+            try:
+                result = subprocess.run(
+                    ["python3", str(SOURCE_CONFIG_HELPER), "version", str(binary)],
+                    capture_output=True, text=True, check=False, timeout=3,
+                )
+                assert result.returncode != 0, result.stdout
+                assert not result.stdout, result.stdout
+            finally:
+                legacy_cache.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     test_live_tui_runtime_loads_plugin()
     test_existing_content_is_preserved_via_second_runtime_source()
@@ -546,4 +573,5 @@ if __name__ == "__main__":
     test_v2_falls_back_for_invalid_config_and_failed_reservation()
     test_v2_native_mail_disable_keeps_identity_capture_plugin()
     test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection()
+    test_version_probe_ignores_stale_suffix_normalization_cache()
     print("PASS: OpenCode v1/v2 wrappers preserve tenant config and fail closed")

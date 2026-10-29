@@ -14,13 +14,18 @@ from pathlib import Path
 # Accept only a plain release tuple so prereleases/build metadata never pass an
 # exact-version feature gate after the suffix has been normalized away.
 VERSION_RE = re.compile(r"(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\s|$)")
+# Version semantics are part of the cache identity. Bump this if an older
+# helper may have cached a normalized value that a stricter parser would reject.
+VERSION_CACHE_SCHEMA = 2
 
 
 def probe(binary: str) -> int:
     try:
         real = Path(binary).resolve(strict=True)
         st = real.stat()
-        key = hashlib.sha256(f"{real}\0{st.st_mtime_ns}\0{st.st_size}".encode()).hexdigest()
+        key = hashlib.sha256(
+            f"{real}\0{st.st_mtime_ns}\0{st.st_size}\0{VERSION_CACHE_SCHEMA}".encode()
+        ).hexdigest()
         cache_dir = Path("/tmp") / f"c11-opencode-version-{os.getuid()}"
         try:
             cache_dir.mkdir(mode=0o700)

@@ -413,16 +413,15 @@ export default {
       if (disposed) return;
       if (!tuiClaimed) {
         if (Date.now() < nextClaimAt) return;
-        if (claimAttempts >= 10) {
-          if (!claimWarningLogged) {
-            claimWarningLogged = true;
-            console.warn('c11 OpenCode route capture disabled: authenticated panel claim was not acknowledged');
-          }
-          return;
-        }
         claimAttempts++;
         tuiClaimed = await claimTui(c11Bin, socketPath, panelID, agentPID);
         if (!tuiClaimed) {
+          if (claimAttempts >= 10 && !claimWarningLogged) {
+            claimWarningLogged = true;
+            console.warn('c11 OpenCode route capture still waiting: authenticated panel claim was not acknowledged');
+          }
+          // Keep retrying at the capped interval for this TUI's lifetime; c11
+          // restore or its socket can recover after the initial backoff.
           nextClaimAt = Date.now() + Math.min(1_000 * (2 ** (claimAttempts - 1)), 5_000);
           return;
         }

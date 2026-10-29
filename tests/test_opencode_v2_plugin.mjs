@@ -29,6 +29,7 @@ async function untilAsync(predicate, timeout = 2000) {
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
+  claimFailures = 0,
   hookFailOnce = [], hookDelayActivity = '', activeSessions, activeFailureCount = 0, holdActiveSnapshot = false,
   permissionHydrated = true, permissionSyncResult = [], formHydrated = true, formSyncResult = [],
   messageList = [],
@@ -38,7 +39,7 @@ async function fixture(t, {
   const socketPath = `${dir}/mail.sock`;
   const claimLog = `${dir}/claim.log`;
   const c11Binary = `${dir}/c11`;
-  await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "${C11_CLI_LOG:-$C11_CLAIM_LOG}"\nif [ "$3" = "agent-hook" ]; then\n  case "${C11_TEST_HOOK_FAIL_ONCE:-}" in\n    *,"$4",*)\n      marker="${C11_TEST_HOOK_FAILURE_MARKER:-}.$4"\n      if [ -n "$marker" ] && [ ! -e "$marker" ]; then : > "$marker"; exit 1; fi\n      ;;\n  esac\n  if [ "$4" = "${C11_TEST_HOOK_DELAY_ACTIVITY:-}" ]; then sleep 0.2; fi\nfi\nexit 0\n');
+  await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "${C11_CLI_LOG:-$C11_CLAIM_LOG}"\nif [ "$3" = "rpc" ] && [ "$4" = "conversation.claim" ]; then\n  count_file="$C11_TEST_CLAIM_COUNT_FILE"\n  count=$(cat "$count_file" 2>/dev/null || printf 0)\n  count=$((count + 1))\n  printf "%s\\n" "$count" > "$count_file"\n  if [ "$count" -le "${C11_TEST_CLAIM_FAILURES:-0}" ]; then exit 1; fi\nfi\nif [ "$3" = "agent-hook" ]; then\n  case "${C11_TEST_HOOK_FAIL_ONCE:-}" in\n    *,"$4",*)\n      marker="${C11_TEST_HOOK_FAILURE_MARKER:-}.$4"\n      if [ -n "$marker" ] && [ ! -e "$marker" ]; then : > "$marker"; exit 1; fi\n      ;;\n  esac\n  if [ "$4" = "${C11_TEST_HOOK_DELAY_ACTIVITY:-}" ]; then sleep 0.2; fi\nfi\nexit 0\n');
   await chmod(c11Binary, 0o755);
   const envBefore = { ...process.env };
   for (const key of Object.keys(process.env)) if (/^(C11_|CMUX_)/.test(key)) delete process.env[key];
@@ -51,7 +52,9 @@ async function fixture(t, {
     } : {}),
     ...(hookDelayActivity ? { C11_TEST_HOOK_DELAY_ACTIVITY: hookDelayActivity } : {}),
     ...(claimPending
-      ? { C11_OPENCODE_TUI_CLAIM_FAILED: '1', C11_OPENCODE_EXPECTED_RESUME_ID: rootA, C11_CLAIM_LOG: claimLog }
+      ? { C11_OPENCODE_TUI_CLAIM_FAILED: '1', C11_OPENCODE_EXPECTED_RESUME_ID: rootA,
+        C11_CLAIM_LOG: claimLog, C11_TEST_CLAIM_FAILURES: String(claimFailures),
+        C11_TEST_CLAIM_COUNT_FILE: `${dir}/claim-attempts` }
       : { C11_OPENCODE_TUI_CLAIMED: '1' }),
   });
   if (nativeMailDisabled) process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED = '1';
@@ -403,6 +406,21 @@ test('v2 retries a failed wrapper claim before capturing its displayed root', { 
   assert.equal(payload.panel_id, 'panel-a');
   assert.equal(payload.interactive_pid, process.pid);
   assert.equal(payload.expected_resume_id, rootA);
+  const capture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.displayed_root);
+  assert.equal(capture.params.id, rootA);
+});
+
+test('v2 keeps retrying the panel claim after its backoff reaches the cap', { timeout: 60000 }, async t => {
+  const f = await fixture(t, { claimPending: true, claimFailures: 10 });
+  await untilAsync(async () => {
+    const lines = (await readFile(f.claimLog, 'utf8').catch(() => '')).split('\n');
+    return lines.filter(line => line.includes('rpc conversation.claim')).length >= 10;
+  }, 45000);
+  assert.equal(f.frames.some(frame => frame.method === 'conversation.push' && frame.params.displayed_root), false,
+    'no route capture is attempted while the authenticated TUI claim is failing');
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.displayed_root), 10000);
+  const lines = (await readFile(f.claimLog, 'utf8')).trim().split('\n');
+  assert.equal(lines.filter(line => line.includes('rpc conversation.claim')).length, 11, lines.join('\n'));
   const capture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.displayed_root);
   assert.equal(capture.params.id, rootA);
 });

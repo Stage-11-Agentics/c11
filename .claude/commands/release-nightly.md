@@ -1,5 +1,7 @@
 # Release Nightly
 
+**Legacy cmux flow; do not run it.** `scripts/build-sign-upload.sh` no longer exists, and its squash-then-tag order is retired. Release with `skills/release/SKILL.md` (GitHub Actions), or with `/release-local` when Actions cannot run.
+
 End-to-end release via PR flow: bump version, update changelog, create PR, merge, tag, then build locally via `scripts/build-sign-upload.sh`.
 
 ## Steps

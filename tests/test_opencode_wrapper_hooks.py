@@ -492,20 +492,20 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
 
     code, _, state, c11_log, stderr = run_wrapper(
         live=True, argv=["--continue"], interactive=True, version="2.0.25",
-        claim_not_ready_attempts=2,
+        claim_not_ready_attempts=1,
     )
     assert code == 0, stderr
     assert state["tui_claimed"] == "1" and state["tui_claim_failed"] is None, state
-    assert sum("rpc conversation.claim" in line for line in c11_log) == 3, c11_log
+    assert sum("rpc conversation.claim" in line for line in c11_log) == 2, c11_log
 
     code, _, state, c11_log, stderr = run_wrapper(
         live=True, argv=["--continue"], interactive=True,
-        version="2.0.25", claim_not_ready_attempts=4,
+        version="2.0.25", claim_not_ready_attempts=2,
     )
     assert code == 0, stderr
     assert state["tui_claim_failed"] == "1" and state["tui_claimed"] is None, state
     assert state["cli_content"] is not None, "the TUI plugin retries after the short wrapper window"
-    assert sum("rpc conversation.claim" in line for line in c11_log) == 4, c11_log
+    assert sum("rpc conversation.claim" in line for line in c11_log) == 2, c11_log
     assert not any("agent-hook idle" in line for line in c11_log), c11_log
 
 

@@ -214,7 +214,10 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
         for table in tables {
             guard let columns = tableColumns(table, in: database),
                   columns.isSuperset(of: ["id", "directory", "time_updated"]),
-                  let tableRows = scrapeRows(table, cwd: trimmedCwd, in: database) else { return [] }
+                  let tableRows = scrapeRows(table, cwd: trimmedCwd, in: database) else {
+                // A partial cross-schema listing could omit a newer exact match.
+                return []
+            }
             rows.append(contentsOf: tableRows)
         }
 

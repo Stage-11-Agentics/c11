@@ -15,6 +15,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 ### Fixed
 
 - **The browser's right-click Download Image, Download Linked File, Open Link in New Panel and Open Link in Default Browser act on the element under the cursor.** They picked the element mirrored vertically, and drifted at any page zoom other than 100%. ([#785](https://github.com/Stage-11-Agentics/c11/pull/785))
+- **Right-click downloads stay on what is under the cursor.** Download Linked File on a link it can't download no longer saves the page's first image, and Download Image over an embedded frame no longer saves the frame's page. ([#791](https://github.com/Stage-11-Agentics/c11/pull/791))
 
 ## [1.5.1] - 2026-10-28
 

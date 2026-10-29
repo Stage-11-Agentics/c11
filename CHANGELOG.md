@@ -11,6 +11,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 - **Browser profiles no longer share favicon cookies or cache.** Favicon fetches send and keep no cookies, and each profile caches its own icons, so a site's favicon can't link one profile to another. ([#786](https://github.com/Stage-11-Agentics/c11/pull/786))
 - **A web page can no longer make Download Image or Download Linked File read a local file.** Saving a `file:` link works only from a page that is itself a local file, only for a regular file in that page's folder, and the copy runs off the main thread. ([#784](https://github.com/Stage-11-Agentics/c11/pull/784))
 - **Search suggestions no longer share cookies or a disk cache across browser profiles.** Each profile's suggestions keep no cookies and only an in-memory cache, so a search engine can't link one profile's typing to another's. ([#789](https://github.com/Stage-11-Agentics/c11/pull/789))
+- **A web page can no longer open a local file in a new panel.** Open Link in New Panel, Cmd-click, target=_blank and window.open open a `file:` link only when a local page asked for it, and a popup never hands one to the system to launch. ([#788](https://github.com/Stage-11-Agentics/c11/pull/788))
 
 ### Fixed
 

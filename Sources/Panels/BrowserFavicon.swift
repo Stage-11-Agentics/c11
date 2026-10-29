@@ -107,12 +107,20 @@ enum BrowserFavicon {
         return decodePNG(payload, targetPx: targetPx)
     }
 
+    /// Decodes the original DOM href before URL normalization can lose the
+    /// boundary between an escaped payload hash and the URL fragment.
+    static func decodeDataURL(from href: String, targetPx: Int) -> Data? {
+        guard let payload = dataURLPayload(from: href) else { return nil }
+        return decodePNG(payload, targetPx: targetPx)
+    }
+
     static func dataURLPayload(_ url: URL) -> Data? {
         guard url.scheme?.lowercased() == "data" else { return nil }
-        let maximumBase64Length = 4 * ((maximumBytes + 2) / 3)
         let absoluteString: String
-        // Some Foundation versions percent-encode the fragment separator in
-        // data URLs, so strip the component before decoding payload escapes.
+        // Prefer a separately parsed fragment when this URL retained one.
+        // Callers with the original href use the string overload below because
+        // some Foundation versions normalize the fragment into the opaque data
+        // payload before URLComponents can recover it.
         if var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
            components.percentEncodedFragment != nil {
             components.percentEncodedFragment = nil
@@ -121,6 +129,19 @@ enum BrowserFavicon {
         } else {
             absoluteString = url.absoluteString
         }
+
+        return dataURLPayload(from: absoluteString)
+    }
+
+    static func dataURLPayload(from href: String) -> Data? {
+        let maximumBase64Length = 4 * ((maximumBytes + 2) / 3)
+        let maximumRawURLCharacters = maximumBytes + maximumBase64Length * 3 + 5
+        // Keep the URL text bounded before trimming or parsing untrusted input.
+        guard href.utf16.prefix(maximumRawURLCharacters + 1).count <= maximumRawURLCharacters else { return nil }
+        let absoluteString = href.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard absoluteString.range(of: "data:", options: [.anchored, .caseInsensitive]) != nil else { return nil }
+        // A literal '#' starts the URL fragment. Percent-encoded '%23' remains
+        // part of the data payload and is decoded only after this boundary.
         let rawValue = absoluteString.dropFirst(5)
         guard rawValue.utf8.count <= maximumBytes + maximumBase64Length * 3 else { return nil }
         let value = rawValue.prefix { $0 != "#" }

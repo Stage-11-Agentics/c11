@@ -9,9 +9,13 @@ import WebKit
 
 /// C11-505. A web page decides the link the context menu resolves, and a link
 /// opened in a new panel loads with read access to its folder. WebKit never
-/// lets a web page load a `file:` URL, so neither may Open Link in New Panel,
-/// Cmd-click, target=_blank or window.open. A local page may still open local
-/// links.
+/// lets a web page load a `file:` URL, so neither may Open Link in New Panel
+/// or the delegate routes (Cmd-click, target=_blank, window.open fallbacks).
+/// A local page may still open local links.
+///
+/// Covered here: the menu through `willOpenMenu`, the initiator gate the
+/// delegate routes share, checked against navigation actions WebKit itself
+/// creates, and the panel's second gate.
 ///
 /// Host-required (`c11Tests`): WebKit needs the app's main bundle.
 @MainActor
@@ -45,8 +49,8 @@ final class BrowserFileLinkNewPanelTests: XCTestCase {
         XCTAssertEqual(openLinkInNewPanelFromMenu(webView, resolving: notes), notes)
     }
 
-    /// Cmd-click, target=_blank, window.open and the menu all reach
-    /// `openLinkInNewPanel`, which decides from the panel's own page.
+    /// `openLinkInNewPanel`, which every route reaches, also checks the
+    /// panel's own page.
     func testBrowserPanelOpensLocalLinksOnlyFromALocalPage() throws {
         let panel = BrowserPanel(workspaceId: UUID())
         defer { panel.close() }
@@ -63,7 +67,38 @@ final class BrowserFileLinkNewPanelTests: XCTestCase {
         XCTAssertTrue(panel.shouldOpenLinkInNewPanel(web))
     }
 
+    /// The delegate routes ask who started the request. The actions here are
+    /// the ones WebKit creates when each page navigates by script.
+    func testNewPanelRequestsNeedALocalInitiatorForFileLinks() throws {
+        let notes = try writeFile("notes.txt")
+        let web = URL(string: "https://site-b.test/page")!
+
+        let webPage = try loadedWebView { $0.loadHTMLString("<p>site a</p>", baseURL: URL(string: "https://site-a.test/")) }
+        let fromWeb = try navigationAction(in: webPage, startedBy: "location.href = 'https://site-a.test/next'")
+        XCTAssertFalse(browserNewPanelRequestAllowed(notes, initiatedBy: fromWeb), "A web page may open a local file in a new panel")
+        XCTAssertTrue(browserNewPanelRequestAllowed(web, initiatedBy: fromWeb))
+
+        let page = try writeFile("page.html", contents: "<p>local page</p>")
+        let other = try writeFile("other.html", contents: "<p>other</p>")
+        let localPage = try loadedWebView { $0.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent()) }
+        let fromLocal = try navigationAction(in: localPage, startedBy: "location.href = '\(other.absoluteString)'")
+        XCTAssertTrue(browserNewPanelRequestAllowed(notes, initiatedBy: fromLocal))
+    }
+
     // MARK: - Fixture
+
+    /// Runs `script` in the page and returns the navigation action WebKit
+    /// asks about, cancelling the navigation.
+    private func navigationAction(in webView: CmuxWebView, startedBy script: String) throws -> WKNavigationAction {
+        let recorder = ActionRecorder()
+        webView.navigationDelegate = recorder
+        let asked = expectation(description: "navigation action")
+        recorder.onAction = { asked.fulfill() }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+        wait(for: [asked], timeout: 10)
+        webView.navigationDelegate = nil
+        return try XCTUnwrap(recorder.action)
+    }
 
     private func writeFile(_ name: String, contents: String = "local file") throws -> URL {
         let url = scratch.appendingPathComponent(name)
@@ -118,5 +153,24 @@ final class BrowserFileLinkNewPanelTests: XCTestCase {
             XCTAssertTrue(NSApp.sendAction(action, to: item.target, from: item))
         }
         return opened
+    }
+}
+
+private final class ActionRecorder: NSObject, WKNavigationDelegate {
+    var onAction: (() -> Void)?
+    private(set) var action: WKNavigationAction?
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        if action == nil {
+            action = navigationAction
+            let callback = onAction
+            onAction = nil
+            callback?()
+        }
+        decisionHandler(.cancel)
     }
 }

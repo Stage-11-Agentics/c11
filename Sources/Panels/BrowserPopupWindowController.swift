@@ -306,14 +306,16 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         return child.webView
     }
 
-    /// Opens a link from the popup's page in the opener's workspace, or with
-    /// the default browser once the opener is gone. A `file:` link is never
-    /// handed to NSWorkspace: it would launch the file with its default app
-    /// (C11-505).
+    /// Opens a link from the popup's page in the opener's workspace, or in
+    /// the default browser once the opener is gone. A `file:` link needs the
+    /// popup itself to show a local page, since the opener may have moved
+    /// on; only http(s) goes to NSWorkspace, which would otherwise launch a
+    /// local file or another app's URL (C11-505).
     func openInOpenerPanel(_ url: URL) {
+        if url.isFileURL, webView.url?.isFileURL != true { return }
         if let openerPanel {
             openerPanel.openLinkInNewPanel(url: url)
-        } else if !url.isFileURL {
+        } else if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -415,7 +417,8 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
             )
         }
 
-        if let url = navigationAction.request.url {
+        if let url = navigationAction.request.url,
+           browserNewPanelRequestAllowed(url, initiatedBy: navigationAction) {
             controller?.openInOpenerPanel(url)
         }
         return nil

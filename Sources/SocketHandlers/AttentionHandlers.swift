@@ -9,6 +9,9 @@ extension TerminalController {
         params: [String: Any],
         legacyMethod: String? = nil
     ) -> V2CallResult {
+        if method.hasPrefix("flag.kind.") {
+            return v2FlagKindWorker(method: method, params: params)
+        }
         if method == "flag.list" {
             return v2FlagListWorker()
         }
@@ -42,6 +45,7 @@ extension TerminalController {
         }
 
         var validatedReason: String?
+        var validatedKind: PanelFlagKind?
         var callerPanelId: UUID?
         if method == "flag.raise" || tracksDelegateOwner {
             if method == "flag.raise" {
@@ -50,6 +54,17 @@ extension TerminalController {
                     validatedReason = reason
                 case .failure(let error):
                     return .err(code: "invalid_params", message: error.message, data: error.detailData)
+                }
+                if let rawKind = params["kind"], !(rawKind is NSNull) {
+                    guard let kindID = rawKind as? String,
+                          let kind = PanelFlagKindRegistry.shared.kind(id: kindID) else {
+                        return .err(
+                            code: "invalid_params",
+                            message: "kind must be the id of a registered flag kind",
+                            data: nil
+                        )
+                    }
+                    validatedKind = kind
                 }
             }
             if let rawCaller = params["caller_surface_id"] as? String {
@@ -131,6 +146,7 @@ extension TerminalController {
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             reason: validatedReason!,
+                            kind: validatedKind,
                             callerPanelId: callerPanelId,
                             by: actor,
                             title: workspace.panelTitle(panelId: surfaceId)
@@ -169,6 +185,7 @@ extension TerminalController {
                         "surface_id": surfaceId.uuidString,
                         "surface_ref": self.v2Ref(kind: .surface, uuid: surfaceId),
                         "flag": self.v2OrNull(snapshot.flagReason),
+                        "kind": snapshot.flagKind?.jsonObject ?? NSNull(),
                         "flag_raised_at": self.v2OrNull(snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp)),
                         "caller_surface_id": self.v2OrNull(
                             snapshot.flagCallerPanelId?.uuidString
@@ -203,6 +220,7 @@ extension TerminalController {
                         "surface_id": snapshot.surfaceId.uuidString,
                         "surface_ref": self.v2Ref(kind: .surface, uuid: snapshot.surfaceId),
                         "reason": snapshot.flagReason ?? "",
+                        "kind": snapshot.flagKind?.jsonObject ?? NSNull(),
                         "raised_at": snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp) ?? "",
                         "caller_surface_id": self.v2OrNull(
                             snapshot.flagCallerPanelId?.uuidString
@@ -221,5 +239,80 @@ extension TerminalController {
             message: "main thread did not begin the attention read before the deadline",
             data: nil
         )
+    }
+
+    nonisolated private func v2FlagKindWorker(
+        method: String,
+        params: [String: Any]
+    ) -> V2CallResult {
+        let registry = PanelFlagKindRegistry.shared
+        switch method {
+        case "flag.kind.list":
+            let kinds = registry.all().map { kind -> [String: Any] in
+                var object = kind.jsonObject
+                object["built_in"] = PanelFlagKindRegistry.isBuiltIn(kind.id)
+                return object
+            }
+            return .ok(["kinds": kinds, "count": kinds.count])
+        case "flag.kind.set":
+            guard let id = params["id"] as? String,
+                  let name = params["name"] as? String,
+                  let colorRaw = params["color"] as? String,
+                  let color = PanelFlagColorToken(rawValue: colorRaw) else {
+                return .err(
+                    code: "invalid_params",
+                    message: "id, name, and color (green, red, pink, or teal) are required",
+                    data: nil
+                )
+            }
+            let emoji: String?
+            if let rawEmoji = params["emoji"], !(rawEmoji is NSNull) {
+                guard let value = rawEmoji as? String else {
+                    return .err(code: "invalid_params", message: "emoji must be a string", data: nil)
+                }
+                emoji = value
+            } else {
+                emoji = nil
+            }
+            let kind = PanelFlagKind(id: id, name: name, color: color, emoji: emoji)
+            guard kind.isValid else {
+                return .err(
+                    code: "invalid_params",
+                    message: PanelFlagKindRegistryError.invalidKind.message,
+                    data: nil
+                )
+            }
+            do {
+                try registry.set(kind)
+                var object = kind.jsonObject
+                object["built_in"] = PanelFlagKindRegistry.isBuiltIn(kind.id)
+                return .ok(["kind": object])
+            } catch let error as PanelFlagKindRegistryError {
+                return .err(code: "invalid_params", message: error.message, data: nil)
+            } catch {
+                return .err(code: "internal_error", message: "failed to save flag kinds", data: nil)
+            }
+        case "flag.kind.rm":
+            guard let id = params["id"] as? String else {
+                return .err(code: "invalid_params", message: "id is required", data: nil)
+            }
+            do {
+                let existed = try registry.remove(id: id)
+                let effective = registry.kind(id: id)
+                var result: [String: Any] = [
+                    "id": id,
+                    "removed": existed && !PanelFlagKindRegistry.isBuiltIn(id),
+                    "reset_to_default": existed && PanelFlagKindRegistry.isBuiltIn(id),
+                ]
+                result["kind"] = effective?.jsonObject ?? NSNull()
+                return .ok(result)
+            } catch let error as PanelFlagKindRegistryError {
+                return .err(code: "invalid_params", message: error.message, data: nil)
+            } catch {
+                return .err(code: "internal_error", message: "failed to remove flag kind", data: nil)
+            }
+        default:
+            return .err(code: "method_not_found", message: "Unknown method", data: nil)
+        }
     }
 }

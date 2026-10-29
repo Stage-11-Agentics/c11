@@ -785,6 +785,26 @@ final class PanelLivenessDeriverTests: XCTestCase {
         XCTAssertNotEqual(Workspace.promptCacheColdHex(lightBackground: true), Workspace.promptCacheColdHex(lightBackground: false))
     }
 
+    func testNamedFlagTokensBeatCacheBlueAndAdaptToBothThemes() {
+        let green = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil)
+        let red = PanelFlagKind(id: "merge-issue", name: "Merge Issue", color: .red, emoji: nil)
+        XCTAssertEqual(Workspace.activityColorOverrideHex(
+            isFlagged: true, promptCacheExpired: true, lightBackground: true, flagKind: green
+        ), "#167A42")
+        XCTAssertEqual(Workspace.activityColorOverrideHex(
+            isFlagged: true, promptCacheExpired: true, lightBackground: false, flagKind: green
+        ), "#49C980")
+        XCTAssertEqual(Workspace.activityColorOverrideHex(
+            isFlagged: true, promptCacheExpired: false, lightBackground: true, flagKind: red
+        ), "#B42331")
+        XCTAssertEqual(Workspace.activityColorOverrideHex(
+            isFlagged: true, promptCacheExpired: false, lightBackground: false, flagKind: red
+        ), "#FF6B78")
+        XCTAssertEqual(Workspace.activityColorOverrideHex(
+            isFlagged: true, promptCacheExpired: true, lightBackground: false
+        ), "#9D8AD9", "a generic flag retains violet")
+    }
+
     func testMarkTintPrecedenceIsFlagThenCacheBlueThenLifecycle() {
         XCTAssertEqual(ActivityMarkTint.resolve(flagged: true, promptCacheExpired: true), .flag)
         XCTAssertEqual(ActivityMarkTint.resolve(flagged: true, promptCacheExpired: false), .flag)

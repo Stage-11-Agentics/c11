@@ -779,14 +779,14 @@ final class FeedAnswerSafetyTests: XCTestCase {
         _ = try store.mutateAttention(
             workspaceId: workspaceID,
             surfaceId: panelID,
-            flag: .raise("original"),
+            flag: .raise("original", kind: nil),
             now: originalEpoch
         )
         _ = try store.mutateAttention(workspaceId: workspaceID, surfaceId: panelID, flag: .lower)
         _ = try store.mutateAttention(
             workspaceId: workspaceID,
             surfaceId: panelID,
-            flag: .raise("replacement"),
+            flag: .raise("replacement", kind: nil),
             now: replacementEpoch
         )
 

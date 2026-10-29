@@ -32,6 +32,8 @@ enum PanelSheetDetailBuilder {
         var markdownPath: String?
         var activity: BonsplitTabActivityState?
         var isFlagged: Bool
+        var flagReason: String? = nil
+        var flagKind: PanelFlagKind? = nil
         /// When the surface entered its current state, as the workspace saw it happen.
         var stateEnteredAt: Date?
         /// Exact start the projection knows for waiting (notification time) and cold.
@@ -182,15 +184,15 @@ enum PanelSheetDetailBuilder {
             }
         }
         let relationship = oneLine(input.relationshipLabel)
+        let flagDetail: String? = {
+            guard input.isFlagged, let reason = oneLine(input.flagReason), !reason.isEmpty else { return nil }
+            return oneLine(input.flagKind?.displayText(reason: reason)) ?? reason
+        }()
         let notes = [oneLine(input.evidenceNote), promptCacheNote(input)].compactMap { $0 }
-        let detail: String?
-        if notes.isEmpty {
-            detail = base
-        } else {
-            detail = [base, notes.joined(separator: " · ")]
-                .compactMap { $0 }
-                .joined(separator: " · ")
-        }
+        let detailParts = [flagDetail, base]
+            .compactMap { $0 }
+            + (notes.isEmpty ? [] : [notes.joined(separator: " · ")])
+        let detail = detailParts.isEmpty ? nil : detailParts.joined(separator: " · ")
         guard let relationship else { return detail }
         // The relationship leads the fixed-height subtitle row so it remains
         // visible at the sheet's narrower width tiers; the row still reserves
@@ -467,6 +469,8 @@ extension Workspace {
             markdownPath: (panel as? MarkdownPanel)?.filePath,
             activity: activity,
             isFlagged: attention.isFlagged,
+            flagReason: attention.flagReason,
+            flagKind: attention.flagKind,
             stateEnteredAt: entered,
             stateStartedAt: activity == .waiting || activity == .cold ? help?.stateStartedAt : nil,
             flagRaisedAt: attention.flagRaisedAt,

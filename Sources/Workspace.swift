@@ -5513,23 +5513,25 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     /// Dark blue: the cold line of an agent whose prompt cache expired, so the
-    /// next message re-caches its whole context. Darker than the flag violet
+    /// next message re-caches its whole context. Darker than the generic flag
     /// (`#9D8AD9`) so the two differ in lightness as well as hue; each theme's
     /// value keeps a 2pt line above 3:1 against its chrome (dark: up to #3A3A3A).
     nonisolated static func promptCacheColdHex(lightBackground: Bool) -> String {
         lightBackground ? "#2C5597" : "#5287D6"
     }
 
-    /// The mark's recolor: flag violet wins, then cache blue; nil keeps the
-    /// lifecycle color. Delegation never recolors a mark; its baseline carries
-    /// lineage (`ActivityMarkTint`).
+    /// The mark's recolor: a named flag uses its adaptive token, generic flag
+    /// stays violet, then cache blue; nil keeps the lifecycle color.
+    /// Delegation never recolors a mark; its baseline carries lineage
+    /// (`ActivityMarkTint`).
     nonisolated static func activityColorOverrideHex(
         isFlagged: Bool,
         promptCacheExpired: Bool,
-        lightBackground: Bool
+        lightBackground: Bool,
+        flagKind: PanelFlagKind? = nil
     ) -> String? {
         switch ActivityMarkTint.resolve(flagged: isFlagged, promptCacheExpired: promptCacheExpired) {
-        case .flag: return "#9D8AD9"
+        case .flag: return flagKind?.colorHex(lightBackground: lightBackground) ?? "#9D8AD9"
         case .promptCacheCold: return promptCacheColdHex(lightBackground: lightBackground)
         case .lifecycle: return nil
         }
@@ -5541,7 +5543,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// running/idle/cold are a neutral white-to-gray ramp (running most present,
     /// cold most receded) so `waiting` gold stays the only chromatic lifecycle
     /// color in the chrome: the brand's deliberate "needs you" signal. Two
-    /// modifiers recolor a mark: flag violet wins, then blue on a cold mark
+    /// modifiers recolor a mark: a flag kind (or generic violet) wins, then blue on a cold mark
     /// whose prompt cache expired. Delegates keep these colors and draw a
     /// lineage baseline instead.
     nonisolated static func resolvedSurfaceTabActivityColors(
@@ -8045,7 +8047,8 @@ final class Workspace: Identifiable, ObservableObject {
                 isFlagged: attention.isFlagged,
                 promptCacheExpired: help?.promptCacheExpired == true,
                 lightBackground: bonsplitController.configuration.appearance.chromeColors.backgroundHex
-                    .flatMap { NSColor(hex: $0) }?.isLightColor ?? false
+                    .flatMap { NSColor(hex: $0) }?.isLightColor ?? false,
+                flagKind: attention.flagKind
             ),
             motion: attention.isFlagged
                 ? (activityState == .waiting ? .binaryFlash : .breathe)
@@ -8090,6 +8093,7 @@ final class Workspace: Identifiable, ObservableObject {
             waitingStartedAt: waitingStartedAt,
             coldAfterSeconds: SidebarAgentColdSettings.thresholdSeconds(),
             flagReason: attention.flagReason,
+            flagKind: attention.flagKind,
             flagRaisedAt: attention.flagRaisedAt,
             suppressed: attention.suppressed,
             delegationLabel: delegationLabel(panelId: panelId),

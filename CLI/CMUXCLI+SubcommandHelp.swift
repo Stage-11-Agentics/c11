@@ -983,13 +983,23 @@ extension CMUXCLI {
         case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
             return """
             Usage:
-              c11 raise-flag --panel <id|ref> "<reason>" [--by agent|operator]
+              c11 raise-flag --panel <id|ref> [--kind <slug>] "<reason>" [--by agent|operator]
               c11 lower-flag --panel <id|ref> [--by agent|operator]
               c11 delegate --panel <id|ref> [--by agent|operator]
               c11 undelegate --panel <id|ref> [--by agent|operator]
 
             Delegate aliases: suppress and unsuppress. Attention mutations
             require an explicit panel and never focus, select, or raise their target.
+            """
+        case "flag-kind":
+            return """
+            Usage:
+              c11 flag-kind list [--json]
+              c11 flag-kind set --id <slug> --name <name> --color <green|red|pink|teal> [--emoji <emoji>] [--json]
+              c11 flag-kind rm --id <slug> [--json]
+
+            Set creates or updates a named flag kind. Removing a built-in kind
+            restores its shipped default. Supported colors are adaptive tokens.
             """
         case "new-panel", "new-tab":
             return """

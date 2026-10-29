@@ -607,6 +607,32 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual((events[2]["payload"] as? [String: Any])?["by"] as? String, "agent")
         XCTAssertEqual((events[3]["payload"] as? [String: Any])?["by"] as? String, "c11")
     }
+
+    func testNamedFlagEventCarriesResolvedSnapshotAndGenericEventKeepsOldShape() {
+        let log = EventLog(url: logURL(), instance: "named-flag-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "named-flag-inst")
+        let kind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: "🧭")
+        EventEmitter.shared.emitFlagRaised(
+            workspace: UUID(), surface: UUID(), reason: "Choose the release owner",
+            callerPanelId: nil, by: .agent
+        )
+        EventEmitter.shared.emitFlagRaised(
+            workspace: UUID(), surface: UUID(), reason: "Resolve the deployment hold",
+            kind: kind, callerPanelId: nil, by: .operator
+        )
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+        let genericPayload = events.first?["payload"] as? [String: Any]
+        let namedPayload = events.dropFirst().first?["payload"] as? [String: Any]
+        XCTAssertNil(genericPayload?["kind"], "generic events preserve their pre-kind shape")
+        XCTAssertEqual(namedPayload?["reason"] as? String, "Resolve the deployment hold")
+        let snapshot = namedPayload?["kind"] as? [String: Any]
+        XCTAssertEqual(snapshot?["id"] as? String, "chief-of-staff")
+        XCTAssertEqual(snapshot?["name"] as? String, "Chief of Staff")
+        XCTAssertEqual(snapshot?["color"] as? String, "green")
+        XCTAssertEqual(snapshot?["emoji"] as? String, "🧭")
+    }
 }
 
 extension EventLogTests {

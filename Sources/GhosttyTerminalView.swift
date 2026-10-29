@@ -7560,15 +7560,34 @@ func shouldAllowEnsureFocusWindowActivation(
 
 private struct PanelFlagBanner: View {
     let reason: String
+    let kind: PanelFlagKind?
     let onDismiss: () -> Void
 
     @State private var isDismissHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var displayText: String {
+        kind?.displayText(reason: reason) ?? reason
+    }
+
+    private var bannerColor: Color {
+        guard let kind,
+              let color = NSColor(hex: kind.colorHex(lightBackground: colorScheme == .light)) else {
+            return Color(red: 157.0 / 255.0, green: 138.0 / 255.0, blue: 217.0 / 255.0)
+        }
+        return Color(nsColor: color)
+    }
+
+    private var bannerForeground: Color {
+        guard kind != nil else { return Color.black.opacity(0.86) }
+        return colorScheme == .light ? .white : Color.black.opacity(0.86)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "flag.fill")
                 .accessibilityHidden(true)
-            Text(verbatim: reason)
+            Text(verbatim: displayText)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 4)
@@ -7596,10 +7615,10 @@ private struct PanelFlagBanner: View {
         .font(.system(size: 12, weight: .semibold))
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .foregroundColor(Color.black.opacity(0.86))
+        .foregroundColor(bannerForeground)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color(red: 157.0 / 255.0, green: 138.0 / 255.0, blue: 217.0 / 255.0))
+                .fill(bannerColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -7610,7 +7629,8 @@ private struct PanelFlagBanner: View {
             localized: "surface.flag.banner.accessibility",
             defaultValue: "Agent flag"
         )))
-        .accessibilityValue(Text(verbatim: reason))
+        .accessibilityValue(Text(verbatim: displayText))
+        .help(displayText)
     }
 }
 
@@ -8203,7 +8223,7 @@ final class GhosttySurfaceScrollView: NSView {
             return
         }
 
-        let root = PanelFlagBanner(reason: reason) { [weak self, weak terminalSurface] in
+        let root = PanelFlagBanner(reason: reason, kind: snapshot.flagKind) { [weak self, weak terminalSurface] in
             guard let self, let terminalSurface else { return }
             _ = try? PanelAttentionService.shared.lower(
                 workspaceId: terminalSurface.workspaceId,

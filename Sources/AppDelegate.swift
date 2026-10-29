@@ -14447,7 +14447,10 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         var lines: [String] = []
         lines.append(NotificationMenuSnapshotBuilder.attentionCountTitle(flags: snapshot.flagCount, asks: snapshot.openAskCount))
         if !snapshot.flags.isEmpty {
-            lines.append(contentsOf: snapshot.flags.prefix(maxInlineNotificationItems).compactMap(\.flagReason))
+            lines.append(contentsOf: snapshot.flags.prefix(maxInlineNotificationItems).compactMap { flag in
+                guard let reason = flag.flagReason else { return nil }
+                return flag.flagKind?.displayText(reason: reason) ?? reason
+            })
         }
         if displayedUnreadCount > 0 {
             lines.append(displayedUnreadCount == 1
@@ -14477,6 +14480,28 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             summary += " …"
         }
         return summary
+    }
+
+    private var isLightAppearance: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .darkAqua
+    }
+
+    private func attributedFlagTitle(_ text: String, kind: PanelFlagKind) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let result = NSMutableAttributedString(
+            string: MenuBarNotificationLineFormatter.flagMenuTitle(text),
+            attributes: [
+                .font: NSFont.menuFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        let firstLine = (result.string as NSString).lineRange(for: NSRange(location: 0, length: 0))
+        if let color = NSColor(hex: kind.colorHex(lightBackground: isLightAppearance)) {
+            result.addAttribute(.foregroundColor, value: color, range: firstLine)
+        }
+        return result
     }
 
     private func applyShortcut(_ shortcut: StoredShortcut, to item: NSMenuItem) {
@@ -14509,8 +14534,14 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             let workspaceTitle = AppDelegate.shared?.tabTitle(for: flag.workspaceId) ?? flag.workspaceId.uuidString
             let workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: flag.workspaceId)?.workspaces.first { $0.id == flag.workspaceId }
             let tabTitle = workspace?.panelTitle(panelId: flag.surfaceId) ?? flag.surfaceId.uuidString
-            let fullTitle = "⚑ \(flag.flagReason ?? "")\n\(workspaceTitle) · \(tabTitle)"
-            item.title = MenuBarNotificationLineFormatter.flagMenuTitle(fullTitle)
+            let reason = flag.flagReason ?? ""
+            let displayText = flag.flagKind?.displayText(reason: reason) ?? reason
+            let fullTitle = "⚑ \(displayText)\n\(workspaceTitle) · \(tabTitle)"
+            if let kind = flag.flagKind {
+                item.attributedTitle = attributedFlagTitle(fullTitle, kind: kind)
+            } else {
+                item.title = MenuBarNotificationLineFormatter.flagMenuTitle(fullTitle)
+            }
             item.toolTip = fullTitle
             item.representedObject = FlagMenuItemPayload(flag: flag)
             menu.insertItem(item, at: flagInsertionIndex + offset)

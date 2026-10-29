@@ -9105,6 +9105,7 @@ struct WorkspaceSidebar: View {
                         flagged: attention.isFlagged,
                         suppressed: attention.suppressed,
                         flagReason: attention.flagReason,
+                        flagKind: attention.flagKind,
                         activityHelp: activityHelp,
                         lineageDepth: attention.delegated ? ws.delegationDepth(panelId: panelId) : 0
                     )
@@ -11734,6 +11735,7 @@ private struct WorkspacePulseMark: View {
 
     let state: WorkspacePulseState
     let lifecycleColor: Color
+    let flagColor: Color?
     let phaseId: UUID
     let flagged: Bool
     let suppressed: Bool
@@ -11755,10 +11757,11 @@ private struct WorkspacePulseMark: View {
         suppressed && !flagged && state == .waiting ? .idle : state
     }
 
-    /// Flag violet, else the caller's lifecycle color (already cache blue for
-    /// a cache-cold mark). Delegation never recolors; it draws the baseline.
+    /// A named flag token or generic violet, else the caller's lifecycle color
+    /// (already cache blue for a cache-cold mark). Delegation never recolors;
+    /// it draws the baseline.
     private var color: Color {
-        flagged ? Self.flaggedColor : lifecycleColor
+        flagged ? (flagColor ?? Self.flaggedColor) : lifecycleColor
     }
 
     private var displayedLineageDepth: Int {
@@ -12372,6 +12375,10 @@ private struct WorkspaceRowView: View, Equatable {
                 ? Color(nsColor: NSColor(hex: Workspace.promptCacheColdHex(lightBackground: colorScheme == .light))
                     ?? .secondaryLabelColor)
                 : workspacePulseColor(for: agent.presentedState),
+            flagColor: agent.flagKind.map {
+                Color(nsColor: NSColor(hex: $0.colorHex(lightBackground: colorScheme == .light))
+                    ?? .secondaryLabelColor)
+            },
             phaseId: agent.surfaceId,
             flagged: agent.flagged,
             suppressed: agent.suppressed,
@@ -12412,11 +12419,17 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func workspacePulseMarkAccessibilityLabel(_ agent: WorkspacePulseAgent) -> String {
-        agent.context?.title
-            ?? String(
-                localized: "surfaceManifest.detail.activity",
-                defaultValue: "Activity"
-            )
+        let label = agent.context?.title
+            ?? String(localized: "surfaceManifest.detail.activity", defaultValue: "Activity")
+        guard agent.flagged, let kind = agent.flagKind else { return label }
+        return String.localizedStringWithFormat(
+            String(
+                localized: "sidebar.workspacePulse.namedFlagAccessibility",
+                defaultValue: "%@, flagged %@"
+            ),
+            label,
+            kind.displayLabel
+        )
     }
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
@@ -12439,7 +12452,8 @@ private struct WorkspaceRowView: View, Equatable {
 
             Group {
                 if agent.flagged, let reason = agent.flagReason {
-                    Text(verbatim: reason).fontWeight(.medium)
+                    Text(verbatim: agent.flagKind?.displayText(reason: reason) ?? reason)
+                        .fontWeight(.medium)
                 } else if let context {
                     (
                         Text(verbatim: context.title).fontWeight(.medium)

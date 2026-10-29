@@ -272,7 +272,7 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
 
         let raised = try store.mutateAttention(
-            workspaceId: workspace, surfaceId: surface, flag: .raise("Synthetic decision"), callerPanelId: caller
+            workspaceId: workspace, surfaceId: surface, flag: .raise("Synthetic decision", kind: nil), callerPanelId: caller
         )
         XCTAssertEqual(raised.after.flagCallerPanelId, caller)
         let metadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
@@ -286,6 +286,19 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
         let loweredMetadata = store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata
         for key in callerKeys {
             XCTAssertNil(loweredMetadata[key], key)
+        }
+    }
+
+    func testFlagKindMetadataRequiresAValidDisplaySnapshot() {
+        let valid = PanelFlagKind(id: "release-review", name: "Release Review", color: .teal, emoji: "🧪")
+        XCTAssertNil(PanelMetadataStore.validateReservedKey(MetadataKey.flagKind, valid.jsonObject))
+        for invalid: Any in [
+            ["id": "Release Review", "name": "Release Review", "color": "teal"],
+            ["id": "release-review", "name": "Release Review", "color": "blue"],
+            ["id": "release-review", "name": " ", "color": "teal"],
+            "release-review",
+        ] {
+            XCTAssertNotNil(PanelMetadataStore.validateReservedKey(MetadataKey.flagKind, invalid))
         }
     }
 
@@ -362,6 +375,75 @@ final class PanelMetadataStoreValidationTests: XCTestCase {
             workspaceId: workspace, surfaceId: surface, key: "flag_caller_panel_id",
             value: UUID().uuidString, source: .heuristic
         ))
+    }
+
+    func testFlagKindSnapshotIsReservedForTheAttentionService() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+        let kind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil)
+        XCTAssertThrowsError(try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.flagKind: kind.jsonObject],
+            mode: .merge,
+            source: .explicit
+        )) { error in
+            guard case .attentionRequiresService? = error as? PanelMetadataStore.WriteError else {
+                return XCTFail("expected attentionRequiresService, got \(error)")
+            }
+        }
+        XCTAssertFalse(store.setInternal(
+            workspaceId: workspace, surfaceId: surface, key: MetadataKey.flagKind,
+            value: kind.jsonObject, source: .heuristic
+        ))
+    }
+
+    func testRestoreKeepsValidFlagKindAtFlagEpochAndDropsInvalidOrOrphanSnapshots() {
+        let kind = PanelFlagKind(id: "archived-kind", name: "Archived Kind", color: .pink, emoji: "🧪")
+        let workspace = UUID()
+        let validSurface = UUID()
+        let invalidSurface = UUID()
+        let orphanSurface = UUID()
+        defer {
+            store.removeSurface(workspaceId: workspace, surfaceId: validSurface)
+            store.removeSurface(workspaceId: workspace, surfaceId: invalidSurface)
+            store.removeSurface(workspaceId: workspace, surfaceId: orphanSurface)
+        }
+        let raisedAt = Date(timeIntervalSince1970: 1_735_000_000)
+
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: validSurface,
+            values: [MetadataKey.flag: "Archived work", MetadataKey.flagKind: kind.jsonObject],
+            sources: [
+                MetadataKey.flag: .init(source: .explicit, ts: raisedAt.timeIntervalSince1970),
+                MetadataKey.flagKind: .init(source: .explicit, ts: raisedAt.addingTimeInterval(60).timeIntervalSince1970),
+            ]
+        )
+        let restored = store.attentionSnapshot(workspaceId: workspace, surfaceId: validSurface)
+        XCTAssertEqual(restored.flagKind, kind, "a saved kind snapshot survives registry removal")
+        XCTAssertEqual(restored.flagRaisedAt, raisedAt)
+        XCTAssertEqual(store.surfaceEntry(workspaceId: workspace, surfaceId: validSurface).sources[MetadataKey.flagKind]?.ts,
+                       raisedAt.timeIntervalSince1970)
+
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: invalidSurface,
+            values: [MetadataKey.flag: "Archived work", MetadataKey.flagKind: ["id": "bad slug"]],
+            sources: [MetadataKey.flag: .init(source: .explicit, ts: raisedAt.timeIntervalSince1970)]
+        )
+        XCTAssertNil(store.attentionSnapshot(workspaceId: workspace, surfaceId: invalidSurface).flagKind)
+        XCTAssertNil(store.getMetadata(workspaceId: workspace, surfaceId: invalidSurface).metadata[MetadataKey.flagKind])
+
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: orphanSurface,
+            values: [MetadataKey.flagKind: kind.jsonObject],
+            sources: [MetadataKey.flagKind: .init(source: .explicit, ts: raisedAt.timeIntervalSince1970)]
+        )
+        XCTAssertNil(store.attentionSnapshot(workspaceId: workspace, surfaceId: orphanSurface).flagKind)
+        XCTAssertNil(store.getMetadata(workspaceId: workspace, surfaceId: orphanSurface).metadata[MetadataKey.flagKind])
     }
 }
 

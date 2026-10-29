@@ -1201,6 +1201,65 @@ extension CMUXCLI {
             }
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["panel", "area", "workspace"]))
 
+        case "flag-kind":
+            guard let subcommand = commandArgs.first?.lowercased() else {
+                throw CLIError(message: "flag-kind requires list, set, or rm")
+            }
+            let method: String
+            var params: [String: Any] = [:]
+            switch subcommand {
+            case "list":
+                method = "flag.kind.list"
+            case "set":
+                method = "flag.kind.set"
+                for name in ["--id", "--name", "--color"] {
+                    guard let value = optionValue(commandArgs, name: name),
+                          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        throw CLIError(message: "flag-kind set requires --id, --name, and --color")
+                    }
+                    params[String(name.dropFirst(2))] = value
+                }
+                if let emoji = optionValue(commandArgs, name: "--emoji") { params["emoji"] = emoji }
+            case "rm":
+                method = "flag.kind.rm"
+                guard let id = optionValue(commandArgs, name: "--id"),
+                      !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: "flag-kind rm requires --id <slug>")
+                }
+                params["id"] = id
+            default:
+                throw CLIError(message: "flag-kind requires list, set, or rm")
+            }
+            let payload = try client.sendV2(method: method, params: params)
+            let flagKindJSON = jsonOutput || commandArgs.contains("--json")
+            if flagKindJSON {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "OK")
+            } else if subcommand == "list" {
+                let kinds = payload["kinds"] as? [[String: Any]] ?? []
+                if kinds.isEmpty {
+                    print("No named flag kinds")
+                } else {
+                    for kind in kinds {
+                        let id = kind["id"] as? String ?? ""
+                        let name = kind["name"] as? String ?? ""
+                        let color = kind["color"] as? String ?? ""
+                        let emoji = kind["emoji"] as? String ?? ""
+                        let source = (kind["built_in"] as? Bool ?? false) ? "built-in" : "custom"
+                        print([id, name, color, emoji, source].filter { !$0.isEmpty }.joined(separator: "\t"))
+                    }
+                }
+            } else if subcommand == "set" {
+                let id = params["id"] as? String ?? ""
+                let name = params["name"] as? String ?? ""
+                print("Saved flag kind \(id) (\(name))")
+            } else if payload["reset_to_default"] as? Bool == true {
+                print("Reset built-in flag kind to its default")
+            } else if payload["removed"] as? Bool == true {
+                print("Removed flag kind")
+            } else {
+                print("No flag kind with that id")
+            }
+
         case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
             guard let rawSurface = optionValue(commandArgs, name: "--panel") else {
                 throw CLIError(message: "\(command) requires --panel <id|ref>")
@@ -1230,11 +1289,17 @@ extension CMUXCLI {
             switch command {
             case "raise-flag":
                 method = "flag.raise"
+                if let kind = optionValue(commandArgs, name: "--kind") {
+                    guard !kind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        throw CLIError(message: "raise-flag: --kind received an empty value")
+                    }
+                    params["kind"] = kind
+                }
                 var positionals: [String] = []
                 var index = 0
                 while index < commandArgs.count {
                     let value = commandArgs[index]
-                    if Self.isFlag(value, "--panel") || ["--workspace", "--window", "--by"].contains(value) {
+                    if Self.isFlag(value, "--panel") || ["--workspace", "--window", "--by", "--kind"].contains(value) {
                         index += 2
                     } else if value == "--json" {
                         index += 1
@@ -1544,6 +1609,15 @@ extension CMUXCLI {
                         let focusTag = focused ? "  [focused]" : ""
                         let titlePart = title.isEmpty ? "" : "  \"\(title)\""
                         print("\(prefix)\(handle)  \(sType)\(focusTag)\(titlePart)")
+                        if let flag = surface["flag"] as? [String: Any],
+                           let reason = flag["reason"] as? String {
+                            let kind = flag["kind"] as? [String: Any]
+                            let emoji = (kind?["emoji"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                            let name = (kind?["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                            let label = [emoji, name].compactMap { $0 }.joined(separator: " ")
+                            let detail = label.isEmpty ? reason : "\(label): \(reason)"
+                            print("     ⚑ \(detail)")
+                        }
                     }
                 }
             }

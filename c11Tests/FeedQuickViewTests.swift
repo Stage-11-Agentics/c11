@@ -9,12 +9,34 @@ import XCTest
 
 final class FeedQuickViewTests: XCTestCase {
     private func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))! }
-    private func row(_ n: Int, kind: FeedKind? = .question, flag: Bool = false, prompt: String? = nil) -> FeedRow {
+    private func row(
+        _ n: Int,
+        kind: FeedKind? = .question,
+        flag: Bool = false,
+        prompt: String? = nil,
+        flagKind: PanelFlagKind? = nil
+    ) -> FeedRow {
         .init(workspaceID: id(99), panelID: id(n), kind: kind, prompt: prompt, options: nil,
             promptAvailable: prompt != nil, source: "hook", sourceRank: 4, openedAtMs: Int64(n),
             state: kind == .turnEnd ? nil : "open", requestID: "synthetic", confirmation: "unconfirmed",
             blocking: kind == .turnEnd ? false : true,
-            flag: flag ? .init(reason: "Synthetic flag", raisedAtMs: Int64(n), callerPanelID: nil) : nil)
+            flag: flag ? .init(reason: "Synthetic flag", raisedAtMs: Int64(n), callerPanelID: nil, kind: flagKind) : nil)
+    }
+
+    func testNamedFlagAndOpenAskKeepBothDetailsInQuickView() {
+        let kind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil)
+        let row = row(1, flag: true, prompt: "Which migration path?", flagKind: kind)
+        let view = FeedQuickViewRow(
+            row: row,
+            title: "Agent",
+            now: Date(timeIntervalSince1970: 10),
+            selected: false,
+            onOpen: {}
+        )
+
+        XCTAssertEqual(view.evidence, "Chief of Staff: Synthetic flag")
+        XCTAssertEqual(view.prompt, "Which migration path?")
+        XCTAssertTrue(view.accessibleHelp.contains("Hook · rank 4 · Unconfirmed"))
     }
 
     func testFiltersUseProjectionCountsAndNeverReplaceJumpSequence() {

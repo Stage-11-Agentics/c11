@@ -185,6 +185,13 @@ extension TerminalController {
                     "tty": v2OrNull(ws.panelTTYNames[panel.id]),
                     "custom_color": v2OrNull(ws.panelCustomColor(panelId: panel.id))
                 ]
+                let attention = ws.attentionSnapshot(panelId: panel.id)
+                if let reason = attention.flagReason {
+                    item["flag"] = [
+                        "reason": reason,
+                        "kind": attention.flagKind?.jsonObject ?? NSNull()
+                    ]
+                }
                 v2SetSeenFields(&item, panelId: panel.id)
                 v2SetPromptCacheField(&item, panelId: panel.id)
                 v2SetLocationFields(&item, workspace: ws, panel: panel)
@@ -1995,6 +2002,7 @@ extension TerminalController {
 
         let attentionKeys = Set([
             MetadataKey.flag,
+            MetadataKey.flagKind,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,
@@ -2163,6 +2171,7 @@ extension TerminalController {
 
         let attentionKeys = Set([
             MetadataKey.flag,
+            MetadataKey.flagKind,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,

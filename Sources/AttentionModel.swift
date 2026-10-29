@@ -14,6 +14,113 @@ enum PanelAttentionReason {
     }
 }
 
+enum PanelFlagKindRegistryError: Error {
+    case invalidKind
+    case tooManyKinds
+    case encodingFailed
+
+    var message: String {
+        switch self {
+        case .invalidKind:
+            return "kind requires a lowercase slug, a non-empty display name, a supported color, and an optional short emoji"
+        case .tooManyKinds:
+            return "at most 64 flag kinds may be registered"
+        case .encodingFailed:
+            return "failed to save flag kinds"
+        }
+    }
+}
+
+/// c11-owned registry for named flags. Built-in entries always exist; edits
+/// are stored as UserDefaults overrides in c11's own app domain, and removing
+/// a built-in restores its shipped default.
+final class PanelFlagKindRegistry: @unchecked Sendable {
+    static let shared = PanelFlagKindRegistry()
+    static let storageKey = "attention.flagKinds.v1"
+    static let didChangeNotification = Notification.Name("c11.panelFlagKindsDidChange")
+    static let builtIns: [PanelFlagKind] = [
+        PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil),
+        PanelFlagKind(id: "merge-issue", name: "Merge Issue", color: .red, emoji: nil),
+    ]
+
+    private let defaults: UserDefaults
+    private let lock = NSLock()
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func all() -> [PanelFlagKind] {
+        lock.lock()
+        defer { lock.unlock() }
+        let overrides = readOverrides()
+        var values = Dictionary(uniqueKeysWithValues: Self.builtIns.map { ($0.id, $0) })
+        for (id, kind) in overrides { values[id] = kind }
+        return values.values.sorted { $0.id < $1.id }
+    }
+
+    func kind(id: String) -> PanelFlagKind? {
+        all().first { $0.id == id }
+    }
+
+    func set(_ kind: PanelFlagKind) throws {
+        guard kind.isValid else { throw PanelFlagKindRegistryError.invalidKind }
+        lock.lock()
+        var changed = false
+        defer {
+            lock.unlock()
+            if changed {
+                NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+            }
+        }
+        var overrides = readOverrides()
+        overrides[kind.id] = kind
+        let registeredIDs = Set(Self.builtIns.map(\.id)).union(overrides.keys)
+        guard registeredIDs.count <= 64 else { throw PanelFlagKindRegistryError.tooManyKinds }
+        try write(overrides)
+        changed = true
+    }
+
+    /// Removing a built-in clears its override and restores the default.
+    @discardableResult
+    func remove(id: String) throws -> Bool {
+        guard PanelFlagKind.isValidSlug(id) else { throw PanelFlagKindRegistryError.invalidKind }
+        lock.lock()
+        var changed = false
+        defer {
+            lock.unlock()
+            if changed {
+                NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+            }
+        }
+        var overrides = readOverrides()
+        let existed = overrides.removeValue(forKey: id) != nil
+            || Self.builtIns.contains(where: { $0.id == id })
+        guard existed else { return false }
+        try write(overrides)
+        changed = true
+        return true
+    }
+
+    static func isBuiltIn(_ id: String) -> Bool {
+        builtIns.contains { $0.id == id }
+    }
+
+    private func readOverrides() -> [String: PanelFlagKind] {
+        guard let data = defaults.data(forKey: Self.storageKey), data.count <= 32_768,
+              let decoded = try? JSONDecoder().decode([PanelFlagKind].self, from: data) else { return [:] }
+        return Dictionary(decoded.filter(\.isValid).map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+    }
+
+    private func write(_ values: [String: PanelFlagKind]) throws {
+        let ordered = values.values.sorted { $0.id < $1.id }
+        guard let data = try? JSONEncoder().encode(ordered), data.count <= 32_768 else {
+            throw PanelFlagKindRegistryError.encodingFailed
+        }
+        defaults.set(data, forKey: Self.storageKey)
+    }
+}
+
 enum PanelAttentionActor: String, CaseIterable {
     case `operator`
     case agent
@@ -22,7 +129,7 @@ enum PanelAttentionActor: String, CaseIterable {
 
 enum PanelAttentionFlagMutation {
     case unchanged
-    case raise(String)
+    case raise(String, kind: PanelFlagKind?)
     case lower
 }
 
@@ -50,6 +157,7 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
     let workspaceId: UUID
     let surfaceId: UUID
     let flagReason: String?
+    let flagKind: PanelFlagKind?
     let flagRaisedAt: Date?
     let flagCallerPanelId: UUID?
     let delegated: Bool
@@ -60,6 +168,7 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
         workspaceId: UUID,
         surfaceId: UUID,
         flagReason: String?,
+        flagKind: PanelFlagKind? = nil,
         flagRaisedAt: Date?,
         flagCallerPanelId: UUID? = nil,
         delegated: Bool,
@@ -68,6 +177,7 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
         self.workspaceId = workspaceId
         self.surfaceId = surfaceId
         self.flagReason = flagReason
+        self.flagKind = flagKind
         self.flagRaisedAt = flagRaisedAt
         self.flagCallerPanelId = flagCallerPanelId
         self.delegated = delegated
@@ -78,6 +188,7 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
         workspaceId: UUID,
         surfaceId: UUID,
         flagReason: String?,
+        flagKind: PanelFlagKind? = nil,
         flagRaisedAt: Date?,
         flagCallerPanelId: UUID? = nil,
         suppressed: Bool
@@ -86,6 +197,7 @@ struct PanelAttentionSnapshot: Equatable, Identifiable {
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flagReason: flagReason,
+            flagKind: flagKind,
             flagRaisedAt: flagRaisedAt,
             flagCallerPanelId: flagCallerPanelId,
             delegated: suppressed
@@ -425,6 +537,7 @@ final class PanelAttentionService {
         workspaceId: UUID,
         surfaceId: UUID,
         reason: String,
+        kind: PanelFlagKind? = nil,
         callerPanelId: UUID? = nil,
         by actor: PanelAttentionActor = .agent,
         title: String?
@@ -432,7 +545,7 @@ final class PanelAttentionService {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
-            flag: .raise(reason),
+            flag: .raise(reason, kind: kind),
             callerPanelId: callerPanelId,
             actor: actor,
             title: title
@@ -767,6 +880,7 @@ final class PanelAttentionService {
                     workspace: workspaceId,
                     surface: surfaceId,
                     reason: reason,
+                    kind: transaction.after.flagKind,
                     callerPanelId: transaction.after.flagCallerPanelId,
                     by: actor
                 )
@@ -778,7 +892,8 @@ final class PanelAttentionService {
                     surfaceId: surfaceId,
                     flagRaisedAt: epoch,
                     title: title,
-                    reason: reason
+                    reason: reason,
+                    kind: transaction.after.flagKind
                 )
             } else {
                 EventEmitter.shared.emitFlagLowered(

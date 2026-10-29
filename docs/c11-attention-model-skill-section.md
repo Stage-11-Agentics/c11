@@ -1,11 +1,9 @@
-# Staged skill section: flags and suppression
+# Skill reference: flags and suppression
 
-**Landing instructions (not part of the skill text):** the section below drops into
-`skills/c11/SKILL.md` in the PR that ships the flag/suppress primitives — not before, since
-it documents CLI commands that must exist when agents read it. Per the hard rule in
-`CLAUDE.md`, the edit is not done until `scripts/sync-installed-skills.sh c11` has run on the
-maintainer's machine. The text is written timelessly and needs no modification at landing
-time.
+This note tracks the corresponding section in `skills/c11/SKILL.md`. C11-513 adds named flag
+kinds to the existing attention model. Keep both copies aligned when the commands or rendering
+contract changes. After editing the skill, run `scripts/sync-installed-skills.sh c11` and inspect
+the installed copy.
 
 ---
 
@@ -18,16 +16,35 @@ Two modifiers sit over it, and they are yours to use.
 
 ```bash
 c11 raise-flag --panel "$C11_PANEL_ID" "Need a call on schema migration vs dual-write"
+c11 raise-flag --panel "$C11_PANEL_ID" --kind chief-of-staff "Need a decision before I can continue"
 c11 lower-flag --panel "$C11_PANEL_ID"
 ```
 
 The reason is required, one line, and surfaced everywhere the flag appears — write it as the
-sentence you would say if the operator walked over.
+sentence you would say if the operator walked over. A flag can optionally carry a registered
+kind. `nil` remains the generic violet flag; kinds label a flag but do not add severity.
 
-- A flag is **sticky**: it holds until the operator dismisses it or you lower it. While it is
-  up, your marks render violet across the workspace; if you are also stopped, the mark
-  strobes — the strongest visual signal c11 has. When the flag lowers, your marks return to
-  normal lifecycle colors.
+Manage c11-owned kinds in Settings or with the CLI:
+
+```bash
+c11 flag-kind list
+c11 flag-kind set --id <slug> --name <name> --color <token> [--emoji <emoji>]
+c11 flag-kind rm --id <slug>
+```
+
+`chief-of-staff` (green) and `merge-issue` (red) are editable built-ins. `raise-flag --kind`
+accepts only a registered slug. Colors come from a fixed adaptive palette; arbitrary hex and
+per-raise color or emoji overrides are not supported. The active flag and `flag.raised` event
+snapshot the resolved name, color token, and emoji. Registry edits do not repaint an existing
+flag; editing its reason or kind keeps its original raise time and oldest-first queue position.
+The Feed, individual sidebar row, tooltip/accessibility text, menu-bar flag item, in-surface
+banner, system notification, and panel-list row show the optional kind label and reason. The
+aggregate count and menu-bar icon keep the existing generic flag glyph.
+
+- A flag is **sticky**: it holds until the operator dismisses it or you lower it. Generic
+  marks remain violet; named marks use their adaptive token. If you are also stopped, the mark
+  strobes in that color — the strongest visual signal c11 has. When the flag lowers, your marks
+  return to normal lifecycle colors. Reduce Motion suppresses the animation.
 - **Flag only when work has stopped and only a human can restart it**, or when you have hit
   an urgent issue whose blast radius crosses other agents. "I finished, please review" is
   waiting, not a flag. If the operator is already in conversation with you, just ask them —

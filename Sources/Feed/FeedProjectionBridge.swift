@@ -117,6 +117,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
             flagReason: snapshot.flagReason,
             flagRaisedAtMs: snapshot.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
             flagCallerPanelID: snapshot.flagCallerPanelId,
+            flagKind: snapshot.flagKind,
             suppressed: snapshot.suppressed
         )
         queue.async { [self] in
@@ -137,6 +138,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
                 flagReason: snapshot.flagReason,
                 flagRaisedAtMs: snapshot.flagRaisedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
                 flagCallerPanelID: snapshot.flagCallerPanelId,
+                flagKind: snapshot.flagKind,
                 suppressed: snapshot.suppressed
             )
         }

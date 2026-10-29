@@ -22,12 +22,136 @@ enum FeedNoteError: String, Error, Equatable {
     case unmatched = "note_unmatched"
 }
 
+/// A named flag carries a stable identifier and an immutable display snapshot.
+/// The generic flag has no kind and remains violet. Only these named tokens
+/// may tint a flag; gray, blue, gold and violet retain their existing meanings.
+enum PanelFlagColorToken: String, CaseIterable, Codable, Hashable, Sendable {
+    case green
+    case red
+    case pink
+    case teal
+
+    func hex(lightBackground: Bool) -> String {
+        switch (self, lightBackground) {
+        case (.green, true): return "#167A42"
+        case (.green, false): return "#49C980"
+        case (.red, true): return "#B42331"
+        case (.red, false): return "#FF6B78"
+        case (.pink, true): return "#A91D70"
+        case (.pink, false): return "#ED72B6"
+        case (.teal, true): return "#00786F"
+        case (.teal, false): return "#58C8BE"
+        }
+    }
+
+    var localizedName: String {
+        switch self {
+        case .green: return String(localized: "flag.kind.color.green", defaultValue: "Green")
+        case .red: return String(localized: "flag.kind.color.red", defaultValue: "Red")
+        case .pink: return String(localized: "flag.kind.color.pink", defaultValue: "Pink")
+        case .teal: return String(localized: "flag.kind.color.teal", defaultValue: "Teal")
+        }
+    }
+}
+
+/// Registry value and the display data copied onto an active flag. Keeping the
+/// same value shape in metadata and events means registry edits cannot repaint
+/// an existing flag or rewrite its event history.
+struct PanelFlagKind: Codable, Equatable, Hashable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let color: PanelFlagColorToken
+    let emoji: String?
+
+    var displayLabel: String {
+        [emoji, name].compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }.joined(separator: " ")
+    }
+
+    func displayText(reason: String) -> String {
+        "\(displayLabel): \(reason)"
+    }
+
+    func colorHex(lightBackground: Bool) -> String {
+        color.hex(lightBackground: lightBackground)
+    }
+
+    var isValid: Bool {
+        guard Self.isValidSlug(id), Self.isValidName(name) else { return false }
+        if let emoji {
+            let forbiddenCharacters = CharacterSet.newlines.union(.controlCharacters)
+            guard emoji.count == 1,
+                  emoji.unicodeScalars.count <= 16,
+                  emoji.utf8.count <= 64,
+                  emoji == emoji.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !emoji.unicodeScalars.contains(where: { forbiddenCharacters.contains($0) })
+            else { return false }
+        }
+        return true
+    }
+
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = [
+            "id": id,
+            "name": name,
+            "color": color.rawValue,
+        ]
+        if let emoji { object["emoji"] = emoji }
+        return object
+    }
+
+    static func fromJSON(_ value: Any?) -> PanelFlagKind? {
+        guard let object = value as? [String: Any],
+              let id = object["id"] as? String,
+              let name = object["name"] as? String,
+              let colorRaw = object["color"] as? String,
+              let color = PanelFlagColorToken(rawValue: colorRaw) else { return nil }
+        let emoji: String?
+        if let rawEmoji = object["emoji"], !(rawEmoji is NSNull) {
+            guard let parsed = rawEmoji as? String else { return nil }
+            emoji = parsed
+        } else {
+            emoji = nil
+        }
+        let kind = PanelFlagKind(id: id, name: name, color: color, emoji: emoji)
+        return kind.isValid ? kind : nil
+    }
+
+    static func isValidSlug(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 48,
+              value.first != "-", value.last != "-" else { return false }
+        var previousWasHyphen = false
+        for scalar in value.unicodeScalars {
+            if scalar == "-" {
+                guard !previousWasHyphen else { return false }
+                previousWasHyphen = true
+            } else {
+                let isLower = scalar.value >= 97 && scalar.value <= 122
+                let isDigit = scalar.value >= 48 && scalar.value <= 57
+                guard isLower || isDigit else { return false }
+                previousWasHyphen = false
+            }
+        }
+        return true
+    }
+
+    static func isValidName(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let forbiddenCharacters = CharacterSet.newlines.union(.controlCharacters)
+        return !trimmed.isEmpty && trimmed == value && value.count <= 48
+            && !value.unicodeScalars.contains(where: { forbiddenCharacters.contains($0) })
+    }
+}
+
 struct FeedAttentionFact: Equatable {
     var workspaceID: UUID
     var panelID: UUID
     var flagReason: String?
     var flagRaisedAtMs: Int64?
     var flagCallerPanelID: UUID?
+    var flagKind: PanelFlagKind? = nil
     var suppressed: Bool
 
     var isFlagged: Bool { flagReason != nil }
@@ -37,6 +161,7 @@ struct FeedFlagFact: Equatable {
     var reason: String
     var raisedAtMs: Int64?
     var callerPanelID: UUID?
+    var kind: PanelFlagKind? = nil
 }
 
 struct FeedDisplayNote: Equatable {
@@ -83,6 +208,7 @@ struct FeedRow: Equatable {
                 "reason": flag.reason,
                 "raised_at_ms": flag.raisedAtMs.map { NSNumber(value: $0) } ?? NSNull(),
                 "caller_panel_id": flag.callerPanelID?.uuidString ?? NSNull(),
+                "kind": flag.kind?.jsonObject ?? NSNull(),
             ]
         }
         return object
@@ -156,7 +282,8 @@ enum FeedProjector {
         let flag = flagged ? FeedFlagFact(
             reason: attention?.flagReason ?? "",
             raisedAtMs: attention?.flagRaisedAtMs,
-            callerPanelID: attention?.flagCallerPanelID
+            callerPanelID: attention?.flagCallerPanelID,
+            kind: attention?.flagKind
         ) : nil
 
         if showBlocking, let journal, let blocking {

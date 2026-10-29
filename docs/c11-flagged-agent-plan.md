@@ -1,5 +1,13 @@
 # Flagged and Suppressed Agents
 
+> **Current contract:** This document preserves the original attention-model design. C11-513
+> adds optional named kinds while keeping the same single flag tier, oldest-first queue,
+> suppression override, and direct escalation. The generic `nil` kind remains violet; named
+> flags use a registered adaptive color token. Their active metadata and `flag.raised` event
+> carry an immutable display snapshot (kind ID, name, color token, optional emoji). Settings and
+> `c11 flag-kind set|list|rm` manage the registry; `raise-flag --kind <slug>` selects a registered
+> kind. For the approved implementation decisions, see [c11-named-flags.md](c11-named-flags.md).
+
 Design spec for two modifiers on the existing attention model: **flagged** agents that explicitly request human involvement and jump the queue, and **suppressed** agents that produce no routine attention signal unless a flag overrides suppression.
 
 ## Motivation
@@ -20,7 +28,7 @@ The existing lifecycle (`working` / `waiting` / `idle` / `cold`) is unchanged an
 
 | Field | Type | Set by | Meaning |
 |---|---|---|---|
-| `flag` | reason string, or none | agent mid-run, or operator at dispatch | a human must act, or this mission is one the operator intends to watch |
+| `flag` | reason string plus optional kind snapshot, or none | agent mid-run, or operator at dispatch | a human must act, or this mission is one the operator intends to watch |
 | `suppressed` | Bool | operator (usually at dispatch) or agent | routine attention is withheld; a direct flag escalation still reaches the operator |
 
 A flagged agent still has a full lifecycle: it can be flagged-and-working, flagged-and-idle, flagged-and-waiting. Flagging qualifies the state without replacing it. Suppression works differently: it *restricts* which states are reachable, barring needs-attention entirely (below).
@@ -70,7 +78,7 @@ The word remains **suppressed** rather than silent because the record survives e
 
 **A flag is independent of run state.** An agent can raise one mid-turn and keep working. The flag says a human is needed; the lifecycle says what the process is doing. Both are true at once.
 
-**A flag arrives from either side and it round-trips.** The operator may flag at dispatch (a critical mission they intend to watch), or an agent may flag itself mid-run on a blocker or an issue whose blast radius crosses agents. Marks snap violet at that moment, whatever lifecycle state they are in, and return to normal lifecycle colors when the flag lowers. Scope is either a moment (one decision, then back) or a whole mission (flagged at dispatch, violet for its lifetime).
+**A flag arrives from either side and it round-trips.** The operator may flag at dispatch (a critical mission they intend to watch), or an agent may flag itself mid-run on a blocker or an issue whose blast radius crosses agents. Marks snap to generic violet or the selected named token at that moment, whatever lifecycle state they are in, and return to normal lifecycle colors when the flag lowers. Scope is either a moment (one decision, then back) or a whole mission (flagged at dispatch, colored for its lifetime).
 
 **Rarity is the design target: at least nine in ten agents should never carry a flag.** The tier's visual strength is bought entirely by its scarcity. This is a stated expectation, not an enforced limit.
 
@@ -152,7 +160,7 @@ The rebuilt set carries lifecycle in **shape alone**, which frees color for the 
 
 ### Flagged: recolor, do not replace
 
-**A flagged agent uses the same mark vocabulary as any other agent, rendered violet.** Flagged-and-working, flagged-and-idle, flagged-and-needing-attention are all meaningful, all render, and all stay mutually distinguishable under the flat recolor: dot grid, frame plus core, empty frame, line.
+**A flagged agent uses the same mark vocabulary as any other agent, rendered in its flag color.** A generic flag uses violet; a named kind uses its registered token. Flagged-and-working, flagged-and-idle, flagged-and-needing-attention are all meaningful, all render, and all stay mutually distinguishable under the flat recolor: dot grid, frame plus core, empty frame, line.
 
 No information is lost to the recolor. This supersedes the earlier accepted working/waiting collapse, which was an artifact of the old vocabulary.
 
@@ -169,7 +177,7 @@ Suppression has **no visual treatment of its own**. A suppressed surface renders
 
 The suppression is expressed entirely by which states are reachable, not by how they are drawn. Frame-plus-core, the needs-attention mark, simply never appears on a suppressed surface unless a flag raises it.
 
-**A flag overrides suppression outright.** A suppressed agent that flags renders the full violet treatment, including the core-only alarm flash when it stops (see Motion).
+**A flag overrides suppression outright.** A suppressed agent that flags renders the full flag-color treatment, including the core-only alarm flash when it stops (see Motion).
 
 **Suppressed marks never animate** *while unflagged*. In practice this only binds on `working`, since idle and cold never animate anyway.
 
@@ -183,24 +191,24 @@ Base motion is **on by default**, with a **Static marks** opt-out in Settings (`
 
 | Flagged state | Motion |
 |---|---|
-| flagged + waiting | **core only** flashes violet↔white, hard square wave, 0.4s, no easing, inside a steady violet frame |
+| flagged + waiting | **core only** flashes between the active flag color and white, hard square wave, 0.4s, no easing, inside a steady frame in that flag color |
 | flagged + working / idle / cold | breathe (slow opacity cycle) |
 
 The frame holds still deliberately. Shape is the load-bearing channel in the rebuilt vocabulary, and the frame is this mark's shape signature; keeping it steady means the mark stays identifiable at every point in the cycle rather than momentarily reducing to a flat white square.
 
 The flash supersedes the breathe for the waiting combination only, and replaces the needs-attention core dip. Two opacity cycles never stack; flag motion and base motion live in separate view layers so a future change cannot accidentally multiply them.
 
-The escalation is the point: static violet says a flag is up, breathe says a flag is up on a live agent, the flash says the agent is flagged *and stopped*, which is the state where nothing moves until the operator acts.
+The escalation is the point: the static flag color says a flag is up, breathe says a flag is up on a live agent, the flash says the agent is flagged *and stopped*, which is the state where nothing moves until the operator acts.
 
 #### Flag tier overrides suppression completely
 
-`docs/c11-mark-vocabulary.md` states that suppressed marks never animate, and suppression otherwise bars the needs-attention state entirely. **Both rules yield to a flag.** A suppressed agent that raises a flag and stops reaches needs-attention and shows the full core-only violet↔white flash.
+`docs/c11-mark-vocabulary.md` states that suppressed marks never animate, and suppression otherwise bars the needs-attention state entirely. **Both rules yield to a flag.** A suppressed agent that raises a flag and stops reaches needs-attention and shows the full core-only flag-color↔white flash.
 
-Suppression is a promise about routine signalling. The headline case for the whole feature is "do not tell me when you finish, do tell me if you get stuck," and a suppressed flagged-waiting mark held at idle would break exactly that promise. Where the rules meet, the flag wins outright: violet frame, flashing core, no state restriction, no motion suppression.
+Suppression is a promise about routine signalling. The headline case for the whole feature is "do not tell me when you finish, do tell me if you get stuck," and a suppressed flagged-waiting mark held at idle would break exactly that promise. Where the rules meet, the flag wins outright: flag-color frame, flashing core, no state restriction, no motion suppression.
 
 #### Reduce Motion is a hard override
 
-When `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion` is true, no mark animates, including the flagged breathe and the alarm flash, regardless of any setting. The static violet mark and the flagged sidebar row carry the signal without motion, so nothing is lost.
+When `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion` is true, no mark animates, including the flagged breathe and the alarm flash, regardless of any setting. The static flag-color mark and flagged sidebar row carry the signal without motion, so nothing is lost.
 
 The flash itself is within safety thresholds (2.5 Hz is below the 3-per-second general flash threshold, and the flashing region is a 4pt core, far below the area threshold), so this is a comfort and preference obligation rather than a seizure-risk one. It is still not optional.
 
@@ -222,7 +230,7 @@ Constraints inherited from the vocabulary doc's performance contract:
 
 **Validate the ladder order empirically.** The stated degradation is dip-only default, then static default. That is likely correct for a structural reason: the dip is a pure opacity change on a static shape, which the render server can composite without re-evaluating body, whereas the dot fill changes *which shapes are drawn* and forces body re-evaluation every beat. Likely, not certain. Measure both independently rather than assuming the cheaper one is the one that survives.
 
-**Flag-tier motion needs its own fallback, because the opt-out is not one.** Static marks disables base motion only; flag motion runs regardless. If it fails the latency gate the fallback is explicit: **the flagged mark ships static violet.** The violet carries the state; motion is an amplifier, not the signal.
+**Flag-tier motion needs its own fallback, because the opt-out is not one.** Static marks disables base motion only; flag motion runs regardless. If it fails the latency gate the fallback is explicit: **the flagged mark ships static in its resolved flag color.** Generic flags stay violet; named flags keep their snapshotted token. Color carries the state; motion is an amplifier, not the signal.
 
 ## Surfaces
 
@@ -272,16 +280,16 @@ signal-eligible on their own.
 
 v1 uses the existing notification sound setting. A dedicated flag sound is a reasonable follow-up, not a launch requirement.
 
-## Color
+## Color (generic flag fallback)
 
-**Violet, `#9D8AD9` as a starting point.**
+**Generic flags remain violet, `#9D8AD9` as the starting point.** Named kinds use the fixed adaptive token palette in [C11-513](c11-named-flags.md); the mark shape and attention tier stay unchanged.
 
 Our gold is `#c9a84c` (`Sources/BrandColors.swift:17`), a muted antique gold rather than a bright yellow. The flag color sits next to it in the same desaturation register, on the opposite side of the wheel. It reads as a cousin of the gold, not an intruder. The mark-level violet may need a separate brighter value to hold up at 8pt against the `#E8E8E8` working mark; dial both against the live sidebar.
 
 Rejected alternatives:
 
 - **Cyan.** A saturated cyan clashes with a desaturated antique gold, and ANSI cyan is ubiquitous in terminal output. The flag banner floats over live terminal content, so a cyan banner over cyan text is a legibility bug waiting to happen.
-- **Red / ember.** Most universally legible as urgent, and semantically wrong. A flag is not an error. Red says "this agent failed" when the meaning is "this agent needs you."
+- **Red / ember as the generic flag.** Most universally legible as urgent, and semantically wrong for every flag. A generic flag is not an error. C11-513 later approves red for the explicitly named `merge-issue` kind, whose label supplies the narrower meaning.
 - **Paper-white** (`#E8E2D0`, reserved at `c11-waiting-agent-cluster-plan.md:108`). On-palette, but it collides with the paper-white used throughout the chrome as ordinary foreground, so it reads as emphasis rather than a distinct state.
 
 Violet is also the rarest hue in a dev environment, and rarity is precisely what an escalation tier is buying.
@@ -299,7 +307,7 @@ These are pure functions with no `UserDefaults` dependency, so the entire preced
 Additions to the v1 taxonomy (`Sources/Events/EventEnvelope.swift:51`):
 
 ```
-flag.raised       payload: { reason: String }
+flag.raised       payload: { reason: String, kind?: { id, name, color, emoji? } }
 flag.lowered      payload: { by: "operator" | "agent" }
 flag.suppressed   payload: { by: "operator" | "agent" }
 flag.unsuppressed payload: { by: "operator" | "agent" }
@@ -309,7 +317,10 @@ This is what makes the attention model consumable outside the app. Overwatch can
 
 ## Skill contract
 
-**The exact section is written and staged at `docs/c11-attention-model-skill-section.md`.** It drops into `skills/c11/SKILL.md` in the PR that ships the primitives, not before, since it documents commands that must exist when agents read it. Landing instructions are at the top of that file, including the `scripts/sync-installed-skills.sh c11` hard rule from `CLAUDE.md`.
+The current contract is written in `docs/c11-attention-model-skill-section.md` and
+`skills/c11/SKILL.md`. It documents the named-kind registry and `--kind` selection alongside
+the original flag guidance. The installed skill copy must be refreshed with
+`scripts/sync-installed-skills.sh c11` whenever its source changes.
 
 What it covers, and why:
 

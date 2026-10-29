@@ -57,6 +57,7 @@ enum WorkspacePlanCapture {
     ) -> [String: PersistedJSONValue] {
         let attentionKeys: Set<String> = [
             MetadataKey.flag,
+            MetadataKey.flagKind,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,

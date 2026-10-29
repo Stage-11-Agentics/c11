@@ -56,7 +56,8 @@ my @command = @ARGV;
 my $pid = fork();
 die "fork failed\n" unless defined $pid;
 if ($pid == 0) {
-    exit 126 unless POSIX::setpgid(0, 0);
+    POSIX::setpgid(0, 0);
+    exit 126 unless POSIX::getpgrp() == $$;
     exec { $command[0] } @command;
     exit 127;
 }

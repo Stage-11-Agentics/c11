@@ -1654,6 +1654,29 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "once_per_idle"))
     }
 
+    func testAlreadyAdmittedReplayRearmsIdleEpochForLaterMail() {
+        let registrationID = UUID()
+        let epoch = "idle"
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.beginAttempt(at: Date(timeIntervalSince1970: 1), epoch: epoch)
+        var nativeCovered: Set<String> = []
+
+        XCTAssertTrue(MailboxNativeDoorbell.recordAcceptance(["mail-a"],
+            registrationID: registrationID, currentRegistrationID: registrationID,
+            nativeCovered: &nativeCovered, ledger: &ledger, rearmEpoch: epoch))
+        XCTAssertEqual(nativeCovered, ["mail-a"])
+        XCTAssertEqual(ledger.coveredIds, ["mail-a"])
+        XCTAssertNil(ledger.rungEpoch)
+
+        var input = MailboxDoorbell.Input(nativeRoute: true, epoch: epoch)
+        input.hasUnread = true
+        input.unreadIds = ["mail-a", "mail-b"]
+        input.coveredIds = ledger.coveredIds
+        input.rungThisEpoch = ledger.rung(in: epoch)
+        XCTAssertEqual(MailboxDoorbell.decide(input), .ring,
+            "the replay covers A but must not strand uncovered B in the same idle period")
+    }
+
     private func nativeProcess(_ parent: pid_t, start: UInt64, tty: dev_t = -1) -> MailboxAgentForeground.ProcessTerminalInfo {
         .init(processGroup: 10, terminalForegroundGroup: 10, terminalDevice: tty,
               isZombie: false, startTime: start, parentPID: parent)

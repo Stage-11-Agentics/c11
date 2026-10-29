@@ -6964,7 +6964,8 @@ final class Workspace: Identifiable, ObservableObject {
                         self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
                             isCurrent = MailboxNativeDoorbell.recordAcceptance(ids, registrationID: registration.id,
                                 currentRegistrationID: MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id,
-                                nativeCovered: &covered, ledger: &ledger)
+                                nativeCovered: &covered, ledger: &ledger,
+                                rearmEpoch: alreadyAdmitted ? epoch : nil)
                         }
                         self.mailboxNativeCovered[surfaceId] = covered
                         if let attemptID, self.mailboxNativeAttempts[surfaceId]?.id == attemptID {

@@ -150,13 +150,19 @@ final class MailboxNativeDoorbell {
 
     /// Apply an observed acceptance on the main hop. The return value says
     /// whether the listener is still current and may trigger further work.
+    /// A replay acknowledged as already admitted is a duplicate no-op, not a
+    /// fresh prompt. Release its idle epoch so later uncovered mail can ring.
     static func recordAcceptance(_ ids: Set<String>, registrationID: UUID, currentRegistrationID: UUID?,
-                                 nativeCovered: inout Set<String>, ledger: inout MailboxDoorbell.Ledger) -> Bool {
+                                 nativeCovered: inout Set<String>, ledger: inout MailboxDoorbell.Ledger,
+                                 rearmEpoch: String? = nil) -> Bool {
         // Acceptance is an observed delivery even if the listener closed
         // before this hop. Route-change handling must see these original IDs.
         nativeCovered.formUnion(ids)
         ledger.coveredIds.formUnion(ids)
         ledger.draftWatch = nil
+        if let rearmEpoch, ledger.rungEpoch == rearmEpoch {
+            ledger.rungEpoch = nil
+        }
         return currentRegistrationID == registrationID
     }
 

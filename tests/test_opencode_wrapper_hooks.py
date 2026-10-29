@@ -383,6 +383,7 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
     assert state["tui_path"] is None, "v2 must not use the v1 TUI config override"
     assert state["resume_reserved"] == "1" and state["resume_reservation_failed"] is None, state
     assert state["tui_claimed"] == "1" and state["tui_claim_failed"] is None, state
+    assert not any("agent-hook idle" in line for line in c11_log), c11_log
     claims = claim_payloads(c11_log)
     assert any(claim.get("expected_resume_id") == session_id and
                claim.get("interactive_pid") == int(state["interactive_pid"]) and
@@ -459,8 +460,10 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     )
     assert code == 0, stderr
     assert state["cli_content"] == malformed, state
-    assert state["resume_reserved"] is None and state["tui_claimed"] is None, state
-    assert not claim_payloads(c11_log), c11_log
+    assert state["resume_reserved"] == "1" and state["tui_claimed"] == "1", state
+    claims = claim_payloads(c11_log)
+    assert any(claim.get("expected_resume_id") == valid_session for claim in claims), claims
+    assert not any("agent-hook idle" in line for line in c11_log), c11_log
 
     for malformed_plugins in ('{"plugins":[{"options":[]}]}',
                               '{"plugins":[{"package":"","options":{}}]}',
@@ -471,7 +474,9 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
         )
         assert code == 0, stderr
         assert state["cli_content"] == malformed_plugins, state
-        assert not claim_payloads(c11_log), c11_log
+        assert state["tui_claimed"] == "1", state
+        assert claim_payloads(c11_log), c11_log
+        assert not any("agent-hook idle" in line for line in c11_log), c11_log
 
     code, _, state, c11_log, stderr = run_wrapper(
         live=True, argv=["-s", valid_session], interactive=True,
@@ -482,6 +487,7 @@ def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     assert state["tui_claim_failed"] == "1" and state["tui_claimed"] is None, state
     assert state["cli_content"] is not None, "the TUI plugin stays loaded to retry the authenticated claim"
     assert claim_payloads(c11_log), c11_log
+    assert not any("agent-hook idle" in line for line in c11_log), c11_log
     assert sum("rpc conversation.claim" in line for line in c11_log) == 1, c11_log
 
     code, _, state, c11_log, stderr = run_wrapper(

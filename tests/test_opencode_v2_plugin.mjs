@@ -31,6 +31,7 @@ async function fixture(t, {
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
   hookFailOnce = [], hookDelayActivity = '', activeSessions, activeFailureCount = 0, holdActiveSnapshot = false,
   permissionHydrated = true, permissionSyncResult = [], formHydrated = true, formSyncResult = [],
+  messageList = [],
   promptResult = input => ({ id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } }),
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
@@ -65,7 +66,8 @@ async function fixture(t, {
     calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0, activeCalls: 0,
     activeSessions: activeSessions ?? (status === 'running' ? { [rootA]: 'running' } : {}),
     permissionList: permissionHydrated ? [] : undefined, permissionSyncCalls: 0,
-    formList: formHydrated ? [] : undefined, formSyncCalls: 0, pendingList: [] };
+    formList: formHydrated ? [] : undefined, formSyncCalls: 0, pendingList: [],
+    messageList, messageSyncCalls: 0 };
   state.activeSnapshotGate = holdActiveSnapshot
     ? new Promise(resolve => { state.releaseActiveSnapshot = resolve; })
     : Promise.resolve();
@@ -134,6 +136,7 @@ async function fixture(t, {
           state.formSyncCalls++;
           state.formList = formSyncResult;
         } },
+        message: { list: () => state.messageList, sync: async () => { state.messageSyncCalls++; } },
         question: { list: () => [] },
       },
       on: (type, handler) => {
@@ -195,6 +198,43 @@ test('v2 keeps resumed running roots closed until the authoritative active snaps
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'resume-still-running'));
   assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'resume-still-running').reason, 'not_ready');
   assert.equal(f.state.calls.length, 0, 'confirmed running roots remain closed to native mail');
+});
+
+test('v2 treats an assistant retry scheduled in the hydrated transcript as busy', { timeout: 5000 }, async t => {
+  const f = await fixture(t, {
+    activeSessions: {},
+    messageList: [{ type: 'assistant', retry: { attempt: 1, at: Date.now() + 1000 } }],
+  });
+  await until(() => f.subscriptions.length >= 2 && f.state.messageSyncCalls > 0);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'scheduled-retry', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'scheduled-retry'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'scheduled-retry').reason, 'not_ready');
+  assert.equal(f.state.calls.length, 0, 'an idle active map cannot open a scheduled retry');
+});
+
+test('v2 keeps retries closed between schedule and terminal lifecycle events', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  await until(() => f.subscriptions.length >= 2 && f.state.messageSyncCalls > 0);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
+
+  f.state.emit('session.retry.scheduled', rootA);
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'retry-scheduled', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'retry-scheduled'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'retry-scheduled').reason, 'not_ready');
+  assert.equal(f.state.calls.length, 0);
+
+  f.state.emit('session.step.started', rootA);
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'retry-running', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'retry-running'));
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'retry-running').reason, 'not_ready');
+  assert.equal(f.state.calls.length, 0);
+
+  f.state.emit('session.execution.failed', rootA);
+  await until(() => f.subscriptions.length >= 3);
+  send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'retry-terminal', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'retry-terminal'));
+  assert.equal(f.state.calls.length, 1, 'terminal completion clears retry state and reopens native mail');
 });
 
 test('v2 retries a failed active snapshot while holding mail and lifecycle idle closed', { timeout: 5000 }, async t => {

@@ -172,6 +172,7 @@ export default {
     let shutdownSessionID;
     let boundStatusConfirmed = false;
     let boundStatus;
+    let retryScheduled = false;
     let statusCheckInFlight = false;
     let statusCheckRetryAt = 0;
     let lifecycleSignalRevision = 0;
@@ -187,14 +188,22 @@ export default {
       const signalRevision = lifecycleSignalRevision;
       statusCheckInFlight = true;
       try {
-        const active = await context.client.session.active();
+        const messageSource = context.data.session.message;
+        if (typeof messageSource?.sync !== 'function') throw new Error('session_messages_unavailable');
+        const [active] = await Promise.all([
+          context.client.session.active(),
+          messageSource.sync(sessionID),
+        ]);
         if (!active || typeof active !== 'object' || Array.isArray(active)) throw new Error('invalid_active_sessions');
+        const messages = sessionList(messageSource, sessionID);
+        if (!messages) throw new Error('invalid_session_messages');
         if (disposed || generation !== routeGeneration || lifecycleSignalRevision !== signalRevision ||
             boundID !== sessionID || visibleID !== sessionID || currentRoute(context) !== sessionID ||
             conflict || captureState !== 'bound' || sessionID === shutdownSessionID) return;
+        retryScheduled = messages.some(message => message?.type === 'assistant' && Boolean(message.retry));
         boundStatusConfirmed = true;
         statusCheckRetryAt = 0;
-        boundStatus = Object.hasOwn(active, sessionID) ? 'running' : 'idle';
+        boundStatus = retryScheduled || Object.hasOwn(active, sessionID) ? 'running' : 'idle';
         reportRootLifecycle(sessionID, boundStatus === 'running' ? 'working' : 'idle');
       } catch {
         if (!disposed && generation === routeGeneration && boundID === sessionID &&
@@ -279,6 +288,7 @@ export default {
     onSessionEvent('session.execution.started', event => {
       if (event?.data?.sessionID === boundID) {
         shutdownSessionID = undefined;
+        retryScheduled = false;
         boundStatusConfirmed = true;
         boundStatus = 'running';
         statusCheckRetryAt = 0;
@@ -286,11 +296,30 @@ export default {
       }
       reportRootLifecycle(event?.data?.sessionID, 'working');
     });
+    onSessionEvent('session.retry.scheduled', event => {
+      if (event?.data?.sessionID !== boundID) return;
+      retryScheduled = true;
+      boundStatusConfirmed = true;
+      boundStatus = 'running';
+      statusCheckRetryAt = 0;
+      lifecycleSignalRevision++;
+      reportRootLifecycle(event.data.sessionID, 'working');
+    });
+    onSessionEvent('session.step.started', event => {
+      if (event?.data?.sessionID !== boundID) return;
+      retryScheduled = false;
+      boundStatusConfirmed = true;
+      boundStatus = 'running';
+      statusCheckRetryAt = 0;
+      lifecycleSignalRevision++;
+      reportRootLifecycle(event.data.sessionID, 'working');
+    });
     for (const type of ['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']) {
       onSessionEvent(type, event => {
         if (type === 'session.execution.interrupted' && event?.data?.reason === 'shutdown') {
           if (event?.data?.sessionID === boundID) {
             shutdownSessionID = boundID;
+            retryScheduled = false;
             boundStatusConfirmed = false;
             boundStatus = undefined;
             statusCheckRetryAt = 0;
@@ -300,6 +329,7 @@ export default {
         }
         if (event?.data?.sessionID === boundID) {
           if (shutdownSessionID === boundID) return;
+          retryScheduled = false;
           boundStatusConfirmed = true;
           boundStatus = 'idle';
           statusCheckRetryAt = 0;
@@ -312,6 +342,7 @@ export default {
     onSessionEvent('server.connected', () => {
       if (!boundID || boundID !== visibleID) return;
       shutdownSessionID = undefined;
+      retryScheduled = false;
       boundStatusConfirmed = false;
       boundStatus = undefined;
       statusCheckRetryAt = 0;
@@ -338,7 +369,7 @@ export default {
         async deliver(message) {
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||
               message !== doorbellText || conflict || !boundID || boundID !== visibleID) throw sessionConflict();
-          if (!boundStatusConfirmed || boundStatus !== 'idle' || boundID === shutdownSessionID ||
+          if (!boundStatusConfirmed || boundStatus !== 'idle' || retryScheduled || boundID === shutdownSessionID ||
               !sessionReadyForMailbox(context, boundID)) {
             nativeNotReady = true;
             void refreshSessionReadiness(boundID, routeGeneration);
@@ -408,6 +439,7 @@ export default {
         desiredLifecycle = undefined;
         lifecycleRetryAt = 0;
         shutdownSessionID = undefined;
+        retryScheduled = false;
         boundStatusConfirmed = false;
         boundStatus = undefined;
         statusCheckRetryAt = 0;
@@ -543,7 +575,7 @@ export default {
         if (boundID && boundID === visibleID && boundStatusConfirmed && boundStatus === 'idle' &&
             !sessionReadyForMailbox(context, boundID)) void refreshSessionReadiness(boundID, generation);
         if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
-            !boundStatusConfirmed || boundStatus !== 'idle' || boundID === shutdownSessionID ||
+            !boundStatusConfirmed || boundStatus !== 'idle' || retryScheduled || boundID === shutdownSessionID ||
             !sessionReadyForMailbox(context, boundID)) return;
         nativeNotReady = false;
         stopMailbox?.();

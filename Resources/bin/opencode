@@ -78,29 +78,8 @@ if [[ "$opencode_version" == 2.0.25 ]]; then
     if [[ -n "$c11_bin" ]]; then
         ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" set-agent --type opencode >/dev/null 2>&1 ) &
         disown 2>/dev/null || true
-        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" agent-hook idle >/dev/null 2>&1 ) &
-        disown 2>/dev/null || true
     fi
     export C11_AGENT_HOOK_CLI="$c11_bin"
-
-    # Validate the effective v2 plugin config before making an ownership
-    # reservation. A malformed or unavailable config must not leave a typed
-    # mail gate claiming that the TUI plugin is active.
-    v2_plugin_ready=0
-    if [[ -t 0 && -t 1 && "${1:-}" != "run" && -n "${C11_AGENT_INTERACTIVE_PID:-}" &&
-          -x "$config_helper" ]]; then
-        v2_plugin_dir="$self_dir/../skills/opencode-plugins/c11-opencode-v2"
-        if [[ -d "$v2_plugin_dir" ]]; then
-            if composed="$(python3 "$config_helper" compose "$v2_plugin_dir")"; then
-                export OPENCODE_CLI_CONFIG_CONTENT="$composed"
-                v2_plugin_ready=1
-            else
-                echo "c11 OpenCode v2 integration disabled: CLI plugin config could not be composed safely" >&2
-            fi
-        else
-            echo "c11 OpenCode v2 integration disabled: bundled TUI plugin is missing" >&2
-        fi
-    fi
 
     # Claim this exact TUI process before OpenCode initializes. The TUI plugin
     # later captures through its own socket peer PID, not environment inherited
@@ -118,7 +97,7 @@ if [[ "$opencode_version" == 2.0.25 ]]; then
         esac
     done
     [[ -z "$expected_session" ]] || export C11_OPENCODE_EXPECTED_RESUME_ID="$expected_session"
-    if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" && "$v2_plugin_ready" == "1" ]]; then
+    if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" ]]; then
         if [[ -n "$c11_bin" ]] && command -v python3 >/dev/null 2>&1; then
             claim_payload="$(python3 - "$c11_panel" "$PWD" "$C11_AGENT_INTERACTIVE_PID" "$expected_session" <<'PY'
 import json, os, sys, time
@@ -171,6 +150,24 @@ PY
         else
             export C11_OPENCODE_TUI_CLAIM_FAILED=1
             export C11_OPENCODE_RESUME_RESERVATION_FAILED=1
+        fi
+    fi
+
+    # Install the plugin only after attempting the authenticated TUI claim. An
+    # accepted claim leaves an unbound placeholder that keeps typed delivery
+    # fail-closed if malformed config prevents the per-client plugin from loading.
+    # Never publish idle before the plugin captures the exact root and status.
+    if [[ -t 0 && -t 1 && "${1:-}" != "run" && -n "${C11_AGENT_INTERACTIVE_PID:-}" &&
+          -x "$config_helper" ]]; then
+        v2_plugin_dir="$self_dir/../skills/opencode-plugins/c11-opencode-v2"
+        if [[ -d "$v2_plugin_dir" ]]; then
+            if composed="$(python3 "$config_helper" compose "$v2_plugin_dir")"; then
+                export OPENCODE_CLI_CONFIG_CONTENT="$composed"
+            else
+                echo "c11 OpenCode v2 integration disabled: CLI plugin config could not be composed safely" >&2
+            fi
+        else
+            echo "c11 OpenCode v2 integration disabled: bundled TUI plugin is missing" >&2
         fi
     fi
 

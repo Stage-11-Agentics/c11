@@ -240,6 +240,7 @@ final class SocketCommandContext: @unchecked Sendable {
     let allowsFocus: Bool
     let callerPanelId: UUID?
     let callerTTYDevice: UInt32?
+    let callerPID: pid_t?
     var blockedTarget: UUID?
     /// A command-palette session adopts the request that drives it (a simulated
     /// shortcut, a debug call). Once adopted, the operator-only wrappers around
@@ -247,11 +248,13 @@ final class SocketCommandContext: @unchecked Sendable {
     /// and attributes the action. Operator-driven sessions never carry one.
     var holdsOperatorWrappers = false
 
-    init(method: String, allowsFocus: Bool, callerPanelId: UUID? = nil, callerTTYDevice: UInt32? = nil) {
+    init(method: String, allowsFocus: Bool, callerPanelId: UUID? = nil, callerTTYDevice: UInt32? = nil,
+         callerPID: pid_t? = nil) {
         self.method = method
         self.allowsFocus = allowsFocus
         self.callerPanelId = callerPanelId
         self.callerTTYDevice = callerTTYDevice
+        self.callerPID = callerPID
     }
 
     /// The origin of the palette session now running, or nil when an operator drives it.
@@ -793,7 +796,8 @@ class TerminalController {
             method: commandKey,
             allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: commandKey, isV2: isV2),
             callerPanelId: SocketCommandContext.current?.callerPanelId,
-            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
+            callerPID: SocketCommandContext.current?.callerPID
         )
         return SocketCommandContext.withContext(context, body)
     }
@@ -2356,6 +2360,7 @@ class TerminalController {
         serveClientCommandLines(
             socket: socket,
             callerTTYDevice: socketCallerTTYDevice(peerPid: peerPid ?? getPeerPid(socket)),
+            callerPID: peerPid ?? getPeerPid(socket),
             nativePeer: nativePeer,
             shouldContinue: { withListenerState { isRunning } },
             execute: { processCommandUsingSocketExecutionPolicy($0) }
@@ -2370,6 +2375,7 @@ class TerminalController {
     func serveClientCommandLines(
         socket: Int32,
         callerTTYDevice: UInt32?,
+        callerPID: pid_t? = nil,
         nativePeer: MailboxStdinBuffer.AgentProcess? = nil,
         shouldContinue: () -> Bool,
         execute: (String) -> String
@@ -2382,7 +2388,8 @@ class TerminalController {
                 if let authResponse = authResponseIfNeeded(for: command, authenticated: &authenticated) {
                     return authResponse
                 }
-                let connection = SocketCommandContext(method: "connection", allowsFocus: false, callerTTYDevice: callerTTYDevice)
+                let connection = SocketCommandContext(method: "connection", allowsFocus: false,
+                                                      callerTTYDevice: callerTTYDevice, callerPID: callerPID)
                 return SocketCommandContext.withContext(connection) {
                     execute(command)
                 }
@@ -2417,7 +2424,8 @@ class TerminalController {
                     method: request.method,
                     allowsFocus: false,
                     callerPanelId: nil,
-                    callerTTYDevice: callerTTYDevice
+                    callerTTYDevice: callerTTYDevice,
+                    callerPID: callerPID
                 )
                 SocketCommandContext.withContext(context) {
                     self.withSocketCommandPolicy(commandKey: request.method, isV2: true) {
@@ -2597,6 +2605,11 @@ class TerminalController {
         // C11-468: store read and transcript stats off-main; one main hop
         // decides and schedules the typing.
         "conversation.resume",
+        // Conversation claims and route writes can wait briefly on the actor
+        // store; keep that bounded wait off main and hop only for legacy
+        // target-handle resolution. Literal panel UUIDs need no AppKit lookup.
+        "conversation.claim",
+        "conversation.push",
         "panel.send_text",
         "panel.send_key",
         "panel.read_text",
@@ -4894,13 +4907,13 @@ class TerminalController {
     /// 64 KiB cap on the serialised payload accepted by v2 conversation
     /// push. Matches the metadata path. Defends the snapshot file against
     /// oversized hook input.
-    static let conversationPayloadMaxBytes: Int = 64 * 1024
+    nonisolated static let conversationPayloadMaxBytes: Int = 64 * 1024
 
     /// Bool detection for payload coercion. Swift `Bool` bridges to
     /// `NSNumber` on Apple platforms, so a naive `as? NSNumber` cast
     /// succeeds for booleans and silently coerces them to `.number(1.0)`.
     /// Use `CFBooleanGetTypeID` to disambiguate.
-    func conversationBoolValue(_ v: Any) -> Bool? {
+    nonisolated func conversationBoolValue(_ v: Any) -> Bool? {
         let cf = v as CFTypeRef
         if CFGetTypeID(cf) == CFBooleanGetTypeID() {
             return (v as? Bool)
@@ -4916,7 +4929,7 @@ class TerminalController {
     ///
     /// Bounded timeout (2 s); the actor never blocks on I/O so a hang
     /// here would mean a deadlock somewhere unrelated.
-    func conversationStoreSync<T: Sendable>(
+    nonisolated func conversationStoreSync<T: Sendable>(
         _ body: @escaping @Sendable (ConversationStore) async -> T
     ) -> T? {
         // C11-24: `Task.detached` so the spawned task does not inherit

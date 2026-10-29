@@ -109,6 +109,10 @@ extension TerminalController {
             return v2WindowResizeWorker(id: request.id, params: request.params)
         case "conversation.resume":
             return v2Result(id: request.id, v2ConversationResume(params: request.params))
+        case "conversation.claim":
+            return v2Result(id: request.id, v2ConversationClaim(params: request.params))
+        case "conversation.push":
+            return v2Result(id: request.id, v2ConversationPush(params: request.params))
         case "panel.send_text":
             return v2Result(id: request.id, v2PanelSendText(params: request.params))
         case "panel.send_key":
@@ -211,7 +215,8 @@ extension TerminalController {
                 ?? (request?.params["caller_panel_id"] as? String
                     ?? request?.params["caller_tab_id"] as? String
                     ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
-            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
+            callerPID: SocketCommandContext.current?.callerPID
         )
         return SocketCommandContext.withContext(context) {
             var response = executeSocketCommand(command)

@@ -505,6 +505,7 @@
 		C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F2E00001A1B2C3D4E5F719 /* omp */; };
 		C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F3E00001A1B2C3D4E5F719 /* grok */; };
 		C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F4E00001A1B2C3D4E5F719 /* opencode */; };
+		C1F4E00005A1B2C3D4E5F721 /* opencode-v2-config.py in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F4E00004A1B2C3D4E5F721 /* opencode-v2-config.py */; };
 		C22557799917F42164A6C855 /* TitlebarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */; };
 		C248B0A1B2C3D4E5F6071801 /* LegacyWireAliases.swift in Sources */ = {isa = PBXBuildFile; fileRef = C248B0A1B2C3D4E5F6071802 /* LegacyWireAliases.swift */; };
 		C2570011A1B2C3D4E5F60718 /* MailboxDrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2570001A1B2C3D4E5F60718 /* MailboxDrain.swift */; };
@@ -758,6 +759,7 @@
 				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
 				C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */,
 				C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */,
+				C1F4E00005A1B2C3D4E5F721 /* opencode-v2-config.py in Copy CLI */,
 				D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */,
 				4EE5E828CC9D3BA957B86380 /* copilot in Copy CLI */,
 			);
@@ -1190,6 +1192,7 @@
 		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
 		C1F3E00001A1B2C3D4E5F719 /* grok */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/grok; sourceTree = SOURCE_ROOT; };
 		C1F4E00001A1B2C3D4E5F719 /* opencode */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/opencode; sourceTree = SOURCE_ROOT; };
+		C1F4E00004A1B2C3D4E5F721 /* opencode-v2-config.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = "Resources/bin/opencode-v2-config.py"; sourceTree = SOURCE_ROOT; };
 		C248B0A1B2C3D4E5F6071802 /* LegacyWireAliases.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LegacyWireAliases.swift; sourceTree = "<group>"; };
 		C2570001A1B2C3D4E5F60718 /* MailboxDrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxDrain.swift; sourceTree = "<group>"; };
 		C2570002A1B2C3D4E5F60718 /* MailboxFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxFraming.swift; sourceTree = "<group>"; };
@@ -1473,6 +1476,7 @@
 				C1F2E00001A1B2C3D4E5F719 /* omp */,
 				C1F3E00001A1B2C3D4E5F719 /* grok */,
 				C1F4E00001A1B2C3D4E5F719 /* opencode */,
+				C1F4E00004A1B2C3D4E5F721 /* opencode-v2-config.py */,
 				D8017BF1A1B2C3D4E5F60718 /* Blueprints */,
 				DA7A10CA710E000000000001 /* Localizable.xcstrings */,
 				DA7A10CA710E000000000002 /* InfoPlist.xcstrings */,

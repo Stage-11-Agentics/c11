@@ -31,6 +31,45 @@ extension TerminalController {
         }
     }
 
+    /// Conversation wrapper calls carry a literal panel UUID, which can be
+    /// resolved without touching AppKit. Keep legacy handle refs working with
+    /// one short main-actor lookup, but keep the high-frequency OpenCode route
+    /// stream off main.
+    private nonisolated func v2ResolveConversationSurfaceOnWorker(
+        params: [String: Any]
+    ) -> Result<UUID, V2CallResult> {
+        if let rawSurfaceID = v2String(params, "surface_id"),
+           let surfaceID = UUID(uuidString: rawSurfaceID) {
+            return .success(surfaceID)
+        }
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { self.v2ResolveSurfaceForConversation(params: params) }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { self.v2ResolveSurfaceForConversation(params: params) }
+        }
+    }
+
+    /// OpenCode claims authenticate both the TUI process and the target
+    /// terminal panel. This lookup is launch-time only; fail closed when the
+    /// live panel or its shell-reported tty is unavailable.
+    private nonisolated func v2OpenCodePanelTTYDeviceForClaim(surfaceId: UUID) -> UInt32? {
+        let resolveOnMain = {
+            MainActor.assumeIsolated { () -> UInt32? in
+                let params: [String: Any] = ["surface_id": surfaceId.uuidString]
+                guard case .success = self.v2ResolveLiveTerminalSurfaceForRuntimeCapture(params: params),
+                      let app = AppDelegate.shared,
+                      let located = app.locateSurface(surfaceId: surfaceId),
+                      let workspace = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }),
+                      let ttyName = workspace.panelTTYNames[surfaceId],
+                      let device = TerminalPIDResolver.ttyDevice(for: ttyName) else { return nil }
+                return UInt32(truncatingIfNeeded: device)
+            }
+        }
+        if Thread.isMainThread { return resolveOnMain() }
+        return DispatchQueue.main.sync(execute: resolveOnMain)
+    }
+
     /// Accept an exact Codex conversation id reported by a tool subprocess
     /// running inside the target Codex session. Kind and provenance are fixed
     /// by this dedicated method; callers cannot relabel the report.
@@ -77,14 +116,14 @@ extension TerminalController {
         ])
     }
 
-    private func v2ConversationClaim(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2ConversationClaim(params: [String: Any]) -> V2CallResult {
         if ConversationStorePolicy.isDisabled {
             return .ok(["disabled": true, "kill_switch": "CMUX_DISABLE_CONVERSATION_STORE"])
         }
         guard let kind = v2String(params, "kind"), !kind.isEmpty else {
             return .err(code: "invalid_kind", message: "kind required", data: nil)
         }
-        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        let surfaceResult = v2ResolveConversationSurfaceOnWorker(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
             return .err(code: "internal_error", message: "panel resolution", data: nil)
@@ -94,15 +133,95 @@ extension TerminalController {
             ?? "wrapper-claim:\(surfaceId.uuidString):\(Int(Date().timeIntervalSince1970))"
         let expectedResumeId = v2String(params, "expected_resume_id")
         if let expectedResumeId {
-            guard kind == "codex", UUID(uuidString: expectedResumeId) != nil else {
+            let valid = (kind == "codex" && UUID(uuidString: expectedResumeId) != nil)
+                || (kind == "opencode" && isValidOpencodeSessionId(expectedResumeId))
+            guard valid else {
                 return .err(
                     code: "invalid_expected_resume_id",
-                    message: "expected_resume_id is supported only for codex UUIDs",
+                    message: "expected_resume_id must match the selected kind's session ID format",
                     data: nil
                 )
             }
         }
-
+        let interactivePID: Int32?
+        let interactiveProcessStartTime: UInt64?
+        if params["interactive_pid"] != nil {
+            guard kind == "opencode", let rawPID = v2Int(params, "interactive_pid"),
+                  rawPID > 0, rawPID <= Int(Int32.max) else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "interactive_pid is supported only for a positive OpenCode TUI pid",
+                            data: nil)
+            }
+            let claimedTuiPID = Int32(rawPID)
+            guard let panelTTYDevice = v2OpenCodePanelTTYDeviceForClaim(surfaceId: surfaceId) else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "OpenCode claims require a live target terminal with a known tty",
+                            data: nil)
+            }
+            guard MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+                peerPID: SocketCommandContext.current?.callerPID,
+                claimedTuiPID: claimedTuiPID,
+                peerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
+                panelTTYDevice: panelTTYDevice
+            ) else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "interactive_pid must identify the foreground OpenCode TUI for the target panel terminal",
+                            data: nil)
+            }
+            guard let tuiProcess = MailboxAgentForeground.processTerminalInfo(pid: claimedTuiPID),
+                  !tuiProcess.isZombie, tuiProcess.startTime > 0 else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "interactive_pid no longer identifies a live OpenCode TUI",
+                            data: nil)
+            }
+            interactivePID = claimedTuiPID
+            interactiveProcessStartTime = tuiProcess.startTime
+        } else {
+            interactivePID = nil
+            interactiveProcessStartTime = nil
+        }
+        guard kind != "opencode" || interactivePID != nil else {
+            return .err(
+                code: "invalid_interactive_pid",
+                message: "OpenCode lifecycle claims require an authenticated foreground TUI process",
+                data: ["surface_id": surfaceId.uuidString]
+            )
+        }
+        let openCodeRecoveryPayload: [String: PersistedJSONValue]?
+        let recoveryClaimParameters: [(String, String)] = [
+            ("recovery_home", ConversationLifecyclePayloadKey.openCodeRecoveryHome),
+            ("recovery_xdg_data_home", ConversationLifecyclePayloadKey.openCodeRecoveryXDGDataHome),
+            ("recovery_database_override", ConversationLifecyclePayloadKey.openCodeRecoveryDatabaseOverride),
+        ]
+        if kind == "opencode", let interactivePID, let interactiveProcessStartTime {
+            var recoveryPayload: [String: PersistedJSONValue] = [
+                ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion: .number(1),
+                ConversationLifecyclePayloadKey.openCodeTuiProcessStartTime: .number(Double(interactiveProcessStartTime))
+            ]
+            for (parameter, key) in recoveryClaimParameters {
+                guard let raw = params[parameter] else { continue }
+                guard let value = raw as? String,
+                      value.utf8.count <= 4_096,
+                      !value.contains("\0") else {
+                    return .err(
+                        code: "invalid_recovery_context",
+                        message: "OpenCode recovery path metadata must be a bounded string",
+                        data: ["key": parameter]
+                    )
+                }
+                recoveryPayload[key] = .string(value)
+            }
+            openCodeRecoveryPayload = recoveryPayload
+        } else {
+            if recoveryClaimParameters.contains(where: { params[$0.0] != nil }) {
+                return .err(
+                    code: "invalid_recovery_context",
+                    message: "OpenCode recovery context requires an authenticated TUI claim",
+                    data: nil
+                )
+            }
+            openCodeRecoveryPayload = nil
+        }
         let expiresAt: Date?
         if params["expires_at_epoch_ms"] != nil {
             guard let epochMilliseconds = v2Int(params, "expires_at_epoch_ms"),
@@ -125,6 +244,30 @@ extension TerminalController {
         } else {
             expiresAt = nil
         }
+        if kind == "opencode", expectedResumeId != nil, expiresAt == nil {
+            return .err(code: "expiry_required",
+                        message: "OpenCode resume reservations require expires_at_epoch_ms",
+                        data: nil)
+        }
+        if kind == "opencode", expectedResumeId != nil,
+           let expiresAt, expiresAt.timeIntervalSinceNow > 300 {
+            return .err(code: "expiry_too_long",
+                        message: "OpenCode resume reservations are limited to five minutes",
+                        data: nil)
+        }
+        if kind == "opencode", let interactivePID {
+            if let expiresAt, expiresAt <= Date() {
+                return .err(code: "request_expired",
+                            message: "claim expired before the store mutation boundary",
+                            data: nil)
+            }
+            // Close any persisted exact-route typed gate as soon as this fresh
+            // foreground claim is verified, before waiting on ConversationStore.
+            _ = ConversationStorePanelRefCache.shared.beginOpenCodeClaim(
+                surfaceId: surfaceId,
+                tuiPID: interactivePID
+            )
+        }
 
         let ref: ConversationRef
         if let expiresAt {
@@ -135,6 +278,8 @@ extension TerminalController {
                     cwd: cwd,
                     placeholderId: placeholder,
                     expectedResumeId: expectedResumeId,
+                    interactivePID: interactivePID,
+                    openCodeRecoveryPayload: openCodeRecoveryPayload,
                     expiresAt: expiresAt
                 )
             }
@@ -158,7 +303,9 @@ extension TerminalController {
                     kind: kind,
                     cwd: cwd,
                     placeholderId: placeholder,
-                    expectedResumeId: expectedResumeId
+                    expectedResumeId: expectedResumeId,
+                    interactivePID: interactivePID,
+                    openCodeRecoveryPayload: openCodeRecoveryPayload
                 )
             }) else {
                 return .err(code: "internal_error", message: "store timeout", data: nil)
@@ -178,7 +325,7 @@ extension TerminalController {
         ])
     }
 
-    private func v2ConversationPush(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2ConversationPush(params: [String: Any]) -> V2CallResult {
         if ConversationStorePolicy.isDisabled {
             return .ok(["disabled": true, "kill_switch": "CMUX_DISABLE_CONVERSATION_STORE"])
         }
@@ -202,13 +349,48 @@ extension TerminalController {
                         message: "id does not match the \(kind) strategy's grammar",
                         data: ["kind": kind])
         }
-        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        // Handle refs are backed by the live c11 model, so resolve them in a
+        // short main-thread slice. Actor-store waits below remain on the socket
+        // worker and cannot freeze the UI.
+        let surfaceResult: Result<UUID, V2CallResult>
+        surfaceResult = v2ResolveConversationSurfaceOnWorker(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
             return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let cwd = v2String(params, "cwd")
         let reason = v2String(params, "diagnostic_reason")
+        let displayedRoot = params["displayed_root"] as? Bool ?? false
+        let displayedRouteState = v2String(params, "displayed_route_state")
+        let routeGenerationValue = v2Int(params, "displayed_route_generation")
+        let hasDisplayedRouteMutation = displayedRoot || displayedRouteState != nil
+        guard params["displayed_route_state"] == nil || displayedRouteState != nil,
+              !(displayedRoot && displayedRouteState != nil) else {
+            return .err(code: "invalid_displayed_route_state",
+                        message: "displayed_route_state must be pending, child, or no-route and cannot be combined with displayed_root",
+                        data: nil)
+        }
+        guard params["displayed_route_generation"] == nil
+                || routeGenerationValue.map({ $0 > 0 }) == true,
+              hasDisplayedRouteMutation == (routeGenerationValue != nil) else {
+            return .err(code: "invalid_displayed_route_generation",
+                        message: "displayed route mutations require a positive displayed_route_generation",
+                        data: nil)
+        }
+        let routeGeneration = routeGenerationValue.map { Int64($0) }
+        guard !displayedRoot || (kind == "opencode" && source == .hook) else {
+            return .err(code: "invalid_displayed_root",
+                        message: "displayed_root is reserved for OpenCode TUI root capture",
+                        data: nil)
+        }
+        if let displayedRouteState,
+           (kind != "opencode" || source != .hook || !["pending", "child", "no-route"].contains(displayedRouteState)) {
+            return .err(
+                code: "invalid_displayed_route_state",
+                message: "displayed_route_state is reserved for OpenCode TUI route state",
+                data: nil
+            )
+        }
         let stateRaw = (v2String(params, "state") ?? "alive").lowercased()
         // C11-24 review (I2): strict validation. Silent fallthrough to
         // .alive swallowed typos ("susended" → .alive) and corrupted the
@@ -238,6 +420,15 @@ extension TerminalController {
         //   land in the snapshot.
         let payload: [String: PersistedJSONValue]?
         if let dict = params["payload"] as? [String: Any] {
+            if let reservedKey = dict.keys.first(where: {
+                ConversationLifecyclePayloadKey.genericPushReservedKeys.contains($0)
+            }) {
+                return .err(
+                    code: "reserved_payload_key",
+                    message: "payload key is written only by the authenticated conversation claim",
+                    data: ["key": reservedKey]
+                )
+            }
             var out: [String: PersistedJSONValue] = [:]
             out.reserveCapacity(dict.count)
             for (k, v) in dict {
@@ -268,6 +459,128 @@ extension TerminalController {
             payload = nil
         }
 
+        if displayedRoot {
+            // SocketCommandContext is thread-local. Capture the authenticated
+            // peer before conversationStoreSync moves work to a detached task.
+            let callerPID = SocketCommandContext.current?.callerPID
+            guard let routeGeneration,
+                  ConversationStorePanelRefCache.shared.beginOpenCodeRouteChange(
+                    surfaceId: surfaceId,
+                    tuiPID: callerPID,
+                    routeGeneration: routeGeneration,
+                    capturesRoot: true,
+                    targetID: id
+                  ) else {
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route capture is older than the latest displayed route",
+                            data: ["surface_id": surfaceId.uuidString])
+            }
+            let storeResult: DisplayedOpenCodeCaptureResult? = conversationStoreSync { store in
+                await store.captureDisplayedOpenCodeRoot(
+                    surfaceId: surfaceId.uuidString,
+                    id: id,
+                    cwd: cwd,
+                    callerPID: callerPID,
+                    routeGeneration: routeGeneration
+                )
+            }
+            guard let result = storeResult else {
+                return .err(code: "internal_error", message: "store timeout", data: nil)
+            }
+            switch result {
+            case .conflict(let owners, let preservedRef):
+                var response: [String: Any] = [
+                    "surface_id": surfaceId.uuidString,
+                    "kind": kind,
+                    "id": id,
+                    "outcome": "identity_conflict",
+                    "owner_surface_ids": owners
+                ]
+                if let preservedRef {
+                    response["preserved_state"] = preservedRef.state.rawValue
+                    if !preservedRef.placeholder { response["preserved_id"] = preservedRef.id }
+                }
+                return .ok(response)
+            case .unauthorized:
+                return .err(code: "displayed_root_caller_mismatch",
+                            message: "displayed-root capture must come from the OpenCode TUI process reserved by this panel",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .staleRouteGeneration:
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route capture is older than the latest displayed route",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .accepted(let ref):
+                PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+                DispatchQueue.main.async {
+                    guard let located = AppDelegate.shared?.locateSurface(surfaceId: surfaceId),
+                          let workspace = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }) else {
+                        return
+                    }
+                    workspace.recheckMailboxDoorbellAfterOpenCodeRouteBound(surfaceId: surfaceId)
+                }
+                return .ok([
+                    "surface_id": surfaceId.uuidString,
+                    "kind": ref.kind,
+                    "id": ref.id,
+                    "captured_via": ref.capturedVia.rawValue,
+                    "state": ref.state.rawValue,
+                    "outcome": "accepted"
+                ])
+            }
+        }
+
+        if let displayedRouteState {
+            // Preserve the socket peer across the detached actor hop just as
+            // for root capture above.
+            let callerPID = SocketCommandContext.current?.callerPID
+            guard let routeGeneration,
+                  ConversationStorePanelRefCache.shared.beginOpenCodeRouteChange(
+                    surfaceId: surfaceId,
+                    tuiPID: callerPID,
+                    routeGeneration: routeGeneration,
+                    capturesRoot: false,
+                    targetID: id
+                  ) else {
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route update is older than the latest displayed route",
+                            data: ["surface_id": surfaceId.uuidString])
+            }
+            let storeResult: OpenCodeUnboundRouteResult? = conversationStoreSync { store in
+                await store.markDisplayedOpenCodeRouteUnbound(
+                    surfaceId: surfaceId.uuidString,
+                    id: id,
+                    cwd: cwd,
+                    routeState: displayedRouteState,
+                    callerPID: callerPID,
+                    routeGeneration: routeGeneration
+                )
+            }
+            guard let result = storeResult else {
+                return .err(code: "internal_error", message: "store timeout", data: nil)
+            }
+            switch result {
+            case .unauthorized:
+                return .err(code: "displayed_route_caller_mismatch",
+                            message: "displayed-route state must come from the OpenCode TUI process reserved by this panel",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .staleRouteGeneration:
+                return .err(code: "stale_route_generation",
+                            message: "OpenCode route update is older than the latest displayed route",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .accepted(let ref):
+                PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+                return .ok([
+                    "surface_id": surfaceId.uuidString,
+                    "kind": ref.kind,
+                    "id": ref.id,
+                    "displayed_id": id,
+                    "placeholder": ref.placeholder,
+                    "state": ref.state.rawValue,
+                    "outcome": "unbound"
+                ])
+            }
+        }
+
         let storeResult: ConversationRef?? = conversationStoreSync { store in
             await store.push(
                 surfaceId: surfaceId.uuidString,
@@ -285,9 +598,9 @@ extension TerminalController {
         }
         guard let ref = maybeRef else {
             return .err(
-                code: "invalid_source",
-                message: "source must be one of hook, scrape, manual",
-                data: nil
+                code: "protected_route",
+                message: "generic conversation pushes cannot replace an authenticated OpenCode v2 route or write claim metadata",
+                data: ["surface_id": surfaceId.uuidString]
             )
         }
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)

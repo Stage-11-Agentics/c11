@@ -17,6 +17,19 @@ final class MailboxNativeDoorbell {
         let sessionID: String
         let route: Route
         let canQueue: Bool
+        let supportsAttemptReplay: Bool
+
+        init(id: UUID, panelID: UUID, agentPID: pid_t, processStart: UInt64, sessionID: String,
+             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false) {
+            self.id = id
+            self.panelID = panelID
+            self.agentPID = agentPID
+            self.processStart = processStart
+            self.sessionID = sessionID
+            self.route = route
+            self.canQueue = canQueue
+            self.supportsAttemptReplay = supportsAttemptReplay
+        }
 
         func matches(process: MailboxStdinBuffer.AgentProcess?, kind: String) -> Bool {
             guard let process, process.pid == agentPID, process.startTime == processStart else { return false }
@@ -30,7 +43,32 @@ final class MailboxNativeDoorbell {
             }
         }
     }
-    enum Result: Equatable { case accepted(late: Bool), failed(String) }
+    enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, failed(String) }
+
+    struct Attempt: Equatable {
+        let id: UUID
+        let process: MailboxStdinBuffer.AgentProcess
+        let ids: Set<String>
+    }
+
+    /// Reuse only the exact unread snapshot for the same live TUI process.
+    /// New mail stays outside an ambiguous earlier attempt and receives its
+    /// own attempt after the original result is confirmed.
+    static func reusableAttempt(_ attempt: Attempt?, process: MailboxStdinBuffer.AgentProcess,
+                                unreadIDs: Set<String>) -> Attempt? {
+        guard let attempt, attempt.process == process,
+              !attempt.ids.isDisjoint(with: unreadIDs) else { return nil }
+        return attempt
+    }
+
+    /// Keep accepted coverage across OpenCode /new route registrations from
+    /// the same TUI process. A different process must be allowed to retry the
+    /// still-unread invitation after a crash or restart.
+    static func shouldResetCoverage(previousProcess: MailboxStdinBuffer.AgentProcess?,
+                                    currentProcess: MailboxStdinBuffer.AgentProcess?) -> Bool {
+        guard let currentProcess else { return false }
+        return previousProcess != currentProcess
+    }
 
     struct Fallback {
         let registration: Registration
@@ -52,6 +90,15 @@ final class MailboxNativeDoorbell {
             if registration.route == .ompExtension, !uncovered.isSubset(of: ids) { return false }
             return true
         }
+
+        /// OpenCode has no safe typed fallback while an invitation may already
+        /// have been admitted by a prompt whose native acknowledgement was
+        /// lost. Only the v2 TUI advertises replay support; v1 retains its
+        /// documented at-least-once typed fallback behavior.
+        func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
+            guard registration.route == .opencodePlugin, registration.supportsAttemptReplay else { return false }
+            return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
+        }
     }
 
     /// Whether a failed native attempt hands its envelopes to the typed gate
@@ -65,15 +112,57 @@ final class MailboxNativeDoorbell {
         !(route == .ompExtension && reason == "native_rejected")
     }
 
+    /// OpenCode v2 TUI routes cannot use typed delivery while their exact
+    /// displayed root is still reserved or explicitly conflicted. This state
+    /// lives in ConversationStore so the hold survives a refused/missing
+    /// native stream registration.
+    static func blocksTypedForUnboundOpenCodeTUI(conversation: ConversationRef?) -> Bool {
+        guard let conversation, conversation.kind == "opencode",
+              case .number(let rawPID)? = conversation.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID],
+              rawPID.isFinite, rawPID > 0 else { return false }
+        return conversation.placeholder ||
+            (conversation.diagnosticReason?.hasPrefix("OpenCode displayed route ") == true)
+    }
+
+    /// Typed delivery requires a fresh wrapper claim and a root capture from
+    /// the current route generation. This includes the interval after a
+    /// verified route-change request arrives but before the actor write ends.
+    static func blocksTypedForOpenCodeTUI(snapshot: ConversationStorePanelRefSnapshot?) -> Bool {
+        guard let snapshot else { return false }
+        if snapshot.authenticatedOpenCodeTuiPID != nil && snapshot.routePending { return true }
+        guard let conversation = snapshot.active, conversation.kind == "opencode",
+              conversation.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] != nil else {
+            return snapshot.authenticatedOpenCodeTuiPID != nil
+        }
+        guard case .number(let rawPID)? = conversation.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID],
+              rawPID.isFinite, rawPID > 0, rawPID <= Double(Int32.max),
+              rawPID.rounded(.towardZero) == rawPID else { return true }
+        guard let authenticatedPID = snapshot.authenticatedOpenCodeTuiPID,
+              authenticatedPID == Int32(rawPID), !snapshot.routePending,
+              snapshot.boundRouteID == conversation.id else { return true }
+        return conversation.placeholder ||
+            conversation.diagnosticReason?.hasPrefix("OpenCode displayed route ") == true
+    }
+
+    static func openCodePluginPeerMatches(peerPID: pid_t?, agentPID: pid_t) -> Bool {
+        peerPID == agentPID && agentPID > 1
+    }
+
     /// Apply an observed acceptance on the main hop. The return value says
     /// whether the listener is still current and may trigger further work.
+    /// A replay acknowledged as already admitted is a duplicate no-op, not a
+    /// fresh prompt. Release its idle epoch so later uncovered mail can ring.
     static func recordAcceptance(_ ids: Set<String>, registrationID: UUID, currentRegistrationID: UUID?,
-                                 nativeCovered: inout Set<String>, ledger: inout MailboxDoorbell.Ledger) -> Bool {
+                                 nativeCovered: inout Set<String>, ledger: inout MailboxDoorbell.Ledger,
+                                 rearmEpoch: String? = nil) -> Bool {
         // Acceptance is an observed delivery even if the listener closed
         // before this hop. Route-change handling must see these original IDs.
         nativeCovered.formUnion(ids)
         ledger.coveredIds.formUnion(ids)
         ledger.draftWatch = nil
+        if let rearmEpoch, ledger.rungEpoch == rearmEpoch {
+            ledger.rungEpoch = nil
+        }
         return currentRegistrationID == registrationID
     }
 
@@ -113,8 +202,42 @@ final class MailboxNativeDoorbell {
         return nil
     }
 
+    /// Authenticate the TUI PID recorded by an OpenCode wrapper claim. The
+    /// claim arrives from a short-lived c11 CLI child, so the socket peer must
+    /// be a same-terminal descendant of the foreground process-group leader.
+    /// Requiring the claimed PID to lead that group prevents a child from
+    /// claiming itself and then reporting a displayed root from its own PID.
+    static func verifiedOpenCodeTUIClaim(
+        peerPID: pid_t?,
+        claimedTuiPID: pid_t,
+        peerTTYDevice: UInt32?,
+        panelTTYDevice: UInt32?,
+        readProcess: (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? = MailboxAgentForeground.processTerminalInfo
+    ) -> Bool {
+        guard let peerPID, peerPID > 1, claimedTuiPID > 1, peerPID != claimedTuiPID,
+              let peerTTYDevice, let panelTTYDevice,
+              let tui = readProcess(claimedTuiPID), tui.startTime > 0,
+              tui.processGroup == claimedTuiPID,
+              tui.processGroup == tui.terminalForegroundGroup,
+              tui.terminalDevice != -1,
+              UInt32(tui.terminalDevice) == peerTTYDevice,
+              UInt32(tui.terminalDevice) == panelTTYDevice,
+              let peer = readProcess(peerPID), peer.startTime > 0,
+              peer.terminalDevice == tui.terminalDevice,
+              peer.processGroup == tui.processGroup,
+              peer.terminalForegroundGroup == tui.terminalForegroundGroup,
+              verifiedAgent(
+                peer: .init(pid: peerPID, startTime: peer.startTime),
+                agentPID: claimedTuiPID,
+                readProcess: readProcess
+              ) == tui,
+              readProcess(peerPID) == peer,
+              readProcess(claimedTuiPID) == tui else { return false }
+        return true
+    }
+
     private struct Pending {
-        let reply: (Result) -> Void
+        let reply: (Result, @escaping () -> Void) -> Void
         var failed = false
         let at: Date
     }
@@ -146,7 +269,7 @@ final class MailboxNativeDoorbell {
                 _ = old.write(["type": "replaced"])
                 old.close()
             }
-            for request in old.pending.values where !request.failed { request.reply(.failed("native_replaced")) }
+            for request in old.pending.values where !request.failed { request.reply(.failed("native_replaced"), {}) }
         }
     }
 
@@ -156,7 +279,7 @@ final class MailboxNativeDoorbell {
         let old = listeners.removeValue(forKey: registration.panelID)
         lock.unlock()
         for request in old?.pending.values ?? Dictionary<UUID, Pending>().values where !request.failed {
-            request.reply(.failed("native_disconnected"))
+            request.reply(.failed("native_disconnected"), {})
         }
     }
 
@@ -164,10 +287,19 @@ final class MailboxNativeDoorbell {
     /// Coverage belongs to Workspace and always names the dispatch-time IDs.
     @discardableResult
     func deliver(_ registration: Registration, timeout: TimeInterval = 2, reply: @escaping (Result) -> Void) -> UUID {
+        deliver(registration, timeout: timeout) { result, _ in reply(result) }
+    }
+
+    /// `settled` runs after Workspace applies an observed acceptance on main.
+    /// OpenCode keeps its old stream until that frame arrives, so route-change
+    /// registration cannot race ahead of accepted-ID coverage.
+    @discardableResult
+    func deliver(_ registration: Registration, timeout: TimeInterval = 2, attemptID: UUID? = nil,
+                 reply: @escaping (Result, @escaping () -> Void) -> Void) -> UUID {
         let requestID = UUID()
         lock.lock()
         guard var listener = listeners[registration.panelID], listener.registration.id == registration.id else {
-            lock.unlock(); reply(.failed("native_unavailable")); return requestID
+            lock.unlock(); reply(.failed("native_unavailable"), {}); return requestID
         }
         listener.pending = listener.pending.filter { Date().timeIntervalSince($0.value.at) < MailboxDoorbell.rateWindow }
         listener.pending[requestID] = Pending(reply: reply, at: Date())
@@ -185,7 +317,9 @@ final class MailboxNativeDoorbell {
                 && current?.pending[requestID]?.failed == false
             lock.unlock()
             guard shouldSend else { return }
-            if !listener.write(["type": "deliver", "delivery_id": requestID.uuidString, "text": MailboxDoorbell.text]) {
+            var frame: [String: Any] = ["type": "deliver", "delivery_id": requestID.uuidString, "text": MailboxDoorbell.text]
+            if let attemptID { frame["attempt_id"] = attemptID.uuidString }
+            if !listener.write(frame) {
                 resolve(registration, requestID: requestID, result: .failed("native_write_failed"))
             }
         }
@@ -201,6 +335,9 @@ final class MailboxNativeDoorbell {
         case .accepted:
             resolved = .accepted(late: pending.failed)
             listener.pending.removeValue(forKey: requestID)
+        case .alreadyAdmitted:
+            resolved = .alreadyAdmitted
+            listener.pending.removeValue(forKey: requestID)
         case .failed(let reason):
             guard !pending.failed else { lock.unlock(); return }
             pending.failed = true
@@ -209,7 +346,28 @@ final class MailboxNativeDoorbell {
         }
         listeners[registration.panelID] = listener
         lock.unlock()
-        pending.reply(resolved)
+        let settled: () -> Void
+        let confirmsCoverage: Bool
+        switch resolved {
+        case .accepted, .alreadyAdmitted: confirmsCoverage = true
+        case .failed: confirmsCoverage = false
+        }
+        if confirmsCoverage {
+            settled = { [weak self] in
+                guard let self else { return }
+                self.io.async { [weak self] in
+                    guard let self else { return }
+                    self.lock.lock()
+                    let listener = self.listeners[registration.panelID]
+                    let write = listener?.registration.id == registration.id ? listener?.write : nil
+                    self.lock.unlock()
+                    _ = write?(["type": "settled", "delivery_id": requestID.uuidString])
+                }
+            }
+        } else {
+            settled = {}
+        }
+        pending.reply(resolved, settled)
     }
 
     /// Reasons a consumer may give that the log names on their own. Any other
@@ -217,6 +375,7 @@ final class MailboxNativeDoorbell {
     /// so a consumer cannot write arbitrary text into `_dispatch.log`.
     static let namedRejections: Set<String> = [
         "transcript_unavailable", "inbox_unavailable", "inbox_write_failed", "unconfirmed", "unsupported_invitation",
+        "session_conflict", "not_ready",
     ]
 
     /// One consumer frame from the stream: an acceptance or a rejection.
@@ -225,7 +384,12 @@ final class MailboxNativeDoorbell {
               let rawID = frame["delivery_id"] as? String, let requestID = UUID(uuidString: rawID) else { return }
         switch frame["type"] as? String {
         case "accepted":
-            resolve(registration, requestID: requestID, result: .accepted(late: false))
+            if registration.route == .opencodePlugin,
+               frame["disposition"] as? String == "already_admitted" {
+                resolve(registration, requestID: requestID, result: .alreadyAdmitted)
+            } else {
+                resolve(registration, requestID: requestID, result: .accepted(late: false))
+            }
         case "rejected":
             let reason = (frame["reason"] as? String).flatMap { Self.namedRejections.contains($0) ? "native_\($0)" : nil }
             resolve(registration, requestID: requestID, result: .failed(reason ?? "native_rejected"))
@@ -240,18 +404,33 @@ extension TerminalController {
     /// live process/start-time/foreground checks match it.
     nonisolated func v2StreamNativeMailbox(id: Any?, params: [String: Any], socket: Int32,
                                           peer: MailboxStdinBuffer.AgentProcess?, shouldContinue: () -> Bool) {
+        let isOpenCodePluginPeer = params["route"] as? String == MailboxNativeDoorbell.Route.opencodePlugin.rawValue
         guard let rawPanel = params["panel_id"] as? String, let panelID = UUID(uuidString: rawPanel),
               let pidNumber = params["agent_pid"] as? NSNumber,
               pidNumber.doubleValue.rounded() == pidNumber.doubleValue,
               pidNumber.int64Value > 1, pidNumber.int64Value <= Int64(Int32.max),
               let sessionID = params["session_id"] as? String, !sessionID.isEmpty, sessionID.utf8.count <= 256,
               let rawRoute = params["route"] as? String, let route = MailboxNativeDoorbell.Route(rawValue: rawRoute), route != .typed,
+              !isOpenCodePluginPeer || MailboxNativeDoorbell.openCodePluginPeerMatches(
+                peerPID: peer?.pid, agentPID: pidNumber.int32Value
+              ),
               let process = MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: pidNumber.int32Value) else {
             _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
             return
         }
+        let supportsAttemptReplay: Bool
+        if let rawSupport = params["supports_attempt_replay"] {
+            guard route == .opencodePlugin, let support = rawSupport as? Bool else {
+                _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
+                return
+            }
+            supportsAttemptReplay = support
+        } else {
+            supportsAttemptReplay = false
+        }
         let registration = MailboxNativeDoorbell.Registration(id: UUID(), panelID: panelID, agentPID: pidNumber.int32Value,
-            processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false)
+            processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false,
+            supportsAttemptReplay: supportsAttemptReplay)
         // A slow/dead peer cannot occupy the shared writer indefinitely.
         var timeout = timeval(tv_sec: 1, tv_usec: 0)
         _ = setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))

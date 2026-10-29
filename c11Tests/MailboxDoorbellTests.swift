@@ -1437,16 +1437,106 @@ final class MailboxNativeDoorbellTests: XCTestCase {
     func testOpenCodeRouteRequiresMatchingHarnessAndProcess() throws {
         let route = try XCTUnwrap(MailboxNativeDoorbell.Route(rawValue: "opencode_plugin"))
         let reg = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123,
-            processStart: 456, sessionID: UUID().uuidString, route: route, canQueue: false)
+            processStart: 456, sessionID: UUID().uuidString, route: route, canQueue: false,
+            supportsAttemptReplay: true)
         let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
         XCTAssertTrue(reg.matches(process: process, kind: "opencode"))
         XCTAssertFalse(reg.canQueue)
+        XCTAssertTrue(reg.supportsAttemptReplay)
         for kind in ["pi", "codex", "claude", "grok"] {
             XCTAssertFalse(reg.matches(process: process, kind: kind))
         }
         XCTAssertFalse(reg.matches(process: .init(pid: 124, startTime: 456), kind: "opencode"))
         XCTAssertFalse(reg.matches(process: .init(pid: 123, startTime: 457), kind: "opencode"))
         XCTAssertFalse(reg.matches(process: nil, kind: "opencode"))
+    }
+
+    func testAcceptedCoverageResetsOnlyForANewTUIProcess() {
+        let original = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        XCTAssertFalse(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: original, currentProcess: original),
+                       "a new OpenCode root in the same TUI keeps its accepted unread IDs covered")
+        XCTAssertFalse(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: original, currentProcess: nil),
+                       "a brief stream disconnect must not lose process identity")
+        XCTAssertTrue(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: nil, currentProcess: original))
+        XCTAssertTrue(MailboxNativeDoorbell.shouldResetCoverage(
+            previousProcess: original, currentProcess: .init(pid: 124, startTime: 456)))
+        XCTAssertTrue(MailboxNativeDoorbell.shouldResetCoverage(
+            previousProcess: original, currentProcess: .init(pid: 123, startTime: 457)),
+            "PID reuse is a new TUI process")
+    }
+
+    func testAmbiguousOpenCodeAttemptKeepsItsExactEnvelopeSnapshot() {
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        let attempt = MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: ["mail-a"])
+        XCTAssertEqual(MailboxNativeDoorbell.reusableAttempt(attempt, process: process,
+            unreadIDs: ["mail-a", "mail-b"]), attempt,
+            "new mail cannot be folded into an attempt whose prompt result is ambiguous")
+        XCTAssertNil(MailboxNativeDoorbell.reusableAttempt(attempt,
+            process: .init(pid: 124, startTime: 456), unreadIDs: ["mail-a", "mail-b"]),
+            "a different TUI process must retry unread mail with a fresh attempt")
+        XCTAssertNil(MailboxNativeDoorbell.reusableAttempt(attempt, process: process,
+            unreadIDs: ["mail-b"]), "an attempt with no still-unread envelope is no longer reusable")
+    }
+
+    func testAcceptedDeliverySettlesOnlyAfterWorkspaceCallback() {
+        let broker = MailboxNativeDoorbell(), reg = registration()
+        let sent = expectation(description: "native invitation")
+        let settledFrame = expectation(description: "workspace settlement frame")
+        let lock = NSLock()
+        var settlement: (() -> Void)?
+        var settledCount = 0
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" { sent.fulfill() }
+            if frame["type"] as? String == "settled" {
+                lock.lock(); settledCount += 1; lock.unlock()
+                settledFrame.fulfill()
+            }
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+        let request = broker.deliver(reg, timeout: 30) { result, finish in
+            XCTAssertEqual(result, .accepted(late: false))
+            settlement = finish
+        }
+        wait(for: [sent], timeout: 1)
+        broker.resolve(reg, requestID: request, result: .accepted(late: false))
+        lock.lock(); let beforeWorkspace = settledCount; lock.unlock()
+        XCTAssertEqual(beforeWorkspace, 0, "the acceptance frame alone cannot confirm Workspace coverage")
+        settlement?()
+        wait(for: [settledFrame], timeout: 1)
+        lock.lock(); let afterWorkspace = settledCount; lock.unlock()
+        XCTAssertEqual(afterWorkspace, 1)
+    }
+
+    func testAlreadyAdmittedReplayCarriesStableAttemptAndSettlesCoverage() throws {
+        let broker = MailboxNativeDoorbell(), reg = registration(route: .opencodePlugin)
+        let attemptID = UUID()
+        let sent = expectation(description: "attempt id sent")
+        let replayed = expectation(description: "already admitted replay")
+        let settledFrame = expectation(description: "replay coverage settled")
+        var settleCoverage: (() -> Void)?
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" {
+                XCTAssertEqual(frame["attempt_id"] as? String, attemptID.uuidString)
+                sent.fulfill()
+            }
+            if frame["type"] as? String == "settled" { settledFrame.fulfill() }
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+        let request = broker.deliver(reg, attemptID: attemptID) { result, settle in
+            XCTAssertEqual(result, .alreadyAdmitted)
+            settleCoverage = settle
+            replayed.fulfill()
+        }
+        wait(for: [sent], timeout: 1)
+        let frame = try JSONSerialization.data(withJSONObject: [
+            "type": "accepted", "delivery_id": request.uuidString, "disposition": "already_admitted",
+        ])
+        broker.consume(frame, registration: reg)
+        wait(for: [replayed], timeout: 1)
+        settleCoverage?()
+        wait(for: [settledFrame], timeout: 1)
     }
 
     func testReplacementWritesRetirementFrameBeforeClosingOldStream() {
@@ -1564,6 +1654,29 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "once_per_idle"))
     }
 
+    func testAlreadyAdmittedReplayRearmsIdleEpochForLaterMail() {
+        let registrationID = UUID()
+        let epoch = "idle"
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.beginAttempt(at: Date(timeIntervalSince1970: 1), epoch: epoch)
+        var nativeCovered: Set<String> = []
+
+        XCTAssertTrue(MailboxNativeDoorbell.recordAcceptance(["mail-a"],
+            registrationID: registrationID, currentRegistrationID: registrationID,
+            nativeCovered: &nativeCovered, ledger: &ledger, rearmEpoch: epoch))
+        XCTAssertEqual(nativeCovered, ["mail-a"])
+        XCTAssertEqual(ledger.coveredIds, ["mail-a"])
+        XCTAssertNil(ledger.rungEpoch)
+
+        var input = MailboxDoorbell.Input(nativeRoute: true, epoch: epoch)
+        input.hasUnread = true
+        input.unreadIds = ["mail-a", "mail-b"]
+        input.coveredIds = ledger.coveredIds
+        input.rungThisEpoch = ledger.rung(in: epoch)
+        XCTAssertEqual(MailboxDoorbell.decide(input), .ring,
+            "the replay covers A but must not strand uncovered B in the same idle period")
+    }
+
     private func nativeProcess(_ parent: pid_t, start: UInt64, tty: dev_t = -1) -> MailboxAgentForeground.ProcessTerminalInfo {
         .init(processGroup: 10, terminalForegroundGroup: 10, terminalDevice: tty,
               isZombie: false, startTime: start, parentPID: parent)
@@ -1616,6 +1729,42 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                 return info
             }), "PID \(changedPID) changed identity during ancestry walk")
         }
+    }
+
+    func testOpenCodeClaimRequiresTheForegroundTUIProcessGroupLeader() {
+        func process(group: pid_t, foreground: pid_t, tty: dev_t, start: UInt64, parent: pid_t) -> MailboxAgentForeground.ProcessTerminalInfo {
+            .init(processGroup: group, terminalForegroundGroup: foreground, terminalDevice: tty,
+                  isZombie: false, startTime: start, parentPID: parent)
+        }
+        let trusted: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            100: process(group: 100, foreground: 100, tty: 7, start: 100, parent: 1),
+            110: process(group: 100, foreground: 100, tty: 7, start: 200, parent: 100),
+        ]
+        XCTAssertTrue(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
+        ), "the wrapper's c11 CLI child may claim its foreground TUI parent on the target panel")
+
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 110, peerTTYDevice: 7, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
+        ), "a child cannot claim itself as the displayed TUI")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 8, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
+        ), "claim socket must come from the TUI's own terminal")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, panelTTYDevice: 8,
+            readProcess: { trusted[$0] }
+        ), "a TUI cannot claim a different panel's terminal")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, panelTTYDevice: nil,
+            readProcess: { trusted[$0] }
+        ), "an unknown target panel terminal fails closed")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: nil, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
+        ), "unreadable peer terminal identity fails closed")
     }
 
     private func registration(panel: UUID = UUID(), pid: pid_t = 123, start: UInt64 = 456,
@@ -1691,6 +1840,7 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                     ringInput: { _ in XCTFail("typed fallback read a running turn"); return .init() })
                 XCTAssertEqual(outcome, .buffered(bytes: 4)); failed.fulfill()
             case .accepted(let late): XCTAssertTrue(late); accepted.fulfill()
+            case .alreadyAdmitted: XCTFail("timeout attempt cannot replay as already admitted")
             }
         }
         wait(for: [dispatched, failed], timeout: 2)
@@ -1709,6 +1859,7 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             ("inbox_write_failed", "native_inbox_write_failed"),
             ("unconfirmed", "native_unconfirmed"),
             ("unsupported_invitation", "native_unsupported_invitation"),
+            ("session_conflict", "native_session_conflict"),
             (nil, "native_rejected"),
             ("anything else", "native_rejected"),
         ]
@@ -1884,6 +2035,8 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                             currentRegistrationID: broker.registration(panelID: reg.panelID)?.id,
                             nativeCovered: &nativeCovered, ledger: &ledger)
                     }
+                case .alreadyAdmitted:
+                    XCTFail("this test does not send a replayed acceptance")
                 }
             }
         }
@@ -1922,6 +2075,40 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             XCTAssertFalse(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed"], coveredIDs: ["failed"]))
             XCTAssertFalse(fallback.blocksNative(registrationID: UUID(), unreadIDs: ["failed"], coveredIDs: []))
         }
+    }
+
+    func testOpenCodeDisplayedRouteConflictHoldsTypedDelivery() {
+        let reg = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123,
+            processStart: 456, sessionID: UUID().uuidString, route: .opencodePlugin,
+            canQueue: false, supportsAttemptReplay: true)
+        let conflict = MailboxNativeDoorbell.Fallback(
+            registration: reg, ids: ["mail-a"], reason: "native_session_conflict"
+        )
+        XCTAssertTrue(conflict.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
+        XCTAssertFalse(conflict.blocksTyped(unreadIDs: ["mail-b"], coveredIDs: []))
+        XCTAssertFalse(conflict.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+
+        let ordinaryFailure = MailboxNativeDoorbell.Fallback(
+            registration: reg, ids: ["mail-a"], reason: "native_timeout"
+        )
+        XCTAssertTrue(ordinaryFailure.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+                      "an ambiguous prompt result must be retried natively with the same attempt ID")
+        XCTAssertFalse(ordinaryFailure.blocksTyped(unreadIDs: ["mail-b"], coveredIDs: []),
+                       "the ambiguous attempt does not hide later mail")
+
+        let notReady = MailboxNativeDoorbell.Fallback(
+            registration: reg, ids: ["mail-a"], reason: "native_not_ready"
+        )
+        XCTAssertTrue(notReady.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+                      "busy OpenCode mail must stay buffered until native delivery can resume")
+        XCTAssertFalse(notReady.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+        XCTAssertTrue(MailboxNativeDoorbell.namedRejections.contains("not_ready"))
+
+        let otherRoute = MailboxNativeDoorbell.Fallback(
+            registration: registration(route: .piExtension), ids: ["mail-a"], reason: "native_not_ready"
+        )
+        XCTAssertFalse(otherRoute.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+                       "OpenCode readiness policy must not leak into other consumers")
     }
 
     func testNativeAndFallbackLogsNameTheirRoutes() throws {

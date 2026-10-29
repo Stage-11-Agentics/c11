@@ -18,15 +18,15 @@ import Foundation
 struct OpencodeStrategy: ConversationStrategy {
     let kind: String = "opencode"
 
-    /// Injectable session-existence lookup for the crash-recovery
-    /// `transcriptExists` seam. Defaults to a real `OpencodeScraper` reading
-    /// `~/.local/share/opencode/opencode.db`; tests inject a scraper pointed
-    /// at a temp DB.
-    private let sessionLookup: @Sendable (_ homeDirectory: URL?) -> any OpencodeSessionLookup
+    /// Injectable session-existence lookup for crash recovery. The home and
+    /// environment are explicit so an authenticated wrapper claim can select
+    /// the same OpenCode store used by that TUI. Legacy refs use c11's normal
+    /// process environment; marked refs never fall back to it.
+    private let sessionLookup: @Sendable (_ homeDirectory: URL?, _ environment: [String: String]) -> any OpencodeSessionLookup
 
     init(
-        sessionLookup: @escaping @Sendable (_ homeDirectory: URL?) -> any OpencodeSessionLookup = { home in
-            OpencodeScraper(homeDirectory: home)
+        sessionLookup: @escaping @Sendable (_ homeDirectory: URL?, _ environment: [String: String]) -> any OpencodeSessionLookup = { home, environment in
+            OpencodeScraper(homeDirectory: home, environment: environment)
         }
     ) {
         self.sessionLookup = sessionLookup
@@ -99,7 +99,13 @@ struct OpencodeStrategy: ConversationStrategy {
         for ref: ConversationRef,
         filesystem: ConversationFilesystem
     ) -> Bool? {
-        sessionLookup(filesystem.homeDirectory).sessionExists(id: ref.id)
+        if OpencodeRecoveryStoreContext.isMarked(ref.payload) {
+            guard let context = OpencodeRecoveryStoreContext(payload: ref.payload), context.isUsable else {
+                return nil
+            }
+            return sessionLookup(context.homeDirectory, context.environment).sessionExists(id: ref.id)
+        }
+        return sessionLookup(filesystem.homeDirectory, ProcessInfo.processInfo.environment).sessionExists(id: ref.id)
     }
 }
 

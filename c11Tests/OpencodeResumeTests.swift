@@ -249,9 +249,65 @@ final class OpencodeStrategyResumeTests: XCTestCase {
     func testTranscriptExistsThreeValued() {
         let r = ref(state: .suspended, cwd: cwd)
         let fs = DefaultConversationFilesystem()
-        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: true) }).transcriptExists(for: r, filesystem: fs), true)
-        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: false) }).transcriptExists(for: r, filesystem: fs), false)
-        XCTAssertNil(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: nil) }).transcriptExists(for: r, filesystem: fs))
+        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _, _ in StubLookup(result: true) }).transcriptExists(for: r, filesystem: fs), true)
+        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _, _ in StubLookup(result: false) }).transcriptExists(for: r, filesystem: fs), false)
+        XCTAssertNil(OpencodeStrategy(sessionLookup: { _, _ in StubLookup(result: nil) }).transcriptExists(for: r, filesystem: fs))
+    }
+
+    func testTranscriptExistsUsesAuthenticatedLaunchStoreContext() {
+        let path = "/isolated/opencode/opencode.db"
+        var payload: [String: PersistedJSONValue] = [
+            OpencodeRecoveryStoreContextKey.version: .number(1),
+            OpencodeRecoveryStoreContextKey.home: .string("/launch/home"),
+            OpencodeRecoveryStoreContextKey.xdgDataHome: .string("/launch/data"),
+            OpencodeRecoveryStoreContextKey.databaseOverride: .string(path),
+        ]
+        let r = ConversationRef(kind: "opencode", id: id, placeholder: false, cwd: cwd,
+                                capturedVia: .hook, state: .alive, payload: payload)
+        let fs = DefaultConversationFilesystem()
+        let strategy = OpencodeStrategy(sessionLookup: { home, environment in
+            guard home?.path == "/launch/home",
+                  environment["XDG_DATA_HOME"] == "/launch/data",
+                  environment["OPENCODE_DB"] == path,
+                  environment.count == 2 else {
+                return StubLookup(result: false)
+            }
+            return StubLookup(result: true)
+        })
+        XCTAssertEqual(strategy.transcriptExists(for: r, filesystem: fs), true)
+
+        // Invalid authenticated context is unverifiable; it must not invoke
+        // the normal process environment lookup as a fallback.
+        payload[OpencodeRecoveryStoreContextKey.version] = .string("1")
+        let malformed = ConversationRef(kind: "opencode", id: id, placeholder: false, cwd: cwd,
+                                        capturedVia: .hook, state: .alive, payload: payload)
+        let fallbackMustNotRun = OpencodeStrategy(sessionLookup: { _, _ in
+            XCTFail("malformed launch context must not use c11's default DB")
+            return StubLookup(result: true)
+        })
+        XCTAssertNil(fallbackMustNotRun.transcriptExists(for: malformed, filesystem: fs))
+    }
+
+    func testTranscriptExistsDoesNotFallBackForMemoryOrEmptyDatabaseOverride() {
+        let fs = DefaultConversationFilesystem()
+        for override in [":memory:", ""] {
+            let ref = ConversationRef(
+                kind: "opencode",
+                id: "ses_0fda89a49ffeLHwJXtrxnn4X6g",
+                placeholder: false,
+                cwd: cwd,
+                capturedVia: .hook,
+                state: .alive,
+                payload: [
+                    OpencodeRecoveryStoreContextKey.version: .number(1),
+                    OpencodeRecoveryStoreContextKey.databaseOverride: .string(override),
+                ]
+            )
+            let strategy = OpencodeStrategy(sessionLookup: { home, environment in
+                OpencodeScraper(homeDirectory: home, environment: environment)
+            })
+            XCTAssertNil(strategy.transcriptExists(for: ref, filesystem: fs), "override \(override.debugDescription) must not use the default DB")
+        }
     }
 
     func testCrashReclassificationPreservesVerifiedMissingUnavailable() async {
@@ -272,7 +328,7 @@ final class OpencodeStrategyResumeTests: XCTestCase {
                 state: .alive
             )
             let registry = ConversationStrategyRegistry(strategies: [
-                OpencodeStrategy(sessionLookup: { _ in
+                OpencodeStrategy(sessionLookup: { _, _ in
                     StubLookup(result: testCase.0)
                 })
             ])
@@ -302,28 +358,39 @@ final class OpencodeScraperTests: XCTestCase {
         if let tmpHome { try? FileManager.default.removeItem(at: tmpHome) }
     }
 
-    /// Lay out `<tmpHome>/.local/share/opencode/opencode.db` with a `session`
-    /// table and the given rows. Mirrors the real column names the scraper
-    /// queries (`id`, `parent_id`, `directory`, `time_updated`).
-    private func seedDatabase(_ rows: [(id: String, dir: String, updatedMs: Int64)]) throws {
-        let dbDir = tmpHome
-            .appendingPathComponent(".local/share/opencode", isDirectory: true)
-        try FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
-        let dbPath = dbDir.appendingPathComponent("opencode.db").path
+    private func databaseURL(dataHome: URL? = nil) -> URL {
+        let root = dataHome ?? tmpHome.appendingPathComponent(".local/share", isDirectory: true)
+        return root.appendingPathComponent("opencode/opencode.db")
+    }
 
+    /// Seed only the session metadata columns used by the scraper. The v2
+    /// fixture mirrors OpenCode 2.0.25's `session_v2` schema names.
+    private func seedDatabase(
+        _ rows: [(id: String, dir: String, updatedMs: Int64)],
+        tables: [String] = ["session"],
+        dataHome: URL? = nil,
+        databaseURLOverride: URL? = nil
+    ) throws {
+        let dbURL = databaseURLOverride ?? databaseURL(dataHome: dataHome)
+        try FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var db: OpaquePointer?
-        XCTAssertEqual(sqlite3_open(dbPath, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_open(dbURL.path, &db), SQLITE_OK)
         defer { sqlite3_close(db) }
-        let ddl = "CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, time_updated INTEGER NOT NULL);"
-        XCTAssertEqual(sqlite3_exec(db, ddl, nil, nil, nil), SQLITE_OK)
-        for r in rows {
-            let sql = "INSERT INTO session (id, parent_id, directory, time_updated) VALUES ('\(r.id)', NULL, '\(r.dir)', \(r.updatedMs));"
-            XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK, "insert \(r.id)")
+        for table in tables {
+            XCTAssertTrue(["session", "session_v2"].contains(table))
+            let ddl = "CREATE TABLE \(table) (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, time_updated INTEGER NOT NULL, time_archived INTEGER);"
+            XCTAssertEqual(sqlite3_exec(db, ddl, nil, nil, nil), SQLITE_OK)
+        }
+        for row in rows {
+            for table in tables {
+                let sql = "INSERT INTO \(table) (id, parent_id, directory, time_updated) VALUES ('\(row.id)', NULL, '\(row.dir)', \(row.updatedMs));"
+                XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK, "insert \(row.id) into \(table)")
+            }
         }
     }
 
     func testDatabasePathNilWhenAbsent() {
-        let scraper = OpencodeScraper(homeDirectory: tmpHome)
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
         XCTAssertNil(scraper.databasePath(), "no db file yet")
     }
 
@@ -331,7 +398,7 @@ final class OpencodeScraperTests: XCTestCase {
         let present = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         let absent  = "ses_0f5b10b09ffeb2G3Y53oze86wV"
         try seedDatabase([(present, "/Users/atin/proj", 1_700_000_000_000)])
-        let scraper = OpencodeScraper(homeDirectory: tmpHome)
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
 
         XCTAssertEqual(scraper.sessionExists(id: present), true)
         XCTAssertEqual(scraper.sessionExists(id: absent), false)
@@ -339,7 +406,7 @@ final class OpencodeScraperTests: XCTestCase {
 
         // DB absent → nil (cannot verify), not false.
         let noDb = OpencodeScraper(homeDirectory: FileManager.default.temporaryDirectory
-            .appendingPathComponent("c11-no-db-\(UUID().uuidString)", isDirectory: true))
+            .appendingPathComponent("c11-no-db-\(UUID().uuidString)", isDirectory: true), environment: [:])
         XCTAssertNil(noDb.sessionExists(id: present))
     }
 
@@ -350,7 +417,7 @@ final class OpencodeScraperTests: XCTestCase {
             ("ses_0fd8a6fffffe6JzzcloHmtDV0R", dir, 300),   // newest in dir
             ("ses_0fd8cb310ffe2of6OsP2qYz4Q5", "/Users/atin/other", 999)  // different cwd
         ])
-        let scraper = OpencodeScraper(homeDirectory: tmpHome)
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
         let refs = scraper.scrape(cwd: dir)
         XCTAssertEqual(refs.map(\.id), [
             "ses_0fd8a6fffffe6JzzcloHmtDV0R",
@@ -362,7 +429,123 @@ final class OpencodeScraperTests: XCTestCase {
 
     func testScrapeEmptyForUnknownCwd() throws {
         try seedDatabase([("ses_0fda89a49ffeLHwJXtrxnn4X6g", "/a", 1)])
-        let scraper = OpencodeScraper(homeDirectory: tmpHome)
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
         XCTAssertEqual(scraper.scrape(cwd: "/nonexistent"), [])
+    }
+
+    func testV2OnlySessionTableVerifiesExactIDAndArchivedRows() throws {
+        let present = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let absent = "ses_0f5b10b09ffeb2G3Y53oze86wV"
+        try seedDatabase([(present, "/work", 1)], tables: ["session_v2"])
+        let dbURL = databaseURL()
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dbURL.path, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, "UPDATE session_v2 SET time_archived = 2 WHERE id = '\(present)';", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
+        XCTAssertEqual(scraper.sessionExists(id: present), true,
+                       "findSession accepts the exact archived row; archive is not confirmed absence")
+        XCTAssertEqual(scraper.sessionExists(id: absent), false)
+        XCTAssertEqual(scraper.scrape(cwd: "/work").map(\.id), [present])
+    }
+
+    func testBothSessionTablesAreQueriedWithoutNewestByCwdSubstitution() throws {
+        let v2ID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let legacyID = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let absent = "ses_0f5b10b09ffeb2G3Y53oze86wV"
+        try seedDatabase([(v2ID, "/same", 10), (legacyID, "/same", 20)], tables: ["session", "session_v2"])
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
+        XCTAssertEqual(scraper.sessionExists(id: v2ID), true)
+        XCTAssertEqual(scraper.sessionExists(id: legacyID), true)
+        XCTAssertEqual(scraper.sessionExists(id: absent), false)
+        XCTAssertEqual(scraper.scrape(cwd: "/same").map(\.id), [legacyID, v2ID])
+    }
+
+    func testXDGDataHomeOverridesHomeDefault() throws {
+        let homeID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let xdgID = "ses_0f5b10b09ffeb2G3Y53oze86wV"
+        let xdg = tmpHome.appendingPathComponent("separate-data-root", isDirectory: true)
+        try seedDatabase([(homeID, "/home", 1)])
+        try seedDatabase([(xdgID, "/xdg", 2)], tables: ["session_v2"], dataHome: xdg)
+        let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: ["XDG_DATA_HOME": xdg.path])
+        XCTAssertEqual(scraper.databasePath(), databaseURL(dataHome: xdg))
+        XCTAssertEqual(scraper.sessionExists(id: xdgID), true)
+        XCTAssertEqual(scraper.sessionExists(id: homeID), false)
+    }
+
+    func testOpenCodeDatabaseOverrideSupportsAbsoluteAndRelativePaths() throws {
+        let absoluteURL = tmpHome.appendingPathComponent("custom-opencode.sqlite")
+        try seedDatabase([("ses_0fda89a49ffeLHwJXtrxnn4X6g", "/absolute", 1)],
+                         databaseURLOverride: absoluteURL)
+        let absolute = OpencodeScraper(homeDirectory: nil, environment: ["OPENCODE_DB": absoluteURL.path])
+        XCTAssertEqual(absolute.databasePath(), absoluteURL)
+        XCTAssertEqual(absolute.sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"), true)
+
+        let relativeURL = tmpHome.appendingPathComponent(".local/share/opencode/alternate.sqlite")
+        try seedDatabase([("ses_0f5b10b09ffeb2G3Y53oze86wV", "/relative", 2)],
+                         databaseURLOverride: relativeURL)
+        let relative = OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": "alternate.sqlite"])
+        XCTAssertEqual(relative.databasePath(), relativeURL)
+        XCTAssertEqual(relative.sessionExists(id: "ses_0f5b10b09ffeb2G3Y53oze86wV"), true)
+    }
+
+    func testOpenCodeMemoryAndMissingOverridesDoNotFallBackToDefaultDatabase() throws {
+        try seedDatabase([("ses_0fda89a49ffeLHwJXtrxnn4X6g", "/default", 1)])
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": ":memory:"]).databasePath(),
+                     "in-memory OpenCode DB has no on-disk recovery path")
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": ""]).databasePath(),
+                     "an explicit empty override has no recoverable path and cannot use the default database")
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": "missing.sqlite"]).databasePath(),
+                     "an absent explicit override must not silently query another database")
+    }
+
+    func testNeitherOrUnsupportedSchemaIsUnverifiable() throws {
+        let dbURL = databaseURL()
+        try FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dbURL.path, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, "CREATE TABLE unrelated (value TEXT); CREATE TABLE session_v2 (title TEXT);", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: [:]).sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"),
+                     "unsupported v2 schema cannot confirm absence")
+
+        let neitherHome = tmpHome.appendingPathComponent("neither", isDirectory: true)
+        let neitherURL = neitherHome.appendingPathComponent(".local/share/opencode/opencode.db")
+        try FileManager.default.createDirectory(at: neitherURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var neitherDB: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(neitherURL.path, &neitherDB), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(neitherDB, "CREATE TABLE unrelated (value TEXT);", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(neitherDB)
+        XCTAssertNil(OpencodeScraper(homeDirectory: neitherHome, environment: [:]).sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"))
+
+        let incompleteHome = tmpHome.appendingPathComponent("incomplete", isDirectory: true)
+        let incompleteURL = incompleteHome.appendingPathComponent(".local/share/opencode/opencode.db")
+        try FileManager.default.createDirectory(at: incompleteURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var incompleteDB: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(incompleteURL.path, &incompleteDB), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(incompleteDB, "CREATE TABLE session_v2 (id TEXT PRIMARY KEY); INSERT INTO session_v2 (id) VALUES ('ses_0fda89a49ffeLHwJXtrxnn4X6g');", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(incompleteDB)
+        XCTAssertNil(OpencodeScraper(homeDirectory: incompleteHome, environment: [:])
+            .sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"),
+                     "an ID-only lookalike table cannot confirm a supported OpenCode session")
+    }
+
+    func testCorruptAndLockedDatabasesRemainUnverifiable() throws {
+        let dbURL = databaseURL()
+        try FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("not a sqlite database".utf8).write(to: dbURL)
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: [:]).sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"))
+
+        try FileManager.default.removeItem(at: dbURL)
+        try seedDatabase([], tables: ["session_v2"])
+        var lockDB: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dbURL.path, &lockDB), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(lockDB, "BEGIN EXCLUSIVE;", nil, nil, nil), SQLITE_OK)
+        defer {
+            sqlite3_exec(lockDB, "ROLLBACK;", nil, nil, nil)
+            sqlite3_close(lockDB)
+        }
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: [:]).sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"))
     }
 }

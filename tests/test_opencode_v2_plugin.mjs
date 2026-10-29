@@ -166,11 +166,6 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
   f.state.statusBySession.set(rootA, 'running');
   f.state.emit('session.execution.started', rootA);
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
-  f.state.statusBySession.set(rootA, 'idle');
-  f.state.emit('session.execution.interrupted', rootA, { reason: 'shutdown' });
-  await delay(30);
-  assert.equal((await readFile(f.claimLog, 'utf8')).includes('agent-hook idle'), false,
-    'shutdown is not a prompt-ready edge');
 
   f.state.emit('session.execution.succeeded', rootB);
   await delay(30);
@@ -186,6 +181,19 @@ test('v2 reports only the bound displayed root execution lifecycle', { timeout: 
   f.state.statusBySession.set(rootA, 'idle');
   f.state.emit('session.execution.interrupted', rootA, { reason: 'user_abort' });
   await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook idle/g)?.length >= 2);
+
+  f.state.statusBySession.set(rootA, 'running');
+  f.state.emit('session.execution.started', rootA);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook working/g)?.length >= 3);
+  f.state.statusBySession.set(rootA, 'idle');
+  f.state.emit('session.execution.interrupted', rootA, { reason: 'shutdown' });
+  await delay(250);
+  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 2,
+    'shutdown keeps the idle status monitor from emitting a prompt-ready edge');
+  f.state.emit('session.execution.succeeded', rootA);
+  await delay(250);
+  assert.equal((await readFile(f.claimLog, 'utf8')).match(/agent-hook idle/g)?.length, 2,
+    'a terminal event following shutdown remains suppressed for this route');
   const calls = (await readFile(f.claimLog, 'utf8')).trim().split('\n');
   assert.equal(calls.some(line => line.includes('--native-event')), false,
     'OpenCode lifecycle uses the panel-scoped activity bridge, not the Pi journal event');

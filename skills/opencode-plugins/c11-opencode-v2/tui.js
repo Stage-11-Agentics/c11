@@ -221,7 +221,6 @@ export default {
           if (event?.data?.sessionID === boundID) shutdownSessionID = boundID;
           return;
         }
-        if (event?.data?.sessionID === shutdownSessionID) shutdownSessionID = undefined;
         reportRootLifecycle(event?.data?.sessionID, 'idle');
       });
     }

@@ -375,7 +375,8 @@ final class CmuxWebView: WKWebView {
     /// Converts a point in this view's coordinates to the CSS viewport point
     /// that `elementFromPoint` expects: origin at the top left, in CSS pixels.
     /// WKWebView is flipped, so its y already runs downward; page zoom scales
-    /// CSS pixels to points.
+    /// CSS pixels to points. Assumes what browser panels set up today: no
+    /// pinch magnification and no content insets.
     private func cssViewportPoint(forViewPoint point: NSPoint) -> CGPoint {
         let top = isFlipped ? point.y : bounds.height - point.y
         let zoom = pageZoom > 0 ? pageZoom : 1
@@ -698,7 +699,7 @@ final class CmuxWebView: WKWebView {
     }
 
     /// Resolve the topmost image URL near a point, accounting for overlay layers.
-    func findImageURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
+    private func findImageURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
         let cssPoint = cssViewportPoint(forViewPoint: point)
         let js = """
         (() => {
@@ -830,7 +831,7 @@ final class CmuxWebView: WKWebView {
     }
 
     /// Resolve the topmost link URL near a point, accounting for overlay layers.
-    func findLinkURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
+    private func findLinkURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
         let cssPoint = cssViewportPoint(forViewPoint: point)
         let js = """
         (() => {

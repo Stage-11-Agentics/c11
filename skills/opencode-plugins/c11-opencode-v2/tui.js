@@ -361,6 +361,14 @@ export default {
       pending.clear();
     };
 
+    const rejectPending = error => {
+      for (const item of pending.values()) {
+        clearTimeout(item.timer);
+        item.reject?.(error);
+      }
+      pending.clear();
+    };
+
     const register = (sessionID, routeGeneration) => {
       if (!sessionID || disposed || nativeMailDisabled) return;
       const streamID = `${sessionID}:${routeGeneration}:${++mailboxRevision}`.slice(0, 256);
@@ -457,13 +465,15 @@ export default {
         } else {
           pendingUnbind = undefined;
         }
-        clearPending();
-        if (candidateID) {
-          // Establish an unsafe provisional native route before waiting for TUI
-          // hydration or the c11 ownership check. It rejects with a named
-          // conflict so mail is held until this displayed route is verified.
+        // Keep the old stream alive until c11 acknowledges the unbind. Its
+        // captured generation now rejects deliveries as a session conflict,
+        // keeping typed fallback closed while c11 still shows the old root.
+        rejectPending(sessionConflict());
+        if (candidateID) hasObservedRoute = true;
+        if (candidateID && !pendingUnbind) {
+          // The initial route has no old root to unbind. Establish an unsafe
+          // provisional stream before waiting for hydration or ownership.
           register(candidateID, nextGeneration);
-          hasObservedRoute = true;
         }
       }
       if (pendingUnbind) {
@@ -486,6 +496,12 @@ export default {
         }
         pendingUnbind = undefined;
         retryUnbindAt = 0;
+        // The old binding is now unbound, so typed fallback remains closed
+        // even while its native stream is replaced by the provisional route.
+        clearPending();
+        if (candidateID) {
+          register(candidateID, unbind.generation);
+        }
       }
       if (!candidateID || captureState === 'bound' ||
           captureState === 'child' || captureState === 'capturing' || Date.now() < retryCaptureAt) return;

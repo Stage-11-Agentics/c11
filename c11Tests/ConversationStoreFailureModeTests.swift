@@ -522,9 +522,9 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         XCTAssertFalse(conflict.blocksTyped(unreadIDs: ["mail-b"], coveredIDs: []))
         XCTAssertFalse(conflict.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
 
-        let ordinaryFailure = MailboxNativeDoorbell.Fallback(
+        let ambiguousTimeout = MailboxNativeDoorbell.Fallback(
             registration: registration, ids: ["mail-a"], reason: "native_timeout")
-        XCTAssertFalse(ordinaryFailure.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
+        XCTAssertTrue(ambiguousTimeout.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
     }
 
     func testOpenCodeTuiConflictHoldsTypedMailWithoutNativeRegistration() {

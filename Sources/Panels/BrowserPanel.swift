@@ -2009,7 +2009,27 @@ final class BrowserHistoryStore: ObservableObject {
 actor BrowserSearchSuggestionService {
     static let shared = BrowserSearchSuggestionService()
 
-    func suggestions(engine: BrowserSearchEngine, query: String) async -> [String] {
+    private var sessions: [UUID: URLSession] = [:]
+
+    /// The suggestion session for one browser profile. The engines are fixed,
+    /// but their cookies would otherwise land in the app-wide jar and link one
+    /// profile's typing to another's, and typed queries would reach the
+    /// app-wide disk cache. Each profile gets no cookies and its own
+    /// in-memory cache (C11-507).
+    func session(forProfile profileID: UUID) -> URLSession {
+        if let session = sessions[profileID] { return session }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = URLCache(memoryCapacity: 1 << 20, diskCapacity: 0)
+        let session = URLSession(configuration: configuration)
+        sessions[profileID] = session
+        return session
+    }
+
+    func suggestions(engine: BrowserSearchEngine, query: String, profileID: UUID) async -> [String] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
@@ -2029,23 +2049,24 @@ actor BrowserSearchSuggestionService {
 
         // Google's endpoint can intermittently throttle/block app-style traffic.
         // Query fallbacks in parallel so we can show predictions quickly.
+        let session = session(forProfile: profileID)
         if engine == .google {
-            return await fetchRemoteSuggestionsWithGoogleFallbacks(query: trimmed)
+            return await fetchRemoteSuggestionsWithGoogleFallbacks(query: trimmed, session: session)
         }
 
-        return await fetchRemoteSuggestions(engine: engine, query: trimmed)
+        return await fetchRemoteSuggestions(engine: engine, query: trimmed, session: session)
     }
 
-    private func fetchRemoteSuggestionsWithGoogleFallbacks(query: String) async -> [String] {
+    private func fetchRemoteSuggestionsWithGoogleFallbacks(query: String, session: URLSession) async -> [String] {
         await withTaskGroup(of: [String].self, returning: [String].self) { group in
             group.addTask {
-                await self.fetchRemoteSuggestions(engine: .google, query: query)
+                await self.fetchRemoteSuggestions(engine: .google, query: query, session: session)
             }
             group.addTask {
-                await self.fetchRemoteSuggestions(engine: .duckduckgo, query: query)
+                await self.fetchRemoteSuggestions(engine: .duckduckgo, query: query, session: session)
             }
             group.addTask {
-                await self.fetchRemoteSuggestions(engine: .bing, query: query)
+                await self.fetchRemoteSuggestions(engine: .bing, query: query, session: session)
             }
 
             while let result = await group.next() {
@@ -2059,7 +2080,7 @@ actor BrowserSearchSuggestionService {
         }
     }
 
-    private func fetchRemoteSuggestions(engine: BrowserSearchEngine, query: String) async -> [String] {
+    private func fetchRemoteSuggestions(engine: BrowserSearchEngine, query: String, session: URLSession) async -> [String] {
         let url: URL?
         switch engine {
         case .google:
@@ -2107,7 +2128,7 @@ actor BrowserSearchSuggestionService {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await session.data(for: req)
         } catch {
             return []
         }

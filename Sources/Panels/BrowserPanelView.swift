@@ -2141,9 +2141,10 @@ struct BrowserPanelView: View {
 
         // Keep current remote rows visible while fetching fresh predictions.
         let engine = searchEngine
+        let profileID = panel.profileID
         isLoadingRemoteSuggestions = true
         suggestionTask = Task {
-            let remote = await BrowserSearchSuggestionService.shared.suggestions(engine: engine, query: query)
+            let remote = await BrowserSearchSuggestionService.shared.suggestions(engine: engine, query: query, profileID: profileID)
             if Task.isCancelled { return }
 
             await MainActor.run {

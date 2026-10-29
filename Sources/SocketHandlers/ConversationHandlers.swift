@@ -126,6 +126,47 @@ extension TerminalController {
         } else {
             interactivePID = nil
         }
+        guard kind != "opencode" || interactivePID != nil else {
+            return .err(
+                code: "invalid_interactive_pid",
+                message: "OpenCode lifecycle claims require an authenticated foreground TUI process",
+                data: ["surface_id": surfaceId.uuidString]
+            )
+        }
+        let openCodeRecoveryPayload: [String: PersistedJSONValue]?
+        let recoveryClaimParameters: [(String, String)] = [
+            ("recovery_home", ConversationLifecyclePayloadKey.openCodeRecoveryHome),
+            ("recovery_xdg_data_home", ConversationLifecyclePayloadKey.openCodeRecoveryXDGDataHome),
+            ("recovery_database_override", ConversationLifecyclePayloadKey.openCodeRecoveryDatabaseOverride),
+        ]
+        if kind == "opencode", interactivePID != nil {
+            var recoveryPayload: [String: PersistedJSONValue] = [
+                ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion: .number(1)
+            ]
+            for (parameter, key) in recoveryClaimParameters {
+                guard let raw = params[parameter] else { continue }
+                guard let value = raw as? String,
+                      value.utf8.count <= 4_096,
+                      !value.contains("\0") else {
+                    return .err(
+                        code: "invalid_recovery_context",
+                        message: "OpenCode recovery path metadata must be a bounded string",
+                        data: ["key": parameter]
+                    )
+                }
+                recoveryPayload[key] = .string(value)
+            }
+            openCodeRecoveryPayload = recoveryPayload
+        } else {
+            if recoveryClaimParameters.contains(where: { params[$0.0] != nil }) {
+                return .err(
+                    code: "invalid_recovery_context",
+                    message: "OpenCode recovery context requires an authenticated TUI claim",
+                    data: nil
+                )
+            }
+            openCodeRecoveryPayload = nil
+        }
         let expiresAt: Date?
         if params["expires_at_epoch_ms"] != nil {
             guard let epochMilliseconds = v2Int(params, "expires_at_epoch_ms"),
@@ -170,6 +211,7 @@ extension TerminalController {
                     placeholderId: placeholder,
                     expectedResumeId: expectedResumeId,
                     interactivePID: interactivePID,
+                    openCodeRecoveryPayload: openCodeRecoveryPayload,
                     expiresAt: expiresAt
                 )
             }
@@ -194,7 +236,8 @@ extension TerminalController {
                     cwd: cwd,
                     placeholderId: placeholder,
                     expectedResumeId: expectedResumeId,
-                    interactivePID: interactivePID
+                    interactivePID: interactivePID,
+                    openCodeRecoveryPayload: openCodeRecoveryPayload
                 )
             }) else {
                 return .err(code: "internal_error", message: "store timeout", data: nil)
@@ -295,6 +338,15 @@ extension TerminalController {
         //   land in the snapshot.
         let payload: [String: PersistedJSONValue]?
         if let dict = params["payload"] as? [String: Any] {
+            if let reservedKey = dict.keys.first(where: {
+                ConversationLifecyclePayloadKey.genericPushReservedKeys.contains($0)
+            }) {
+                return .err(
+                    code: "reserved_payload_key",
+                    message: "payload key is written only by the authenticated conversation claim",
+                    data: ["key": reservedKey]
+                )
+            }
             var out: [String: PersistedJSONValue] = [:]
             out.reserveCapacity(dict.count)
             for (k, v) in dict {
@@ -422,7 +474,11 @@ extension TerminalController {
             return .err(code: "internal_error", message: "store timeout", data: nil)
         }
         guard let ref = maybeRef else {
-            return .err(code: "invalid_source", message: "source must be one of hook, scrape, manual", data: nil)
+            return .err(
+                code: "protected_route",
+                message: "generic conversation pushes cannot replace an authenticated OpenCode v2 route or write claim metadata",
+                data: ["surface_id": surfaceId.uuidString]
+            )
         }
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([

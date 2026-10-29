@@ -1,6 +1,90 @@
 import Foundation
 import SQLite3
 
+/// Server-owned payload keys captured only by an authenticated OpenCode TUI
+/// wrapper claim. The version marker is present even when the process had no
+/// path overrides; its presence prevents recovery from borrowing c11's own
+/// process environment for a TUI that used a different launch context.
+enum OpencodeRecoveryStoreContextKey {
+    static let version = "opencode_recovery_context_version"
+    static let home = "opencode_recovery_home"
+    static let xdgDataHome = "opencode_recovery_xdg_data_home"
+    static let databaseOverride = "opencode_recovery_database_override"
+}
+
+struct OpencodeRecoveryStoreContext: Sendable, Equatable {
+    let homeDirectory: URL?
+    let environment: [String: String]
+
+    /// `nil` means no authenticated launch marker exists. A malformed marker
+    /// is represented by a non-nil context with `isUsable == false`, so the
+    /// caller can fail closed instead of falling back to c11's environment.
+    let isUsable: Bool
+
+    static func isMarked(_ payload: [String: PersistedJSONValue]?) -> Bool {
+        payload?[OpencodeRecoveryStoreContextKey.version] != nil
+    }
+
+    init?(payload: [String: PersistedJSONValue]?) {
+        guard let payload,
+              payload[OpencodeRecoveryStoreContextKey.version] != nil else {
+            return nil
+        }
+
+        var valid = false
+        if case .number(let version)? = payload[OpencodeRecoveryStoreContextKey.version],
+           version == 1 {
+            valid = true
+        }
+
+        let home: String?
+        if case .string(let value)? = payload[OpencodeRecoveryStoreContextKey.home] {
+            home = value
+            if !value.hasPrefix("/") || value.utf8.count > Self.maximumPathBytes || value.contains("\0") {
+                valid = false
+            }
+        } else if payload[OpencodeRecoveryStoreContextKey.home] != nil {
+            home = nil
+            valid = false
+        } else {
+            home = nil
+        }
+
+        var environment: [String: String] = [:]
+        if case .string(let value)? = payload[OpencodeRecoveryStoreContextKey.xdgDataHome] {
+            guard value.utf8.count <= Self.maximumPathBytes, !value.contains("\0") else {
+                self.homeDirectory = nil
+                self.environment = [:]
+                self.isUsable = false
+                return
+            }
+            environment["XDG_DATA_HOME"] = value
+        } else if payload[OpencodeRecoveryStoreContextKey.xdgDataHome] != nil {
+            valid = false
+        }
+
+        if case .string(let value)? = payload[OpencodeRecoveryStoreContextKey.databaseOverride] {
+            guard value.utf8.count <= Self.maximumPathBytes, !value.contains("\0") else {
+                self.homeDirectory = nil
+                self.environment = [:]
+                self.isUsable = false
+                return
+            }
+            // Preserve empty and :memory: values exactly. They are explicit
+            // non-disk configurations, never a reason to use the default DB.
+            environment["OPENCODE_DB"] = value
+        } else if payload[OpencodeRecoveryStoreContextKey.databaseOverride] != nil {
+            valid = false
+        }
+
+        self.homeDirectory = home.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        self.environment = environment
+        self.isUsable = valid
+    }
+
+    private static let maximumPathBytes = 4_096
+}
+
 /// Read-only SQLite I/O over OpenCode's global data path. v1 uses the
 /// `session` table; v2 uses `session_v2`.
 ///
@@ -48,8 +132,8 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
         }
 
         let url: URL
-        if let override = environment["OPENCODE_DB"], !override.isEmpty {
-            guard override != ":memory:" else { return nil }
+        if let override = environment["OPENCODE_DB"] {
+            guard !override.isEmpty, override != ":memory:", !override.contains("\0") else { return nil }
             if override.hasPrefix("/") {
                 url = URL(fileURLWithPath: override)
             } else {

@@ -249,9 +249,65 @@ final class OpencodeStrategyResumeTests: XCTestCase {
     func testTranscriptExistsThreeValued() {
         let r = ref(state: .suspended, cwd: cwd)
         let fs = DefaultConversationFilesystem()
-        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: true) }).transcriptExists(for: r, filesystem: fs), true)
-        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: false) }).transcriptExists(for: r, filesystem: fs), false)
-        XCTAssertNil(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: nil) }).transcriptExists(for: r, filesystem: fs))
+        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _, _ in StubLookup(result: true) }).transcriptExists(for: r, filesystem: fs), true)
+        XCTAssertEqual(OpencodeStrategy(sessionLookup: { _, _ in StubLookup(result: false) }).transcriptExists(for: r, filesystem: fs), false)
+        XCTAssertNil(OpencodeStrategy(sessionLookup: { _, _ in StubLookup(result: nil) }).transcriptExists(for: r, filesystem: fs))
+    }
+
+    func testTranscriptExistsUsesAuthenticatedLaunchStoreContext() {
+        let path = "/isolated/opencode/opencode.db"
+        var payload: [String: PersistedJSONValue] = [
+            OpencodeRecoveryStoreContextKey.version: .number(1),
+            OpencodeRecoveryStoreContextKey.home: .string("/launch/home"),
+            OpencodeRecoveryStoreContextKey.xdgDataHome: .string("/launch/data"),
+            OpencodeRecoveryStoreContextKey.databaseOverride: .string(path),
+        ]
+        let r = ConversationRef(kind: "opencode", id: id, placeholder: false, cwd: cwd,
+                                capturedVia: .hook, state: .alive, payload: payload)
+        let fs = DefaultConversationFilesystem()
+        let strategy = OpencodeStrategy(sessionLookup: { home, environment in
+            guard home?.path == "/launch/home",
+                  environment["XDG_DATA_HOME"] == "/launch/data",
+                  environment["OPENCODE_DB"] == path,
+                  environment.count == 2 else {
+                return StubLookup(result: false)
+            }
+            return StubLookup(result: true)
+        })
+        XCTAssertEqual(strategy.transcriptExists(for: r, filesystem: fs), true)
+
+        // Invalid authenticated context is unverifiable; it must not invoke
+        // the normal process environment lookup as a fallback.
+        payload[OpencodeRecoveryStoreContextKey.version] = .string("1")
+        let malformed = ConversationRef(kind: "opencode", id: id, placeholder: false, cwd: cwd,
+                                        capturedVia: .hook, state: .alive, payload: payload)
+        let fallbackMustNotRun = OpencodeStrategy(sessionLookup: { _, _ in
+            XCTFail("malformed launch context must not use c11's default DB")
+            return StubLookup(result: true)
+        })
+        XCTAssertNil(fallbackMustNotRun.transcriptExists(for: malformed, filesystem: fs))
+    }
+
+    func testTranscriptExistsDoesNotFallBackForMemoryOrEmptyDatabaseOverride() {
+        let fs = DefaultConversationFilesystem()
+        for override in [":memory:", ""] {
+            let ref = ConversationRef(
+                kind: "opencode",
+                id: "ses_0fda89a49ffeLHwJXtrxnn4X6g",
+                placeholder: false,
+                cwd: cwd,
+                capturedVia: .hook,
+                state: .alive,
+                payload: [
+                    OpencodeRecoveryStoreContextKey.version: .number(1),
+                    OpencodeRecoveryStoreContextKey.databaseOverride: .string(override),
+                ]
+            )
+            let strategy = OpencodeStrategy(sessionLookup: { home, environment in
+                OpencodeScraper(homeDirectory: home, environment: environment)
+            })
+            XCTAssertNil(strategy.transcriptExists(for: ref, filesystem: fs), "override \(override.debugDescription) must not use the default DB")
+        }
     }
 
     func testCrashReclassificationPreservesVerifiedMissingUnavailable() async {
@@ -272,7 +328,7 @@ final class OpencodeStrategyResumeTests: XCTestCase {
                 state: .alive
             )
             let registry = ConversationStrategyRegistry(strategies: [
-                OpencodeStrategy(sessionLookup: { _ in
+                OpencodeStrategy(sessionLookup: { _, _ in
                     StubLookup(result: testCase.0)
                 })
             ])
@@ -438,6 +494,8 @@ final class OpencodeScraperTests: XCTestCase {
         try seedDatabase([("ses_0fda89a49ffeLHwJXtrxnn4X6g", "/default", 1)])
         XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": ":memory:"]).databasePath(),
                      "in-memory OpenCode DB has no on-disk recovery path")
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": ""]).databasePath(),
+                     "an explicit empty override has no recoverable path and cannot use the default database")
         XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": "missing.sqlite"]).databasePath(),
                      "an absent explicit override must not silently query another database")
     }

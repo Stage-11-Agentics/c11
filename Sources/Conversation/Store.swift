@@ -11,6 +11,20 @@ enum ConversationLifecyclePayloadKey {
     static let expectedResumeID = "expected_resume_id"
     static let resumeExpiresAtEpochMs = "resume_expires_at_epoch_ms"
     static let openCodeTuiPID = "opencode_tui_pid"
+    static let openCodeRecoveryContextVersion = OpencodeRecoveryStoreContextKey.version
+    static let openCodeRecoveryHome = OpencodeRecoveryStoreContextKey.home
+    static let openCodeRecoveryXDGDataHome = OpencodeRecoveryStoreContextKey.xdgDataHome
+    static let openCodeRecoveryDatabaseOverride = OpencodeRecoveryStoreContextKey.databaseOverride
+
+    /// These fields are written only by the authenticated wrapper-claim seam.
+    /// A generic hook payload must never mint or replace them.
+    static let genericPushReservedKeys: Set<String> = [
+        openCodeTuiPID,
+        openCodeRecoveryContextVersion,
+        openCodeRecoveryHome,
+        openCodeRecoveryXDGDataHome,
+        openCodeRecoveryDatabaseOverride,
+    ]
 }
 
 struct OwnershipAuditResult: Sendable, Equatable {
@@ -296,6 +310,11 @@ actor ConversationStore {
         }
     }
 
+    /// Socket-authenticated wrapper claims only. Persisted PID metadata marks
+    /// a v2 ref for conservative routing after restart, but it is not proof
+    /// that the current socket peer is still that TUI process.
+    private var authenticatedOpenCodeTuiPIDBySurface: [String: Int32] = [:]
+
     init() {}
 
     /// Process-wide singleton. Held outside `Workspace` because:
@@ -407,6 +426,7 @@ extension ConversationStore {
     @discardableResult
     func seed(from records: [String: PanelConversations]) -> OwnershipAuditResult {
         bySurface = records
+        authenticatedOpenCodeTuiPIDBySurface.removeAll()
         return auditGlobalOwnership()
     }
 
@@ -426,7 +446,8 @@ extension ConversationStore {
         capturedAt: Date = Date(),
         diagnosticReason: String? = nil,
         expectedResumeId: String? = nil,
-        interactivePID: Int32? = nil
+        interactivePID: Int32? = nil,
+        openCodeRecoveryPayload: [String: PersistedJSONValue]? = nil
     ) -> ConversationRef {
         switch claim(
             surfaceId: surfaceId,
@@ -437,6 +458,7 @@ extension ConversationStore {
             diagnosticReason: diagnosticReason,
             expectedResumeId: expectedResumeId,
             interactivePID: interactivePID,
+            openCodeRecoveryPayload: openCodeRecoveryPayload,
             expiresAt: nil
         ) {
         case .accepted(let ref):
@@ -470,10 +492,18 @@ extension ConversationStore {
         diagnosticReason: String? = nil,
         expectedResumeId: String? = nil,
         interactivePID: Int32? = nil,
+        openCodeRecoveryPayload: [String: PersistedJSONValue]? = nil,
         expiresAt: Date?
     ) -> ConversationClaimResult {
         if let expiresAt, expiresAt <= Date() {
             return .expired
+        }
+
+        authenticatedOpenCodeTuiPIDBySurface.removeValue(forKey: surfaceId)
+        if kind == "opencode" {
+            if let interactivePID, interactivePID > 0 {
+                authenticatedOpenCodeTuiPIDBySurface[surfaceId] = interactivePID
+            }
         }
 
         let existing = bySurface[surfaceId]?.active
@@ -513,7 +543,11 @@ extension ConversationStore {
                existing.kind == kind,
                !existing.placeholder,
                existing.id == expectedResumeId {
-                let refreshed = openCodeTuiClaim(existing, interactivePID: interactivePID)
+                let refreshed = openCodeTuiClaim(
+                    existing,
+                    interactivePID: interactivePID,
+                    recoveryPayload: openCodeRecoveryPayload
+                )
                 var snap = bySurface[surfaceId] ?? .empty
                 snap.active = refreshed
                 bySurface[surfaceId] = snap
@@ -524,7 +558,11 @@ extension ConversationStore {
                existing.placeholder,
                expectedOpenCodeResumeID(in: existing) == expectedResumeId,
                existing.capturedAt >= capturedAt {
-                let refreshed = openCodeTuiClaim(existing, interactivePID: interactivePID)
+                let refreshed = openCodeTuiClaim(
+                    existing,
+                    interactivePID: interactivePID,
+                    recoveryPayload: openCodeRecoveryPayload
+                )
                 var snap = bySurface[surfaceId] ?? .empty
                 snap.active = refreshed
                 bySurface[surfaceId] = snap
@@ -546,6 +584,9 @@ extension ConversationStore {
                 payload = (payload ?? [:]).merging([
                     ConversationLifecyclePayloadKey.openCodeTuiPID: .number(Double(interactivePID))
                 ]) { _, new in new }
+            }
+            if let openCodeRecoveryPayload, let interactivePID, interactivePID > 0 {
+                payload = (payload ?? [:]).merging(openCodeRecoveryPayload) { _, new in new }
             }
         } else if let existing, existing.capturedVia != .wrapperClaim {
             // Claude's wrapper claim is intentionally backgrounded; its
@@ -601,6 +642,20 @@ extension ConversationStore {
         guard source == .hook || source == .scrape || source == .manual else {
             return nil
         }
+        guard payload?.keys.allSatisfy({ !ConversationLifecyclePayloadKey.genericPushReservedKeys.contains($0) }) ?? true else {
+            return nil
+        }
+        if kind == "opencode",
+           let current = bySurface[surfaceId]?.active,
+           current.kind == "opencode",
+           (current.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] != nil
+                || current.payload?[ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion] != nil) {
+            // OpenCode v2 routes are mutated only through the authenticated
+            // displayed-root/unbound-route or wrapper-claim seams. A generic
+            // OpenCode push can neither replace the route nor erase its
+            // ownership marker.
+            return nil
+        }
         let ref = ConversationRef(
             kind: kind,
             id: id,
@@ -629,6 +684,7 @@ extension ConversationStore {
         capturedAt: Date = Date()
     ) -> DisplayedOpenCodeCaptureResult {
         guard let callerPID, callerPID > 0,
+              authenticatedOpenCodeTuiPIDBySurface[surfaceId] == callerPID,
               let current = bySurface[surfaceId]?.active,
               expectedOpenCodeTuiPID(in: current) == callerPID else {
             return .unauthorized
@@ -693,6 +749,7 @@ extension ConversationStore {
         guard (["pending", "child", "no-route"].contains(routeState)),
               isValidOpencodeSessionId(id),
               let callerPID, callerPID > 0,
+              authenticatedOpenCodeTuiPIDBySurface[surfaceId] == callerPID,
               let current = bySurface[surfaceId]?.active,
               expectedOpenCodeTuiPID(in: current) == callerPID else {
             return .unauthorized
@@ -755,11 +812,26 @@ extension ConversationStore {
         return Int32(raw)
     }
 
-    private func openCodeTuiClaim(_ ref: ConversationRef, interactivePID: Int32?) -> ConversationRef {
+    private func openCodeTuiClaim(
+        _ ref: ConversationRef,
+        interactivePID: Int32?,
+        recoveryPayload: [String: PersistedJSONValue]?
+    ) -> ConversationRef {
         guard let interactivePID, interactivePID > 0 else { return ref }
         var refreshed = ref
         var payload = ref.payload ?? [:]
+        for key in [
+            ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion,
+            ConversationLifecyclePayloadKey.openCodeRecoveryHome,
+            ConversationLifecyclePayloadKey.openCodeRecoveryXDGDataHome,
+            ConversationLifecyclePayloadKey.openCodeRecoveryDatabaseOverride,
+        ] {
+            payload.removeValue(forKey: key)
+        }
         payload[ConversationLifecyclePayloadKey.openCodeTuiPID] = .number(Double(interactivePID))
+        if let recoveryPayload {
+            payload.merge(recoveryPayload) { _, new in new }
+        }
         refreshed.payload = payload
         return refreshed
     }
@@ -1051,6 +1123,7 @@ extension ConversationStore {
     /// Wipe a surface's conversations. Operator escape hatch
     /// (`c11 conversation clear`).
     func clear(surfaceId: String) {
+        authenticatedOpenCodeTuiPIDBySurface.removeValue(forKey: surfaceId)
         bySurface.removeValue(forKey: surfaceId)
     }
 

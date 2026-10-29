@@ -38,6 +38,18 @@ def claim_payloads(lines: list[str]) -> list[dict]:
     return result
 
 
+def merge_config(base: dict, overlay: dict) -> dict:
+    """Mirror OpenCode's config merge so wrapper output is tested in context."""
+    result = dict(base)
+    for key, value in overlay.items():
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            result[key] = merge_config(current, value)
+        else:
+            result[key] = value
+    return result
+
+
 def run_wrapper(
     *,
     live: bool,
@@ -55,6 +67,7 @@ def run_wrapper(
     cli_file: str | None = None,
     claim_succeeds: bool = True,
     version_delay: float = 0,
+    recovery_context: bool = False,
 ) -> tuple[int, list[str], dict, list[str], str]:
     with tempfile.TemporaryDirectory(prefix="c11-opencode-wrapper-test-") as td:
         tmp = Path(td)
@@ -140,6 +153,7 @@ fi
         for key in list(env):
             if key.startswith(("C11_", "CMUX_", "CMUXTERM_", "OPENCODE_")):
                 env.pop(key)
+        env.pop("XDG_DATA_HOME", None)
         env.update(
             {
                 "HOME": str(home),
@@ -178,6 +192,9 @@ fi
             env.pop("OPENCODE_CONFIG", None)
         if cli_content is not None:
             env["OPENCODE_CLI_CONFIG_CONTENT"] = cli_content
+        if recovery_context:
+            env["XDG_DATA_HOME"] = str(home / "data")
+            env["OPENCODE_DB"] = "tenant-state/custom.sqlite"
         cli_config_path = home / ".config" / "opencode" / "cli.json"
         if cli_file is not None:
             cli_config_path.parent.mkdir(parents=True)
@@ -348,6 +365,7 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
     code, argv, state, c11_log, stderr = run_wrapper(
         live=True, argv=["--session", session_id, "--model", "value with spaces"],
         interactive=True, version="2.0.25", cli_content=cli_content, cli_file=cli_file,
+        recovery_context=True,
     )
     assert code == 0, stderr
     assert argv == ["--session", session_id, "--model", "value with spaces"], argv
@@ -358,12 +376,27 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
     claims = claim_payloads(c11_log)
     assert any(claim.get("expected_resume_id") == session_id and
                claim.get("interactive_pid") == int(state["interactive_pid"]) and
+               claim.get("recovery_home", "").endswith("isolated-home") and
+               claim.get("recovery_xdg_data_home", "").endswith("isolated-home/data") and
+               claim.get("recovery_database_override") == "tenant-state/custom.sqlite" and
                claim.get("expires_at_epoch_ms", 0) > 0 for claim in claims), claims
     composed = json.loads(state["cli_content"])
     assert composed["theme"] == "operator", composed
-    assert composed["model"] == "file/model", "environment content must overlay, not erase, other cli.json settings"
+    assert "model" not in composed, "file-only settings must remain in cli.json"
     assert composed["plugins"][:2] == ["operator-env", {"package": "file:///private/plugin"}], composed
     assert composed["plugins"][-1]["package"].endswith("/c11-opencode-v2"), composed
+    effective = merge_config(
+        {"plugins": ["file-plugin", "@operator/plugin@1.2.3"], "model": "file/model"},
+        composed,
+    )
+    assert effective["model"] == "file/model" and effective["theme"] == "operator", effective
+    # OpenCode returns merge(updated cli.json, content) after a config save.
+    # A setting changed in the file must take effect while the wrapper runs.
+    after_save = merge_config(
+        {"plugins": ["file-plugin"], "model": "changed/file-model", "theme": "file-theme"},
+        composed,
+    )
+    assert after_save["model"] == "changed/file-model" and after_save["theme"] == "operator", after_save
     assert state["cli_file_after"] == cli_file, state
 
     code, _, state, c11_log, stderr = run_wrapper(
@@ -381,9 +414,14 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
     )
     assert code == 0, stderr
     composed = json.loads(state["cli_content"])
-    assert composed["theme"] == "dark" and composed["model"] == "operator/model", composed
+    assert set(composed) == {"plugins"}, composed
     assert composed["plugins"][0] == "operator-file", composed
     assert composed["plugins"][-1]["package"].endswith("/c11-opencode-v2"), composed
+    effective = merge_config(
+        {"plugins": ["operator-file"], "theme": "dark", "model": "operator/model"},
+        composed,
+    )
+    assert effective["theme"] == "dark" and effective["model"] == "operator/model", effective
     assert state["cli_file_after"] == file_config, state
 
 

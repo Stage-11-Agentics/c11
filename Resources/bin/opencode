@@ -93,7 +93,7 @@ if [[ "$opencode_version" == 2.0.25 ]]; then
     if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" ]]; then
         if [[ -n "$c11_bin" ]] && command -v python3 >/dev/null 2>&1; then
             claim_payload="$(python3 - "$c11_panel" "$PWD" "$C11_AGENT_INTERACTIVE_PID" "$expected_session" <<'PY'
-import json, sys, time
+import json, os, sys, time
 
 panel_id, cwd, pid, expected_id = sys.argv[1:5]
 payload = {
@@ -106,6 +106,13 @@ payload = {
 }
 if expected_id:
     payload["expected_resume_id"] = expected_id
+for env_name, param_name in (
+    ("HOME", "recovery_home"),
+    ("XDG_DATA_HOME", "recovery_xdg_data_home"),
+    ("OPENCODE_DB", "recovery_database_override"),
+):
+    if env_name in os.environ:
+        payload[param_name] = os.environ[env_name]
 print(json.dumps(payload, separators=(",", ":")))
 PY
             )"

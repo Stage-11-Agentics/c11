@@ -163,12 +163,17 @@ def compose(plugin_dir: str) -> int:
             env_config = parse_jsonc(env_content)
             if not isinstance(env_config, dict):
                 raise ValueError("OPENCODE_CLI_CONFIG_CONTENT must be an object")
-            config = merge_records(file_config, env_config)
         else:
-            # With no explicit per-process override, preserve the complete
-            # operator cli.json. Only the plugin list is augmented below.
-            config = file_config.copy()
-        plugins = config.get("plugins", [])
+            env_config = {}
+
+        # OpenCode reapplies OPENCODE_CLI_CONFIG_CONTENT after each cli.json
+        # update. Keep the operator's original environment overlay intact, but
+        # do not copy file-only settings into it: that would turn a snapshot of
+        # cli.json into a permanent override after the operator changes a
+        # setting. The plugin array is the one deliberate snapshot because it
+        # must combine file plugins, environment plugins, and this extension.
+        effective_config = merge_records(file_config, env_config)
+        plugins = effective_config.get("plugins", [])
         if not isinstance(plugins, list):
             raise ValueError("effective plugins must be an array of strings or plugin objects")
         for item in plugins:
@@ -181,8 +186,9 @@ def compose(plugin_dir: str) -> int:
                     ("options" in item and not isinstance(item["options"], dict))):
                 raise ValueError("plugin entries must be package strings or {package, options} objects")
         resolved = str(Path(plugin_dir).resolve(strict=True))
-        config["plugins"] = [*plugins, {"package": resolved}]
-        print(json.dumps(config, separators=(",", ":"), ensure_ascii=False))
+        output_config = env_config.copy()
+        output_config["plugins"] = [*plugins, {"package": resolved}]
+        print(json.dumps(output_config, separators=(",", ":"), ensure_ascii=False))
         return 0
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
         print(f"c11 OpenCode v2 plugin disabled: {error}", file=sys.stderr)

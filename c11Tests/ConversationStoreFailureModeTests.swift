@@ -325,6 +325,78 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         XCTAssertEqual(active?.placeholder, true, "rejected spoof must not consume the resume reservation")
     }
 
+    func testOpenCodeGenericPushCannotForgeOrReplaceAuthenticatedTuiRoute() async {
+        let store = ConversationStore()
+        let rootID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let attackerID = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        await store.claim(
+            surfaceId: "A", kind: "opencode", cwd: cwd,
+            placeholderId: "wrapper-claim:A", interactivePID: 1001,
+            openCodeRecoveryPayload: [
+                ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion: .number(1),
+                ConversationLifecyclePayloadKey.openCodeRecoveryHome: .string("/open-code/home"),
+                ConversationLifecyclePayloadKey.openCodeRecoveryXDGDataHome: .string("/open-code/data"),
+                ConversationLifecyclePayloadKey.openCodeRecoveryDatabaseOverride: .string("tenant-state/custom.sqlite"),
+            ]
+        )
+
+        let forgedClaim = await store.push(
+            surfaceId: "A", kind: "opencode", id: attackerID, source: .hook,
+            payload: [ConversationLifecyclePayloadKey.openCodeTuiPID: .number(2002)]
+        )
+        XCTAssertNil(forgedClaim, "generic pushes cannot write server-owned TUI claim metadata")
+
+        let forgedRecoveryContext = await store.push(
+            surfaceId: "A", kind: "opencode", id: attackerID, source: .hook,
+            payload: [ConversationLifecyclePayloadKey.openCodeRecoveryContextVersion: .number(1)]
+        )
+        XCTAssertNil(forgedRecoveryContext, "generic pushes cannot forge the authenticated recovery context")
+
+        guard case .accepted = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: rootID, cwd: cwd, callerPID: 1001
+        ) else { return XCTFail("the authenticated wrapper TUI must bind its displayed root") }
+
+        let replacement = await store.push(
+            surfaceId: "A", kind: "opencode", id: attackerID, source: .hook
+        )
+        XCTAssertNil(replacement, "generic pushes cannot replace a v2 displayed route")
+        let active = await store.active(for: "A")
+        XCTAssertEqual(active?.id, rootID)
+        XCTAssertEqual(active?.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID], .number(1001))
+        XCTAssertEqual(active?.payload?[ConversationLifecyclePayloadKey.openCodeRecoveryHome], .string("/open-code/home"))
+        XCTAssertEqual(active?.payload?[ConversationLifecyclePayloadKey.openCodeRecoveryXDGDataHome], .string("/open-code/data"))
+        XCTAssertEqual(active?.payload?[ConversationLifecyclePayloadKey.openCodeRecoveryDatabaseOverride], .string("tenant-state/custom.sqlite"))
+
+        let subprocessCapture = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: attackerID, cwd: cwd, callerPID: 2002
+        )
+        guard case .unauthorized = subprocessCapture else {
+            return XCTFail("a forged PID in an ordinary hook payload must not authorize a displayed-route capture")
+        }
+    }
+
+    func testSeededOpenCodeV2ReferenceRequiresFreshAuthenticatedClaim() async {
+        let store = ConversationStore()
+        let id = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let persisted = ConversationRef(
+            kind: "opencode", id: id, placeholder: false, cwd: cwd,
+            capturedAt: Date(), capturedVia: .hook, state: .alive,
+            payload: [ConversationLifecyclePayloadKey.openCodeTuiPID: .number(1001)]
+        )
+        _ = await store.seed(from: ["A": PanelConversations(active: persisted)])
+
+        let recoveredPush = await store.push(
+            surfaceId: "A", kind: "opencode", id: "ses_0fd8a6fffffe6JzzcloHmtDV0R", source: .hook
+        )
+        XCTAssertNil(recoveredPush, "a restored v2 route remains protected until a fresh TUI claim")
+        let staleTui = await store.captureDisplayedOpenCodeRoot(
+            surfaceId: "A", id: id, cwd: cwd, callerPID: 1001
+        )
+        guard case .unauthorized = staleTui else {
+            return XCTFail("persisted PID metadata is not a live socket authentication")
+        }
+    }
+
     func testOpenCodeSessionConflictBlocksTypedMailboxFallback() {
         let registration = MailboxNativeDoorbell.Registration(
             id: UUID(), panelID: UUID(), agentPID: 0, processStart: 0,

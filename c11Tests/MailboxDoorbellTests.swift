@@ -1618,6 +1618,30 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         }
     }
 
+    func testOpenCodeClaimRequiresTheForegroundTUIProcessGroupLeader() {
+        func process(group: pid_t, foreground: pid_t, tty: dev_t, start: UInt64, parent: pid_t) -> MailboxAgentForeground.ProcessTerminalInfo {
+            .init(processGroup: group, terminalForegroundGroup: foreground, terminalDevice: tty,
+                  isZombie: false, startTime: start, parentPID: parent)
+        }
+        let trusted: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            100: process(group: 100, foreground: 100, tty: 7, start: 100, parent: 1),
+            110: process(group: 100, foreground: 100, tty: 7, start: 200, parent: 100),
+        ]
+        XCTAssertTrue(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, readProcess: { trusted[$0] }
+        ), "the wrapper's c11 CLI child may claim its foreground TUI parent")
+
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 110, peerTTYDevice: 7, readProcess: { trusted[$0] }
+        ), "a child cannot claim itself as the displayed TUI")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 8, readProcess: { trusted[$0] }
+        ), "claim socket must come from the TUI's own terminal")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: nil, readProcess: { trusted[$0] }
+        ), "unreadable peer terminal identity fails closed")
+    }
+
     private func registration(panel: UUID = UUID(), pid: pid_t = 123, start: UInt64 = 456,
                               route: MailboxNativeDoorbell.Route = .piExtension) -> MailboxNativeDoorbell.Registration {
         .init(id: UUID(), panelID: panel, agentPID: pid, processStart: start,
@@ -1938,6 +1962,20 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             registration: reg, ids: ["mail-a"], reason: "native_timeout"
         )
         XCTAssertFalse(ordinaryFailure.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
+
+        let notReady = MailboxNativeDoorbell.Fallback(
+            registration: reg, ids: ["mail-a"], reason: "native_not_ready"
+        )
+        XCTAssertTrue(notReady.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+                      "busy OpenCode mail must stay buffered until native delivery can resume")
+        XCTAssertFalse(notReady.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+        XCTAssertTrue(MailboxNativeDoorbell.namedRejections.contains("not_ready"))
+
+        let otherRoute = MailboxNativeDoorbell.Fallback(
+            registration: registration(route: .piExtension), ids: ["mail-a"], reason: "native_not_ready"
+        )
+        XCTAssertFalse(otherRoute.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+                       "OpenCode readiness policy must not leak into other consumers")
     }
 
     func testNativeAndFallbackLogsNameTheirRoutes() throws {

@@ -18,7 +18,7 @@ async function until(predicate, timeout = 2000) {
 
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
-  nativeMailDisabled = false,
+  nativeMailDisabled = false, status = 'idle',
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
@@ -38,7 +38,7 @@ async function fixture(t, {
     [child, { id: child, parentID: rootA, location: { directory: '/same/cwd' } }],
   ]);
   const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], calls: [], syncCalls: 0,
-    conflictID: conflictID ?? '' };
+    conflictID: conflictID ?? '', status };
   const sockets = new Set();
   const subscriptions = [];
   const frames = [];
@@ -84,7 +84,7 @@ async function fixture(t, {
           state.syncCalls++;
           if (state.syncCalls <= syncFailureCount) throw new Error('session_sync_failed');
           if (state.syncCalls >= hydrateAfterSync) state.sessions.set(id, { id, location: { directory: '/same/cwd' } });
-        }, status: () => 'idle',
+        }, status: () => state.status,
         permission: { list: () => [] }, question: { list: () => [] },
       },
       listen: callback => { state.callbacks.push(callback); return () => { state.callbacks = state.callbacks.filter(item => item !== callback); }; },
@@ -140,6 +140,25 @@ test('v2 route ownership conflict rejects before prompting and names safe hold',
   assert.equal(f.state.calls.length, 0, 'a colliding panel ID never reaches OpenCode promptAsync');
   const rejection = f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'conflict-mail');
   assert.equal(rejection.reason, 'session_conflict');
+});
+
+test('v2 busy route rejects with not_ready and re-registers after the session becomes idle', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { status: 'running' });
+  await until(() => f.subscriptions.length >= 2);
+  const busyStream = f.subscriptions.at(-1);
+  send(busyStream.socket, { type: 'deliver', delivery_id: 'busy-mail', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'busy-mail'));
+  assert.equal(f.state.calls.length, 0, 'busy mail cannot invoke promptAsync');
+  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'busy-mail').reason, 'not_ready');
+
+  f.state.status = 'idle';
+  await until(() => f.subscriptions.length >= 3);
+  const readyStream = f.subscriptions.at(-1);
+  assert.notEqual(readyStream.frame.params.session_id, busyStream.frame.params.session_id,
+    'ready transition creates a new registration to clear c11 fallback state');
+  send(readyStream.socket, { type: 'deliver', delivery_id: 'ready-mail', text: doorbellText });
+  await until(() => f.state.calls.length === 1);
+  assert.equal(f.state.calls[0].sessionID, rootA);
 });
 
 test('v2 retries a route conflict until the displayed root becomes unowned', { timeout: 5000 }, async t => {

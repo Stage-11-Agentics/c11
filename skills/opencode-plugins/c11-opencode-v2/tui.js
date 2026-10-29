@@ -81,6 +81,23 @@ function sessionConflict() {
   return error;
 }
 
+function sessionNotReady() {
+  const error = new Error('not_ready');
+  error.code = 'not_ready';
+  return error;
+}
+
+function sessionReadyForMailbox(context, id) {
+  if (!id) return false;
+  try {
+    const status = context.data.session.status?.(id);
+    return status !== 'running' && status !== 'busy' && status?.type !== 'running' && status?.type !== 'retry' &&
+      !sessionList(context.data.session.permission, id).length &&
+      !sessionList(context.data.session.pending, id).length &&
+      !sessionList(context.data.session.form, id).length;
+  } catch { return false; }
+}
+
 export default {
   id: 'com.stage11.c11.opencode-v2',
   async setup(context) {
@@ -104,6 +121,8 @@ export default {
     let retryCaptureAt = 0;
     let hasObservedRoute = false;
     let stopMailbox;
+    let mailboxRevision = 0;
+    let nativeNotReady = false;
     const pending = new Map();
     const userMessages = new Map();
 
@@ -120,17 +139,16 @@ export default {
 
     const register = (sessionID, routeGeneration) => {
       if (!sessionID || disposed || nativeMailDisabled) return;
-      const streamID = `${sessionID}:${routeGeneration}`.slice(0, 256);
+      const streamID = `${sessionID}:${routeGeneration}:${++mailboxRevision}`.slice(0, 256);
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
         deliver(message) {
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||
               message !== doorbellText || conflict || !boundID || boundID !== visibleID) throw sessionConflict();
-          const status = context.data.session.status?.(boundID);
-          if (status === 'running' || status === 'busy' || status?.type === 'running' || status?.type === 'retry' ||
-              sessionList(context.data.session.permission, boundID).length ||
-              sessionList(context.data.session.pending, boundID).length ||
-              sessionList(context.data.session.form, boundID).length) throw new Error('not_ready');
+          if (!sessionReadyForMailbox(context, boundID)) {
+            nativeNotReady = true;
+            throw sessionNotReady();
+          }
           return new Promise((resolve, reject) => {
             const partID = `prt_${randomUUID().replaceAll('-', '')}`;
             const item = { sessionID: boundID, partID, resolve, reject };
@@ -158,6 +176,7 @@ export default {
         visibleID = candidateID;
         boundID = undefined;
         conflict = Boolean(candidateID);
+        nativeNotReady = false;
         captureState = candidateID ? 'waiting' : 'no-route';
         retryCaptureAt = 0;
         if (shouldUnbind) {
@@ -231,6 +250,7 @@ export default {
       if (result?.outcome === 'accepted' && result.id === candidateID) {
         boundID = candidateID;
         conflict = false;
+        nativeNotReady = false;
         captureState = 'bound';
         if (!nativeMailDisabled) {
           // Replace the provisional stream so a prior session_conflict
@@ -274,7 +294,16 @@ export default {
     let removeEvent;
     try { removeEvent = context.data.listen(confirm); } catch { return; }
 
-    const monitor = setInterval(() => { void capture(); }, 100);
+    const monitor = setInterval(() => {
+      void capture().then(() => {
+        if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
+            !sessionReadyForMailbox(context, boundID)) return;
+        nativeNotReady = false;
+        stopMailbox?.();
+        stopMailbox = undefined;
+        register(boundID, generation);
+      });
+    }, 100);
     monitor.unref?.();
     await capture();
     return () => {

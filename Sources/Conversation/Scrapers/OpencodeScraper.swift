@@ -26,26 +26,40 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
         self.maxCandidates = maxCandidates
     }
 
-    /// Resolve `<XDG_DATA_HOME>/opencode/opencode.db`, or OpenCode's
-    /// `~/.local/share/opencode/opencode.db` default. OpenCode 2.0.25's
-    /// `OPENCODE_CONFIG_DIR` affects configuration only; `XDG_DATA_HOME`
-    /// selects the data root. Relative XDG paths are ignored per the XDG
-    /// directory specification.
+    /// Resolve OpenCode's database override or the platform data path.
+    /// Absolute `OPENCODE_DB` paths are used directly; relative paths are
+    /// resolved inside OpenCode's data directory. `:memory:` is intentionally
+    /// not opened as a fallback to the on-disk database. Relative XDG paths
+    /// are ignored per the XDG directory specification.
     func databasePath() -> URL? {
+        let dataDirectory: URL?
         if let rawDataHome = environment["XDG_DATA_HOME"],
            !rawDataHome.isEmpty,
            rawDataHome.hasPrefix("/") {
-            let url = URL(fileURLWithPath: rawDataHome, isDirectory: true)
+            dataDirectory = URL(fileURLWithPath: rawDataHome, isDirectory: true)
                 .appendingPathComponent("opencode", isDirectory: true)
-                .appendingPathComponent("opencode.db", isDirectory: false)
-            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        } else if let home = homeDirectory {
+            dataDirectory = home
+                .appendingPathComponent(".local", isDirectory: true)
+                .appendingPathComponent("share", isDirectory: true)
+                .appendingPathComponent("opencode", isDirectory: true)
+        } else {
+            dataDirectory = nil
         }
-        guard let home = homeDirectory else { return nil }
-        let url = home
-            .appendingPathComponent(".local", isDirectory: true)
-            .appendingPathComponent("share", isDirectory: true)
-            .appendingPathComponent("opencode", isDirectory: true)
-            .appendingPathComponent("opencode.db", isDirectory: false)
+
+        let url: URL
+        if let override = environment["OPENCODE_DB"], !override.isEmpty {
+            guard override != ":memory:" else { return nil }
+            if override.hasPrefix("/") {
+                url = URL(fileURLWithPath: override)
+            } else {
+                guard let dataDirectory else { return nil }
+                url = dataDirectory.appendingPathComponent(override).standardizedFileURL
+            }
+        } else {
+            guard let dataDirectory else { return nil }
+            url = dataDirectory.appendingPathComponent("opencode.db", isDirectory: false)
+        }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 

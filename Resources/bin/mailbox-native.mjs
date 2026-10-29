@@ -50,7 +50,7 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
         }).then(
           () => send({type: 'accepted', delivery_id: frame.delivery_id}),
           error => {
-            const reason = error?.code === 'session_conflict' ? 'session_conflict' : undefined;
+            const reason = ['session_conflict', 'not_ready'].includes(error?.code) ? error.code : undefined;
             send({type: 'rejected', delivery_id: frame.delivery_id, ...(reason ? {reason} : {})});
           },
         );

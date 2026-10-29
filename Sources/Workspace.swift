@@ -6795,24 +6795,9 @@ final class Workspace: Identifiable, ObservableObject {
         }
         let ids = queued.map(\.id)
         let nativeRoute = registeredNativeMailbox(surfaceId: surfaceId)
-        let isOpenCodePanel = surfaceActivityTerminalKind(panelId: surfaceId) == "opencode"
         let inbox = MailboxLayout.inboxURL(state: dispatcher.stateURL, workspaceId: id, panelId: surfaceId)
         Self.mailboxPushIOQueue.async { [weak self] in
             let live = Set(ids.filter { MailboxIO.isPending(id: $0, inbox: inbox) })
-            let holdTypedForOpenCodeIdentity: Bool
-            if isOpenCodePanel {
-                if let conversations = Self.readConversationsByPanelIdSyncIfCompleted(timeout: 0.25) {
-                    holdTypedForOpenCodeIdentity = MailboxNativeDoorbell.blocksTypedForUnboundOpenCodeTUI(
-                        conversation: conversations[surfaceId.uuidString]?.active
-                    )
-                } else {
-                    // An unreadable store cannot prove that a shared OpenCode
-                    // route has a safe typed recipient.
-                    holdTypedForOpenCodeIdentity = true
-                }
-            } else {
-                holdTypedForOpenCodeIdentity = false
-            }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
@@ -6821,8 +6806,7 @@ final class Workspace: Identifiable, ObservableObject {
                         queued: queued,
                         liveIds: live,
                         dispatcher: dispatcher,
-                        nativeRoute: nativeRoute,
-                        holdTypedForOpenCodeIdentity: holdTypedForOpenCodeIdentity
+                        nativeRoute: nativeRoute
                     )
                 }
             }
@@ -6834,8 +6818,7 @@ final class Workspace: Identifiable, ObservableObject {
         queued: [MailboxStdinBuffer.Entry],
         liveIds: Set<String>,
         dispatcher: MailboxDispatcher,
-        nativeRoute: MailboxNativeDoorbell.Registration?,
-        holdTypedForOpenCodeIdentity: Bool
+        nativeRoute: MailboxNativeDoorbell.Registration?
     ) {
         let goneIds = Set(MailboxDoorbellSequence.droppedIds(
             snapshot: queued.map(\.id),
@@ -6865,10 +6848,6 @@ final class Workspace: Identifiable, ObservableObject {
         if let nativeRoute {
             deliverNativeMailbox(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live, registration: nativeRoute)
         } else {
-            if holdTypedForOpenCodeIdentity {
-                mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                return
-            }
             if let failed = mailboxNativeFallback[surfaceId] {
                 let unread = Set(live.map(\.id))
                 let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
@@ -6975,6 +6954,15 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// The final typed-delivery identity read is bounded and runs on main.
+    private func openCodeIdentityAllowsTypedMailbox(surfaceId: UUID) -> Bool {
+        guard surfaceActivityTerminalKind(panelId: surfaceId) == "opencode" else { return true }
+        guard let conversations = Self.readConversationsByPanelIdSyncIfCompleted(timeout: 0.25) else { return false }
+        return !MailboxNativeDoorbell.blocksTypedForUnboundOpenCodeTUI(
+            conversation: conversations[surfaceId.uuidString]?.active
+        )
+    }
+
     /// Type the invitation once the paste can start. A refusal before that
     /// leaves the idle period and the cap unused, and looks again while the
     /// prompt is still open. Does not activate the app or change focus.
@@ -7013,6 +7001,15 @@ final class Workspace: Identifiable, ObservableObject {
                     after: MailboxDoorbellSequence.shortRecheck
                 )
             }
+            return
+        }
+        guard openCodeIdentityAllowsTypedMailbox(surfaceId: surfaceId) else {
+            if began { FeedAnswerInFlight.end(panelID: surfaceId) }
+            mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+            mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                if ledger.rungEpoch == input.epoch { ledger.rungEpoch = nil }
+            }
+            logMailboxDoorbellEntries(queued, outcome: .doorbellFailed, reason: "opencode_identity_unbound")
             return
         }
         for entry in queued {
@@ -7201,6 +7198,11 @@ final class Workspace: Identifiable, ObservableObject {
               let live = panel.surface.surface,
               live == nativeSurface else {
             return finish(.targetLost, nil, nil)
+        }
+        guard openCodeIdentityAllowsTypedMailbox(surfaceId: surfaceId) else {
+            mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.strandedPending = true }
+            logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: "opencode_identity_unbound")
+            return .pastedNotSubmitted
         }
         let operatorInputUnchanged = panel.surface.lastOperatorInputAt == operatorInputAt
         let harness = surfaceActivityTerminalKind(panelId: surfaceId)

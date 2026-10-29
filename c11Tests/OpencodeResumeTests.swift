@@ -312,9 +312,10 @@ final class OpencodeScraperTests: XCTestCase {
     private func seedDatabase(
         _ rows: [(id: String, dir: String, updatedMs: Int64)],
         tables: [String] = ["session"],
-        dataHome: URL? = nil
+        dataHome: URL? = nil,
+        databaseURLOverride: URL? = nil
     ) throws {
-        let dbURL = databaseURL(dataHome: dataHome)
+        let dbURL = databaseURLOverride ?? databaseURL(dataHome: dataHome)
         try FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         var db: OpaquePointer?
         XCTAssertEqual(sqlite3_open(dbURL.path, &db), SQLITE_OK)
@@ -415,6 +416,30 @@ final class OpencodeScraperTests: XCTestCase {
         XCTAssertEqual(scraper.databasePath(), databaseURL(dataHome: xdg))
         XCTAssertEqual(scraper.sessionExists(id: xdgID), true)
         XCTAssertEqual(scraper.sessionExists(id: homeID), false)
+    }
+
+    func testOpenCodeDatabaseOverrideSupportsAbsoluteAndRelativePaths() throws {
+        let absoluteURL = tmpHome.appendingPathComponent("custom-opencode.sqlite")
+        try seedDatabase([("ses_0fda89a49ffeLHwJXtrxnn4X6g", "/absolute", 1)],
+                         databaseURLOverride: absoluteURL)
+        let absolute = OpencodeScraper(homeDirectory: nil, environment: ["OPENCODE_DB": absoluteURL.path])
+        XCTAssertEqual(absolute.databasePath(), absoluteURL)
+        XCTAssertEqual(absolute.sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"), true)
+
+        let relativeURL = tmpHome.appendingPathComponent(".local/share/opencode/alternate.sqlite")
+        try seedDatabase([("ses_0f5b10b09ffeb2G3Y53oze86wV", "/relative", 2)],
+                         databaseURLOverride: relativeURL)
+        let relative = OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": "alternate.sqlite"])
+        XCTAssertEqual(relative.databasePath(), relativeURL)
+        XCTAssertEqual(relative.sessionExists(id: "ses_0f5b10b09ffeb2G3Y53oze86wV"), true)
+    }
+
+    func testOpenCodeMemoryAndMissingOverridesDoNotFallBackToDefaultDatabase() throws {
+        try seedDatabase([("ses_0fda89a49ffeLHwJXtrxnn4X6g", "/default", 1)])
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": ":memory:"]).databasePath(),
+                     "in-memory OpenCode DB has no on-disk recovery path")
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: ["OPENCODE_DB": "missing.sqlite"]).databasePath(),
+                     "an absent explicit override must not silently query another database")
     }
 
     func testNeitherOrUnsupportedSchemaIsUnverifiable() throws {

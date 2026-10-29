@@ -112,7 +112,17 @@ extension TerminalController {
                             message: "interactive_pid is supported only for a positive OpenCode TUI pid",
                             data: nil)
             }
-            interactivePID = Int32(rawPID)
+            let claimedTuiPID = Int32(rawPID)
+            guard MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+                peerPID: SocketCommandContext.current?.callerPID,
+                claimedTuiPID: claimedTuiPID,
+                peerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+            ) else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "interactive_pid must identify the foreground OpenCode TUI for this terminal",
+                            data: nil)
+            }
+            interactivePID = claimedTuiPID
         } else {
             interactivePID = nil
         }

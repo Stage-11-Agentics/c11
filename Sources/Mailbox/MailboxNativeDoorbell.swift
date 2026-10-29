@@ -56,7 +56,8 @@ final class MailboxNativeDoorbell {
         /// A v2 OpenCode TUI whose displayed route is unowned must hold its
         /// envelopes out of the typed terminal path until a new route binds.
         func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
-            guard reason == "native_session_conflict" else { return false }
+            guard registration.route == .opencodePlugin,
+                  reason == "native_session_conflict" || reason == "native_not_ready" else { return false }
             return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
         }
     }
@@ -134,6 +135,38 @@ final class MailboxNativeDoorbell {
             process = parent
         }
         return nil
+    }
+
+    /// Authenticate the TUI PID recorded by an OpenCode wrapper claim. The
+    /// claim arrives from a short-lived c11 CLI child, so the socket peer must
+    /// be a same-terminal descendant of the foreground process-group leader.
+    /// Requiring the claimed PID to lead that group prevents a child from
+    /// claiming itself and then reporting a displayed root from its own PID.
+    static func verifiedOpenCodeTUIClaim(
+        peerPID: pid_t?,
+        claimedTuiPID: pid_t,
+        peerTTYDevice: UInt32?,
+        readProcess: (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? = MailboxAgentForeground.processTerminalInfo
+    ) -> Bool {
+        guard let peerPID, peerPID > 1, claimedTuiPID > 1, peerPID != claimedTuiPID,
+              let peerTTYDevice,
+              let tui = readProcess(claimedTuiPID), tui.startTime > 0,
+              tui.processGroup == claimedTuiPID,
+              tui.processGroup == tui.terminalForegroundGroup,
+              tui.terminalDevice != -1,
+              UInt32(tui.terminalDevice) == peerTTYDevice,
+              let peer = readProcess(peerPID), peer.startTime > 0,
+              peer.terminalDevice == tui.terminalDevice,
+              peer.processGroup == tui.processGroup,
+              peer.terminalForegroundGroup == tui.terminalForegroundGroup,
+              verifiedAgent(
+                peer: .init(pid: peerPID, startTime: peer.startTime),
+                agentPID: claimedTuiPID,
+                readProcess: readProcess
+              ) == tui,
+              readProcess(peerPID) == peer,
+              readProcess(claimedTuiPID) == tui else { return false }
+        return true
     }
 
     private struct Pending {
@@ -240,7 +273,7 @@ final class MailboxNativeDoorbell {
     /// so a consumer cannot write arbitrary text into `_dispatch.log`.
     static let namedRejections: Set<String> = [
         "transcript_unavailable", "inbox_unavailable", "inbox_write_failed", "unconfirmed", "unsupported_invitation",
-        "session_conflict",
+        "session_conflict", "not_ready",
     ]
 
     /// One consumer frame from the stream: an acceptance or a rejection.

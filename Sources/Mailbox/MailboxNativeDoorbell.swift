@@ -17,6 +17,19 @@ final class MailboxNativeDoorbell {
         let sessionID: String
         let route: Route
         let canQueue: Bool
+        let supportsAttemptReplay: Bool
+
+        init(id: UUID, panelID: UUID, agentPID: pid_t, processStart: UInt64, sessionID: String,
+             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false) {
+            self.id = id
+            self.panelID = panelID
+            self.agentPID = agentPID
+            self.processStart = processStart
+            self.sessionID = sessionID
+            self.route = route
+            self.canQueue = canQueue
+            self.supportsAttemptReplay = supportsAttemptReplay
+        }
 
         func matches(process: MailboxStdinBuffer.AgentProcess?, kind: String) -> Bool {
             guard let process, process.pid == agentPID, process.startTime == processStart else { return false }
@@ -80,9 +93,10 @@ final class MailboxNativeDoorbell {
 
         /// OpenCode has no safe typed fallback while an invitation may already
         /// have been admitted by a prompt whose native acknowledgement was
-        /// lost. The next native registration replays the same attempt ID.
+        /// lost. Only the v2 TUI advertises replay support; v1 retains its
+        /// documented at-least-once typed fallback behavior.
         func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
-            guard registration.route == .opencodePlugin else { return false }
+            guard registration.route == .opencodePlugin, registration.supportsAttemptReplay else { return false }
             return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
         }
     }
@@ -398,8 +412,19 @@ extension TerminalController {
             _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
             return
         }
+        let supportsAttemptReplay: Bool
+        if let rawSupport = params["supports_attempt_replay"] {
+            guard route == .opencodePlugin, let support = rawSupport as? Bool else {
+                _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
+                return
+            }
+            supportsAttemptReplay = support
+        } else {
+            supportsAttemptReplay = false
+        }
         let registration = MailboxNativeDoorbell.Registration(id: UUID(), panelID: panelID, agentPID: pidNumber.int32Value,
-            processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false)
+            processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false,
+            supportsAttemptReplay: supportsAttemptReplay)
         // A slow/dead peer cannot occupy the shared writer indefinitely.
         var timeout = timeval(tv_sec: 1, tv_usec: 0)
         _ = setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))

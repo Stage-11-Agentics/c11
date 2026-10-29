@@ -1437,10 +1437,12 @@ final class MailboxNativeDoorbellTests: XCTestCase {
     func testOpenCodeRouteRequiresMatchingHarnessAndProcess() throws {
         let route = try XCTUnwrap(MailboxNativeDoorbell.Route(rawValue: "opencode_plugin"))
         let reg = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123,
-            processStart: 456, sessionID: UUID().uuidString, route: route, canQueue: false)
+            processStart: 456, sessionID: UUID().uuidString, route: route, canQueue: false,
+            supportsAttemptReplay: true)
         let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
         XCTAssertTrue(reg.matches(process: process, kind: "opencode"))
         XCTAssertFalse(reg.canQueue)
+        XCTAssertTrue(reg.supportsAttemptReplay)
         for kind in ["pi", "codex", "claude", "grok"] {
             XCTAssertFalse(reg.matches(process: process, kind: kind))
         }

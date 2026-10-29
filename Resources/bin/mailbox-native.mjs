@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 export const doorbellText = 'c11 mail waiting: run c11 mailbox recv --ack';
 
 export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionID, route, canQueue = false, deliver,
-  onDeliveryPending, onDeliverySettled, onSettled }) {
+  supportsAttemptReplay = false, onDeliveryPending, onDeliverySettled, onSettled }) {
   let stopped = false;
   let socket;
   let retry;
@@ -20,7 +20,10 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
     let registered = false;
     const pendingDeliveries = new Map();
     const scheduleReconnect = () => {
-      if (stopped || current !== socket || retry || pendingDeliveries.size > 0) return;
+      // Only a replay-capable client can safely hold reconnect until an
+      // outstanding prompt's durable result arrives. Legacy routes keep the
+      // previous reconnect behavior while the two-second fallback runs.
+      if (stopped || current !== socket || retry || (supportsAttemptReplay && pendingDeliveries.size > 0)) return;
       retry = setTimeout(() => {
         retry = undefined;
         connect();
@@ -40,6 +43,7 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
     current.setTimeout(2000, () => current.destroy());
     current.on('connect', () => current.write(JSON.stringify({id: randomUUID(), method: 'mailbox.native.subscribe', params: {
       panel_id: panelID, agent_pid: agentPID, session_id: sessionID, route, can_queue: canQueue,
+      ...(supportsAttemptReplay ? { supports_attempt_replay: true } : {}),
     }}) + '\n'));
     const send = (frame, afterFlush, onUnavailable) => {
       if (!stopped && current === socket && !current.destroyed && current.readyState === 'open') {

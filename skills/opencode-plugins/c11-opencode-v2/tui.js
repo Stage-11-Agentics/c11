@@ -399,6 +399,7 @@ export default {
       const streamID = `${sessionID}:${routeGeneration}:${++mailboxRevision}`.slice(0, 256);
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
+        supportsAttemptReplay: true,
         onDeliveryPending: deliveryID => unsettledMailboxDeliveries.add(deliveryID),
         onDeliverySettled: (deliveryID, settlement) => {
           unsettledMailboxDeliveries.delete(deliveryID);

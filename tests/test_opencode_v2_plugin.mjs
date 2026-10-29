@@ -181,6 +181,8 @@ test('v2 TUI owns exact displayed root capture and confirms native mail from its
   await until(() => f.subscriptions.length === 1);
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA));
   await until(() => f.subscriptions.length === 2);
+  assert.equal(f.subscriptions.at(-1).frame.params.supports_attempt_replay, true,
+    'the v2 TUI opts into stable attempt replay and its fail-closed timeout behavior');
   const capture = f.frames.find(frame => frame.method === 'conversation.push' && frame.params.id === rootA);
   assert.equal(capture.params.displayed_root, true);
   assert.equal(capture.params.displayed_route_generation, 1);

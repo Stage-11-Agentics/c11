@@ -515,7 +515,8 @@ final class ConversationStoreFailureModeTests: XCTestCase {
     func testOpenCodeSessionConflictBlocksTypedMailboxFallback() {
         let registration = MailboxNativeDoorbell.Registration(
             id: UUID(), panelID: UUID(), agentPID: 0, processStart: 0,
-            sessionID: "opencode-session:1", route: .opencodePlugin, canQueue: false)
+            sessionID: "opencode-session:1", route: .opencodePlugin, canQueue: false,
+            supportsAttemptReplay: true)
         let conflict = MailboxNativeDoorbell.Fallback(
             registration: registration, ids: ["mail-a"], reason: "native_session_conflict")
         XCTAssertTrue(conflict.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
@@ -525,6 +526,14 @@ final class ConversationStoreFailureModeTests: XCTestCase {
         let ambiguousTimeout = MailboxNativeDoorbell.Fallback(
             registration: registration, ids: ["mail-a"], reason: "native_timeout")
         XCTAssertTrue(ambiguousTimeout.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
+
+        let legacyRegistration = MailboxNativeDoorbell.Registration(
+            id: UUID(), panelID: UUID(), agentPID: 0, processStart: 0,
+            sessionID: "opencode-session:v1", route: .opencodePlugin, canQueue: false)
+        let legacyTimeout = MailboxNativeDoorbell.Fallback(
+            registration: legacyRegistration, ids: ["mail-a"], reason: "native_timeout")
+        XCTAssertFalse(legacyTimeout.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+            "OpenCode v1 keeps its documented at-least-once typed fallback")
     }
 
     func testOpenCodeTuiConflictHoldsTypedMailWithoutNativeRegistration() {

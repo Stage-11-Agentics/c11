@@ -37,9 +37,10 @@ async function fixture(t, receive) {
     await rm(root, { recursive: true, force: true });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
-  const subscribe = (sessionID, deliver = () => {}, onSettled, onDeliveryPending, onDeliverySettled) => {
+  const subscribe = (sessionID, deliver = () => {}, onSettled, onDeliveryPending, onDeliverySettled,
+    { route = 'pi_extension', supportsAttemptReplay = false } = {}) => {
     const stop = subscribeNativeMailbox({ socketPath, panelID: 'same-panel', agentPID: process.pid,
-      sessionID, route: 'pi_extension', deliver, onSettled, onDeliveryPending, onDeliverySettled });
+      sessionID, route, supportsAttemptReplay, deliver, onSettled, onDeliveryPending, onDeliverySettled });
     stops.push(stop);
     return stop;
   };
@@ -142,8 +143,10 @@ test('a closed stream waits for a submitted prompt, then locally settles before 
   f.subscribe('drop-during-prompt', () => {
     promptCount++;
     return new Promise(resolve => { resolvePrompt = resolve; });
-  }, undefined, undefined, (deliveryID, settlement) => localSettlements.push({ deliveryID, settlement }));
+  }, undefined, undefined, (deliveryID, settlement) => localSettlements.push({ deliveryID, settlement }),
+  { route: 'opencode_plugin', supportsAttemptReplay: true });
   await until(() => typeof resolvePrompt === 'function');
+  assert.equal(f.subscriptions[0].frame.params.supports_attempt_replay, true);
   f.subscriptions[0].socket.destroy();
   await delay(350);
   assert.equal(f.subscriptions.length, 1, 'the transport cannot replay while the original prompt is unresolved');
@@ -154,6 +157,24 @@ test('a closed stream waits for a submitted prompt, then locally settles before 
   assert.equal(localSettlements[0].deliveryID, 'ambiguous');
   assert.deepEqual(localSettlements[0].settlement, { covered: false, attemptID: 'attempt-a' },
     'socket loss clears the route blocker without claiming c11 coverage');
+});
+
+test('legacy OpenCode reconnects after close even while its prompt acknowledgement is pending', { timeout: 5000 }, async t => {
+  let resolvePrompt;
+  const f = await fixture(t, (socket, frame, subscriptions) => {
+    if (frame.method !== 'mailbox.native.subscribe') return;
+    accept(socket);
+    if (subscriptions.length === 1)
+      send(socket, { type: 'deliver', delivery_id: 'legacy-pending', text: doorbellText });
+  });
+  f.subscribe('legacy-close-pending', () => new Promise(resolve => { resolvePrompt = resolve; }),
+    undefined, undefined, undefined, { route: 'opencode_plugin' });
+  await until(() => typeof resolvePrompt === 'function');
+  assert.equal(f.subscriptions[0].frame.params.supports_attempt_replay, undefined,
+    'the v1 registration keeps its legacy protocol shape');
+  f.subscriptions[0].socket.destroy();
+  await until(() => f.subscriptions.length === 2);
+  resolvePrompt();
 });
 
 test('accepted deliveries settle only after the server confirms coverage for all pending IDs', { timeout: 5000 }, async t => {

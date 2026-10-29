@@ -48,12 +48,11 @@ End-to-end release via PR flow: bump version, update changelog, create PR, merge
    - `gh pr create --title "Release vX.Y.Z" --body "...changelog..."`
    - `gh pr checks --watch`
 
-8. **Merge PR**
-   - `gh pr merge --squash --delete-branch`
-   - `git checkout main && git pull`
+8. **Tag the tested release-branch head**
+   - Gate and tag as in `skills/release/SKILL.md` step 9: `git tag -a vX.Y.Z -m "Release vX.Y.Z" <tested head sha> && git push origin vX.Y.Z`
 
-9. **Create and push the tag**
-   - `git tag vX.Y.Z && git push origin vX.Y.Z`
+9. **Merge the branch back after the release is verified**
+   - `gh pr merge <release PR> --merge` (a merge commit, never a squash), then delete the remote branch
 
 ### Phase 2: Local build, sign, notarize, upload
 

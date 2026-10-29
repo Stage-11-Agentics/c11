@@ -6,7 +6,7 @@ Ship a c11 production release without GitHub Actions, through `scripts/release-l
 
 ### 1. Prepare and tag the release
 
-Follow `skills/release/SKILL.md` through tagging: choose the version, update `CHANGELOG.md`, bump with `./scripts/bump-version.sh`, merge the release PR, then gate and push the annotated tag `vX.Y.Z`.
+Follow `skills/release/SKILL.md` through tagging: choose the version, update `CHANGELOG.md`, bump with `./scripts/bump-version.sh`, then gate and push the annotated tag `vX.Y.Z` on the tested release-branch head. Merge the branch back into `main` after the release is verified (skill step 11).
 
 The tag push also starts `release.yml`. If that run is queued or in progress, cancel it (`gh run cancel <id> --repo Stage-11-Agentics/c11`); the script refuses to publish while it is active.
 

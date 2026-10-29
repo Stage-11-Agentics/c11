@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Prepare and ship a c11 release end-to-end: choose the next version, curate user-facing changelog entries, bump versions, open and monitor a release PR, merge, tag, and verify published artifacts. Use when asked to cut, prepare, publish, or tag a new release."
+description: "Prepare and ship a c11 release end-to-end: choose the next version, curate user-facing changelog entries, bump versions, open and monitor a release PR, tag the tested release-branch head, verify published artifacts, and merge the branch back. Use when asked to cut, prepare, publish, or tag a new release."
 ---
 
 # Release
@@ -32,8 +32,8 @@ If the operator says "skip pre-flight," skip. Otherwise run all four every time.
 - Read `MARKETING_VERSION` from `GhosttyTabs.xcodeproj/project.pbxproj`.
 - Default to a minor bump unless the user explicitly requests patch/major/specific version.
 
-2. Create a release branch:
-- `git checkout -b release/vX.Y.Z`
+2. Create a release branch from current `main`:
+- `git fetch origin main && git checkout -b release/vX.Y.Z origin/main`
 
 3. Gather user-facing changes and contributors since the last versioned release tag:
 - `git describe --tags --abbrev=0 --match 'v*'` (artifact tags such as `nightly` and `xcframework-*` are not releases)
@@ -139,29 +139,43 @@ This is a checklist trigger, not a CI gate.
 - `gh pr checks --watch`
 - Fix failing checks, push, and wait for green.
 
-9. Merge and sync `main`:
-- `gh pr merge --squash --delete-branch`
-- `git checkout main && git pull --ff-only`
-- **Confirm the pull actually moved `main`.** A stale local tag (notably `nightly`) makes `git fetch`/`git pull` exit non-zero on a "would clobber existing tag" error, which aborts the ff-merge — `main` silently stays on the old commit while the fetch line still shows `origin/main` advancing. Prune the offending tag (`git tag -d nightly` / `git fetch --prune --prune-tags origin`) and re-run, or fetch then ff explicitly: `git fetch origin main && git merge --ff-only origin/main`.
+The tag goes on the tested release-branch head, never on a merge into `main`. `main` keeps moving while a release is in flight: a commit that lands after the cut ships in the next release, and nothing forces a re-cut or a merge hold.
 
-10. Create and push tag:
-- **Gate the tag on a HEAD + version assertion — do not tag and sync in the same blind batch.** Tagging stale `main` (see the pull-abort trap above) points `vX.Y.Z` at the previous release's content and the release workflow builds the wrong DMG. Verify first:
+9. Tag the tested head, after the operator's named go:
+- **Gate the tag on the exact tested commit.** The tested commit is the head the staging app was built from, the smoke ran on, and `c11/pr-swift` passed on. Verify first:
   ```bash
-  test "$(git rev-parse HEAD)" = "<merge-commit-sha>" || echo "STOP: main not at merge commit"
-  grep -m1 MARKETING_VERSION GhosttyTabs.xcodeproj/project.pbxproj   # must read X.Y.Z
+  git fetch origin release/vX.Y.Z
+  SHA=<tested head sha>
+  test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || echo "STOP: branch moved since it was tested"
+  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | grep -m1 MARKETING_VERSION   # must read X.Y.Z
+  git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # release.yml needs it
   ```
-  Only tag once both match the release.
-- `git tag -a vX.Y.Z -m "Release vX.Y.Z"` (annotated; lightweight `git tag vX.Y.Z` is rejected with "no tag message?" by local git config)
+  A stale local tag (notably `nightly`) makes `git fetch` fail with "would clobber existing tag" and can leave refs unmoved: prune it (`git tag -d nightly` or `git fetch --prune --prune-tags origin`) and re-check.
+- `git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"` (annotated; local git config rejects a lightweight `git tag vX.Y.Z` with "no tag message?")
 - `git push origin vX.Y.Z`
-- **If you tagged the wrong commit and the release run already started:** `gh run cancel <id>` (release runs took 33 to 41 min for v1.1.3 through v1.4.0, about 30 of it before signing, so a quick catch publishes nothing), delete the tag both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), fix `main`, re-verify the gate, then re-tag and push.
+- **If you tagged the wrong commit and the release run already started:** run `gh run cancel <id>`. Release runs take 33 to 41 minutes, about 30 of them before signing, so a quick catch publishes nothing. Delete the tag in both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), re-verify the gate, then re-tag and push.
 
-11. Verify release workflow and assets:
-- `gh run watch --repo Stage-11-Agentics/c11`
-- Confirm release exists in GitHub Releases and includes `c11-macos.dmg`.
+10. Verify release workflow and assets:
+- `gh run watch <run id> --exit-status`
+- Confirm the release exists in GitHub Releases, is neither a draft nor a prerelease, and includes `c11-macos.dmg`.
+- `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints `vX.Y.Z`, and `releases/latest/download/appcast.xml` serves `X.Y.Z` with the new build number.
+
+11. Merge the release branch back into `main`:
+- `gh pr merge <release PR> --merge`. Use a merge commit, never a squash: the tag must stay an ancestor of `main`, and a squash leaves the shipped commit off `main`'s history.
+- Never rebase, amend or force-push the branch after tagging. If the PR conflicts, merge `origin/main` into the release branch, push, then merge the PR. Usually only `CHANGELOG.md` conflicts: keep the `[X.Y.Z]` section, and leave entries that `main` added under `[Unreleased]` there.
+- Delete the remote branch (`git push origin --delete release/vX.Y.Z`).
+- Confirm with `git fetch origin main && git merge-base --is-ancestor vX.Y.Z origin/main`.
 
 12. Lift a skill-sync hold:
 - If `CLAUDE.md` carries a "Hold until c11 1.0 is installed" line under the skill-sync hard rule, wait until the maintainer has installed this release, then run `scripts/sync-installed-skills.sh` and check one live copy (`~/.claude/skills/c11/SKILL.md` matches `skills/c11/SKILL.md`).
 - Delete the hold line from `CLAUDE.md` and the matching "(until 1.0 is installed, follow the sync hold in the repo's CLAUDE.md)" clause from `skills/c11/SKILL.md` (Editing this skill) in one PR; after it merges, sync `c11` again.
+
+## Hotfix
+
+A hotfix branches from the shipped tag, not from `main`:
+
+- `git checkout -b release/vX.Y.Z+1 vX.Y.Z`, then `git cherry-pick -x` each fix from `main`.
+- Then run the normal flow on that branch: a patch bump, a changelog section, staging, checks, the tag gate on the tested head, and the merge back.
 
 ## Changelog Rules
 

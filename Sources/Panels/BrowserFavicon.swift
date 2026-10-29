@@ -8,12 +8,36 @@ enum BrowserFavicon {
     static let maximumBytes = 1 << 20
     static let maximumDiscoveredURLCharacters = 1_500_000
 
-    static let directSession: URLSession = {
-        let configuration = URLSessionConfiguration.default
+    /// Settings every favicon session starts from. Pages choose favicon URLs,
+    /// so a favicon fetch sends and keeps no cookies and no stored
+    /// credentials (C11-496).
+    static func makeSessionConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCredentialStorage = nil
         configuration.timeoutIntervalForRequest = 2
         configuration.timeoutIntervalForResource = 4
-        return URLSession(configuration: configuration)
-    }()
+        return configuration
+    }
+
+    private static let directSessionsLock = NSLock()
+    private static var directSessions: [UUID: URLSession] = [:]
+
+    /// The direct favicon session for one browser profile. Each profile has
+    /// its own in-memory cache, so an icon is fetched once per profile and
+    /// nothing one profile's favicon fetches leave behind reaches another.
+    static func directSession(forProfile profileID: UUID) -> URLSession {
+        directSessionsLock.lock()
+        defer { directSessionsLock.unlock() }
+        if let session = directSessions[profileID] { return session }
+        let configuration = makeSessionConfiguration()
+        configuration.urlCache = URLCache(memoryCapacity: 4 << 20, diskCapacity: 0)
+        let session = URLSession(configuration: configuration)
+        directSessions[profileID] = session
+        return session
+    }
 
     enum FetchError: Error {
         case invalidURL

@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Security
+
+- **Browser profiles no longer share favicon cookies or cache.** Favicon fetches send and keep no cookies, and each profile caches its own icons, so a site's favicon can't link one profile to another. ([#786](https://github.com/Stage-11-Agentics/c11/pull/786))
+
 ## [1.5.1] - 2026-10-28
 
 Headline: **c11 1.5.1. A panel moved to another workspace keeps its metadata and its mail, browser downloads stop sending another site's cookies, the Agent Skills sheet no longer replaces newer skill copies, and the markdown viewer loads long documents fast.**

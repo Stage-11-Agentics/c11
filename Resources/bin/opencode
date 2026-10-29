@@ -68,6 +68,9 @@ if [[ -x "$config_helper" ]] && command -v python3 >/dev/null 2>&1; then
     opencode_version="$(python3 "$config_helper" version "$REAL_OPENCODE" 2>/dev/null || true)"
 fi
 
+# Keep this exact pin until a new OpenCode release's in-process TUI APIs have
+# been requalified by the plugin suite and two-client guest proof. Unknown 2.x
+# versions keep baseline lifecycle tracking until that validation advances it.
 # OpenCode v2 loads TUI plugins from the CLI config and shares its server
 # across clients. Never give the legacy server plugin a panel identity.
 if [[ "$opencode_version" == 2.0.25 ]]; then
@@ -128,7 +131,7 @@ PY
                 # The socket can answer ping before restore has admitted
                 # conversation claims. Retry only that transient startup
                 # response, keeping the same expiry-bounded claim payload.
-                for ((claim_attempt=1; claim_attempt<=20; claim_attempt++)); do
+                for ((claim_attempt=1; claim_attempt<=4; claim_attempt++)); do
                     claim_output="$(C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
                         "$c11_bin" --socket "$c11_socket" rpc conversation.claim "$claim_payload" 2>&1)"
                     if [[ $? -eq 0 ]]; then
@@ -136,7 +139,7 @@ PY
                         break
                     fi
                     [[ "$claim_output" == not_ready:* ]] || break
-                    ((claim_attempt < 20)) || break
+                    ((claim_attempt < 4)) || break
                     sleep 0.25
                 done
             fi

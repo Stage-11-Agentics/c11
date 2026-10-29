@@ -4227,7 +4227,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 do {
                     let raw = try await BrowserFavicon.fetch(
                         effectiveRequest,
-                        session: remoteSession ?? BrowserFavicon.directSession,
+                        session: remoteSession ?? BrowserFavicon.directSession(forProfile: profileID),
                         maximumBytes: BrowserFavicon.maximumBytes
                     )
                     // Use 2x the rendered point size so Retina icons stay sharp.
@@ -4563,10 +4563,8 @@ final class BrowserPanel: Panel, ObservableObject {
         let host = endpoint.host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty, endpoint.port > 0, endpoint.port <= 65535 else { return nil }
 
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = BrowserFavicon.makeSessionConfiguration()
         configuration.requestCachePolicy = .returnCacheDataElseLoad
-        configuration.timeoutIntervalForRequest = 2.0
-        configuration.timeoutIntervalForResource = 4.0
         configuration.connectionProxyDictionary = [
             kCFNetworkProxiesSOCKSEnable as String: 1,
             kCFNetworkProxiesSOCKSProxy as String: host,

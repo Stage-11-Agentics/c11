@@ -322,20 +322,22 @@ final class BrowserFaviconTests: XCTestCase {
         let server = try FaviconCookieListener()
         defer {
             server.stop()
-            for cookie in HTTPCookieStorage.shared.cookies ?? [] where cookie.name == FaviconCookieListener.cookieName {
+            for cookie in HTTPCookieStorage.shared.cookies ?? []
+            where cookie.name == FaviconCookieListener.cookieName || cookie.domain == "127.0.0.1" {
                 HTTPCookieStorage.shared.deleteCookie(cookie)
             }
         }
         let base = "http://127.0.0.1:\(server.port)"
+        let session = BrowserFavicon.directSession(forProfile: UUID())
 
         _ = try await BrowserFavicon.fetch(
             URLRequest(url: URL(string: "\(base)/sets-cookie.ico")!),
-            session: BrowserFavicon.directSession,
+            session: session,
             maximumBytes: BrowserFavicon.maximumBytes
         )
         _ = try await BrowserFavicon.fetch(
             URLRequest(url: URL(string: "\(base)/next.ico")!),
-            session: BrowserFavicon.directSession,
+            session: session,
             maximumBytes: BrowserFavicon.maximumBytes
         )
 
@@ -345,6 +347,28 @@ final class BrowserFaviconTests: XCTestCase {
             (HTTPCookieStorage.shared.cookies ?? []).contains { $0.name == FaviconCookieListener.cookieName },
             "A favicon response stored its cookie in the app-wide jar"
         )
+    }
+
+    /// C11-496. A profile reuses an icon it already fetched, but another
+    /// profile never gets it from that cache.
+    func testFaviconCacheIsPerProfile() async throws {
+        let server = try FaviconCookieListener()
+        defer { server.stop() }
+        let request = URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/cached.ico")!)
+        let profileA = BrowserFavicon.directSession(forProfile: UUID())
+        let profileB = BrowserFavicon.directSession(forProfile: UUID())
+
+        _ = try await BrowserFavicon.fetch(request, session: profileA, maximumBytes: BrowserFavicon.maximumBytes)
+        let cache = try XCTUnwrap(profileA.configuration.urlCache)
+        let deadline = Date().addingTimeInterval(5)
+        while cache.cachedResponse(for: request) == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        _ = try await BrowserFavicon.fetch(request, session: profileA, maximumBytes: BrowserFavicon.maximumBytes)
+        XCTAssertEqual(server.requests.filter { $0.path == "/cached.ico" }.count, 1, "Profile A fetched its cached icon again")
+
+        _ = try await BrowserFavicon.fetch(request, session: profileB, maximumBytes: BrowserFavicon.maximumBytes)
+        XCTAssertEqual(server.requests.filter { $0.path == "/cached.ico" }.count, 2, "Profile B was served profile A's cached icon")
     }
 
     func testAspectFitKeepsTransparentPadding() throws {
@@ -440,7 +464,8 @@ private final class FaviconTestURLProtocol: URLProtocol {
 }
 
 /// A loopback HTTP/1.1 listener for favicon fetches. `/sets-cookie.ico`
-/// answers with a Set-Cookie header; every path answers with a few bytes.
+/// answers with a Set-Cookie header, `/cached.ico` may be cached for an hour,
+/// and every path answers with a few bytes.
 /// Records each request's path and Cookie header.
 private final class FaviconCookieListener: @unchecked Sendable {
     struct Request {
@@ -522,6 +547,9 @@ private final class FaviconCookieListener: @unchecked Sendable {
         var headers = ["Content-Type: image/x-icon", "Content-Length: \(body.count)", "Connection: close"]
         if path == "/sets-cookie.ico" {
             headers.append("Set-Cookie: \(Self.cookieName)=linked; Path=/; Max-Age=3600")
+        }
+        if path == "/cached.ico" {
+            headers.append("Cache-Control: max-age=3600")
         }
         var response = Data(("HTTP/1.1 200 OK\r\n" + headers.joined(separator: "\r\n") + "\r\n\r\n").utf8)
         response.append(body)

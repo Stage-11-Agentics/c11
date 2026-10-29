@@ -2055,7 +2055,9 @@ final class MailboxNativeDoorbellTests: XCTestCase {
     }
 
     func testOpenCodeDisplayedRouteConflictHoldsTypedDelivery() {
-        let reg = registration(route: .opencodePlugin)
+        let reg = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123,
+            processStart: 456, sessionID: UUID().uuidString, route: .opencodePlugin,
+            canQueue: false, supportsAttemptReplay: true)
         let conflict = MailboxNativeDoorbell.Fallback(
             registration: reg, ids: ["mail-a"], reason: "native_session_conflict"
         )

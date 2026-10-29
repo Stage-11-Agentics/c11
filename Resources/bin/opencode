@@ -51,13 +51,105 @@ if [[ -z "$c11_panel" || "${C11_OPENCODE_HOOKS_DISABLED:-${CMUX_OPENCODE_HOOKS_D
     exec "$REAL_OPENCODE" "$@"
 fi
 
-# OpenCode's named subcommands and informational flags do not start an
-# interactive agent TUI. Leave them completely transparent.
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_bin="$self_dir/c11"
+[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+config_helper="$self_dir/opencode-v2-config.py"
+
+# OpenCode's named subcommands and informational flags are transparent.
 case "${1:-}" in
     serve|web|agent|models|auth|upgrade|uninstall|mcp|github|pr|stats|export|import|attach|acp|debug|--help|-h|--version|-v)
         exec "$REAL_OPENCODE" "$@"
         ;;
 esac
+
+opencode_version=""
+if [[ -x "$config_helper" ]] && command -v python3 >/dev/null 2>&1; then
+    opencode_version="$(python3 "$config_helper" version "$REAL_OPENCODE" 2>/dev/null || true)"
+fi
+
+# OpenCode v2 loads TUI plugins from the CLI config and shares its server
+# across clients. Never give the legacy server plugin a panel identity.
+if [[ "$opencode_version" == 2.0.25 ]]; then
+    if [[ -t 0 && -t 1 && "${1:-}" != "run" ]]; then
+        export C11_AGENT_INTERACTIVE_PID=$$
+    fi
+
+    # Claim this exact TUI process before OpenCode initializes. The TUI plugin
+    # later captures through its own socket peer PID, not environment inherited
+    # by a shared-server tool subprocess.
+    expected_session=""
+    launch_args=("$@")
+    for ((arg_index=0; arg_index<${#launch_args[@]}; arg_index++)); do
+        case "${launch_args[$arg_index]}" in
+            --session|-s)
+                if ((arg_index + 1 < ${#launch_args[@]})); then expected_session="${launch_args[$((arg_index + 1))]}"; fi
+                break
+                ;;
+            --session=*) expected_session="${launch_args[$arg_index]#--session=}"; break ;;
+            -s?*) expected_session="${launch_args[$arg_index]#-s}"; break ;;
+        esac
+    done
+    if [[ -n "${C11_AGENT_INTERACTIVE_PID:-}" ]]; then
+        if [[ -n "$c11_bin" ]] && command -v python3 >/dev/null 2>&1; then
+            claim_payload="$(python3 - "$c11_panel" "$PWD" "$C11_AGENT_INTERACTIVE_PID" "$expected_session" <<'PY'
+import json, sys, time
+
+panel_id, cwd, pid, expected_id = sys.argv[1:5]
+payload = {
+    "panel_id": panel_id,
+    "kind": "opencode",
+    "cwd": cwd,
+    "placeholder_id": f"wrapper-claim:{panel_id}",
+    "interactive_pid": int(pid),
+    "expires_at_epoch_ms": int(time.time() * 1000) + 120_000,
+}
+if expected_id:
+    payload["expected_resume_id"] = expected_id
+print(json.dumps(payload, separators=(",", ":")))
+PY
+            )"
+            if [[ -n "$claim_payload" ]] && C11_DEFAULT_SOCKET_DEADLINE_MS=750 \
+                "$c11_bin" --socket "$c11_socket" rpc conversation.claim "$claim_payload" >/dev/null 2>&1; then
+                export C11_OPENCODE_TUI_CLAIMED=1
+                [[ -z "$expected_session" ]] || export C11_OPENCODE_RESUME_RESERVED=1
+            else
+                export C11_OPENCODE_TUI_CLAIM_FAILED=1
+                export C11_OPENCODE_RESUME_RESERVATION_FAILED=1
+            fi
+        else
+            export C11_OPENCODE_TUI_CLAIM_FAILED=1
+            export C11_OPENCODE_RESUME_RESERVATION_FAILED=1
+        fi
+    fi
+
+    if [[ -n "$c11_bin" ]]; then
+        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" set-agent --type opencode >/dev/null 2>&1 ) &
+        disown 2>/dev/null || true
+        ( C11_DEFAULT_SOCKET_DEADLINE_MS=750 "$c11_bin" --socket "$c11_socket" agent-hook idle >/dev/null 2>&1 ) &
+        disown 2>/dev/null || true
+    fi
+
+    # CLI-content plugins are the v2 TUI extension seam. The helper composes
+    # the effective operator plugin list in memory and fails closed on invalid
+    # or unreadable config. It never edits cli.json or an explicit override.
+    if [[ -t 0 && -t 1 && "${1:-}" != "run" && -n "${C11_AGENT_INTERACTIVE_PID:-}" &&
+          "${C11_OPENCODE_NATIVE_MAIL_DISABLED:-}" != "1" && -x "$config_helper" ]]; then
+        v2_plugin_dir="$self_dir/../skills/opencode-plugins/c11-opencode-v2"
+        if [[ -d "$v2_plugin_dir" ]]; then
+            composed="$(python3 "$config_helper" compose "$v2_plugin_dir" 2>/dev/null)" &&
+                export OPENCODE_CLI_CONFIG_CONTENT="$composed"
+        fi
+    fi
+    export C11_AGENT_HOOK_CLI="$c11_bin"
+    exec "$REAL_OPENCODE" "$@"
+fi
+
+# Unknown versions get no c11 extension, because neither panel ownership nor
+# config loading behavior is proven. v1 keeps the original supported path.
+if [[ "$opencode_version" != 1.* ]]; then
+    exec "$REAL_OPENCODE" "$@"
+fi
 
 # Mark this launch as an interactive agent only when it reads and writes
 # its terminal (`opencode run` is one-shot). c11 pushes mailbox messages only to a panel whose
@@ -66,10 +158,6 @@ esac
 if [[ -t 0 && -t 1 ]] && [[ "${1:-}" != "run" ]]; then
     export C11_AGENT_INTERACTIVE_PID=$$
 fi
-
-self_dir="$(cd "$(dirname "$0")" && pwd)"
-c11_bin="$self_dir/c11"
-[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
 if [[ -n "$c11_bin" ]]; then
     (

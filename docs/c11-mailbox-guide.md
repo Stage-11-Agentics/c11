@@ -432,42 +432,25 @@ The hook's five-second timeout was observed as unenforced for async hooks; if Cl
 
 For a repeatable Claude guest proof, stage `--agents claude` with `sandbox-up.sh`, then run `scripts/check-claude-native-mail.py <run-id>`. It uses real Claude sessions in isolated scratch configuration, checks native draft/repeat, `/clear`, `--resume`, hook-absent fallback, explicit inbound refusal, and unchanged default tenant files. `--disable-native-control` removes the bridge and must fail the native-with-draft assertion. The caller owns the guest and credential cleanup.
 
-### OpenCode native plugin
+### OpenCode plugin compatibility
 
-The interactive wrapper runtime-loads `skills/opencode-plugins/c11-mailbox.mjs`
-through `OPENCODE_TUI_CONFIG`. OpenCode 1.15.13's TUI plugin API exposes the
-displayed session; the server plugin alone cannot distinguish a visible session
-from another session. The native plugin registers `opencode_plugin` with
-`can_queue:false` and sends only the fixed invitation at idle. It never reads or
-edits the composer. Busy, retry, permission and question states refuse injection.
+The PATH wrapper checks the resolved OpenCode binary version before adding a c11 plugin. It supports the existing v1 plugin contract and OpenCode 2.0.25's client-side TUI plugin contract. Unknown versions receive no plugin injection and use the typed c11 route. No wrapper path writes OpenCode tenant configuration.
 
-Acceptance requires OpenCode's matching text-part and user-message events in the
-bound session. The SDK returning 204 is insufficient. An uncertain response
-leaves c11's two-second timeout to apply the ordinary typed gate. A late observed
-acceptance can still be logged. Envelopes remain unread until explicit
-`recv --ack`; all shared opt-in, doorbell-off, flag, process, coverage and rate
-guards remain active. Dispatch uses `route: opencode_plugin`, or `typed` with
-the attempted native route and failure reason after a failed native attempt.
+| Feature | OpenCode v1 | OpenCode 2.0.25 | Safe fallback |
+|---|---|---|---|
+| Exact displayed-root capture | v1 lifecycle plugin plus TUI bridge | Per-client `setup(context)` plugin reads the TUI route and loaded session row | No exact binding; unsupported DB remains unverifiable |
+| Native mailbox | `c11-mailbox.mjs` TUI route | TUI plugin bound only after exact c11 capture | Ordinary timeout/unavailable uses typed delivery; a route collision holds affected mail until a new route is captured |
+| Lifecycle and status | v1 server plugin | Not reported by the v2 adapter; foreground liveness still applies | No false lifecycle attribution from the shared server |
+| Prompt-cache telemetry | v1 server plugin | Unavailable in the v2 adapter | No server-side panel attribution |
+| Permission notifications | v1 server plugin | Unavailable in the v2 adapter | OpenCode's permission behavior is unchanged |
 
-Home, child-session views and unresolved session metadata retire the subscription;
-only a displayed root session can bind. New and resumed roots bind fresh generations.
-The plugin reads the live route again before every SDK call and monitors route
-changes every 250 ms because this API has no navigation event. Plugin disposal
-and process exit close the stream. Unexpected c11 connection loss uses the shared
-client's bounded reconnect; a replaced stream stays retired.
+For v2, the wrapper composes `OPENCODE_CLI_CONFIG_CONTENT` in memory with the effective ordered `cli.json` plugin list. An environment `plugins` array takes precedence over the on-disk array, matching OpenCode's config merge; the c11 local package is appended without dropping string or `-id` directives. Malformed operator content or config disables injection and leaves the environment and file untouched. The v2 path does not set `OPENCODE_CONFIG_CONTENT`, `OPENCODE_CONFIG`, or `OPENCODE_TUI_CONFIG`. The TUI plugin runs in the individual client, never the shared server.
 
-OpenCode does not emit `session.created` on resume. Its first real prompt restores
-the lifecycle conversation owner after the SDK confirms a root session, before
-publishing the turn. Child sessions and failed lookups cannot claim that owner.
+Every interactive v2 wrapper launch records the OpenCode TUI PID in c11; an explicit `-s`/`--session` ID is reserved in the same claim before the TUI starts. A failed claim disables c11 capture for that launch. The TUI adapter waits for its loaded session row and requires `parentID` to prove a root. It sends displayed-root capture directly over the Unix socket from the TUI process, and c11 accepts it only when the kernel-reported socket peer PID matches that wrapper claim. Native OpenCode mailbox registration has the same direct-peer check. A tool subprocess's inherited `C11_PANEL_ID` and `C11_AGENT_INTERACTIVE_PID` cannot assert a displayed route. The adapter confirms mailbox delivery only from matching message and text-part events in the bound session; invoking the SDK is insufficient. Busy, retry, permission and question states refuse injection. Child, unresolved, and colliding routes keep a provisional stream that rejects with `session_conflict`. c11 also holds typed mail while the ConversationStore shows a v2 TUI reservation or identity conflict, even if native stream registration was refused. A same-route conflict is retried every 500 ms and clears when ownership becomes available. Home retires the subscription. New and resumed roots bind fresh generations, and the plugin checks the live route before every SDK call while monitoring changes every 100 ms.
 
-No tenant configuration is written. An explicit `OPENCODE_TUI_CONFIG`, missing
-plugin support, a noninteractive launch, or `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`
-keeps typed fallback. Both server-config slots being occupied also keeps typed
-delivery, because c11 cannot ensure its lifecycle plugin is loaded. Other runtime config sources remain the operator's own;
-the server lifecycle plugin uses a private c11 tempfile in `/tmp` when CONTENT
-is already occupied. It contains only the bundled plugin path and remains
-available for repeated reads until temporary-file cleanup. Older OpenCode releases without the TUI plugin API are not
-native-capable. The existing lifecycle and prompt-cache plugin remains separate.
+OpenCode does not emit `session.created` on resume. The v1 server plugin restores its lifecycle owner on the first prompt. The v2 adapter captures the loaded root from its own TUI before the first prompt; it does not claim v1 lifecycle, prompt-cache, or permission-notification parity. No tenant configuration is written. An explicit v1 `OPENCODE_TUI_CONFIG`, missing plugin support, noninteractive launch, `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`, unknown version, or malformed v2 config keeps native delivery disabled. The v1 server plugin uses a private c11 tempfile in `/tmp` when its CONTENT slot is occupied.
+
+OpenCode v2 also propagates `session.environment` to tool subprocesses. Those processes can inherit the last client's C11 variables, but c11 does not accept them as displayed-route proof: capture and native OpenCode mailbox ownership require the exact TUI socket peer PID. Generic c11 commands invoked by OpenCode tool subprocesses still use their ordinary caller-panel environment and remain an upstream attribution residual; this adapter never uses those commands for capture or mailbox ownership.
 
 For the credential-free acceptance check, start an Atlas sandbox with the tagged
 app, then run `scripts/check-opencode-native-mail.py <run-id>`. It stages the

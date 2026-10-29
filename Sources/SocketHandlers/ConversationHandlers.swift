@@ -94,13 +94,27 @@ extension TerminalController {
             ?? "wrapper-claim:\(surfaceId.uuidString):\(Int(Date().timeIntervalSince1970))"
         let expectedResumeId = v2String(params, "expected_resume_id")
         if let expectedResumeId {
-            guard kind == "codex", UUID(uuidString: expectedResumeId) != nil else {
+            let valid = (kind == "codex" && UUID(uuidString: expectedResumeId) != nil)
+                || (kind == "opencode" && isValidOpencodeSessionId(expectedResumeId))
+            guard valid else {
                 return .err(
                     code: "invalid_expected_resume_id",
-                    message: "expected_resume_id is supported only for codex UUIDs",
+                    message: "expected_resume_id must match the selected kind's session ID format",
                     data: nil
                 )
             }
+        }
+        let interactivePID: Int32?
+        if params["interactive_pid"] != nil {
+            guard kind == "opencode", let rawPID = v2Int(params, "interactive_pid"),
+                  rawPID > 0, rawPID <= Int(Int32.max) else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "interactive_pid is supported only for a positive OpenCode TUI pid",
+                            data: nil)
+            }
+            interactivePID = Int32(rawPID)
+        } else {
+            interactivePID = nil
         }
 
         let expiresAt: Date?
@@ -135,6 +149,7 @@ extension TerminalController {
                     cwd: cwd,
                     placeholderId: placeholder,
                     expectedResumeId: expectedResumeId,
+                    interactivePID: interactivePID,
                     expiresAt: expiresAt
                 )
             }
@@ -158,7 +173,8 @@ extension TerminalController {
                     kind: kind,
                     cwd: cwd,
                     placeholderId: placeholder,
-                    expectedResumeId: expectedResumeId
+                    expectedResumeId: expectedResumeId,
+                    interactivePID: interactivePID
                 )
             }) else {
                 return .err(code: "internal_error", message: "store timeout", data: nil)
@@ -209,6 +225,12 @@ extension TerminalController {
         }
         let cwd = v2String(params, "cwd")
         let reason = v2String(params, "diagnostic_reason")
+        let displayedRoot = params["displayed_root"] as? Bool ?? false
+        guard !displayedRoot || (kind == "opencode" && source == .hook) else {
+            return .err(code: "invalid_displayed_root",
+                        message: "displayed_root is reserved for OpenCode TUI root capture",
+                        data: nil)
+        }
         let stateRaw = (v2String(params, "state") ?? "alive").lowercased()
         // C11-24 review (I2): strict validation. Silent fallthrough to
         // .alive swallowed typos ("susended" → .alive) and corrupted the
@@ -268,6 +290,49 @@ extension TerminalController {
             payload = nil
         }
 
+        if displayedRoot {
+            let storeResult: DisplayedOpenCodeCaptureResult? = conversationStoreSync { store in
+                await store.captureDisplayedOpenCodeRoot(
+                    surfaceId: surfaceId.uuidString,
+                    id: id,
+                    cwd: cwd,
+                    callerPID: SocketCommandContext.current?.callerPID
+                )
+            }
+            guard let result = storeResult else {
+                return .err(code: "internal_error", message: "store timeout", data: nil)
+            }
+            switch result {
+            case .conflict(let owners, let preservedRef):
+                var response: [String: Any] = [
+                    "surface_id": surfaceId.uuidString,
+                    "kind": kind,
+                    "id": id,
+                    "outcome": "identity_conflict",
+                    "owner_surface_ids": owners
+                ]
+                if let preservedRef {
+                    response["preserved_state"] = preservedRef.state.rawValue
+                    if !preservedRef.placeholder { response["preserved_id"] = preservedRef.id }
+                }
+                return .ok(response)
+            case .unauthorized:
+                return .err(code: "displayed_root_caller_mismatch",
+                            message: "displayed-root capture must come from the OpenCode TUI process reserved by this panel",
+                            data: ["surface_id": surfaceId.uuidString])
+            case .accepted(let ref):
+                PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+                return .ok([
+                    "surface_id": surfaceId.uuidString,
+                    "kind": ref.kind,
+                    "id": ref.id,
+                    "captured_via": ref.capturedVia.rawValue,
+                    "state": ref.state.rawValue,
+                    "outcome": "accepted"
+                ])
+            }
+        }
+
         let storeResult: ConversationRef?? = conversationStoreSync { store in
             await store.push(
                 surfaceId: surfaceId.uuidString,
@@ -284,11 +349,7 @@ extension TerminalController {
             return .err(code: "internal_error", message: "store timeout", data: nil)
         }
         guard let ref = maybeRef else {
-            return .err(
-                code: "invalid_source",
-                message: "source must be one of hook, scrape, manual",
-                data: nil
-            )
+            return .err(code: "invalid_source", message: "source must be one of hook, scrape, manual", data: nil)
         }
         PanelActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([

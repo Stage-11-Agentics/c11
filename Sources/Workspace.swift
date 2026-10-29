@@ -6795,9 +6795,24 @@ final class Workspace: Identifiable, ObservableObject {
         }
         let ids = queued.map(\.id)
         let nativeRoute = registeredNativeMailbox(surfaceId: surfaceId)
+        let isOpenCodePanel = surfaceActivityTerminalKind(panelId: surfaceId) == "opencode"
         let inbox = MailboxLayout.inboxURL(state: dispatcher.stateURL, workspaceId: id, panelId: surfaceId)
         Self.mailboxPushIOQueue.async { [weak self] in
             let live = Set(ids.filter { MailboxIO.isPending(id: $0, inbox: inbox) })
+            let holdTypedForOpenCodeIdentity: Bool
+            if isOpenCodePanel {
+                if let conversations = Self.readConversationsByPanelIdSyncIfCompleted(timeout: 0.25) {
+                    holdTypedForOpenCodeIdentity = MailboxNativeDoorbell.blocksTypedForUnboundOpenCodeTUI(
+                        conversation: conversations[surfaceId.uuidString]?.active
+                    )
+                } else {
+                    // An unreadable store cannot prove that a shared OpenCode
+                    // route has a safe typed recipient.
+                    holdTypedForOpenCodeIdentity = true
+                }
+            } else {
+                holdTypedForOpenCodeIdentity = false
+            }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
@@ -6806,7 +6821,8 @@ final class Workspace: Identifiable, ObservableObject {
                         queued: queued,
                         liveIds: live,
                         dispatcher: dispatcher,
-                        nativeRoute: nativeRoute
+                        nativeRoute: nativeRoute,
+                        holdTypedForOpenCodeIdentity: holdTypedForOpenCodeIdentity
                     )
                 }
             }
@@ -6818,7 +6834,8 @@ final class Workspace: Identifiable, ObservableObject {
         queued: [MailboxStdinBuffer.Entry],
         liveIds: Set<String>,
         dispatcher: MailboxDispatcher,
-        nativeRoute: MailboxNativeDoorbell.Registration?
+        nativeRoute: MailboxNativeDoorbell.Registration?,
+        holdTypedForOpenCodeIdentity: Bool
     ) {
         let goneIds = Set(MailboxDoorbellSequence.droppedIds(
             snapshot: queued.map(\.id),
@@ -6848,6 +6865,18 @@ final class Workspace: Identifiable, ObservableObject {
         if let nativeRoute {
             deliverNativeMailbox(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live, registration: nativeRoute)
         } else {
+            if holdTypedForOpenCodeIdentity {
+                mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                return
+            }
+            if let failed = mailboxNativeFallback[surfaceId] {
+                let unread = Set(live.map(\.id))
+                let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+                if failed.blocksTyped(unreadIDs: unread, coveredIDs: covered) {
+                    mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                    return
+                }
+            }
             typeMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live)
         }
     }

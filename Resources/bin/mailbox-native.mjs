@@ -49,7 +49,10 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
           return deliver(frame.text);
         }).then(
           () => send({type: 'accepted', delivery_id: frame.delivery_id}),
-          () => send({type: 'rejected', delivery_id: frame.delivery_id}),
+          error => {
+            const reason = error?.code === 'session_conflict' ? 'session_conflict' : undefined;
+            send({type: 'rejected', delivery_id: frame.delivery_id, ...(reason ? {reason} : {})});
+          },
         );
       }
     });

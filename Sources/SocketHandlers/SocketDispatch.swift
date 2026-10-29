@@ -211,7 +211,8 @@ extension TerminalController {
                 ?? (request?.params["caller_panel_id"] as? String
                     ?? request?.params["caller_tab_id"] as? String
                     ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
-            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+            callerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
+            callerPID: SocketCommandContext.current?.callerPID
         )
         return SocketCommandContext.withContext(context) {
             var response = executeSocketCommand(command)

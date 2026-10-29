@@ -1,62 +1,56 @@
 import Foundation
 import SQLite3
 
-/// Read-only SQLite I/O over `~/.local/share/opencode/opencode.db`, where
-/// opencode stores one row per session in the `session` table.
+/// Read-only SQLite I/O over OpenCode's global data path. v1 uses the
+/// `session` table; v2 uses `session_v2`.
 ///
-/// **Privacy contract** (see architecture doc §"Privacy contract for scrape"):
-/// stat-equivalent — queries `session.id` and `session.time_updated` only.
-/// The `message` and `part` tables (transcript content) are NEVER opened,
-/// copied, or logged. The query is bounded (`LIMIT 16`) and filtered to the
-/// surface's cwd via the `directory` column.
-///
-/// Scope:
-/// - At most 16 most-recent sessions for the cwd by `time_updated` DESC.
-/// - Id grammar: `ses_` + 26-char **base62** body (validated via
-///   `isValidOpencodeSessionId` as defence-in-depth — the DB is the source
-///   of truth, but a corrupt row cannot leak into a synthesized ref).
-/// - DB-locked / absent / corrupt: returns `[]`. Never crashes the caller.
-///   A 2 s busy-timeout is configured so a transient opencode write does
-///   not fail the read.
-///
-/// This scraper deviates from `ClaudeCodeScraper` / `CodexScraper` by
-/// returning `[ConversationRef]` directly rather than `[ScrapeCandidate]`:
-/// opencode has no on-disk transcript file (sessions live in SQLite), so
-/// the filesystem-shaped `ScrapeCandidate` fields (`filePath`, `size`)
-/// have no meaningful value. Callers that feed the strategy-inputs
-/// pipeline can lift each ref into a `ScrapeCandidate` if needed.
+/// **Privacy contract**: exact recovery reads only the requested session ID.
+/// Directory scrape reads only `id`, `directory`, and `time_updated`. The
+/// `message` and `part` tables (transcript content) are NEVER opened, copied,
+/// or logged.
 struct OpencodeScraper: Sendable, OpencodeSessionLookup {
     let kind: String = "opencode"
     static let defaultMaxCandidates: Int = 16
 
     let maxCandidates: Int
     let homeDirectory: URL?
+    let environment: [String: String]
 
     init(
         homeDirectory: URL? = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
         maxCandidates: Int = OpencodeScraper.defaultMaxCandidates
     ) {
         self.homeDirectory = homeDirectory
+        self.environment = environment
         self.maxCandidates = maxCandidates
     }
 
-    /// Resolve `~/.local/share/opencode/opencode.db`. Returns nil if HOME
-    /// isn't available or the file doesn't exist (opencode never ran on
-    /// this machine).
+    /// Resolve `<XDG_DATA_HOME>/opencode/opencode.db`, or OpenCode's
+    /// `~/.local/share/opencode/opencode.db` default. OpenCode 2.0.25's
+    /// `OPENCODE_CONFIG_DIR` affects configuration only; `XDG_DATA_HOME`
+    /// selects the data root. Relative XDG paths are ignored per the XDG
+    /// directory specification.
     func databasePath() -> URL? {
+        if let rawDataHome = environment["XDG_DATA_HOME"],
+           !rawDataHome.isEmpty,
+           rawDataHome.hasPrefix("/") {
+            let url = URL(fileURLWithPath: rawDataHome, isDirectory: true)
+                .appendingPathComponent("opencode", isDirectory: true)
+                .appendingPathComponent("opencode.db", isDirectory: false)
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
         guard let home = homeDirectory else { return nil }
         let url = home
             .appendingPathComponent(".local", isDirectory: true)
             .appendingPathComponent("share", isDirectory: true)
             .appendingPathComponent("opencode", isDirectory: true)
             .appendingPathComponent("opencode.db", isDirectory: false)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return url
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    /// Open the opencode DB read-only with a 2 s busy-timeout. Returns nil
-    /// (and closes any partial handle) on any failure. Caller owns
-    /// `sqlite3_close`.
+    /// Open the OpenCode DB read-only with a 2 s busy-timeout. Returns nil on
+    /// any failure. Caller owns `sqlite3_close`.
     private func openDatabase() -> OpaquePointer? {
         guard let dbURL = databasePath() else { return nil }
         var database: OpaquePointer?
@@ -70,119 +64,180 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
             sqlite3_close(database)
             return nil
         }
-        // 2 s busy-timeout: a transient opencode write should not fail the
-        // read. `SQLITE_BUSY` past the timeout degrades to nil/[].
         sqlite3_busy_timeout(database, 2_000)
         return database
     }
 
-    /// Stat-equivalent existence check for a specific session id. The
-    /// crash-recovery backing for `OpencodeStrategy.transcriptExists`.
+    /// Exact-ID crash-recovery lookup.
     ///
-    /// - `nil`: id is malformed, or the DB is absent / cannot be opened or
-    ///   prepared (cannot verify).
-    /// - `true`: a `session` row with this id exists.
-    /// - `false`: the DB was queried and no such row exists.
+    /// - `true`: a row with this ID exists in a supported schema. OpenCode's
+    ///   `findSession` accepts archived rows too, so archive time is not a
+    ///   reason to report absence.
+    /// - `false`: every present supported schema was queried successfully and
+    ///   no matching row exists.
+    /// - `nil`: malformed ID, unavailable/corrupt/locked DB, no supported
+    ///   session table, unsupported table shape, or query failure.
     ///
-    /// Reads `session.id` only — never transcript content. Never crashes.
+    /// Never substitutes another session and never reads transcript tables.
     func sessionExists(id: String) -> Bool? {
-        guard isValidOpencodeSessionId(id) else { return nil }
-        guard let database = openDatabase() else { return nil }
+        guard isValidOpencodeSessionId(id), let database = openDatabase() else { return nil }
         defer { sqlite3_close(database) }
+        guard let tables = sessionTables(in: database), !tables.isEmpty else { return nil }
 
-        let sql = "SELECT 1 FROM session WHERE id = ? LIMIT 1"
+        var queriedSupportedSchema = false
+        var encounteredUnsupportedSchema = false
+        for table in tables {
+            guard let columns = tableColumns(table, in: database),
+                  columns.isSuperset(of: ["id", "directory", "time_updated"]) else {
+                encounteredUnsupportedSchema = true
+                continue
+            }
+            queriedSupportedSchema = true
+            switch exactIDExists(id, table: table, in: database) {
+            case .some(true): return true
+            case .some(false): break
+            case .none: encounteredUnsupportedSchema = true
+            }
+        }
+        guard queriedSupportedSchema, !encounteredUnsupportedSchema else { return nil }
+        return false
+    }
+
+    /// Top-N sessions for `cwd`, combined across supported session schemas.
+    /// An incomplete or unsupported table returns no scrape candidates rather
+    /// than implying that the remaining table is complete.
+    func scrape(cwd: String) -> [ConversationRef] {
+        let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCwd.isEmpty, let database = openDatabase() else { return [] }
+        defer { sqlite3_close(database) }
+        guard let tables = sessionTables(in: database), !tables.isEmpty else { return [] }
+
+        var rows: [(id: String, timeUpdatedMs: Int64)] = []
+        for table in tables {
+            guard let columns = tableColumns(table, in: database),
+                  columns.isSuperset(of: ["id", "directory", "time_updated"]),
+                  let tableRows = scrapeRows(table, cwd: trimmedCwd, in: database) else { return [] }
+            rows.append(contentsOf: tableRows)
+        }
+
+        var seen: Set<String> = []
+        return Array(rows.sorted { $0.timeUpdatedMs > $1.timeUpdatedMs }.compactMap { row in
+            guard seen.insert(row.id).inserted, isValidOpencodeSessionId(row.id) else { return nil }
+            return ConversationRef(
+                kind: kind,
+                id: row.id,
+                placeholder: false,
+                cwd: trimmedCwd,
+                capturedAt: Date(timeIntervalSince1970: Double(row.timeUpdatedMs) / 1_000.0),
+                capturedVia: .scrape,
+                state: .unknown,
+                diagnosticReason: "scrape: exact session row in OpenCode data database"
+            )
+        }.prefix(maxCandidates))
+    }
+
+    private enum SessionTable: String, CaseIterable {
+        case v2 = "session_v2"
+        case legacy = "session"
+    }
+
+    private func sessionTables(in database: OpaquePointer) -> [SessionTable]? {
+        let sql = "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('session_v2', 'session')"
         var statement: OpaquePointer?
-        let prepareCode = sqlite3_prepare_v2(database, sql, -1, &statement, nil)
-        guard prepareCode == SQLITE_OK, let statement else {
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
             sqlite3_finalize(statement)
             return nil
         }
         defer { sqlite3_finalize(statement) }
 
-        return id.withCString { cString -> Bool? in
-            guard sqlite3_bind_text(statement, 1, cString, -1, nil) == SQLITE_OK else {
-                return nil
-            }
+        var found: Set<SessionTable> = []
+        while true {
             switch sqlite3_step(statement) {
             case SQLITE_ROW:
-                return true
+                guard let text = sqlite3_column_text(statement, 0),
+                      let table = SessionTable(rawValue: String(cString: text)) else { continue }
+                found.insert(table)
             case SQLITE_DONE:
-                return false
+                return SessionTable.allCases.filter(found.contains)
             default:
-                // SQLITE_BUSY past timeout / SQLITE_ERROR: cannot verify.
                 return nil
             }
         }
     }
 
-    /// Top-N sessions for `cwd` by `time_updated` DESC. Empty when the DB
-    /// is absent, locked past the busy-timeout, or corrupt. Never throws.
-    func scrape(cwd: String) -> [ConversationRef] {
-        let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedCwd.isEmpty else { return [] }
-        guard let database = openDatabase() else { return [] }
-        defer { sqlite3_close(database) }
-
-        let sql = """
-            SELECT id, time_updated
-            FROM session
-            WHERE directory = ?
-            ORDER BY time_updated DESC
-            LIMIT ?
-            """
+    private func tableColumns(_ table: SessionTable, in database: OpaquePointer) -> Set<String>? {
+        // The identifier is selected from the fixed enum, never user input.
+        let sql = "PRAGMA table_info(\(table.rawValue))"
         var statement: OpaquePointer?
-        let prepareCode = sqlite3_prepare_v2(database, sql, -1, &statement, nil)
-        guard prepareCode == SQLITE_OK, let statement else {
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
             sqlite3_finalize(statement)
-            return []
+            return nil
         }
         defer { sqlite3_finalize(statement) }
 
-        let limitBindResult = sqlite3_bind_int64(statement, 2, Int64(maxCandidates))
-        guard limitBindResult == SQLITE_OK else { return [] }
-
-        // Bind cwd as UTF-8 text. `withCString` guarantees a stable
-        // NUL-terminated buffer for the lifetime of the closure, so
-        // SQLITE_STATIC (nil destructor) is safe — SQLite reads but
-        // does not retain the bytes.
-        return trimmedCwd.withCString { cString in
-            let cwdBindResult = sqlite3_bind_text(
-                statement, 1, cString, -1, nil
-            )
-            guard cwdBindResult == SQLITE_OK else { return [] }
-
-            var refs: [ConversationRef] = []
-            refs.reserveCapacity(min(maxCandidates, 16))
-            while true {
-                let stepCode = sqlite3_step(statement)
-                if stepCode == SQLITE_ROW {
-                    guard let idC = sqlite3_column_text(statement, 0) else { continue }
-                    let id = String(cString: idC)
-                    let timeUpdatedMs = sqlite3_column_int64(statement, 1)
-                    let capturedAt = Date(timeIntervalSince1970: Double(timeUpdatedMs) / 1_000.0)
-                    guard isValidOpencodeSessionId(id) else { continue }
-                    refs.append(ConversationRef(
-                        kind: kind,
-                        id: id,
-                        placeholder: false,
-                        cwd: trimmedCwd,
-                        capturedAt: capturedAt,
-                        capturedVia: .scrape,
-                        state: .unknown,
-                        diagnosticReason: "scrape: session row in ~/.local/share/opencode/opencode.db"
-                    ))
-                    continue
-                }
-                if stepCode == SQLITE_DONE {
-                    break
-                }
-                // Any other step code (SQLITE_BUSY past timeout, SQLITE_ERROR,
-                // ...): the query is incomplete. Return what we have rather
-                // than crashing — partial results are still useful for
-                // crash recovery.
-                return refs
+        var columns: Set<String> = []
+        while true {
+            switch sqlite3_step(statement) {
+            case SQLITE_ROW:
+                guard let text = sqlite3_column_text(statement, 1) else { continue }
+                columns.insert(String(cString: text))
+            case SQLITE_DONE:
+                return columns.isEmpty ? nil : columns
+            default:
+                return nil
             }
-            return refs
+        }
+    }
+
+    private func exactIDExists(_ id: String, table: SessionTable, in database: OpaquePointer) -> Bool? {
+        let sql = "SELECT 1 FROM \(table.rawValue) WHERE id = ? LIMIT 1"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            sqlite3_finalize(statement)
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        return id.withCString { cString in
+            guard sqlite3_bind_text(statement, 1, cString, -1, nil) == SQLITE_OK else { return nil }
+            switch sqlite3_step(statement) {
+            case SQLITE_ROW: return true
+            case SQLITE_DONE: return false
+            default: return nil
+            }
+        }
+    }
+
+    private func scrapeRows(
+        _ table: SessionTable,
+        cwd: String,
+        in database: OpaquePointer
+    ) -> [(id: String, timeUpdatedMs: Int64)]? {
+        let sql = "SELECT id, time_updated FROM \(table.rawValue) WHERE directory = ? ORDER BY time_updated DESC LIMIT ?"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            sqlite3_finalize(statement)
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int64(statement, 2, Int64(maxCandidates)) == SQLITE_OK else { return nil }
+        return cwd.withCString { cString in
+            guard sqlite3_bind_text(statement, 1, cString, -1, nil) == SQLITE_OK else { return nil }
+            var rows: [(id: String, timeUpdatedMs: Int64)] = []
+            while true {
+                switch sqlite3_step(statement) {
+                case SQLITE_ROW:
+                    guard let text = sqlite3_column_text(statement, 0) else { continue }
+                    rows.append((String(cString: text), sqlite3_column_int64(statement, 1)))
+                case SQLITE_DONE:
+                    return rows
+                default:
+                    return nil
+                }
+            }
         }
     }
 }

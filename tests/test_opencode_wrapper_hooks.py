@@ -17,6 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_WRAPPER = ROOT / "Resources" / "bin" / "opencode"
 SOURCE_PLUGIN = ROOT / "skills" / "opencode-plugins" / "c11-notify.js"
+SOURCE_V2_PLUGIN = ROOT / "skills" / "opencode-plugins" / "c11-opencode-v2"
+SOURCE_CONFIG_HELPER = ROOT / "Resources" / "bin" / "opencode-v2-config.py"
 
 
 def executable(path: Path, content: str) -> None:
@@ -26,6 +28,14 @@ def executable(path: Path, content: str) -> None:
 
 def read(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+
+def claim_payloads(lines: list[str]) -> list[dict]:
+    result = []
+    for line in lines:
+        if "rpc conversation.claim " in line:
+            result.append(json.loads(line.split("rpc conversation.claim ", 1)[1]))
+    return result
 
 
 def run_wrapper(
@@ -40,6 +50,11 @@ def run_wrapper(
     existing_tui: str | None = None,
     native_disabled: bool = False,
     current_names: bool = False,
+    version: str = "1.15.9",
+    cli_content: str | None = None,
+    cli_file: str | None = None,
+    claim_succeeds: bool = True,
+    version_delay: float = 0,
 ) -> tuple[int, list[str], dict, list[str], str]:
     with tempfile.TemporaryDirectory(prefix="c11-opencode-wrapper-test-") as td:
         tmp = Path(td)
@@ -55,6 +70,8 @@ def run_wrapper(
         shutil.copy2(SOURCE_WRAPPER, wrapper_dir / "opencode")
         shutil.copy2(SOURCE_PLUGIN, plugin_dir / "c11-notify.js")
         shutil.copy2(SOURCE_PLUGIN.with_name("c11-mailbox.mjs"), plugin_dir / "c11-mailbox.mjs")
+        shutil.copytree(SOURCE_V2_PLUGIN, plugin_dir / "c11-opencode-v2")
+        shutil.copy2(SOURCE_CONFIG_HELPER, wrapper_dir / SOURCE_CONFIG_HELPER.name)
         (wrapper_dir / "opencode").chmod(0o755)
 
         args_log = tmp / "args.log"
@@ -85,7 +102,17 @@ print(json.dumps({
   "interactive_pid": os.environ.get("C11_AGENT_INTERACTIVE_PID"),
   "tui_path": tui,
   "tui_content": open(tui).read() if tui else None,
+  "cli_content": os.environ.get("OPENCODE_CLI_CONFIG_CONTENT"),
+  "resume_reserved": os.environ.get("C11_OPENCODE_RESUME_RESERVED"),
+  "resume_reservation_failed": os.environ.get("C11_OPENCODE_RESUME_RESERVATION_FAILED"),
+  "tui_claimed": os.environ.get("C11_OPENCODE_TUI_CLAIMED"),
+  "tui_claim_failed": os.environ.get("C11_OPENCODE_TUI_CLAIM_FAILED"),
 }))' > "$FAKE_ENV_LOG"
+if [[ "${1:-}" == "--version" ]]; then
+  sleep "$FAKE_VERSION_DELAY"
+  [[ "$FAKE_VERSION" == "garbage" ]] || printf 'opencode %s\n' "$FAKE_VERSION"
+  exit 0
+fi
 """,
         )
         executable(
@@ -95,6 +122,9 @@ set -euo pipefail
 printf '%s\\n' "$*" >> "$FAKE_C11_LOG"
 if [[ "${!#}" == "ping" && "$FAKE_PING_STATUS" != "0" ]]; then
   exit "$FAKE_PING_STATUS"
+fi
+if [[ "$*" == *"rpc conversation.claim"* && "$FAKE_CLAIM_STATUS" != "0" ]]; then
+  exit "$FAKE_CLAIM_STATUS"
 fi
 """,
         )
@@ -122,6 +152,9 @@ fi
                 "FAKE_ENV_LOG": str(env_log),
                 "FAKE_C11_LOG": str(c11_log),
                 "FAKE_PING_STATUS": "0" if ping_succeeds else "1",
+                "FAKE_CLAIM_STATUS": "0" if claim_succeeds else "1",
+                "FAKE_VERSION": version,
+                "FAKE_VERSION_DELAY": str(version_delay),
             }
         )
         if not in_c11:
@@ -143,6 +176,12 @@ fi
             env["OPENCODE_CONFIG"] = str(config_path)
         else:
             env.pop("OPENCODE_CONFIG", None)
+        if cli_content is not None:
+            env["OPENCODE_CLI_CONFIG_CONTENT"] = cli_content
+        cli_config_path = home / ".config" / "opencode" / "cli.json"
+        if cli_file is not None:
+            cli_config_path.parent.mkdir(parents=True)
+            cli_config_path.write_text(cli_file, encoding="utf-8")
 
         tui_path = tmp / "operator tui.json"
         if existing_tui is not None:
@@ -179,13 +218,18 @@ fi
             Path(runtime_path).unlink()  # This fake harness has now exited.
         state["tenant_paths"] = sorted(str(path.relative_to(home)) for path in home.rglob("*"))
         state["tenant_plugins_present"] = (home / ".config" / "opencode" / "plugins").exists()
-        assert state["tenant_paths"] == [], state
+        opencode_tenant_paths = [path for path in state["tenant_paths"] if path.startswith(".config/opencode/")]
+        expected_opencode_paths = [".config/opencode/cli.json"] if cli_file is not None else []
+        assert opencode_tenant_paths == expected_opencode_paths, state
         if existing_config is not None:
             assert config_path.read_bytes() == existing_config.encode("utf-8"), "operator config was rewritten"
             state["expected_config_path"] = str(config_path)
         if existing_tui is not None:
             assert tui_path.read_text() == existing_tui, "operator TUI config was rewritten"
             state["expected_tui_path"] = str(tui_path)
+        if cli_file is not None:
+            assert cli_config_path.read_text(encoding="utf-8") == cli_file, "operator cli.json was rewritten"
+            state["cli_file_after"] = cli_config_path.read_text(encoding="utf-8")
         return proc.returncode, read(args_log), state, read(c11_log), proc.stderr.strip()
 
 
@@ -297,6 +341,97 @@ def test_native_tui_requires_interactive_launch_and_free_runtime_slot() -> None:
     assert state["tui_path"] is None, "no native route without the bundled lifecycle plugin"
 
 
+def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> None:
+    session_id = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+    cli_file = '{ // operator file config\n "plugins": ["file-plugin", "@operator/plugin@1.2.3"], "model": "file/model", }\n'
+    cli_content = '{"plugins":["operator-env",{"package":"file:///private/plugin"}],"theme":"operator"}'
+    code, argv, state, c11_log, stderr = run_wrapper(
+        live=True, argv=["--session", session_id, "--model", "value with spaces"],
+        interactive=True, version="2.0.25", cli_content=cli_content, cli_file=cli_file,
+    )
+    assert code == 0, stderr
+    assert argv == ["--session", session_id, "--model", "value with spaces"], argv
+    assert state["content"] is None and state["config_path"] is None, state
+    assert state["tui_path"] is None, "v2 must not use the v1 TUI config override"
+    assert state["resume_reserved"] == "1" and state["resume_reservation_failed"] is None, state
+    assert state["tui_claimed"] == "1" and state["tui_claim_failed"] is None, state
+    claims = claim_payloads(c11_log)
+    assert any(claim.get("expected_resume_id") == session_id and
+               claim.get("interactive_pid") == int(state["interactive_pid"]) and
+               claim.get("expires_at_epoch_ms", 0) > 0 for claim in claims), claims
+    composed = json.loads(state["cli_content"])
+    assert composed["theme"] == "operator", composed
+    assert composed["model"] == "file/model", "environment content must overlay, not erase, other cli.json settings"
+    assert composed["plugins"][:2] == ["operator-env", {"package": "file:///private/plugin"}], composed
+    assert composed["plugins"][-1]["package"].endswith("/c11-opencode-v2"), composed
+    assert state["cli_file_after"] == cli_file, state
+
+    code, _, state, c11_log, stderr = run_wrapper(
+        live=True, argv=[], interactive=True, version="2.0.25",
+    )
+    assert code == 0, stderr
+    assert state["tui_claimed"] == "1" and state["resume_reserved"] is None, state
+    claims = claim_payloads(c11_log)
+    assert any("expected_resume_id" not in claim and
+               claim.get("interactive_pid") == int(state["interactive_pid"]) for claim in claims), claims
+
+    file_config = '{ // preserve all operator CLI settings\n "plugins": ["operator-file"], "theme": "dark", "model": "operator/model", }\n'
+    code, _, state, _, stderr = run_wrapper(
+        live=True, argv=[], interactive=True, version="2.0.25", cli_file=file_config,
+    )
+    assert code == 0, stderr
+    composed = json.loads(state["cli_content"])
+    assert composed["theme"] == "dark" and composed["model"] == "operator/model", composed
+    assert composed["plugins"][0] == "operator-file", composed
+    assert composed["plugins"][-1]["package"].endswith("/c11-opencode-v2"), composed
+    assert state["cli_file_after"] == file_config, state
+
+
+def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
+    valid_session = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+    malformed = '{"plugins": ["operator"],'
+    code, _, state, _, stderr = run_wrapper(
+        live=True, argv=["--session", valid_session], interactive=True,
+        version="2.0.25", cli_content=malformed,
+    )
+    assert code == 0, stderr
+    assert state["cli_content"] == malformed, state
+    assert state["resume_reserved"] == "1", state
+
+    for malformed_plugins in ('{"plugins":[{"options":[]}]}',
+                              '{"plugins":[{"package":"","options":{}}]}',
+                              '{"plugins":[{"package":"operator/plugin","extra":true}]}'):
+        code, _, state, _, stderr = run_wrapper(
+            live=True, argv=[], interactive=True, version="2.0.25",
+            cli_content=malformed_plugins,
+        )
+        assert code == 0, stderr
+        assert state["cli_content"] == malformed_plugins, state
+
+    code, _, state, c11_log, stderr = run_wrapper(
+        live=True, argv=["-s", valid_session], interactive=True,
+        version="2.0.25", claim_succeeds=False,
+    )
+    assert code == 0, stderr
+    assert state["resume_reservation_failed"] == "1", state
+    assert state["tui_claim_failed"] == "1" and state["tui_claimed"] is None, state
+    assert state["cli_content"] is not None, "the TUI module self-disables on failed reservation"
+    assert claim_payloads(c11_log), c11_log
+
+
+def test_unknown_or_timed_out_versions_receive_no_c11_plugins() -> None:
+    for options in ({"version": "2.0.26"}, {"version": "garbage"},
+                    {"version": "2.0.25", "version_delay": 2}):
+        code, argv, state, c11_log, stderr = run_wrapper(
+            live=True, argv=["--continue"], interactive=True, **options,
+        )
+        assert code == 0, stderr
+        assert argv == ["--continue"], argv
+        assert state["content"] is None and state["cli_content"] is None, state
+        assert state["tui_path"] is None and state["hook_cli"] is None, state
+        assert not any("set-agent" in line or "agent-hook" in line for line in c11_log), c11_log
+
+
 if __name__ == "__main__":
     test_live_tui_runtime_loads_plugin()
     test_existing_content_is_preserved_via_second_runtime_source()
@@ -304,4 +439,7 @@ if __name__ == "__main__":
     test_outside_c11_and_unreachable_socket_are_transparent()
     test_both_runtime_config_sources_are_preserved_without_tenant_writes()
     test_native_tui_requires_interactive_launch_and_free_runtime_slot()
-    print("PASS: OpenCode lifecycle loads at runtime without tenant config writes")
+    test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch()
+    test_v2_falls_back_for_invalid_config_and_failed_reservation()
+    test_unknown_or_timed_out_versions_receive_no_c11_plugins()
+    print("PASS: OpenCode v1/v2 wrappers preserve tenant config and fail closed")

@@ -1709,6 +1709,7 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             ("inbox_write_failed", "native_inbox_write_failed"),
             ("unconfirmed", "native_unconfirmed"),
             ("unsupported_invitation", "native_unsupported_invitation"),
+            ("session_conflict", "native_session_conflict"),
             (nil, "native_rejected"),
             ("anything else", "native_rejected"),
         ]
@@ -1922,6 +1923,21 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             XCTAssertFalse(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["failed"], coveredIDs: ["failed"]))
             XCTAssertFalse(fallback.blocksNative(registrationID: UUID(), unreadIDs: ["failed"], coveredIDs: []))
         }
+    }
+
+    func testOpenCodeDisplayedRouteConflictHoldsTypedDelivery() {
+        let reg = registration(route: .opencodePlugin)
+        let conflict = MailboxNativeDoorbell.Fallback(
+            registration: reg, ids: ["mail-a"], reason: "native_session_conflict"
+        )
+        XCTAssertTrue(conflict.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
+        XCTAssertFalse(conflict.blocksTyped(unreadIDs: ["mail-b"], coveredIDs: []))
+        XCTAssertFalse(conflict.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+
+        let ordinaryFailure = MailboxNativeDoorbell.Fallback(
+            registration: reg, ids: ["mail-a"], reason: "native_timeout"
+        )
+        XCTAssertFalse(ordinaryFailure.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
     }
 
     func testNativeAndFallbackLogsNameTheirRoutes() throws {

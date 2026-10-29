@@ -52,6 +52,13 @@ final class MailboxNativeDoorbell {
             if registration.route == .ompExtension, !uncovered.isSubset(of: ids) { return false }
             return true
         }
+
+        /// A v2 OpenCode TUI whose displayed route is unowned must hold its
+        /// envelopes out of the typed terminal path until a new route binds.
+        func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
+            guard reason == "native_session_conflict" else { return false }
+            return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
+        }
     }
 
     /// Whether a failed native attempt hands its envelopes to the typed gate
@@ -63,6 +70,22 @@ final class MailboxNativeDoorbell {
     /// sticks (a timeout may follow a turn that already started).
     static func failureSticksToTypedGate(route: Route, reason: String) -> Bool {
         !(route == .ompExtension && reason == "native_rejected")
+    }
+
+    /// OpenCode v2 TUI routes cannot use typed delivery while their exact
+    /// displayed root is still reserved or explicitly conflicted. This state
+    /// lives in ConversationStore so the hold survives a refused/missing
+    /// native stream registration.
+    static func blocksTypedForUnboundOpenCodeTUI(conversation: ConversationRef?) -> Bool {
+        guard let conversation, conversation.kind == "opencode",
+              case .number(let rawPID)? = conversation.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID],
+              rawPID.isFinite, rawPID > 0 else { return false }
+        return conversation.placeholder ||
+            (conversation.diagnosticReason?.hasPrefix("OpenCode displayed route ") == true)
+    }
+
+    static func openCodePluginPeerMatches(peerPID: pid_t?, agentPID: pid_t) -> Bool {
+        peerPID == agentPID && agentPID > 1
     }
 
     /// Apply an observed acceptance on the main hop. The return value says
@@ -217,6 +240,7 @@ final class MailboxNativeDoorbell {
     /// so a consumer cannot write arbitrary text into `_dispatch.log`.
     static let namedRejections: Set<String> = [
         "transcript_unavailable", "inbox_unavailable", "inbox_write_failed", "unconfirmed", "unsupported_invitation",
+        "session_conflict",
     ]
 
     /// One consumer frame from the stream: an acceptance or a rejection.
@@ -240,12 +264,16 @@ extension TerminalController {
     /// live process/start-time/foreground checks match it.
     nonisolated func v2StreamNativeMailbox(id: Any?, params: [String: Any], socket: Int32,
                                           peer: MailboxStdinBuffer.AgentProcess?, shouldContinue: () -> Bool) {
+        let isOpenCodePluginPeer = params["route"] as? String == MailboxNativeDoorbell.Route.opencodePlugin.rawValue
         guard let rawPanel = params["panel_id"] as? String, let panelID = UUID(uuidString: rawPanel),
               let pidNumber = params["agent_pid"] as? NSNumber,
               pidNumber.doubleValue.rounded() == pidNumber.doubleValue,
               pidNumber.int64Value > 1, pidNumber.int64Value <= Int64(Int32.max),
               let sessionID = params["session_id"] as? String, !sessionID.isEmpty, sessionID.utf8.count <= 256,
               let rawRoute = params["route"] as? String, let route = MailboxNativeDoorbell.Route(rawValue: rawRoute), route != .typed,
+              !isOpenCodePluginPeer || MailboxNativeDoorbell.openCodePluginPeerMatches(
+                peerPID: peer?.pid, agentPID: pidNumber.int32Value
+              ),
               let process = MailboxNativeDoorbell.verifiedAgent(peer: peer, agentPID: pidNumber.int32Value) else {
             _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
             return

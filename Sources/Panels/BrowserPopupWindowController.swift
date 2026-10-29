@@ -198,11 +198,7 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         // Context menu "Open Link in New Tab" → open in opener's workspace,
         // not as a nested popup. Falls back to system browser if opener is gone.
         webView.onContextMenuOpenLinkInNewPanel = { [weak self] url in
-            if let opener = self?.openerPanel {
-                opener.openLinkInNewPanel(url: url)
-            } else {
-                NSWorkspace.shared.open(url)
-            }
+            self?.openInOpenerPanel(url)
         }
 
         // --- KVO for title and URL ---
@@ -310,10 +306,16 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         return child.webView
     }
 
+    /// Opens a link from the popup's page in the opener's workspace, or in
+    /// the default browser once the opener is gone. A `file:` link needs the
+    /// popup itself to show a local page, since the opener may have moved
+    /// on; only http(s) goes to NSWorkspace, which would otherwise launch a
+    /// local file or another app's URL (C11-505).
     func openInOpenerPanel(_ url: URL) {
+        if url.isFileURL, webView.url?.isFileURL != true { return }
         if let openerPanel {
             openerPanel.openLinkInNewPanel(url: url)
-        } else {
+        } else if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -415,7 +417,8 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
             )
         }
 
-        if let url = navigationAction.request.url {
+        if let url = navigationAction.request.url,
+           browserNewPanelRequestAllowed(url, initiatedBy: navigationAction) {
             controller?.openInOpenerPanel(url)
         }
         return nil

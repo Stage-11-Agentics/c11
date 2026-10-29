@@ -5041,6 +5041,16 @@ extension BrowserPanel {
         webView.goForward()
     }
 
+    /// Whether a link this panel's page asked to open in a new panel may
+    /// open. A `file:` link opens only while the panel shows a local page:
+    /// WebKit never lets a web page load a `file:` URL, and opening one in a
+    /// new panel grants it read access to its folder (C11-505). The callers
+    /// check the initiating frame first; this is the second gate.
+    func shouldOpenLinkInNewPanel(_ url: URL) -> Bool {
+        guard url.isFileURL else { return true }
+        return webView.url?.isFileURL == true
+    }
+
     /// Open a link in a new browser surface in the same pane
     func openLinkInNewPanel(url: URL, bypassInsecureHTTPHostOnce: String? = nil) {
 #if DEBUG
@@ -5050,6 +5060,12 @@ extension BrowserPanel {
             "bypass=\(bypassInsecureHTTPHostOnce ?? "nil")"
         )
 #endif
+        guard shouldOpenLinkInNewPanel(url) else {
+#if DEBUG
+            dlog("browser.newTab.open.abort panel=\(id.uuidString.prefix(5)) reason=fileFromNonLocalPage")
+#endif
+            return
+        }
         guard let app = AppDelegate.shared else {
 #if DEBUG
             dlog("browser.newTab.open.abort panel=\(id.uuidString.prefix(5)) reason=missingAppDelegate")
@@ -6900,6 +6916,20 @@ func browserNavigationShouldCreatePopup(
     return navigationType == .other && !isUserNewPanel
 }
 
+/// Whether a page's request to open `url` in a new panel may go ahead. A
+/// `file:` URL needs a frame from a local page as the initiator: WebKit never
+/// lets a web page load one, but it hands window.open requests to the UI
+/// delegate before checking; the click routes check too, to not depend on
+/// WebKit (C11-505). Sandboxed frames have an opaque origin and are refused.
+/// The SDK marks the source frame nonnull, so the optional is not a real
+/// check; were it nil, the protocol would read empty and be refused.
+@MainActor
+func browserNewPanelRequestAllowed(_ url: URL, initiatedBy action: WKNavigationAction) -> Bool {
+    guard url.isFileURL else { return true }
+    let source: WKFrameInfo? = action.sourceFrame
+    return source?.securityOrigin.protocol == "file"
+}
+
 func browserNavigationShouldFallbackNilTargetToNewPanel(
     navigationType: WKNavigationType
 ) -> Bool {
@@ -7166,7 +7196,9 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
 #if DEBUG
             dlog("browser.nav.decidePolicy.action kind=openInNewTab url=\(url.absoluteString)")
 #endif
-            openInNewPanel?(url)
+            if browserNewPanelRequestAllowed(url, initiatedBy: navigationAction) {
+                openInNewPanel?(url)
+            }
             decisionHandler(.cancel)
             return
         }
@@ -7182,7 +7214,9 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
 #if DEBUG
             dlog("browser.nav.decidePolicy.action kind=openInNewTabFromNilTarget url=\(url.absoluteString)")
 #endif
-            openInNewPanel?(url)
+            if browserNewPanelRequestAllowed(url, initiatedBy: navigationAction) {
+                openInNewPanel?(url)
+            }
             decisionHandler(.cancel)
             return
         }
@@ -7351,7 +7385,8 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
         }
 
         // Fallback: open in new tab (no opener linkage)
-        if let url = navigationAction.request.url {
+        if let url = navigationAction.request.url,
+           browserNewPanelRequestAllowed(url, initiatedBy: navigationAction) {
             if let requestNavigation {
                 let intent: BrowserInsecureHTTPNavigationIntent = .newPanel
 #if DEBUG

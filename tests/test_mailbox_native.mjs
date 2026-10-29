@@ -37,9 +37,9 @@ async function fixture(t, receive) {
     await rm(root, { recursive: true, force: true });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
-  const subscribe = (sessionID, deliver = () => {}) => {
+  const subscribe = (sessionID, deliver = () => {}, onSettled) => {
     const stop = subscribeNativeMailbox({ socketPath, panelID: 'same-panel', agentPID: process.pid,
-      sessionID, route: 'pi_extension', deliver });
+      sessionID, route: 'pi_extension', deliver, onSettled });
     stops.push(stop);
     return stop;
   };
@@ -126,4 +126,25 @@ test('unexpected close still reconnects and delivers', { timeout: 5000 }, async 
   stop();
   await delay(350);
   assert.equal(f.subscriptions.length, 2);
+});
+
+test('accepted deliveries settle only after the server confirms coverage for all pending IDs', { timeout: 5000 }, async t => {
+  const delivered = [];
+  let settled = 0;
+  const f = await fixture(t, (socket, frame) => {
+    if (frame.method !== 'mailbox.native.subscribe') return;
+    accept(socket);
+    send(socket, { type: 'deliver', delivery_id: 'first', text: doorbellText });
+    send(socket, { type: 'deliver', delivery_id: 'second', text: doorbellText });
+  });
+  f.subscribe('settlement', text => delivered.push(text), () => { settled++; });
+  await until(() => f.frames.filter(frame => frame.type === 'accepted').length === 2);
+  assert.deepEqual(delivered, [doorbellText, doorbellText]);
+  assert.equal(settled, 0, 'client acceptance alone must not release a route handoff');
+  const socket = f.subscriptions[0].socket;
+  send(socket, { type: 'settled', delivery_id: 'first' });
+  await delay(20);
+  assert.equal(settled, 0, 'another pending delivery still owns the old route');
+  send(socket, { type: 'settled', delivery_id: 'second' });
+  await until(() => settled === 1);
 });

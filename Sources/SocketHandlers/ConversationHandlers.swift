@@ -50,6 +50,26 @@ extension TerminalController {
         }
     }
 
+    /// OpenCode claims authenticate both the TUI process and the target
+    /// terminal panel. This lookup is launch-time only; fail closed when the
+    /// live panel or its shell-reported tty is unavailable.
+    private nonisolated func v2OpenCodePanelTTYDeviceForClaim(surfaceId: UUID) -> UInt32? {
+        let resolveOnMain = {
+            MainActor.assumeIsolated { () -> UInt32? in
+                let params: [String: Any] = ["surface_id": surfaceId.uuidString]
+                guard case .success = self.v2ResolveLiveTerminalSurfaceForRuntimeCapture(params: params),
+                      let app = AppDelegate.shared,
+                      let located = app.locateSurface(surfaceId: surfaceId),
+                      let workspace = located.workspaceManager.workspaces.first(where: { $0.id == located.workspaceId }),
+                      let ttyName = workspace.panelTTYNames[surfaceId],
+                      let device = TerminalPIDResolver.ttyDevice(for: ttyName) else { return nil }
+                return UInt32(truncatingIfNeeded: device)
+            }
+        }
+        if Thread.isMainThread { return resolveOnMain() }
+        return DispatchQueue.main.sync(execute: resolveOnMain)
+    }
+
     /// Accept an exact Codex conversation id reported by a tool subprocess
     /// running inside the target Codex session. Kind and provenance are fixed
     /// by this dedicated method; callers cannot relabel the report.
@@ -133,13 +153,19 @@ extension TerminalController {
                             data: nil)
             }
             let claimedTuiPID = Int32(rawPID)
+            guard let panelTTYDevice = v2OpenCodePanelTTYDeviceForClaim(surfaceId: surfaceId) else {
+                return .err(code: "invalid_interactive_pid",
+                            message: "OpenCode claims require a live target terminal with a known tty",
+                            data: nil)
+            }
             guard MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
                 peerPID: SocketCommandContext.current?.callerPID,
                 claimedTuiPID: claimedTuiPID,
-                peerTTYDevice: SocketCommandContext.current?.callerTTYDevice
+                peerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
+                panelTTYDevice: panelTTYDevice
             ) else {
                 return .err(code: "invalid_interactive_pid",
-                            message: "interactive_pid must identify the foreground OpenCode TUI for this terminal",
+                            message: "interactive_pid must identify the foreground OpenCode TUI for the target panel terminal",
                             data: nil)
             }
             guard let tuiProcess = MailboxAgentForeground.processTerminalInfo(pid: claimedTuiPID),

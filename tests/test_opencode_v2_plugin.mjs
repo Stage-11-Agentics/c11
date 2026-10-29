@@ -94,6 +94,9 @@ async function fixture(t, {
         if (frame.method === 'mailbox.native.subscribe') {
           subscriptions.push({ socket, frame });
           send(socket, { ok: true, result: { subscription_id: 'registered' } });
+        } else if (frame.type === 'accepted') {
+          // Mirror c11's post-main-hop coverage confirmation.
+          send(socket, { type: 'settled', delivery_id: frame.delivery_id });
         } else if (frame.method === 'conversation.push') {
           const id = frame.params.id;
           const isUnbind = Boolean(frame.params.displayed_route_state);
@@ -490,14 +493,17 @@ test('v2 retries a route conflict until the displayed root becomes unowned', { t
   assert.equal(f.state.calls[0].sessionID, rootB);
 });
 
-test('v2 retries failed route unbinds and rejects mail until the new root binds', { timeout: 5000 }, async t => {
+test('v2 retries route unbinds and confirms an in-flight prompt before replacing its stream', { timeout: 5000 }, async t => {
   let promptCalls = 0;
+  let resolveFirstPrompt;
   const f = await fixture(t, {
     unbindFailureCount: 2,
     promptResult: input => {
       promptCalls++;
       return promptCalls === 1
-        ? new Promise(() => {})
+        ? new Promise(resolve => { resolveFirstPrompt = () => resolve({
+            id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text },
+          }); })
         : { id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } };
     },
   });
@@ -509,11 +515,11 @@ test('v2 retries failed route unbinds and rejects mail until the new root binds'
   await until(() => f.state.calls.length === 1);
   f.state.route = { type: 'session', sessionID: rootB };
   await until(() => f.state.unbindCalls >= 1);
-  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'inflight-before-route-change'));
-  assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'inflight-before-route-change').reason,
-    'session_conflict', 'an in-flight native delivery must fail closed while the old c11 binding is visible');
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
+  assert.equal(f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'inflight-before-route-change'), false,
+    'a submitted prompt stays pending until its durable result can cover the original envelope');
   assert.equal(oldStream.socket.destroyed, false, 'the old stream stays open while c11 retries the unbind');
-  assert.equal(f.subscriptions.length, 2, 'the replacement stream waits for c11 to acknowledge the unbind');
+  assert.equal(f.subscriptions.length, 2, 'the replacement stream waits for the submitted prompt to settle');
 
   send(oldStream.socket, { type: 'deliver', delivery_id: 'route-pending-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'route-pending-mail'));
@@ -522,7 +528,6 @@ test('v2 retries failed route unbinds and rejects mail until the new root binds'
   assert.equal(f.state.calls.length, 1, 'mail during the route transition cannot invoke a second session.prompt');
 
   await until(() => f.state.unbindCalls >= 3);
-  await until(() => f.subscriptions.length >= 4);
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
 
   const attempts = f.frames.filter(frame => frame.method === 'conversation.push' && frame.params.displayed_route_state === 'pending');
@@ -532,14 +537,21 @@ test('v2 retries failed route unbinds and rejects mail until the new root binds'
   assert.equal(nextCapture.params.displayed_route_generation, 2, 'unbind and root capture share one generation');
   assert(f.frames.indexOf(attempts.at(-1)) < f.frames.findIndex(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
   const newRegistration = f.subscriptions.find(item => item.frame.params.session_id.startsWith(`${rootB}:2:`));
-  assert(newRegistration, 'the new provisional and bound registrations use the new route generation');
-  const latestUnbind = attempts.at(-1);
-  assert(f.frames.indexOf(latestUnbind) < f.frames.indexOf(newRegistration.frame),
-    'the new stream is not installed until c11 confirms the old root is unbound');
+  assert.equal(newRegistration, undefined, 'the old registration remains until the in-flight prompt settles');
 
-  const boundStream = f.subscriptions.at(-1);
-  send(boundStream.socket, { type: 'deliver', delivery_id: 'after-route-bind', text: doorbellText });
+  resolveFirstPrompt();
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'inflight-before-route-change'));
+  await until(() => f.subscriptions.length === 3);
+  const newRouteRegistration = f.subscriptions.at(-1);
+  assert(newRouteRegistration.frame.params.session_id.startsWith(`${rootB}:2:`));
+  const latestUnbind = attempts.at(-1);
+  assert(f.frames.indexOf(latestUnbind) < f.frames.indexOf(nextCapture),
+    'the new root is captured only after c11 confirms the old root is unbound');
+
+  send(newRouteRegistration.socket, { type: 'deliver', delivery_id: 'after-route-bind', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'after-route-bind'));
+  assert.equal(f.state.calls.length, 2, 'the in-flight envelope is prompted once and the later envelope is prompted once');
+  assert.equal(f.state.calls[0].sessionID, rootA, 'the in-flight envelope remains with the session that received it');
   assert.equal(f.state.calls.at(-1).sessionID, rootB, 'native delivery resumes only on the newly bound exact root');
 });
 

@@ -32,6 +32,15 @@ final class MailboxNativeDoorbell {
     }
     enum Result: Equatable { case accepted(late: Bool), failed(String) }
 
+    /// Keep accepted coverage across OpenCode /new route registrations from
+    /// the same TUI process. A different process must be allowed to retry the
+    /// still-unread invitation after a crash or restart.
+    static func shouldResetCoverage(previousProcess: MailboxStdinBuffer.AgentProcess?,
+                                    currentProcess: MailboxStdinBuffer.AgentProcess?) -> Bool {
+        guard let currentProcess else { return false }
+        return previousProcess != currentProcess
+    }
+
     struct Fallback {
         let registration: Registration
         let ids: Set<String>
@@ -166,15 +175,17 @@ final class MailboxNativeDoorbell {
         peerPID: pid_t?,
         claimedTuiPID: pid_t,
         peerTTYDevice: UInt32?,
+        panelTTYDevice: UInt32?,
         readProcess: (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? = MailboxAgentForeground.processTerminalInfo
     ) -> Bool {
         guard let peerPID, peerPID > 1, claimedTuiPID > 1, peerPID != claimedTuiPID,
-              let peerTTYDevice,
+              let peerTTYDevice, let panelTTYDevice,
               let tui = readProcess(claimedTuiPID), tui.startTime > 0,
               tui.processGroup == claimedTuiPID,
               tui.processGroup == tui.terminalForegroundGroup,
               tui.terminalDevice != -1,
               UInt32(tui.terminalDevice) == peerTTYDevice,
+              UInt32(tui.terminalDevice) == panelTTYDevice,
               let peer = readProcess(peerPID), peer.startTime > 0,
               peer.terminalDevice == tui.terminalDevice,
               peer.processGroup == tui.processGroup,
@@ -190,7 +201,7 @@ final class MailboxNativeDoorbell {
     }
 
     private struct Pending {
-        let reply: (Result) -> Void
+        let reply: (Result, @escaping () -> Void) -> Void
         var failed = false
         let at: Date
     }
@@ -222,7 +233,7 @@ final class MailboxNativeDoorbell {
                 _ = old.write(["type": "replaced"])
                 old.close()
             }
-            for request in old.pending.values where !request.failed { request.reply(.failed("native_replaced")) }
+            for request in old.pending.values where !request.failed { request.reply(.failed("native_replaced"), {}) }
         }
     }
 
@@ -232,7 +243,7 @@ final class MailboxNativeDoorbell {
         let old = listeners.removeValue(forKey: registration.panelID)
         lock.unlock()
         for request in old?.pending.values ?? Dictionary<UUID, Pending>().values where !request.failed {
-            request.reply(.failed("native_disconnected"))
+            request.reply(.failed("native_disconnected"), {})
         }
     }
 
@@ -240,10 +251,19 @@ final class MailboxNativeDoorbell {
     /// Coverage belongs to Workspace and always names the dispatch-time IDs.
     @discardableResult
     func deliver(_ registration: Registration, timeout: TimeInterval = 2, reply: @escaping (Result) -> Void) -> UUID {
+        deliver(registration, timeout: timeout) { result, _ in reply(result) }
+    }
+
+    /// `settled` runs after Workspace applies an observed acceptance on main.
+    /// OpenCode keeps its old stream until that frame arrives, so route-change
+    /// registration cannot race ahead of accepted-ID coverage.
+    @discardableResult
+    func deliver(_ registration: Registration, timeout: TimeInterval = 2,
+                 reply: @escaping (Result, @escaping () -> Void) -> Void) -> UUID {
         let requestID = UUID()
         lock.lock()
         guard var listener = listeners[registration.panelID], listener.registration.id == registration.id else {
-            lock.unlock(); reply(.failed("native_unavailable")); return requestID
+            lock.unlock(); reply(.failed("native_unavailable"), {}); return requestID
         }
         listener.pending = listener.pending.filter { Date().timeIntervalSince($0.value.at) < MailboxDoorbell.rateWindow }
         listener.pending[requestID] = Pending(reply: reply, at: Date())
@@ -285,7 +305,23 @@ final class MailboxNativeDoorbell {
         }
         listeners[registration.panelID] = listener
         lock.unlock()
-        pending.reply(resolved)
+        let settled: () -> Void
+        if case .accepted = resolved {
+            settled = { [weak self] in
+                guard let self else { return }
+                self.io.async { [weak self] in
+                    guard let self else { return }
+                    self.lock.lock()
+                    let listener = self.listeners[registration.panelID]
+                    let write = listener?.registration.id == registration.id ? listener?.write : nil
+                    self.lock.unlock()
+                    _ = write?(["type": "settled", "delivery_id": requestID.uuidString])
+                }
+            }
+        } else {
+            settled = {}
+        }
+        pending.reply(resolved, settled)
     }
 
     /// Reasons a consumer may give that the log names on their own. Any other

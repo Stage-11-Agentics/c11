@@ -160,6 +160,7 @@ export default {
     let captureState = 'no-route';
     let retryCaptureAt = 0;
     let pendingUnbind;
+    let mailboxHandoff;
     let retryUnbindAt = 0;
     let hasObservedRoute = false;
     let stopMailbox;
@@ -351,22 +352,42 @@ export default {
       nativeNotReady = true;
     });
 
-    const clearPending = () => {
+    const closeMailboxStream = () => {
       stopMailbox?.();
       stopMailbox = undefined;
+    };
+
+    const clearPending = () => {
+      closeMailboxStream();
       for (const item of pending.values()) {
-        clearTimeout(item.timer);
-        item.reject?.(new Error('route_changed'));
+        item.finish?.(new Error('route_changed'));
       }
       pending.clear();
+      mailboxHandoff = undefined;
+    };
+
+    const finishMailboxHandoff = () => {
+      if (!mailboxHandoff || pending.size || pendingUnbind) return;
+      const next = mailboxHandoff;
+      if (next.generation !== generation || next.sessionID !== visibleID) return;
+      mailboxHandoff = undefined;
+      closeMailboxStream();
+      if (next.sessionID) register(next.sessionID, next.generation);
+    };
+
+    const replaceMailboxStream = (sessionID, routeGeneration) => {
+      mailboxHandoff = { sessionID, generation: routeGeneration };
+      finishMailboxHandoff();
     };
 
     const rejectPending = error => {
-      for (const item of pending.values()) {
-        clearTimeout(item.timer);
-        item.reject?.(error);
+      for (const item of [...pending.values()]) {
+        // Once session.prompt has been issued it cannot be cancelled. Let its
+        // exact durable result settle this original delivery so c11 does not
+        // retry the same envelope into a later displayed route.
+        if (item.submitted) continue;
+        item.finish?.(error);
       }
-      pending.clear();
     };
 
     const register = (sessionID, routeGeneration) => {
@@ -374,6 +395,7 @@ export default {
       const streamID = `${sessionID}:${routeGeneration}:${++mailboxRevision}`.slice(0, 256);
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
+        onSettled: finishMailboxHandoff,
         async deliver(message) {
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||
               message !== doorbellText || conflict || !boundID || boundID !== visibleID) throw sessionConflict();
@@ -385,18 +407,17 @@ export default {
           }
           return new Promise((resolve, reject) => {
             const messageID = `msg_${randomUUID().replaceAll('-', '')}`;
-            const item = { sessionID: boundID, messageID, resolve, reject };
+            const item = { sessionID: boundID, messageID, resolve, reject, submitted: false, finish: undefined };
             const finish = error => {
               if (pending.get(messageID) !== item) return;
-              clearTimeout(item.timer);
               pending.delete(messageID);
               if (error) reject(error);
               else resolve();
             };
-            item.timer = setTimeout(() => finish(new Error('unconfirmed')), 10000);
-            item.timer.unref?.();
+            item.finish = finish;
             pending.set(messageID, item);
             try {
+              item.submitted = true;
               Promise.resolve(context.client.session.prompt({
                 sessionID: boundID,
                 id: messageID,
@@ -498,10 +519,7 @@ export default {
         retryUnbindAt = 0;
         // The old binding is now unbound, so typed fallback remains closed
         // even while its native stream is replaced by the provisional route.
-        clearPending();
-        if (candidateID) {
-          register(candidateID, unbind.generation);
-        }
+        replaceMailboxStream(candidateID, unbind.generation);
       }
       if (!candidateID || captureState === 'bound' ||
           captureState === 'child' || captureState === 'capturing' || Date.now() < retryCaptureAt) return;
@@ -561,8 +579,7 @@ export default {
         if (!nativeMailDisabled) {
           // Replace the provisional stream so a prior session_conflict
           // fallback ledger clears after this route becomes authoritative.
-          clearPending();
-          register(candidateID, routeGeneration);
+          replaceMailboxStream(candidateID, routeGeneration);
         }
       } else if (result?.outcome === 'identity_conflict') {
         conflict = true;

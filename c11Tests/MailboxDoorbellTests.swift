@@ -1449,6 +1449,50 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertFalse(reg.matches(process: nil, kind: "opencode"))
     }
 
+    func testAcceptedCoverageResetsOnlyForANewTUIProcess() {
+        let original = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        XCTAssertFalse(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: original, currentProcess: original),
+                       "a new OpenCode root in the same TUI keeps its accepted unread IDs covered")
+        XCTAssertFalse(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: original, currentProcess: nil),
+                       "a brief stream disconnect must not lose process identity")
+        XCTAssertTrue(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: nil, currentProcess: original))
+        XCTAssertTrue(MailboxNativeDoorbell.shouldResetCoverage(
+            previousProcess: original, currentProcess: .init(pid: 124, startTime: 456)))
+        XCTAssertTrue(MailboxNativeDoorbell.shouldResetCoverage(
+            previousProcess: original, currentProcess: .init(pid: 123, startTime: 457)),
+            "PID reuse is a new TUI process")
+    }
+
+    func testAcceptedDeliverySettlesOnlyAfterWorkspaceCallback() {
+        let broker = MailboxNativeDoorbell(), reg = registration()
+        let sent = expectation(description: "native invitation")
+        let settledFrame = expectation(description: "workspace settlement frame")
+        let lock = NSLock()
+        var settlement: (() -> Void)?
+        var settledCount = 0
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" { sent.fulfill() }
+            if frame["type"] as? String == "settled" {
+                lock.lock(); settledCount += 1; lock.unlock()
+                settledFrame.fulfill()
+            }
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+        let request = broker.deliver(reg, timeout: 30) { result, finish in
+            XCTAssertEqual(result, .accepted(late: false))
+            settlement = finish
+        }
+        wait(for: [sent], timeout: 1)
+        broker.resolve(reg, requestID: request, result: .accepted(late: false))
+        lock.lock(); let beforeWorkspace = settledCount; lock.unlock()
+        XCTAssertEqual(beforeWorkspace, 0, "the acceptance frame alone cannot confirm Workspace coverage")
+        settlement?()
+        wait(for: [settledFrame], timeout: 1)
+        lock.lock(); let afterWorkspace = settledCount; lock.unlock()
+        XCTAssertEqual(afterWorkspace, 1)
+    }
+
     func testReplacementWritesRetirementFrameBeforeClosingOldStream() {
         let broker = MailboxNativeDoorbell(), old = registration()
         let retired = expectation(description: "old stream retired")
@@ -1628,17 +1672,29 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             110: process(group: 100, foreground: 100, tty: 7, start: 200, parent: 100),
         ]
         XCTAssertTrue(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
-            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, readProcess: { trusted[$0] }
-        ), "the wrapper's c11 CLI child may claim its foreground TUI parent")
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
+        ), "the wrapper's c11 CLI child may claim its foreground TUI parent on the target panel")
 
         XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
-            peerPID: 110, claimedTuiPID: 110, peerTTYDevice: 7, readProcess: { trusted[$0] }
+            peerPID: 110, claimedTuiPID: 110, peerTTYDevice: 7, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
         ), "a child cannot claim itself as the displayed TUI")
         XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
-            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 8, readProcess: { trusted[$0] }
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 8, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
         ), "claim socket must come from the TUI's own terminal")
         XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
-            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: nil, readProcess: { trusted[$0] }
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, panelTTYDevice: 8,
+            readProcess: { trusted[$0] }
+        ), "a TUI cannot claim a different panel's terminal")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: 7, panelTTYDevice: nil,
+            readProcess: { trusted[$0] }
+        ), "an unknown target panel terminal fails closed")
+        XCTAssertFalse(MailboxNativeDoorbell.verifiedOpenCodeTUIClaim(
+            peerPID: 110, claimedTuiPID: 100, peerTTYDevice: nil, panelTTYDevice: 7,
+            readProcess: { trusted[$0] }
         ), "unreadable peer terminal identity fails closed")
     }
 

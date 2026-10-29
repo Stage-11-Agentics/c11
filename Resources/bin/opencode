@@ -42,24 +42,39 @@ c11_socket_available() {
 }
 
 probe_opencode_version_fallback() {
-    local output_file output pid attempt version_pattern
+    local output_file output version_pattern
     output_file="$(/usr/bin/mktemp /tmp/c11-opencode-version.XXXXXX)" || return 1
-    "$REAL_OPENCODE" --version >"$output_file" 2>/dev/null &
-    pid=$!
-    for ((attempt=1; attempt<=25; attempt++)); do
-        kill -0 "$pid" 2>/dev/null || break
-        /bin/sleep 0.1
-    done
-    if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-        wait "$pid" 2>/dev/null || true
+    # Perl is present on supported macOS releases even when Python is not.
+    # Its child gets a private process group so the bounded probe can clean up
+    # descendants that keep stdout open after the version process exits.
+    if ! /usr/bin/perl -e '
+use Errno qw(EINTR);
+use POSIX ();
+use Time::HiRes qw(alarm);
+my $timeout = shift @ARGV;
+my @command = @ARGV;
+my $pid = fork();
+die "fork failed\n" unless defined $pid;
+if ($pid == 0) {
+    exit 126 unless POSIX::setpgid(0, 0);
+    exec { $command[0] } @command;
+    exit 127;
+}
+my $timed_out = 0;
+$SIG{ALRM} = sub { $timed_out = 1; kill "KILL", -$pid; };
+alarm($timeout);
+my $waited;
+do { $waited = waitpid($pid, 0); } while ($waited < 0 && $! == EINTR);
+alarm(0);
+my $status = $?;
+kill "KILL", -$pid;
+exit 124 if $timed_out;
+exit 1 if $waited != $pid || ($status & 127);
+exit($status >> 8);
+' 2.5 "$REAL_OPENCODE" --version 2>/dev/null >"$output_file"; then
         /bin/rm -f "$output_file"
         return 1
     fi
-    wait "$pid" 2>/dev/null || {
-        /bin/rm -f "$output_file"
-        return 1
-    }
     output="$(/bin/cat "$output_file")"
     /bin/rm -f "$output_file"
     version_pattern='(^|[[:space:]])v?([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$)'

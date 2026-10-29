@@ -8,6 +8,7 @@ import json
 import os
 import pty
 import shutil
+import signal
 import socket
 import subprocess
 import tempfile
@@ -70,6 +71,7 @@ def run_wrapper(
     claim_succeeds: bool = True,
     claim_not_ready_attempts: int = 0,
     version_delay: float = 0,
+    version_descendant: bool = False,
     recovery_context: bool = False,
 ) -> tuple[int, list[str], dict, list[str], str]:
     with tempfile.TemporaryDirectory(prefix="c11-opencode-wrapper-test-") as td:
@@ -127,6 +129,13 @@ print(json.dumps({
   "tui_claim_failed": os.environ.get("C11_OPENCODE_TUI_CLAIM_FAILED"),
 }))' > "$FAKE_ENV_LOG"
 if [[ "${1:-}" == "--version" ]]; then
+  if [[ "${FAKE_VERSION_DESCENDANT:-0}" == "1" ]]; then
+    /usr/bin/python3 -B -c 'import os,time; open(os.environ["FAKE_VERSION_CHILD_PID_FILE"],"w").write(str(os.getpid())); time.sleep(30)' &
+    for ((attempt=0; attempt<100; attempt++)); do
+      [[ -s "$FAKE_VERSION_CHILD_PID_FILE" ]] && break
+      /bin/sleep 0.01
+    done
+  fi
   sleep "$FAKE_VERSION_DELAY"
   [[ "$FAKE_VERSION" == "garbage" ]] || printf 'opencode %s\n' "$FAKE_VERSION"
   exit 0
@@ -183,6 +192,8 @@ fi
                 "FAKE_CLAIM_NOT_READY_ATTEMPTS": str(claim_not_ready_attempts),
                 "FAKE_VERSION": version,
                 "FAKE_VERSION_DELAY": str(version_delay),
+                "FAKE_VERSION_DESCENDANT": "1" if version_descendant else "0",
+                "FAKE_VERSION_CHILD_PID_FILE": str(tmp / "version-child.pid"),
             }
         )
         if not in_c11:
@@ -244,6 +255,9 @@ fi
                 test_socket.close()
 
         state = json.loads(env_log.read_text(encoding="utf-8")) if env_log.exists() else {}
+        version_child_pid_file = tmp / "version-child.pid"
+        if version_child_pid_file.exists():
+            state["version_child_pid"] = int(version_child_pid_file.read_text(encoding="ascii"))
         runtime_path = state.get("config_path")
         if existing_config is None and runtime_path and runtime_path.startswith("/tmp/c11-opencode-config."):
             Path(runtime_path).unlink()  # This fake harness has now exited.
@@ -578,6 +592,80 @@ def test_v2_plugin_recovers_when_python_version_probe_times_out() -> None:
     assert not any("agent-hook idle" in line for line in c11_log), c11_log
 
 
+def process_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    result = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                            capture_output=True, text=True, check=False)
+    status = result.stdout.strip()
+    return bool(status) and not status.startswith("Z")
+
+
+def assert_process_stopped(pid: int) -> None:
+    deadline = time.monotonic() + 2
+    while process_is_running(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if process_is_running(pid):
+        os.kill(pid, signal.SIGKILL)
+        raise AssertionError(f"version probe left child process {pid} running")
+
+
+def test_shell_version_probe_kills_descendant_when_python_is_unavailable() -> None:
+    code, _, state, _, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True,
+        version="1.15.9", python_failure=True, version_descendant=True,
+    )
+    assert code == 0, stderr
+    assert state["version_child_pid"] > 1, state
+    assert_process_stopped(state["version_child_pid"])
+    config = json.loads(state["content"])
+    assert config["plugin"][0].endswith("/c11-notify.js"), config
+
+
+def test_shell_version_probe_timeout_kills_the_entire_process_group() -> None:
+    started = time.monotonic()
+    code, _, state, _, stderr = run_wrapper(
+        live=True, argv=["--continue"], interactive=True,
+        version="1.15.9", python_failure=True, version_delay=5,
+        version_descendant=True,
+    )
+    assert code == 0, stderr
+    assert time.monotonic() - started < 4.5, "fallback probe exceeded its deadline"
+    assert state["version_child_pid"] > 1, state
+    assert_process_stopped(state["version_child_pid"])
+    assert "c11 could not verify the OpenCode version" in stderr, stderr
+    assert state["content"] is None, state
+
+
+def test_python_version_probe_kills_descendant_holding_stdout_open() -> None:
+    with tempfile.TemporaryDirectory(prefix="c11-opencode-probe-child-test-") as td:
+        root = Path(td)
+        binary = root / "opencode"
+        child_pid_file = root / "child.pid"
+        executable(binary, """#!/usr/bin/env bash
+set -euo pipefail
+/usr/bin/python3 -B -c 'import os,time; open(os.environ["FAKE_VERSION_CHILD_PID_FILE"],"w").write(str(os.getpid())); time.sleep(30)' &
+for attempt in {1..100}; do
+  [[ -s "$FAKE_VERSION_CHILD_PID_FILE" ]] && break
+  /bin/sleep 0.01
+done
+printf 'opencode v1.15.9\\n'
+""")
+        env = os.environ.copy()
+        env["FAKE_VERSION_CHILD_PID_FILE"] = str(child_pid_file)
+        started = time.monotonic()
+        result = subprocess.run(
+            ["python3", str(SOURCE_CONFIG_HELPER), "version", str(binary)],
+            capture_output=True, text=True, check=False, timeout=6, env=env,
+        )
+        assert result.returncode != 0 and not result.stdout, result.stdout
+        assert time.monotonic() - started < 5, "probe exceeded its bounded timeout"
+        child_pid = int(child_pid_file.read_text(encoding="ascii"))
+        assert_process_stopped(child_pid)
+
+
 def test_version_probe_ignores_stale_suffix_normalization_cache() -> None:
     cache_dir = Path("/tmp") / f"c11-opencode-version-{os.getuid()}"
     cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -618,5 +706,8 @@ if __name__ == "__main__":
     test_v1_tui_plugins_survive_python_version_probe_failure()
     test_v1_tui_plugins_survive_slow_python_version_probe()
     test_v2_plugin_recovers_when_python_version_probe_times_out()
+    test_shell_version_probe_kills_descendant_when_python_is_unavailable()
+    test_shell_version_probe_timeout_kills_the_entire_process_group()
+    test_python_version_probe_kills_descendant_holding_stdout_open()
     test_version_probe_ignores_stale_suffix_normalization_cache()
     print("PASS: OpenCode v1/v2 wrappers preserve tenant config and fail closed")

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -56,12 +57,23 @@ def probe(binary: str) -> int:
                 return 0
         except (OSError, UnicodeError):
             pass
-        result = subprocess.run([str(real), "--version"], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                text=True, timeout=1.5, check=False, env=os.environ.copy())
-        if result.returncode != 0:
+        probe_process = subprocess.Popen(
+            [str(real), "--version"], stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, env=os.environ.copy(), start_new_session=True,
+        )
+        try:
+            version_output, _ = probe_process.communicate(timeout=1.5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(probe_process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            probe_process.communicate()
             return 2
-        match = VERSION_RE.search(result.stdout)
+        if probe_process.returncode != 0:
+            return 2
+        match = VERSION_RE.search(version_output)
         if not match:
             return 2
         version = ".".join(match.groups())

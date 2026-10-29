@@ -5042,6 +5042,15 @@ extension BrowserPanel {
     }
 
     /// Open a link in a new browser surface in the same pane
+    /// Whether a link this panel's page asked to open in a new panel may
+    /// open. A `file:` link opens only from a settled local page: WebKit never
+    /// lets a web page load a `file:` URL, and opening one in a new panel
+    /// would grant it read access to its folder (C11-505).
+    func shouldOpenLinkInNewPanel(_ url: URL) -> Bool {
+        guard url.isFileURL else { return true }
+        return webView.url?.isFileURL == true && !webView.isLoading
+    }
+
     func openLinkInNewPanel(url: URL, bypassInsecureHTTPHostOnce: String? = nil) {
 #if DEBUG
         dlog(
@@ -5050,6 +5059,12 @@ extension BrowserPanel {
             "bypass=\(bypassInsecureHTTPHostOnce ?? "nil")"
         )
 #endif
+        guard shouldOpenLinkInNewPanel(url) else {
+#if DEBUG
+            dlog("browser.newTab.open.abort panel=\(id.uuidString.prefix(5)) reason=fileFromNonLocalPage")
+#endif
+            return
+        }
         guard let app = AppDelegate.shared else {
 #if DEBUG
             dlog("browser.newTab.open.abort panel=\(id.uuidString.prefix(5)) reason=missingAppDelegate")

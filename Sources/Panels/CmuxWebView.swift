@@ -1147,8 +1147,7 @@ final class CmuxWebView: WKWebView {
             // settled when the menu opened may save a file, and only one
             // inside the folder WebKit lets that page read (C11-495).
             let indicator = onContextMenuDownloadStateChanged
-            guard let pageURL = menuPageURL, pageURL.isFileURL,
-                  !isLoading, self.url == pageURL else {
+            guard let pageURL = menuPageURL, isSettledLocalPage(pageURL) else {
                 indicator?(false)
                 debugContextDownload(
                     "browser.ctxdl.file trace=\(traceID) stage=rejectPage menuPage=\(menuPageURL?.scheme ?? "nil") loading=\(isLoading ? 1 : 0)"
@@ -1229,9 +1228,18 @@ final class CmuxWebView: WKWebView {
         }
     }
 
-    /// Records the page the context menu opened on, for `file:` saves.
+    /// Records the page the context menu opened on, for `file:` links.
     func noteContextMenuOpened() {
         contextMenuPageURL = isLoading ? nil : url
+    }
+
+    /// True when the menu opened on a local page (`menuPageURL`) that is
+    /// still shown and settled. Only then may a menu action act on a `file:`
+    /// URL: the page's own JavaScript resolved it, and WebKit never lets a
+    /// web page load a `file:` URL.
+    private func isSettledLocalPage(_ menuPageURL: URL?) -> Bool {
+        guard let menuPageURL, menuPageURL.isFileURL else { return false }
+        return !isLoading && url == menuPageURL
     }
 
     /// The canonical path with every symlink resolved, or nil when any
@@ -1512,8 +1520,16 @@ final class CmuxWebView: WKWebView {
 
     @objc private func contextMenuOpenLinkInNewPanel(_ sender: Any?) {
         let point = lastContextMenuPoint
+        // The page this menu opened on, read now: a later menu replaces it.
+        let menuPageURL = contextMenuPageURL
         resolveContextMenuLinkURL(at: point) { [weak self] url in
             guard let self, let url else { return }
+            if url.isFileURL, !self.isSettledLocalPage(menuPageURL) {
+                self.debugContextDownload(
+                    "browser.ctxmenu.openLink reject=fileFromNonLocalPage menuPage=\(menuPageURL?.scheme ?? "nil")"
+                )
+                return
+            }
             self.onContextMenuOpenLinkInNewPanel?(url)
         }
     }

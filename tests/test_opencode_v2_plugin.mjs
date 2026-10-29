@@ -19,6 +19,7 @@ async function until(predicate, timeout = 2000) {
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
+  promptResult = input => ({ id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } }),
 } = {}) {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
@@ -103,14 +104,14 @@ async function fixture(t, {
       },
       listen: callback => { state.callbacks.push(callback); return () => { state.callbacks = state.callbacks.filter(item => item !== callback); }; },
     },
-    client: { session: { promptAsync: input => { state.calls.push(input); return Promise.resolve({}); } } },
+    client: { session: { prompt: input => { state.calls.push(input); return Promise.resolve(promptResult(input)); } } },
   };
   const plugin = (await import(pathToFileURL(new URL('../skills/opencode-plugins/c11-opencode-v2/tui.js', import.meta.url).pathname))).default;
   dispose = await plugin.setup(context);
   return { state, subscriptions, frames, sockets, claimLog };
 }
 
-test('v2 TUI owns exact displayed root capture and confirmed native mail', { timeout: 5000 }, async t => {
+test('v2 TUI owns exact displayed root capture and confirms native mail from its admitted inbox item', { timeout: 5000 }, async t => {
   const f = await fixture(t);
   await until(() => f.subscriptions.length === 1);
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootA));
@@ -124,10 +125,20 @@ test('v2 TUI owns exact displayed root capture and confirmed native mail', { tim
   send(f.subscriptions.at(-1).socket, { type: 'deliver', delivery_id: 'mail-a', text: doorbellText });
   await until(() => f.state.calls.length === 1);
   assert.equal(f.state.calls[0].sessionID, rootA);
-  const part = f.state.calls[0].parts[0];
-  f.state.callbacks.forEach(callback => callback({ details: { type: 'message.part.updated', data: { part: { ...part, type: 'text', text: doorbellText, sessionID: rootA, messageID: 'msg-a' } } } }));
-  f.state.callbacks.forEach(callback => callback({ details: { type: 'message.updated', data: { info: { id: 'msg-a', sessionID: rootA, role: 'user' } } } }));
+  assert.match(f.state.calls[0].id, /^msg_[0-9a-f]{32}$/);
+  assert.equal(f.state.calls[0].text, doorbellText);
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'mail-a'));
+});
+
+test('v2 native mail is not acknowledged when session.prompt returns a different inbox item', { timeout: 5000 }, async t => {
+  const f = await fixture(t, { promptResult: input => ({
+    id: input.id, sessionID: rootB, type: 'user', payload: { text: input.text },
+  }) });
+  await until(() => f.subscriptions.length >= 2);
+  const stream = f.subscriptions.at(-1);
+  send(stream.socket, { type: 'deliver', delivery_id: 'wrong-session-mail', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'wrong-session-mail'));
+  assert.equal(f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'wrong-session-mail'), false);
 });
 
 test('v2 retries a failed wrapper claim before capturing its displayed root', { timeout: 5000 }, async t => {
@@ -166,7 +177,7 @@ test('v2 route ownership conflict rejects before prompting and names safe hold',
   const latest = f.subscriptions.at(-1);
   send(latest.socket, { type: 'deliver', delivery_id: 'conflict-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'conflict-mail'));
-  assert.equal(f.state.calls.length, 0, 'a colliding panel ID never reaches OpenCode promptAsync');
+  assert.equal(f.state.calls.length, 0, 'a colliding panel ID never reaches OpenCode session.prompt');
   const rejection = f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'conflict-mail');
   assert.equal(rejection.reason, 'session_conflict');
 });
@@ -177,7 +188,7 @@ test('v2 busy route rejects with not_ready and re-registers after the session be
   const busyStream = f.subscriptions.at(-1);
   send(busyStream.socket, { type: 'deliver', delivery_id: 'busy-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'busy-mail'));
-  assert.equal(f.state.calls.length, 0, 'busy mail cannot invoke promptAsync');
+  assert.equal(f.state.calls.length, 0, 'busy mail cannot invoke OpenCode session.prompt');
   assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'busy-mail').reason, 'not_ready');
 
   f.state.status = 'idle';
@@ -216,7 +227,7 @@ test('v2 retries failed route unbinds and rejects mail until the new root binds'
   const provisional = f.subscriptions.at(-1);
   send(provisional.socket, { type: 'deliver', delivery_id: 'route-pending-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'route-pending-mail'));
-  assert.equal(f.state.calls.length, 0, 'pending route mail cannot invoke promptAsync');
+  assert.equal(f.state.calls.length, 0, 'pending route mail cannot invoke OpenCode session.prompt');
   await until(() => f.state.unbindCalls >= 3);
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
 

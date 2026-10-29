@@ -137,7 +137,7 @@ export default {
     const c11Bin = process.env.C11_AGENT_HOOK_CLI;
     const nativeMailDisabled = process.env.C11_OPENCODE_NATIVE_MAIL_DISABLED === '1';
     if (!panelID || !socketPath || !c11Bin || agentPID !== process.pid ||
-        !context.ui?.router?.current || !context.data?.session?.get || !context.data?.listen) return;
+        !context.ui?.router?.current || !context.data?.session?.get) return;
 
     let disposed = false;
     let tuiClaimed = process.env.C11_OPENCODE_TUI_CLAIMED === '1';
@@ -157,7 +157,6 @@ export default {
     let mailboxRevision = 0;
     let nativeNotReady = false;
     const pending = new Map();
-    const userMessages = new Map();
 
     const clearPending = () => {
       stopMailbox?.();
@@ -167,7 +166,6 @@ export default {
         item.reject?.(new Error('route_changed'));
       }
       pending.clear();
-      userMessages.clear();
     };
 
     const register = (sessionID, routeGeneration) => {
@@ -183,17 +181,34 @@ export default {
             throw sessionNotReady();
           }
           return new Promise((resolve, reject) => {
-            const partID = `prt_${randomUUID().replaceAll('-', '')}`;
-            const item = { sessionID: boundID, partID, resolve, reject };
-            item.timer = setTimeout(() => { pending.delete(partID); reject(new Error('unconfirmed')); }, 10000);
+            const messageID = `msg_${randomUUID().replaceAll('-', '')}`;
+            const item = { sessionID: boundID, messageID, resolve, reject };
+            const finish = error => {
+              if (pending.get(messageID) !== item) return;
+              clearTimeout(item.timer);
+              pending.delete(messageID);
+              if (error) reject(error);
+              else resolve();
+            };
+            item.timer = setTimeout(() => finish(new Error('unconfirmed')), 10000);
             item.timer.unref?.();
-            pending.set(partID, item);
+            pending.set(messageID, item);
             try {
-              Promise.resolve(context.client.session.promptAsync({
+              Promise.resolve(context.client.session.prompt({
                 sessionID: boundID,
-                parts: [{ id: partID, type: 'text', text: message }],
-              })).catch(() => {});
-            } catch { /* an invocation is not delivery confirmation */ }
+                id: messageID,
+                text: message,
+              })).then(result => {
+                // OpenCode 2 returns the durable inbox item admitted for this
+                // session. Invocation alone is not delivery confirmation.
+                if (result?.id !== messageID || result?.sessionID !== item.sessionID ||
+                    result?.type !== 'user' || result?.payload?.text !== doorbellText) {
+                  finish(new Error('unconfirmed'));
+                  return;
+                }
+                finish();
+              }, finish);
+            } catch (error) { finish(error); }
           });
         },
       });
@@ -346,32 +361,6 @@ export default {
       return captureInFlight;
     };
 
-    const confirm = event => {
-      const detail = event?.details ?? event;
-      const properties = detail?.properties ?? detail?.data ?? detail ?? {};
-      if (detail?.type === 'message.updated' || detail?.type === 'message.created') {
-        const info = properties.info ?? properties.message ?? properties;
-        if (info?.role === 'user' && typeof info.id === 'string') {
-          userMessages.set(info.id, info.sessionID);
-          if (userMessages.size > 64) userMessages.delete(userMessages.keys().next().value);
-          for (const [id, item] of pending) if (item.messageID && userMessages.get(item.messageID) === item.sessionID) {
-            clearTimeout(item.timer); pending.delete(id); item.resolve();
-          }
-        }
-      }
-      if (detail?.type === 'message.part.updated' || detail?.type === 'message.part.created') {
-        const part = properties.part ?? properties;
-        const item = pending.get(part?.id);
-        if (!item || part.type !== 'text' || part.text !== doorbellText || part.sessionID !== item.sessionID) return;
-        item.messageID = part.messageID;
-        if (userMessages.get(item.messageID) === item.sessionID) {
-          clearTimeout(item.timer); pending.delete(item.partID); item.resolve();
-        }
-      }
-    };
-    let removeEvent;
-    try { removeEvent = context.data.listen(confirm); } catch { return; }
-
     const monitor = setInterval(() => {
       void capture().then(() => {
         if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
@@ -389,7 +378,6 @@ export default {
       generation++;
       clearInterval(monitor);
       clearPending();
-      try { removeEvent?.(); } catch {}
     };
   },
 };

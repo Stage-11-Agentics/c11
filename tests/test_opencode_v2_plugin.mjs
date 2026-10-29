@@ -595,6 +595,37 @@ test('v2 keeps an accepted delivery stream open until c11 settles coverage acros
   assert(oldStream.socket.destroyed, 'the old stream retires only after c11 settles coverage');
 });
 
+test('v2 readiness recovery keeps a submitted prompt stream until c11 settles coverage', { timeout: 5000 }, async t => {
+  let resolvePrompt;
+  const f = await fixture(t, {
+    holdSettlement: true,
+    promptResult: input => new Promise(resolve => { resolvePrompt = () => resolve({
+      id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text },
+    }); }),
+  });
+  await until(() => f.subscriptions.length >= 2);
+  const oldStream = f.subscriptions.at(-1);
+  send(oldStream.socket, { type: 'deliver', delivery_id: 'recovery-coverage-pending', text: doorbellText });
+  await until(() => f.state.calls.length === 1);
+
+  f.state.emit('server.connected', rootA);
+  await until(() => f.state.activeCalls >= 2);
+  await delay(200);
+  assert.equal(f.subscriptions.length, 2,
+    'readiness recovery cannot retire a stream with an in-flight prompt');
+  assert.equal(oldStream.socket.destroyed, false);
+
+  resolvePrompt();
+  await until(() => f.frames.some(frame => frame.type === 'accepted' &&
+    frame.delivery_id === 'recovery-coverage-pending'));
+  await delay(30);
+  assert.equal(f.subscriptions.length, 2,
+    'prompt completion cannot replace the stream before c11 confirms coverage');
+  f.state.releaseSettlements();
+  await until(() => f.subscriptions.length === 3);
+  assert(oldStream.socket.destroyed);
+});
+
 test('child session is never captured or opened as a mailbox recipient', { timeout: 5000 }, async t => {
   const f = await fixture(t);
   await until(() => f.subscriptions.length === 1);

@@ -615,9 +615,9 @@ export default {
             !boundStatusConfirmed || boundStatus !== 'idle' || retryScheduled || boundID === shutdownSessionID ||
             !sessionReadyForMailbox(context, boundID)) return;
         nativeNotReady = false;
-        stopMailbox?.();
-        stopMailbox = undefined;
-        register(boundID, generation);
+        // Readiness recovery also replaces a stream. Route it through the
+        // same prompt and durable-coverage gate as a displayed-root handoff.
+        replaceMailboxStream(boundID, generation);
       });
     }, 100);
     monitor.unref?.();

@@ -5373,6 +5373,7 @@ final class Workspace: Identifiable, ObservableObject {
     private var mailboxNativeProcessIdentity: [UUID: MailboxStdinBuffer.AgentProcess] = [:]
     private var mailboxNativeCovered: [UUID: Set<String>] = [:]
     private var mailboxNativeInFlight: [UUID: UUID] = [:]
+    private var mailboxNativeAttempts: [UUID: MailboxNativeDoorbell.Attempt] = [:]
 
     /// One delivery's screen read, shared by the two closures `deliver` calls.
     private final class MailboxDoorbellCaptureNote {
@@ -6903,6 +6904,7 @@ final class Workspace: Identifiable, ObservableObject {
                     currentProcess: process
                 ) {
                     mailboxNativeProcessIdentity[surfaceId] = process
+                    mailboxNativeAttempts.removeValue(forKey: surfaceId)
                     let covered = mailboxNativeCovered.removeValue(forKey: surfaceId) ?? []
                     mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
                         ledger.coveredIds.subtract(covered)
@@ -6927,14 +6929,27 @@ final class Workspace: Identifiable, ObservableObject {
             ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
             return
         }
-        let ids = Set(queued.map(\.id))
+        let unreadIDs = Set(queued.map(\.id))
+        var ids = unreadIDs
+        var entries = queued
+        var attemptID: UUID?
+        if registration.route == .opencodePlugin {
+            let process = MailboxStdinBuffer.AgentProcess(pid: registration.agentPID, startTime: registration.processStart)
+            let attempt = MailboxNativeDoorbell.reusableAttempt(
+                mailboxNativeAttempts[surfaceId], process: process, unreadIDs: unreadIDs
+            ) ?? MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: unreadIDs)
+            mailboxNativeAttempts[surfaceId] = attempt
+            attemptID = attempt.id
+            ids = attempt.ids
+            entries = queued.filter { attempt.ids.contains($0.id) }
+        }
         let epoch = input.epoch
         let token = UUID()
         mailboxNativeInFlight[surfaceId] = token
         let startedAt = Date()
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.beginAttempt(at: startedAt, epoch: epoch) }
-        logMailboxDoorbellEntries(queued, outcome: .doorbell, reason: "started", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
-        MailboxNativeDoorbell.shared.deliver(registration) { [weak self] result, settled in
+        logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "started", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+        MailboxNativeDoorbell.shared.deliver(registration, attemptID: attemptID) { [weak self] result, settled in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.panels[surfaceId] != nil else { settled(); return }
@@ -6943,8 +6958,7 @@ final class Workspace: Identifiable, ObservableObject {
                         self.mailboxNativeInFlight.removeValue(forKey: surfaceId)
                         self.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
                     }
-                    switch result {
-                    case .accepted(let late):
+                    let recordAcceptance: (Bool, Bool) -> Void = { late, alreadyAdmitted in
                         var covered = self.mailboxNativeCovered[surfaceId] ?? []
                         var isCurrent = false
                         self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
@@ -6953,21 +6967,39 @@ final class Workspace: Identifiable, ObservableObject {
                                 nativeCovered: &covered, ledger: &ledger)
                         }
                         self.mailboxNativeCovered[surfaceId] = covered
+                        if let attemptID, self.mailboxNativeAttempts[surfaceId]?.id == attemptID {
+                            self.mailboxNativeAttempts.removeValue(forKey: surfaceId)
+                        }
                         guard isCurrent else { settled(); return }
-                        self.mailboxStdinState.buffer.noteNativeTurnStarted(surfaceId: surfaceId, at: startedAt)
-                        self.logMailboxDoorbellEntries(queued, outcome: .doorbell,
-                            reason: late ? "native_late_accept" : "submitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+                        if alreadyAdmitted {
+                            self.logMailboxDoorbellEntries(entries, outcome: .doorbell,
+                                reason: "native_already_admitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+                        } else {
+                            self.mailboxStdinState.buffer.noteNativeTurnStarted(surfaceId: surfaceId, at: startedAt)
+                            self.logMailboxDoorbellEntries(entries, outcome: .doorbell,
+                                reason: late ? "native_late_accept" : "submitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+                        }
                         settled()
                         if late { return }
+                    }
+                    switch result {
+                    case .accepted(let late):
+                        recordAcceptance(late, false)
+                    case .alreadyAdmitted:
+                        recordAcceptance(false, true)
                     case .failed(let reason):
                         guard ownsAttempt else { return }
+                        if reason == "native_not_ready" || reason == "native_session_conflict",
+                           let attemptID, self.mailboxNativeAttempts[surfaceId]?.id == attemptID {
+                            self.mailboxNativeAttempts.removeValue(forKey: surfaceId)
+                        }
                         if MailboxNativeDoorbell.failureSticksToTypedGate(route: registration.route, reason: reason) {
                             self.mailboxNativeFallback[surfaceId] = MailboxNativeDoorbell.Fallback(registration: registration, ids: ids, reason: reason)
                         }
                         self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
                             if ledger.rungEpoch == epoch { ledger.rungEpoch = nil }
                         }
-                        self.logMailboxDoorbellEntries(queued, outcome: .doorbellFailed, reason: reason, route: registration.route)
+                        self.logMailboxDoorbellEntries(entries, outcome: .doorbellFailed, reason: reason, route: registration.route)
                     }
                     // This runs the same typed turn/composer checks after failure,
                     // and sees mail that arrived during a successful native request.
@@ -7299,6 +7331,7 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxStdinState.doorbell.remove(surfaceId)
         mailboxNativeFallback.removeValue(forKey: surfaceId)
         mailboxNativeCovered.removeValue(forKey: surfaceId)
+        mailboxNativeAttempts.removeValue(forKey: surfaceId)
         mailboxNativeIdentity.removeValue(forKey: surfaceId)
         mailboxNativeProcessIdentity.removeValue(forKey: surfaceId)
         mailboxNativeInFlight.removeValue(forKey: surfaceId)

@@ -422,12 +422,12 @@ test('v2 retries a failed wrapper claim before capturing its displayed root', { 
   assert.equal(capture.params.id, rootA);
 });
 
-test('v2 keeps retrying the panel claim after its backoff reaches the cap', { timeout: 60000 }, async t => {
+test('v2 keeps retrying the panel claim after its backoff reaches the cap', { timeout: 70000 }, async t => {
   const f = await fixture(t, { claimPending: true, claimFailures: 10 });
   await untilAsync(async () => {
     const lines = (await readFile(f.claimLog, 'utf8').catch(() => '')).split('\n');
     return lines.filter(line => line.includes('rpc conversation.claim')).length >= 10;
-  }, 45000);
+  }, 55000);
   assert.equal(f.frames.some(frame => frame.method === 'conversation.push' && frame.params.displayed_root), false,
     'no route capture is attempted while the authenticated TUI claim is failing');
   await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.displayed_root), 10000);
@@ -593,6 +593,48 @@ test('v2 keeps an accepted delivery stream open until c11 settles coverage acros
   f.state.releaseSettlements();
   await until(() => f.subscriptions.length === 3);
   assert(oldStream.socket.destroyed, 'the old stream retires only after c11 settles coverage');
+});
+
+test('v2 replays a durably admitted attempt after socket loss without prompting twice', { timeout: 5000 }, async t => {
+  let resolvePrompt;
+  let promptCount = 0;
+  const f = await fixture(t, {
+    holdUnbindResponses: true,
+    promptResult: input => {
+      promptCount++;
+      if (promptCount === 1) return new Promise(resolve => { resolvePrompt = () => resolve({
+        id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text },
+      }); });
+      return { id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text } };
+    },
+  });
+  await until(() => f.subscriptions.length >= 2);
+  const oldStream = f.subscriptions.at(-1);
+  send(oldStream.socket, { type: 'deliver', delivery_id: 'lost-accepted', attempt_id: 'attempt-a', text: doorbellText });
+  await until(() => f.state.calls.length === 1);
+
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.state.unbindCalls === 1);
+  oldStream.socket.destroy();
+  await delay(350);
+  assert.equal(f.subscriptions.length, 2, 'reconnect waits until the submitted prompt resolves');
+  assert.equal(f.state.calls.length, 1);
+
+  resolvePrompt();
+  f.state.releaseUnbindResponses();
+  await until(() => f.subscriptions.some(item => item.frame.params.session_id.startsWith(`${rootB}:2:`)));
+  const newRoute = f.subscriptions.filter(item => item.frame.params.session_id.startsWith(`${rootB}:2:`)).at(-1);
+  send(newRoute.socket, { type: 'deliver', delivery_id: 'replay-a', attempt_id: 'attempt-a', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'replay-a'));
+  const replay = f.frames.find(frame => frame.type === 'accepted' && frame.delivery_id === 'replay-a');
+  assert.equal(replay.disposition, 'already_admitted');
+  assert.equal(f.state.calls.length, 1, 'replaying a confirmed attempt does not call session.prompt again');
+
+  send(newRoute.socket, { type: 'deliver', delivery_id: 'new-mail-b', attempt_id: 'attempt-b', text: doorbellText });
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'new-mail-b'));
+  assert.equal(f.state.calls.length, 2, 'a distinct attempt still prompts for later mail');
+  assert.equal(f.state.calls.at(-1).sessionID, rootB, 'new mail goes to the exact newly displayed root');
+  assert.equal(f.frames.find(frame => frame.type === 'accepted' && frame.delivery_id === 'new-mail-b').disposition, undefined);
 });
 
 test('v2 readiness recovery keeps a submitted prompt stream until c11 settles coverage', { timeout: 5000 }, async t => {

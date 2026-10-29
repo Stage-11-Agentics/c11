@@ -30,7 +30,23 @@ final class MailboxNativeDoorbell {
             }
         }
     }
-    enum Result: Equatable { case accepted(late: Bool), failed(String) }
+    enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, failed(String) }
+
+    struct Attempt: Equatable {
+        let id: UUID
+        let process: MailboxStdinBuffer.AgentProcess
+        let ids: Set<String>
+    }
+
+    /// Reuse only the exact unread snapshot for the same live TUI process.
+    /// New mail stays outside an ambiguous earlier attempt and receives its
+    /// own attempt after the original result is confirmed.
+    static func reusableAttempt(_ attempt: Attempt?, process: MailboxStdinBuffer.AgentProcess,
+                                unreadIDs: Set<String>) -> Attempt? {
+        guard let attempt, attempt.process == process,
+              !attempt.ids.isDisjoint(with: unreadIDs) else { return nil }
+        return attempt
+    }
 
     /// Keep accepted coverage across OpenCode /new route registrations from
     /// the same TUI process. A different process must be allowed to retry the
@@ -62,11 +78,11 @@ final class MailboxNativeDoorbell {
             return true
         }
 
-        /// A v2 OpenCode TUI whose displayed route is unowned must hold its
-        /// envelopes out of the typed terminal path until a new route binds.
+        /// OpenCode has no safe typed fallback while an invitation may already
+        /// have been admitted by a prompt whose native acknowledgement was
+        /// lost. The next native registration replays the same attempt ID.
         func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
-            guard registration.route == .opencodePlugin,
-                  reason == "native_session_conflict" || reason == "native_not_ready" else { return false }
+            guard registration.route == .opencodePlugin else { return false }
             return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
         }
     }
@@ -258,7 +274,7 @@ final class MailboxNativeDoorbell {
     /// OpenCode keeps its old stream until that frame arrives, so route-change
     /// registration cannot race ahead of accepted-ID coverage.
     @discardableResult
-    func deliver(_ registration: Registration, timeout: TimeInterval = 2,
+    func deliver(_ registration: Registration, timeout: TimeInterval = 2, attemptID: UUID? = nil,
                  reply: @escaping (Result, @escaping () -> Void) -> Void) -> UUID {
         let requestID = UUID()
         lock.lock()
@@ -281,7 +297,9 @@ final class MailboxNativeDoorbell {
                 && current?.pending[requestID]?.failed == false
             lock.unlock()
             guard shouldSend else { return }
-            if !listener.write(["type": "deliver", "delivery_id": requestID.uuidString, "text": MailboxDoorbell.text]) {
+            var frame: [String: Any] = ["type": "deliver", "delivery_id": requestID.uuidString, "text": MailboxDoorbell.text]
+            if let attemptID { frame["attempt_id"] = attemptID.uuidString }
+            if !listener.write(frame) {
                 resolve(registration, requestID: requestID, result: .failed("native_write_failed"))
             }
         }
@@ -297,6 +315,9 @@ final class MailboxNativeDoorbell {
         case .accepted:
             resolved = .accepted(late: pending.failed)
             listener.pending.removeValue(forKey: requestID)
+        case .alreadyAdmitted:
+            resolved = .alreadyAdmitted
+            listener.pending.removeValue(forKey: requestID)
         case .failed(let reason):
             guard !pending.failed else { lock.unlock(); return }
             pending.failed = true
@@ -306,7 +327,12 @@ final class MailboxNativeDoorbell {
         listeners[registration.panelID] = listener
         lock.unlock()
         let settled: () -> Void
-        if case .accepted = resolved {
+        let confirmsCoverage: Bool
+        switch resolved {
+        case .accepted, .alreadyAdmitted: confirmsCoverage = true
+        case .failed: confirmsCoverage = false
+        }
+        if confirmsCoverage {
             settled = { [weak self] in
                 guard let self else { return }
                 self.io.async { [weak self] in
@@ -338,7 +364,12 @@ final class MailboxNativeDoorbell {
               let rawID = frame["delivery_id"] as? String, let requestID = UUID(uuidString: rawID) else { return }
         switch frame["type"] as? String {
         case "accepted":
-            resolve(registration, requestID: requestID, result: .accepted(late: false))
+            if registration.route == .opencodePlugin,
+               frame["disposition"] as? String == "already_admitted" {
+                resolve(registration, requestID: requestID, result: .alreadyAdmitted)
+            } else {
+                resolve(registration, requestID: requestID, result: .accepted(late: false))
+            }
         case "rejected":
             let reason = (frame["reason"] as? String).flatMap { Self.namedRejections.contains($0) ? "native_\($0)" : nil }
             resolve(registration, requestID: requestID, result: .failed(reason ?? "native_rejected"))

@@ -181,6 +181,7 @@ export default {
     let readinessSyncRetryAt = 0;
     const pending = new Map();
     const unsettledMailboxDeliveries = new Set();
+    const admittedMailboxAttempts = new Map();
 
     const refreshBoundSessionStatus = async (sessionID, routeGeneration) => {
       if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
@@ -399,11 +400,21 @@ export default {
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
         onDeliveryPending: deliveryID => unsettledMailboxDeliveries.add(deliveryID),
-        onDeliverySettled: deliveryID => unsettledMailboxDeliveries.delete(deliveryID),
+        onDeliverySettled: (deliveryID, settlement) => {
+          unsettledMailboxDeliveries.delete(deliveryID);
+          if (settlement?.covered && typeof settlement.attemptID === 'string')
+            admittedMailboxAttempts.delete(settlement.attemptID);
+        },
         onSettled: finishMailboxHandoff,
-        async deliver(message) {
+        async deliver(message, attemptID) {
+          if (message !== doorbellText) throw sessionConflict();
+          // c11 may have lost the acknowledgement after OpenCode durably
+          // admitted the prompt. Replay confirms that same attempt without
+          // checking the now-current route or submitting another prompt.
+          if (typeof attemptID === 'string' && admittedMailboxAttempts.has(attemptID))
+            return { alreadyAdmitted: true };
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||
-              message !== doorbellText || conflict || !boundID || boundID !== visibleID) throw sessionConflict();
+              conflict || !boundID || boundID !== visibleID) throw sessionConflict();
           if (!boundStatusConfirmed || boundStatus !== 'idle' || retryScheduled || boundID === shutdownSessionID ||
               !sessionReadyForMailbox(context, boundID)) {
             nativeNotReady = true;
@@ -434,6 +445,9 @@ export default {
                     result?.type !== 'user' || result?.payload?.text !== doorbellText) {
                   finish(new Error('unconfirmed'));
                   return;
+                }
+                if (typeof attemptID === 'string') {
+                  admittedMailboxAttempts.set(attemptID, { messageID, sessionID: item.sessionID });
                 }
                 finish();
               }, finish);

@@ -18,21 +18,43 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
     current.unref();
     let buffered = '';
     let registered = false;
-    const pendingDeliveries = new Set();
-    const finishDelivery = deliveryID => {
-      if (!pendingDeliveries.delete(deliveryID)) return;
-      onDeliverySettled?.(deliveryID);
-      if (pendingDeliveries.size === 0) onSettled?.();
+    const pendingDeliveries = new Map();
+    const scheduleReconnect = () => {
+      if (stopped || current !== socket || retry || pendingDeliveries.size > 0) return;
+      retry = setTimeout(() => {
+        retry = undefined;
+        connect();
+      }, Math.min(10000, 250 * 2 ** Math.min(failures++, 6)));
+      retry.unref();
+    };
+    const finishDelivery = (deliveryID, covered = false) => {
+      const delivery = pendingDeliveries.get(deliveryID);
+      if (!delivery) return;
+      pendingDeliveries.delete(deliveryID);
+      onDeliverySettled?.(deliveryID, { covered, attemptID: delivery.attemptID });
+      if (pendingDeliveries.size === 0) {
+        if (current.destroyed) scheduleReconnect();
+        onSettled?.();
+      }
     };
     current.setTimeout(2000, () => current.destroy());
     current.on('connect', () => current.write(JSON.stringify({id: randomUUID(), method: 'mailbox.native.subscribe', params: {
       panel_id: panelID, agent_pid: agentPID, session_id: sessionID, route, can_queue: canQueue,
     }}) + '\n'));
-    const send = (frame, afterFlush) => {
-      if (!stopped && current === socket && !current.destroyed) {
-        current.write(JSON.stringify(frame) + '\n', error => { if (!error) afterFlush?.(); });
+    const send = (frame, afterFlush, onUnavailable) => {
+      if (!stopped && current === socket && !current.destroyed && current.readyState === 'open') {
+        try {
+          current.write(JSON.stringify(frame) + '\n', error => {
+            if (error || current.destroyed || current.readyState !== 'open') onUnavailable?.();
+            else afterFlush?.();
+          });
+        } catch {
+          onUnavailable?.();
+          return false;
+        }
         return true;
       }
+      onUnavailable?.();
       return false;
     };
     current.on('data', chunk => {
@@ -54,23 +76,31 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
         }
         if (frame.type === 'replaced') { stop(); return; }
         if (frame.type === 'settled' && typeof frame.delivery_id === 'string') {
-          finishDelivery(frame.delivery_id);
+          finishDelivery(frame.delivery_id, true);
           continue;
         }
         if (frame.type !== 'deliver' || typeof frame.delivery_id !== 'string' || frame.text !== doorbellText) continue;
-        pendingDeliveries.add(frame.delivery_id);
+        pendingDeliveries.set(frame.delivery_id, { attemptID: frame.attempt_id, promptSettled: false });
         onDeliveryPending?.(frame.delivery_id);
         // A positive result means observed harness acceptance, never merely
         // invoking a void API. Rejections must precede any possible side effect.
         Promise.resolve().then(() => {
           if (stopped || current !== socket || current.destroyed) throw new Error('session_closed');
-          return deliver(frame.text);
+          return deliver(frame.text, frame.attempt_id);
         }).then(
-          () => send({type: 'accepted', delivery_id: frame.delivery_id}),
+          result => {
+            const delivery = pendingDeliveries.get(frame.delivery_id);
+            if (delivery) delivery.promptSettled = true;
+            send({type: 'accepted', delivery_id: frame.delivery_id,
+              ...(result?.alreadyAdmitted ? { disposition: 'already_admitted' } : {})}, undefined,
+              () => finishDelivery(frame.delivery_id, false));
+          },
           error => {
+            const delivery = pendingDeliveries.get(frame.delivery_id);
+            if (delivery) delivery.promptSettled = true;
             const reason = ['session_conflict', 'not_ready'].includes(error?.code) ? error.code : undefined;
             send({type: 'rejected', delivery_id: frame.delivery_id, ...(reason ? {reason} : {})},
-              () => finishDelivery(frame.delivery_id));
+              () => finishDelivery(frame.delivery_id, false), () => finishDelivery(frame.delivery_id, false));
           },
         );
       }
@@ -78,9 +108,12 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
     current.on('error', () => {});
     current.on('close', () => {
       if (stopped || current !== socket) return;
-      // Only failed connections retry. An established idle stream has no timer.
-      retry = setTimeout(connect, Math.min(10000, 250 * 2 ** Math.min(failures++, 6)));
-      retry.unref();
+      // Wait for submitted prompts to resolve before opening another stream.
+      // Their stable attempt IDs make the later registration idempotent.
+      for (const [deliveryID, delivery] of pendingDeliveries) {
+        if (delivery.promptSettled) finishDelivery(deliveryID, false);
+      }
+      scheduleReconnect();
     });
   };
   connect();

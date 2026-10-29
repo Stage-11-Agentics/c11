@@ -1463,6 +1463,19 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             "PID reuse is a new TUI process")
     }
 
+    func testAmbiguousOpenCodeAttemptKeepsItsExactEnvelopeSnapshot() {
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        let attempt = MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: ["mail-a"])
+        XCTAssertEqual(MailboxNativeDoorbell.reusableAttempt(attempt, process: process,
+            unreadIDs: ["mail-a", "mail-b"]), attempt,
+            "new mail cannot be folded into an attempt whose prompt result is ambiguous")
+        XCTAssertNil(MailboxNativeDoorbell.reusableAttempt(attempt,
+            process: .init(pid: 124, startTime: 456), unreadIDs: ["mail-a", "mail-b"]),
+            "a different TUI process must retry unread mail with a fresh attempt")
+        XCTAssertNil(MailboxNativeDoorbell.reusableAttempt(attempt, process: process,
+            unreadIDs: ["mail-b"]), "an attempt with no still-unread envelope is no longer reusable")
+    }
+
     func testAcceptedDeliverySettlesOnlyAfterWorkspaceCallback() {
         let broker = MailboxNativeDoorbell(), reg = registration()
         let sent = expectation(description: "native invitation")
@@ -1491,6 +1504,37 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         wait(for: [settledFrame], timeout: 1)
         lock.lock(); let afterWorkspace = settledCount; lock.unlock()
         XCTAssertEqual(afterWorkspace, 1)
+    }
+
+    func testAlreadyAdmittedReplayCarriesStableAttemptAndSettlesCoverage() throws {
+        let broker = MailboxNativeDoorbell(), reg = registration(route: .opencodePlugin)
+        let attemptID = UUID()
+        let sent = expectation(description: "attempt id sent")
+        let replayed = expectation(description: "already admitted replay")
+        let settledFrame = expectation(description: "replay coverage settled")
+        var settleCoverage: (() -> Void)?
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" {
+                XCTAssertEqual(frame["attempt_id"] as? String, attemptID.uuidString)
+                sent.fulfill()
+            }
+            if frame["type"] as? String == "settled" { settledFrame.fulfill() }
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+        let request = broker.deliver(reg, attemptID: attemptID) { result, settle in
+            XCTAssertEqual(result, .alreadyAdmitted)
+            settleCoverage = settle
+            replayed.fulfill()
+        }
+        wait(for: [sent], timeout: 1)
+        let frame = try JSONSerialization.data(withJSONObject: [
+            "type": "accepted", "delivery_id": request.uuidString, "disposition": "already_admitted",
+        ])
+        broker.consume(frame, registration: reg)
+        wait(for: [replayed], timeout: 1)
+        settleCoverage?()
+        wait(for: [settledFrame], timeout: 1)
     }
 
     func testReplacementWritesRetirementFrameBeforeClosingOldStream() {
@@ -1771,6 +1815,7 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                     ringInput: { _ in XCTFail("typed fallback read a running turn"); return .init() })
                 XCTAssertEqual(outcome, .buffered(bytes: 4)); failed.fulfill()
             case .accepted(let late): XCTAssertTrue(late); accepted.fulfill()
+            case .alreadyAdmitted: XCTFail("timeout attempt cannot replay as already admitted")
             }
         }
         wait(for: [dispatched, failed], timeout: 2)
@@ -1965,6 +2010,8 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                             currentRegistrationID: broker.registration(panelID: reg.panelID)?.id,
                             nativeCovered: &nativeCovered, ledger: &ledger)
                     }
+                case .alreadyAdmitted:
+                    XCTFail("this test does not send a replayed acceptance")
                 }
             }
         }
@@ -2017,7 +2064,10 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         let ordinaryFailure = MailboxNativeDoorbell.Fallback(
             registration: reg, ids: ["mail-a"], reason: "native_timeout"
         )
-        XCTAssertFalse(ordinaryFailure.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []))
+        XCTAssertTrue(ordinaryFailure.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: []),
+                      "an ambiguous prompt result must be retried natively with the same attempt ID")
+        XCTAssertFalse(ordinaryFailure.blocksTyped(unreadIDs: ["mail-b"], coveredIDs: []),
+                       "the ambiguous attempt does not hide later mail")
 
         let notReady = MailboxNativeDoorbell.Fallback(
             registration: reg, ids: ["mail-a"], reason: "native_not_ready"

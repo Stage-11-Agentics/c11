@@ -37,9 +37,9 @@ async function fixture(t, receive) {
     await rm(root, { recursive: true, force: true });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
-  const subscribe = (sessionID, deliver = () => {}, onSettled) => {
+  const subscribe = (sessionID, deliver = () => {}, onSettled, onDeliveryPending, onDeliverySettled) => {
     const stop = subscribeNativeMailbox({ socketPath, panelID: 'same-panel', agentPID: process.pid,
-      sessionID, route: 'pi_extension', deliver, onSettled });
+      sessionID, route: 'pi_extension', deliver, onSettled, onDeliveryPending, onDeliverySettled });
     stops.push(stop);
     return stop;
   };
@@ -126,6 +126,34 @@ test('unexpected close still reconnects and delivers', { timeout: 5000 }, async 
   stop();
   await delay(350);
   assert.equal(f.subscriptions.length, 2);
+});
+
+test('a closed stream waits for a submitted prompt, then locally settles before reconnecting', { timeout: 5000 }, async t => {
+  let resolvePrompt;
+  let promptCount = 0;
+  const localSettlements = [];
+  const f = await fixture(t, (socket, frame, subscriptions) => {
+    if (frame.method !== 'mailbox.native.subscribe') return;
+    accept(socket);
+    if (subscriptions.length === 1) {
+      send(socket, { type: 'deliver', delivery_id: 'ambiguous', attempt_id: 'attempt-a', text: doorbellText });
+    }
+  });
+  f.subscribe('drop-during-prompt', () => {
+    promptCount++;
+    return new Promise(resolve => { resolvePrompt = resolve; });
+  }, undefined, undefined, (deliveryID, settlement) => localSettlements.push({ deliveryID, settlement }));
+  await until(() => typeof resolvePrompt === 'function');
+  f.subscriptions[0].socket.destroy();
+  await delay(350);
+  assert.equal(f.subscriptions.length, 1, 'the transport cannot replay while the original prompt is unresolved');
+
+  resolvePrompt({ alreadyAdmitted: true });
+  await until(() => f.subscriptions.length === 2 && localSettlements.length === 1);
+  assert.equal(promptCount, 1, 'the original prompt promise runs once');
+  assert.equal(localSettlements[0].deliveryID, 'ambiguous');
+  assert.deepEqual(localSettlements[0].settlement, { covered: false, attemptID: 'attempt-a' },
+    'socket loss clears the route blocker without claiming c11 coverage');
 });
 
 test('accepted deliveries settle only after the server confirms coverage for all pending IDs', { timeout: 5000 }, async t => {

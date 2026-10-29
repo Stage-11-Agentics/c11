@@ -24,7 +24,7 @@ Surface these five facts in one batch before touching anything else:
    unfinished work that belongs in the release, surface it now — not
    after the release branch is cut.
 
-5. **Previous release merged back.** `git fetch origin main --tags && git merge-base --is-ancestor "$(git tag -l 'v*' --sort=-v:refname | head -1)" origin/main`. If the newest `v*` tag is not on `main`, its merge-back (step 11) is outstanding. That is a blocker: `main` still carries the old version, so the next bump would reuse it, and `git describe` on `main` would skip that tag and widen the changelog range.
+5. **Previous release merged back.** `git fetch origin main 'refs/tags/v*:refs/tags/v*' && git merge-base --is-ancestor "$(git tag -l 'v*' --sort=-v:refname | head -1)" origin/main` (fetching only `v*` tags avoids the moving `nightly` tag). A silent exit 0 means it merged back. If the newest `v*` tag is not on `main` (exit 1), its merge-back (step 11) is outstanding. That is a blocker: `main` still carries the old version, so the next bump would reuse it, and `git describe` on `main` would skip that tag and widen the changelog range.
 
 If the operator says "skip pre-flight," skip. Otherwise run all five every time.
 
@@ -104,7 +104,7 @@ This is a checklist trigger, not a CI gate.
 - `git push -u origin release/vX.Y.Z`.
 
 6.5. Build the tagged staging artifact:
-- Record the commit you build: `SHA=$(git rev-parse HEAD)`. This is the tested head. Every later fix or merge on the branch replaces it, and staging, the smoke and CI then run again on the new head.
+- Build from a clean, pushed tree (`git status -s` empty), because `remote-build.sh` also ships dirty files. Write `git rev-parse HEAD` into the release PR body as the tested head; a shell variable does not survive until the tag. Every later fix or merge on the branch replaces it, and staging, the smoke and CI then run again on the new head.
 - `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
   (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
   the operator's prod c11.
@@ -149,13 +149,15 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 - **Gate the tag on the exact tested commit.** The tested commit is the head the staging app was built from, the smoke ran on, and `c11/pr-swift` passed on. Verify first:
   ```bash
   git fetch origin release/vX.Y.Z
-  # SHA is the tested head recorded in 6.5
+  SHA=<full tested head sha from the release PR body>
+  test -n "$SHA" || { echo "STOP: no tested head"; exit 1; }
   test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
   git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | grep -m1 MARKETING_VERSION   # must read X.Y.Z
   git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # release.yml needs it
-  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '.statuses[]|"\(.context) \(.state)"'   # c11/pr-swift success
-  gh pr checks <release PR>                                                           # every check passing at $SHA
+  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -qx success || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
+  gh pr checks <release PR> || { echo "STOP: a PR check is failing or pending"; exit 1; }
   ```
+  Run the gate as a script or in an agent's shell: `exit` closes an interactive terminal.
   A stale local tag (notably `nightly`) makes `git fetch` fail with "would clobber existing tag" and can leave refs unmoved: prune it (`git tag -d nightly` or `git fetch --prune --prune-tags origin`) and re-check.
 - `git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"` (annotated; local git config rejects a lightweight `git tag vX.Y.Z` with "no tag message?")
 - `git push origin vX.Y.Z`

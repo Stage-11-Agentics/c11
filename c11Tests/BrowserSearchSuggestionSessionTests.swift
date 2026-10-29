@@ -36,6 +36,39 @@ final class BrowserSearchSuggestionSessionTests: XCTestCase {
         )
     }
 
+    /// Drives the real suggestion path, as the omnibar does, against a
+    /// loopback engine whose first answer sets a cookie.
+    func testSuggestionsSendNoCookieAnEngineSet() async throws {
+        let server = try LoopbackHTTPListener(
+            headers: { _ in ["Content-Type: application/json", "Set-Cookie: \(Self.engineCookie)=linked; Path=/; Max-Age=3600"] },
+            body: { _ in Data(#"["ab", ["ab one", "ab two"]]"#.utf8) }
+        )
+        defer {
+            server.stop()
+            for cookie in HTTPCookieStorage.shared.cookies ?? []
+            where cookie.name == Self.engineCookie || cookie.domain == "127.0.0.1" {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+        }
+        let port = server.port
+        let service = BrowserSearchSuggestionService { _, query in
+            URL(string: "http://127.0.0.1:\(port)/suggest?q=\(query)")
+        }
+        let profile = UUID()
+
+        let first = await service.suggestions(engine: .bing, query: "ab", profileID: profile)
+        let second = await service.suggestions(engine: .bing, query: "abc", profileID: profile)
+
+        XCTAssertEqual(first, ["ab one", "ab two"])
+        XCTAssertEqual(second, ["ab one", "ab two"])
+        XCTAssertEqual(server.requests.count, 2)
+        XCTAssertNil(server.requests.last?.cookie, "A suggestion request sent the cookie the engine set")
+        XCTAssertFalse(
+            (HTTPCookieStorage.shared.cookies ?? []).contains { $0.name == Self.engineCookie },
+            "An engine's cookie landed in the app-wide jar"
+        )
+    }
+
     func testEachProfileHasItsOwnSession() async {
         let service = BrowserSearchSuggestionService()
         let profileA = UUID()

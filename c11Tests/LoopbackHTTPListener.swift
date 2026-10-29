@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 /// A loopback-only HTTP/1.1 listener for tests of the app's own fetches
-/// (favicons, search suggestions). It answers every request with a few bytes
+/// (favicons, search suggestions). It answers every request with `body(path)`
 /// plus the extra headers `headers(path)` returns, closes the connection, and
 /// records each request's path and Cookie header.
 final class LoopbackHTTPListener: @unchecked Sendable {
@@ -11,12 +11,13 @@ final class LoopbackHTTPListener: @unchecked Sendable {
         let cookie: String?
     }
 
-    let port: UInt16
+    private(set) var port: UInt16 = 0
     private let listener: NWListener
     private let queue = DispatchQueue(label: "c11.tests.loopback-http-listener")
     private let lock = NSLock()
     private var recorded: [Request] = []
     private let headers: @Sendable (String) -> [String]
+    private let body: @Sendable (String) -> Data
 
     var requests: [Request] {
         lock.lock()
@@ -24,12 +25,15 @@ final class LoopbackHTTPListener: @unchecked Sendable {
         return recorded
     }
 
-    init(headers: @escaping @Sendable (String) -> [String] = { _ in [] }) throws {
+    init(
+        headers: @escaping @Sendable (String) -> [String] = { _ in [] },
+        body: @escaping @Sendable (String) -> Data = { _ in Data("ok".utf8) }
+    ) throws {
         self.headers = headers
+        self.body = body
         let parameters = NWParameters.tcp
         parameters.requiredInterfaceType = .loopback
-        let listener = try NWListener(using: parameters, on: .any)
-        self.listener = listener
+        listener = try NWListener(using: parameters, on: .any)
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { state in
             switch state {
@@ -37,15 +41,13 @@ final class LoopbackHTTPListener: @unchecked Sendable {
             default: break
             }
         }
-        var serve: ((NWConnection) -> Void)?
-        listener.newConnectionHandler = { connection in serve?(connection) }
+        listener.newConnectionHandler = { [weak self] connection in self?.serve(connection) }
         listener.start(queue: queue)
         guard ready.wait(timeout: .now() + 5) == .success, let port = listener.port?.rawValue else {
             listener.cancel()
             throw NWError.posix(.ETIMEDOUT)
         }
         self.port = port
-        serve = { [weak self] connection in self?.serve(connection) }
     }
 
     func stop() {
@@ -82,10 +84,10 @@ final class LoopbackHTTPListener: @unchecked Sendable {
         recorded.append(Request(path: path, cookie: cookie))
         lock.unlock()
 
-        let body = Data("ok".utf8)
-        let responseHeaders = ["Content-Length: \(body.count)", "Connection: close"] + headers(path)
+        let payload = body(path)
+        let responseHeaders = ["Content-Length: \(payload.count)", "Connection: close"] + headers(path)
         var response = Data(("HTTP/1.1 200 OK\r\n" + responseHeaders.joined(separator: "\r\n") + "\r\n\r\n").utf8)
-        response.append(body)
+        response.append(payload)
         connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
 }

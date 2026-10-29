@@ -2010,6 +2010,13 @@ actor BrowserSearchSuggestionService {
     static let shared = BrowserSearchSuggestionService()
 
     private var sessions: [UUID: URLSession] = [:]
+    private let endpoint: @Sendable (BrowserSearchEngine, String) -> URL?
+
+    /// `endpoint` builds the suggestion URL for an engine and query; tests
+    /// point it at a loopback server.
+    init(endpoint: @escaping @Sendable (BrowserSearchEngine, String) -> URL? = BrowserSearchSuggestionService.engineURL) {
+        self.endpoint = endpoint
+    }
 
     /// The suggestion session for one browser profile. The engines are fixed,
     /// but their cookies would otherwise land in the app-wide jar and link one
@@ -2049,12 +2056,12 @@ actor BrowserSearchSuggestionService {
 
         // Google's endpoint can intermittently throttle/block app-style traffic.
         // Query fallbacks in parallel so we can show predictions quickly.
-        let session = session(forProfile: profileID)
+        let profileSession = session(forProfile: profileID)
         if engine == .google {
-            return await fetchRemoteSuggestionsWithGoogleFallbacks(query: trimmed, session: session)
+            return await fetchRemoteSuggestionsWithGoogleFallbacks(query: trimmed, session: profileSession)
         }
 
-        return await fetchRemoteSuggestions(engine: engine, query: trimmed, session: session)
+        return await fetchRemoteSuggestions(engine: engine, query: trimmed, session: profileSession)
     }
 
     private func fetchRemoteSuggestionsWithGoogleFallbacks(query: String, session: URLSession) async -> [String] {
@@ -2081,6 +2088,36 @@ actor BrowserSearchSuggestionService {
     }
 
     private func fetchRemoteSuggestions(engine: BrowserSearchEngine, query: String, session: URLSession) async -> [String] {
+        guard let url = endpoint(engine, query) else { return [] }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 0.65
+        req.cachePolicy = .returnCacheDataElseLoad
+        req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            return []
+        }
+
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            return []
+        }
+
+        switch engine {
+        case .google, .bing, .kagi, .startpage:
+            return parseOSJSON(data: data)
+        case .duckduckgo:
+            return parseDuckDuckGo(data: data)
+        }
+    }
+
+    /// The public suggestion endpoint for an engine and query.
+    static func engineURL(engine: BrowserSearchEngine, query: String) -> URL? {
         let url: URL?
         switch engine {
         case .google:
@@ -2116,34 +2153,7 @@ actor BrowserSearchSuggestionService {
             ]
             url = c?.url
         }
-
-        guard let url else { return [] }
-
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 0.65
-        req.cachePolicy = .returnCacheDataElseLoad
-        req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch {
-            return []
-        }
-
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        switch engine {
-        case .google, .bing, .kagi, .startpage:
-            return parseOSJSON(data: data)
-        case .duckduckgo:
-            return parseDuckDuckGo(data: data)
-        }
+        return url
     }
 
     private func parseOSJSON(data: Data) -> [String] {

@@ -80225,6 +80225,318 @@
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ 的子面板"}},
         "ru": {"stringUnit": {"state": "translated", "value": "Дочерняя панель %@"}}
       }
+    },
+    "flag.kind.color.green": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Green"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "緑"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Зелений"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "녹색"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "绿色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "綠色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Зелёный"}}
+      }
+    },
+    "flag.kind.color.pink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Pink"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ピンク"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Рожевий"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "분홍색"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "粉色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "粉紅色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Розовый"}}
+      }
+    },
+    "flag.kind.color.red": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Red"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "赤"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Червоний"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "빨간색"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "红色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "紅色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Красный"}}
+      }
+    },
+    "flag.kind.color.teal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Teal"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ティール"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Бірюзовий"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "청록색"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "青绿色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "青綠色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Бирюзовый"}}
+      }
+    },
+    "settings.flagKinds.add": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Add"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "追加"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Додати"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "추가"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "添加"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "新增"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Добавить"}}
+      }
+    },
+    "settings.flagKinds.addHeading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Add a kind"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "種類を追加"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Додати тип"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "종류 추가"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "添加类型"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "新增類型"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Добавить тип"}}
+      }
+    },
+    "settings.flagKinds.color": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Color"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "色"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Колір"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "색상"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "颜色"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "顏色"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Цвет"}}
+      }
+    },
+    "settings.flagKinds.emoji": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Emoji"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "絵文字"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Емодзі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이모지"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "表情符号"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "表情符號"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Эмодзи"}}
+      }
+    },
+    "settings.flagKinds.emojiPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Emoji"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "絵文字"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Емодзі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이모지"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "表情符号"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "表情符號"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Эмодзи"}}
+      }
+    },
+    "settings.flagKinds.idPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "slug"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "スラッグ"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "слаг"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "슬러그"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "短标识"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "代碼"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "слаг"}}
+      }
+    },
+    "settings.flagKinds.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Name"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "名前"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Назва"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이름"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "名称"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "名稱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Название"}}
+      }
+    },
+    "settings.flagKinds.namePlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Name"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "名前"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Назва"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이름"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "名称"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "名稱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Название"}}
+      }
+    },
+    "settings.flagKinds.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Named flags use a fixed color palette. Existing flags keep the display snapshot they had when raised."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "名前付きフラグには固定のカラーパレットを使用します。既存のフラグには、作成時の表示スナップショットが保持されます。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Іменовані позначки використовують фіксовану палітру кольорів. Активні позначки зберігають вигляд, який мали під час створення."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이름이 지정된 플래그는 정해진 색상 팔레트를 사용합니다. 기존 플래그는 플래그를 올렸을 때의 표시 정보를 유지합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "命名标记使用固定的颜色调色板。现有标记会保留创建时的显示快照。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "具名旗標使用固定的色彩盤。既有旗標會保留建立時的顯示快照。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Для именованных флагов используется фиксированная палитра. Активные флаги сохраняют отображение, которое было при их создании."}}
+      }
+    },
+    "settings.flagKinds.remove": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Remove"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "削除"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Видалити"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "삭제"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "移除"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Удалить"}}
+      }
+    },
+    "settings.flagKinds.removeError": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Could not update this flag kind."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグの種類を更新できませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Не вдалося оновити цей тип позначки."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 종류를 업데이트할 수 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法更新此标记类型。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法更新此旗標類型。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Не удалось обновить этот тип флага."}}
+      }
+    },
+    "settings.flagKinds.removed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flag kind removed."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグの種類を削除しました。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Тип позначки видалено."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 종류를 삭제했습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标记类型已移除。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已移除旗標類型。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Тип флага удалён."}}
+      }
+    },
+    "settings.flagKinds.reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Built-in kind reset to its default."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "組み込みの種類を既定値に戻しました。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Вбудований тип скинуто до початкового значення."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "기본 제공 종류를 기본값으로 재설정했습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "内置类型已恢复默认值。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "內建類型已還原為預設值。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Встроенный тип сброшен к значению по умолчанию."}}
+      }
+    },
+    "settings.flagKinds.resetButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Reset"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "リセット"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Скинути"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "재설정"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "重置"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "重設"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сбросить"}}
+      }
+    },
+    "settings.flagKinds.save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Save"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "保存"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Зберегти"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "저장"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "保存"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "儲存"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сохранить"}}
+      }
+    },
+    "settings.flagKinds.saveError": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Could not save this flag kind."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグの種類を保存できませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Не вдалося зберегти цей тип позначки."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 종류를 저장할 수 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法保存此标记类型。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法儲存此旗標類型。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Не удалось сохранить тип флага."}}
+      }
+    },
+    "settings.flagKinds.saved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flag kind saved."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグの種類を保存しました。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Тип позначки збережено."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 종류를 저장했습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标记类型已保存。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已儲存旗標類型。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Тип флага сохранён."}}
+      }
+    },
+    "settings.flagKinds.slugHelp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Use a lowercase slug with letters, numbers, and single hyphens."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "小文字の英字と数字を使い、ハイフンは連続させずに入力してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Використовуйте слаг із малих літер, цифр і одиночних дефісів."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "영문 소문자와 숫자, 단일 하이픈만 포함된 슬러그를 사용하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "使用小写字母、数字和单个连字符组成短标识。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請使用只包含小寫字母、數字及單一連字號的代碼。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Используйте слаг из строчных латинских букв и цифр с одиночными дефисами."}}
+      }
+    },
+    "settings.section.flagKinds": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flag kinds"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグの種類"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Типи позначок"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그 종류"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "标记类型"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "旗標類型"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Типы флагов"}}
+      }
+    },
+    "sidebar.workspacePulse.namedFlagAccessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%@, flagged %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%@のフラグ: %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%@: позначка «%@»"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@, 플래그됨: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%@，已标记 %@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@，已標記：%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%@, флаг: %@"}}
+      }
+    },
+    "surface.activity.flaggedKind": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flagged: %@: %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグ: %@：%@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Позначено: %@: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그됨: %@: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已标记：%@：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已標記：%@：%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Флаг «%@»: %@"}}
+      }
+    },
+    "surface.activity.flaggedKindNoReason": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Flagged: %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "フラグ: %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Позначено: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "플래그됨: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已标记：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已標記：%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Флаг «%@»"}}
+      }
     }
   }
 }

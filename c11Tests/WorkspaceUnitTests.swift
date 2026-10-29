@@ -3634,7 +3634,7 @@ final class WorkspacePanelIconColorTests: XCTestCase {
         )
         _ = try store.mutateAttention(
             workspaceId: source.id, surfaceId: panelId,
-            flag: .raise("Need a call on the move"),
+            flag: .raise("Need a call on the move", kind: nil),
             delegation: .delegate(ownerPanelId: ownerPanelId),
             callerPanelId: callerPanelId,
             now: Date(timeIntervalSince1970: 1_800_000_000)
@@ -3688,7 +3688,7 @@ final class WorkspacePanelIconColorTests: XCTestCase {
 
         let source = Workspace()
         let panelId = try XCTUnwrap(source.focusedPanelId)
-        _ = try store.mutateAttention(workspaceId: source.id, surfaceId: panelId, flag: .raise("Need a call on the move"))
+        _ = try store.mutateAttention(workspaceId: source.id, surfaceId: panelId, flag: .raise("Need a call on the move", kind: nil))
         PanelAttentionService.shared.syncFromMetadata(workspaceId: source.id, surfaceId: panelId)
         var draft = JournalDraft(kind: .questionRequested, emittedAtMs: 1_000, panelID: panelId, workspaceID: source.id,
                                  sessionID: "c11-490-session", agentKind: "claude-code", source: .hook,

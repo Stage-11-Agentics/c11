@@ -34,6 +34,23 @@ final class AreaMetadataStoreTests: XCTestCase {
         XCTAssertEqual(store.getSource(workspaceId: wsId, paneId: paneId, key: "title"), .explicit)
     }
 
+    func testFlagKindAreaMetadataUsesReservedSnapshotValidation() {
+        let (store, wsId, paneId) = makeStoreAndPane()
+        XCTAssertThrowsError(try store.setMetadata(
+            workspaceId: wsId,
+            paneId: paneId,
+            partial: [MetadataKey.flagKind: "chief-of-staff"],
+            mode: .merge,
+            source: .explicit
+        )) { error in
+            guard let writeError = error as? PanelMetadataStore.WriteError else {
+                return XCTFail("expected reserved key validation, got \(error)")
+            }
+            XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
+        }
+        XCTAssertNil(store.getMetadata(workspaceId: wsId, paneId: paneId).metadata[MetadataKey.flagKind])
+    }
+
     func testMergePreservesOtherKeys() throws {
         let (store, wsId, paneId) = makeStoreAndPane()
         _ = try store.setMetadata(

@@ -744,7 +744,11 @@ struct PanelRailTipView: View {
                         if let word = statusWord(row.status) {
                             Text(word)
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(statusColor(row.status, palette))
+                                .foregroundStyle(statusColor(
+                                    row.status,
+                                    markColorOverrideHex: row.markColorOverrideHex,
+                                    palette
+                                ))
                                 .lineLimit(1)
                         }
                     }
@@ -817,10 +821,14 @@ struct PanelRailTipView: View {
         }
     }
 
-    private func statusColor(_ status: PanelRailTipStatusKind?, _ palette: TipPalette) -> Color {
+    private func statusColor(
+        _ status: PanelRailTipStatusKind?,
+        markColorOverrideHex: String?,
+        _ palette: TipPalette
+    ) -> Color {
         switch status {
         case .waiting: return palette.amber
-        case .flagged: return palette.violet
+        case .flagged: return flagColor(markColorOverrideHex, palette)
         default: return palette.faint
         }
     }
@@ -829,12 +837,16 @@ struct PanelRailTipView: View {
         switch row.status {
         case .working: return palette.text
         case .waiting: return palette.amber
-        case .flagged: return palette.violet
+        case .flagged: return flagColor(row.markColorOverrideHex, palette)
         case .cold:
             return row.markColorOverrideHex.flatMap { NSColor(hex: $0) }.map { Color(nsColor: $0) } ?? palette.faint
         case .idle: return palette.faint
         case nil: return Color.clear
         }
+    }
+
+    private func flagColor(_ hex: String?, _ palette: TipPalette) -> Color {
+        hex.flatMap { NSColor(hex: $0) }.map { Color(nsColor: $0) } ?? palette.violet
     }
 }
 

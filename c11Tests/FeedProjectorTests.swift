@@ -35,6 +35,37 @@ final class FeedProjectorTests: XCTestCase {
         FeedAttentionFact(workspaceID: workspace, panelID: panel, flagReason: "synthetic-flag", flagRaisedAtMs: 50, flagCallerPanelID: otherPanel, suppressed: suppressed)
     }
 
+    func testNamedFlagFeedJSONCarriesTheSnapshotWhileGenericStaysUntyped() throws {
+        let kind = PanelFlagKind(id: "merge-issue", name: "Merge Issue", color: .red, emoji: "🧩")
+        let named = FeedAttentionFact(
+            workspaceID: JournalTestData.workspace,
+            panelID: JournalTestData.panel,
+            flagReason: "Conflicting change",
+            flagRaisedAtMs: 50,
+            flagCallerPanelID: otherPanel,
+            flagKind: kind,
+            suppressed: false
+        )
+        let namedRow = try XCTUnwrap(FeedProjector.project(
+            journalRows: [], attention: [named], notes: [:], scope: .attention
+        ).first)
+        let namedFlag = try XCTUnwrap(namedRow.jsonObject()["flag"] as? [String: Any])
+        let namedSnapshot = try XCTUnwrap(namedFlag["kind"] as? [String: Any])
+        XCTAssertEqual(namedFlag["reason"] as? String, "Conflicting change")
+        XCTAssertEqual(namedSnapshot["id"] as? String, "merge-issue")
+        XCTAssertEqual(namedSnapshot["name"] as? String, "Merge Issue")
+        XCTAssertEqual(namedSnapshot["color"] as? String, "red")
+        XCTAssertEqual(namedSnapshot["emoji"] as? String, "🧩")
+        XCTAssertEqual(kind.colorHex(lightBackground: true), "#B42331")
+        XCTAssertEqual(kind.colorHex(lightBackground: false), "#FF6B78")
+
+        let genericRow = try XCTUnwrap(FeedProjector.project(
+            journalRows: [], attention: [flag()], notes: [:], scope: .attention
+        ).first)
+        let genericFlag = try XCTUnwrap(genericRow.jsonObject()["flag"] as? [String: Any])
+        XCTAssertTrue(genericFlag["kind"] is NSNull)
+    }
+
     func testFeedAnswerTextPolicyClassifiesNewlinesForPreDeliveryRefusal() {
         XCTAssertNil(FeedAnswerTextPolicy.refusalCode(for: "single line answer"))
         XCTAssertEqual(FeedAnswerTextPolicy.refusalCode(for: "first\nsecond"), "multiline_unsupported")

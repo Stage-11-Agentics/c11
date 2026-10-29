@@ -187,6 +187,7 @@ struct FeedQuickViewRow: View {
     let selected: Bool
     var onLayout: ((String, CGRect) -> Void)?
     let onOpen: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: onOpen) { rowContent }
@@ -201,7 +202,9 @@ struct FeedQuickViewRow: View {
 
     private var rowContent: some View {
         HStack(spacing: 8) {
-            Image(systemName: glyph).frame(width: 16, height: 16)
+            Image(systemName: glyph)
+                .foregroundColor(flagColor)
+                .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline).lineLimit(1).truncationMode(.tail)
                 Text(evidence).font(.caption).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
@@ -217,12 +220,29 @@ struct FeedQuickViewRow: View {
         .contentShape(Rectangle())
     }
 
-    private var prompt: String {
-        row.prompt ?? row.flag?.reason ?? String(localized: "feed.quick.prompt.missing", defaultValue: "—")
+    var prompt: String {
+        if let flag = row.flag {
+            // Keep a same-panel ask prompt visible; its named flag reason
+            // occupies the evidence line in that case.
+            if let askPrompt = row.prompt { return askPrompt }
+            if let kind = flag.kind { return kind.displayText(reason: flag.reason) }
+            return row.prompt ?? flag.reason
+        }
+        return row.prompt ?? String(localized: "feed.quick.prompt.missing", defaultValue: "—")
     }
 
-    private var accessibleHelp: String {
-        String([title, evidence, prompt].joined(separator: "\n").prefix(1024))
+    private var flagColor: Color {
+        guard let kind = row.flag?.kind,
+              let color = NSColor(hex: kind.colorHex(lightBackground: colorScheme == .light)) else {
+            return .primary
+        }
+        return Color(nsColor: color)
+    }
+
+    var accessibleHelp: String {
+        var lines = [title, evidence, prompt]
+        if evidence != evidenceSource { lines.append(evidenceSource) }
+        return String(lines.joined(separator: "\n").prefix(1024))
     }
 
     private var glyph: String {
@@ -236,6 +256,7 @@ struct FeedQuickViewRow: View {
         }
     }
     private var kindTitle: String {
+        if let label = row.flag?.kind?.displayLabel, !label.isEmpty { return label }
         switch row.kind {
         case .question: return String(localized: "feed.quick.kind.question", defaultValue: "Question")
         case .plan: return String(localized: "feed.quick.kind.plan", defaultValue: "Plan")
@@ -254,7 +275,17 @@ struct FeedQuickViewRow: View {
         formatter.maximumUnitCount = 1
         return formatter.string(from: max(0, now.timeIntervalSince1970 - Double(ms) / 1000)) ?? "—"
     }
-    private var evidence: String {
+    var evidence: String {
+        if let flag = row.flag,
+           let kind = flag.kind,
+           let askPrompt = row.prompt,
+           !askPrompt.isEmpty {
+            return kind.displayText(reason: flag.reason)
+        }
+        return evidenceSource
+    }
+
+    private var evidenceSource: String {
         let source: String
         switch row.source {
         case "hook": source = String(localized: "feed.quick.source.hook", defaultValue: "Hook")

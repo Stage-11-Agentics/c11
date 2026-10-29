@@ -419,20 +419,27 @@ final class EventEmitter {
         workspace: UUID,
         surface: UUID,
         reason: String,
+        kind: PanelFlagKind? = nil,
         callerPanelId: UUID?,
         by actor: PanelAttentionActor
     ) {
+        var payload: [String: Any] = [
+            "reason": reason,
+            // C11-337: v2 writes only `caller_panel_id`; readers accept the
+            // v1 `caller_tab_id` / `caller_surface_id` via `EventEnvelope.callerPanelId`.
+            EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull(),
+            "by": actor.rawValue,
+        ]
+        // Omit the key for generic flags so old generic events retain their
+        // original shape. Named events carry an immutable display snapshot.
+        if let kind {
+            payload["kind"] = kind.jsonObject
+        }
         emit(
             .flagRaised,
             workspace: workspace,
             surface: surface,
-            payload: [
-                "reason": reason,
-                // C11-337: v2 writes only `caller_panel_id`; readers accept the
-                // v1 `caller_tab_id` / `caller_surface_id` via `EventEnvelope.callerPanelId`.
-                EventEnvelope.PayloadKey.callerPanelId: callerPanelId?.uuidString ?? NSNull(),
-                "by": actor.rawValue,
-            ]
+            payload: payload
         )
     }
 

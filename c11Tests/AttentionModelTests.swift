@@ -68,7 +68,7 @@ final class AttentionModelTests: XCTestCase {
         let raised = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
-            flag: .raise("Needs review"),
+            flag: .raise("Needs review", kind: nil),
             delegation: .delegate(ownerPanelId: ownerPanelId),
             callerPanelId: originalCaller,
             now: raisedAt
@@ -95,7 +95,7 @@ final class AttentionModelTests: XCTestCase {
         let revised = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
-            flag: .raise("Needs operator decision"),
+            flag: .raise("Needs operator decision", kind: nil),
             callerPanelId: revisingCaller,
             now: Date(timeIntervalSince1970: 2_000)
         )
@@ -111,7 +111,7 @@ final class AttentionModelTests: XCTestCase {
         let noOp = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
-            flag: .raise("Needs operator decision"),
+            flag: .raise("Needs operator decision", kind: nil),
             delegation: .delegate(ownerPanelId: ownerPanelId)
         )
         XCTAssertEqual(noOp.result.applied[MetadataKey.flag], false)
@@ -128,7 +128,7 @@ final class AttentionModelTests: XCTestCase {
         let reraised = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
-            flag: .raise("New epoch"),
+            flag: .raise("New epoch", kind: nil),
             callerPanelId: revisingCaller,
             now: Date(timeIntervalSince1970: 4_000)
         )
@@ -146,6 +146,74 @@ final class AttentionModelTests: XCTestCase {
                 flagRaisedAt: reraised.after.flagRaisedAt!
             )
         )
+    }
+
+    func testNamedFlagSnapshotEditsKeepTheEpochAndLowerRemovesTheKind() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+        let raisedAt = Date(timeIntervalSince1970: 1_735_000_000)
+        let firstKind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: "🧭")
+        let editedKind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .teal, emoji: "🧭")
+
+        let raised = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            flag: .raise("Needs a decision", kind: firstKind),
+            now: raisedAt
+        )
+        XCTAssertEqual(raised.after.flagKind, firstKind)
+        XCTAssertEqual(raised.after.flagRaisedAt, raisedAt)
+        let storedSnapshot = try XCTUnwrap(
+            store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata[MetadataKey.flagKind] as? [String: Any]
+        )
+        XCTAssertEqual(storedSnapshot["id"] as? String, "chief-of-staff")
+        XCTAssertEqual(storedSnapshot["name"] as? String, "Chief of Staff")
+        XCTAssertEqual(storedSnapshot["color"] as? String, "green")
+        XCTAssertEqual(storedSnapshot["emoji"] as? String, "🧭")
+
+        let revised = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            flag: .raise("Still needs a decision", kind: editedKind),
+            now: raisedAt.addingTimeInterval(900)
+        )
+        XCTAssertEqual(revised.after.flagKind, editedKind)
+        XCTAssertEqual(revised.after.flagRaisedAt, raisedAt, "kind and reason edits keep the queue epoch")
+        XCTAssertEqual(revised.result.applied[MetadataKey.flagKind], true)
+
+        let lowered = try store.mutateAttention(workspaceId: workspace, surfaceId: surface, flag: .lower)
+        XCTAssertNil(lowered.after.flagKind)
+        XCTAssertNil(store.getMetadata(workspaceId: workspace, surfaceId: surface).metadata[MetadataKey.flagKind])
+    }
+
+    func testFlagKindRegistryKeepsBuiltInsAndPersistsUserKindsInItsStore() throws {
+        let suite = "c11-flag-kind-tests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let registry = PanelFlagKindRegistry(defaults: defaults)
+
+        XCTAssertEqual(registry.kind(id: "chief-of-staff"), PanelFlagKind(
+            id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil
+        ))
+        XCTAssertEqual(registry.kind(id: "merge-issue"), PanelFlagKind(
+            id: "merge-issue", name: "Merge Issue", color: .red, emoji: nil
+        ))
+
+        let userKind = PanelFlagKind(id: "release-review", name: "Release Review", color: .pink, emoji: "🧪")
+        try registry.set(userKind)
+        XCTAssertEqual(registry.kind(id: "release-review"), userKind)
+
+        let editedBuiltIn = PanelFlagKind(id: "chief-of-staff", name: "Office of the Chief", color: .teal, emoji: "🧭")
+        try registry.set(editedBuiltIn)
+        XCTAssertEqual(registry.kind(id: "chief-of-staff"), editedBuiltIn)
+        XCTAssertTrue(try registry.remove(id: "chief-of-staff"))
+        XCTAssertEqual(registry.kind(id: "chief-of-staff"), PanelFlagKindRegistry.builtIns.first { $0.id == "chief-of-staff" })
+
+        XCTAssertTrue(try registry.remove(id: "release-review"))
+        XCTAssertNil(registry.kind(id: "release-review"))
+        XCTAssertFalse(try registry.remove(id: "missing-kind"))
+        XCTAssertFalse(PanelFlagKind.isValidSlug("Release Review"))
     }
 
     func testDelegationAdoptsLegacySuppressionAndTransfersToTheLatestCaller() throws {
@@ -462,7 +530,7 @@ final class AttentionModelTests: XCTestCase {
             try store.mutateAttention(
                 workspaceId: workspace,
                 surfaceId: surface,
-                flag: .raise(reason)
+                flag: .raise(reason, kind: nil)
             )
         ) {
             XCTAssertEqual(($0 as? PanelMetadataStore.WriteError)?.code, "payload_too_large")
@@ -751,11 +819,13 @@ final class AttentionModelTests: XCTestCase {
         let newerSurface = UUID()
         let olderCaller = UUID()
         let controller = TerminalController.shared
+        let namedKind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: "🧭")
         PanelAttentionIndex.shared.publish(
             PanelAttentionSnapshot(
                 workspaceId: workspace,
                 surfaceId: newerSurface,
                 flagReason: "newer",
+                flagKind: namedKind,
                 flagRaisedAt: Date(timeIntervalSince1970: 20),
                 suppressed: false
             )
@@ -801,6 +871,10 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(flags.first?["panel_id"] as? String, olderSurface.uuidString)
         XCTAssertNil(flags.first?["tab_id"], "C11-345: tab_* keys are no longer emitted")
         XCTAssertNil(flags.first?["surface_id"], "C11-337: surface_* keys are no longer emitted")
+        XCTAssertTrue(flags.first?["kind"] is NSNull, "generic flags keep an explicit null snapshot")
+        let newerSnapshot = try! XCTUnwrap(flags.last?["kind"] as? [String: Any])
+        XCTAssertEqual(newerSnapshot["id"] as? String, "chief-of-staff")
+        XCTAssertEqual(newerSnapshot["color"] as? String, "green")
         XCTAssertEqual(
             flags.first?["caller_panel_id"] as? String,
             olderCaller.uuidString
@@ -836,6 +910,83 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(object["ok"] as? Bool, false)
         let error = try! XCTUnwrap(object["error"] as? [String: Any])
         XCTAssertEqual(error["code"] as? String, "missing_caller_surface")
+    }
+
+    func testFlagRaiseRejectsUnknownKindBeforeCallerValidationOrCommit() {
+        let controller = TerminalController.shared
+        let response = AttentionTestBox<String?>(nil)
+        let completed = expectation(description: "unknown flag kind rejected before commit")
+        DispatchQueue.global(qos: .userInitiated).async {
+            response.set(
+                controller.socketWorkerV2Response(
+                    TerminalController.V2SocketRequest(
+                        id: 181,
+                        method: "flag.raise",
+                        params: [
+                            "surface_id": UUID().uuidString,
+                            "reason": "Needs operator",
+                            "kind": "not-registered",
+                            "by": "agent",
+                        ]
+                    )
+                )
+            )
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+
+        let data = try! XCTUnwrap(response.get()?.data(using: .utf8))
+        let object = try! XCTUnwrap(try! JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        let error = try! XCTUnwrap(object["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "invalid_params")
+        XCTAssertEqual(error["message"] as? String, "kind must be the id of a registered flag kind")
+    }
+
+    func testFlagKindSocketMethodsListValidateSaveAndRemove() throws {
+        let controller = TerminalController.shared
+        let registry = PanelFlagKindRegistry.shared
+        let id = "socket-test-\(UUID().uuidString.lowercased())"
+        defer { _ = try? registry.remove(id: id) }
+
+        func send(_ method: String, params: [String: Any], requestID: Int) throws -> [String: Any] {
+            let response = AttentionTestBox<String?>(nil)
+            let completed = expectation(description: "\(method) response")
+            DispatchQueue.global(qos: .userInitiated).async {
+                response.set(controller.socketWorkerV2Response(
+                    TerminalController.V2SocketRequest(id: requestID, method: method, params: params)
+                ))
+                completed.fulfill()
+            }
+            wait(for: [completed], timeout: 2)
+            let data = try XCTUnwrap(response.get()?.data(using: .utf8))
+            return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        let listed = try send("flag.kind.list", params: [:], requestID: 182)
+        XCTAssertEqual(listed["ok"] as? Bool, true)
+        let kinds = try XCTUnwrap((listed["result"] as? [String: Any])?["kinds"] as? [[String: Any]])
+        XCTAssertTrue(kinds.contains { $0["id"] as? String == "chief-of-staff" })
+        XCTAssertTrue(kinds.contains { $0["id"] as? String == "merge-issue" })
+
+        let invalid = try send("flag.kind.set", params: [
+            "id": id, "name": "Socket Test", "color": "blue",
+        ], requestID: 183)
+        XCTAssertEqual(invalid["ok"] as? Bool, false)
+        XCTAssertEqual((invalid["error"] as? [String: Any])?["code"] as? String, "invalid_params")
+        XCTAssertNil(registry.kind(id: id))
+
+        let kind = PanelFlagKind(id: id, name: "Socket Test", color: .pink, emoji: "🧪")
+        let saved = try send("flag.kind.set", params: [
+            "id": id, "name": kind.name, "color": kind.color.rawValue, "emoji": kind.emoji!,
+        ], requestID: 184)
+        XCTAssertEqual(saved["ok"] as? Bool, true)
+        XCTAssertEqual(registry.kind(id: id), kind)
+
+        let removed = try send("flag.kind.rm", params: ["id": id], requestID: 185)
+        XCTAssertEqual(removed["ok"] as? Bool, true)
+        XCTAssertEqual((removed["result"] as? [String: Any])?["removed"] as? Bool, true)
+        XCTAssertNil(registry.kind(id: id))
     }
 
     func testAgentDelegationRequiresCallerSurfaceBeforeMainThreadCommit() {
@@ -1124,7 +1275,7 @@ final class AttentionModelTests: XCTestCase {
         _ = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
-            flag: .raise("Canonical")
+            flag: .raise("Canonical", kind: nil)
         )
         XCTAssertThrowsError(
             try store.clearMetadata(

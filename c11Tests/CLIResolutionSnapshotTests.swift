@@ -1055,6 +1055,10 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             (["set-workspace-description", "--workspace", workspaceID, "--value", "hello"], "workspace.set_metadata"),
             (["set-workspace-icon", "--workspace", workspaceID, "--value", "sf:star.fill"], "workspace.set_metadata"),
             (["raise-flag", "--workspace", workspaceID, "--panel", panelID, "--by", "operator", "--json", "reason"], "flag.raise"),
+            (["raise-flag", "--panel", panelID, "--kind", "chief-of-staff", "reason"], "flag.raise"),
+            (["flag-kind", "list"], "flag.kind.list"),
+            (["flag-kind", "set", "--id", "release-review", "--name", "Release Review", "--color", "pink", "--emoji", "🧪"], "flag.kind.set"),
+            (["flag-kind", "rm", "--id", "release-review"], "flag.kind.rm"),
             (["lower-flag", "--window", "window:1", "--panel", panelID, "--json"], "flag.lower"),
         ]
         for (command, method) in cases {
@@ -1063,6 +1067,30 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         XCTAssertTrue(assertCommandReachesSocket(
             ["clear-notifications", "--workspace", workspaceID]
         ))
+
+        guard let socket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let missingKind = runCLI(
+            ["raise-flag", "--panel", socket.panelIDForAssertions, "--kind"],
+            socketPath: socket.path
+        ) else { return }
+        XCTAssertNotEqual(missingKind.status, 0)
+        XCTAssertFalse(socket.waitUntilFinished(), "a missing --kind value must fail before socket I/O")
+        XCTAssertTrue(socket.requests.isEmpty)
+
+        guard let adHocSocket = try? CapturedCLISocket() else {
+            XCTFail("Could not create a fake CLI socket")
+            return
+        }
+        guard let adHocColor = runCLI(
+            ["raise-flag", "--panel", adHocSocket.panelIDForAssertions, "--color", "red", "reason"],
+            socketPath: adHocSocket.path
+        ) else { return }
+        XCTAssertNotEqual(adHocColor.status, 0)
+        XCTAssertTrue(adHocColor.stderr.contains("unknown flag '--color'"), adHocColor.stderr)
+        XCTAssertTrue(adHocSocket.requests.isEmpty, "per-raise colors must fail before socket I/O")
     }
 
     func testLeadingDashTextAndEndOfOptionsRemainLiteral() {

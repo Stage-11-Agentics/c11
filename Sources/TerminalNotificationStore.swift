@@ -1114,7 +1114,8 @@ final class TerminalNotificationStore: ObservableObject {
         surfaceId: UUID,
         flagRaisedAt: Date,
         title: String?,
-        reason: String
+        reason: String,
+        kind: PanelFlagKind? = nil
     ) {
         let fallback = String(
             localized: "notification.flaggedAgent.title",
@@ -1138,7 +1139,7 @@ final class TerminalNotificationStore: ObservableObject {
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             title: normalizedTitle ?? fallback,
-            subtitle: "",
+            subtitle: kind?.displayLabel ?? "",
             body: reason,
             createdAt: Date(),
             isRead: true

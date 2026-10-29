@@ -51,6 +51,7 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         let result = WorkspacePlanCapture.planSurfaceMetadata(from: [
             MetadataKey.title: .string("Agent"),
             MetadataKey.flag: .string("operator_attention"),
+            MetadataKey.flagKind: .object(["id": .string("chief-of-staff")]),
             MetadataKey.suppressed: .bool(true),
             MetadataKey.delegatedBy: .string("owner"),
         ])

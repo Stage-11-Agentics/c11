@@ -156,7 +156,8 @@ extension TerminalController {
         case "config.list", "config.recent", "config.stats",
              "config.save", "config.edit", "config.rm", "config.reorder", "config.default":
             return v2Result(id: request.id, TerminalController.v2ConfigNonLaunch(method: request.method, params: request.params))
-        case "flag.raise", "flag.lower", "flag.list", "flag.delegate", "flag.undelegate":
+        case "flag.raise", "flag.lower", "flag.list", "flag.delegate", "flag.undelegate",
+             "flag.kind.list", "flag.kind.set", "flag.kind.rm":
             return v2Result(
                 id: request.id,
                 self.v2FlagWorker(

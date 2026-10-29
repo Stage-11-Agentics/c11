@@ -23,7 +23,9 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         browserURL: URL? = nil,
         markdownPath: String? = nil,
         activity: BonsplitTabActivityState? = nil,
-        isFlagged: Bool = false
+        isFlagged: Bool = false,
+        flagReason: String? = nil,
+        flagKind: PanelFlagKind? = nil
     ) -> PanelSheetDetailBuilder.Inputs {
         .init(
             panelType: panelType,
@@ -37,6 +39,8 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
             markdownPath: markdownPath,
             activity: activity,
             isFlagged: isFlagged,
+            flagReason: flagReason,
+            flagKind: flagKind,
             stateEnteredAt: t0.addingTimeInterval(10),
             stateStartedAt: t0,
             flagRaisedAt: t0.addingTimeInterval(30),
@@ -217,6 +221,23 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         )
     }
 
+    func testFlagSubtitleShowsGenericReasonAndNamedKindSnapshot() {
+        let generic = PanelSheetDetailBuilder.build(inputs(
+            directory: "/repo",
+            isFlagged: true,
+            flagReason: "Need an operator decision"
+        ))
+        XCTAssertEqual(generic.subtitle, "Need an operator decision · /repo")
+
+        let named = PanelSheetDetailBuilder.build(inputs(
+            directory: "/repo",
+            isFlagged: true,
+            flagReason: "Resolve the merge conflict",
+            flagKind: PanelFlagKind(id: "merge-issue", name: "Merge Issue", color: .red, emoji: "🧩")
+        ))
+        XCTAssertEqual(named.subtitle, "🧩 Merge Issue: Resolve the merge conflict · /repo")
+    }
+
     // MARK: Title
 
     func testFullTitleIsKeptWhole() {
@@ -376,6 +397,7 @@ final class WorkspaceCloseInventoryTests: XCTestCase {
     private func row(
         _ title: String,
         agentTint: String? = nil,
+        flagColorHex: String? = nil,
         status: BonsplitTabDetail.StatusKind? = nil
     ) -> WorkspaceCloseInventory.Row {
         WorkspaceCloseInventory.Row(
@@ -384,6 +406,7 @@ final class WorkspaceCloseInventoryTests: XCTestCase {
             title: title,
             kindLabel: agentTint == nil ? "Terminal" : "Claude Code · Opus",
             agentTintHex: agentTint,
+            flagColorHex: flagColorHex,
             subtitle: nil,
             status: status
         )
@@ -417,5 +440,10 @@ final class WorkspaceCloseInventoryTests: XCTestCase {
 
         XCTAssertEqual(inventory.scaleSummary, "1 panel")
         XCTAssertTrue(inventory.liveStateCounts.isEmpty, "idle and cold are not live work")
+    }
+
+    func testFlaggedInventoryRowKeepsItsNamedColorSnapshot() {
+        let flagged = row("merge issue", flagColorHex: "#FF6B78", status: .flagged)
+        XCTAssertEqual(flagged.flagColorHex, "#FF6B78")
     }
 }

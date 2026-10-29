@@ -98,7 +98,7 @@ priority; delegation reroutes routine attention, it never blocks escalation.
 |---|---|
 | Normal | Independent agent; routine completion reaches the operator. |
 | Delegate | The agent that launched this worker handles its results; routine signals go to that parent, not the operator's sidebar. The usual state for workers an agent launches. |
-| Flagged | Operator-designated priority mission, or a running agent now needs human action. Marks render violet; the flag escalates to the menu bar extra, reaching the operator even when c11 isn't frontmost. |
+| Flagged | Operator-designated priority mission, or a running agent now needs human action. Generic flags render violet; named flags use their registered adaptive color token. The flag escalates to the menu bar extra, reaching the operator even when c11 isn't frontmost. |
 | Flagged delegate | Supervised priority mission: routine completion stays quiet, escalation still lands at full strength. |
 
 Feed and the configured attention jump use oldest flags first, then oldest eligible open asks (panel UUID, then workspace UUID for ties). The jump continues through oldest eligible unread completions/legacy notices with exact panel targets.
@@ -111,12 +111,32 @@ Use `c11 feed answer` only for an eligible flag or `turn_end` row; in c11 1.0 it
 
 ```bash
 c11 raise-flag --panel "$C11_PANEL_ID" "Need a call on schema migration vs dual-write"
+c11 raise-flag --panel "$C11_PANEL_ID" --kind chief-of-staff "Need a decision before I can continue"
 c11 lower-flag --panel "$C11_PANEL_ID"
 c11 launch-agent ... --flag "Watch the migration" --by operator
 ```
 
 The reason is required — one line, ≤256 chars, surfaced everywhere the flag appears. Write it
 as the sentence you would say if the operator walked over. Policy differs by origin:
+
+A flag may have an optional **kind**. Without one, it stays the generic violet flag. Named
+kinds are labels, not severity levels: `chief-of-staff` (green) and `merge-issue` (red) are
+editable built-ins. Raise with `--kind <slug>` only after it has been registered. Manage the
+c11-owned registry from Settings or the CLI:
+
+```bash
+c11 flag-kind list
+c11 flag-kind set --id <slug> --name <name> --color <token> [--emoji <emoji>]
+c11 flag-kind rm --id <slug>
+```
+
+Colors come from the fixed adaptive palette; arbitrary hex values and per-raise color or emoji
+overrides are not supported. The active flag and its `flag.raised` event retain the resolved
+name, color token, and emoji snapshot. Editing or removing a registry entry does not repaint an
+existing flag. Editing a flag's reason or kind keeps its original raise time and queue position.
+The Feed, sidebar rows, panel mark tooltip/accessibility, menu-bar items, in-surface banner,
+system notification, and panel list show the available kind label and reason. Aggregate counts
+and the menu-bar glyph remain generic because multiple kinds can be active together.
 
 - **At dispatch** (`--flag`): reserved for missions the operator designated as priority. Pass
   it only when relaying explicit operator intent, with `--by operator`.
@@ -127,7 +147,8 @@ as the sentence you would say if the operator walked over. Policy differs by ori
   Delegates below).
 
 A flag is **sticky** — it holds until dismissed or lowered, and if you are also stopped the
-mark strobes, the strongest signal c11 has. **Expect at least nine in ten agents to never
+mark strobes in its flag color, the strongest signal c11 has; generic flags keep violet.
+**Expect at least nine in ten agents to never
 carry one**; the tier's power is its scarcity. Typing into the flagged panel lowers the
 flag immediately — an operator's first keystroke of a reply is the answer arriving — so a
 flag that vanishes mid-conversation was answered, not lost. Otherwise a dismissed flag was
@@ -142,7 +163,9 @@ Every raise sent from inside c11 also records the calling panel UUID as
 caller. An operator-originated raise outside c11 may omit it. This is attribution, not a copied
 display identity: resolve the UUID against current panel metadata or conversation state, and
 fall back to the raw UUID after the caller closes. `flag.raised` events carry the same
-`caller_panel_id` plus `by`.
+`caller_panel_id` plus `by`; named events also carry the resolved `kind` snapshot. Generic
+events omit that optional field, so older event records remain valid. `flag.list` and Feed JSON
+include the optional active kind snapshot.
 
 ### Delegates: workers that report to their parent
 
@@ -151,10 +174,11 @@ you, not the operator: on stop its mark reads idle, and it stays out of waiting 
 routine notifications (the record still lands in the store). Its mark sits on a **baseline**: one
 thin rule under the mark per delegate hop, two for a delegate of a delegate (the display stops at
 two; the tooltip and panel list give the true depth). The baseline is the only delegate cue; color
-still means attention (gray lifecycle, blue cache-cold, violet flag), so a cold delegate is gray or
-blue like any agent. **Gold and the waiting shape mean waiting on the operator, nothing else:** a
-stopped delegate shows idle, and the only waiting-shaped delegate is a flagged one, in violet, with
-its baseline kept. The operator hears that *you* are waiting, never that your worker finished.
+still means attention (gray lifecycle, blue cache-cold, violet generic flag, or a named flag token),
+so a cold delegate is gray or blue like any agent. **Gold and the waiting shape mean waiting on the
+operator, nothing else:** a stopped delegate shows idle, and the only waiting-shaped delegate is a
+flagged one, in its flag color, with its baseline kept. The operator hears that *you* are waiting,
+never that your worker finished.
 Parent/child is a creation fact: every delegate is a child, but not every child is a delegate.
 Use the delegate vocabulary for new work; `--suppressed`, `suppress`/`unsuppress`, and reads
 of `suppressed` remain aliases for compatibility:
@@ -176,7 +200,8 @@ handing the work off for good. A delegate is yours in three ways:
   parent by mailbox. If something needs the operator, or your parent can't or shouldn't judge
   it, raise a c11 flag."*
 - **Visibility.** The baseline under its mark distinguishes a quiet worker from an ordinary
-  idle panel; a flag turns the mark and its baseline violet.
+  idle panel; a generic flag turns the mark and its baseline violet, while a named flag uses its
+  registered color token.
 
 c11 releases a delegate when its owner panel closes. A re-tasked delegate releases itself with
 `c11 undelegate --panel "$C11_PANEL_ID"`.
@@ -224,7 +249,8 @@ terminal. Click the group name to focus a member. The header stays highlighted
 when its active member is hidden. Its fixed slots show members, flagged panels,
 non-delegated waiting panels, and unread notifications separately, including hidden
 members. Any flag makes the group signal violet, even on a delegated or plain
-terminal; unread alone does not add a waiting panel. Counts above 99 show `99+`,
+terminal, and the group signal stays generic when members carry different named
+kinds; unread alone does not add a waiting panel. Counts above 99 show `99+`,
 with exact counts in accessibility labels and tooltips.
 
 Use the header menu for Rename, Color, Icon, Pin/Unpin, Ungroup or Delete Group;

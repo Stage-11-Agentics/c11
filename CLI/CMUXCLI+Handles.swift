@@ -675,6 +675,7 @@ extension CMUXCLI {
             return sub(["path": 1, "status": 1, "list": 1, "install": 1, "remove": 1, "uninstall": 1, "help": 1])
         case "terminal-theme": return sub(["list": 1, "clear": 1])
         case "model-costs": return sub(["list": 1, "help": 1])
+        case "flag-kind": return sub(["list": 1, "set": 1, "rm": 1, "help": 1])
         case "events": return sub(["tail": 1, "help": 1])
         case "config": return sub(["list": 1, "recent": 1, "stats": 1])
         case "themes":
@@ -964,10 +965,21 @@ extension CMUXCLI {
         case "clear-notifications":
             return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
         case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
+            var values: Set<String> = ["--panel", "--workspace", "--window", "--by"]
+            if command == "raise-flag" { values.insert("--kind") }
             return CLIFlagPreflightSpec(
                 flags: ["--json"],
-                valueOptions: ["--panel", "--workspace", "--window", "--by"]
+                valueOptions: values
             )
+        case "flag-kind":
+            switch args.first?.lowercased() {
+            case "list": return CLIFlagPreflightSpec(flags: ["--json"])
+            case "set": return CLIFlagPreflightSpec(
+                flags: ["--json"], valueOptions: ["--id", "--name", "--color", "--emoji"]
+            )
+            case "rm": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--id"])
+            default: return CLIFlagPreflightSpec(flags: ["--json"])
+            }
         default:
             return declaredCommandFlagPreflightSpec(command, args: args)
         }

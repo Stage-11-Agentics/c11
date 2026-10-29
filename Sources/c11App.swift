@@ -6355,6 +6355,18 @@ struct SettingsView: View {
         SettingsCard {
             DefaultAgentSettingsSection()
         }
+
+        SettingsSectionHeader(title: String(
+            localized: "settings.section.flagKinds",
+            defaultValue: "Flag kinds"
+        ))
+        SettingsCardNote(String(
+            localized: "settings.flagKinds.note",
+            defaultValue: "Named flags use a fixed color palette. Existing flags keep the display snapshot they had when raised."
+        ))
+        SettingsCard {
+            PanelFlagKindSettingsSection()
+        }
     }
 
     // C11-14: Automation page now hosts the permissions + socket-access +
@@ -6965,6 +6977,203 @@ extension SettingsPickerRow where ExtraTrailing == EmptyView {
     ) {
         self.init(title, subtitle: subtitle, controlWidth: controlWidth, selection: selection, accessibilityId: accessibilityId, content: content) {
             EmptyView()
+        }
+    }
+}
+
+private struct PanelFlagKindSettingsSection: View {
+    @State private var kinds = PanelFlagKindRegistry.shared.all()
+    @State private var newID = ""
+    @State private var newName = ""
+    @State private var newColor: PanelFlagColorToken = .green
+    @State private var newEmoji = ""
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+
+    private var canAdd: Bool {
+        let candidate = PanelFlagKind(
+            id: newID,
+            name: newName,
+            color: newColor,
+            emoji: newEmoji.isEmpty ? nil : newEmoji
+        )
+        return candidate.isValid && !kinds.contains(where: { $0.id == candidate.id })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(kinds.enumerated()), id: \.element.id) { index, kind in
+                PanelFlagKindSettingsRow(
+                    kind: kind,
+                    onSave: save,
+                    onRemove: remove
+                )
+                if index < kinds.count - 1 { SettingsCardDivider() }
+            }
+
+            if !kinds.isEmpty { SettingsCardDivider() }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "settings.flagKinds.addHeading", defaultValue: "Add a kind"))
+                    .font(.system(size: 12, weight: .semibold))
+                HStack(spacing: 7) {
+                    TextField(String(localized: "settings.flagKinds.idPlaceholder", defaultValue: "slug"), text: $newID)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 112)
+                        .accessibilityIdentifier("SettingsFlagKindNewID")
+                    TextField(String(localized: "settings.flagKinds.namePlaceholder", defaultValue: "Name"), text: $newName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 100)
+                        .accessibilityIdentifier("SettingsFlagKindNewName")
+                    colorPicker(selection: $newColor)
+                    TextField(String(localized: "settings.flagKinds.emojiPlaceholder", defaultValue: "Emoji"), text: $newEmoji)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                        .accessibilityIdentifier("SettingsFlagKindNewEmoji")
+                    Button(String(localized: "settings.flagKinds.add", defaultValue: "Add"), action: add)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!canAdd)
+                        .accessibilityIdentifier("SettingsFlagKindAdd")
+                }
+                Text(String(localized: "settings.flagKinds.slugHelp", defaultValue: "Use a lowercase slug with letters, numbers, and single hyphens."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(statusIsError ? Color.red : Color.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+            }
+        }
+        .onAppear(perform: reload)
+        .onReceive(NotificationCenter.default.publisher(for: PanelFlagKindRegistry.didChangeNotification)
+            .receive(on: DispatchQueue.main)) { _ in reload() }
+    }
+
+    private func colorPicker(selection: Binding<PanelFlagColorToken>) -> some View {
+        Picker(String(localized: "settings.flagKinds.color", defaultValue: "Color"), selection: selection) {
+            ForEach(PanelFlagColorToken.allCases, id: \.self) { token in
+                Text(token.localizedName).tag(token)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+    }
+
+    private func reload() {
+        kinds = PanelFlagKindRegistry.shared.all()
+    }
+
+    private func add() {
+        save(PanelFlagKind(
+            id: newID,
+            name: newName,
+            color: newColor,
+            emoji: newEmoji.isEmpty ? nil : newEmoji
+        ))
+        if statusIsError == false {
+            newID = ""
+            newName = ""
+            newEmoji = ""
+        }
+    }
+
+    private func save(_ kind: PanelFlagKind) {
+        do {
+            try PanelFlagKindRegistry.shared.set(kind)
+            reload()
+            statusMessage = String(localized: "settings.flagKinds.saved", defaultValue: "Flag kind saved.")
+            statusIsError = false
+        } catch {
+            statusMessage = String(localized: "settings.flagKinds.saveError", defaultValue: "Could not save this flag kind.")
+            statusIsError = true
+        }
+    }
+
+    private func remove(_ id: String) {
+        do {
+            _ = try PanelFlagKindRegistry.shared.remove(id: id)
+            reload()
+            statusMessage = PanelFlagKindRegistry.isBuiltIn(id)
+                ? String(localized: "settings.flagKinds.reset", defaultValue: "Built-in kind reset to its default.")
+                : String(localized: "settings.flagKinds.removed", defaultValue: "Flag kind removed.")
+            statusIsError = false
+        } catch {
+            statusMessage = String(localized: "settings.flagKinds.removeError", defaultValue: "Could not update this flag kind.")
+            statusIsError = true
+        }
+    }
+}
+
+private struct PanelFlagKindSettingsRow: View {
+    let kind: PanelFlagKind
+    let onSave: (PanelFlagKind) -> Void
+    let onRemove: (String) -> Void
+
+    @State private var name: String
+    @State private var color: PanelFlagColorToken
+    @State private var emoji: String
+
+    init(kind: PanelFlagKind, onSave: @escaping (PanelFlagKind) -> Void, onRemove: @escaping (String) -> Void) {
+        self.kind = kind
+        self.onSave = onSave
+        self.onRemove = onRemove
+        _name = State(initialValue: kind.name)
+        _color = State(initialValue: kind.color)
+        _emoji = State(initialValue: kind.emoji ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(kind.id)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 7) {
+                TextField(String(localized: "settings.flagKinds.namePlaceholder", defaultValue: "Name"), text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 100)
+                    .accessibilityLabel(String(localized: "settings.flagKinds.name", defaultValue: "Name"))
+                Picker(String(localized: "settings.flagKinds.color", defaultValue: "Color"), selection: $color) {
+                    ForEach(PanelFlagColorToken.allCases, id: \.self) { token in
+                        Text(token.localizedName).tag(token)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                TextField(String(localized: "settings.flagKinds.emojiPlaceholder", defaultValue: "Emoji"), text: $emoji)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 70)
+                    .accessibilityLabel(String(localized: "settings.flagKinds.emoji", defaultValue: "Emoji"))
+                Button(String(localized: "settings.flagKinds.save", defaultValue: "Save")) {
+                    onSave(PanelFlagKind(id: kind.id, name: name, color: color, emoji: emoji.isEmpty ? nil : emoji))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("SettingsFlagKindSave.\(kind.id)")
+                Button(PanelFlagKindRegistry.isBuiltIn(kind.id)
+                    ? String(localized: "settings.flagKinds.resetButton", defaultValue: "Reset")
+                    : String(localized: "settings.flagKinds.remove", defaultValue: "Remove")) {
+                    onRemove(kind.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("SettingsFlagKindRemove.\(kind.id)")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .onChange(of: kind) { updated in
+            name = updated.name
+            color = updated.color
+            emoji = updated.emoji ?? ""
         }
     }
 }

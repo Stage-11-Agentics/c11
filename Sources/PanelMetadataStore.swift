@@ -23,6 +23,8 @@ public enum MetadataKey {
     public static let description = "description"
     public static let lifecycleState = "lifecycle_state"
     public static let flag = "flag"
+    /// Immutable display snapshot for the optional kind on an active flag.
+    public static let flagKind = "flag_kind"
     public static let legacyFlagCallerSurfaceId = "flag_caller_surface_id"
     /// C11-248 / C11-345: the v0.67 spelling of the flag caller key. Read-only:
     /// still read (and cleared) when an older session restores it, never written.
@@ -73,7 +75,7 @@ public enum MetadataKey {
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch, activity, flag, legacyFlagCallerSurfaceId, flagCallerTabId, flagCallerPanelId,
+        worktree, branch, activity, flag, flagKind, legacyFlagCallerSurfaceId, flagCallerTabId, flagCallerPanelId,
         delegated, delegatedBy, suppressed, icon, color
     ]
 
@@ -232,6 +234,7 @@ final class PanelMetadataStore: @unchecked Sendable {
         "branch",
         "activity",
         "flag",
+        "flag_kind",
         "flag_caller_surface_id",
         "flag_caller_tab_id",
         "flag_caller_panel_id",
@@ -348,6 +351,11 @@ final class PanelMetadataStore: @unchecked Sendable {
             }
             guard !reason.contains("\n"), !reason.contains("\r") else {
                 return .reservedKeyInvalidType(key, "reason must be a single line")
+            }
+            return nil
+        case "flag_kind":
+            guard PanelFlagKind.fromJSON(value) != nil else {
+                return .reservedKeyInvalidType(key, "expected a valid kind display snapshot")
             }
             return nil
         case "flag_caller_surface_id", "flag_caller_tab_id", "flag_caller_panel_id":
@@ -651,6 +659,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
+                flagKind: PanelFlagKind.fromJSON(blob[MetadataKey.flagKind]),
                 flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
                 flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
@@ -679,6 +688,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
+                flagKind: PanelFlagKind.fromJSON(blob[MetadataKey.flagKind]),
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
                 flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
@@ -690,21 +700,38 @@ final class PanelMetadataStore: @unchecked Sendable {
             switch flag {
             case .unchanged:
                 break
-            case .raise(let reason):
+            case .raise(let reason, let kind):
                 if let error = Self.validateReservedKey(MetadataKey.flag, reason) {
                     throw error
                 }
+                if let kind, !kind.isValid {
+                    throw WriteError.reservedKeyInvalidType(MetadataKey.flagKind, "invalid flag kind")
+                }
                 let priorReason = blob[MetadataKey.flag] as? String
+                let priorKind = PanelFlagKind.fromJSON(blob[MetadataKey.flagKind])
+                let hasInvalidKindSnapshot = blob[MetadataKey.flagKind] != nil && priorKind == nil
                 let existingCaller = PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:))
                 let shouldSetCaller = existingCaller == nil && callerPanelId != nil
                 if priorReason != reason
+                    || priorKind != kind
+                    || hasInvalidKindSnapshot
                     || sourceBlob[MetadataKey.flag]?.source != .explicit
                     || shouldSetCaller {
                     if let priorReason { result.priorValues[MetadataKey.flag] = priorReason }
                     blob[MetadataKey.flag] = reason
                     let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
                     sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
+                    if let kind {
+                        blob[MetadataKey.flagKind] = kind.jsonObject
+                        sourceBlob[MetadataKey.flagKind] = SourceRecord(source: .explicit, ts: epoch)
+                    } else {
+                        blob.removeValue(forKey: MetadataKey.flagKind)
+                        sourceBlob.removeValue(forKey: MetadataKey.flagKind)
+                    }
+                    if priorKind != kind || hasInvalidKindSnapshot {
+                        result.applied[MetadataKey.flagKind] = true
+                    }
                     if let callerPanelId, existingCaller == nil {
                         blob.removeValue(forKey: MetadataKey.flagCallerTabId)
                         sourceBlob.removeValue(forKey: MetadataKey.flagCallerTabId)
@@ -733,6 +760,9 @@ final class PanelMetadataStore: @unchecked Sendable {
                             result.removedKeys.insert(key)
                         }
                     }
+                    let hadKind = blob.removeValue(forKey: MetadataKey.flagKind) != nil
+                    sourceBlob.removeValue(forKey: MetadataKey.flagKind)
+                    if hadKind { result.removedKeys.insert(MetadataKey.flagKind) }
                     result.removedKeys.insert(MetadataKey.flag)
                     result.applied[MetadataKey.flag] = true
                 } else {
@@ -815,6 +845,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 flagReason: blob[MetadataKey.flag] as? String,
+                flagKind: PanelFlagKind.fromJSON(blob[MetadataKey.flagKind]),
                 flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
                 flagCallerPanelId: PanelMetadataStore.flagCallerValue(blob)
                     .flatMap(UUID.init(uuidString:)),
@@ -837,10 +868,12 @@ final class PanelMetadataStore: @unchecked Sendable {
                 blob.removeValue(forKey: key)
                 sourceBlob.removeValue(forKey: key)
             }
+            blob.removeValue(forKey: MetadataKey.flagKind)
             blob.removeValue(forKey: MetadataKey.delegated)
             blob.removeValue(forKey: MetadataKey.delegatedBy)
             blob.removeValue(forKey: MetadataKey.suppressed)
             sourceBlob.removeValue(forKey: MetadataKey.flag)
+            sourceBlob.removeValue(forKey: MetadataKey.flagKind)
             sourceBlob.removeValue(forKey: MetadataKey.delegated)
             sourceBlob.removeValue(forKey: MetadataKey.delegatedBy)
             sourceBlob.removeValue(forKey: MetadataKey.suppressed)
@@ -854,6 +887,10 @@ final class PanelMetadataStore: @unchecked Sendable {
                     source: .explicit,
                     ts: epoch
                 )
+                if let kind = snapshot.flagKind, kind.isValid {
+                    blob[MetadataKey.flagKind] = kind.jsonObject
+                    sourceBlob[MetadataKey.flagKind] = SourceRecord(source: .explicit, ts: epoch)
+                }
                 if let callerPanelId = snapshot.flagCallerPanelId {
                     for key in MetadataKey.flagCallerWriteKeys {
                         blob[key] = callerPanelId.uuidString
@@ -895,6 +932,7 @@ final class PanelMetadataStore: @unchecked Sendable {
             var result = WriteResult()
             let attentionKeys: Set<String> = [
                 MetadataKey.flag,
+                MetadataKey.flagKind,
                 MetadataKey.legacyFlagCallerSurfaceId,
                 MetadataKey.flagCallerTabId,
                 MetadataKey.flagCallerPanelId,
@@ -1062,12 +1100,14 @@ final class PanelMetadataStore: @unchecked Sendable {
         var values = values
         var sources = sources
         let fallbackTimestamp = now.timeIntervalSince1970
+        var activeFlagTimestamp: Double?
 
         if let reason = values[MetadataKey.flag] as? String,
            validateReservedKey(MetadataKey.flag, reason) == nil {
             values[MetadataKey.flag] = reason
             let flagTimestamp =
                 validAttentionTimestamp(sources[MetadataKey.flag]?.ts) ?? fallbackTimestamp
+            activeFlagTimestamp = flagTimestamp
             sources[MetadataKey.flag] = SourceRecord(
                 source: .explicit,
                 ts: flagTimestamp
@@ -1093,6 +1133,18 @@ final class PanelMetadataStore: @unchecked Sendable {
                 values.removeValue(forKey: key)
                 sources.removeValue(forKey: key)
             }
+        }
+
+        if let activeFlagTimestamp,
+           let kind = PanelFlagKind.fromJSON(values[MetadataKey.flagKind]) {
+            values[MetadataKey.flagKind] = kind.jsonObject
+            sources[MetadataKey.flagKind] = SourceRecord(source: .explicit, ts: activeFlagTimestamp)
+        } else {
+            // A display snapshot belongs to the active flag epoch. Drop
+            // malformed and orphan values, while preserving a valid snapshot
+            // even when its registry entry has since been removed.
+            values.removeValue(forKey: MetadataKey.flagKind)
+            sources.removeValue(forKey: MetadataKey.flagKind)
         }
 
         let interimDelegated = values.removeValue(forKey: MetadataKey.delegated) as? Bool == true
@@ -1145,6 +1197,7 @@ final class PanelMetadataStore: @unchecked Sendable {
         source: MetadataSource
     ) -> Bool {
         guard key != MetadataKey.flag,
+              key != MetadataKey.flagKind,
               key != MetadataKey.legacyFlagCallerSurfaceId,
               key != MetadataKey.flagCallerTabId,
               key != MetadataKey.flagCallerPanelId,
@@ -1217,6 +1270,7 @@ final class PanelMetadataStore: @unchecked Sendable {
         }
         let attentionKeys: Set<String> = [
             MetadataKey.flag,
+            MetadataKey.flagKind,
             MetadataKey.legacyFlagCallerSurfaceId,
             MetadataKey.flagCallerTabId,
             MetadataKey.flagCallerPanelId,

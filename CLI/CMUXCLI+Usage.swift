@@ -129,7 +129,8 @@ extension CMUXCLI {
           default-agent {get | set <type> | launch [--in-panel <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--delegated] [--env K=V ...] [--json]
           model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--cache-read <usd>] [--cache-write <usd>] [--cache-write-1h <usd>] [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
-          raise-flag --panel <id|ref> "<reason>"
+          flag-kind {list [--json] | set --id <slug> --name <name> --color <token> [--emoji <emoji>] | rm --id <slug>}
+          raise-flag --panel <id|ref> [--kind <slug>] "<reason>"
           lower-flag --panel <id|ref>
           delegate --panel <id|ref>
           undelegate --panel <id|ref>

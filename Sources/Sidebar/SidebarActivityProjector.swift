@@ -35,6 +35,7 @@ struct AgentActivityHelpProjection: Equatable {
     let accessibilityValue: String
     let lastActivityAt: Date?
     let flagReason: String?
+    let flagKind: PanelFlagKind?
     let flagRaisedAt: Date?
     let suppressed: Bool
     /// Cold because the agent's prompt cache expired, not because it sat
@@ -47,6 +48,7 @@ struct AgentActivityHelpProjection: Equatable {
         waitingStartedAt: Date?,
         coldAfterSeconds: TimeInterval,
         flagReason: String?,
+        flagKind: PanelFlagKind? = nil,
         flagRaisedAt: Date?,
         suppressed: Bool,
         delegationLabel: String? = nil,
@@ -67,11 +69,21 @@ struct AgentActivityHelpProjection: Equatable {
         let normalizedReason = flagReason?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         var detailLines: [String] = []
-        if let normalizedReason, !normalizedReason.isEmpty {
+        if let normalizedReason, !normalizedReason.isEmpty, let flagKind {
+            detailLines.append(String(format: String(
+                localized: "surface.activity.flaggedKind",
+                defaultValue: "Flagged: %@: %@"
+            ), flagKind.displayLabel, normalizedReason))
+        } else if let normalizedReason, !normalizedReason.isEmpty {
             detailLines.append(String(
                 localized: "surface.activity.flagged",
                 defaultValue: "Flagged: \(normalizedReason)"
             ))
+        } else if let flagKind {
+            detailLines.append(String(format: String(
+                localized: "surface.activity.flaggedKindNoReason",
+                defaultValue: "Flagged: %@"
+            ), flagKind.displayLabel))
         } else if flagReason != nil {
             detailLines.append(String(
                 localized: "surface.activity.flaggedNoReason",
@@ -133,6 +145,7 @@ struct AgentActivityHelpProjection: Equatable {
             ),
             lastActivityAt: lastActivityAt,
             flagReason: normalizedReason.flatMap { $0.isEmpty ? nil : $0 },
+            flagKind: flagKind,
             flagRaisedAt: flagRaisedAt,
             suppressed: suppressed,
             promptCacheExpired: promptCacheExpired
@@ -213,8 +226,8 @@ struct PanelActivityDetailsSnapshot: Equatable {
     var isBeingSeen: Bool = false
 }
 
-/// Which color a 9pt activity mark takes. Color means attention only: the
-/// flag's violet wins, then blue on a cold mark whose prompt cache expired,
+/// Which color a 9pt activity mark takes. Color means attention only: a
+/// named flag's token or generic violet wins, then blue on a cold mark whose prompt cache expired,
 /// else the gray/gold lifecycle ramp. Delegation is not a color; it draws a
 /// lineage baseline (`BonsplitActivityMarkLineage`).
 enum ActivityMarkTint: Equatable {
@@ -242,6 +255,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     let flagged: Bool
     let suppressed: Bool
     let flagReason: String?
+    let flagKind: PanelFlagKind?
     let activityHelp: AgentActivityHelpProjection?
     /// Delegate hops above this agent (0 for a normal agent). The mark draws
     /// one baseline rule per hop, capped at two.
@@ -256,8 +270,8 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         )
     }
 
-    /// The cold line turns blue when the agent's prompt cache expired; the
-    /// flag's violet wins over it.
+    /// The cold line turns blue when the agent's prompt cache expired; a flag
+    /// wins over it, using its named token or generic violet.
     var showsPromptCacheColor: Bool {
         markTint == .promptCacheCold
     }
@@ -269,6 +283,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         flagged: Bool = false,
         suppressed: Bool = false,
         flagReason: String? = nil,
+        flagKind: PanelFlagKind? = nil,
         activityHelp: AgentActivityHelpProjection? = nil,
         lineageDepth: Int = 0
     ) {
@@ -278,6 +293,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         self.flagged = flagged
         self.suppressed = suppressed
         self.flagReason = flagReason
+        self.flagKind = flagKind
         self.activityHelp = activityHelp
         self.lineageDepth = suppressed ? max(1, lineageDepth) : 0
     }

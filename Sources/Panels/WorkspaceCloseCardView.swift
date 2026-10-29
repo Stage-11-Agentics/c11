@@ -157,6 +157,8 @@ public struct WorkspaceCloseInventory {
         let kindLabel: String
         /// The model-family tint; set only for agents.
         let agentTintHex: String?
+        /// The active flag's snapshotted color token, resolved for this dark card.
+        let flagColorHex: String?
         let subtitle: String?
         let status: BonsplitTabDetail.StatusKind?
 
@@ -184,6 +186,7 @@ public struct WorkspaceCloseInventory {
                 title: Self.displayTitle(workspace.title),
                 rows: workspace.sidebarOrderedPanelIds().compactMap { panelId in
                     guard let detail = workspace.panelSheetDetail(panelId: panelId) else { return nil }
+                    let attention = workspace.attentionSnapshot(panelId: panelId)
                     return Row(
                         id: panelId,
                         ordinal: showOrdinals
@@ -195,12 +198,13 @@ public struct WorkspaceCloseInventory {
                         ),
                         kindLabel: detail.agentLabel ?? detail.typeLabel ?? "",
                         agentTintHex: detail.agentTintHex,
+                        flagColorHex: attention.flagKind?.colorHex(lightBackground: false),
                         subtitle: detail.subtitle,
                         // A flag on a panel with no tracked activity (a plain
                         // terminal) still has to show: it is work the operator
                         // was asked to look at.
                         status: detail.status?.kind
-                            ?? (workspace.attentionSnapshot(panelId: panelId).isFlagged ? .flagged : nil)
+                            ?? (attention.isFlagged ? .flagged : nil)
                     )
                 }
             )
@@ -397,7 +401,7 @@ struct WorkspaceCloseInventoryView: View {
                     if let status = row.status {
                         Text(WorkspaceCloseInventory.statusWord(status))
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Self.statusColor(status))
+                            .foregroundStyle(Self.statusColor(status, flagColorHex: row.flagColorHex))
                             .fixedSize()
                     }
                 }
@@ -420,11 +424,15 @@ struct WorkspaceCloseInventoryView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private static func statusColor(_ kind: BonsplitTabDetail.StatusKind) -> Color {
+    private static func statusColor(
+        _ kind: BonsplitTabDetail.StatusKind,
+        flagColorHex: String? = nil
+    ) -> Color {
         switch kind {
         case .working: return BrandColors.whiteSwiftUI
         case .waiting: return amber
-        case .flagged: return violet
+        case .flagged:
+            return flagColorHex.flatMap { NSColor(hex: $0) }.map { Color(nsColor: $0) } ?? violet
         case .idle, .cold: return faint
         }
     }

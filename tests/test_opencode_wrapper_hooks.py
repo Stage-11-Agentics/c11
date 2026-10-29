@@ -520,7 +520,8 @@ def test_v2_native_mail_disable_keeps_identity_capture_plugin() -> None:
 
 
 def test_unknown_or_timed_out_versions_keep_baseline_without_plugin_injection() -> None:
-    for options in ({"version": "2.0.26"}, {"version": "garbage"},
+    for options in ({"version": "2.0.26"}, {"version": "2.0.25-beta"},
+                    {"version": "2.0.25+build.1"}, {"version": "garbage"},
                     {"version": "2.0.25", "version_delay": 2}):
         code, argv, state, c11_log, stderr = run_wrapper(
             live=True, argv=["--continue"], interactive=True, **options,

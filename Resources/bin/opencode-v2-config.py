@@ -11,7 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION_RE = re.compile(r"(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?(?:\s|$)")
+# Accept only a plain release tuple so prereleases/build metadata never pass an
+# exact-version feature gate after the suffix has been normalized away.
+VERSION_RE = re.compile(r"(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\s|$)")
 
 
 def probe(binary: str) -> int:

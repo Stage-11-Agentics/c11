@@ -128,6 +128,14 @@ function sessionReadyForMailbox(context, id) {
   } catch { return false; }
 }
 
+function reportLifecycle(c11Bin, socketPath, activity) {
+  if (!c11Bin || !socketPath) return;
+  void execFileAsync(c11Bin, ["--socket", socketPath, "agent-hook", activity], {
+    timeout: 750,
+    maxBuffer: 64 * 1024,
+  }).catch(() => {});
+}
+
 export default {
   id: 'com.stage11.c11.opencode-v2',
   async setup(context) {
@@ -156,7 +164,31 @@ export default {
     let stopMailbox;
     let mailboxRevision = 0;
     let nativeNotReady = false;
+    let reportedLifecycle;
     const pending = new Map();
+
+    const reportRootLifecycle = (sessionID, activity) => {
+      if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
+          currentRoute(context) !== sessionID || conflict || captureState !== 'bound' ||
+          reportedLifecycle === activity) return;
+      reportedLifecycle = activity;
+      reportLifecycle(c11Bin, socketPath, activity);
+    };
+
+    const stopLifecycle = [];
+    const onSessionEvent = (type, handler) => {
+      const stop = context.data.on?.(type, handler);
+      if (typeof stop === 'function') stopLifecycle.push(stop);
+    };
+    onSessionEvent('session.execution.started', event => {
+      reportRootLifecycle(event?.data?.sessionID, 'working');
+    });
+    for (const type of ['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']) {
+      onSessionEvent(type, event => {
+        if (type === 'session.execution.interrupted' && event?.data?.reason === 'shutdown') return;
+        reportRootLifecycle(event?.data?.sessionID, 'idle');
+      });
+    }
 
     const clearPending = () => {
       stopMailbox?.();
@@ -240,6 +272,7 @@ export default {
         visibleID = candidateID;
         boundID = undefined;
         conflict = Boolean(candidateID);
+        reportedLifecycle = undefined;
         nativeNotReady = false;
         captureState = candidateID ? 'waiting' : 'no-route';
         retryCaptureAt = 0;
@@ -337,6 +370,9 @@ export default {
         conflict = false;
         nativeNotReady = false;
         captureState = 'bound';
+        if (context.data.session.status?.(candidateID) === 'running') {
+          reportRootLifecycle(candidateID, 'working');
+        }
         if (!nativeMailDisabled) {
           // Replace the provisional stream so a prior session_conflict
           // fallback ledger clears after this route becomes authoritative.
@@ -363,6 +399,10 @@ export default {
 
     const monitor = setInterval(() => {
       void capture().then(() => {
+        if (boundID && visibleID === boundID && currentRoute(context) === boundID &&
+            context.data.session.status?.(boundID) === 'running') {
+          reportRootLifecycle(boundID, 'working');
+        }
         if (!nativeNotReady || !boundID || boundID !== visibleID || conflict ||
             !sessionReadyForMailbox(context, boundID)) return;
         nativeNotReady = false;
@@ -378,6 +418,7 @@ export default {
       generation++;
       clearInterval(monitor);
       clearPending();
+      stopLifecycle.forEach(stop => stop());
     };
   },
 };

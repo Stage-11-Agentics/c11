@@ -79,6 +79,25 @@ def probe(binary: str) -> int:
 
 
 def parse_jsonc(source: str):
+    def skip_trivia(position: int) -> int:
+        while position < len(source):
+            if source[position].isspace():
+                position += 1
+                continue
+            if source.startswith("//", position):
+                position += 2
+                while position < len(source) and source[position] not in "\r\n":
+                    position += 1
+                continue
+            if source.startswith("/*", position):
+                end = source.find("*/", position + 2)
+                if end < 0:
+                    raise ValueError("unterminated JSONC comment")
+                position = end + 2
+                continue
+            break
+        return position
+
     out = []
     i = 0
     string = False
@@ -113,9 +132,7 @@ def parse_jsonc(source: str):
             i = end + 2
             continue
         if ch == ",":
-            j = i + 1
-            while j < len(source) and source[j].isspace():
-                j += 1
+            j = skip_trivia(i + 1)
             if j < len(source) and source[j] in "}]":
                 i += 1
                 continue

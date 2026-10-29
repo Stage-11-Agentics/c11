@@ -435,6 +435,21 @@ def test_v2_composes_cli_plugins_and_reserves_exact_resume_before_launch() -> No
     assert state["cli_file_after"] == file_config, state
 
 
+def test_v2_composes_plugins_when_jsonc_trailing_comma_precedes_comment() -> None:
+    cli_file = '{"plugins":["operator-file"], // valid JSONC trailing comma\n}\n'
+    cli_content = '{"theme":"operator"}'
+    code, _, state, _, stderr = run_wrapper(
+        live=True, argv=[], interactive=True, version="2.0.25",
+        cli_content=cli_content, cli_file=cli_file,
+    )
+    assert code == 0, stderr
+    assert state["cli_file_after"] == cli_file, state
+    composed = json.loads(state["cli_content"])
+    assert composed["theme"] == "operator", composed
+    assert composed["plugins"][0] == "operator-file", composed
+    assert composed["plugins"][-1]["package"].endswith("/c11-opencode-v2"), composed
+
+
 def test_v2_falls_back_for_invalid_config_and_failed_reservation() -> None:
     valid_session = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
     malformed = '{"plugins": ["operator"],'

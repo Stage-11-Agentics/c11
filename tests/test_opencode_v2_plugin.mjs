@@ -16,6 +16,16 @@ async function until(predicate, timeout = 2000) {
   while (!predicate()) { assert(Date.now() < end, 'timed out'); await delay(10); }
 }
 
+async function untilAsync(predicate, timeout = 2000) {
+  const end = Date.now() + timeout;
+  while (true) {
+    const value = await predicate();
+    if (value) return value;
+    assert(Date.now() < end, 'timed out');
+    await delay(10);
+  }
+}
+
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
@@ -24,17 +34,14 @@ async function fixture(t, {
   const dir = await mkdtemp('/tmp/c11-oc-v2-');
   const socketPath = `${dir}/mail.sock`;
   const claimLog = `${dir}/claim.log`;
-  let c11Binary = process.execPath;
-  if (claimPending) {
-    c11Binary = `${dir}/c11`;
-    await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$C11_CLAIM_LOG"\nexit 0\n');
-    await chmod(c11Binary, 0o755);
-  }
+  const c11Binary = `${dir}/c11`;
+  await writeFile(c11Binary, '#!/bin/sh\nprintf "%s\\n" "$*" >> "${C11_CLI_LOG:-$C11_CLAIM_LOG}"\nexit 0\n');
+  await chmod(c11Binary, 0o755);
   const envBefore = { ...process.env };
   for (const key of Object.keys(process.env)) if (/^(C11_|CMUX_)/.test(key)) delete process.env[key];
   Object.assign(process.env, {
     C11_SOCKET_PATH: socketPath, C11_PANEL_ID: 'panel-a',
-    C11_AGENT_INTERACTIVE_PID: String(process.pid), C11_AGENT_HOOK_CLI: c11Binary,
+    C11_AGENT_INTERACTIVE_PID: String(process.pid), C11_AGENT_HOOK_CLI: c11Binary, C11_CLI_LOG: claimLog,
     ...(claimPending
       ? { C11_OPENCODE_TUI_CLAIM_FAILED: '1', C11_OPENCODE_EXPECTED_RESUME_ID: rootA, C11_CLAIM_LOG: claimLog }
       : { C11_OPENCODE_TUI_CLAIMED: '1' }),
@@ -46,8 +53,13 @@ async function fixture(t, {
     [rootB, { id: rootB, location: { directory: '/same/cwd' } }],
     [child, { id: child, parentID: rootA, location: { directory: '/same/cwd' } }],
   ]);
-  const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], calls: [], syncCalls: 0,
-    conflictID: conflictID ?? '', status, unbindCalls: 0 };
+  const statusBySession = new Map([[rootA, status], [rootB, 'idle'], [child, 'idle']]);
+  const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], lifecycleHandlers: [],
+    calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0 };
+  state.emit = (type, sessionID, extra = {}) => {
+    const event = { type, data: { sessionID, ...extra } };
+    for (const item of [...state.lifecycleHandlers]) if (item.type === type) item.handler(event);
+  };
   const sockets = new Set();
   const subscriptions = [];
   const frames = [];
@@ -99,8 +111,13 @@ async function fixture(t, {
           state.syncCalls++;
           if (state.syncCalls <= syncFailureCount) throw new Error('session_sync_failed');
           if (state.syncCalls >= hydrateAfterSync) state.sessions.set(id, { id, location: { directory: '/same/cwd' } });
-        }, status: () => state.status,
+        }, status: id => state.statusBySession.get(id) ?? 'idle',
         permission: { list: () => [] }, question: { list: () => [] },
+      },
+      on: (type, handler) => {
+        const item = { type, handler };
+        state.lifecycleHandlers.push(item);
+        return () => { state.lifecycleHandlers = state.lifecycleHandlers.filter(candidate => candidate !== item); };
       },
       listen: callback => { state.callbacks.push(callback); return () => { state.callbacks = state.callbacks.filter(item => item !== callback); }; },
     },
@@ -128,6 +145,57 @@ test('v2 TUI owns exact displayed root capture and confirms native mail from its
   assert.match(f.state.calls[0].id, /^msg_[0-9a-f]{32}$/);
   assert.equal(f.state.calls[0].text, doorbellText);
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'mail-a'));
+});
+
+test('v2 reports only the bound displayed root execution lifecycle', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  await until(() => f.subscriptions.length >= 2 && f.frames.some(frame =>
+    frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
+
+  f.state.emit('session.execution.started', rootB);
+  await delay(30);
+  assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook'), false,
+    'another root in the shared server cannot change this panel lifecycle');
+
+  f.state.emit('session.execution.started', rootA);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
+  f.state.emit('session.execution.interrupted', rootA, { reason: 'shutdown' });
+  await delay(30);
+  assert.equal((await readFile(f.claimLog, 'utf8')).includes('agent-hook idle'), false,
+    'shutdown is not a prompt-ready edge');
+
+  f.state.emit('session.execution.succeeded', rootB);
+  await delay(30);
+  assert.equal((await readFile(f.claimLog, 'utf8')).includes('agent-hook idle'), false,
+    'a sibling session completion cannot release this panel');
+
+  f.state.emit('session.execution.failed', rootA);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
+  f.state.emit('session.execution.started', rootA);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook working/g)?.length >= 2);
+  f.state.emit('session.execution.interrupted', rootA, { reason: 'user_abort' });
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).match(/agent-hook idle/g)?.length >= 2);
+  const calls = (await readFile(f.claimLog, 'utf8')).trim().split('\n');
+  assert.equal(calls.some(line => line.includes('--native-event')), false,
+    'OpenCode lifecycle uses the panel-scoped activity bridge, not the Pi journal event');
+});
+
+test('v2 ignores lifecycle events from child and former displayed routes', { timeout: 5000 }, async t => {
+  const f = await fixture(t);
+  await until(() => f.subscriptions.length >= 2 && f.frames.some(frame =>
+    frame.method === 'conversation.push' && frame.params.id === rootA && frame.params.displayed_root));
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.subscriptions.length >= 4 && f.frames.some(frame =>
+    frame.method === 'conversation.push' && frame.params.id === rootB && frame.params.displayed_root));
+
+  f.state.emit('session.execution.succeeded', rootA);
+  f.state.emit('session.execution.started', child);
+  await delay(30);
+  assert.equal((await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook'), false,
+    'neither a former root nor a child session owns this panel lifecycle');
+
+  f.state.emit('session.execution.started', rootB);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
 });
 
 test('v2 native mail is not acknowledged when session.prompt returns a different inbox item', { timeout: 5000 }, async t => {
@@ -185,13 +253,16 @@ test('v2 route ownership conflict rejects before prompting and names safe hold',
 test('v2 busy route rejects with not_ready and re-registers after the session becomes idle', { timeout: 5000 }, async t => {
   const f = await fixture(t, { status: 'running' });
   await until(() => f.subscriptions.length >= 2);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook working'));
   const busyStream = f.subscriptions.at(-1);
   send(busyStream.socket, { type: 'deliver', delivery_id: 'busy-mail', text: doorbellText });
   await until(() => f.frames.some(frame => frame.type === 'rejected' && frame.delivery_id === 'busy-mail'));
   assert.equal(f.state.calls.length, 0, 'busy mail cannot invoke OpenCode session.prompt');
   assert.equal(f.frames.find(frame => frame.type === 'rejected' && frame.delivery_id === 'busy-mail').reason, 'not_ready');
 
-  f.state.status = 'idle';
+  f.state.statusBySession.set(rootA, 'idle');
+  f.state.emit('session.execution.succeeded', rootA);
+  await untilAsync(async () => (await readFile(f.claimLog, 'utf8').catch(() => '')).includes('agent-hook idle'));
   await until(() => f.subscriptions.length >= 3);
   const readyStream = f.subscriptions.at(-1);
   assert.notEqual(readyStream.frame.params.session_id, busyStream.frame.params.session_id,

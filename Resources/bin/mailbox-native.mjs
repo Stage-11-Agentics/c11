@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 
 export const doorbellText = 'c11 mail waiting: run c11 mailbox recv --ack';
 
-export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionID, route, canQueue = false, deliver, onSettled }) {
+export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionID, route, canQueue = false, deliver,
+  onDeliveryPending, onDeliverySettled, onSettled }) {
   let stopped = false;
   let socket;
   let retry;
@@ -20,6 +21,7 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
     const pendingDeliveries = new Set();
     const finishDelivery = deliveryID => {
       if (!pendingDeliveries.delete(deliveryID)) return;
+      onDeliverySettled?.(deliveryID);
       if (pendingDeliveries.size === 0) onSettled?.();
     };
     current.setTimeout(2000, () => current.destroy());
@@ -57,6 +59,7 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
         }
         if (frame.type !== 'deliver' || typeof frame.delivery_id !== 'string' || frame.text !== doorbellText) continue;
         pendingDeliveries.add(frame.delivery_id);
+        onDeliveryPending?.(frame.delivery_id);
         // A positive result means observed harness acceptance, never merely
         // invoking a void API. Rejections must precede any possible side effect.
         Promise.resolve().then(() => {

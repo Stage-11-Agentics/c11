@@ -180,6 +180,7 @@ export default {
     let readinessSyncInFlight = false;
     let readinessSyncRetryAt = 0;
     const pending = new Map();
+    const unsettledMailboxDeliveries = new Set();
 
     const refreshBoundSessionStatus = async (sessionID, routeGeneration) => {
       if (disposed || !sessionID || sessionID !== boundID || sessionID !== visibleID ||
@@ -367,7 +368,9 @@ export default {
     };
 
     const finishMailboxHandoff = () => {
-      if (!mailboxHandoff || pending.size || pendingUnbind) return;
+      // The prompt result can precede c11's durable coverage acknowledgement.
+      // Keep the old stream until both the prompt and every delivery settle.
+      if (!mailboxHandoff || pending.size || unsettledMailboxDeliveries.size || pendingUnbind) return;
       const next = mailboxHandoff;
       if (next.generation !== generation || next.sessionID !== visibleID) return;
       mailboxHandoff = undefined;
@@ -395,6 +398,8 @@ export default {
       const streamID = `${sessionID}:${routeGeneration}:${++mailboxRevision}`.slice(0, 256);
       stopMailbox = subscribeNativeMailbox({
         socketPath, panelID, agentPID, sessionID: streamID, route: 'opencode_plugin', canQueue: false,
+        onDeliveryPending: deliveryID => unsettledMailboxDeliveries.add(deliveryID),
+        onDeliverySettled: deliveryID => unsettledMailboxDeliveries.delete(deliveryID),
         onSettled: finishMailboxHandoff,
         async deliver(message) {
           if (disposed || generation !== routeGeneration || currentRoute(context) !== visibleID ||

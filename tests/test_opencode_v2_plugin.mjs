@@ -29,6 +29,7 @@ async function untilAsync(predicate, timeout = 2000) {
 async function fixture(t, {
   conflictID, loadRoot = true, hydrateAfterSync = Number.POSITIVE_INFINITY, syncFailureCount = 0,
   nativeMailDisabled = false, status = 'idle', unbindFailureCount = 0, claimPending = false,
+  holdUnbindResponses = false, holdSettlement = false,
   claimFailures = 0,
   hookFailOnce = [], hookDelayActivity = '', activeSessions, activeFailureCount = 0, holdActiveSnapshot = false,
   permissionHydrated = true, permissionSyncResult = [], formHydrated = true, formSyncResult = [],
@@ -71,6 +72,10 @@ async function fixture(t, {
     permissionList: permissionHydrated ? [] : undefined, permissionSyncCalls: 0,
     formList: formHydrated ? [] : undefined, formSyncCalls: 0, pendingList: [],
     messageList, messageSyncCalls: 0 };
+  state.pendingUnbindResponses = [];
+  state.pendingSettlements = [];
+  state.releaseUnbindResponses = () => state.pendingUnbindResponses.splice(0).forEach(release => release());
+  state.releaseSettlements = () => state.pendingSettlements.splice(0).forEach(release => release());
   state.activeSnapshotGate = holdActiveSnapshot
     ? new Promise(resolve => { state.releaseActiveSnapshot = resolve; })
     : Promise.resolve();
@@ -96,7 +101,9 @@ async function fixture(t, {
           send(socket, { ok: true, result: { subscription_id: 'registered' } });
         } else if (frame.type === 'accepted') {
           // Mirror c11's post-main-hop coverage confirmation.
-          send(socket, { type: 'settled', delivery_id: frame.delivery_id });
+          const settle = () => send(socket, { type: 'settled', delivery_id: frame.delivery_id });
+          if (holdSettlement) state.pendingSettlements.push(settle);
+          else settle();
         } else if (frame.method === 'conversation.push') {
           const id = frame.params.id;
           const isUnbind = Boolean(frame.params.displayed_route_state);
@@ -110,7 +117,9 @@ async function fixture(t, {
             : id === state.conflictID
             ? { outcome: 'identity_conflict', id, owner_surface_ids: ['other'] }
             : { outcome: 'accepted', id };
-          send(socket, { id: frame.id, ok: true, result });
+          const respond = () => send(socket, { id: frame.id, ok: true, result });
+          if (isUnbind && holdUnbindResponses) state.pendingUnbindResponses.push(respond);
+          else respond();
         }
       }
     });
@@ -553,6 +562,37 @@ test('v2 retries route unbinds and confirms an in-flight prompt before replacing
   assert.equal(f.state.calls.length, 2, 'the in-flight envelope is prompted once and the later envelope is prompted once');
   assert.equal(f.state.calls[0].sessionID, rootA, 'the in-flight envelope remains with the session that received it');
   assert.equal(f.state.calls.at(-1).sessionID, rootB, 'native delivery resumes only on the newly bound exact root');
+});
+
+test('v2 keeps an accepted delivery stream open until c11 settles coverage across route handoff', { timeout: 5000 }, async t => {
+  let resolvePrompt;
+  const f = await fixture(t, {
+    holdUnbindResponses: true,
+    holdSettlement: true,
+    promptResult: input => new Promise(resolve => { resolvePrompt = () => resolve({
+      id: input.id, sessionID: input.sessionID, type: 'user', payload: { text: input.text },
+    }); }),
+  });
+  await until(() => f.subscriptions.length >= 2);
+  const oldStream = f.subscriptions.at(-1);
+  send(oldStream.socket, { type: 'deliver', delivery_id: 'coverage-pending', text: doorbellText });
+  await until(() => f.state.calls.length === 1);
+
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.state.unbindCalls === 1);
+  resolvePrompt();
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'coverage-pending'));
+  f.state.releaseUnbindResponses();
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' &&
+    frame.params.id === rootB && frame.params.displayed_root));
+
+  assert.equal(f.subscriptions.length, 2,
+    'prompt completion alone cannot retire the route while c11 has not confirmed coverage');
+  assert.equal(oldStream.socket.destroyed, false, 'the old native stream remains open for settlement');
+
+  f.state.releaseSettlements();
+  await until(() => f.subscriptions.length === 3);
+  assert(oldStream.socket.destroyed, 'the old stream retires only after c11 settles coverage');
 });
 
 test('child session is never captured or opened as a mailbox recipient', { timeout: 5000 }, async t => {

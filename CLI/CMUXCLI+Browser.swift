@@ -302,14 +302,19 @@ extension CMUXCLI {
             // Parse routing flags before URL assembly so they never leak into the URL string.
             let (workspaceOpt, argsAfterWorkspace) = parseOption(subArgs, name: "--workspace")
             let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
-            let (profileOpt, argsAfterProfile) = parseOption(argsAfterWindow, name: "--profile")
+            let (paneOpt, argsAfterPane) = parseOption(argsAfterWindow, name: "--area")
+            let (profileOpt, argsAfterProfile) = parseOption(argsAfterPane, name: "--profile")
+            guard paneOpt == nil || surfaceRaw == nil else {
+                throw CLIError(message: "browser open: --panel and --area cannot be combined")
+            }
             guard profileOpt == validatedProfile else {
                 throw CLIError(message: String(localized: "browser.profile.error.invalidSelection", defaultValue: "--profile must be a non-empty string"))
             }
             let (urlArgs, allowInsecureHTTP) = parseFlag(argsAfterProfile, name: "--allow-insecure-http")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let respectExternalOpenRules: Bool = {
-                guard let raw = ProcessInfo.processInfo.environment["CMUX_RESPECT_EXTERNAL_OPEN_RULES"] else {
+                guard let raw = ProcessInfo.processInfo.environment["C11_RESPECT_EXTERNAL_OPEN_RULES"]
+                    ?? ProcessInfo.processInfo.environment["CMUX_RESPECT_EXTERNAL_OPEN_RULES"] else {
                     return false
                 }
                 switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -320,7 +325,21 @@ extension CMUXCLI {
                 }
             }()
 
-            if surfaceRaw != nil, subcommand == "open" {
+            // An explicit browser target retains open-as-navigation. Other panel
+            // types are placement anchors, as with markdown open.
+            let validatedSource = try validatedPanelTargetValue(surfaceRaw, wasProvided: surfaceRaw != nil)
+            let sourceSurface = try normalizeSurfaceHandle(validatedSource, client: client)
+            var opensExistingBrowser = false
+            if let sourceSurface, subcommand == "open" {
+                let listed = try client.sendV2(method: "panel.list", params: ["panel_id": sourceSurface])
+                let panels = listed["panels"] as? [[String: Any]] ?? []
+                opensExistingBrowser = panels.contains {
+                    (($0["id"] as? String)?.caseInsensitiveCompare(sourceSurface) == .orderedSame
+                     || ($0["ref"] as? String).map { Self.canonicalHandle($0).lowercased() == Self.canonicalHandle(sourceSurface).lowercased() } == true)
+                    && ($0["type"] as? String) == "browser"
+                }
+            }
+            if opensExistingBrowser {
                 // Treat `browser <surface> open <url>` as navigate for agent-browser ergonomics.
                 guard profileOpt == nil else {
                     throw CLIError(message: String(localized: "browser.profile.error.creationOnly", defaultValue: "--profile is only valid when creating a browser panel"))
@@ -342,10 +361,11 @@ extension CMUXCLI {
             if !url.isEmpty {
                 params["url"] = url
             }
-            if let sourceSurface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
+            if let sourceSurface {
                 params["panel_id"] = sourceSurface
             }
-            let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+            let environment = ProcessInfo.processInfo.environment
+            let workspaceRaw = workspaceOpt ?? (windowOpt == nil && sourceSurface == nil && paneOpt == nil ? environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"] : nil)
             if let workspaceRaw {
                 if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
                     params["workspace_id"] = workspace
@@ -365,11 +385,19 @@ extension CMUXCLI {
                     params["window_id"] = window
                 }
             }
+            if let paneOpt {
+                guard !paneOpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: "empty_ref: --area requires a non-empty area handle")
+                }
+                if let pane = try normalizePaneHandle(paneOpt, client: client, workspaceHandle: params["workspace_id"] as? String) {
+                    params["area_id"] = pane
+                }
+            }
             try addCallingPanel(to: &params)
             let payload = try client.sendV2(method: "browser.open_split", params: params)
             let surfaceText = formatHandle(payload, kind: "panel", idFormat: effectiveIDFormat) ?? "unknown"
             let paneText = formatHandle(payload, kind: "area", idFormat: effectiveIDFormat) ?? "unknown"
-            let placement = ((payload["created_split"] as? Bool) == true) ? "split" : "reuse"
+            let placement = payload["placement_strategy"] as? String ?? "unknown"
             let openFallback = "OK panel=\(surfaceText) area=\(paneText) placement=\(placement)"
                 + browserInsecureHTTPPendingSuffix(payload)
             output(payload, fallback: openFallback)

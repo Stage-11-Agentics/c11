@@ -1989,8 +1989,13 @@ extension CMUXCLI {
             `open`/`open-split`/`new`/`identify` can run without an explicit panel.
 
             Subcommands:
-              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--profile <name|id>] [--allow-insecure-http]
-                open/open-split/new default to $CMUX_WORKSPACE_ID when --workspace is omitted and --window is not set
+              open|open-split|new [url] [--area <id|ref>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--profile <name|id>] [--allow-insecure-http]
+                open/open-split/new place by anchor, never by focus (the three names are aliases)
+                without --panel/--area, anchor on $C11_PANEL_ID in $C11_WORKSPACE_ID
+                first open splits beside the anchor when space permits; later opens join its browser area
+                cross-workspace opens add to an existing area without splitting
+                --area adds a panel there without splitting; --panel anchors beside a terminal
+                open with an explicit browser panel navigates it in place; use new to create another
                 --profile selects one browser profile for this creation only
               profiles list
               profiles add <name>

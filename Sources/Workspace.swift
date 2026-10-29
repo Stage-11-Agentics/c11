@@ -10882,6 +10882,30 @@ final class Workspace: Identifiable, ObservableObject {
     /// after a restart placement falls back to the right-neighbor check.
     var markdownDocAnchors: [UUID: UUID] = [:]
 
+    /// Browser placement uses the same neighbor lookup as markdown, but never
+    /// joins an unrelated terminal area. Remember anchors for size-policy flips.
+    func isBrowserOnlyPane(_ paneId: PaneID) -> Bool {
+        let tabs = bonsplitController.tabs(inPane: paneId)
+        return !tabs.isEmpty && tabs.allSatisfy { tab in
+            guard let panelId = bonsplitTabIdToTabId[tab.id] else { return false }
+            return panels[panelId] is BrowserPanel
+        }
+    }
+
+    var browserPanelAnchors: [UUID: UUID] = [:]
+
+    func preferredBrowserOpenPane(fromPanelId panelId: UUID) -> PaneID? {
+        if let pane = preferredBrowserTargetPane(fromPanelId: panelId), isBrowserOnlyPane(pane) {
+            return pane
+        }
+        return bonsplitController.allPaneIds.first { pane in
+            isBrowserOnlyPane(pane) && bonsplitController.tabs(inPane: pane).contains { tab in
+                guard let browserId = bonsplitTabIdToTabId[tab.id] else { return false }
+                return browserPanelAnchors[browserId] == panelId
+            }
+        }
+    }
+
     /// Returns the nearest right-side sibling pane for browser placement.
     /// The search is local to the source pane's ancestry in the split tree:
     /// use the closest horizontal ancestor where the source is in the first (left) branch.

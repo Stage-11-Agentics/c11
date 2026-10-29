@@ -306,6 +306,8 @@ c11 new-panel --type terminal --area area:4
 c11 markdown open plan.md --area area:4
 ```
 
+**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
+
 ### Move a panel into a split
 
 ```bash

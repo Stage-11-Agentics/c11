@@ -69,6 +69,7 @@ final class SocketClient {
 
     func close() {
         serverVocabularyTier = nil
+        serverMethods = nil
         if socketFD >= 0 {
             Darwin.close(socketFD)
             socketFD = -1
@@ -364,13 +365,28 @@ final class SocketClient {
     /// Version-skew tier of the app on this socket (see `CLIVersionSkew`). Probed once per
     /// connection via `system.capabilities` and cached; a failed probe means `.panel`.
     var serverVocabularyTier: CLIVersionSkew.Tier?
+    /// The methods the same probe advertised; nil when it failed.
+    private(set) var serverMethods: Set<String>?
 
     private func probeServerVocabularyTier(deadline: SocketDeadline) -> CLIVersionSkew.Tier {
         if let cached = serverVocabularyTier { return cached }
         let caps = try? sendV2Raw(method: "system.capabilities", params: [:], deadline: deadline)
         let tier = CLIVersionSkew.tier(fromCapabilities: caps)
         serverVocabularyTier = tier
+        serverMethods = (caps?["methods"] as? [String]).map(Set.init)
         return tier
+    }
+
+    /// Whether the app on this socket advertises `method`, probing once.
+    /// Throws when that probe fails, so a caller can tell a probe with no
+    /// reply (whose late answer may still arrive) from an app's refusal.
+    func advertisesMethod(_ method: String) throws -> Bool {
+        if serverVocabularyTier == nil {
+            let caps = try sendV2Raw(method: "system.capabilities", params: [:], deadline: .default)
+            serverVocabularyTier = CLIVersionSkew.tier(fromCapabilities: caps)
+            serverMethods = (caps["methods"] as? [String]).map(Set.init)
+        }
+        return serverMethods?.contains(method) == true
     }
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {

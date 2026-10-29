@@ -2,7 +2,8 @@
 """v2 regression (C11-490, C11-491): a terminal panel moved to another
 workspace keeps its metadata, attention and tty, and the shell it was running
 still identifies and mails as that panel, though its C11_WORKSPACE_ID names
-the workspace it started in.
+the workspace it started in. Commands that default to the caller's workspace
+(a new panel, a browser, a sidebar status) land in the panel's live workspace.
 
 Live socket test: run only in a sandbox guest (scripts/sandbox-tests-v2.sh).
 """
@@ -10,6 +11,7 @@ Live socket test: run only in a sandbox guest (scripts/sandbox-tests-v2.sh).
 import json
 import os
 import shlex
+import subprocess
 import sys
 import tempfile
 import time
@@ -142,13 +144,36 @@ def main() -> int:
         if screen["status"] != 0 or "read-screen" not in screen["output"]:
             raise cmuxError(f"read-screen failed in the moved panel: {screen}")
 
+        # C11-499, C11-503: commands that default to the caller's workspace
+        # follow the moved panel, creation and sidebar writes included.
+        def panel_ids(ws: str) -> set:
+            try:
+                rows = (c._call("panel.list", {"workspace_id": ws}) or {}).get("panels") or []
+            except cmuxError:
+                return set()   # the emptied start workspace may have closed
+            return {str(row.get("id")).upper() for row in rows}
+        start_before, live_before = panel_ids(start_ws), panel_ids(live_ws)
+        for args in ("new-panel --type terminal", "browser open about:blank", "set-status c11-499 moved"):
+            made = _run_in_panel(c, mover, cli, args, scratch / f"{args.split()[0]}.txt")
+            if made["status"] != 0:
+                raise cmuxError(f"{args} failed in the moved panel: {made}")
+        _wait(lambda: len(panel_ids(live_ws) - live_before) >= 2, 10,
+              "the new terminal and browser in the moved panel's workspace")
+        if panel_ids(start_ws) - start_before:
+            raise cmuxError("A command from the moved panel created a panel in its start workspace")
+        statuses = subprocess.run([cli, "list-status", "--workspace", live_ws], capture_output=True, text=True,
+                                  timeout=15)
+        if "c11-499" not in statuses.stdout:
+            raise cmuxError(f"set-status from the moved panel missed its workspace: {statuses.stdout!r} {statuses.stderr!r}")
+
         for ws in (start_ws, live_ws):
             try:
                 c.close_workspace(ws)
             except cmuxError:
                 pass
 
-    print("PASS: a moved panel keeps its metadata, attention and tty, and its shell identifies and mails as itself")
+    print("PASS: a moved panel keeps its metadata, attention and tty, and its shell identifies, mails and "
+          "creates as itself")
     return 0
 
 

@@ -575,3 +575,29 @@ final class ClaudeTranscriptInterruptTests: XCTestCase {
         ), "a transcript edge needs the reader's verified clock")
     }
 }
+
+/// C11-499: a hook from a panel that moved after its shell started names the
+/// workspace it started in. The journal records it under the panel's workspace.
+final class JournalMovedPanelAppendTests: XCTestCase {
+    func testAppendFromAMovedPanelIsRecordedUnderItsLiveWorkspace() throws {
+        let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("c11-499-journal-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { 20_000 })
+        let coordinator = JournalCoordinator(store: store)
+        let panel = UUID(), start = UUID(), live = UUID()
+        let owner = JournalOwner(panelID: panel, agentKind: "claude-code", sessionID: "c11-499-session")
+        coordinator.register(panelID: panel, workspaceID: start)
+        coordinator.setOwner(panelID: panel, owner: owner)
+        defer { coordinator.remove(panelID: panel) }
+        coordinator.register(panelID: panel, workspaceID: live)   // the move
+
+        let draft = JournalDraft(kind: .turnStarted, emittedAtMs: 10_000, panelID: panel, workspaceID: start,
+                                 sessionID: owner.sessionID, agentKind: owner.agentKind, source: .hook,
+                                 adapter: .claudeHook, nativeEvent: "UserPromptSubmit")
+        let result = try coordinator.append(draft)
+
+        XCTAssertEqual(result.receipt.projectionEffect, .applied)
+        XCTAssertEqual(try XCTUnwrap(store.current(owner: owner)).workspaceID, live)
+    }
+}

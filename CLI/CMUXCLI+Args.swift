@@ -404,6 +404,50 @@ extension CMUXCLI {
             .replacingOccurrences(of: "\\t", with: "\t")
     }
 
+    enum CallerPanelFollow: Equatable {
+        case unchanged
+        case moved(UUID)
+        /// The lookup ended without a reply (timeout or transport failure), so
+        /// a late reply could still arrive on this connection: reconnect.
+        case connectionSuspect
+    }
+
+    /// C11-499: a shell keeps the C11_WORKSPACE_ID it started with, and a
+    /// panel can move to another workspace after that. Ask c11 once where the
+    /// caller's panel (C11_PANEL_ID) lives now and, when it moved, point this
+    /// process's C11_WORKSPACE_ID and CMUX_WORKSPACE_ID at that workspace, so
+    /// every command that defaults to the caller's workspace follows the panel.
+    /// An app that does not advertise `panel.locate`, or an unknown panel,
+    /// leaves the environment.
+    static func followCallerPanelWorkspace(client: SocketClient) -> CallerPanelFollow {
+        let env = ProcessInfo.processInfo.environment
+        guard let panel = callerPanelEnv(env), UUID(uuidString: panel) != nil,
+              let start = (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:))
+        else { return .unchanged }
+        let payload: [String: Any]
+        do {
+            guard try client.advertisesMethod("panel.locate") else { return .unchanged }
+            payload = try client.sendV2(method: "panel.locate", params: ["panel_id": panel])
+        } catch let error as CLIError where isServerErrorReply(error.message) {
+            return .unchanged
+        } catch {
+            return .connectionSuspect
+        }
+        guard let live = (payload["workspace_id"] as? String).flatMap(UUID.init(uuidString:)),
+              live != start else { return .unchanged }
+        setenv("C11_WORKSPACE_ID", live.uuidString, 1)
+        setenv("CMUX_WORKSPACE_ID", live.uuidString, 1)
+        return .moved(live)
+    }
+
+    /// An app's own error reply (`code: message`, code in snake case), as
+    /// opposed to a timeout (`c11: timeout: ...`) or a transport failure.
+    static func isServerErrorReply(_ message: String) -> Bool {
+        guard let colon = message.firstIndex(of: ":") else { return false }
+        let code = message[..<colon]
+        return !code.isEmpty && code.allSatisfy { $0 == "_" || ("a"..."z").contains($0) }
+    }
+
     func workspaceFromArgsOrEnv(_ args: [String], windowOverride: String? = nil) -> String? {
         if let explicit = optionValue(args, name: "--workspace") { return explicit }
         // When --window is explicitly targeted, don't fall back to env workspace from a different window

@@ -403,7 +403,7 @@ final class CmuxWebView: WKWebView {
     /// The page the context menu opened on, when it was settled. `url` alone
     /// would already report a pending navigation while the previous document
     /// still answers the menu's JavaScript.
-    private var contextMenuPageURL: URL?
+    private(set) var contextMenuPageURL: URL?
     /// Saved native WebKit action for "Download Image".
     private var fallbackDownloadImageTarget: AnyObject?
     private var fallbackDownloadImageAction: Selector?
@@ -1008,7 +1008,8 @@ final class CmuxWebView: WKWebView {
         sender: Any?,
         fallbackAction: Selector?,
         fallbackTarget: AnyObject?,
-        traceID: String
+        traceID: String,
+        menuPageURL: URL?
     ) {
         guard isDownloadSupportedScheme(url) else {
             debugContextDownload(
@@ -1106,11 +1107,11 @@ final class CmuxWebView: WKWebView {
             // settled when the menu opened may save a file, and only one
             // inside the folder WebKit lets that page read (C11-495).
             let indicator = onContextMenuDownloadStateChanged
-            guard let pageURL = contextMenuPageURL, pageURL.isFileURL,
+            guard let pageURL = menuPageURL, pageURL.isFileURL,
                   !isLoading, self.url == pageURL else {
                 indicator?(false)
                 debugContextDownload(
-                    "browser.ctxdl.file trace=\(traceID) stage=rejectPage menuPage=\(contextMenuPageURL?.scheme ?? "nil") loading=\(isLoading ? 1 : 0)"
+                    "browser.ctxdl.file trace=\(traceID) stage=rejectPage menuPage=\(menuPageURL?.scheme ?? "nil") loading=\(isLoading ? 1 : 0)"
                 )
                 return
             }
@@ -1121,14 +1122,19 @@ final class CmuxWebView: WKWebView {
             // Path resolution, stat and copy stay off main: an automount, a
             // slow volume or a FIFO must not block the app.
             DispatchQueue.global(qos: .userInitiated).async {
-                let source = url.resolvingSymlinksInPath()
-                let allowed = Self.isInsideReadAccess(of: pageURL, source)
-                    && Self.isRegularFile(atPath: source.path)
+                // realpath fails on a missing component instead of collapsing
+                // `..` as text, so `missing/../link/x` cannot pass the folder
+                // check while the kernel follows `link` elsewhere.
+                let root = browserReadAccessURL(forLocalFileURL: pageURL).flatMap { Self.realPath($0.path) }
+                let sourcePath = Self.realPath(url.path)
+                let allowed = root != nil && sourcePath != nil
+                    && Self.isPath(sourcePath!, inside: root!)
+                    && Self.isRegularFile(atPath: sourcePath!)
                 DispatchQueue.main.async {
                     indicator?(false)
-                    guard allowed else {
+                    guard allowed, let root, let sourcePath else {
                         self.debugContextDownload(
-                            "browser.ctxdl.file trace=\(traceID) stage=rejectSource path=\(source.path)"
+                            "browser.ctxdl.file trace=\(traceID) stage=rejectSource path=\(url.path)"
                         )
                         return
                     }
@@ -1144,7 +1150,9 @@ final class CmuxWebView: WKWebView {
                         }
                         indicator?(true)
                         DispatchQueue.global(qos: .userInitiated).async {
-                            let outcome = Result { try Self.copyRegularFile(atPath: source.path, to: destURL) }
+                            let outcome = Result {
+                                try Self.copyRegularFile(atPath: sourcePath, inside: root, to: destURL)
+                            }
                             DispatchQueue.main.async {
                                 indicator?(false)
                                 switch outcome {
@@ -1186,13 +1194,18 @@ final class CmuxWebView: WKWebView {
         contextMenuPageURL = isLoading ? nil : url
     }
 
-    /// True when `source`, already resolved, lies inside the folder WebKit
-    /// lets `pageURL` read (`browserLoadRequest` grants the same folder).
-    private static func isInsideReadAccess(of pageURL: URL, _ source: URL) -> Bool {
-        guard let root = browserReadAccessURL(forLocalFileURL: pageURL)?
-            .resolvingSymlinksInPath().standardizedFileURL.path else { return false }
-        let prefix = root.hasSuffix("/") ? root : root + "/"
-        return source.standardizedFileURL.path.hasPrefix(prefix)
+    /// The canonical path with every symlink resolved, or nil when any
+    /// component is missing.
+    private static func realPath(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    /// True when canonical `path` lies inside canonical folder `root`, the
+    /// folder WebKit lets the page read (`browserLoadRequest` grants it).
+    private static func isPath(_ path: String, inside root: String) -> Bool {
+        path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
     }
 
     /// Checks the file type without opening it, so a FIFO or device is never
@@ -1204,9 +1217,10 @@ final class CmuxWebView: WKWebView {
 
     /// Copies a regular file's bytes to the destination the operator chose,
     /// replacing a file there as the save panel already confirmed. The file
-    /// is checked again through the descriptor that is copied, so a file
-    /// swapped for a FIFO or symlink after the first check is refused.
-    private static func copyRegularFile(atPath sourcePath: String, to destination: URL) throws {
+    /// is checked again through the descriptor that is copied, its type and
+    /// the path it really opened, so a file swapped for a FIFO or a symlink
+    /// out of `root` after the first check is refused.
+    private static func copyRegularFile(atPath sourcePath: String, inside root: String, to destination: URL) throws {
         func posixError() -> POSIXError {
             POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
@@ -1217,10 +1231,15 @@ final class CmuxWebView: WKWebView {
         var info = stat()
         guard fstat(source, &info) == 0 else { throw posixError() }
         guard (info.st_mode & S_IFMT) == S_IFREG else { throw POSIXError(.EFTYPE) }
+        var openedPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(source, F_GETPATH, &openedPath) != -1 else { throw posixError() }
+        guard isPath(String(cString: openedPath), inside: root) else { throw POSIXError(.EPERM) }
 
+        // A fixed-length name, so a long destination name stays under the
+        // 255-byte limit. The copy keeps the source's permission bits.
         let staged = destination.deletingLastPathComponent()
-            .appendingPathComponent(".\(destination.lastPathComponent).c11-\(UUID().uuidString)", isDirectory: false)
-        let target = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o644)
+            .appendingPathComponent(".c11-\(UUID().uuidString).partial", isDirectory: false)
+        let target = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, info.st_mode & 0o666)
         guard target >= 0 else { throw posixError() }
         var placed = false
         defer {
@@ -1228,8 +1247,11 @@ final class CmuxWebView: WKWebView {
         }
         let copied = fcopyfile(source, target, nil, copyfile_flags_t(COPYFILE_DATA))
         let copyError = posixError()
-        close(target)
+        // Network volumes can report a failed write only at close.
+        let closed = close(target)
+        let closeError = posixError()
         guard copied == 0 else { throw copyError }
+        guard closed == 0 else { throw closeError }
         guard rename(staged.path, destination.path) == 0 else { throw posixError() }
         placed = true
     }
@@ -1280,12 +1302,15 @@ final class CmuxWebView: WKWebView {
         }
     }
 
+    /// `menuPageURL` is the page the menu opened on (`contextMenuPageURL` when
+    /// the item was chosen); only a `file:` save reads it.
     func startContextMenuDownload(
         _ url: URL,
         sender: Any?,
         fallbackAction: Selector?,
         fallbackTarget: AnyObject?,
-        traceID: String
+        traceID: String,
+        menuPageURL: URL? = nil
     ) {
         debugContextDownload("browser.ctxdl.start trace=\(traceID) url=\(url.absoluteString)")
         downloadContextMenuURL(
@@ -1294,7 +1319,8 @@ final class CmuxWebView: WKWebView {
             sender: sender,
             fallbackAction: fallbackAction,
             fallbackTarget: fallbackTarget,
-            traceID: traceID
+            traceID: traceID,
+            menuPageURL: menuPageURL
         )
     }
 
@@ -1454,6 +1480,8 @@ final class CmuxWebView: WKWebView {
 
     @objc private func contextMenuDownloadImage(_ sender: Any?) {
         let traceID = Self.makeContextDownloadTraceID(prefix: "img")
+        // The page this menu opened on, read now: a later menu replaces it.
+        let menuPageURL = contextMenuPageURL
         let point = lastContextMenuPoint
         debugContextDownload(
             "browser.ctxdl.click trace=\(traceID) kind=image point=(\(Int(point.x)),\(Int(point.y)))"
@@ -1492,7 +1520,8 @@ final class CmuxWebView: WKWebView {
                                 sender: sender,
                                 fallbackAction: fallback.action,
                                 fallbackTarget: fallback.target,
-                                traceID: traceID
+                                traceID: traceID,
+                                menuPageURL: menuPageURL
                             )
                             return
                         }
@@ -1532,7 +1561,8 @@ final class CmuxWebView: WKWebView {
                             sender: sender,
                             fallbackAction: fallback.action,
                             fallbackTarget: fallback.target,
-                            traceID: traceID
+                            traceID: traceID,
+                            menuPageURL: menuPageURL
                         )
                         return
                     }
@@ -1547,7 +1577,8 @@ final class CmuxWebView: WKWebView {
                         sender: sender,
                         fallbackAction: fallback.action,
                         fallbackTarget: fallback.target,
-                        traceID: traceID
+                        traceID: traceID,
+                        menuPageURL: menuPageURL
                     )
                     return
                 }
@@ -1561,7 +1592,8 @@ final class CmuxWebView: WKWebView {
                         sender: sender,
                         fallbackAction: fallback.action,
                         fallbackTarget: fallback.target,
-                        traceID: traceID
+                        traceID: traceID,
+                        menuPageURL: menuPageURL
                     )
                     return
                 }
@@ -1592,6 +1624,8 @@ final class CmuxWebView: WKWebView {
 
     @objc private func contextMenuDownloadLinkedFile(_ sender: Any?) {
         let traceID = Self.makeContextDownloadTraceID(prefix: "lnk")
+        // The page this menu opened on, read now: a later menu replaces it.
+        let menuPageURL = contextMenuPageURL
         let point = lastContextMenuPoint
         debugContextDownload(
             "browser.ctxdl.click trace=\(traceID) kind=linked point=(\(Int(point.x)),\(Int(point.y)))"
@@ -1620,7 +1654,8 @@ final class CmuxWebView: WKWebView {
                         sender: sender,
                         fallbackAction: fallback.action,
                         fallbackTarget: fallback.target,
-                        traceID: traceID
+                        traceID: traceID,
+                        menuPageURL: menuPageURL
                     )
                     return
                 }
@@ -1638,7 +1673,8 @@ final class CmuxWebView: WKWebView {
                         sender: sender,
                         fallbackAction: fallback.action,
                         fallbackTarget: fallback.target,
-                        traceID: traceID
+                        traceID: traceID,
+                        menuPageURL: menuPageURL
                     )
                     return
                 }
@@ -1664,7 +1700,8 @@ final class CmuxWebView: WKWebView {
                                 sender: sender,
                                 fallbackAction: fallback.action,
                                 fallbackTarget: fallback.target,
-                                traceID: traceID
+                                traceID: traceID,
+                                menuPageURL: menuPageURL
                             )
                             return
                         }
@@ -1692,7 +1729,8 @@ final class CmuxWebView: WKWebView {
                                 sender: sender,
                                 fallbackAction: fallback.action,
                                 fallbackTarget: fallback.target,
-                                traceID: traceID
+                                traceID: traceID,
+                                menuPageURL: menuPageURL
                             )
                             return
                         }
@@ -1711,7 +1749,8 @@ final class CmuxWebView: WKWebView {
                         sender: sender,
                         fallbackAction: fallback.action,
                         fallbackTarget: fallback.target,
-                        traceID: traceID
+                        traceID: traceID,
+                        menuPageURL: menuPageURL
                     )
                 }
             }

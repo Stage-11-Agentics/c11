@@ -14,7 +14,8 @@ import WebKit
 /// nothing about it may block the main thread.
 ///
 /// Each test opens the menu with `noteContextMenuOpened()`, as `willOpenMenu`
-/// does, and records the download indicator, which must end where it started.
+/// does, chooses the item with the page recorded then, and records the
+/// download indicator, which must end where it started.
 ///
 /// Host-required (`c11Tests`): WebKit needs the app's main bundle to start its
 /// processes.
@@ -116,6 +117,62 @@ final class BrowserContextMenuFileDownloadTests: XCTestCase {
         try fixture.waitForRefusal()
     }
 
+    /// A symlink inside the page's folder that points out of it, named
+    /// directly or behind a missing `..` component, is refused.
+    @MainActor
+    func testLocalPageCannotFollowASymlinkOutOfItsFolder() throws {
+        let page = try writeFile("site/page.html", bytes: Data("<!doctype html><p>local page</p>".utf8))
+        let fixture = try Fixture(test: self, page: .local(page))
+        _ = try writeFile("outside/secret.txt", bytes: Data("local secret".utf8))
+        let link = scratch.appendingPathComponent("site/d")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "../outside")
+        let site = scratch.appendingPathComponent("site")
+
+        fixture.download(site.appendingPathComponent("d/secret.txt"))
+        try fixture.waitForRefusal()
+
+        fixture.download(URL(fileURLWithPath: site.path + "/missing/../d/secret.txt"))
+        try fixture.waitForIndicator([true, false, true, false])
+        XCTAssertEqual(fixture.destinations.requestedNames, [], "A path through the symlink reached the save step")
+    }
+
+    /// The menu opened while a local page was still loading: refused even
+    /// after the load settles.
+    @MainActor
+    func testFileSaveNeedsAPageThatHadSettledWhenTheMenuOpened() throws {
+        let fixture = try Fixture(test: self, page: .web)
+        let page = try writeFile("page.html", bytes: Data("<!doctype html><p>local page</p>".utf8))
+        let image = try writeFile("photo.png", bytes: Data("local image".utf8))
+        let finished = expectation(description: "local page loaded")
+        fixture.onNextSettle { finished.fulfill() }
+        XCTAssertNotNil(fixture.webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent()))
+        fixture.webView.noteContextMenuOpened()
+        wait(for: [finished], timeout: 15)
+
+        fixture.download(image)
+
+        try fixture.waitForRefusal()
+    }
+
+    /// The menu opened on a settled local page, which then reloaded: the
+    /// document answering the menu may be the old one.
+    @MainActor
+    func testFileSaveRefusedWhileThePageReloads() throws {
+        let page = try writeFile("page.html", bytes: Data("<!doctype html><p>local page</p>".utf8))
+        let fixture = try Fixture(test: self, page: .local(page))
+        let image = try writeFile("photo.png", bytes: Data("local image".utf8))
+        let started = expectation(description: "reload started")
+        fixture.onNextStart {
+            XCTAssertEqual(fixture.webView.url, page)
+            fixture.download(image)
+            started.fulfill()
+        }
+        XCTAssertNotNil(fixture.webView.reload())
+        wait(for: [started], timeout: 15)
+
+        try fixture.waitForRefusal()
+    }
+
     /// data: downloads share the save step with file: downloads and stay
     /// available to web pages.
     @MainActor
@@ -169,9 +226,9 @@ private final class Fixture {
         destinations = DestinationRecorder(directory: saves)
         webView.navigationDelegate = navigation
         webView.contextMenuSaveDestinationProvider = destinations.provide
-        webView.onContextMenuDownloadStateChanged = { [unowned self] state in
-            indicator.append(state)
-            onIndicatorChange?()
+        webView.onContextMenuDownloadStateChanged = { [weak self] state in
+            self?.indicator.append(state)
+            self?.onIndicatorChange?()
         }
         try load(page, noteMenu: true)
     }
@@ -194,14 +251,24 @@ private final class Fixture {
         }
     }
 
+    /// Chooses Download Linked File for `url` on the menu last opened.
     func download(_ url: URL) {
         webView.startContextMenuDownload(
             url,
             sender: nil,
             fallbackAction: nil,
             fallbackTarget: nil,
-            traceID: "c11-495-test"
+            traceID: "c11-495-test",
+            menuPageURL: webView.contextMenuPageURL
         )
+    }
+
+    func onNextSettle(_ action: @escaping () -> Void) {
+        navigation.onSettled = { _ in action() }
+    }
+
+    func onNextStart(_ action: @escaping () -> Void) {
+        navigation.onStart = action
     }
 
     /// The menu turned the indicator on and off and never asked where to save.
@@ -213,8 +280,8 @@ private final class Fixture {
     func waitForIndicator(_ expected: [Bool]) throws {
         if indicator.count < expected.count {
             let reached = test.expectation(description: "indicator changed \(expected.count) times")
-            onIndicatorChange = { [unowned self] in
-                guard indicator.count >= expected.count else { return }
+            onIndicatorChange = { [weak self] in
+                guard let self, indicator.count >= expected.count else { return }
                 onIndicatorChange = nil
                 reached.fulfill()
             }
@@ -228,6 +295,13 @@ private final class Fixture {
 
 private final class FinishWaiter: NSObject, WKNavigationDelegate {
     var onSettled: ((Error?) -> Void)?
+    var onStart: (() -> Void)?
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        let callback = onStart
+        onStart = nil
+        callback?()
+    }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         settle(nil)

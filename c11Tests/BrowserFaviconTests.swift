@@ -153,7 +153,9 @@ final class BrowserFaviconTests: XCTestCase {
 
     func testDataPayloadDropsURLFragmentWithoutDroppingEscapedHash() throws {
         let url = try XCTUnwrap(URL(string: "data:application/octet-stream,one%23two#ignored"))
-        XCTAssertEqual(BrowserFavicon.dataURLPayload(url), Data("one#two".utf8))
+        let payload = try XCTUnwrap(BrowserFavicon.dataURLPayload(url))
+        XCTAssertEqual(payload.count, 7)
+        XCTAssertEqual(payload, Data("one#two".utf8))
     }
 
     func testMalformedBase64RemainsRejected() throws {

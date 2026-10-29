@@ -110,7 +110,18 @@ enum BrowserFavicon {
     static func dataURLPayload(_ url: URL) -> Data? {
         guard url.scheme?.lowercased() == "data" else { return nil }
         let maximumBase64Length = 4 * ((maximumBytes + 2) / 3)
-        let rawValue = url.absoluteString.dropFirst(5)
+        let absoluteString: String
+        // Some Foundation versions percent-encode the fragment separator in
+        // data URLs, so strip the component before decoding payload escapes.
+        if var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           components.percentEncodedFragment != nil {
+            components.percentEncodedFragment = nil
+            guard let fragmentlessURL = components.string else { return nil }
+            absoluteString = fragmentlessURL
+        } else {
+            absoluteString = url.absoluteString
+        }
+        let rawValue = absoluteString.dropFirst(5)
         guard rawValue.utf8.count <= maximumBytes + maximumBase64Length * 3 else { return nil }
         let value = rawValue.prefix { $0 != "#" }
         guard let comma = value.firstIndex(of: ",") else { return nil }

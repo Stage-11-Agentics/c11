@@ -47,7 +47,11 @@ def main():
     with cmux(socket) as c:
         window = c._call('window.create')['window_id']
         ws = c._call('workspace.list', {'window_id': window})['workspaces'][0]['id']
-        a = c.list_surfaces(ws)[0][1]
+        initial = c.list_surfaces(ws)
+        a = initial[0][1]
+        # New windows can inherit the operator's starter layout (e.g. a quad).
+        for _, panel, _ in initial[1:]:
+            c._call('panel.close', {'panel_id': panel})
         print('DISPLAY', command('resize-window', '--window', window, '1900', '1040'), flush=True)
         b = panel_id(command('new-split', 'right', '--workspace', ws, '--panel', a))
         cc = panel_id(command('new-split', 'down', '--workspace', ws, '--panel', a))
@@ -76,7 +80,7 @@ def main():
         def loaded(result):
             pid = panel_id(result)
             wait(lambda: command('browser', pid, 'get', 'url').get('url') == url, 'browser URL')
-            wait(lambda: 'Browser placement loaded' in command('browser', pid, 'get', 'text', 'body').get('text', ''), 'rendered page')
+            wait(lambda: 'Browser placement loaded' in command('browser', pid, 'get', 'text', 'body').get('value', ''), 'rendered page')
 
         opened = []
         for caller in (a, b, cc, a, b):
@@ -95,6 +99,9 @@ def main():
             assert h[1] - h[0] >= .24, area
         print('AFTER\n' + command('tree', '--workspace', ws, '--no-layout', raw=True), flush=True)
         other = c._call('workspace.create', {'window_id': window})['workspace_id']
+        other_initial = c.list_surfaces(other)
+        for _, panel, _ in other_initial[1:]:
+            c._call('panel.close', {'panel_id': panel})
         for verb in ('open', 'open-split', 'new'):
             result = from_panel(a, ['browser', verb, url, '--workspace', other])
             assert result['workspace_id'] == other and not result['created_split'], result

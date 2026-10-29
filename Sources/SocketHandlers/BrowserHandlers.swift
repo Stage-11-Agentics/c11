@@ -1388,9 +1388,23 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create browser", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager) else {
+            var resolvedWorkspaceManager = workspaceManager
+            var areaWorkspace: Workspace?
+            if v2HasNonNullParam(params, "pane_id") {
+                guard let paneUUID = v2UUID(params, "pane_id"),
+                      let located = AppDelegate.shared?.locatePane(paneId: paneUUID) else {
+                    result = .err(code: "not_found", message: "Area not found", data: nil)
+                    return
+                }
+                areaWorkspace = located.workspace
+                resolvedWorkspaceManager = located.workspaceManager
+            }
+            guard let ws = areaWorkspace ?? v2ResolveWorkspace(params: params, workspaceManager: resolvedWorkspaceManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
+            }
+            let explicitPane = v2UUID(params, "pane_id").flatMap { paneUUID in
+                ws.bonsplitController.allPaneIds.first { $0.id == paneUUID }
             }
 
             var preferredProfileID: UUID?
@@ -1428,7 +1442,7 @@ extension TerminalController {
                     )
                     return
                 }
-                let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+                let windowId = v2ResolveWindowId(workspaceManager: resolvedWorkspaceManager)
                 result = .ok([
                     "window_id": v2OrNull(windowId?.uuidString),
                     "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -1445,45 +1459,63 @@ extension TerminalController {
                 ])
                 return
             }
-            v2MaybeFocusWindow(for: workspaceManager)
-            v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
+            v2MaybeFocusWindow(for: resolvedWorkspaceManager)
+            v2MaybeSelectWorkspace(resolvedWorkspaceManager, workspace: ws)
 
-            let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
-            guard let sourceSurfaceId else {
-                result = .err(code: "not_found", message: "No focused panel to split", data: nil)
+            let explicitSourceId = v2UUID(params, "surface_id")
+            if let explicitSourceId, ws.panels[explicitSourceId] == nil {
+                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": explicitSourceId.uuidString])
                 return
             }
-            guard ws.panels[sourceSurfaceId] != nil else {
-                result = .err(code: "not_found", message: "Source panel not found", data: ["surface_id": sourceSurfaceId.uuidString])
-                return
-            }
+            let callerPanelId = v2UUID(params, "caller_panel_id").flatMap { ws.panels[$0] != nil ? $0 : nil }
+            let sourceSurfaceId = explicitSourceId ?? callerPanelId
+            let sourcePaneUUID = sourceSurfaceId.flatMap { ws.paneId(forPanelId: $0)?.id }
 
-            let sourcePaneUUID = ws.paneId(forPanelId: sourceSurfaceId)?.id
-
-            var createdSplit = true
-            var placementStrategy = "split_right"
-            let createdPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
-                if let targetPane = ws.preferredBrowserTargetPane(fromPanelId: sourceSurfaceId) {
-                    let panel = ws.newBrowserSurface(
-                        inPane: targetPane,
-                        url: url,
-                        focus: true,
+            var createdSplit = false
+            var placementStrategy = "existing_area"
+            var warningText: String?
+            let createdPanel: BrowserPanel? = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id")) {
+                func addPanel(in pane: PaneID) -> BrowserPanel? {
+                    ws.newBrowserSurface(
+                        inPane: pane, url: url, focus: v2FocusAllowed(),
                         preferredProfileID: preferredProfileID,
                         sticksAsPreferred: sticksAsPreferred,
                         bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
                     )
-                    createdSplit = false
-                    placementStrategy = "reuse_right_sibling"
-                    return panel
-                } else {
+                }
+                if let explicitPane {
+                    placementStrategy = "explicit_area"
+                    return addPanel(in: explicitPane)
+                }
+                guard let sourceSurfaceId else {
+                    // Cross-workspace and callerless opens never split the focused area.
+                    guard let pane = ws.bonsplitController.allPaneIds.first(where: { ws.isBrowserOnlyPane($0) })
+                        ?? ws.bonsplitController.focusedPaneId else { return nil }
+                    return addPanel(in: pane)
+                }
+                if let pane = ws.preferredBrowserOpenPane(fromPanelId: sourceSurfaceId) {
+                    placementStrategy = "reuse_browser_area"
+                    return addPanel(in: pane)
+                }
+                switch planSizeAwareSplit(ws: ws, sourcePanelId: sourceSurfaceId, requested: .right, newIsTerminal: false, force: false) {
+                case .split(let direction, _, let warning):
+                    createdSplit = true
+                    placementStrategy = "split"
+                    warningText = warning
                     return ws.newBrowserSplit(
-                        from: sourceSurfaceId,
-                        orientation: .horizontal,
-                        url: url,
+                        from: sourceSurfaceId, orientation: direction.orientation,
+                        insertFirst: direction.insertFirst, url: url,
                         preferredProfileID: preferredProfileID,
                         sticksAsPreferred: sticksAsPreferred,
+                        focus: v2FocusAllowed(),
                         bypassInsecureHTTPHostOnce: insecureHTTPConsentHost
                     )
+                case .panel, .refuse:
+                    placementStrategy = "panel_in_area"
+                    guard let pane = ws.bonsplitController.allPaneIds.first(where: { ws.isBrowserOnlyPane($0) })
+                        ?? ws.paneId(forPanelId: sourceSurfaceId) else { return nil }
+                    warningText = "no room to split beside the source panel; opened as a panel in an existing area"
+                    return addPanel(in: pane)
                 }
             }
 
@@ -1492,8 +1524,12 @@ extension TerminalController {
                 return
             }
 
+            if let sourceSurfaceId, explicitPane == nil {
+                ws.browserPanelAnchors = ws.browserPanelAnchors.filter { ws.panels[$0.key] != nil }
+                ws.browserPanelAnchors[browserPanelId] = sourceSurfaceId
+            }
             let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+            let windowId = v2ResolveWindowId(workspaceManager: resolvedWorkspaceManager)
             var payload: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
@@ -1503,7 +1539,7 @@ extension TerminalController {
                 "pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
                 "surface_id": browserPanelId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: browserPanelId),
-                "source_surface_id": sourceSurfaceId.uuidString,
+                "source_surface_id": v2OrNull(sourceSurfaceId?.uuidString),
                 "source_surface_ref": v2Ref(kind: .surface, uuid: sourceSurfaceId),
                 "source_pane_id": v2OrNull(sourcePaneUUID?.uuidString),
                 "source_pane_ref": v2Ref(kind: .pane, uuid: sourcePaneUUID),
@@ -1513,6 +1549,7 @@ extension TerminalController {
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
             ]
+            if let warningText { payload["size_warning"] = warningText }
             // This verb's promise is "a browser surface exists", and it does
             // even when the initial navigation was refused. Report the refusal
             // in the payload rather than as an error, so the caller keeps the

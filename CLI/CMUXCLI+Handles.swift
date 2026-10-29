@@ -1657,7 +1657,7 @@ extension CMUXCLI {
         switch verb {
         case "open", "open-split", "new":
             flags.insert("--allow-insecure-http")
-            values.formUnion(["--workspace", "--window", "--profile"])
+            values.formUnion(["--workspace", "--window", "--profile", "--area"])
         case "profiles":
             switch subArgs.first?.lowercased() {
             case "add", "rename":

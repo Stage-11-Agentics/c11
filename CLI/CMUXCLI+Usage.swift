@@ -171,7 +171,7 @@ extension CMUXCLI {
           mailbox [send|recv|trace|tail|view]    (durable inter-agent messaging)
 
           browser [--panel <id|ref|index> | <panel>] <subcommand> ...
-          browser open [url] [--allow-insecure-http]   (create browser split in caller's workspace; if panel supplied, behaves like navigate)
+          browser open [url] [--allow-insecure-http]   (place beside caller; explicit browser panel navigates in place)
           browser open-split [url] [--allow-insecure-http]
           browser goto|navigate <url> [--snapshot-after] [--allow-insecure-http]
           browser back|forward|reload [--snapshot-after]

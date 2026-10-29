@@ -34,6 +34,13 @@ c11 browser <panel> goto <url> --allow-insecure-http
 
 > **Workspace context:** `browser open` targets the workspace of the terminal where the command is run (via `C11_WORKSPACE_ID`), even if a different workspace is currently focused. Use `--workspace` to override.
 
+**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
+
+```bash
+c11 browser open <url> --panel "$C11_PANEL_ID"
+c11 browser open <url> --area area:3
+```
+
 ### Browser profiles
 
 ```bash

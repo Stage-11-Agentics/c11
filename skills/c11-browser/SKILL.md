@@ -43,7 +43,7 @@ Notes:
 - CLI output defaults to short refs (`panel:N`, `area:N`, `workspace:N`, `window:N`).
 - UUIDs are still accepted on input; only request UUID output when needed (`--id-format uuids|both`).
 - Keep using one `panel:N` per task within the current c11 process unless you intentionally switch. Short refs (`panel:N`, `area:N`, `workspace:N`, `window:N`) start over after a restart; store the panel UUID from `c11 --id-format both tree --json` to find that same browser panel afterward.
-- **Default to a panel in the existing browser area.** If the workspace already has a browser area, open new pages as panels inside it rather than spawning a new browser area — an area holds many panels, and a fresh area each time is the awkward interaction to avoid. Find the browser area in `c11 tree --json` and add the panel with `c11 new-panel --type browser --url <url> --area <browser-area-ref>`. Open a new browser area (`c11 new-area --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser panel when one is available.
+**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
 
 ## Browser Profiles
 

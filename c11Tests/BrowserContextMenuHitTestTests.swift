@@ -42,14 +42,21 @@ final class BrowserContextMenuHitTestTests: XCTestCase {
         XCTAssertEqual(try fixture.openLinkInDefaultBrowser(pointsFromTop: 240), "bottom-link")
     }
 
-    /// A page with an image at the top, a mailto: link in the middle and an
-    /// iframe at the bottom, each 100pt tall.
+    /// Four 75pt rows: an image, a mailto: link, an iframe, and a card whose
+    /// image ignores pointer events (so the hit stack holds only the card)
+    /// with a hidden decoy image laid over it.
     private static let scopePage = """
         <!doctype html>
-        <style>html,body{margin:0;overflow:hidden}#logo,a,iframe{display:block;width:100vw;height:100px;border:0;margin:0}</style>
+        <style>
+        html,body{margin:0;overflow:hidden}
+        #logo,a,iframe,.card{display:block;width:100vw;height:75px;border:0;margin:0}
+        .card{position:relative}
+        .card img{position:absolute;inset:0;width:100%;height:100%}
+        </style>
         <img id="logo" src="\(base)/logo.png">
         <a href="mailto:someone@example.com">mail</a>
         <iframe src="\(base)/frame.html"></iframe>
+        <div class="card"><img style="pointer-events:none" src="\(base)/card.png"><img style="visibility:hidden" src="\(base)/decoy.png"></div>
         """
 
     /// C11-504. Download Linked File on a link it cannot download hands back to
@@ -57,17 +64,27 @@ final class BrowserContextMenuHitTestTests: XCTestCase {
     func testDownloadLinkedFileOnAMailtoLinkDoesNotTakeAnotherImage() throws {
         let fixture = try loadPage(Self.scopePage)
 
-        XCTAssertEqual(try fixture.download(.linkedFile, pointsFromTop: 150), .fellBack)
-        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 50), .downloaded("logo.png"))
+        XCTAssertEqual(try fixture.download(.linkedFile, pointsFromTop: 112), .fellBack)
+        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 37), .downloaded("logo.png"))
     }
 
-    /// C11-504. A frame's content is not in the page's document, so Download
-    /// Image over an iframe hands back to WebKit instead of downloading the
+    /// C11-504. A frame's content is not in the page's document, so both
+    /// downloads over an iframe hand back to WebKit instead of downloading the
     /// frame's page.
-    func testDownloadImageOverAFrameDoesNotDownloadTheFramePage() throws {
+    func testDownloadsOverAFrameHandBackToWebKit() throws {
         let fixture = try loadPage(Self.scopePage)
 
-        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 250), .fellBack)
+        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 187), .fellBack)
+        XCTAssertEqual(try fixture.download(.linkedFile, pointsFromTop: 187), .fellBack)
+    }
+
+    /// C11-504. An image the hit stack skips (pointer-events: none) is still
+    /// found inside the card under the cursor, and a hidden image laid over it
+    /// is not.
+    func testDownloadImageFindsTheVisibleImageNestedUnderTheCursor() throws {
+        let fixture = try loadPage(Self.scopePage)
+
+        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 262), .downloaded("card.png"))
     }
 
     func testMenuAccountsForPageZoom() throws {

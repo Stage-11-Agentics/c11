@@ -742,8 +742,22 @@ final class CmuxWebView: WKWebView {
                 }
                 return out;
             };
+            // A nested search climbs as far as <body>, so it only counts
+            // descendants under the point; and a frame's content is not in
+            // this document, so a frame-like element is never a candidate
+            // (WebKit's own action hit-tests into frames) (C11-504).
+            const containsPoint = (node) => {
+                if (!node || !node.getBoundingClientRect) return false;
+                const r = node.getBoundingClientRect();
+                return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+            };
+            const nestedUnderPoint = (el, selector) => {
+                if (!el || !el.querySelectorAll) return null;
+                return Array.from(el.querySelectorAll(selector)).find(containsPoint) || null;
+            };
+            const isFrameLike = (el) => ['IFRAME', 'FRAME', 'OBJECT', 'EMBED'].includes(el.tagName);
             const candidateFromElement = (el) => {
-                if (!el) return '';
+                if (!el || isFrameLike(el)) return '';
                 const attr = (name) => normalize(el.getAttribute ? el.getAttribute(name) : '');
                 if (el.tagName === 'IMG') {
                     const imageCandidates = [
@@ -774,8 +788,8 @@ final class CmuxWebView: WKWebView {
                     const computedBg = firstBackgroundURL(computed ? computed.backgroundImage : '');
                     if (computedBg) return computedBg;
                 } catch (_) {}
-                if (el.querySelector) {
-                    const nestedImg = el.querySelector('img[src],img[srcset],img[data-src],img[data-iurl],source[srcset]');
+                if (el.querySelectorAll) {
+                    const nestedImg = nestedUnderPoint(el, 'img[src],img[srcset],img[data-src],img[data-iurl]');
                     if (nestedImg) {
                         const nestedCandidates = [
                             normalize(nestedImg.currentSrc || ''),
@@ -786,7 +800,7 @@ final class CmuxWebView: WKWebView {
                         const foundNested = nestedCandidates.find(Boolean);
                         if (foundNested) return foundNested;
                     }
-                    const nestedBg = el.querySelector('[style*="background-image"]');
+                    const nestedBg = nestedUnderPoint(el, '[style*="background-image"]');
                     if (nestedBg) {
                         const styleValue = nestedBg.getAttribute ? nestedBg.getAttribute('style') : '';
                         const bgURL = firstBackgroundURL(styleValue || '');
@@ -854,8 +868,22 @@ final class CmuxWebView: WKWebView {
                 }
                 return out;
             };
+            // A nested search climbs as far as <body>, so it only counts
+            // descendants under the point; and a frame's content is not in
+            // this document, so a frame-like element is never a candidate
+            // (WebKit's own action hit-tests into frames) (C11-504).
+            const containsPoint = (node) => {
+                if (!node || !node.getBoundingClientRect) return false;
+                const r = node.getBoundingClientRect();
+                return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+            };
+            const nestedUnderPoint = (el, selector) => {
+                if (!el || !el.querySelectorAll) return null;
+                return Array.from(el.querySelectorAll(selector)).find(containsPoint) || null;
+            };
+            const isFrameLike = (el) => ['IFRAME', 'FRAME', 'OBJECT', 'EMBED'].includes(el.tagName);
             const linkFromElement = (el) => {
-                if (!el) return '';
+                if (!el || isFrameLike(el)) return '';
                 const attr = (name) => normalize(el.getAttribute ? el.getAttribute(name) : '');
                 if (el.closest) {
                     const closestLink = el.closest('a[href],area[href]');
@@ -869,10 +897,8 @@ final class CmuxWebView: WKWebView {
                     const v = attr(name);
                     if (v) return v;
                 }
-                if (el.querySelector) {
-                    const nestedLink = el.querySelector('a[href],area[href]');
-                    if (nestedLink && nestedLink.href) return normalize(nestedLink.href);
-                }
+                const nestedLink = nestedUnderPoint(el, 'a[href],area[href]');
+                if (nestedLink && nestedLink.href) return normalize(nestedLink.href);
                 return '';
             };
             const tryNodes = (nodes) => {

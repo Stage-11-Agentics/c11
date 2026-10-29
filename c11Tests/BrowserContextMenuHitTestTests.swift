@@ -42,6 +42,34 @@ final class BrowserContextMenuHitTestTests: XCTestCase {
         XCTAssertEqual(try fixture.openLinkInDefaultBrowser(pointsFromTop: 240), "bottom-link")
     }
 
+    /// A page with an image at the top, a mailto: link in the middle and an
+    /// iframe at the bottom, each 100pt tall.
+    private static let scopePage = """
+        <!doctype html>
+        <style>html,body{margin:0;overflow:hidden}#logo,a,iframe{display:block;width:100vw;height:100px;border:0;margin:0}</style>
+        <img id="logo" src="\(base)/logo.png">
+        <a href="mailto:someone@example.com">mail</a>
+        <iframe src="\(base)/frame.html"></iframe>
+        """
+
+    /// C11-504. Download Linked File on a link it cannot download hands back to
+    /// WebKit; it must not climb to <body> and download the page's first image.
+    func testDownloadLinkedFileOnAMailtoLinkDoesNotTakeAnotherImage() throws {
+        let fixture = try loadPage(Self.scopePage)
+
+        XCTAssertEqual(try fixture.download(.linkedFile, pointsFromTop: 150), .fellBack)
+        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 50), .downloaded("logo.png"))
+    }
+
+    /// C11-504. A frame's content is not in the page's document, so Download
+    /// Image over an iframe hands back to WebKit instead of downloading the
+    /// frame's page.
+    func testDownloadImageOverAFrameDoesNotDownloadTheFramePage() throws {
+        let fixture = try loadPage(Self.scopePage)
+
+        XCTAssertEqual(try fixture.download(.image, pointsFromTop: 250), .fellBack)
+    }
+
     func testMenuAccountsForPageZoom() throws {
         let fixture = try loadPage()
         fixture.webView.pageZoom = 2
@@ -56,7 +84,7 @@ final class BrowserContextMenuHitTestTests: XCTestCase {
 
     // MARK: - Fixture
 
-    private func loadPage() throws -> Fixture {
+    private func loadPage(_ html: String? = nil) throws -> Fixture {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
             styleMask: [.borderless],
@@ -78,7 +106,7 @@ final class BrowserContextMenuHitTestTests: XCTestCase {
             if let error { XCTFail("Page load failed: \(error)") }
             finished.fulfill()
         }
-        XCTAssertNotNil(webView.loadHTMLString(Self.page, baseURL: URL(string: "\(Self.base)/")))
+        XCTAssertNotNil(webView.loadHTMLString(html ?? Self.page, baseURL: URL(string: "\(Self.base)/")))
         wait(for: [finished], timeout: 15)
         return fixture
     }
@@ -99,25 +127,51 @@ final class BrowserContextMenuHitTestTests: XCTestCase {
             webView.contextMenuDownloadDelegate = downloads
         }
 
+        enum DownloadItem {
+            case image
+            case linkedFile
+        }
+
+        enum Outcome: Equatable {
+            /// WebKit was asked to download a file with this name.
+            case downloaded(String)
+            /// The menu handed back to WebKit's own menu item.
+            case fellBack
+        }
+
         /// Right-clicks `pointsFromTop` below the web view's top edge, chooses
         /// Download Image, and returns the file name WebKit was asked to fetch.
         func downloadImage(pointsFromTop: CGFloat) throws -> String? {
-            let item = NSMenuItem(title: "Download Image", action: NSSelectorFromString("downloadImageToDisk:"), keyEquivalent: "")
-            item.identifier = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierDownloadImage")
-            item.target = NSObject()
+            guard case .downloaded(let name) = try download(.image, pointsFromTop: pointsFromTop) else { return nil }
+            return name
+        }
+
+        /// Right-clicks `pointsFromTop` below the web view's top edge, chooses
+        /// the download item, and reports what the menu did with it.
+        func download(_ kind: DownloadItem, pointsFromTop: CGFloat) throws -> Outcome {
+            let webKitItem = FallbackRecorder()
+            let item = NSMenuItem(title: kind == .image ? "Download Image" : "Download Linked File", action: #selector(FallbackRecorder.record(_:)), keyEquivalent: "")
+            item.identifier = NSUserInterfaceItemIdentifier(kind == .image ? "WKMenuItemIdentifierDownloadImage" : "WKMenuItemIdentifierDownloadLinkToDisk")
+            item.target = webKitItem
             let menu = NSMenu()
             menu.addItem(item)
             rightClick(menu, pointsFromTop: pointsFromTop)
 
-            let requested = test.expectation(description: "download requested")
-            var url: URL?
+            let settled = test.expectation(description: "download requested or handed back")
+            var outcome: Outcome?
             downloads.onRequest = { requestedURL in
-                url = requestedURL
-                requested.fulfill()
+                outcome = .downloaded(requestedURL?.lastPathComponent ?? "")
+                settled.fulfill()
             }
+            webKitItem.onRecord = {
+                outcome = .fellBack
+                settled.fulfill()
+            }
+            XCTAssertTrue(item.target === webView, "The download item was not taken over")
             XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
-            test.wait(for: [requested], timeout: 10)
-            return url?.lastPathComponent
+            test.wait(for: [settled], timeout: 10)
+            downloads.onRequest = nil
+            return try XCTUnwrap(outcome)
         }
 
         /// Right-clicks a link, chooses Open Link in Default Browser, and
@@ -210,5 +264,16 @@ private final class DownloadURLRecorder: NSObject, WKDownloadDelegate {
         let callback = onRequest
         onRequest = nil
         callback?(download.originalRequest?.url)
+    }
+}
+
+/// Stands in for WebKit's own menu item, which the menu falls back to.
+private final class FallbackRecorder: NSObject {
+    var onRecord: (() -> Void)?
+
+    @objc func record(_ sender: Any?) {
+        let callback = onRecord
+        onRecord = nil
+        callback?()
     }
 }

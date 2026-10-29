@@ -29,6 +29,8 @@
 		13B8F0B50BDEE1859B0BE1AE /* WorkspaceSnapshotStoreSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D800FBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift */; };
 		13F986E4DA1C4EAF92CA9445 /* MarkdownAssetPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */; };
 		C9A9EE8A917AFDA56305D84E /* BrowserFaviconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B93AA031C8EDCB13939E77 /* BrowserFaviconTests.swift */; };
+		C11507C001B2C3D4E5F60718 /* BrowserSearchSuggestionSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11507D001B2C3D4E5F60718 /* BrowserSearchSuggestionSessionTests.swift */; };
+		C11507A001B2C3D4E5F60718 /* LoopbackHTTPListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11507B001B2C3D4E5F60718 /* LoopbackHTTPListener.swift */; };
 		14D792EBB09AC36ADFF389EC /* ShutdownSentinelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B204EF50A2AF07D922EFFA /* ShutdownSentinelTests.swift */; };
 		1521D55DC63D5E5FC4955E31 /* ShortcutAndCommandPaletteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6083A7DAD962E287FC2FFE94 /* ShortcutAndCommandPaletteTests.swift */; };
 		154C8F2336C14C870CB0C531 /* ConfigCommandCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C7E212A580905DBF388D79 /* ConfigCommandCoreTests.swift */; };
@@ -1011,6 +1013,8 @@
 		AE86A069B4ECE7503CE20B95 /* Pi.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Conversation/Strategies/Pi.swift; sourceTree = "<group>"; };
 		AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownAssetPolicyTests.swift; sourceTree = "<group>"; };
 		B6B93AA031C8EDCB13939E77 /* BrowserFaviconTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserFaviconTests.swift; sourceTree = "<group>"; };
+		C11507D001B2C3D4E5F60718 /* BrowserSearchSuggestionSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSearchSuggestionSessionTests.swift; sourceTree = "<group>"; };
+		C11507B001B2C3D4E5F60718 /* LoopbackHTTPListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoopbackHTTPListener.swift; sourceTree = "<group>"; };
 		B0168BD407C49A98B930100D /* CreateWorkspaceRecentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWorkspaceRecentsTests.swift; sourceTree = "<group>"; };
 		B03F186DDAF8E10C83FC63CF /* ScrapeCapturePipelineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrapeCapturePipelineTests.swift; sourceTree = "<group>"; };
 		B09C007F42697761B5F1A2AB /* OmnibarAndToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmnibarAndToolsTests.swift; sourceTree = "<group>"; };
@@ -2018,6 +2022,8 @@
 				A11A6E02C11A6E0100000002 /* NewAgentShortcutTests.swift */,
 				AFFA49E5526541A9B61A16C1 /* MarkdownAssetPolicyTests.swift */,
 				B6B93AA031C8EDCB13939E77 /* BrowserFaviconTests.swift */,
+				C11507D001B2C3D4E5F60718 /* BrowserSearchSuggestionSessionTests.swift */,
+				C11507B001B2C3D4E5F60718 /* LoopbackHTTPListener.swift */,
 				24E076EF2ACF45CA9D5C928E /* MarkdownPresentationTests.swift */,
 				63D43C0C6E454F73AA5EEF37 /* MarkdownRendererRetentionPolicyTests.swift */,
 				D7003BF1A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift */,
@@ -2468,6 +2474,8 @@
 				A11A6E01C11A6E0100000001 /* NewAgentShortcutTests.swift in Sources */,
 				13F986E4DA1C4EAF92CA9445 /* MarkdownAssetPolicyTests.swift in Sources */,
 				C9A9EE8A917AFDA56305D84E /* BrowserFaviconTests.swift in Sources */,
+				C11507C001B2C3D4E5F60718 /* BrowserSearchSuggestionSessionTests.swift in Sources */,
+				C11507A001B2C3D4E5F60718 /* LoopbackHTTPListener.swift in Sources */,
 				E82D48CDE3BD488B8AAFA67D /* MarkdownPresentationTests.swift in Sources */,
 				D596A20B742A467FAA6951C3 /* MarkdownRendererRetentionPolicyTests.swift in Sources */,
 				A5FA2032A22C7558D3C7FABB /* MetadataPersistencePrecedenceTests.swift in Sources */,

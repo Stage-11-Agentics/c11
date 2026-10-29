@@ -2009,7 +2009,34 @@ final class BrowserHistoryStore: ObservableObject {
 actor BrowserSearchSuggestionService {
     static let shared = BrowserSearchSuggestionService()
 
-    func suggestions(engine: BrowserSearchEngine, query: String) async -> [String] {
+    private var sessions: [UUID: URLSession] = [:]
+    private let endpoint: @Sendable (BrowserSearchEngine, String) -> URL?
+
+    /// `endpoint` builds the suggestion URL for an engine and query; tests
+    /// point it at a loopback server.
+    init(endpoint: @escaping @Sendable (BrowserSearchEngine, String) -> URL? = BrowserSearchSuggestionService.engineURL) {
+        self.endpoint = endpoint
+    }
+
+    /// The suggestion session for one browser profile. The engines are fixed,
+    /// but their cookies would otherwise land in the app-wide jar and link one
+    /// profile's typing to another's, and typed queries would reach the
+    /// app-wide disk cache. Each profile gets no cookies and its own
+    /// in-memory cache (C11-507).
+    func session(forProfile profileID: UUID) -> URLSession {
+        if let session = sessions[profileID] { return session }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = URLCache(memoryCapacity: 1 << 20, diskCapacity: 0)
+        let session = URLSession(configuration: configuration)
+        sessions[profileID] = session
+        return session
+    }
+
+    func suggestions(engine: BrowserSearchEngine, query: String, profileID: UUID) async -> [String] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
@@ -2029,23 +2056,24 @@ actor BrowserSearchSuggestionService {
 
         // Google's endpoint can intermittently throttle/block app-style traffic.
         // Query fallbacks in parallel so we can show predictions quickly.
+        let profileSession = session(forProfile: profileID)
         if engine == .google {
-            return await fetchRemoteSuggestionsWithGoogleFallbacks(query: trimmed)
+            return await fetchRemoteSuggestionsWithGoogleFallbacks(query: trimmed, session: profileSession)
         }
 
-        return await fetchRemoteSuggestions(engine: engine, query: trimmed)
+        return await fetchRemoteSuggestions(engine: engine, query: trimmed, session: profileSession)
     }
 
-    private func fetchRemoteSuggestionsWithGoogleFallbacks(query: String) async -> [String] {
+    private func fetchRemoteSuggestionsWithGoogleFallbacks(query: String, session: URLSession) async -> [String] {
         await withTaskGroup(of: [String].self, returning: [String].self) { group in
             group.addTask {
-                await self.fetchRemoteSuggestions(engine: .google, query: query)
+                await self.fetchRemoteSuggestions(engine: .google, query: query, session: session)
             }
             group.addTask {
-                await self.fetchRemoteSuggestions(engine: .duckduckgo, query: query)
+                await self.fetchRemoteSuggestions(engine: .duckduckgo, query: query, session: session)
             }
             group.addTask {
-                await self.fetchRemoteSuggestions(engine: .bing, query: query)
+                await self.fetchRemoteSuggestions(engine: .bing, query: query, session: session)
             }
 
             while let result = await group.next() {
@@ -2059,7 +2087,37 @@ actor BrowserSearchSuggestionService {
         }
     }
 
-    private func fetchRemoteSuggestions(engine: BrowserSearchEngine, query: String) async -> [String] {
+    private func fetchRemoteSuggestions(engine: BrowserSearchEngine, query: String, session: URLSession) async -> [String] {
+        guard let url = endpoint(engine, query) else { return [] }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 0.65
+        req.cachePolicy = .returnCacheDataElseLoad
+        req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            return []
+        }
+
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            return []
+        }
+
+        switch engine {
+        case .google, .bing, .kagi, .startpage:
+            return parseOSJSON(data: data)
+        case .duckduckgo:
+            return parseDuckDuckGo(data: data)
+        }
+    }
+
+    /// The public suggestion endpoint for an engine and query.
+    static func engineURL(engine: BrowserSearchEngine, query: String) -> URL? {
         let url: URL?
         switch engine {
         case .google:
@@ -2095,34 +2153,7 @@ actor BrowserSearchSuggestionService {
             ]
             url = c?.url
         }
-
-        guard let url else { return [] }
-
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 0.65
-        req.cachePolicy = .returnCacheDataElseLoad
-        req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: req)
-        } catch {
-            return []
-        }
-
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-            return []
-        }
-
-        switch engine {
-        case .google, .bing, .kagi, .startpage:
-            return parseOSJSON(data: data)
-        case .duckduckgo:
-            return parseDuckDuckGo(data: data)
-        }
+        return url
     }
 
     private func parseOSJSON(data: Data) -> [String] {

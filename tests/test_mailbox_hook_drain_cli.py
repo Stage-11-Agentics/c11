@@ -372,8 +372,10 @@ def main() -> int:
           "recv --tab <name>: receipt carries no panel_id rather than the caller's", json.dumps(receipts))
     # `--tab <name>` resolves the name to its tab's UUID inbox through
     # `mailbox.resolve` (C5) before anything is claimed; the delivery itself is
-    # recorded only through the receipt spool, never over the socket.
-    reporting = [r for r in rec.requests if r.get("method") not in ("system.capabilities", "mailbox.resolve")]
+    # recorded only through the receipt spool, never over the socket. The
+    # caller's panel location lookup (C11-499) reports nothing.
+    reporting = [r for r in rec.requests
+                 if r.get("method") not in ("system.capabilities", "mailbox.resolve", "panel.locate")]
     check(reporting == [], "plain drain: no delivery reported over the socket", str(reporting[:2]))
     rec.close()
     fx.cleanup()

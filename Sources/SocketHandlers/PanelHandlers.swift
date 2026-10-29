@@ -1478,6 +1478,24 @@ extension TerminalController {
         }
     }
 
+    /// C11-499: the workspace a panel lives in now, read on the socket worker.
+    /// A shell keeps the C11_WORKSPACE_ID it started with, so the CLI asks this
+    /// once per command to follow a panel that moved since. `Workspace.panels`
+    /// registers every panel's workspace with the journal on add and on a move,
+    /// and clears it on close; that lock-guarded map is the answer, so no main hop.
+    nonisolated func v2PanelLocate(params: [String: Any]) -> V2CallResult {
+        guard let raw = v2String(params, "surface_id") else {
+            return .err(code: "missing_ref", message: "panel.locate requires panel_id", data: nil)
+        }
+        guard let panelId = UUID(uuidString: raw) else {
+            return .err(code: "invalid_params", message: "panel.locate takes a panel UUID", data: nil)
+        }
+        guard let workspaceId = JournalCoordinator.shared.target(panelID: panelId) else {
+            return .err(code: "not_found", message: "Panel not found", data: ["panel_id": panelId.uuidString])
+        }
+        return .ok(["panel_id": panelId.uuidString, "workspace_id": workspaceId.uuidString])
+    }
+
     nonisolated func v2PanelReadSelection(params: [String: Any]) -> V2CallResult {
         guard CapabilityFeatures.current.supports(.terminalSelection) else {
             return .err(code: "not_supported", message: String(localized: "socket.read_selection.unsupported", defaultValue: "Terminal selection reading is unavailable."), data: nil)

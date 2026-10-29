@@ -146,6 +146,7 @@ extension TerminalController {
             "panel.cancel_flash",
             "panel.set_metadata",
             "panel.get_metadata",
+            "panel.locate",
             "panel.clear_metadata",
             "panel.set_custom_color",
             "panel.get_titlebar_state",

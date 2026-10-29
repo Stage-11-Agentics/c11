@@ -1933,6 +1933,39 @@ final class MovedPanelIdentifyTests: XCTestCase {
             XCTAssertEqual((caller["panel_id"] ?? caller["surface_id"]) as? String, panelId.uuidString)
         }
     }
+
+    /// `panel.locate` is a socket-worker method that never hops to main, so
+    /// it is called on its worker entry, with the canonical param name.
+    private func locate(_ panelId: UUID) throws -> [String: Any] {
+        let response = TerminalController.shared.socketWorkerV2Response(
+            TerminalController.V2SocketRequest(id: 499, method: "panel.locate", params: ["surface_id": panelId.uuidString])
+        )
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any], response)
+    }
+
+    /// C11-499: `panel.locate` and panel-scoped reports follow a panel moved to
+    /// another window, and a closed panel is not found.
+    func testPanelLocateAndPanelReportsFollowAMovedPanel() throws {
+        let (sourceManager, sourceWindow) = try registerWindow()
+        defer { sourceWindow.close() }
+        let (destinationManager, destinationWindow) = try registerWindow()
+        defer { destinationWindow.close() }
+        let source = sourceManager.addWorkspace(select: false)
+        let panelId = try XCTUnwrap(source.focusedPanelId)
+        let destination = try XCTUnwrap(destinationManager.selectedWorkspace)
+        let pane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        let detached = try XCTUnwrap(source.detachPanel(panelId: panelId))
+        XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: pane, focus: false), panelId)
+
+        let located = try locate(panelId)
+        XCTAssertEqual((located["result"] as? [String: Any])?["workspace_id"] as? String, destination.id.uuidString, "\(located)")
+        XCTAssertTrue(TerminalController.shared.workspaceFollowingPanel(panelId, named: source) === destination)
+        XCTAssertTrue(TerminalController.shared.workspaceFollowingPanel(panelId, named: nil) === destination)
+        XCTAssertTrue(TerminalController.shared.workspaceFollowingPanel(nil, named: source) === source)
+
+        let unknown = try locate(UUID())
+        XCTAssertEqual((unknown["error"] as? [String: Any])?["code"] as? String, "not_found", "\(unknown)")
+    }
 }
 
 /// Call-site proof for the panel-confirm watchdog, pending reveal, focused-key

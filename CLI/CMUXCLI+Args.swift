@@ -404,6 +404,34 @@ extension CMUXCLI {
             .replacingOccurrences(of: "\\t", with: "\t")
     }
 
+    /// C11-499: a shell keeps the C11_WORKSPACE_ID it started with, and a
+    /// panel can move to another workspace after that. Ask c11 once where the
+    /// caller's panel (C11_PANEL_ID) lives now and, when it moved, point this
+    /// process's C11_WORKSPACE_ID and CMUX_WORKSPACE_ID at that workspace, so
+    /// every command that defaults to the caller's workspace follows the panel.
+    /// Returns the new workspace when it changed. An app without
+    /// `panel.locate`, an unknown panel or a slow answer leaves the environment.
+    @discardableResult
+    static func followCallerPanelWorkspace(client: SocketClient) -> UUID? {
+        let env = ProcessInfo.processInfo.environment
+        guard let panel = callerPanelEnv(env), UUID(uuidString: panel) != nil,
+              let start = (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+              let payload = try? client.sendV2(
+                  method: "panel.locate",
+                  params: ["panel_id": panel],
+                  deadline: .custom(callerPanelLocateSeconds)
+              ),
+              let live = (payload["workspace_id"] as? String).flatMap(UUID.init(uuidString:)),
+              live != start else { return nil }
+        setenv("C11_WORKSPACE_ID", live.uuidString, 1)
+        setenv("CMUX_WORKSPACE_ID", live.uuidString, 1)
+        return live
+    }
+
+    /// The lookup is a lock read on the socket worker; a c11 that cannot answer
+    /// this quickly cannot serve the command either, so don't spend more here.
+    static let callerPanelLocateSeconds: TimeInterval = 0.5
+
     func workspaceFromArgsOrEnv(_ args: [String], windowOverride: String? = nil) -> String? {
         if let explicit = optionValue(args, name: "--workspace") { return explicit }
         // When --window is explicitly targeted, don't fall back to env workspace from a different window

@@ -230,6 +230,14 @@ final class JournalCoordinator: @unchecked Sendable {
         interactivePID: Int32?,
         transcriptClockEvidence: Bool
     ) throws -> JournalAppendResult {
+        var draft = draft
+        // C11-499: the panel is the identity. A hook from a panel that moved
+        // after its shell started names the workspace it started in; record
+        // the workspace the panel is registered in now.
+        if let panelID = draft.panelID, draft.workspaceID != nil,
+           let live = target(panelID: panelID), live != draft.workspaceID {
+            draft.workspaceID = live
+        }
         do {
             let eligible = draft.owner.map { isEligible($0) && target(panelID: $0.panelID) == draft.workspaceID } ?? false
             let model = draft.panelID.flatMap { panelID in target(panelID: panelID).flatMap { workspaceID in

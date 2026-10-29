@@ -131,6 +131,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2FeedNoteDisplay(params: request.params))
         case "feed.answer":
             return v2Result(id: request.id, v2FeedAnswer(params: request.params))
+        case "panel.locate":
+            return v2Result(id: request.id, v2PanelLocate(params: request.params))
         case "panel.read_selection":
             return v2Result(id: request.id, v2PanelReadSelection(params: request.params))
         case "panel.input_state":

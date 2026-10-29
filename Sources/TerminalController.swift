@@ -2602,6 +2602,8 @@ class TerminalController {
         "panel.read_text",
         "panel.read_selection",
         "panel.input_state",
+        // C11-499: a lock-guarded panel location lookup the CLI makes per command.
+        "panel.locate",
         "panel.clear_history",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI
@@ -6655,6 +6657,18 @@ class TerminalController {
         return result
     }
 
+    /// C11-499: the workspace a panel-scoped report means. A hook from a panel
+    /// that moved after its shell started still names the workspace it started
+    /// in; the panel is the identity, so follow it to the workspace it is in now.
+    func workspaceFollowingPanel(_ panelId: UUID?, named workspace: Workspace?) -> Workspace? {
+        guard let panelId, workspace?.panels[panelId] == nil,
+              let located = AppDelegate.shared?.workspaceContainingPanel(
+                  panelId: panelId,
+                  preferredWorkspaceId: workspace?.id
+              ) else { return workspace }
+        return located.workspace
+    }
+
     func notifyTarget(_ args: String) -> String {
         guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6669,13 +6683,13 @@ class TerminalController {
 
         var result = "OK"
         v2MainSync {
-            let workspace: Workspace?
+            let named: Workspace?
             if let workspaceId = UUID(uuidString: workspaceArg) {
-                workspace = workspaceForSidebarMutation(id: workspaceId)
+                named = workspaceForSidebarMutation(id: workspaceId)
             } else {
-                workspace = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager)
+                named = resolveWorkspace(from: workspaceArg, workspaceManager: workspaceManager)
             }
-            guard let workspace else {
+            guard let workspace = workspaceFollowingPanel(UUID(uuidString: panelArg), named: named) else {
                 result = "ERROR: Tab not found"
                 return
             }
@@ -6732,9 +6746,7 @@ class TerminalController {
         }
         var workspaceId: UUID?
         v2MainSync {
-            if let workspace = resolveWorkspaceForReport(trimmed) {
-                workspaceId = workspace.id
-            }
+            workspaceId = workspaceFollowingPanel(panelId, named: resolveWorkspaceForReport(trimmed))?.id
         }
         guard let workspaceId else {
             return "ERROR: Tab not found"

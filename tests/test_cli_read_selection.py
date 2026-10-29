@@ -60,7 +60,8 @@ def main():
                 assert result.returncode == 0 and json.loads(result.stdout) == server.selection
                 count = len(server.requests)
                 result = run(['read-selection', '--panel', 'panel:2', '--json', '--bad-flag'])
-                assert result.returncode != 0 and 'unexpected arguments' in result.stderr
+                # Unknown flags are refused before the socket is used (#743).
+                assert result.returncode != 0 and "unknown flag '--bad-flag'" in result.stderr, result.stderr
                 assert len(server.requests) == count
                 print('PASS: exact skill trailing --json argv, global --json, human/empty output and unknown flag rejection')
             finally:

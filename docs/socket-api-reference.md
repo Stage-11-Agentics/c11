@@ -122,7 +122,7 @@ Dotted v2 methods, grouped by domain. Method names are stable identifiers; argum
 - `workspace.set_metadata`
 - `workspace.set_root`
 
-### Panels (`panel.*`) — 27
+### Panels (`panel.*`) — 28
 
 - `panel.action`
 - `panel.cancel_flash`
@@ -138,6 +138,7 @@ Dotted v2 methods, grouped by domain. Method names are stable identifiers; argum
 - `panel.health`
 - `panel.input_state`
 - `panel.list`
+- `panel.locate`
 - `panel.move`
 - `panel.read_selection`
 - `panel.read_text`

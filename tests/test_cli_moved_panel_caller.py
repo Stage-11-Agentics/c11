@@ -18,6 +18,9 @@ that pins the start workspace finds no such panel there.
      `read-screen`, `notify`, flashes, `new-split`, `close-panel`,
      `read-selection`, `input-state`) send no workspace beside a panel named
      by UUID or ref, so c11 finds it wherever it is.
+  6. With `panel.locate` (C11-499), every command that defaults to the
+     caller's workspace follows the moved panel, sidebar writes and creation
+     commands included; an app without it keeps the start workspace.
 
 Run: C11_CLI_BIN=<path to c11> python3 tests/test_cli_moved_panel_caller.py
 """
@@ -48,12 +51,17 @@ class MovedPanelServer(drain.FakeC11):
     """`metadata` is what c11 holds for the caller panel; None means the
     panel is open nowhere."""
 
-    def __init__(self, path: str, metadata: dict | None):
+    def __init__(self, path: str, metadata: dict | None, locate: bool = False):
         self.metadata = metadata
+        self.locate = locate   # an app with `panel.locate` (C11-499); older apps answer {}
         super().__init__(path, False)
 
     def answer(self, method: str, params: dict) -> tuple[dict | None, dict | None]:
         pinned = params.get("workspace_id")
+        if method == "panel.locate" and self.locate:
+            if str(params.get("panel_id", "")).upper() == PANEL:
+                return {"panel_id": PANEL, "workspace_id": LIVE}, None
+            return None, {"code": "not_found", "message": "Panel not found"}
         if method == "system.capabilities":
             return {"methods": ["panel.list", "mailbox.resolve", "panel.read_text"],
                     "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}]}, None
@@ -89,6 +97,7 @@ class MovedPanelServer(drain.FakeC11):
                     try:
                         request = json.loads(line)
                     except ValueError:
+                        self.requests.append({"v1": line.decode(errors="replace").strip()})
                         conn.sendall(b"OK\n")
                         continue
                     self.requests.append(request)
@@ -268,6 +277,39 @@ def main() -> int:
                 check(sent and all("workspace_id" not in p and p.get("panel_id") for p in sent),
                       f"{argv[0]} sends the panel without the start workspace",
                       f"rc={proc.returncode} sent={sent!r} err={proc.stderr[:200]!r}")
+        finally:
+            fixture.cleanup()
+        # 6. C11-499: with `panel.locate`, every command that defaults to the
+        # caller's workspace follows the moved panel; an older app keeps it.
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "locate.sock"), titled, locate=True)
+        note = os.path.join(tmp, "note.md")
+        with open(note, "w") as handle:
+            handle.write("# note\n")
+        try:
+            for argv in (
+                ["list-panels"], ["browser", "open", "https://example.com"], ["new-panel", "--type", "terminal"],
+                ["new-area"], ["markdown", "open", note], ["set-status", "build", "ok"], ["log", "hello"],
+                ["set-progress", "0.5"], ["get-titlebar-state"], ["panel-action", "rename", "--title", "x"],
+                ["workspace-action", "--workspace", "self", "rename", "--title", "x"],
+                ["send", "--panel", "panel:3", "hi"], ["pipe-pane", "--command", "cat"],
+            ):
+                before = len(server.requests)
+                proc, _ = drain.run(cli, ["--socket", server.path, *argv], fixture.env(server.path))
+                sent = [r for r in server.requests[before:] if r.get("method") not in ("system.capabilities", "panel.locate")]
+                named = json.dumps(sent).upper()
+                check(proc.returncode == 0 and LIVE in named and START not in named,
+                      f"{' '.join(argv[:2])} follows the moved panel's workspace",
+                      f"rc={proc.returncode} sent={sent!r} err={proc.stderr[:200]!r}")
+        finally:
+            fixture.cleanup()
+        fixture = drain.Fixture()
+        server = MovedPanelServer(os.path.join(tmp, "old-app.sock"), titled)
+        try:
+            proc, _ = drain.run(cli, ["--socket", server.path, "list-panels"], fixture.env(server.path))
+            listed = server.params_of("panel.list")
+            check(proc.returncode == 0 and [p.get("workspace_id", "").upper() for p in listed] == [START],
+                  "an app without panel.locate keeps the start workspace", f"rc={proc.returncode} sent={listed!r}")
         finally:
             fixture.cleanup()
     finally:

@@ -191,6 +191,12 @@ settles on the expected origin; a wrong-origin redirect returns
 files not owned by the current user, writable by group or others, or carrying
 an allow ACL.
 
+Context-menu downloads (Download Image, Download Linked File; 1.5.1,
+C11-487) of http(s) URLs go through `WKWebView.startDownload(using:)`, so
+WebKit attaches only the cookies it would send for that URL and matches them
+again on each redirect. c11 never copies the profile's cookie jar into a
+request of its own. `data:` and `file:` downloads do not send cookies.
+
 Every socket-driven browser wait, eval and script injection runs off the
 main thread (1.0, C11-311 B006). `browser addinitscript|addscript|addstyle`
 still install `WKUserScript`s through the panel's `userContentController`;
@@ -253,8 +259,11 @@ never interpolated JavaScript or a page URL. markdown-it runs with raw HTML
 off. Every rendered block passes DOMPurify, which forbids script, style,
 frame, object, embed, form and media elements and limits URLs to `http(s)`,
 `mailto`, `file`, `c11md-asset` and relative references. KaTeX runs with
-`trust: false`. Mermaid runs at `securityLevel: 'strict'`, refuses `init`
-and `config` directives, and its SVG is sanitized again without links,
+`trust: false`. Mermaid runs at `securityLevel: 'strict'`. The viewer
+refuses any diagram carrying an `init` or `initialize` directive in any form
+Mermaid's own grammar accepts, anywhere in the source, and any frontmatter
+line other than a blank, a comment, `title:` or `displayMode:` (1.5.1,
+C11-498), so a diagram cannot change the renderer's configuration. Its SVG is sanitized again without links,
 images, event attributes or external `url()`. HTML labels stay off, and
 `foreignObject` is removed, except in a diagram whose labels contain `$$`
 math (1.3: C11-456). There KaTeX renders each formula to MathML (`trust:

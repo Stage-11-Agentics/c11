@@ -698,6 +698,30 @@ final class CmuxWebView: WKWebView {
         return (defaultAction, defaultTarget)
     }
 
+    /// JavaScript the context-menu resolvers share; it expects `x` and `y`,
+    /// the CSS viewport point, in scope. A nested search only counts visible
+    /// descendants under the point, topmost first, and never runs from
+    /// <body> or <html>, whose children under the point are already in the
+    /// hit stack. A frame's content is not in this document, so frame-like
+    /// elements give no candidate and a frame on top ends the search;
+    /// WebKit's own menu action hit-tests into frames (C11-504).
+    private static let contextMenuHitTestPrelude = """
+        const containsPoint = (node) => {
+            if (!node || !node.getBoundingClientRect) return false;
+            const r = node.getBoundingClientRect();
+            return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+        };
+        const nestedUnderPoint = (el, selector) => {
+            if (!el || !el.querySelectorAll || el === document.body || el === document.documentElement) return [];
+            return Array.from(el.querySelectorAll(selector)).filter((n) => {
+                if (!containsPoint(n)) return false;
+                try { return window.getComputedStyle(n).visibility !== 'hidden'; } catch (_) { return true; }
+            }).reverse();
+        };
+        const isFrameLike = (el) => !!el && ['IFRAME', 'FRAME', 'OBJECT', 'EMBED'].includes((el.tagName || '').toUpperCase());
+        const examined = new Set();
+        """
+
     /// Resolve the topmost image URL near a point, accounting for overlay layers.
     private func findImageURLAtPoint(_ point: NSPoint, completion: @escaping (URL?) -> Void) {
         let cssPoint = cssViewportPoint(forViewPoint: point)
@@ -742,8 +766,9 @@ final class CmuxWebView: WKWebView {
                 }
                 return out;
             };
+            \(Self.contextMenuHitTestPrelude)
             const candidateFromElement = (el) => {
-                if (!el) return '';
+                if (!el || isFrameLike(el)) return '';
                 const attr = (name) => normalize(el.getAttribute ? el.getAttribute(name) : '');
                 if (el.tagName === 'IMG') {
                     const imageCandidates = [
@@ -774,9 +799,8 @@ final class CmuxWebView: WKWebView {
                     const computedBg = firstBackgroundURL(computed ? computed.backgroundImage : '');
                     if (computedBg) return computedBg;
                 } catch (_) {}
-                if (el.querySelector) {
-                    const nestedImg = el.querySelector('img[src],img[srcset],img[data-src],img[data-iurl],source[srcset]');
-                    if (nestedImg) {
+                if (el.querySelectorAll) {
+                    for (const nestedImg of nestedUnderPoint(el, 'img[src],img[srcset],img[data-src],img[data-iurl]')) {
                         const nestedCandidates = [
                             normalize(nestedImg.currentSrc || ''),
                             normalize(nestedImg.getAttribute ? nestedImg.getAttribute('src') : ''),
@@ -786,8 +810,7 @@ final class CmuxWebView: WKWebView {
                         const foundNested = nestedCandidates.find(Boolean);
                         if (foundNested) return foundNested;
                     }
-                    const nestedBg = el.querySelector('[style*="background-image"]');
-                    if (nestedBg) {
+                    for (const nestedBg of nestedUnderPoint(el, '[style*="background-image"]')) {
                         const styleValue = nestedBg.getAttribute ? nestedBg.getAttribute('style') : '';
                         const bgURL = firstBackgroundURL(styleValue || '');
                         if (bgURL) return bgURL;
@@ -798,6 +821,8 @@ final class CmuxWebView: WKWebView {
             const tryNodes = (nodes) => {
                 for (const start of nodes) {
                     for (const el of collectChain(start)) {
+                        if (examined.has(el)) continue;
+                        examined.add(el);
                         const found = candidateFromElement(el);
                         if (found) return found;
                     }
@@ -814,6 +839,7 @@ final class CmuxWebView: WKWebView {
                 return '';
             };
             const all = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+            if (all.length && isFrameLike(all[0])) return '';
             const foundFromAll = tryNodes(all);
             if (foundFromAll) return foundFromAll;
             const single = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
@@ -854,8 +880,9 @@ final class CmuxWebView: WKWebView {
                 }
                 return out;
             };
+            \(Self.contextMenuHitTestPrelude)
             const linkFromElement = (el) => {
-                if (!el) return '';
+                if (!el || isFrameLike(el)) return '';
                 const attr = (name) => normalize(el.getAttribute ? el.getAttribute(name) : '');
                 if (el.closest) {
                     const closestLink = el.closest('a[href],area[href]');
@@ -869,15 +896,16 @@ final class CmuxWebView: WKWebView {
                     const v = attr(name);
                     if (v) return v;
                 }
-                if (el.querySelector) {
-                    const nestedLink = el.querySelector('a[href],area[href]');
-                    if (nestedLink && nestedLink.href) return normalize(nestedLink.href);
+                for (const nestedLink of nestedUnderPoint(el, 'a[href]')) {
+                    if (nestedLink.href) return normalize(nestedLink.href);
                 }
                 return '';
             };
             const tryNodes = (nodes) => {
                 for (const start of nodes) {
                     for (const node of collectChain(start)) {
+                        if (examined.has(node)) continue;
+                        examined.add(node);
                         const found = linkFromElement(node);
                         if (found) return found;
                     }
@@ -894,6 +922,7 @@ final class CmuxWebView: WKWebView {
                 return '';
             };
             const nodes = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+            if (nodes.length && isFrameLike(nodes[0])) return '';
             const found = tryNodes(nodes);
             if (found) return found;
             const single = document.elementFromPoint ? document.elementFromPoint(x, y) : null;

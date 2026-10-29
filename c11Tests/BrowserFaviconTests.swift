@@ -152,8 +152,11 @@ final class BrowserFaviconTests: XCTestCase {
     }
 
     func testDataPayloadDropsURLFragmentWithoutDroppingEscapedHash() throws {
-        let url = try XCTUnwrap(URL(string: "data:application/octet-stream,one%23two#ignored"))
-        let payload = try XCTUnwrap(BrowserFavicon.dataURLPayload(url))
+        // Parse the original href: older Foundation versions may normalize the
+        // literal fragment separator into the opaque data payload in URL.
+        let href = "data:application/octet-stream,one%23two#ignored"
+        XCTAssertEqual(BrowserFavicon.discoveredURL(from: href)?.scheme?.lowercased(), "data")
+        let payload = try XCTUnwrap(BrowserFavicon.dataURLPayload(from: href))
         XCTAssertEqual(payload.count, 7)
         XCTAssertEqual(payload, Data("one#two".utf8))
     }

@@ -4197,12 +4197,18 @@ final class BrowserPanel: Panel, ObservableObject {
             """
 
             var discoveredURL: URL?
+            // Keep the raw DOM href for data URLs. Foundation can normalize
+            // their literal fragment separator into the opaque payload.
+            var discoveredDataURLHref: String?
             if let href = await self.evaluateJavaScriptString(
                 js,
                 in: webView,
                 timeoutNanoseconds: 400_000_000
             ) {
                 discoveredURL = BrowserFavicon.discoveredURL(from: href)
+                if discoveredURL?.scheme?.lowercased() == "data" {
+                    discoveredDataURLHref = href
+                }
             }
             guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID) else { return }
             guard self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
@@ -4241,8 +4247,9 @@ final class BrowserPanel: Panel, ObservableObject {
                 guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID),
                       self.isCurrentFaviconRefresh(generation: refreshGeneration) else { return }
                 if candidate.scheme?.lowercased() == "data" {
+                    guard let dataURLHref = discoveredDataURLHref else { continue }
                     decodedPNG = await Task.detached(priority: .utility) {
-                        BrowserFavicon.decodeDataURL(candidate, targetPx: 32)
+                        BrowserFavicon.decodeDataURL(from: dataURLHref, targetPx: 32)
                     }.value
                     if decodedPNG != nil { break }
                     continue

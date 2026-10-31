@@ -58,7 +58,9 @@ The `test_default_local_lock_remains_single_slot` failure (`2 != 1`, seen on #80
 
 After R1-R4 a release is about 28 min. Reaching 15 min needs B. Its options:
 
-1. Release from Atlas with `release-local.sh` and Xcode 16.4 installed beside 26.x (keeps the SDK pin): about 10-12 min. Moves signing credentials onto Atlas. First check that Xcode 16.4 runs on Atlas's macOS 26.5.
-2. The same on Atlas with the pin moved to Xcode 26.x: changes the SDK users get.
-3. Paid `macos-15-xlarge` with arm64-only: about 14 min (estimate); drops Intel Macs.
+Xcode 16.4 runs only through macOS 26.1.x ([Apple's support table](https://developer.apple.com/support/xcode/)), so it cannot run on Atlas (macOS 26.5), and the pin ends when GitHub retires its `macos-15` images.
+
+1. Move the pin to Xcode 26.x and release from Atlas with `release-local.sh`: about 10-12 min. Users on macOS 26 get the 26 SDK's system look (Apple's `UIDesignRequiresCompatibility` key can keep the old one), and signing credentials move onto Atlas.
+2. Move the pin to Xcode 26.x and keep the free GitHub runner: fixes the pin, no speed gain (about 28 min).
+3. Keep the pin on paid `macos-15-xlarge`, arm64-only: about 14 min (estimate). Drops Intel Macs, and the pin still ends with `macos-15`.
 4. Paid `macos-15-xlarge` alone, or free per-architecture parallel jobs with a `lipo` merge: about 21 min each; neither meets 15.

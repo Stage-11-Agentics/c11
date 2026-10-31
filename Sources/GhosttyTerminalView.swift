@@ -9078,32 +9078,37 @@ final class GhosttySurfaceScrollView: NSView {
     /// presentation tree (sublayer property), not via a redraw of the surface,
     /// so this stays out of the typing hot path.
     func triggerFlash(style: FlashStyle, appearance: FlashAppearance) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-#if DEBUG
-            if let surfaceId = self.surfaceView.terminalSurface?.id {
-                Self.recordFlash(for: surfaceId)
+        // Native link selection already deferred once to restore its target.
+        // Main-thread callers can install the layer animation in that turn.
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.triggerFlash(style: style, appearance: appearance)
             }
-#endif
-            self.updateFlashPath(style: style)
-            self.flashLayer.removeAllAnimations()
-            self.flashLayer.opacity = 0
-            self.flashLayer.strokeColor = appearance.color.cgColor
-            self.flashLayer.shadowColor = appearance.color.cgColor
-            let animation = CAKeyframeAnimation(keyPath: "opacity")
-            animation.values = FocusFlashPattern.values.map { NSNumber(value: $0) }
-            animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
-            animation.duration = FocusFlashPattern.duration
-            animation.timingFunctions = FocusFlashPattern.curves.map { curve in
-                switch curve {
-                case .easeIn:
-                    return CAMediaTimingFunction(name: .easeIn)
-                case .easeOut:
-                    return CAMediaTimingFunction(name: .easeOut)
-                }
-            }
-            self.flashLayer.add(animation, forKey: "cmux.flash")
+            return
         }
+#if DEBUG
+        if let surfaceId = self.surfaceView.terminalSurface?.id {
+            Self.recordFlash(for: surfaceId)
+        }
+#endif
+        self.updateFlashPath(style: style)
+        self.flashLayer.removeAllAnimations()
+        self.flashLayer.opacity = 0
+        self.flashLayer.strokeColor = appearance.color.cgColor
+        self.flashLayer.shadowColor = appearance.color.cgColor
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        animation.values = FocusFlashPattern.values.map { NSNumber(value: $0) }
+        animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
+        animation.duration = FocusFlashPattern.duration
+        animation.timingFunctions = FocusFlashPattern.curves.map { curve in
+            switch curve {
+            case .easeIn:
+                return CAMediaTimingFunction(name: .easeIn)
+            case .easeOut:
+                return CAMediaTimingFunction(name: .easeOut)
+            }
+        }
+        self.flashLayer.add(animation, forKey: "c11.flash")
     }
 
     func setVisibleInUI(_ visible: Bool) {

@@ -9149,8 +9149,7 @@ struct WorkspaceSidebar: View {
             remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
             allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
             allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected },
-            sidebarFlashToken: ws.sidebarFlashToken,
-            sidebarFlashColorHex: ws.sidebarFlashColorHex,
+            sidebarFlashSnapshot: ws.sidebarFlashRequest,
             chromeTokens: chromeTokens
         )
         .equatable()
@@ -12110,10 +12109,12 @@ private struct SidebarPanelMetricsReadout: View {
 // Do NOT add @EnvironmentObject or new @Binding without updating ==.
 // Do NOT remove .equatable() from the ForEach call site in VerticalTabsSidebar.
 //
-// Note on `sidebarFlashToken`: it's a precomputed `let` (Int), threaded from
-// the parent ForEach via `tab.sidebarFlashToken`. Keeping it in `==` is what
-// causes ONLY the targeted workspace's row to re-render (and therefore
-// re-fire its `.onChange`) when a flash arrives — sibling rows skip body.
+// The flash snapshot participates in parent equality. Delivery observes the
+// workspace directly: a flash does not change the parent's group projection.
+#if DEBUG
+private let sidebarRowProbeEnabled = ProcessInfo.processInfo.environment["C11_SIDEBAR_ROW_PROBE"] == "1"
+#endif
+
 private struct WorkspaceRowView: View, Equatable {
     // Closures, Bindings, and object references are excluded from ==
     // because they're recreated every parent eval but don't affect rendering.
@@ -12137,8 +12138,7 @@ private struct WorkspaceRowView: View, Equatable {
         lhs.remoteContextMenuWorkspaceIds == rhs.remoteContextMenuWorkspaceIds &&
         lhs.allRemoteContextMenuTargetsConnecting == rhs.allRemoteContextMenuTargetsConnecting &&
         lhs.allRemoteContextMenuTargetsDisconnected == rhs.allRemoteContextMenuTargetsDisconnected &&
-        lhs.sidebarFlashToken == rhs.sidebarFlashToken &&
-        lhs.sidebarFlashColorHex == rhs.sidebarFlashColorHex &&
+        lhs.sidebarFlashSnapshot == rhs.sidebarFlashSnapshot &&
         lhs.chromeTokens == rhs.chromeTokens
     }
 
@@ -12182,35 +12182,13 @@ private struct WorkspaceRowView: View, Equatable {
     let remoteContextMenuWorkspaceIds: [UUID]
     let allRemoteContextMenuTargetsConnecting: Bool
     let allRemoteContextMenuTargetsDisconnected: Bool
-    /// Per-workspace flash signal. Bumped by `Workspace.triggerFocusFlash`
-    /// whenever any panel in the workspace is flashed. The row reacts by
-    /// running a single, gentle pulse in the same accent color used for
-    /// other workspace affordances. Visual-only; never selects.
-    let sidebarFlashToken: Int
-    /// CMUX-10: hex color (#RRGGBBAA) for the sidebar pulse on the most
-    /// recent flash. Sourced from `--color` via `Workspace.runFlashPulse`
-    /// so a per-call color override tints the workspace row, not just the
-    /// terminal pane ring. nil → fall back to the default sidebar-fill
-    /// color.
-    let sidebarFlashColorHex: String?
-
-    /// CMUX-10: resolves `sidebarFlashColorHex` to a SwiftUI `Color`. Falls
-    /// back to the default `FlashAppearance` sidebar fill when the most
-    /// recent flash carried no per-call color.
-    private var sidebarFlashFillColor: Color {
-        if let hex = sidebarFlashColorHex,
-           let nsColor = FlashAppearance.parseHex(hex) {
-            return Color(nsColor: nsColor)
-        }
-        return FlashAppearance.current(envelope: .sidebarFill).swiftUIColor
-    }
-    /// Chrome scale tokens (sidebar+tab strip font/sizing multipliers). Value-typed
-    /// and Equatable so it folds into `==` as a single multiplier compare. (C11-6)
+    let sidebarFlashSnapshot: FocusFlashRequest?
+    @State private var activeSidebarFlash: FocusFlashRequest?
+    /// Value-typed scale remains part of the row equality contract.
     let chromeTokens: ChromeScaleTokens
     @State private var isHovering = false
     @State private var rowHeight: CGFloat = 1
-    @State private var sidebarFlashOpacity: Double = 0
-    @State private var lastObservedSidebarFlashToken: Int = 0
+
     @AppStorage("sidebarShowGitBranch") private var sidebarShowGitBranch = true
     @AppStorage(SidebarBranchLayoutSettings.key) private var sidebarBranchVerticalLayout = SidebarBranchLayoutSettings.defaultVerticalLayout
     @AppStorage("sidebarShowBranchDirectory") private var sidebarShowBranchDirectory = true
@@ -12881,9 +12859,10 @@ private struct WorkspaceRowView: View, Equatable {
                 }
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(sidebarFlashFillColor.opacity(sidebarFlashOpacity))
-                    .allowsHitTesting(false)
+                if let request = activeSidebarFlash {
+                    SidebarFlashOverlay(request: request)
+                        .allowsHitTesting(false)
+                }
             }
     }
 
@@ -12941,6 +12920,9 @@ private struct WorkspaceRowView: View, Equatable {
 
     var body: some View {
         let closeWorkspaceTooltip = String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close Workspace")
+#if DEBUG
+        let _ = sidebarRowProbeEnabled ? dlog("sidebar.row.body workspace=\(workspace.id.uuidString)") : ()
+#endif
         let accessibilityHintText = String(localized: "sidebar.workspace.accessibilityHint", defaultValue: "Activate to focus this workspace. Drag to reorder, or use Move Up and Move Down actions.")
         let moveUpActionText = String(localized: "sidebar.workspace.moveUpAction", defaultValue: "Move Up")
         let moveDownActionText = String(localized: "sidebar.workspace.moveDownAction", defaultValue: "Move Down")
@@ -13158,11 +13140,15 @@ private struct WorkspaceRowView: View, Equatable {
         .padding(.top, 13)
         .padding(.bottom, 11)
         .background(workspacePulseCardBackground)
-        .onChange(of: sidebarFlashToken) { _, newValue in
-            guard newValue != lastObservedSidebarFlashToken else { return }
-            lastObservedSidebarFlashToken = newValue
-            runSidebarFlashAnimation(token: newValue)
+        .onChange(of: workspace.sidebarFlashRequest) { _, request in
+            guard let request, request.remainingDuration > 0 else { return }
+            activeSidebarFlash = request
+            DispatchQueue.main.asyncAfter(deadline: .now() + request.remainingDuration) {
+                guard activeSidebarFlash?.id == request.id else { return }
+                activeSidebarFlash = nil
+            }
         }
+        .onDisappear { activeSidebarFlash = nil }
         .padding(.horizontal, 6)
         .background {
             GeometryReader { proxy in
@@ -13244,31 +13230,6 @@ private struct WorkspaceRowView: View, Equatable {
 
     private func contextMenuLabel(multi: String, single: String, isMulti: Bool) -> String {
         isMulti ? multi : single
-    }
-
-    private func runSidebarFlashAnimation(token: Int) {
-        // CMUX-10: drive the sidebar pulse from the unified `FocusFlashPattern`
-        // envelope (same temporal shape as the pane ring), with the per-channel
-        // peak scalar applied so the row tint reads as a signal without
-        // overpowering the sidebar.
-        let peakScale = FlashEnvelope.sidebarFill.peakScale
-        sidebarFlashOpacity = (FocusFlashPattern.values.first ?? 0) * peakScale
-        for segment in FocusFlashPattern.segments {
-            DispatchQueue.main.asyncAfter(deadline: .now() + segment.delay) {
-                // Bail if a newer flash superseded this run.
-                guard token == lastObservedSidebarFlashToken else { return }
-                let animation: Animation
-                switch segment.curve {
-                case .easeIn:
-                    animation = .easeIn(duration: segment.duration)
-                case .easeOut:
-                    animation = .easeOut(duration: segment.duration)
-                }
-                withAnimation(animation) {
-                    sidebarFlashOpacity = segment.targetOpacity * peakScale
-                }
-            }
-        }
     }
 
     private func remoteContextMenuWorkspaces() -> [Workspace] {

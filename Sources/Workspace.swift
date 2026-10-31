@@ -5112,20 +5112,9 @@ final class Workspace: Identifiable, ObservableObject {
     private var lastKnownPanelIds: Set<UUID> = []
     private var workspaceCreationPendingRestore = false
 
-    /// Monotonically incrementing token used by the sidebar workspace row to
-    /// observe focus flashes targeting any panel in this workspace. Bumped
-    /// from `triggerFocusFlash(panelId:)` so a single fan-out drives the
-    /// pane content flash, the Bonsplit tab strip flash, and the sidebar
-    /// row pulse together. Visual-only; never affects selection.
-    @Published private(set) var sidebarFlashToken: Int = 0
-
-    /// CMUX-10: hex color (sRGB w/ alpha) used by the sidebar workspace row
-    /// pulse. Set in `runFlashPulse` from the per-call `FlashAppearance` so
-    /// `c11 trigger-flash --color "#FF00FF"` tints the sidebar pulse, not
-    /// just the terminal pane ring. Stored as a hex string so it can fold
-    /// cleanly into `TabItemView.==` without touching `NSColor` reference
-    /// equality. nil → fall back to the default sidebar-fill color.
-    @Published private(set) var sidebarFlashColorHex: String?
+    /// One current request, observed by the row itself. A parent snapshot is
+    /// only an equality input; it must not be the row's delivery mechanism.
+    @Published private(set) var sidebarFlashRequest: FocusFlashRequest?
 
     /// CMUX-10: state for in-flight persistent flashes (one entry per panel).
     /// The Timer is process-local; the manifest is not abused for per-frame
@@ -12124,21 +12113,27 @@ final class Workspace: Identifiable, ObservableObject {
     /// Bonsplit's `flashTab` does not accept a color callback, so the tab-
     /// strip pulse stays on the bonsplit-internal accent and is intentionally
     /// not retinted here.
-    func triggerFocusFlash(panelId: UUID, appearance: FlashAppearance, persistent: Bool = false) {
-        guard NotificationAreaFlashSettings.isEnabled() else { return }
+    @discardableResult
+    func triggerFocusFlash(
+        panelId: UUID,
+        appearance: FlashAppearance,
+        persistent: Bool = false,
+        source: String = "focus",
+        requestedAt: FlashRequestTime = FlashRequestTime()
+    ) -> FocusFlashRequest? {
+        guard NotificationAreaFlashSettings.isEnabled() else { return nil }
 
         // CMUX-10: persistent on the focused surface in the focused window
         // degrades to a one-shot. Persistence is "look at this when you
         // eventually look back" — meaningless when the operator is already
         // looking. The color override is still honored.
         if persistent && isFocusedTargetForPersistentFlash(panelId: panelId) {
-            runFlashPulse(panelId: panelId, appearance: appearance)
-            return
+            return runFlashPulse(panelId: panelId, appearance: appearance, source: source, requestedAt: requestedAt)
         }
 
-        runFlashPulse(panelId: panelId, appearance: appearance)
+        let request = runFlashPulse(panelId: panelId, appearance: appearance, source: source, requestedAt: requestedAt)
 
-        guard persistent else { return }
+        guard persistent else { return request }
 
         // Replace any existing timer for this panel before installing a new one,
         // so back-to-back persistent triggers don't leak timers.
@@ -12163,7 +12158,7 @@ final class Workspace: Identifiable, ObservableObject {
                     state.lastBreadcrumbAt = now
                     self.persistentFlashPanels[panelId] = state
                 }
-                self.runFlashPulse(panelId: panelId, appearance: appearance)
+                self.runFlashPulse(panelId: panelId, appearance: appearance, source: "persistent", recordsEvents: false)
             }
         }
         persistentFlashPanels[panelId] = PersistentFlashState(
@@ -12192,6 +12187,7 @@ final class Workspace: Identifiable, ObservableObject {
             dlog("flash.manifest.set workspace=\(id.uuidString.prefix(8)) panel=\(panelId.uuidString.prefix(8)) error=\(error)")
 #endif
         }
+        return request
     }
 
     /// CMUX-10: clear a persistent flash on a single panel. Idempotent —
@@ -12227,17 +12223,25 @@ final class Workspace: Identifiable, ObservableObject {
     /// CMUX-10: shared fan-out used by both one-shot and persistent flash
     /// pulses. Stays small to keep pulse-firing predictable; lifecycle and
     /// timer management live in `triggerFocusFlash` / `cancelPersistentFlash`.
-    private func runFlashPulse(panelId: UUID, appearance: FlashAppearance) {
+    @discardableResult
+    private func runFlashPulse(
+        panelId: UUID,
+        appearance: FlashAppearance,
+        source: String,
+        requestedAt: FlashRequestTime = FlashRequestTime(),
+        recordsEvents: Bool = true
+    ) -> FocusFlashRequest {
+        let request = FocusFlashRequest(
+            workspaceId: id, panelId: panelId, time: requestedAt, source: source,
+            appearance: appearance, duration: appearance.envelope.duration, recordsEvents: recordsEvents
+        )
+        EventEmitter.shared.emitFlashRequested(request)
         panels[panelId]?.triggerFlash(appearance: appearance)
         if let bonsplitTabId = bonsplitTabIdFromTabId(panelId) {
             bonsplitController.flashTab(bonsplitTabId)
         }
-        // CMUX-10: thread the per-call appearance into the sidebar pulse so
-        // `--color` tints the workspace row, not just the terminal pane ring.
-        // Stored as a hex string so `TabItemView.==` can fold it in without
-        // tripping NSColor reference equality.
-        sidebarFlashColorHex = appearance.color.hexString(includeAlpha: true)
-        sidebarFlashToken &+= 1
+        sidebarFlashRequest = request
+        return request
     }
 
     /// CMUX-10: true when a persistent-flash request would target the panel
@@ -14200,7 +14204,7 @@ extension Workspace: BonsplitDelegate {
 
         // CMUX-10: clear any persistent-flash timer + manifest entry before
         // removing the panel. Without this, the repeating timer keeps firing
-        // and increments `sidebarFlashToken` for a panel that no longer exists.
+        // and publishes a sidebar flash request for a panel that no longer exists.
         cancelPersistentFlash(panelId: panelId)
 
         let isMoving = isDetaching && panel != nil

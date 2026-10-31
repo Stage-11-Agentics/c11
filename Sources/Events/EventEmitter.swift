@@ -350,6 +350,28 @@ final class EventEmitter {
         emit(.surfaceClosed, workspace: workspace, surface: surface)
     }
 
+    func emitFlashRequested(_ request: FocusFlashRequest) {
+        guard request.recordsEvents else { return }
+        emit(.flashRequested, workspace: request.workspaceId, surface: request.panelId, payload: [
+            "request_id": request.id.uuidString,
+            "source": request.source,
+            "requested_at_ms": request.time.wall.timeIntervalSince1970 * 1_000
+        ])
+    }
+
+    func emitFlashDrawn(_ request: FocusFlashRequest, channel: String) {
+        guard request.recordsEvents else { return }
+        let drawn = FlashRequestTime()
+        emit(.flashDrawn, workspace: request.workspaceId, surface: request.panelId, payload: [
+            "request_id": request.id.uuidString,
+            "source": request.source,
+            "channel": channel,
+            "requested_at_ms": request.time.wall.timeIntervalSince1970 * 1_000,
+            "drawn_at_ms": drawn.wall.timeIntervalSince1970 * 1_000,
+            "latency_ms": max(0, drawn.uptime - request.time.uptime) * 1_000
+        ])
+    }
+
     func emitWorkspaceReordered(windowId: UUID?, workspaceIds: [UUID]) {
         var payload: [String: Any] = ["final_workspace_ids": workspaceIds.map(\.uuidString)]
         if let windowId { payload["window_id"] = windowId.uuidString }

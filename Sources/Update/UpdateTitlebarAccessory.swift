@@ -253,6 +253,7 @@ struct TitlebarControlButton<Content: View>: View {
 struct TitlebarControlsView: View {
     @ObservedObject var notificationStore: TerminalNotificationStore
     @ObservedObject var viewModel: TitlebarControlsViewModel
+    @ObservedObject var sidebarState: SidebarState
     let onToggleSidebar: () -> Void
     let onToggleNotifications: () -> Void
     let onNewTab: () -> Void
@@ -367,6 +368,15 @@ struct TitlebarControlsView: View {
             }
             .accessibilityIdentifier("titlebarControl.toggleSidebar")
             .accessibilityLabel(String(localized: "titlebar.sidebar.accessibilityLabel", defaultValue: "Toggle Sidebar"))
+
+            TitlebarControlButton(config: config, action: { sidebarState.toggleDoubleWide() }) {
+                iconLabel(systemName: "rectangle.split.2x1", config: config)
+                    .foregroundStyle(sidebarState.isDoubleWide ? BrandColors.goldSwiftUI : Color.primary)
+            }
+            .accessibilityIdentifier("titlebarControl.doubleWideSidebar")
+            .accessibilityLabel(String(localized: "sidebar.tiles.toggle.tooltip", defaultValue: "Double-wide sidebar"))
+            .accessibilityValue(sidebarState.isDoubleWide ? "1" : "0")
+            .safeHelp(String(localized: "sidebar.tiles.toggle.tooltip", defaultValue: "Double-wide sidebar"))
 
             TitlebarControlButton(config: config, action: {
                 #if DEBUG
@@ -484,7 +494,7 @@ struct TitlebarControlsView: View {
     }
 
     private func titlebarButtonRightEdge(for slot: HintSlot, config: TitlebarControlsStyleConfig) -> CGFloat {
-        let index = CGFloat(slot.rawValue)
+        let index = CGFloat(slot.rawValue + (slot == .toggleSidebar ? 0 : 1))
         return (index + 1) * config.buttonSize + index * config.spacing
     }
 
@@ -546,15 +556,17 @@ struct TitlebarControlsView: View {
 
 struct HiddenTitlebarSidebarControlsView: View {
     @ObservedObject var notificationStore: TerminalNotificationStore
+    @ObservedObject var sidebarState: SidebarState
     @StateObject private var viewModel = TitlebarControlsViewModel()
 
-    private let hostWidth: CGFloat = 124
+    private let hostWidth: CGFloat = 156
     private let hostHeight: CGFloat = 28
 
     var body: some View {
         TitlebarControlsView(
             notificationStore: notificationStore,
             viewModel: viewModel,
+            sidebarState: sidebarState,
             onToggleSidebar: { _ = AppDelegate.shared?.sidebarState?.toggle() },
             onToggleNotifications: { [viewModel] in
                 AppDelegate.shared?.toggleNotificationsPopover(
@@ -793,7 +805,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
     var popoverIsShownForTesting: Bool { notificationsPopover.isShown }
     private var showsWorkspaceTitlebar: Bool { !WorkspacePresentationModeSettings.isMinimal() }
 
-    init(notificationStore: TerminalNotificationStore) {
+    init(notificationStore: TerminalNotificationStore, sidebarState: SidebarState) {
         self.notificationStore = notificationStore
         let toggleSidebar = { _ = AppDelegate.shared?.sidebarState?.toggle() }
         let toggleNotifications: () -> Void = { _ = AppDelegate.shared?.toggleNotificationsPopover(animated: true) }
@@ -809,6 +821,7 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             rootView: TitlebarControlsView(
                 notificationStore: notificationStore,
                 viewModel: viewModel,
+                sidebarState: sidebarState,
                 onToggleSidebar: toggleSidebar,
                 onToggleNotifications: toggleNotifications,
                 onNewTab: newTab,
@@ -1164,34 +1177,29 @@ final class UpdateTitlebarAccessoryController {
         // after didBecomeKey/didBecomeMain notifications. Retry briefly to avoid missing
         // attaching accessories (notably in UI tests).
         if !isMainTerminalWindow(window) {
-            let key = ObjectIdentifier(window)
-            let attempts = pendingAttachRetries[key, default: 0]
-            if attempts < 40 {
-                pendingAttachRetries[key] = attempts + 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak window] in
-                    Task { @MainActor [weak self, weak window] in
-                        guard let self, let window else { return }
-                        self.attachIfNeeded(to: window)
-                    }
-                }
-            } else {
-                pendingAttachRetries.removeValue(forKey: key)
-            }
+            retryAttach(to: window)
             return
         }
 
-        pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
-
         guard !WorkspacePresentationModeSettings.isMinimal() else {
+            pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
             removeAccessoryIfPresent(from: window)
             return
         }
 
-        guard !attachedWindows.contains(window) else { return }
+        guard !attachedWindows.contains(window) else {
+            pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
+            return
+        }
 
         if !window.titlebarAccessoryViewControllers.contains(where: { $0.view.identifier == controlsIdentifier }) {
+            guard let sidebarState = AppDelegate.shared?.sidebarState(for: window) else {
+                retryAttach(to: window)
+                return
+            }
             let controls = TitlebarControlsAccessoryViewController(
-                notificationStore: TerminalNotificationStore.shared
+                notificationStore: TerminalNotificationStore.shared,
+                sidebarState: sidebarState
             )
             controls.layoutAttribute = .left
             controls.view.identifier = controlsIdentifier
@@ -1200,6 +1208,7 @@ final class UpdateTitlebarAccessoryController {
         }
 
         attachedWindows.add(window)
+        pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
 
 #if DEBUG
         let env = ProcessInfo.processInfo.environment
@@ -1208,6 +1217,22 @@ final class UpdateTitlebarAccessoryController {
             UpdateLogStore.shared.append("attached titlebar accessories to window id=\(ident)")
         }
 #endif
+    }
+
+    private func retryAttach(to window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        let attempts = pendingAttachRetries[key, default: 0]
+        guard attempts < 40 else {
+            pendingAttachRetries.removeValue(forKey: key)
+            return
+        }
+        pendingAttachRetries[key] = attempts + 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak window] in
+            Task { @MainActor [weak self, weak window] in
+                guard let self, let window else { return }
+                self.attachIfNeeded(to: window)
+            }
+        }
     }
 
     private func removeAccessoryIfPresent(from window: NSWindow) {

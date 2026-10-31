@@ -31,6 +31,8 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. *
 
 **Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
 
+The operator can enable **Double Wide** in the sidebar header or View → Sidebar, or begin a drag below 300 pt and cross that threshold. A drag that starts at 300 pt or wider keeps cards. Tiles pack left to right and show the full card on hover; narrowing keeps Tiles on, and switching it off restores the previous card width. This mode persists per window. Agents can read `sidebar-state --json --workspace <ref>` (`layout.double_wide`, width and columns); only the operator changes the mode.
+
 ## Links to panels and workspaces
 
 Before emitting these links, pages and agents should check the connected server's `features` in `c11 capabilities --json` for `links.panel` version 1, which covers the browser and Markdown navigation described here.

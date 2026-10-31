@@ -350,15 +350,36 @@ struct TitlebarLayerBackground: NSViewRepresentable {
 final class SidebarState: ObservableObject {
     @Published var isVisible: Bool
     @Published var persistedWidth: CGFloat
+    @Published var isDoubleWide: Bool
+    var singleWideWidth: CGFloat
 
-    init(isVisible: Bool = true, persistedWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)) {
+    init(isVisible: Bool = true, persistedWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth),
+         isDoubleWide: Bool = false, singleWideWidth: CGFloat? = nil) {
         self.isVisible = isVisible
         let sanitized = SessionPersistencePolicy.sanitizedSidebarWidth(Double(persistedWidth))
         self.persistedWidth = CGFloat(sanitized)
+        self.isDoubleWide = isDoubleWide
+        self.singleWideWidth = CGFloat(SessionPersistencePolicy.sanitizedSidebarWidth(singleWideWidth.map { Double($0) }))
     }
 
     func toggle() {
         isVisible.toggle()
+    }
+
+    private var layoutState: SidebarLayoutPolicy.State {
+        .init(doubleWide: isDoubleWide, width: Double(persistedWidth), singleWideWidth: Double(singleWideWidth))
+    }
+
+    private func apply(_ state: SidebarLayoutPolicy.State) {
+        if singleWideWidth != CGFloat(state.singleWideWidth) { singleWideWidth = CGFloat(state.singleWideWidth) }
+        if isDoubleWide != state.doubleWide { isDoubleWide = state.doubleWide }
+        if persistedWidth != CGFloat(state.width) { persistedWidth = CGFloat(state.width) }
+    }
+
+    func toggleDoubleWide() { apply(SidebarLayoutPolicy.toggled(layoutState)) }
+
+    func resize(to width: CGFloat, initialWidth: CGFloat) {
+        apply(SidebarLayoutPolicy.dragged(layoutState, width: Double(width), initialWidth: Double(initialWidth)))
     }
 }
 
@@ -1891,13 +1912,13 @@ struct ContentView: View {
             ?? NSApp.keyWindow?.contentView?.bounds.width
             ?? NSApp.keyWindow?.contentLayoutRect.width
         if let resolvedAvailableWidth, resolvedAvailableWidth > 0 {
-            return max(Self.minimumSidebarWidth, resolvedAvailableWidth * Self.maximumSidebarWidthRatio)
+            return max(Self.minimumSidebarWidth, min(CGFloat(SessionPersistencePolicy.maximumSidebarWidth), resolvedAvailableWidth * Self.maximumSidebarWidthRatio))
         }
 
         let fallbackScreenWidth = NSApp.keyWindow?.screen?.frame.width
             ?? NSScreen.main?.frame.width
             ?? 1920
-        return max(Self.minimumSidebarWidth, fallbackScreenWidth * Self.maximumSidebarWidthRatio)
+        return max(Self.minimumSidebarWidth, min(CGFloat(SessionPersistencePolicy.maximumSidebarWidth), fallbackScreenWidth * Self.maximumSidebarWidthRatio))
     }
 
     static func clampedSidebarWidth(_ candidate: CGFloat, maximumWidth: CGFloat) -> CGFloat {
@@ -1911,7 +1932,7 @@ struct ContentView: View {
 
     private func clampSidebarWidthIfNeeded(availableWidth: CGFloat? = nil) {
         let nextWidth = Self.clampedSidebarWidth(
-            sidebarWidth,
+            sidebarState.isDoubleWide ? sidebarState.persistedWidth : sidebarWidth,
             maximumWidth: maxSidebarWidth(availableWidth: availableWidth)
         )
         guard abs(nextWidth - sidebarWidth) > 0.5 else { return }
@@ -2118,6 +2139,7 @@ struct ContentView: View {
                             maximumWidth: maxSidebarWidth(availableWidth: availableWidth)
                         )
                         withTransaction(Transaction(animation: nil)) {
+                            sidebarState.resize(to: nextWidth, initialWidth: startWidth)
                             sidebarWidth = nextWidth
                         }
                     }
@@ -2170,6 +2192,7 @@ struct ContentView: View {
         WorkspaceSidebar(
             updateViewModel: updateViewModel,
             onSendFeedback: presentFeedbackComposer,
+            compact: sidebarState.isDoubleWide,
             selection: $sidebarSelectionState.selection,
             selectedWorkspaceIds: $selectedWorkspaceIds,
             lastSidebarSelectionIndex: $lastSidebarSelectionIndex
@@ -2335,6 +2358,7 @@ struct ContentView: View {
         TitlebarControlsView(
             notificationStore: TerminalNotificationStore.shared,
             viewModel: fullscreenControlsViewModel,
+            sidebarState: sidebarState,
             onToggleSidebar: { sidebarState.toggle() },
             onToggleNotifications: { [fullscreenControlsViewModel] in
                 AppDelegate.shared?.toggleNotificationsPopover(
@@ -2559,7 +2583,7 @@ struct ContentView: View {
             if abs(sidebarWidth - restoredWidth) > 0.5 {
                 sidebarWidth = restoredWidth
             }
-            if abs(sidebarState.persistedWidth - restoredWidth) > 0.5 {
+            if !sidebarState.isDoubleWide, abs(sidebarState.persistedWidth - restoredWidth) > 0.5 {
                 sidebarState.persistedWidth = restoredWidth
             }
             if selectedWorkspaceIds.isEmpty, let selectedId = workspaceManager.selectedWorkspaceId {
@@ -2975,7 +2999,7 @@ struct ContentView: View {
                 sidebarWidth = sanitized
                 return
             }
-            if abs(sidebarState.persistedWidth - sanitized) > 0.5 {
+            if !sidebarState.isDoubleWide, abs(sidebarState.persistedWidth - sanitized) > 0.5 {
                 sidebarState.persistedWidth = sanitized
             }
             // Sidebar width changes are pure SwiftUI layout updates, so portal-hosted
@@ -2999,7 +3023,7 @@ struct ContentView: View {
 
         view = AnyView(view.onChange(of: sidebarState.persistedWidth) { newValue in
             let sanitized = normalizedSidebarWidth(newValue)
-            if abs(newValue - sanitized) > 0.5 {
+            if !sidebarState.isDoubleWide, abs(newValue - sanitized) > 0.5 {
                 sidebarState.persistedWidth = sanitized
                 return
             }
@@ -3009,6 +3033,7 @@ struct ContentView: View {
             }
         })
 
+        view = AnyView(view.focusedSceneObject(sidebarState))
         view = AnyView(view.ignoresSafeArea())
         view = AnyView(view.sheet(isPresented: $isFeedbackComposerPresented) {
             SidebarFeedbackComposerSheet()
@@ -8466,6 +8491,8 @@ struct WorkspaceSidebar: View {
     // the whole sidebar (workspace pulse projection, worktree chips, per-row
     // Equatable compares) twice a second.
     let onSendFeedback: () -> Void
+    var compact: Bool = false
+    @EnvironmentObject var sidebarState: SidebarState
     @EnvironmentObject var workspaceManager: WorkspaceManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
     @Environment(\.colorScheme) private var colorScheme
@@ -8496,6 +8523,8 @@ struct WorkspaceSidebar: View {
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(ChromeScaleSettings.presetKey)
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
+    @AppStorage(ChromeScaleSettings.customMultiplierKey)
+    private var chromeScaleCustomMultiplier = Double(ChromeScaleSettings.defaultCustomMultiplier)
     /// C11-104 v2 — chip row is gated by the preserved
     /// `sidebarShowBranchDirectory` key (existing user prefs survive
     /// the legacy-row → chip-row migration).
@@ -8604,7 +8633,10 @@ struct WorkspaceSidebar: View {
         // precomputed `let` to TabItemView so its typing-latency hot-path
         // == comparison stays a single multiplier compare. (C11-6)
         let chromeTokens = ChromeScaleTokens(
-            multiplier: ChromeScaleSettings.multiplier(
+            multiplier: compact ? ChromeScaleSettings.multiplier(
+                presetRaw: chromeScalePresetRaw,
+                customMultiplier: chromeScaleCustomMultiplier
+            ) : ChromeScaleSettings.multiplier(
                 for: ChromeScaleSettings.preset(for: chromeScalePresetRaw)
             )
         )
@@ -8627,6 +8659,24 @@ struct WorkspaceSidebar: View {
 
                             groupControls
 
+                            Group {
+                                if compact {
+                                    LazyVStack(spacing: tabRowSpacing) {
+                                        ForEach(WorkspaceSidebarTileRun.pack(groupCoordinator.projection.rows)) { run in
+                                            if case .group = run.rows[0] {
+                                                tileRows(run.rows, workspacesById: workspacesById,
+                                                         chromeTokens: chromeTokens, palette: groupPalette)
+                                            } else {
+                                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 0),
+                                                    count: SidebarLayoutPolicy.columns(width: Double(proxy.size.width),
+                                                        scale: Double(chromeTokens.multiplier))), spacing: tabRowSpacing) {
+                                                    tileRows(run.rows, workspacesById: workspacesById,
+                                                             chromeTokens: chromeTokens, palette: groupPalette)
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
                             LazyVStack(spacing: tabRowSpacing) {
                                 ForEach(groupCoordinator.projection.rows) { row in
                                     switch row {
@@ -8658,6 +8708,8 @@ struct WorkspaceSidebar: View {
                                                 }
                                         }
                                     }
+                                }
+                            }
                                 }
                             }
                             .overlayPreferenceValue(SidebarWorkspaceRowAnchorKey.self) { anchors in
@@ -8727,7 +8779,7 @@ struct WorkspaceSidebar: View {
                     }
                     .overlay(alignment: .topLeading) {
                         if isMinimalMode {
-                            HiddenTitlebarSidebarControlsView(notificationStore: notificationStore)
+                            HiddenTitlebarSidebarControlsView(notificationStore: notificationStore, sidebarState: sidebarState)
                                 .padding(.leading, hiddenTitlebarControlsLeadingInset)
                                 .padding(.top, 2)
                         }
@@ -9150,9 +9202,50 @@ struct WorkspaceSidebar: View {
             allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
             allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected },
             sidebarFlashSnapshot: ws.sidebarFlashRequest,
-            chromeTokens: chromeTokens
+            chromeTokens: chromeTokens,
+            compact: compact
         )
         .equatable()
+    }
+
+    @ViewBuilder
+    private func tileRows(_ rows: [WorkspaceGroupSidebarRow], workspacesById: [UUID: Workspace],
+                          chromeTokens: ChromeScaleTokens, palette: [WorkspaceColorEntry]) -> some View {
+        ForEach(rows) { row in
+            Group {
+                switch row {
+                case .group(let header):
+                    groupHeader(header, chromeTokens: chromeTokens, palette: palette)
+                        .overlay(alignment: .topLeading) {
+                            groupColorBar(
+                                groupId: header.group.id,
+                                continuesBelow: !header.group.isCollapsed && header.summary.memberCount > 0
+                            )
+                        }
+                case .workspace(let item):
+                    if let ws = workspacesById[item.workspaceId] {
+                        workspaceRow(ws, item: item, chromeTokens: chromeTokens)
+                            .anchorPreference(key: SidebarWorkspaceRowAnchorKey.self, value: .bounds) { [ws.id: $0] }
+                            .padding(.leading, item.groupId == nil ? 0 : 12)
+                            .overlay(alignment: .topLeading) {
+                                groupColorBar(
+                                    groupId: item.groupId,
+                                    continuesBelow: !item.isLastGroupMember
+                                )
+                            }
+                            .overlay(alignment: .bottom) {
+                                if item.isLastGroupMember, draggedGroupId != nil,
+                                   dropIndicator?.groupId == item.groupId,
+                                   dropIndicator?.isGroupBody == false, dropIndicator?.edge == .bottom {
+                                    Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 6)
+                                }
+                            }
+                    }
+                }
+
+            }
+            .id(row.id)
+        }
     }
 
     private func debugShortSidebarWorkspaceId(_ id: UUID?) -> String {
@@ -11589,6 +11682,12 @@ enum WorkspacePulseMarkRowMetrics {
         }
     }
 
+    static func tileLayout(count: Int, availableWidth: CGFloat) -> Layout {
+        let fit = max(0, Int(floor((max(0, availableWidth) + 4) / 18)))
+        let visible = count <= fit ? count : max(0, Int(floor((max(0, availableWidth - 26) + 4) / 18)))
+        return Layout(slot: 14, spacing: 4, visibleCount: min(count, visible), hiddenCount: max(0, count - visible))
+    }
+
     static func width(count: Int, slot: CGFloat, spacing: CGFloat) -> CGFloat {
         guard count > 0 else { return 0 }
         return slot * CGFloat(count) + spacing * CGFloat(count - 1)
@@ -12115,6 +12214,230 @@ private struct SidebarPanelMetricsReadout: View {
 private let sidebarRowProbeEnabled = ProcessInfo.processInfo.environment["C11_SIDEBAR_ROW_PROBE"] == "1"
 #endif
 
+/// A mouse-only preview. The terminal retains the key window and first responder;
+/// explicit buttons inside the card still perform their normal operator actions.
+private struct SidebarTileHoverPreview<Identity: Equatable>: NSViewRepresentable {
+    let workspaceManager: WorkspaceManager
+    let contentIdentity: () -> Identity
+    let content: () -> AnyView
+
+    final class Coordinator {
+        var renderedIdentity: Identity?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> SidebarTileHoverAnchor {
+        SidebarTileHoverAnchor()
+    }
+
+    func updateNSView(_ view: SidebarTileHoverAnchor, context: Context) {
+        view.workspaceManager = workspaceManager
+        let coordinator = context.coordinator
+        view.previewContent = { force in
+            let identity = contentIdentity()
+            guard force || coordinator.renderedIdentity != identity else { return nil }
+            coordinator.renderedIdentity = identity
+            return content()
+        }
+        view.refreshVisibleContent()
+    }
+
+    static func dismantleNSView(_ view: SidebarTileHoverAnchor, coordinator: Coordinator) { view.dismiss() }
+}
+
+private final class SidebarTilePreviewPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+@MainActor
+final class SidebarTileHoverAnchor: NSView {
+    private static let active = NSMapTable<NSWindow, SidebarTileHoverAnchor>.weakToWeakObjects()
+    weak var workspaceManager: WorkspaceManager?
+    var previewContent: ((Bool) -> AnyView?)?
+    private var preview: SidebarTilePreviewPanel?
+    private var previewHostingView: NSHostingView<AnyView>?
+    private var pending: DispatchWorkItem?
+    private var pointerMonitor: Any?
+    private var observers: [NSObjectProtocol] = []
+    private var tracking: NSTrackingArea?
+    private var sourceFrame: NSRect = .zero
+    private weak var previewHost: NSWindow?
+    private var previousMouseMoves = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window { dismiss() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+#if DEBUG
+        dlog("sidebar.tilePreview.enter bounds=\(bounds) key=\(window?.isKeyWindow == true)")
+#endif
+        guard let window, window.isKeyWindow else { return }
+        if let existing = Self.active.object(forKey: window), existing !== self {
+            // Crossing a neighboring cell must not replace the card while the
+            // pointer is travelling through its passage to the preview.
+            if existing.preview != nil, existing.previewPassage.contains(NSEvent.mouseLocation) { return }
+            existing.dismiss()
+        }
+        if preview != nil { return }
+        Self.active.setObject(self, forKey: window)
+        pending?.cancel()
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss() }
+        })
+        let work = DispatchWorkItem { [weak self] in self?.show() }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+#if DEBUG
+        dlog("sidebar.tilePreview.exit visible=\(preview != nil)")
+#endif
+        if preview == nil { dismiss() } else { checkPointer() }
+    }
+
+    @discardableResult
+    static func dismiss(in window: NSWindow?) -> Bool {
+        guard let window, let anchor = active.object(forKey: window) else { return false }
+        let wasVisible = anchor.preview != nil
+        anchor.dismiss()
+        return wasVisible
+    }
+
+    func dismiss() {
+        pending?.cancel()
+        pending = nil
+        if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+        pointerMonitor = nil
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers.removeAll()
+        if let preview {
+            preview.parent?.removeChildWindow(preview)
+            preview.orderOut(nil)
+            preview.contentView = nil
+        }
+        preview = nil
+        previewHostingView = nil
+        if let previewHost { previewHost.acceptsMouseMovedEvents = previousMouseMoves }
+        previewHost = nil
+        if let window, Self.active.object(forKey: window) === self { Self.active.removeObject(forKey: window) }
+    }
+
+    private func show() {
+        pending = nil
+#if DEBUG
+        dlog("sidebar.tilePreview.show bounds=\(bounds) visible=\(visibleRect) key=\(window?.isKeyWindow == true)")
+#endif
+        guard NSEvent.pressedMouseButtons == 0,
+              let window, window.isKeyWindow, !visibleRect.isEmpty,
+              let workspaceManager,
+              let layout = AppDelegate.shared?.sidebarLayout(for: workspaceManager),
+              let sidebarWidth = layout["effective_width"] as? Double else { dismiss(); return }
+        sourceFrame = window.convertToScreen(convert(bounds, to: nil))
+#if DEBUG
+        dlog("sidebar.tilePreview.position source=\(sourceFrame) pointer=\(NSEvent.mouseLocation)")
+#endif
+        guard sourceFrame.contains(NSEvent.mouseLocation) else { dismiss(); return }
+        let panel = SidebarTilePreviewPanel(contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = true
+        panel.identifier = NSUserInterfaceItemIdentifier("c11.sidebar.tilePreview")
+        preview = panel
+        refreshVisibleContent(force: true)
+        let hostFrame = window.convertToScreen(window.contentView?.bounds ?? window.contentLayoutRect)
+        let origin = NSPoint(x: min(hostFrame.minX + sidebarWidth + 8, hostFrame.maxX - panel.frame.width),
+                             y: max(hostFrame.minY, min(sourceFrame.maxY - panel.frame.height, hostFrame.maxY - panel.frame.height)))
+        panel.setFrameOrigin(origin)
+        window.addChildWindow(panel, ordered: .above)
+        panel.alphaValue = 0
+        panel.orderFront(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.06
+            panel.animator().alphaValue = 1
+        }
+        previewHost = window
+        previousMouseMoves = window.acceptsMouseMovedEvents
+        window.acceptsMouseMovedEvents = true
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .scrollWheel, .leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .scrollWheel, event.window === self.preview { return event }
+            if event.type == .leftMouseDragged || event.type == .scrollWheel { self.dismiss() }
+            else { self.checkPointer() }
+            return event
+        }
+        for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification,
+                     NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.dismiss() }
+            })
+        }
+    }
+
+    func refreshVisibleContent(force: Bool = false) {
+        guard let preview, let window, let content = previewContent?(force) else { return }
+        // Keep the same hosting/scroll views across updates, including a button
+        // press in flight. The width constraint also governs fittingSize.
+        let root = AnyView(content.frame(width: 200).fixedSize(horizontal: false, vertical: true))
+        let host: NSHostingView<AnyView>
+        if let existing = previewHostingView {
+            host = existing
+            host.rootView = root
+        } else {
+            host = NSHostingView(rootView: root)
+            previewHostingView = host
+            let scroll = NSScrollView()
+            scroll.drawsBackground = false
+            scroll.hasVerticalScroller = false
+            scroll.hasHorizontalScroller = false
+            scroll.documentView = host
+            preview.contentView = scroll
+        }
+        let contentHeight = max(75, host.fittingSize.height)
+        host.setFrameSize(NSSize(width: 200, height: contentHeight))
+        let height = min(contentHeight, (window.contentView?.bounds.height ?? 640) - 40)
+        preview.setContentSize(NSSize(width: 200, height: height))
+#if DEBUG
+        dlog("sidebar.tilePreview.content host=\(ObjectIdentifier(host)) height=\(height)")
+#endif
+    }
+
+    private func checkPointer() {
+        guard let preview else { dismiss(); return }
+        let point = NSEvent.mouseLocation
+        // The narrow bridge is needed to reach the card from the tile without
+        // closing it in the eight-point gap (or over the adjacent grid cell).
+        if !sourceFrame.contains(point) && !preview.frame.contains(point) && !previewPassage.contains(point) { dismiss() }
+    }
+
+    private var previewPassage: NSRect {
+        guard let preview else { return .zero }
+        return NSRect(x: sourceFrame.minX, y: sourceFrame.minY,
+                      width: max(sourceFrame.width, preview.frame.minX - sourceFrame.minX + 2),
+                      height: sourceFrame.height)
+    }
+}
+
 private struct WorkspaceRowView: View, Equatable {
     // Closures, Bindings, and object references are excluded from ==
     // because they're recreated every parent eval but don't affect rendering.
@@ -12139,7 +12462,8 @@ private struct WorkspaceRowView: View, Equatable {
         lhs.allRemoteContextMenuTargetsConnecting == rhs.allRemoteContextMenuTargetsConnecting &&
         lhs.allRemoteContextMenuTargetsDisconnected == rhs.allRemoteContextMenuTargetsDisconnected &&
         lhs.sidebarFlashSnapshot == rhs.sidebarFlashSnapshot &&
-        lhs.chromeTokens == rhs.chromeTokens
+        lhs.chromeTokens == rhs.chromeTokens &&
+        lhs.compact == rhs.compact
     }
 
     // Use plain references instead of @EnvironmentObject to avoid subscribing
@@ -12186,6 +12510,7 @@ private struct WorkspaceRowView: View, Equatable {
     @State private var activeSidebarFlash: FocusFlashRequest?
     /// Value-typed scale remains part of the row equality contract.
     let chromeTokens: ChromeScaleTokens
+    var compact: Bool = false
     @State private var isHovering = false
     @State private var rowHeight: CGFloat = 1
 
@@ -12580,18 +12905,18 @@ private struct WorkspaceRowView: View, Equatable {
     /// composition rail at the foot of the card still carries the full
     /// state distribution.
     @ViewBuilder
-    private var workspacePulseMarkRow: some View {
+    private func workspacePulseMarkRow(tile: Bool = false) -> some View {
         let agents = workspacePulse.agents
         GeometryReader { proxy in
-            let layout = WorkspacePulseMarkRowMetrics.layout(
-                count: agents.count,
-                availableWidth: proxy.size.width
-            )
+            let layout = tile
+                ? WorkspacePulseMarkRowMetrics.tileLayout(count: agents.count, availableWidth: proxy.size.width / chromeTokens.multiplier)
+                : WorkspacePulseMarkRowMetrics.layout(count: agents.count, availableWidth: proxy.size.width)
+            let scale = tile ? chromeTokens.multiplier : 1
             let visible = Array(agents.suffix(layout.visibleCount))
             // Trailing alignment comes from the outer frame rather than a
             // leading Spacer: a Spacer would add one more `layout.spacing`
             // gap on top of the width the metrics just fitted.
-            HStack(spacing: layout.spacing) {
+            HStack(spacing: layout.spacing * scale) {
                 if layout.hiddenCount > 0 {
                     Text(verbatim: "+\(layout.hiddenCount)")
                         .lineLimit(1)
@@ -12605,14 +12930,14 @@ private struct WorkspaceRowView: View, Equatable {
                 ForEach(visible) { agent in
                     workspacePulseMarkTarget(
                         for: agent,
-                        width: layout.slot,
-                        height: 14
+                        width: layout.slot * scale,
+                        height: 14 * scale
                     )
                 }
             }
-            .frame(width: proxy.size.width, height: 14, alignment: .trailing)
+            .frame(width: proxy.size.width, height: 14 * scale, alignment: .trailing)
         }
-        .frame(height: 14)
+        .frame(height: 14 * (tile ? chromeTokens.multiplier : 1))
     }
 
     private var workspacePulseFooter: some View {
@@ -12630,7 +12955,7 @@ private struct WorkspaceRowView: View, Equatable {
                 Spacer(minLength: 0)
             }
 
-            workspacePulseMarkRow
+            workspacePulseMarkRow()
         }
         .font(.system(size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced))
         .foregroundColor(.secondary.opacity(0.68))
@@ -12643,12 +12968,12 @@ private struct WorkspaceRowView: View, Equatable {
         .padding(.top, 10)
     }
 
-    private var workspacePulseCompositionRail: some View {
+    private func workspacePulseCompositionRail(scale: CGFloat = 1, topPadding: CGFloat = 9) -> some View {
         GeometryReader { proxy in
             let populatedStates = WorkspacePulseState.allCases.filter {
                 workspacePulse.agentCount(for: $0) > 0
             }
-            let gap: CGFloat = 2
+            let gap: CGFloat = 2 * scale
             let totalGaps = gap * CGFloat(max(0, populatedStates.count - 1))
             let availableWidth = max(0, proxy.size.width - totalGaps)
             HStack(spacing: gap) {
@@ -12663,13 +12988,13 @@ private struct WorkspaceRowView: View, Equatable {
                 }
             }
         }
-        .frame(height: 4)
+        .frame(height: 4 * scale)
         .background(
             Rectangle()
                 .fill(BrandColors.ruleSwiftUI.opacity(workspacePulse.agents.isEmpty ? 0.55 : 0.35))
         )
         .clipShape(Rectangle())
-        .padding(.top, 9)
+        .padding(.top, topPadding)
         .accessibilityHidden(true)
     }
 
@@ -12816,7 +13141,7 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     @ViewBuilder
-    private var workspacePulseCardBackground: some View {
+    private func workspacePulseCardBackground(includeFlash: Bool = true) -> some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(workspacePulseBaseColor)
             .overlay {
@@ -12859,7 +13184,7 @@ private struct WorkspaceRowView: View, Equatable {
                 }
             }
             .overlay {
-                if let request = activeSidebarFlash {
+                if includeFlash, let request = activeSidebarFlash {
                     SidebarFlashOverlay(request: request)
                         .allowsHitTesting(false)
                 }
@@ -12918,20 +13243,56 @@ private struct WorkspaceRowView: View, Equatable {
         )
     }
 
-    var body: some View {
+    private struct HoverContentIdentity: Equatable {
+        let pulse: WorkspacePulseSummary
+        let chips: [WorktreeChipRow]
+        let chrome: ChromeScaleTokens
+        let values: [AnyHashable]
+    }
+
+    // Evaluated only when the preview is visible or about to appear. Snapshot
+    // the mutable workspace values; retaining the workspace reference alone
+    // cannot distinguish its old and new content. Flash/hover state is excluded.
+    private var hoverContentIdentity: HoverContentIdentity {
+        let colors = workspacePulseColors
+        var values: [AnyHashable] = [
+            workspace.id, workspace.title, workspace.isPinned, workspace.displayOrdinal,
+            AnyHashable(workspace.customColor), AnyHashable(workspace.focusedPanelId),
+            isActive, canCloseWorkspace, showsWorkspaceId, colorScheme == .light,
+            AnyHashable(themedBackgroundColor?.hexString(includeAlpha: true)),
+            AnyHashable(themedRailColor?.hexString(includeAlpha: true)),
+            AnyHashable(colors.waitingHex), AnyHashable(colors.runningHex),
+            AnyHashable(colors.idleHex), AnyHashable(colors.coldHex),
+            [sidebarShowMetadata, sidebarShowLog, sidebarShowProgress, sidebarShowBranchDirectory,
+             sidebarShowPullRequest, sidebarShowPorts, sidebarHideAllDetails, sidebarShowSSH],
+            AnyHashable(remoteWorkspaceSidebarText), remoteConnectionStatusText,
+            AnyHashable(copyableSidebarSSHError), workspace.listeningPorts,
+            AnyHashable(workspace.logEntries.last?.message), AnyHashable(workspace.logEntries.last?.level.rawValue),
+            AnyHashable(workspace.progress?.value), AnyHashable(workspace.progress?.label),
+            AnyHashable(workspace.progress?.timestamp)
+        ]
+        for block in workspace.sidebarMetadataBlocksInDisplayOrder() {
+            values.append(contentsOf: [AnyHashable(block.key), AnyHashable(block.markdown),
+                                      AnyHashable(block.priority), AnyHashable(block.timestamp)])
+        }
+        if visibleAuxiliaryDetails.showsPullRequests {
+            for request in pullRequestDisplays(orderedPanelIds: workspace.sidebarOrderedPanelIds()) {
+                values.append(contentsOf: [request.id, request.label, request.number, request.url,
+                                           request.status.rawValue, AnyHashable(request.checks?.rawValue)])
+            }
+        }
+        return HoverContentIdentity(pulse: workspacePulse, chips: worktreeChipRows,
+                                    chrome: chromeTokens, values: values)
+    }
+
+    private func cardContents(compact: Bool) -> some View {
         let closeWorkspaceTooltip = String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close Workspace")
-#if DEBUG
-        let _ = sidebarRowProbeEnabled ? dlog("sidebar.row.body workspace=\(workspace.id.uuidString)") : ()
-#endif
-        let accessibilityHintText = String(localized: "sidebar.workspace.accessibilityHint", defaultValue: "Activate to focus this workspace. Drag to reorder, or use Move Up and Move Down actions.")
-        let moveUpActionText = String(localized: "sidebar.workspace.moveUpAction", defaultValue: "Move Up")
-        let moveDownActionText = String(localized: "sidebar.workspace.moveDownAction", defaultValue: "Move Down")
         let detailVisibility = visibleAuxiliaryDetails
         // C11-104 v2 — branch+directory text-line precomputes retired.
         // The new chip render (precomputed upstream in
         // `VerticalTabsSidebar`, passed in via `worktreeChipRows`)
         // replaces them.
-        let orderedPanelIds: [UUID]? = detailVisibility.showsPullRequests
+        let orderedPanelIds: [UUID]? = !compact && detailVisibility.showsPullRequests
             ? workspace.sidebarOrderedPanelIds()
             : nil
         let pullRequestRows: [PullRequestDisplay] = {
@@ -12939,7 +13300,7 @@ private struct WorkspaceRowView: View, Equatable {
             return pullRequestDisplays(orderedPanelIds: orderedPanelIds)
         }()
 
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             // Spacing and the trailing accessory slot are both held back from
             // the title on every card, so anything reserved here is title the
             // operator never gets to read in a narrow sidebar. Keep the pin
@@ -13000,7 +13361,11 @@ private struct WorkspaceRowView: View, Equatable {
                 }
                 .frame(minWidth: 18, minHeight: 19, alignment: .trailing)
             }
+            .frame(height: compact ? 19 * chromeTokens.multiplier : nil)
 
+            if compact {
+                tileSecondRow
+            } else {
             workspacePulseSummaries
 
             workspacePulseFooter
@@ -13131,15 +13496,65 @@ private struct WorkspaceRowView: View, Equatable {
                     .truncationMode(.tail)
             }
 
-            workspacePulseCompositionRail
+            }
+            workspacePulseCompositionRail(scale: compact ? chromeTokens.multiplier : 1,
+                                          topPadding: compact ? 8 * chromeTokens.multiplier : 9)
         }
         .animation(.easeInOut(duration: 0.2), value: workspace.logEntries.count)
         .animation(.easeInOut(duration: 0.2), value: workspace.progress != nil)
         .animation(.easeInOut(duration: 0.2), value: workspace.metadataBlocks.count)
-        .padding(.horizontal, 13)
-        .padding(.top, 13)
-        .padding(.bottom, 11)
-        .background(workspacePulseCardBackground)
+        .padding(.horizontal, compact ? 13 * chromeTokens.multiplier : 13)
+        .padding(.top, compact ? 13 * chromeTokens.multiplier : 13)
+        .padding(.bottom, compact ? 11 * chromeTokens.multiplier : 11)
+        .frame(height: compact ? 75 * chromeTokens.multiplier : nil, alignment: .top)
+    }
+
+    private var tileSecondRow: some View {
+        let flagged = workspacePulse.agents.first(where: { $0.flagged })
+        let reason = flagged.flatMap { agent in agent.flagReason.map { agent.flagKind?.displayText(reason: $0) ?? $0 } }
+        let text = reason ?? (workspacePulse.agents.isEmpty
+            ? String(localized: "sidebar.tiles.noAgents", defaultValue: "No agents") : workspacePulseAgentCountText)
+        return GeometryReader { proxy in
+            let font = reason == nil
+                ? NSFont.monospacedSystemFont(ofSize: 9.5 * chromeTokens.multiplier, weight: .regular)
+                : NSFont.systemFont(ofSize: 10.5 * chromeTokens.multiplier)
+            let labelWidth = min(ceil((text as NSString).size(withAttributes: [.font: font]).width),
+                                 max(0, proxy.size.width - 46 * chromeTokens.multiplier))
+            HStack(spacing: 6 * chromeTokens.multiplier) {
+                Text(verbatim: text)
+                    .font(.system(size: (reason == nil ? 9.5 : 10.5) * chromeTokens.multiplier,
+                                  design: reason == nil ? .monospaced : .default))
+                    .foregroundStyle(reason == nil ? Color.secondary : Color(nsColor: NSColor(hex: flagged?.flagKind?.colorHex(lightBackground: colorScheme == .light) ?? "#9D8AD9") ?? .systemPurple))
+                    .lineLimit(1)
+                    .frame(width: labelWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(text)
+                workspacePulseMarkRow(tile: true)
+            }
+        }
+        .frame(height: 14 * chromeTokens.multiplier)
+        .padding(.top, 6 * chromeTokens.multiplier)
+    }
+
+    var body: some View {
+#if DEBUG
+        let _ = sidebarRowProbeEnabled ? dlog("sidebar.row.body workspace=\(workspace.id.uuidString)") : ()
+#endif
+        let accessibilityHintText = String(localized: "sidebar.workspace.accessibilityHint", defaultValue: "Activate to focus this workspace. Drag to reorder, or use Move Up and Move Down actions.")
+        let moveUpActionText = String(localized: "sidebar.workspace.moveUpAction", defaultValue: "Move Up")
+        let moveDownActionText = String(localized: "sidebar.workspace.moveDownAction", defaultValue: "Move Down")
+        cardContents(compact: compact)
+        .background(workspacePulseCardBackground())
+        .background {
+            if compact {
+                SidebarTileHoverPreview(workspaceManager: workspaceManager,
+                    contentIdentity: { hoverContentIdentity },
+                    content: { AnyView(cardContents(compact: false)
+                        .background(workspacePulseCardBackground(includeFlash: false))
+                        .padding(.horizontal, 6)
+                        .frame(width: 200)) })
+            }
+        }
         .onChange(of: workspace.sidebarFlashRequest) { _, request in
             guard let request, request.remainingDuration > 0 else { return }
             activeSidebarFlash = request
@@ -13217,6 +13632,7 @@ private struct WorkspaceRowView: View, Equatable {
             isHovering = hovering
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sidebar.workspace.\(workspace.id.uuidString)")
         .accessibilityLabel(Text(accessibilityTitle))
         .accessibilityHint(Text(accessibilityHintText))
         .accessibilityAction(named: Text(moveUpActionText)) {
@@ -13518,7 +13934,16 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private var accessibilityTitle: String {
-        String(localized: "accessibility.workspacePosition", defaultValue: "\(workspace.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
+        let position = String(localized: "accessibility.workspacePosition", defaultValue: "\(workspace.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
+        guard compact else { return position }
+        let census = workspacePulse.agents.isEmpty
+            ? String(localized: "sidebar.tiles.noAgents", defaultValue: "No agents")
+            : workspacePulseAgentCountText
+        let agents = workspacePulse.agents.map { agent in
+            let state = agent.activityHelp?.accessibilityValue ?? workspacePulseLabel(for: agent.presentedState)
+            return "\(workspacePulseMarkAccessibilityLabel(agent)): \(state)"
+        }
+        return ([position, "WS \(workspace.displayOrdinal)", census] + agents).joined(separator: ", ")
     }
 
     private func moveBy(_ delta: Int) {

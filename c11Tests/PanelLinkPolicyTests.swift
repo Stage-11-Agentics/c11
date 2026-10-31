@@ -10,6 +10,34 @@ import CoreGraphics
 final class PanelLinkPolicyTests: XCTestCase {
     private let id = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
 
+    func testTerminalConsumesEveryInternalSchemeBeforeExternalResolution() {
+        for link in ["c11://panel/\(id)", "C11:panel/\(id)", "c11:notes", "c11://%", "c11://panel/not-a-uuid", " c11://workspace/\(id) "] {
+            XCTAssertTrue(PanelLinkTarget.usesScheme(link), link)
+            XCTAssertNil(resolveTerminalOpenURLTarget(link), link)
+        }
+        XCTAssertFalse(PanelLinkTarget.usesScheme("https://example.com/c11:notes"))
+        XCTAssertFalse(PanelLinkTarget.usesScheme("c110://panel/\(id)"))
+        XCTAssertEqual(resolveTerminalOpenURLTarget("mailto:test@example.com"), .external(URL(string: "mailto:test@example.com")!))
+        XCTAssertEqual(resolveTerminalOpenURLTarget("https://example.com"), .embeddedBrowser(URL(string: "https://example.com")!))
+    }
+
+    func testTerminalRequiresNativeCommandClickAndNeverSocketAuthority() {
+        let valid = TerminalPanelLinkPolicy(isNativeCommandClick: true, isSocketCommand: false, isKeyWindow: true, isVisible: true)
+        XCTAssertNil(valid.refusalReason)
+        var value = valid
+        value.isNativeCommandClick = false
+        XCTAssertEqual(value.refusalReason, "missing_native_input")
+        value = valid
+        value.isSocketCommand = true
+        XCTAssertEqual(value.refusalReason, "socket_command")
+        value = valid
+        value.isKeyWindow = false
+        XCTAssertEqual(value.refusalReason, "window_not_key")
+        value = valid
+        value.isVisible = false
+        XCTAssertEqual(value.refusalReason, "view_hidden")
+    }
+
     func testExactUUIDLinksAreCaseInsensitive() {
         XCTAssertEqual(PanelLinkTarget("c11://panel/\(id.uuidString)"), .panel(id))
         XCTAssertEqual(PanelLinkTarget("C11://WORKSPACE/\(id.uuidString.lowercased())"), .workspace(id))

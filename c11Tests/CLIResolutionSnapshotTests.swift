@@ -1588,6 +1588,14 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         }
 
         private var resultOverrides: [String: [String: Any]] = [:]
+        private var requestHandler: (([String: Any]) -> [String: Any]?)?
+
+        /// Route-aware replies for commands that enumerate multiple windows/workspaces.
+        func reply(using handler: @escaping ([String: Any]) -> [String: Any]?) {
+            lock.lock()
+            requestHandler = handler
+            lock.unlock()
+        }
 
         /// Answer `method` with `result` instead of the default reply.
         func reply(to method: String, with result: [String: Any]) {
@@ -1648,9 +1656,13 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             let method = request["method"] as? String ?? ""
             lock.lock()
             let override = resultOverrides[method]
+            let handler = requestHandler
             lock.unlock()
+            let routed = handler?(request)
             let result: [String: Any]
             switch method {
+            case _ where routed != nil:
+                result = routed ?? [:]
             case _ where override != nil:
                 result = override ?? [:]
             case "system.capabilities":
@@ -1693,6 +1705,172 @@ final class CLIResolutionSnapshotTests: XCTestCase {
                 userInfo: [NSLocalizedDescriptionKey: "CLI fake socket \(operation) failed"]
             )
         }
+    }
+}
+
+// MARK: - C11-525: generated links resolve live identity without navigation
+
+extension CLIResolutionSnapshotTests {
+    private static let linkWindowA = "a1111111-1111-4111-8111-111111111111"
+    private static let linkWindowB = "b1111111-1111-4111-8111-111111111111"
+    private static let linkWorkspaceA = "a2222222-2222-4222-8222-222222222222"
+    private static let linkWorkspaceB = "b2222222-2222-4222-8222-222222222222"
+    private static let linkPanelA = "a3333333-3333-4333-8333-333333333333"
+    private static let linkPanelB = "b3333333-3333-4333-8333-333333333333"
+
+    private func makeLinkSocket() throws -> CapturedCLISocket {
+        let socket = try CapturedCLISocket()
+        socket.reply { request in
+            let params = request["params"] as? [String: Any] ?? [:]
+            switch request["method"] as? String {
+            case "window.list":
+                return ["windows": [
+                    ["id": Self.linkWindowA, "ref": "window:1", "index": 0],
+                    ["id": Self.linkWindowB, "ref": "window:2", "index": 1],
+                ]]
+            case "workspace.list":
+                if params["window_id"] as? String == Self.linkWindowA {
+                    return ["workspaces": [["id": Self.linkWorkspaceA, "ref": "workspace:1", "index": 0, "title": "First project"]]]
+                }
+                if params["window_id"] as? String == Self.linkWindowB {
+                    return ["workspaces": [["id": Self.linkWorkspaceB, "ref": "workspace:2", "index": 0, "title": "Second\nproject"]]]
+                }
+                return ["workspaces": []]
+            case "panel.list":
+                if params["workspace_id"] as? String == Self.linkWorkspaceA,
+                   params["window_id"] as? String == Self.linkWindowA {
+                    return ["panels": [["id": Self.linkPanelA, "ref": "panel:1", "index": 0, "title": "First agent"]]]
+                }
+                if params["workspace_id"] as? String == Self.linkWorkspaceB,
+                   params["window_id"] as? String == Self.linkWindowB {
+                    return ["panels": [["id": Self.linkPanelB, "ref": "panel:2", "index": 0, "title": "[Agent]\u{1B}\u{07}\nTwo"]]]
+                }
+                return ["panels": []]
+            default: return nil
+            }
+        }
+        return socket
+    }
+
+    private func assertLinkInventoryOnly(_ socket: CapturedCLISocket, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(socket.waitUntilFinished(), file: file, line: line)
+        let allowed: Set<String> = ["system.capabilities", "window.list", "workspace.list", "panel.list"]
+        let unexpected = socket.requests.filter { !allowed.contains($0["method"] as? String ?? "") }
+        XCTAssertTrue(unexpected.isEmpty, "Unexpected link requests: \(unexpected)", file: file, line: line)
+    }
+
+    func testLinkRejectsInvalidArgumentsBeforeSocketDiscovery() {
+        let cases: [([String], String)] = [
+            (["link"], "requires --panel or --workspace"),
+            (["link", "--panel"], "requires a value"),
+            (["link", "--workspace"], "requires a value"),
+            (["link", "--panel", ""], "empty value"),
+            (["link", "--workspace="], "empty value"),
+            (["link", "--panel", "--json"], "requires a value"),
+            (["link", "--panel", "panel:1", "--format", "html"], "must be url, markdown, or osc8"),
+            (["link", "--panel", "panel:1", "--format"], "requires a value"),
+            (["link", "--panel", "panel:1", "--format="], "empty value"),
+            (["link", "--panel", "panel:1", "--tab", "panel:2"], "only be supplied once"),
+            (["link", "--workspace", "workspace:1", "--workspace", "workspace:2"], "only be supplied once"),
+            (["link", "--panel", "workspace:1"], "invalid panel target"),
+            (["link", "--panel", "self"], "invalid panel target"),
+            (["link", "--workspace", "workspace:1", "extra"], "unexpected argument"),
+            (["link", "--workspace", "workspace:1", "--", "extra"], "unexpected argument"),
+            (["link", "--workspace", "workspace:1", "--bogus"], "unknown flag"),
+        ]
+        for (argv, expected) in cases {
+            guard let result = runCLI(argv, environmentOverrides: ["C11_PANEL_ID": Self.linkPanelA, "C11_WORKSPACE_ID": Self.linkWorkspaceA]) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(argv)")
+            XCTAssertTrue(result.stderr.contains(expected), "\(argv): \(result.stderr)")
+            XCTAssertFalse(result.stderr.contains("Socket not found"), "\(argv): input must fail before connection")
+        }
+    }
+
+    func testLinkFormatsAndJSONResolveLivePanelAcrossWindows() throws {
+        let url = "c11://panel/\(Self.linkPanelB)"
+        let markdown = "[\\[Agent\\] Two](\(url))"
+        let osc8 = "\u{1B}]8;;\(url)\u{1B}\\[Agent] Two\u{1B}]8;;\u{1B}\\"
+        for (format, expected) in [("url", url), ("markdown", markdown), ("osc8", osc8)] {
+            let socket = try makeLinkSocket()
+            let result = try XCTUnwrap(runCLI(["link", "--panel=panel:2", "--format=\(format)"], socketPath: socket.path))
+            XCTAssertEqual(result.status, 0, result.stderr)
+            XCTAssertEqual(result.stdout, expected + "\n")
+            assertLinkInventoryOnly(socket)
+        }
+        let socket = try makeLinkSocket()
+        let result = try XCTUnwrap(runCLI(["--id-format", "refs", "link", "--tab", Self.linkPanelB.uppercased(), "--json"], socketPath: socket.path))
+        XCTAssertEqual(result.status, 0, result.stderr)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        XCTAssertEqual(payload["kind"] as? String, "panel")
+        XCTAssertEqual(payload["id"] as? String, Self.linkPanelB)
+        XCTAssertEqual(payload["title"] as? String, "[Agent] Two")
+        XCTAssertEqual(payload["url"] as? String, url)
+        XCTAssertEqual(payload["markdown"] as? String, markdown)
+        XCTAssertEqual(payload["osc8"] as? String, osc8)
+        XCTAssertFalse(result.stdout.contains("\u{1B}"))
+        XCTAssertEqual((payload["workspace"] as? [String: Any])?["id"] as? String, Self.linkWorkspaceB)
+        XCTAssertEqual((payload["workspace"] as? [String: Any])?["title"] as? String, "Second project")
+        assertLinkInventoryOnly(socket)
+    }
+
+    func testLinkHonorsWindowAndWorkspaceScope() throws {
+        let cases: [([String], String?)] = [
+            (["--window", "window:2", "link", "--workspace", "workspace:2"], "c11://workspace/\(Self.linkWorkspaceB)"),
+            (["--window", "window:2", "link", "--panel", "panel:2", "--workspace", "workspace:2"], "c11://panel/\(Self.linkPanelB)"),
+            (["--window", "window:1", "link", "--workspace", Self.linkWorkspaceB], nil),
+            (["--window", "window:1", "link", "--panel", Self.linkPanelB], nil),
+            (["link", "--panel", "panel:2", "--workspace", Self.linkWorkspaceA], nil),
+        ]
+        for (argv, expected) in cases {
+            let socket = try makeLinkSocket()
+            let result = try XCTUnwrap(runCLI(argv, socketPath: socket.path))
+            if let expected {
+                XCTAssertEqual(result.status, 0, result.stderr)
+                XCTAssertEqual(result.stdout, expected + "\n")
+            } else {
+                XCTAssertNotEqual(result.status, 0)
+                XCTAssertTrue(result.stderr.contains("not_found:"), result.stderr)
+                XCTAssertTrue(result.stdout.isEmpty)
+            }
+            if argv.first == "--window" {
+                let expectedWindow = argv[1] == "window:1" ? Self.linkWindowA : Self.linkWindowB
+                for request in socket.requests where ["workspace.list", "panel.list"].contains(request["method"] as? String ?? "") {
+                    XCTAssertEqual((request["params"] as? [String: Any])?["window_id"] as? String, expectedWindow)
+                }
+            }
+            assertLinkInventoryOnly(socket)
+        }
+    }
+
+    func testLinkRejectsUnknownUUIDsAndRefsInsteadOfUsingCaller() throws {
+        for argv in [
+            ["link", "--panel", "ffffffff-ffff-4fff-8fff-ffffffffffff"],
+            ["link", "--workspace", "ffffffff-ffff-4fff-8fff-ffffffffffff"],
+            ["link", "--panel", "panel:999"],
+            ["link", "--workspace", "workspace:999"],
+        ] {
+            let socket = try makeLinkSocket()
+            let result = try XCTUnwrap(runCLI(argv, socketPath: socket.path, environmentOverrides: ["C11_PANEL_ID": Self.linkPanelA, "C11_WORKSPACE_ID": Self.linkWorkspaceA]))
+            XCTAssertNotEqual(result.status, 0)
+            XCTAssertTrue(result.stderr.contains("not_found:"), result.stderr)
+            XCTAssertTrue(result.stdout.isEmpty)
+            assertLinkInventoryOnly(socket)
+        }
+    }
+
+    func testLinkRequiresUniqueIndexAndAcceptsExplicitScope() throws {
+        for argv in [["link", "--panel", "0"], ["link", "--workspace", "0"]] {
+            let socket = try makeLinkSocket()
+            let result = try XCTUnwrap(runCLI(argv, socketPath: socket.path))
+            XCTAssertNotEqual(result.status, 0)
+            XCTAssertTrue(result.stderr.contains("ambiguous"), result.stderr)
+            assertLinkInventoryOnly(socket)
+        }
+        let socket = try makeLinkSocket()
+        let result = try XCTUnwrap(runCLI(["link", "--panel", "0", "--workspace", "workspace:2"], socketPath: socket.path))
+        XCTAssertEqual(result.status, 0, result.stderr)
+        XCTAssertEqual(result.stdout, "c11://panel/\(Self.linkPanelB)\n")
+        assertLinkInventoryOnly(socket)
     }
 }
 

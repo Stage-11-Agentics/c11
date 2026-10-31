@@ -620,7 +620,7 @@ extension CMUXCLI {
              "set-buffer", "respawn-pane", "display-message", "open-browser", "navigate",
              "popup", "bind-key", "unbind-key", "copy-mode", "claude-teams":
             return .any
-        case "ping", "capabilities", "brand", "identify", "list-windows", "current-window", "new-window",
+        case "ping", "capabilities", "brand", "identify", "link", "list-windows", "current-window", "new-window",
              "focus-window", "close-window", "move-workspace-to-window", "reorder-workspaces", "get-titlebar-state",
              "list-workspaces", "ssh-session-end", "workspace-apply", "snapshot", "list-snapshots", "new-workspace",
              "list-areas", "list-area-panels", "tree", "family", "launch-agent", "lower-flag", "delegate",
@@ -1086,6 +1086,8 @@ extension CMUXCLI {
             return CLIFlagPreflightSpec()
         case "identify":
             return CLIFlagPreflightSpec(flags: ["--no-caller", "--json"], valueOptions: ["--workspace", "--panel"])
+        case "link":
+            return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--panel", "--format"])
         case "remote-daemon-status":
             return CLIFlagPreflightSpec(valueOptions: ["--os", "--arch"])
         case "focus-window", "close-window", "resize-window":

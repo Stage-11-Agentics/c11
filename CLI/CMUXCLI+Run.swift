@@ -241,6 +241,9 @@ extension CMUXCLI {
             resizeArguments = nil
         }
 
+        let linkArguments = command == "link" && !hasSubcommandHelp
+            ? try parseLinkArguments(commandArgs) : nil
+
         let cliTelemetry = CLISocketSentryTelemetry(
             command: command,
             commandArgs: commandArgs,
@@ -535,7 +538,7 @@ extension CMUXCLI {
         // Hooks keep their socket budget: the app follows the panel each hook
         // names, and turn-boundary drains find a moved inbox themselves.
         // Commands that never default to the caller's workspace skip it.
-        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents"].contains(command),
+        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents", "link"].contains(command),
            !Self.isMailboxHookDrain(command: command, commandArgs: commandArgs),
            Self.followCallerPanelWorkspace(client: client) == .connectionSuspect {
             client.close()
@@ -568,6 +571,10 @@ extension CMUXCLI {
         }
 
         switch command {
+        case "link":
+            guard let linkArguments else { preconditionFailure("link must be parsed before connect") }
+            try runLink(arguments: linkArguments, client: client, jsonOutput: jsonOutput)
+
         case "ping":
             let response = try sendV1Command("ping", client: client)
             print(response)

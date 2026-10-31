@@ -351,8 +351,9 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
   Bare panel and workspace UUID links now use the same Cmd-hover and Cmd-click
   path as other terminal URLs. No tenant configuration is written or changed.
 - Regression cases cover both target kinds, Codex's `title (c11://...)` output,
-  and Markdown links followed by punctuation. Existing `link-url` and
-  `link-previews` preferences keep their current behavior. Regex-matched links
+  and Markdown links followed by punctuation. The existing `link-url` preference
+  is respected. c11 forces `link-previews = true` in its runtime configuration
+  so internal-link hover can show the true destination. Regex-matched links
   emit `mouse_over_link` when previews are enabled; OSC 8 links already supply
   their destination URI through that action.
 - This engine patch adds detection only. Native navigation and destination

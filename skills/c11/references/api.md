@@ -5,6 +5,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 ## Contents
 
 - [Addressing & targeting](#addressing--targeting)
+- [Panel and workspace links](#panel-and-workspace-links)
 - [Environment variables](#environment-variables)
 - [Discovery & state](#discovery--state)
 - [Workspaces, areas, panels](#workspaces-areas-panels)
@@ -53,6 +54,32 @@ c11 read-screen --workspace workspace:2 --panel panel:3 --lines 50
 Most commands default to the caller's context via env vars — no flags needed when targeting your own panel.
 
 Global `c11 --window <id> <command>` scopes routing to that window without raising it or using the caller's workspace/panel environment. Panels and workspaces outside that window are errors. The command-local `c11 tree --window` flag still means “show the current window.”
+
+## Panel and workspace links
+
+```bash
+c11 link --panel panel:3 --format markdown
+c11 link --panel panel:3 --workspace workspace:2 --format osc8
+c11 link --workspace workspace:2                  # URL
+c11 link --workspace workspace:2 --json           # URL, Markdown, OSC 8 and identity
+```
+
+`link` reads live inventory and emits `c11://panel/<uuid>` or
+`c11://workspace/<uuid>`. An explicit target is required. `--workspace` scopes a
+panel lookup when both flags are present; otherwise it is the link destination.
+`--window` scopes all lookups. UUIDs, short refs and unambiguous indexes are
+accepted; unknown or ambiguous targets fail without changing focus. `--format`
+accepts `url` (default), `markdown` or `osc8`. Titles are read from the destination,
+sanitized for control characters, and escaped for the output format.
+
+Use titled links whenever mentioning a panel or workspace to the operator.
+Cmd-click opens terminal links; Cmd-hover previews the true live destination.
+Bare `c11://` URLs are detected by Ghostty's `link-url` setting (on by default); OSC 8 links work regardless.
+Browser and markdown links use a plain click or Return, with the local-origin
+restrictions in [the skill](../SKILL.md#links-to-panels-and-workspaces).
+Copy Link in panel and workspace context menus copies the plain UUID URL.
+This command formats links only: it grants no socket activation or workspace
+switch capability.
 
 ## Terminal selection
 

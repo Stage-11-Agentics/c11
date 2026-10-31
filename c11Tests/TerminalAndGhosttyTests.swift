@@ -2768,6 +2768,19 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
 
 
 final class TerminalOpenURLTargetResolutionTests: XCTestCase {
+    func testMalformedUTF8IsPreservedOnlyForInternalSchemeConsumption() throws {
+        let internalBytes = Data("C11://panel/".utf8) + Data([0xFF])
+        let internalURL = try XCTUnwrap(decodeTerminalOpenURL(internalBytes))
+        XCTAssertTrue(PanelLinkTarget.usesScheme(internalURL))
+        XCTAssertNil(PanelLinkTarget(internalURL))
+        XCTAssertNil(resolveTerminalOpenURLTarget(internalURL))
+        for prefix in ["https://example.com/", "mailto:", "/tmp/"] {
+            XCTAssertNil(decodeTerminalOpenURL(Data(prefix.utf8) + Data([0xFF])))
+        }
+        let valid = "https://example.com/日本語"
+        XCTAssertEqual(decodeTerminalOpenURL(Data(valid.utf8)), valid)
+    }
+
     func testResolvesHTTPSAsEmbeddedBrowser() throws {
         let target = try XCTUnwrap(resolveTerminalOpenURLTarget("https://example.com/path?q=1"))
         switch target {

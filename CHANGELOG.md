@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-31
+
+Headline: **c11 1.7.0. The sidebar can go double wide as Tiles: compact workspace tiles packed into columns, so a whole fleet fits on one screen, with the full card a hover away.**
+
+### Added
+
+- **Tiles: a double-wide sidebar.** Turn it on with the new glyph in the sidebar header (left of the bell) or View > Sidebar > Double Wide, or drag the sidebar edge past 300 pt from a narrower sidebar. Workspaces become fixed-height tiles packed left to right in as many columns as fit, each showing its title, WS number, agent marks, census or flag reason, and the agent rail. Hover a tile to see its full card, whose rows stay clickable; Escape or moving away closes it. Narrowing the window keeps Tiles on with fewer columns, and turning it off restores your previous width. The setting is per window and survives a restart; a sidebar already 300 pt or wider stays as cards when you drag it. Selection, reordering, folders, context menus, flashes and panel links work on tiles as on cards. Agents can read the mode with `c11 sidebar-state --json`. ([#809](https://github.com/Stage-11-Agentics/c11/pull/809))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.6.0] - 2026-10-31
 
 Headline: **c11 1.6.0. Panels and workspaces get clickable `c11://` links that jump straight to the panel, take the keyboard and flash it, from a terminal, a markdown note or a local web page. Flags can carry a named kind, mail keeps ringing after a panel moves, and the browser closes several ways a web page could reach local files or link one profile to another.**

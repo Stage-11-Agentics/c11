@@ -101,7 +101,7 @@ def shot(name):
 
 def stop_recording():
     if RECORDING.poll() is None:
-        RECORDING.terminate()
+        RECORDING.send_signal(signal.SIGINT)
         RECORDING.wait(timeout=8)
 
 
@@ -190,7 +190,7 @@ time.sleep(11)
 assert not layout()['double_wide']
 shot('off-baseline')
 # Self-terminating recording on the already verified isolated guest display.
-RECORDING = subprocess.Popen(['screencapture', '-x', '-v', '-V180', '-D1', '-k', str(OUT/'tiles-toggle-drag-hover.mov')])
+RECORDING = subprocess.Popen(['screencapture', '-x', '-v', '-V60', '-D1', '-k', str(OUT/'tiles-toggle-drag.mov')])
 atexit.register(stop_recording)
 press('titlebarControl.doubleWideSidebar')
 wait_for(lambda: layout()['double_wide'], 'glyph enables Tiles')

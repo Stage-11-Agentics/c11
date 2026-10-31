@@ -341,6 +341,9 @@ jobs:
           SPARKLE_BIN_DIR="$(./scripts/fetch-sparkle-tools.sh "$RUNNER_TEMP/sparkle")"
           export SPARKLE_BIN_DIR
           ./scripts/sparkle_generate_appcast.sh c11-macos.dmg "$GITHUB_REF_NAME" appcast.xml
+          # Prove the signature is valid under the app's public key before publishing.
+          swift scripts/verify_sparkle_appcast.swift appcast.xml c11-macos.dmg \
+            "$SPARKLE_PUBLIC_KEY" "${DOWNLOAD_URL_PREFIX}c11-macos.dmg"
 
       - name: Upload release asset
         if: steps.guard_release_assets.outputs.skip_upload != 'true'

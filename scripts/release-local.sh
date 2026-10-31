@@ -4,7 +4,8 @@
 # Mirrors .github/workflows/release.yml step for step, split by machine:
 #   Atlas    the heavy Release build (scripts/remote-build.sh --mode release)
 #   Hyperion the light tail: daemon assets, Sparkle keys, codesign, notarize,
-#            staple, DMG, Sentry dSYMs, Sparkle appcast, GitHub release
+#            staple, DMG, Sparkle appcast, GitHub release, Homebrew cask
+#            dispatch, Sentry dSYMs (after publishing)
 #
 # gh release create/upload use the REST API, so GitHub Actions billing does
 # not apply. Run from a clean checkout of the release tag:
@@ -696,6 +697,20 @@ else
     curl -fsSL -o /dev/null "$SPARKLE_FEED_URL" || die "feed $SPARKLE_FEED_URL does not resolve"
     note "latest = $TAG with appcast.xml; feed resolves"
   fi
+fi
+
+# update-homebrew.yml runs on its own only after release.yml completes, so a
+# release published here dispatches it. Only a release that took `latest`
+# moves the cask; a hotfix on an older line never pins Homebrew back.
+step "Update Homebrew cask"
+if [[ "$TAKE_LATEST" != "true" ]]; then
+  note "skipped: $TAG did not take latest"
+elif [[ "$DRY_RUN" -eq 1 ]]; then
+  would gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"
+elif gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"; then
+  note "dispatched update-homebrew.yml for $VERSION (gh run list --repo $REPO_SLUG --workflow update-homebrew.yml)"
+else
+  note "WARNING: could not dispatch update-homebrew.yml; the release is published. Run: gh workflow run update-homebrew.yml --repo $REPO_SLUG -f version=$VERSION"
 fi
 
 # ----------------------------------------------------------------- Sentry --

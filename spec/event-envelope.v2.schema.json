@@ -40,6 +40,8 @@
         "workspace.selected",
         "workspace.switch_blocked",
         "workspace.reordered",
+        "flash.requested",
+        "flash.drawn",
         "metadata.changed",
         "liveness.derived",
         "waiting.entered",
@@ -63,7 +65,7 @@
         "log.policy",
         "log.retention"
       ],
-      "description": "Dotted event type. Closed v2 taxonomy: panel.created, panel.closed, app.activated, app.deactivated, screen.locked, screen.unlocked, system.sleep, system.wake, instance.sample, workspace.created, workspace.renamed, workspace.closed, workspace.selected, workspace.switch_blocked, workspace.reordered, metadata.changed, liveness.derived, waiting.entered, waiting.left, lifecycle.changed, flag.raised, flag.lowered, flag.suppressed, flag.unsuppressed, mailbox.accepted, panel.input_sent, mailbox.delivered, conversation.resume.mode, conversation.resume.decision, hang.precursor, ask.opened, ask.closed. Stream-control markers: log.opened, log.rotated, log.dropped, log.policy, log.retention. Readers accept v1 renamed aliases. log.retention reports degraded/recovered retention coordination and does not imply dropped event coverage."
+      "description": "Dotted event type. Closed v2 taxonomy: panel.created, panel.closed, app.activated, app.deactivated, screen.locked, screen.unlocked, system.sleep, system.wake, instance.sample, workspace.created, workspace.renamed, workspace.closed, workspace.selected, workspace.switch_blocked, workspace.reordered, flash.requested, flash.drawn, metadata.changed, liveness.derived, waiting.entered, waiting.left, lifecycle.changed, flag.raised, flag.lowered, flag.suppressed, flag.unsuppressed, mailbox.accepted, panel.input_sent, mailbox.delivered, conversation.resume.mode, conversation.resume.decision, hang.precursor, ask.opened, ask.closed. Stream-control markers: log.opened, log.rotated, log.dropped, log.policy, log.retention. Readers accept v1 renamed aliases. log.retention reports degraded/recovered retention coordination and does not imply dropped event coverage."
     },
     "instance": {
       "type": "string",

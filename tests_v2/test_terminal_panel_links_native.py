@@ -410,9 +410,12 @@ finally:
         for y, row in enumerate(pixels):
             for x in range(width):
                 r, g, b = row[x * channels:x * channels + 3]
-                key = ('magenta' if r > 220 and g < 50 and b > 220 else
-                       'cyan' if r < 50 and g > 220 and b > 220 else
-                       'yellow' if r > 220 and g > 220 and b < 50 else None)
+                # The renderer snapshot is color-managed. Classify channel
+                # dominance, then require unique solid one-cell rectangles,
+                # instead of assuming literal sRGB bytes survive its profile.
+                key = ('magenta' if min(r, b) > 200 and g + 80 < min(r, b) else
+                       'cyan' if min(g, b) > 200 and r + 80 < min(g, b) else
+                       'yellow' if min(r, g) > 200 and b + 80 < min(r, g) else None)
                 if key:
                     boxes[key].append((x, y))
         bounds = {}

@@ -3402,7 +3402,7 @@ final class BrowserPanel: Panel, ObservableObject {
         // between construction and the legacy re-hibernate dispatch.
         // Resume reads the URL from `currentURL` (or the snapshot store
         // entry primed below) when the operator unfreezes the workspace.
-        if let url = initialURL, !PanelLinkTarget.isLink(url.absoluteString) {
+        if let url = initialURL, !PanelLinkTarget.usesScheme(url) {
             if pendingHibernate {
                 self.currentURL = url
                 BrowserSnapshotStore.shared.storeMetadataOnly(
@@ -4422,7 +4422,7 @@ final class BrowserPanel: Panel, ObservableObject {
     /// Navigate to a URL
     @discardableResult
     func navigate(to url: URL, recordTypedNavigation: Bool = false) -> BrowserNavigationDisposition {
-        guard !PanelLinkTarget.isLink(url.absoluteString) else {
+        guard !PanelLinkTarget.usesScheme(url) else {
             PanelLinkActivation.log(target: url.absoluteString, origin: webView.url?.absoluteString ?? "",
                                     activation: "refused", result: "direct_load_refused")
             (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.activation)
@@ -4534,7 +4534,7 @@ final class BrowserPanel: Panel, ObservableObject {
         recordTypedNavigation: Bool,
         preserveRestoredSessionHistory: Bool = false
     ) {
-        guard let url = request.url, !PanelLinkTarget.isLink(url.absoluteString) else { return }
+        guard let url = request.url, !PanelLinkTarget.usesScheme(url) else { return }
         if usesRemoteWorkspaceProxy, remoteProxyEndpoint == nil {
             pendingRemoteNavigation = PendingRemoteNavigation(
                 request: request,
@@ -4575,7 +4575,7 @@ final class BrowserPanel: Panel, ObservableObject {
         recordTypedNavigation: Bool,
         preserveRestoredSessionHistory: Bool
     ) {
-        guard !PanelLinkTarget.isLink(originalURL.absoluteString) else { return }
+        guard !PanelLinkTarget.usesScheme(originalURL) else { return }
         if !preserveRestoredSessionHistory {
             abandonRestoredSessionHistoryIfNeeded()
         }
@@ -5072,7 +5072,7 @@ extension BrowserPanel {
     /// new panel grants it read access to its folder (C11-505). The callers
     /// check the initiating frame first; this is the second gate.
     func shouldOpenLinkInNewPanel(_ url: URL) -> Bool {
-        guard !PanelLinkTarget.isLink(url.absoluteString) else { return false }
+        guard !PanelLinkTarget.usesScheme(url) else { return false }
         guard url.isFileURL else { return true }
         return webView.url?.isFileURL == true
     }
@@ -6372,7 +6372,7 @@ extension BrowserPanel {
     }
 
     private static func serializableSessionHistoryURLString(_ url: URL?) -> String? {
-        guard let url, !PanelLinkTarget.isLink(url.absoluteString) else { return nil }
+        guard let url, !PanelLinkTarget.usesScheme(url) else { return nil }
         let value = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value != "about:blank" else { return nil }
         return value
@@ -6381,8 +6381,9 @@ extension BrowserPanel {
     private static func sanitizedSessionHistoryURL(_ raw: String?) -> URL? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != "about:blank", !PanelLinkTarget.isLink(trimmed) else { return nil }
-        return URL(string: trimmed)
+        guard !trimmed.isEmpty, trimmed != "about:blank",
+              let url = URL(string: trimmed), !PanelLinkTarget.usesScheme(url) else { return nil }
+        return url
     }
 
     private static func sanitizedSessionHistoryURLs(_ values: [String]) -> [URL] {

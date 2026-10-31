@@ -43,7 +43,9 @@ Local pages in c11 browser panels and local markdown panels can offer operator n
 Markdown uses `[Open the agent](c11://panel/<uuid>)`. Get real UUIDs from
 `c11 --id-format both tree --json`, `$C11_PANEL_ID`, or `$C11_WORKSPACE_ID`.
 Short refs such as `panel:10` are process-local and are refused in links.
-UUID case does not matter; query strings, fragments and extra path segments are refused.
+UUID case does not matter; surrounding whitespace is trimmed. Query strings, fragments
+and extra path segments are refused. Text such as `c11: notes` is not a panel link and
+follows ordinary browser search handling.
 
 A plain left click or Return on the focused link selects the owning workspace/window,
 reveals the panel's area, and pulses the panel after it becomes visible. A workspace
@@ -54,6 +56,8 @@ show a small notice in the source panel.
 
 For this first slice, browser links work only from a main-frame `file://` page or
 HTTP(S) on `localhost`, `127.0.0.1` or `::1` (any port). Other origins show a notice.
+The link itself must be in the top document: links inside iframes are refused,
+even when the outer page is local. A committed page can use links while resources load.
 Scripts, redirects, forms, subframes, popups and browser automation cannot navigate
 these links. Cmd/middle/modified clicks and `target="_blank"` are refused. Opening a
 `c11://` URL through the CLI is also refused; socket focus still cannot switch the

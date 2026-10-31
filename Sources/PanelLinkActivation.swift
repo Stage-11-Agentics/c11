@@ -8,10 +8,15 @@ enum PanelLinkTarget: Equatable {
     case workspace(UUID)
 
     static func isLink(_ text: String) -> Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("c11:")
+        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("c11://")
+    }
+
+    static func usesScheme(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "c11"
     }
 
     init?(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Parse the wire spelling, not a normalized URL path: escaped path
         // components, shorthand refs, extra segments and authority decorations
         // are not aliases for a native target.
@@ -72,12 +77,40 @@ struct PanelLinkNativeIntent {
     let point: CGPoint?
 
     func matches(kind: Kind, point: CGPoint?, now: TimeInterval) -> Bool {
-        guard self.kind == kind, now >= uptime, now - uptime <= 1 else { return false }
+        refusalReason(kind: kind, point: point, now: now) == nil
+    }
+
+    func refusalReason(kind: Kind, point: CGPoint?, now: TimeInterval) -> String? {
+        guard self.kind == kind else { return "input_kind_mismatch" }
+        guard now >= uptime, now - uptime <= 1 else { return "input_expired" }
         if kind == .pointer {
-            guard let expected = self.point, let point else { return false }
-            return abs(expected.x - point.x) <= 2 && abs(expected.y - point.y) <= 2
+            guard let expected = self.point, let point else { return "input_point_missing" }
+            guard abs(expected.x - point.x) <= 2 && abs(expected.y - point.y) <= 2 else { return "input_point_mismatch" }
         }
-        return true
+        return nil
+    }
+}
+
+struct PanelLinkActivationPolicy {
+    var trusted: Bool
+    var supported: Bool
+    var isMainFrame: Bool
+    var isSocketCommand: Bool
+    var isKeyWindow: Bool
+    var isVisible: Bool
+    var sameDocument: Bool
+
+    func refusalReason(kind: PanelLinkNativeIntent.Kind?, intent: PanelLinkNativeIntent?, point: CGPoint?, now: TimeInterval) -> String? {
+        guard trusted else { return "untrusted_event" }
+        guard isMainFrame else { return "subframe" }
+        guard !isSocketCommand else { return "socket_command" }
+        guard isKeyWindow else { return "window_not_key" }
+        guard isVisible else { return "view_hidden" }
+        guard sameDocument else { return "document_changed" }
+        guard supported else { return "unsupported_activation" }
+        guard let kind else { return "invalid_activation_kind" }
+        guard let intent else { return "missing_native_input" }
+        return intent.refusalReason(kind: kind, point: point, now: now)
     }
 }
 
@@ -111,12 +144,15 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
 
     func record(_ event: NSEvent) {
         nativeIntent = nil
-        guard let webView, !webView.isLoading, SocketCommandContext.current == nil else { return }
+        guard event.type == .leftMouseUp ||
+                (event.type == .keyDown && (event.keyCode == 36 || event.keyCode == 76)) else { return }
+        guard let webView, SocketCommandContext.current == nil else { return }
         nativeDocumentURL = webView.url
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         guard modifiers.isEmpty else { return }
         switch event.type {
         case .leftMouseUp:
+            // Like cssViewportPoint, this assumes no content insets or pinch magnification.
             let p = webView.convert(event.locationInWindow, from: nil)
             let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1
             let point = CGPoint(x: p.x / zoom, y: (webView.isFlipped ? p.y : webView.bounds.height - p.y) / zoom)
@@ -133,28 +169,33 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        let intent = nativeIntent
-        nativeIntent = nil
         guard let webView, message.webView === webView,
               let body = message.body as? [String: Any],
               let href = body["href"] as? String, href.utf8.count <= 16 * 1024 else { return }
         let origin = message.frameInfo.securityOrigin
         let source = "\(origin.protocol)://\(origin.host):\(origin.port)"
-        guard message.frameInfo.isMainFrame,
-              SocketCommandContext.current == nil,
-              webView.window?.isKeyWindow == true, !webView.isHiddenOrHasHiddenAncestor,
-              nativeDocumentURL == webView.url, message.frameInfo.request.url == webView.url,
-              body["trusted"] as? Bool == true,
-              body["supported"] as? Bool == true,
-              let kindValue = body["kind"] as? String,
-              let kind = PanelLinkNativeIntent.Kind(rawValue: kindValue),
-              let intent,
-              intent.matches(kind: kind, point: (body["x"] as? Double).flatMap { x in
-                  (body["y"] as? Double).map { CGPoint(x: x, y: $0) }
-              }, now: ProcessInfo.processInfo.systemUptime) else {
-            Self.log(target: href, origin: source, activation: "refused", result: "unpaired")
+        let policy = PanelLinkActivationPolicy(
+            trusted: body["trusted"] as? Bool == true,
+            supported: body["supported"] as? Bool == true,
+            isMainFrame: message.frameInfo.isMainFrame,
+            isSocketCommand: SocketCommandContext.current != nil,
+            isKeyWindow: webView.window?.isKeyWindow == true,
+            isVisible: !webView.isHiddenOrHasHiddenAncestor,
+            sameDocument: nativeDocumentURL == webView.url && message.frameInfo.request.url == webView.url
+        )
+        let intent = nativeIntent
+        // A page-world synthetic click must not consume a real input in flight.
+        if policy.trusted { nativeIntent = nil }
+        let kind = (body["kind"] as? String).flatMap(PanelLinkNativeIntent.Kind.init(rawValue:))
+        let point = (body["x"] as? Double).flatMap { x in
+            (body["y"] as? Double).map { CGPoint(x: x, y: $0) }
+        }
+        if let reason = policy.refusalReason(kind: kind, intent: intent, point: point, now: ProcessInfo.processInfo.systemUptime) {
+            if policy.trusted { showNotice(.activation) }
+            Self.log(target: href, origin: source, activation: "refused", result: reason)
             return
         }
+        guard let kind else { return } // The policy above requires a recognized kind.
         let activation = "native_\(kind.rawValue)"
         let allowed = isMarkdownRenderer
             ? webView.url == MarkdownAssetPolicy.entryURL
@@ -231,7 +272,7 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
         const anchor = event.composedPath().find(node => node instanceof Element && node.matches('a[href]'));
         if (!anchor) return;
         const href = anchor.getAttribute('href') || '';
-        if (!/^\s*c11:/i.test(href)) return;
+        if (!/^\s*c11:\/\//i.test(href)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         // This value is read from the isolated world's native Event prototype,

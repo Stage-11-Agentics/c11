@@ -13,6 +13,7 @@ final class PanelLinkPolicyTests: XCTestCase {
     func testExactUUIDLinksAreCaseInsensitive() {
         XCTAssertEqual(PanelLinkTarget("c11://panel/\(id.uuidString)"), .panel(id))
         XCTAssertEqual(PanelLinkTarget("C11://WORKSPACE/\(id.uuidString.lowercased())"), .workspace(id))
+        XCTAssertEqual(PanelLinkTarget(" \tc11://panel/\(id)\n "), .panel(id))
     }
 
     func testMalformedAndDecoratedLinksAreRefused() {
@@ -22,11 +23,53 @@ final class PanelLinkPolicyTests: XCTestCase {
             "c11://panel/\(id)?", "c11://panel/\(id)?a=1", "c11://panel/\(id)#",
             "c11://panel/\(id)#fragment", "c11://user@panel/\(id)", "c11://panel:80/\(id)",
             "c11://window/\(id)", "https://panel/\(id)", "c11:panel/\(id)",
-            "c11://panel/%30\(id.uuidString.dropFirst())", "c11://panel/%2F\(id)",
-            " c11://panel/\(id)", "c11://panel/\(id)\n"
+            "c11://panel/%30\(id.uuidString.dropFirst())", "c11://panel/%2F\(id)"
         ] {
             XCTAssertNil(PanelLinkTarget(link), link)
         }
+    }
+
+    func testOnlyLinkPrefixInterceptsSearchInputWhileAllSchemeURLsStayBlocked() {
+        XCTAssertTrue(PanelLinkTarget.isLink(" \nC11://panel/\(id) "))
+        XCTAssertFalse(PanelLinkTarget.isLink("c11: notes"))
+        XCTAssertFalse(PanelLinkTarget.isLink("c11:notes"))
+        XCTAssertNil(resolveBrowserNavigableURL("c11: notes"))
+        XCTAssertTrue(PanelLinkTarget.usesScheme(URL(string: "c11:notes")!))
+        XCTAssertTrue(PanelLinkTarget.usesScheme(URL(string: "c11://panel/\(id)")!))
+        XCTAssertFalse(PanelLinkTarget.usesScheme(URL(string: "https://localhost")!))
+    }
+
+    func testActivationRefusalReportsFirstFailedCondition() {
+        let intent = PanelLinkNativeIntent(kind: .pointer, uptime: 10, point: CGPoint(x: 100, y: 200))
+        let valid = PanelLinkActivationPolicy(trusted: true, supported: true, isMainFrame: true,
+                                             isSocketCommand: false, isKeyWindow: true, isVisible: true, sameDocument: true)
+        func reason(_ policy: PanelLinkActivationPolicy) -> String? {
+            policy.refusalReason(kind: .pointer, intent: intent, point: intent.point, now: 10.2)
+        }
+        XCTAssertNil(reason(valid))
+        for (key, value, expected) in [
+            (\PanelLinkActivationPolicy.trusted, false, "untrusted_event"),
+            (\PanelLinkActivationPolicy.supported, false, "unsupported_activation"),
+            (\PanelLinkActivationPolicy.isMainFrame, false, "subframe"),
+            (\PanelLinkActivationPolicy.isSocketCommand, true, "socket_command"),
+            (\PanelLinkActivationPolicy.isKeyWindow, false, "window_not_key"),
+            (\PanelLinkActivationPolicy.isVisible, false, "view_hidden"),
+            (\PanelLinkActivationPolicy.sameDocument, false, "document_changed")
+        ] {
+            var policy = valid
+            policy[keyPath: key] = value
+            XCTAssertEqual(reason(policy), expected)
+        }
+        var overlapping = valid
+        overlapping.trusted = false
+        overlapping.isMainFrame = false
+        XCTAssertEqual(reason(overlapping), "untrusted_event")
+        XCTAssertEqual(valid.refusalReason(kind: nil, intent: intent, point: intent.point, now: 10.2), "invalid_activation_kind")
+        XCTAssertEqual(valid.refusalReason(kind: .pointer, intent: nil, point: intent.point, now: 10.2), "missing_native_input")
+        XCTAssertEqual(valid.refusalReason(kind: .keyboard, intent: intent, point: nil, now: 10.2), "input_kind_mismatch")
+        XCTAssertEqual(valid.refusalReason(kind: .pointer, intent: intent, point: intent.point, now: 12), "input_expired")
+        XCTAssertEqual(valid.refusalReason(kind: .pointer, intent: intent, point: nil, now: 10.2), "input_point_missing")
+        XCTAssertEqual(valid.refusalReason(kind: .pointer, intent: intent, point: .zero, now: 10.2), "input_point_mismatch")
     }
 
     func testOnlyMainFrameLocalOriginsAreAllowed() {

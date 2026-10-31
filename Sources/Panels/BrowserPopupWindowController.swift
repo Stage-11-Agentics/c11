@@ -396,7 +396,7 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        if let url = navigationAction.request.url, PanelLinkTarget.isLink(url.absoluteString) {
+        if let url = navigationAction.request.url, PanelLinkTarget.usesScheme(url) {
             PanelLinkActivation.log(target: url.absoluteString, origin: navigationAction.sourceFrame.securityOrigin.host,
                                     activation: "refused", result: "popup_cancelled")
             return nil
@@ -564,7 +564,7 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
         in webView: WKWebView,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        if let url, PanelLinkTarget.isLink(url.absoluteString) {
+        if let url, PanelLinkTarget.usesScheme(url) {
             PanelLinkActivation.log(target: url.absoluteString, origin: webView.url?.absoluteString ?? "",
                                     activation: "refused", result: "popup_navigation_cancelled")
             decisionHandler(.cancel)

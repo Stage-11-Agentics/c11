@@ -94,7 +94,7 @@ def javascript(script):
     return call('browser.eval', panel_id=SOURCE, workspace_id=A, script=script)['value']
 
 
-def coordinates(selector):
+def coordinates(selector, page_zoom=1):
     # The fixture has exactly one area in A. Its web view ends at the
     # window's right/bottom inner border (verified in the source screenshot).
     # AX supplies the native window frame; DOM supplies only geometry, not input.
@@ -103,9 +103,9 @@ def coordinates(selector):
     assert len(numbers) == 4, numbers
     x, y, width, height = numbers
     assert 100 < rect[2] < width and 100 < rect[3] < height, (numbers, rect)
-    viewport_x = x + width - rect[2] - 1
-    viewport_y = y + height - rect[3] - 1
-    return round(viewport_x+rect[0]), round(viewport_y+rect[1])
+    viewport_x = x + width - rect[2] * page_zoom - 1
+    viewport_y = y + height - rect[3] * page_zoom - 1
+    return round(viewport_x+rect[0]*page_zoom), round(viewport_y+rect[1]*page_zoom)
 
 
 def post_mouse(x, y, middle=False):
@@ -129,8 +129,8 @@ def post_mouse(x, y, middle=False):
     return posted_ms  # exact mouse-up post; avoids subprocess-start uncertainty
 
 
-def ui_click(selector, modifier=None, middle=False):
-    x, y = coordinates(selector)
+def ui_click(selector, modifier=None, middle=False, page_zoom=1):
+    x, y = coordinates(selector, page_zoom=page_zoom)
     if middle:
         post_mouse(x, y, middle=True)
         return
@@ -230,6 +230,15 @@ try:
     assert not denied['ok'] and denied['error']['code'] == 'operator_activation_required', denied
     assert call('browser.url.get', workspace_id=A, panel_id=SOURCE)['url'] == source_path.as_uri()
     print('PASS 11 direct navigation refused and source URL preserved', flush=True)
+    panel_count = len(call('panel.list', workspace_id=A)['panels'])
+    with socket.socket(socket.AF_UNIX) as legacy:
+        legacy.settimeout(12)
+        legacy.connect(SOCKET)
+        legacy.sendall(f'open_browser c11://panel/{TERMINAL}\n'.encode())
+        response = legacy.makefile('rb').readline().decode()
+    assert 'operator_activation_required' in response, response
+    assert len(call('panel.list', workspace_id=A)['panels']) == panel_count
+    print('PASS repair 5 legacy open_browser refuses before creating a panel', flush=True)
     before = focus()
     denied = raw('workspace.select', workspace_id=B)
     assert not denied['ok'] and denied['error']['code'] == 'workspace_switch_blocked', denied
@@ -281,16 +290,41 @@ try:
             unchanged(lambda: ui_click('#target'), f'4/16 current target activation {index+1}', pause=.2)
             shot(f'16-current-{href.split("/")[2]}-{index+1}')
     shot('04-current-target-flash')
+    javascript('document.querySelector("#target").href=' + json.dumps(f'c11://panel/{TERMINAL}'))
+    normal_width = javascript('innerWidth')
+    for _ in range(5):
+        osa('keystroke "=" using command down')
+    wait_for(lambda: 1.49 < normal_width / javascript('innerWidth') < 1.51, 'native page zoom reaches 1.5')
+    (OUT / 'repair-zoom-150.json').write_text(json.dumps(dict(normal_width=normal_width,
+        zoomed_width=javascript('innerWidth'), native_zoom_in_steps=5, page_zoom=1.5), indent=2))
+    shot('repair-zoom-150-source')
+    ui_click('#target', page_zoom=1.5)
+    wait_for(lambda: focus()['workspace_id'] == B and focus()['panel_id'] == TERMINAL, '150 percent page link lands')
+    back_to_a()
+    osa('keystroke "0" using command down')
+    wait_for(lambda: abs(javascript('innerWidth') - normal_width) <= 1, 'native zoom reset')
+    print('PASS addendum C native link at pageZoom 1.5', flush=True)
     closed = call('panel.create', workspace_id=B, type='browser')['panel_id']
     call('panel.close', workspace_id=B, panel_id=closed)
     javascript('document.querySelector("#target").href=' + json.dumps(f'c11://panel/{closed}'))
     unchanged(lambda: ui_click('#target'), '5 closed UUID refused')
-    for target in (TERMINAL.lower(), TERMINAL.upper()):
-        javascript('document.querySelector("#target").href=' + json.dumps(f'c11://panel/{target}'))
+    for href in (f'c11://panel/{TERMINAL.lower()}', f'c11://panel/{TERMINAL.upper()}', f' \tc11://panel/{TERMINAL}\n '):
+        javascript('document.querySelector("#target").href=' + json.dumps(href))
         ui_click('#target')
         wait_for(lambda: focus()['workspace_id'] == B and focus()['panel_id'] == TERMINAL, '5 UUID case accepted')
         back_to_a()
-    print('PASS 5 uppercase and lowercase native links', flush=True)
+    print('PASS 5 uppercase, lowercase, and surrounding-whitespace native links', flush=True)
+    javascript('window.addEventListener("mouseup",()=>document.querySelector("#target").click(),{once:true})')
+    ui_click('#target')
+    wait_for(lambda: focus()['workspace_id'] == B and focus()['panel_id'] == TERMINAL,
+             'synthetic mouseup click must not consume the real click intent')
+    back_to_a()
+    print('PASS repair 3 synthetic click during native mouseup preserves real activation', flush=True)
+    javascript('window.addEventListener("mouseup",()=>{const until=performance.now()+1200;while(performance.now()<until){}},{once:true})')
+    unchanged(lambda: ui_click('#target'), 'repair 2 expired native input leaves focus unchanged', pause=1.5)
+    assert any(json.loads(line.split('panel_link ', 1)[1]).get('result') == 'input_expired'
+               for line in LOG.read_text().splitlines() if 'panel_link ' in line)
+    shot('repair-expired-activation-notice')
     javascript('document.querySelector("#target").focus()')
     osa('key code 36')
     wait_for(lambda: focus()['workspace_id'] == B and focus()['panel_id'] == TERMINAL, 'native Return must select B terminal')
@@ -356,9 +390,53 @@ try:
     assert len(call('panel.list', workspace_id=A)['panels']) == panel_count
     javascript('document.querySelector("#target").removeAttribute("target")')
 
+    def context_open_link():
+        x, y = coordinates('#target')
+        subprocess.run(['/opt/homebrew/bin/cliclick', f'rc:{x},{y}', 'w:200'], check=True)
+        # Native keyboard chooses the first, screenshot-verified Open Link item.
+        subprocess.run(['screencapture', '-x', '-o', str(OUT / 'repair-context-menu.png')], check=True)
+        subprocess.run(['/opt/homebrew/bin/cliclick', 'kp:arrow-down', 'kp:enter'], check=True)
+    unchanged(context_open_link, 'addendum A context-menu link refused', pause=.5)
+    assert any(json.loads(line.split('panel_link ', 1)[1]).get('result') == 'context_menu_refused'
+               for line in LOG.read_text().splitlines() if 'panel_link ' in line)
+    shot('repair-context-menu-notice')
+    ordinary = fixture_dir / 'context.html'
+    ordinary.write_text('<title>ordinary-context-link</title><body>Ordinary Open Link still works</body>')
+    javascript('document.querySelector("#target").href=' + json.dumps(ordinary.as_uri()))
+    before_panels = {p['id'] for p in call('panel.list', workspace_id=A)['panels']}
+    context_open_link()
+    # Preserve WebKit's existing routing, which may open the ordinary link in
+    # a new browser panel. Verify the destination document, not a fixed panel.
+    wait_for(lambda: any(p['title'] == 'ordinary-context-link' for p in call('panel.list', workspace_id=A)['panels']),
+             'ordinary context Open Link preserved', timeout=20)
+    opened = next(p['id'] for p in call('panel.list', workspace_id=A)['panels'] if p['title'] == 'ordinary-context-link')
+    assert call('browser.url.get', workspace_id=A, panel_id=opened)['url'] == ordinary.as_uri()
+    assert call('browser.eval', workspace_id=A, panel_id=opened, script='document.title')['value'] == 'ordinary-context-link'
+    if opened != SOURCE:
+        assert opened not in before_panels
+        call('panel.close', workspace_id=A, panel_id=opened)
+    call('panel.focus', workspace_id=A, panel_id=SOURCE)
+    navigate(source_path.as_uri())
+    print('PASS addendum A ordinary context-menu Open Link preserved', flush=True)
+
+    slow_started = threading.Event()
+    slow_release = threading.Event()
     class Handler(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *args):
             pass
+        def do_GET(self):
+            if self.path != '/slow.gif':
+                return super().do_GET()
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/gif')
+            self.send_header('Content-Length', '1')
+            self.end_headers()
+            slow_started.set()
+            slow_release.wait(timeout=20)
+            try:
+                self.wfile.write(b'x')
+            except OSError:
+                pass
     # Port 0 chooses an unused guest port atomically; serves only fixture files.
     server = http.server.ThreadingHTTPServer(('0.0.0.0', 0), functools.partial(Handler, directory=str(fixture_dir)))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -373,8 +451,21 @@ try:
         wait_for(lambda: focus()['workspace_id'] == B, 'loopback origin allowed')
         print('PASS loopback HTTP native link', flush=True)
         back_to_a()
+        (fixture_dir / 'loading.html').write_text(source_path.read_text() + '<img id="slow" src="/slow.gif">')
+        call('browser.navigate', workspace_id=A, panel_id=SOURCE,
+             url=f'http://127.0.0.1:{server.server_port}/loading.html', allow_insecure_http=True)
+        assert slow_started.wait(timeout=8), 'slow resource requested'
+        wait_for(lambda: javascript('document.readyState') == 'interactive', 'committed page still loading')
+        assert javascript('document.querySelector("#slow").complete') is False
+        ui_click('#target')
+        wait_for(lambda: focus()['workspace_id'] == B and focus()['panel_id'] == TERMINAL,
+                 'committed loading page must allow native activation')
+        slow_release.set()
+        back_to_a()
+        print('PASS repair 1 native link while committed page resource is still loading', flush=True)
         navigate(source_path.as_uri())
     finally:
+        slow_release.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)

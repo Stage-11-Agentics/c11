@@ -160,7 +160,7 @@ class RoutingTests(unittest.TestCase):
         payload, first = self.stage(home)
         self.assertEqual(first["bundles"], {"parent": "full", "ghostty": "full", "vendor-bonsplit": "full"})
         with patch.dict(os.environ, HOME=str(home)):
-            held = remote.held_heads(["bash", "-c"])
+            held = remote.held_heads(remote.Transport("local"))
         self.assertEqual(held, {"parent": [first["head"]], "ghostty": [first["submodules"]["ghostty"]],
                                 "vendor-bonsplit": [first["submodules"]["vendor/bonsplit"]]})
         self.advance("child of a held head")
@@ -174,7 +174,7 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(git(self.worktree, "rev-list", "--count", first["head"] + "..HEAD"), "1")
         # The same head again uploads no bundle at all; the host publishes it from its mirror.
         with patch.dict(os.environ, HOME=str(home)):
-            held = remote.held_heads(["bash", "-c"])
+            held = remote.held_heads(remote.Transport("local"))
         payload, third = self.stage(home, held)
         self.assertEqual(third["bundles"], {})
         self.assertEqual(list(payload.glob("*.bundle")), [])
@@ -215,7 +215,7 @@ class RoutingTests(unittest.TestCase):
         # A host from before mirrors has only its per-tag checkouts.
         shutil.rmtree(home / "c11-builds/mirrors")
         with patch.dict(os.environ, HOME=str(home)):
-            held = remote.held_heads(["bash", "-c"])
+            held = remote.held_heads(remote.Transport("local"))
         self.assertEqual(held["parent"], [git(self.worktree, "rev-parse", "HEAD")])
         self.assertEqual(held["ghostty"], [git(self.worktree / "ghostty", "rev-parse", "HEAD")])
         self.advance("after migration")
@@ -227,7 +227,7 @@ class RoutingTests(unittest.TestCase):
         home.mkdir()
         self.stage(home)
         with patch.dict(os.environ, HOME=str(home)):
-            held = remote.held_heads(["bash", "-c"])
+            held = remote.held_heads(remote.Transport("local"))
         self.advance("one head, two tags")
         mirror = home / "c11-builds/mirrors/parent.git"
         ready, release = self.base / "ready", self.base / "release"
@@ -287,7 +287,7 @@ class RoutingTests(unittest.TestCase):
         (mirrors / "ghostty.git/objects").mkdir(parents=True)
         (mirrors / "vendor-bonsplit.git.init").mkdir()
         with patch.dict(os.environ, HOME=str(home), GIT_CEILING_DIRECTORIES=str(self.base)):
-            held = remote.held_heads(["bash", "-c"])
+            held = remote.held_heads(remote.Transport("local"))
             self.assertEqual(held, {"parent": [], "ghostty": [], "vendor-bonsplit": []})
             for repo in held:
                 self.assertEqual(git(mirrors / (repo + ".git"), "rev-parse", "--is-bare-repository"), "true")
@@ -304,7 +304,7 @@ class RoutingTests(unittest.TestCase):
             manifest = remote.snapshot(self.worktree, payload, self.args, {"ghostty": []})
             remote.mirror_head(payload, manifest, "ghostty", manifest["submodules"]["ghostty"])
             # The rebuilt mirror adopted the head the fixture checkout already had.
-            self.assertEqual(remote.held_heads(["bash", "-c"])["ghostty"], [manifest["submodules"]["ghostty"]])
+            self.assertEqual(remote.held_heads(remote.Transport("local"))["ghostty"], [manifest["submodules"]["ghostty"]])
 
     def test_reload_build_failure_does_not_stage_or_launch_existing_app(self):
         scripts = self.base / "scripts"
@@ -524,6 +524,51 @@ class RoutingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "executed zero tests"):
             remote.require_test_success(build_log, self.base, {"PATH": str(fake)})
+
+    def test_local_host_runs_the_same_admitted_build_command_in_place(self):
+        # --host local must reach remote() through the same command as ssh does, so the
+        # build takes the same atlas_build_slots admission, only without the ssh hop.
+        fixture_scripts = self.worktree / "scripts"
+        fixture_scripts.mkdir()
+        for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
+            (fixture_scripts / name).write_bytes((ROOT / "scripts" / name).read_bytes())
+        fake = self.base / "fake"
+        fake.mkdir()
+        record = self.base / "record"
+        # ssh: answer the held-heads probe and mkdir; record the build command, then fail it.
+        (fake / "ssh").write_text(
+            "#!/bin/sh\ncase \"$*\" in *--held-heads*) echo '{}'; exit 0;; *mkdir*) exit 0;; esac\n"
+            "for last; do :; done\nprintf 'ssh|%s\\n' \"$last\" >>\"$RECORD\"\nexit 23\n")
+        (fake / "rsync").write_text("#!/bin/sh\nexit 0\n")
+        # python3 on the local path: answer held-heads, record cwd and the build command, fail it.
+        real_rsync = shutil.which("rsync")
+        (fake / "python3").write_text(
+            "#!/bin/sh\ncase \"$*\" in *--held-heads*) cat >/dev/null; echo '{}'; exit 0;; esac\n"
+            "printf 'local|%s|python3 %s\\n' \"$PWD\" \"$*\" >>\"$RECORD\"\nexit 23\n")
+        for path in fake.iterdir():
+            path.chmod(0o755)
+        home = self.base / "home"
+        home.mkdir()
+        env = {"HOME": str(home), "PATH": str(fake) + ":" + os.environ["PATH"], "RECORD": str(record)}
+        with patch.object(remote, "__file__", str(fixture_scripts / "remote_build.py")), patch.dict(os.environ, env):
+            self.args.host = "atlas"
+            self.assertEqual(remote.client(self.args), 23)
+            # The local path copies the payload for real, so give it the real rsync.
+            (fake / "rsync").unlink()
+            (fake / "rsync").symlink_to(real_rsync)
+            self.args.host = "local"
+            self.assertEqual(remote.client(self.args), 23)
+        lines = record.read_text().splitlines()
+        self.assertEqual(len(lines), 2, lines)
+        ssh_command = lines[0].split("|", 1)[1]
+        _, local_cwd, local_command = lines[1].split("|", 2)
+        normalize = lambda command: __import__("re").sub(r"[0-9a-f]{32}", "<invocation>", command)
+        self.assertIn("remote_build.py --remote", ssh_command)
+        self.assertEqual(normalize(local_command), normalize(ssh_command))
+        self.assertEqual(os.path.realpath(local_cwd), os.path.realpath(home))
+        staged = list((home / "c11-builds").glob("*/incoming/*/remote_build.py"))
+        self.assertEqual(len(staged), 1, "the local transport stages the payload under $HOME like the host")
+        self.assertEqual(staged[0].read_bytes(), (ROOT / "scripts/remote_build.py").read_bytes())
 
     def test_remote_failure_preserves_local_app_and_never_launches(self):
         # Fake transports exercise the actual client failure path, not source structure.

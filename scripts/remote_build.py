@@ -238,12 +238,39 @@ def host_held_heads():
     return held
 
 
-def held_heads(ssh):
+class Transport:
+    """Reaches the build host: over ssh, or in place when --host is "local".
+
+    The local form runs the same command strings from $HOME, the directory an ssh
+    session starts in, and maps host:path to $HOME/path. A release driven on the
+    build host itself (Atlas, with its signing keychain) needs no ssh hop and no
+    authorized_keys entry, and still enters remote() and its admission slots."""
+
+    def __init__(self, host):
+        self.host = host
+        self.local = host == "local"
+
+    def command(self, command):
+        if self.local:
+            return ["/bin/bash", "-c", command]
+        return ["ssh", "-o", "BatchMode=yes", self.host, command]
+
+    def cwd(self):
+        return str(Path.home()) if self.local else None
+
+    def location(self, relative):
+        return str(Path.home() / relative) if self.local else self.host + ":" + relative
+
+    def rsync(self, *flags):
+        return ["rsync", *flags] if self.local else ["rsync", *flags, "-e", "ssh -o BatchMode=yes"]
+
+
+def held_heads(transport):
     """Ask the host which commits each repository mirror holds.
 
     The host runs this script from stdin, so the probe shares mirror_head's locking
     and readiness checks; any host failure fails staging instead of reading as empty."""
-    response = run([*ssh, shlex.join(["python3", "-", "--held-heads"])],
+    response = run(transport.command(shlex.join(["python3", "-", "--held-heads"])), cwd=transport.cwd(),
                    input=Path(__file__).read_bytes(), stdout=subprocess.PIPE)
     return json.loads(response.stdout)
 
@@ -569,14 +596,14 @@ def client(args):
     with tempfile.TemporaryDirectory(prefix="c11-remote-source-") as tmp:
         payload = Path(tmp)
         host = args.host
-        ssh = ["ssh", "-o", "BatchMode=yes", host]
+        transport = Transport(host)
         started = time.monotonic()
-        manifest = snapshot(root, payload, args, held_heads(ssh))
+        manifest = snapshot(root, payload, args, held_heads(transport))
         for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
             shutil.copy2(root / "scripts" / name, payload / name)
         relative = f"c11-builds/{manifest['slug']}/incoming/{manifest['invocation']}"
-        run([*ssh, shlex.join(["mkdir", "-p", relative])])
-        run(["rsync", "-a", "-e", "ssh -o BatchMode=yes", str(payload) + "/", host + ":" + relative + "/"])
+        run(transport.command(shlex.join(["mkdir", "-p", relative])), cwd=transport.cwd())
+        run([*transport.rsync("-a"), str(payload) + "/", transport.location(relative) + "/"])
         sent = sum(f.stat().st_size for f in payload.rglob("*") if f.is_file() and not f.is_symlink())
         print(f"[remote-build] staged {sent / 1e6:.2f} MB in {time.monotonic() - started:.1f}s; bundles: " +
               (", ".join(f"{r}={k}" for r, k in manifest["bundles"].items()) or "none, host holds every head"),
@@ -584,13 +611,14 @@ def client(args):
         command = shlex.join(["python3", relative + "/remote_build.py", "--remote", relative])
         print(f"[remote-build] host={host} tag={args.tag} invocation={manifest['invocation']} head={manifest['head']}", flush=True)
         print(f"[remote-build] remote log: ~/c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/build.log", flush=True)
-        process = subprocess.run([*ssh, command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.run(transport.command(command), cwd=transport.cwd(),
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(process.stdout, end="", flush=True)
         local = root / "build-remote" / manifest["invocation"]
         local.mkdir(parents=True)
         (local / "transport.log").write_text(process.stdout)
         remote_artifacts = f"c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/"
-        retrieved = subprocess.run(["rsync", "-az", "-e", "ssh -o BatchMode=yes", host + ":" + remote_artifacts, str(local) + "/"])
+        retrieved = subprocess.run([*transport.rsync("-az"), transport.location(remote_artifacts), str(local) + "/"])
         print(f"[remote-build] logs and identity: {local}")
         if process.returncode:
             return process.returncode

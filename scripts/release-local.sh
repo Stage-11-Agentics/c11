@@ -75,7 +75,8 @@ Options:
   --reuse-build          Reuse the Atlas build already in
                          build-release-local/<tag>/pristine when it was built
                          from this HEAD (rerun the tail after a failure).
-  --host <ssh-host>      Build host (default: atlas).
+  --host <ssh-host>      Build host (default: atlas). "local" builds in place on
+                         this machine, for a release driven on Atlas itself.
   -h, --help             Show this help.
 
 Environment overrides: C11_SIGNING_IDENTITY, C11_NOTARY_PROFILE,
@@ -376,6 +377,11 @@ check_guard preflight
 check_active_runs
 
 # ------------------------------------------------------------ Atlas build --
+# --host local runs the build in place on this machine (remote-build.sh's
+# local transport), for a release driven on Atlas itself; otherwise the build
+# host is reached over ssh.
+host_path() { if [[ "$HOST" == "local" ]]; then printf '%s/%s' "$HOME" "$1"; else printf '%s:%s' "$HOST" "$1"; fi; }
+host_rsync() { if [[ "$HOST" == "local" ]]; then rsync "$@"; else rsync -e "ssh -o BatchMode=yes" "$@"; fi; }
 PRISTINE="$OUT/pristine/c11.app"
 IDENTITY_FILE="$OUT/pristine/build-identity.json"
 REMOTE_TAG="release-local-$TAG"
@@ -452,15 +458,15 @@ else
   # Fetched right after the build returns. The per-tag derived-data dir is
   # only rebuilt by another remote-build of this same tag, and the hashes
   # below prove the fetched binaries are the build remote-build attested.
-  note "fetching pristine c11.app from $HOST:$REMOTE_PRODUCTS"
+  note "fetching pristine c11.app from $(host_path "$REMOTE_PRODUCTS")"
   rm -rf "$OUT/pristine"
   mkdir -p "$OUT/pristine"
-  rsync -a -e "ssh -o BatchMode=yes" "$HOST:$REMOTE_PRODUCTS/c11.app" "$OUT/pristine/"
+  host_rsync -a "$(host_path "$REMOTE_PRODUCTS/c11.app")" "$OUT/pristine/"
   [[ -d "$PRISTINE" ]] || die "pristine c11.app not retrieved"
   if [[ "$SENTRY_WANTED" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
     note "fetching dSYMs for Sentry"
     mkdir -p "$OUT/pristine/dsyms"
-    rsync -a -e "ssh -o BatchMode=yes" "$HOST:$REMOTE_PRODUCTS/*.dSYM" "$OUT/pristine/dsyms/" \
+    host_rsync -a $(host_path "$REMOTE_PRODUCTS")/*.dSYM "$OUT/pristine/dsyms/" \
       || die "could not fetch dSYMs from $HOST"
   fi
 
@@ -803,7 +809,7 @@ if [[ "$SKIP_SENTRY" -eq 1 ]]; then
 elif [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
   note "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
 elif [[ "$DRY_RUN" -eq 1 ]]; then
-  would rsync -a "$HOST:$REMOTE_PRODUCTS/*.dSYM" "$OUT/pristine/dsyms/"
+  would rsync -a "$(host_path "$REMOTE_PRODUCTS")/*.dSYM" "$OUT/pristine/dsyms/"
   would env SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/"
 elif ! command -v sentry-cli >/dev/null 2>&1; then
   note "sentry-cli not installed (brew install getsentry/tools/sentry-cli); skipping dSYM upload"

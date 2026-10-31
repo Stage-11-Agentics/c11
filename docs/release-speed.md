@@ -39,7 +39,7 @@ Critical path: 18 min of guest yield plus 9 min of gate, of which 4.5 min was th
 | Check | Measured | Owner of the fix |
 |---|---|---|
 | CI (`ci.yml`) | 272 s recent median, 85 s with #807 | C11-538 A |
-| `c11/pr-swift` (Atlas, advisory) | 288-364 s; tests 225-269 s, `CLIResolutionSnapshotTests` 192 s; plus guest yields up to 20 min and the cold retry | C11-538 B, poller |
+| `c11/pr-swift` (Atlas, advisory) | 288-364 s; tests 225-269 s, `CLIResolutionSnapshotTests` 192 s; plus guest yields up to 20 min and the cold retry (removed in PR B) | C11-538 B, poller |
 | Drawbridge (dry run) | 210-416 s; its two serial LLM jobs about 150 s | Atin's call |
 
 The `test_default_local_lock_remains_single_slot` failure (`2 != 1`, seen on #805 and on the v1.6.0 release PR) was a real build-lock race on Ubuntu 26's uutils `mkdir`, not a flaky test; #807 fixes the lock.

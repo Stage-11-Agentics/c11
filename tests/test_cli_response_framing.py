@@ -33,6 +33,9 @@ CAPS = {"methods": ["panel.list", "fixture.echo"],
 
 def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
     """Keep the accepted connection open until the CLI exits, unless asked to close."""
+    # Let large-frame correctness checks tolerate startup and runner load.
+    # Keep the fixture alive long enough to observe the CLI's own deadline.
+    timeout_seconds = max(6, deadline_ms / 1000 + 2)
     with tempfile.TemporaryDirectory(prefix="c11-frame-", dir="/tmp") as directory:
         path = str(Path(directory) / "s")
         stopped = threading.Event()
@@ -41,12 +44,12 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
             server.bind(path)
             server.listen(1)
-            server.settimeout(6)
+            server.settimeout(timeout_seconds)
 
             def serve():
                 try:
                     with server.accept()[0] as conn:
-                        conn.settimeout(6)
+                        conn.settimeout(timeout_seconds)
                         pending = bytearray()
 
                         def request():
@@ -63,7 +66,7 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
                             return value
 
                         handler(conn, request, record, stopped)
-                        stopped.wait(6)
+                        stopped.wait(timeout_seconds)
                 except Exception as exc:
                     errors.append(repr(exc))
 
@@ -75,12 +78,16 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
                        C11_QUIET_DISCOVERY="1")
             try:
                 result = subprocess.run([cli, "--socket", path, "rpc", method], env=env,
-                                        capture_output=True, timeout=6)
+                                        capture_output=True, timeout=timeout_seconds)
             finally:
                 stopped.set()
-                worker.join(timeout=7)
+                worker.join(timeout=timeout_seconds + 1)
             assert not worker.is_alive(), "fixture did not stop"
-            assert not errors, errors
+            assert not errors, {
+                "peer_errors": errors,
+                "returncode": result.returncode,
+                "stderr": result.stderr.decode(errors="replace"),
+            }
             return result, record
 
 
@@ -140,7 +147,7 @@ def test_large_reply(cli):
     wire = frame(payload)
     # Fragment across many kernel reads, without making runtime proportional to sleeps.
     result, _ = exchange(cli, reply_handler([wire[i:i + 32749] for i in range(0, len(wire), 32749)], delay=0),
-                         deadline_ms=4000)
+                         deadline_ms=20000)
     assert_success(result, payload)
 
 

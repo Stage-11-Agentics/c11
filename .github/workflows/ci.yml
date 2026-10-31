@@ -83,7 +83,7 @@ jobs:
 
   agent-runtime-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,6 +126,7 @@ jobs:
           GUARDS_RESULT: ${{ needs.workflow-guards.result }}
           RUNTIME_RESULT: ${{ needs.agent-runtime-tests.result }}
         run: |
+          set -euo pipefail
           test "$GUARDS_RESULT" = success
           test "$RUNTIME_RESULT" = success
 

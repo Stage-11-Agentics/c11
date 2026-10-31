@@ -40,7 +40,15 @@ read_meta() { cat "$LOCK_DIR/$1" 2>/dev/null || true; }
 acquire_directory() {
   # uutils mkdir 0.10.0 can report success to both concurrent creators.
   # os.mkdir preserves the kernel's EEXIST result, which is the lock contract.
-  python3 -c 'import os, sys; os.mkdir(sys.argv[1])' "$LOCK_DIR" 2>/dev/null
+  python3 -I -c 'import os, sys
+try:
+    os.mkdir(sys.argv[1])
+except FileExistsError:
+    sys.exit(1)
+except OSError as error:
+    print(error, file=sys.stderr)
+    sys.exit(2)
+' "$LOCK_DIR"
 }
 
 # Only the Atlas slot scheduler enables reentrancy. Ordinary local invocations
@@ -61,9 +69,23 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 2
 fi
 
+if ! python3 -I -c 'import os, sys' >/dev/null 2>&1; then
+  echo "[build-lock] python3 failed to initialize atomic directory acquisition" >&2
+  exit 2
+fi
+
 start=$(date +%s)
 last_report=0
-while ! acquire_directory; do
+while true; do
+  if acquire_directory; then
+    break
+  else
+    acquisition_status=$?
+  fi
+  if [[ "$acquisition_status" -ne 1 ]]; then
+    echo "[build-lock] atomic directory acquisition failed (python3 exit $acquisition_status)" >&2
+    exit 2
+  fi
   owner_pid="$(read_meta pid)"
   if [[ -n "$owner_pid" ]] && ! kill -0 "$owner_pid" 2>/dev/null; then
     echo "[build-lock] owner pid $owner_pid ($(read_meta label)) is gone; taking over the lock" >&2

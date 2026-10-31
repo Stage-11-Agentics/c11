@@ -139,6 +139,22 @@ class SlotsTests(unittest.TestCase):
     def test_default_local_lock_remains_single_slot(self):
         self.assertEqual(self.finish(self.local_lock_processes()), 1)
 
+    def test_local_lock_fails_promptly_when_python_is_broken(self):
+        bin_dir = self.base / "bin"
+        bin_dir.mkdir()
+        shim = bin_dir / "python3"
+        shim.write_text("#!/bin/sh\nexit 1\n")
+        shim.chmod(0o755)
+        env = dict(self.env, PATH=str(bin_dir) + os.pathsep + self.env["PATH"],
+                   C11_BUILD_LOCK_DIR=str(self.base / "broken-python-lock"),
+                   C11_BUILD_LOCK_TIMEOUT="30")
+        result = subprocess.run([str(ROOT / "scripts/with-build-lock.sh"), *self.command],
+                                env=env, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("python3", result.stderr)
+        self.assertIn("atomic directory acquisition", result.stderr)
+        self.assertFalse(self.log.exists(), "broken lock dependency must not run the protected command")
+
     def test_local_lock_rejects_a_second_creator_when_mkdir_reports_success(self):
         # Model the observed utility behavior: both creators return success.
         # The lock must use the atomic filesystem result, not this utility.

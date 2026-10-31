@@ -19,6 +19,9 @@ abort "FAIL: CLI lookup must not build independently" if build_run.include?("xco
 abort "FAIL: Python job must restore the exact-head prebuilt-products cache" unless
   steps.any? { |step| step["name"] == "Restore exact-head prebuilt products" }
 
+abort "FAIL: activity memory probes must be enabled in the built-CLI step" unless
+  (step["env"] || {}).fetch("C11_ACTIVITY_MEMORY_PROBE", nil).to_s == "1"
+
 run = step.fetch("run", "")
 required = [
   'launch_cli_test ssh-shell env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py',

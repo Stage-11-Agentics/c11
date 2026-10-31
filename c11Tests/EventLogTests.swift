@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -36,6 +37,29 @@ final class EventLogTests: XCTestCase {
 
     private func parse(_ line: String) -> [String: Any] {
         (try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]) ?? [:]
+    }
+
+    @MainActor
+    func testUnmountedFlashRendererNeverClaimsADraw() {
+        let url = logURL()
+        let log = EventLog(url: url, instance: "flash-hidden")
+        log.open()
+        EventEmitter.shared.startForTesting(log: log, instance: "flash-hidden")
+        let request = FocusFlashRequest(
+            workspaceId: UUID(), panelId: UUID(), time: FlashRequestTime(), source: "socket",
+            appearance: FlashAppearance(color: .yellow, envelope: .paneRing), duration: 1.5
+        )
+        EventEmitter.shared.emitFlashRequested(request)
+        let view = SidebarFlashDrawingView()
+        view.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+        view.play(request)
+        view.draw(view.bounds)
+        EventEmitter.shared.flush()
+        let events = readLines(url).map(parse)
+        let requested = events.filter { $0["type"] as? String == "flash.requested" }
+        XCTAssertEqual(requested.count, 1)
+        XCTAssertEqual((requested.first?["payload"] as? [String: Any])?["request_id"] as? String, request.id.uuidString)
+        XCTAssertFalse(events.contains { $0["type"] as? String == "flash.drawn" })
     }
 
     // MARK: - EVT-1: envelope shape

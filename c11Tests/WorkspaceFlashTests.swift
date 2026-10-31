@@ -27,18 +27,37 @@ final class WorkspaceFlashTests: XCTestCase {
         super.tearDown()
     }
 
-    func testOneShotFlashFansOutToSidebarTokenWithoutRegisteringPersistentState() {
+    func testOneShotFlashFansOutToSidebarRequestWithoutRegisteringPersistentState() {
         let workspace = Workspace(title: "flash-test")
         let panelId = UUID()
-        let initialToken = workspace.sidebarFlashToken
+        XCTAssertNil(workspace.sidebarFlashRequest)
 
         workspace.triggerFocusFlash(
             panelId: panelId,
             appearance: FlashAppearance.current(envelope: .paneRing)
         )
 
-        XCTAssertEqual(workspace.sidebarFlashToken, initialToken &+ 1)
+        XCTAssertEqual(workspace.sidebarFlashRequest?.panelId, panelId)
+        XCTAssertEqual(workspace.sidebarFlashRequest?.workspaceId, workspace.id)
         XCTAssertNil(workspace.persistentFlashPanels[panelId])
+    }
+
+    func testRepeatPublishesANewRequestWithTheCurrentColorAndOriginalTiming() {
+        let workspace = Workspace(title: "flash-test")
+        let panelId = UUID()
+        let first = workspace.triggerFocusFlash(
+            panelId: panelId, appearance: FlashAppearance(color: .red, envelope: .paneRing)
+        )
+        let time = FlashRequestTime()
+        let second = workspace.triggerFocusFlash(
+            panelId: panelId, appearance: FlashAppearance(color: .blue, envelope: .paneRing),
+            source: "socket", requestedAt: time
+        )
+        XCTAssertNotEqual(first?.id, second?.id)
+        XCTAssertEqual(workspace.sidebarFlashRequest, second)
+        XCTAssertEqual(second?.appearance.color, NSColor.blue)
+        XCTAssertEqual(second?.time, time)
+        XCTAssertEqual(second?.source, "socket")
     }
 
     func testPersistentFlashRegistersStateAndKeepsRegistrationUntilCancel() {
@@ -173,7 +192,7 @@ final class WorkspaceFlashTests: XCTestCase {
 
         let workspace = Workspace(title: "flash-test")
         let panelId = UUID()
-        let initialToken = workspace.sidebarFlashToken
+        let initialRequest = workspace.sidebarFlashRequest
 
         workspace.triggerFocusFlash(
             panelId: panelId,
@@ -181,7 +200,7 @@ final class WorkspaceFlashTests: XCTestCase {
             persistent: true
         )
 
-        XCTAssertEqual(workspace.sidebarFlashToken, initialToken)
+        XCTAssertEqual(workspace.sidebarFlashRequest, initialRequest)
         XCTAssertNil(workspace.persistentFlashPanels[panelId])
     }
 }

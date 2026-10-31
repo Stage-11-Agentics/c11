@@ -1,5 +1,101 @@
 import AppKit
 import SwiftUI
+import QuartzCore
+
+/// Wall time correlates with callers; uptime measures latency across clock changes.
+struct FlashRequestTime: Equatable {
+    let wall = Date()
+    let uptime = ProcessInfo.processInfo.systemUptime
+}
+
+struct FocusFlashRequest: Equatable {
+    let id = UUID()
+    let workspaceId: UUID
+    let panelId: UUID
+    let time: FlashRequestTime
+    let source: String
+    let appearance: FlashAppearance
+    let duration: TimeInterval
+    // Pulse lifetime starts at fan-out; request time includes selection latency.
+    let startedUptime = ProcessInfo.processInfo.systemUptime
+
+    var remainingDuration: TimeInterval {
+        duration - (ProcessInfo.processInfo.systemUptime - startedUptime)
+    }
+}
+
+/// Mounted only for an active sidebar pulse. Idle workspace rows have no AppKit
+/// flash view, timer or animation. The existing Workspace observation delivers
+/// requests; this renderer does not subscribe to another observable object.
+struct SidebarFlashOverlay: NSViewRepresentable {
+    let request: FocusFlashRequest
+
+    func makeNSView(context: Context) -> SidebarFlashDrawingView {
+        SidebarFlashDrawingView()
+    }
+
+    func updateNSView(_ view: SidebarFlashDrawingView, context: Context) {
+        view.play(request)
+    }
+}
+
+final class SidebarFlashDrawingView: NSView {
+    private var request: FocusFlashRequest?
+    private var reportedDraw = false
+
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func play(_ next: FocusFlashRequest) {
+        guard request?.id != next.id else { return }
+        request = next
+        reportedDraw = false
+        layer?.removeAnimation(forKey: "c11.sidebarFlash")
+        guard next.remainingDuration > 0 else { return }
+        // Restart from a visible leading edge, even if the preceding pulse is
+        // fading. Core Animation replaces the old envelope, never queues it.
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        animation.values = [0.25, 1, 0, 1, 0]
+        animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
+        animation.duration = next.duration
+        animation.beginTime = CACurrentMediaTime()
+        animation.timingFunctions = FocusFlashPattern.curves.map {
+            CAMediaTimingFunction(name: $0 == .easeIn ? .easeIn : .easeOut)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.opacity = 0
+        layer?.add(animation, forKey: "c11.sidebarFlash")
+        CATransaction.commit()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let request, request.remainingDuration > 0,
+              request.appearance.color.alphaComponent > 0,
+              !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty,
+              let window, window.isVisible, window.occlusionState.contains(.visible) else { return }
+        request.appearance.color.withAlphaComponent(
+            request.appearance.color.alphaComponent * FlashEnvelope.sidebarFill.peakScale
+        ).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
+        // This is the real, nontransparent pulse paint, not receipt, onChange,
+        // an animation completion or a layout callback. Scanout is measured
+        // independently by the guest recording.
+        if !reportedDraw {
+            reportedDraw = true
+            EventEmitter.shared.emitFlashDrawn(request, channel: "sidebar")
+        }
+    }
+}
 
 // CMUX-10: Single seam for flash visuals (color + envelope) used by both the
 // pane ring renderer (`GhosttySurfaceScrollView`) and the sidebar workspace row

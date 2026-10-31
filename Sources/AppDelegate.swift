@@ -13842,6 +13842,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// commands keep their existing workspace-switch prohibition.
     @discardableResult
     func openPanelLink(_ target: PanelLinkTarget) -> Bool {
+        let requestedAt = FlashRequestTime()
         guard SocketCommandContext.current == nil else { return false }
         let workspaceID: UUID
         let explicitPanelID: UUID?
@@ -13882,16 +13883,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // Selection's queued restoration/acknowledgment is the same as a sidebar
         // visit. Do not use the notification jump's additional mark-read path.
-        // Let the newly selected SwiftUI/portal content paint before its pulse.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak manager, weak workspace, weak window] in
+        // Let the selection's queued restoration run before starting the pulse.
+        // Forcing a synchronous whole-window paint here delays both renderers;
+        // their normal display pass paints the destination and its pulse together.
+        DispatchQueue.main.async { [weak manager, weak workspace, weak window] in
             guard let manager, let workspace, let window,
                   manager.selectedWorkspaceId == workspaceID, window.isKeyWindow,
                   let panelID, workspace.focusedPanelId == panelID,
-                  let panel = workspace.panels[panelID],
+                  workspace.panels[panelID] != nil,
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-            window.contentView?.layoutSubtreeIfNeeded()
-            window.displayIfNeeded()
-            panel.triggerFlash()
+            workspace.triggerFocusFlash(
+                panelId: panelID, appearance: FlashAppearance.current(envelope: .paneRing),
+                source: "panel_link", requestedAt: requestedAt
+            )
         }
         return true
     }

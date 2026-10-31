@@ -1841,6 +1841,7 @@ extension TerminalController {
     }
 
     private func v2PanelTriggerFlash(params: [String: Any]) -> V2CallResult {
+        let requestedAt = FlashRequestTime()
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -1884,7 +1885,10 @@ extension TerminalController {
             v2MaybeFocusWindow(for: workspaceManager)
             v2MaybeSelectWorkspace(workspaceManager, workspace: ws)
 
-            ws.triggerFocusFlash(panelId: surfaceId, appearance: appearance, persistent: persistent)
+            let request = ws.triggerFocusFlash(
+                panelId: surfaceId, appearance: appearance, persistent: persistent,
+                source: "socket", requestedAt: requestedAt
+            )
             result = .ok([
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -1892,7 +1896,8 @@ extension TerminalController {
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
                 "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager)),
-                "persistent": persistent
+                "persistent": persistent,
+                "flash_id": v2OrNull(request?.id.uuidString)
             ])
         }
         return result

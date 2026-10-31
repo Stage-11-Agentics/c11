@@ -773,8 +773,29 @@ A live idle agent's mark goes cold at `cold_at`, within about 20 seconds (two 10
 c11 notify --title <text> [--subtitle <text>] [--body <text>]
 c11 list-notifications
 c11 clear-notifications
-c11 trigger-flash [--panel <id|ref>]     # Visual flash on a panel
+c11 trigger-flash --panel <id|ref> [--workspace <id|ref>] [--color <#hex>] [--persistent]
+c11 cancel-flash --panel <id|ref> [--workspace <id|ref>]
 ```
+
+Flash requests pulse the panel, its strip and its workspace row without changing
+selection. A repeat replaces and restarts the pulse. Persistent requests keep one
+repeating timer per panel; they do not queue the previous requests. Native panel
+links use the same flash fan-out after queued destination selection restoration.
+
+`panel.trigger_flash` returns `flash_id` (null when the flash preference disables
+it). In `c11 events`, `flash.requested` carries `request_id`, `source` (`socket`,
+`panel_link`, `focus` or `persistent`) and `requested_at_ms` (Unix milliseconds).
+`flash.drawn` correlates that ID and adds `channel: sidebar`, `drawn_at_ms`, and
+`latency_ms` measured with a monotonic clock. It is emitted from the visible
+sidebar pulse's actual draw callback, not from request acceptance or an animation
+completion. It measures renderer latency, not physical display scanout. A hidden,
+unmounted, expired or superseded-before-paint row produces no drawn event; a
+missing event does not prove that the panel's independent renderer failed.
+Persistent timer pulses have their own IDs and `source: persistent`.
+
+For tagged Debug performance checks only, launch with `C11_SIDEBAR_ROW_PROBE=1`
+to log `sidebar.row.body workspace=<UUID>` for each row body evaluation. The probe
+is off by default and absent from Release. It does not force row updates.
 
 Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
 

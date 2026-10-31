@@ -26,6 +26,16 @@ NOTARY_PROFILE_CANDIDATES=(c11-notary acetate-notary)
 NOTARY_PROFILE="${C11_NOTARY_PROFILE:-${NOTARY_PROFILE_CANDIDATES[0]}}"
 # The Apple team the release is signed and notarized for, from the identity.
 TEAM_ID="$(sed -nE 's/.*\(([A-Z0-9]{10})\)$/\1/p' <<<"$SIGNING_IDENTITY")"
+# Signing-keychain mode (a release run on Atlas while the operator's Mac
+# sleeps): the Developer ID identity, the notary profile and the Sparkle key
+# live in a dedicated keychain that is locked at rest. The run takes one
+# launchd unlock lease through the helper and the exit trap locks it again.
+# Unset, everything comes from the login keychain of the Mac running this.
+SIGNING_KEYCHAIN="${C11_SIGNING_KEYCHAIN:-}"
+SIGNING_KEYCHAIN_HELPER="${C11_SIGNING_KEYCHAIN_HELPER:-$HOME/.acetate-release/bin/release_keychain.sh}"
+KC_ARGS=()
+[[ -n "$SIGNING_KEYCHAIN" ]] && KC_ARGS=(--keychain "$SIGNING_KEYCHAIN")
+KEYCHAIN_LEASED=0
 SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 # The public half of the c11mux key; every shipped c11 trusts only this key.
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
@@ -154,6 +164,10 @@ DAEMON_PID=""
 cleanup() {
   # The exported Sparkle key lives only in this 0700 dir during step 13.
   if [[ -n "$KEY_DIR" && -d "$KEY_DIR" ]]; then rm -rf "$KEY_DIR"; fi
+  # The signing keychain goes back to locked on every exit path.
+  if [[ "$KEYCHAIN_LEASED" -eq 1 ]]; then
+    perl -e 'alarm 30; exec @ARGV' "$SIGNING_KEYCHAIN_HELPER" lock $$ >/dev/null 2>&1 || true
+  fi
   # An early exit must not leave the background daemon build running.
   if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
     pkill -TERM -P "$DAEMON_PID" 2>/dev/null || true
@@ -230,7 +244,16 @@ DAEMON_LOG="$OUT/remote-daemon-assets.log"
 DAEMON_PID=$!
 note "remote daemon assets building in the background (pid $DAEMON_PID, log $DAEMON_LOG)"
 
-IDENTITIES="$(security find-identity -v -p codesigning)" || die "security find-identity failed"
+if [[ -n "$SIGNING_KEYCHAIN" ]]; then
+  [[ -f "$SIGNING_KEYCHAIN" ]] || die "signing keychain not found: $SIGNING_KEYCHAIN"
+  [[ -x "$SIGNING_KEYCHAIN_HELPER" ]] || die "signing keychain helper not found: $SIGNING_KEYCHAIN_HELPER"
+  # Sized for a cold build plus the tail; the exit trap locks it sooner.
+  perl -e 'alarm 90; exec @ARGV' "$SIGNING_KEYCHAIN_HELPER" request-unlock 3600 $$ >/dev/null \
+    || die "could not unlock the signing keychain $SIGNING_KEYCHAIN through $SIGNING_KEYCHAIN_HELPER"
+  KEYCHAIN_LEASED=1
+  note "signing keychain unlocked for this run (lease $$): $SIGNING_KEYCHAIN"
+fi
+IDENTITIES="$(security find-identity -v -p codesigning ${KC_ARGS[@]+"${SIGNING_KEYCHAIN}"})" || die "security find-identity failed"
 grep -qF "\"$SIGNING_IDENTITY\"" <<<"$IDENTITIES" || die "signing identity not in the keychain: $SIGNING_IDENTITY"
 note "signing identity present: $SIGNING_IDENTITY"
 
@@ -241,7 +264,7 @@ else
   [[ -z "${C11_NOTARY_PROFILE:-}" ]] && candidates=("${NOTARY_PROFILE_CANDIDATES[@]}")
   NOTARY_OK=0
   for profile in "${candidates[@]}"; do
-    if xcrun notarytool history --keychain-profile "$profile" >/dev/null 2>"$OUT/notary-check.err"; then
+    if xcrun notarytool history --keychain-profile "$profile" ${KC_ARGS[@]+"${KC_ARGS[@]}"} >/dev/null 2>"$OUT/notary-check.err"; then
       NOTARY_PROFILE="$profile"
       NOTARY_OK=1
       break
@@ -533,18 +556,19 @@ note "SUFeedURL=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PLIST")"
 # --------------------------------------------------------------- codesign --
 step "Codesign app"
 # release.yml imports a .p12 into a throwaway build.keychain first; here the
-# Developer ID identity already lives in the login keychain, whose ACL lets
-# /usr/bin/codesign use the key without a prompt.
+# Developer ID identity lives in the login keychain, or in signing-keychain
+# mode in the dedicated keychain, whose partition list lets /usr/bin/codesign
+# use the key without a prompt.
 ENTITLEMENTS="$ROOT/c11.entitlements"
 CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
 HELPER_PATH="$APP_PATH/Contents/Resources/bin/ghostty"
 if [ -f "$CLI_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
+  /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
 fi
 if [ -f "$HELPER_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
+  /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
 fi
-/usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
+/usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 # --------------------------------------------------------- notarize: app --
@@ -553,13 +577,13 @@ notarize() {
   local file="$1" label="$2" json id status
   note "notarizing $label with notarytool profile '$NOTARY_PROFILE' for team ${TEAM_ID:-unknown}"
   # notarytool exits non-zero on Invalid; keep its JSON so the log is fetched.
-  json="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json)" || true
+  json="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" ${KC_ARGS[@]+"${KC_ARGS[@]}"} --wait --output-format json)" || true
   id="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<<"$json" 2>/dev/null || true)"
   status="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' <<<"$json" 2>/dev/null || true)"
   note "$label notarization ${id:-<no id>}: ${status:-<no status>}"
   if [[ "$status" != "Accepted" ]]; then
     printf '%s\n' "$json"
-    [[ -n "$id" ]] && { xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" || true; }
+    [[ -n "$id" ]] && { xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" ${KC_ARGS[@]+"${KC_ARGS[@]}"} || true; }
     die "$label notarization failed with status: ${status:-submit error}"
   fi
 }
@@ -631,9 +655,17 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   VERIFY_PUBLIC_KEY="$(swift "$ROOT/scripts/derive_sparkle_public_key.swift" "$(cat "$KEY_DIR/key")")"
   note "throwaway public key: $VERIFY_PUBLIC_KEY"
 else
-  note "reading the $SPARKLE_ACCOUNT key from the login keychain with Sparkle's generate_keys"
-  note "(macOS asks once for the login keychain password to allow generate_keys; choose Always Allow so later runs are silent)"
-  "$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -x "$KEY_DIR/key" >/dev/null
+  if [[ -n "$SIGNING_KEYCHAIN" ]]; then
+    # The key goes from the keychain to a 0600 file in this 0700 dir: no argv, no log.
+    note "reading the $SPARKLE_ACCOUNT key from the signing keychain"
+    ( umask 077; perl -e 'alarm 30; exec @ARGV' security find-generic-password \
+        -s "https://sparkle-project.org" -a "$SPARKLE_ACCOUNT" -w "$SIGNING_KEYCHAIN" >"$KEY_DIR/key" ) \
+      || die "the signing keychain has no readable $SPARKLE_ACCOUNT Sparkle key (scripts/move-sparkle-key-to-atlas.sh)"
+  else
+    note "reading the $SPARKLE_ACCOUNT key from the login keychain with Sparkle's generate_keys"
+    note "(macOS asks once for the login keychain password to allow generate_keys; choose Always Allow so later runs are silent)"
+    "$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -x "$KEY_DIR/key" >/dev/null
+  fi
   VERIFY_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY"
 fi
 [[ -s "$KEY_DIR/key" ]] || die "no Sparkle private key"

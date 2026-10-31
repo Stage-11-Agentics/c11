@@ -414,7 +414,7 @@ final class MailboxNativeDoorbell {
     /// so a consumer cannot write arbitrary text into `_dispatch.log`.
     static let namedRejections: Set<String> = [
         "transcript_unavailable", "inbox_unavailable", "inbox_write_failed", "unconfirmed", "unsupported_invitation",
-        "session_conflict", "not_ready", "refused",
+        "session_conflict", "not_ready",
     ]
 
     /// One consumer frame from the stream: an acceptance or a rejection.
@@ -430,7 +430,10 @@ final class MailboxNativeDoorbell {
                 resolve(registration, requestID: requestID, result: .accepted(late: false))
             }
         case "rejected":
-            let reason = (frame["reason"] as? String).flatMap { Self.namedRejections.contains($0) ? "native_\($0)" : nil }
+            let reason = (frame["reason"] as? String).flatMap {
+                Self.namedRejections.contains($0) || ($0 == "refused" && registration.route == .claudeInbox)
+                    ? "native_\($0)" : nil
+            }
             resolve(registration, requestID: requestID, result: .failed(reason ?? "native_rejected"))
         default: break
         }

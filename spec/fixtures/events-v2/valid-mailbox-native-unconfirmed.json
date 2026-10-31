@@ -1,0 +1,16 @@
+{
+  "seq": 42,
+  "ts": "2026-07-07T08:20:11.008Z",
+  "type": "mailbox.native_unconfirmed",
+  "instance": "com.stage11.c11-12345",
+  "v": 2,
+  "workspace": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+  "panel": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "payload": {
+    "delivery_id": "f3d7ff30-d36c-469d-8bba-ccfe458c7b29",
+    "panel_id": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+    "claude_session_id": "e38019ab-a30b-4714-a320-5dcb0b3a8e31",
+    "route": "claude_inbox",
+    "reason": "unconfirmed"
+  }
+}

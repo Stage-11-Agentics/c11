@@ -1868,7 +1868,6 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             ("inbox_unavailable", "native_inbox_unavailable"),
             ("inbox_write_failed", "native_inbox_write_failed"),
             ("unconfirmed", "native_unconfirmed"),
-            ("refused", "native_refused"),
             ("unsupported_invitation", "native_unsupported_invitation"),
             ("session_conflict", "native_session_conflict"),
             (nil, "native_rejected"),
@@ -1882,6 +1881,22 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             var frame: [String: Any] = ["type": "rejected", "delivery_id": try offered.deliveryID()]
             if let reason { frame["reason"] = reason }
             broker.consume(try JSONSerialization.data(withJSONObject: frame), registration: reg)
+            wait(for: [failed], timeout: 1)
+            broker.disconnect(reg)
+        }
+    }
+
+    func testExplicitRefusalIsNamedOnlyForClaude() throws {
+        let routes: [MailboxNativeDoorbell.Route] = [.claudeInbox, .piExtension, .ompExtension, .opencodePlugin]
+        for route in routes {
+            let broker = MailboxNativeDoorbell(), reg = registration(route: route)
+            let offered = offerNatively(broker, reg)
+            let expected = route == .claudeInbox ? "native_refused" : "native_rejected"
+            let failed = expectation(description: route.rawValue)
+            offered.reply = { result in XCTAssertEqual(result, .failed(expected)); failed.fulfill() }
+            broker.consume(try JSONSerialization.data(withJSONObject: [
+                "type": "rejected", "delivery_id": try offered.deliveryID(), "reason": "refused",
+            ]), registration: reg)
             wait(for: [failed], timeout: 1)
             broker.disconnect(reg)
         }

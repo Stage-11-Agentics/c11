@@ -498,6 +498,9 @@ jobs:
             echo "Missing SPARKLE_PRIVATE_KEY secret" >&2
             exit 1
           fi
+          # Prebuilt, checksum-verified Sparkle tools instead of a clone and build.
+          SPARKLE_BIN_DIR="$(./scripts/fetch-sparkle-tools.sh "$RUNNER_TEMP/sparkle")"
+          export SPARKLE_BIN_DIR
           ./scripts/sparkle_generate_appcast.sh "$NIGHTLY_DMG_IMMUTABLE" nightly appcast.xml
           # Keep the legacy universal feed alive long enough for older nightly
           # installs to migrate onto the unified nightly appcast.

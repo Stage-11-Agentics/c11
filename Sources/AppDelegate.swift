@@ -13838,6 +13838,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         contextContainingWorkspaceId(workspaceId)?.workspaceManager
     }
 
+    /// Reached only from the isolated native link activation adapter. Socket
+    /// commands keep their existing workspace-switch prohibition.
+    @discardableResult
+    func openPanelLink(_ target: PanelLinkTarget) -> Bool {
+        guard SocketCommandContext.current == nil else { return false }
+        let workspaceID: UUID
+        let explicitPanelID: UUID?
+        switch target {
+        case .panel(let id):
+            guard let located = workspaceContainingPanel(panelId: id) else { return false }
+            workspaceID = located.workspace.id
+            explicitPanelID = id
+        case .workspace(let id):
+            workspaceID = id
+            explicitPanelID = nil
+        }
+        // Resolve everything before changing selection, zoom or window order.
+        guard let context = contextContainingWorkspaceId(workspaceID),
+              let workspace = context.workspaceManager.workspaces.first(where: { $0.id == workspaceID }),
+              let window = context.window ?? mainWindow(for: context.windowId) else { return false }
+        let panelID = explicitPanelID ?? workspace.focusedPanelId
+        if let panelID, workspace.panels[panelID] == nil { return false }
+        let manager = context.workspaceManager
+        let alreadyFocused = manager.selectedWorkspaceId == workspaceID &&
+            workspace.focusedPanelId == panelID && window.isKeyWindow
+        if !alreadyFocused {
+            workspace.clearSplitZoom()
+            context.sidebarSelectionState.selection = .tabs
+            // Select the destination before revealing the workspace. Otherwise
+            // its previous browser can enqueue an omnibar request on reveal.
+            if let panelID { workspace.focusPanel(panelID) }
+            bringToFront(window)
+            manager.focusWorkspace(workspaceID, surfaceId: panelID, suppressFlash: true, cause: "panel_link")
+            guard manager.selectedWorkspaceId == workspaceID else { return false }
+            manager.requestSidebarReveal(workspaceId: workspaceID)
+            // focusPanel can briefly focus the area's previous selected panel
+            // before selecting its new one. Cancel competing requests after
+            // those synchronous focus callbacks, before the reveal is painted.
+            for case let browser as BrowserPanel in workspace.panels.values where browser.id != panelID {
+                browser.cancelPendingAddressBarFocusForPanelLink()
+            }
+        }
+        // Selection's queued restoration/acknowledgment is the same as a sidebar
+        // visit. Do not use the notification jump's additional mark-read path.
+        // Let the newly selected SwiftUI/portal content paint before its pulse.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak manager, weak workspace, weak window] in
+            guard let manager, let workspace, let window,
+                  manager.selectedWorkspaceId == workspaceID, window.isKeyWindow,
+                  let panelID, workspace.focusedPanelId == panelID,
+                  let panel = workspace.panels[panelID],
+                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            panel.triggerFlash()
+        }
+        return true
+    }
+
     /// Shared exact-target resolver for Feed UI and socket focus intent. No active-tab fallback.
     func resolveFeedTarget(_ target: AttentionOrder.Target) -> (WorkspaceManager, Workspace)? {
         guard let manager = workspaceManagerFor(workspaceId: target.workspaceID),
@@ -15574,6 +15632,9 @@ private extension NSWindow {
 #if DEBUG
             dlog("  → browser Return/Enter routed to firstResponder.keyDown")
 #endif
+            // WebKit's content view can bypass the WKWebView subclass here.
+            // Bind this exact native Return to its isolated link listener.
+            firstResponderWebView?.panelLinkActivation?.record(event)
             self.firstResponder?.keyDown(with: event)
             return true
         }

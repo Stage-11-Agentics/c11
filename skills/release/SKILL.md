@@ -138,7 +138,7 @@ This is a checklist trigger, not a CI gate.
 6.7. Pre-build the release on Atlas, in parallel with staging and CI:
 - From a clean checkout at the tested head, run `scripts/release-local.sh --dry-run vX.Y.Z`. It builds the production app on Atlas (cold, wholemodule, arm64, Xcode 26.3; about 6-9 minutes), rehearses every step up to notarization, and keeps the build in `build-release-local/vX.Y.Z/pristine` for the real run to reuse.
 - The tree must be clean: a build that carried uncommitted files cannot be reused. Rerun 6.7 whenever the tested head changes.
-- Before the first real release on a machine: the `c11-notary` notarytool keychain profile must exist (the operator stores it once with `xcrun notarytool store-credentials c11-notary --apple-id <id> --team-id UKQ4QALWD4`), and the first real run shows keychain dialogs for the Sparkle key and the Developer ID key that the operator answers with Always Allow.
+- The real run notarizes with the first working notarytool keychain profile among `c11-notary` and `acetate-notary` (both team UKQ4QALWD4; `C11_NOTARY_PROFILE` picks one). The first real run on a machine shows keychain dialogs for the Sparkle key and the Developer ID key that the operator answers with Always Allow.
 
 7. Create release PR:
 - `gh pr create --title "Release vX.Y.Z" --body "..."`

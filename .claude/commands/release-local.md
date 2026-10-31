@@ -29,7 +29,7 @@ scripts/release-local.sh vX.Y.Z
 ```
 
 Before it runs, check that:
-- The `c11-notary` notarytool keychain profile exists (the preflight fails fast without it).
+- A notarytool keychain profile for team UKQ4QALWD4 works: `c11-notary`, else `acetate-notary`, or the one `C11_NOTARY_PROFILE` names (the preflight fails fast without one).
 - Atlas builds with the pinned release toolchain. The script refuses an app whose `DTXcode` differs from `RELEASE_DTXCODE` (1640, Xcode 16.4, as v0.67.0 shipped). Moving the pin (`C11_RELEASE_DTXCODE`) is a deliberate SDK change and should move `release.yml` with it.
 - Someone is at the Mac: the first read of the `c11mux` Sparkle key shows one keychain dialog for Sparkle's `generate_keys`, asking for the login password. *Always Allow* makes later runs silent.
 

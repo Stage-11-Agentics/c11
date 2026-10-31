@@ -34,6 +34,8 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. *
 ## Links to panels and workspaces
 
 Before emitting these links, pages and agents should check the connected server's `features` in `c11 capabilities --json` for `links.panel` version 1, which covers the browser and Markdown navigation described here.
+`links.terminal` version 1 covers terminal Cmd-click, true-destination hover previews,
+and `c11 link` generation. Check that capability before relying on terminal links.
 
 **Mention panels and workspaces in operator reports only as titled links.** Use
 `c11 link --panel <ref> --format markdown` or `c11 link --workspace <ref> --format markdown`

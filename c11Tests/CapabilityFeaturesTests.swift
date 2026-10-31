@@ -84,6 +84,9 @@ final class CapabilityFeaturesTests: XCTestCase {
         let panelLinks = features.filter { $0["id"] as? String == "links.panel" }
         XCTAssertEqual(panelLinks.count, 1)
         XCTAssertEqual(panelLinks.first?["version"] as? Int, 1)
+        let terminalLinks = features.filter { $0["id"] as? String == "links.terminal" }
+        XCTAssertEqual(terminalLinks.count, 1)
+        XCTAssertEqual(terminalLinks.first?["version"] as? Int, 1)
     }
 
     @MainActor

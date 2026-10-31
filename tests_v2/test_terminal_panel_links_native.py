@@ -11,6 +11,7 @@ substituting live UUIDs/titles, not a claim of new interactive-agent execution.
 The original captures and rendering-summary.json are in C11-525's evidence dir.
 """
 import base64
+import ctypes
 import hashlib
 import json
 import os
@@ -460,10 +461,34 @@ finally:
     def click_link(self, kind, command=True):
         x, y = self.point(kind)
         try:
-            self.native(*(['kd:cmd'] if command else []), f'm:{x},{y}', 'w:100', f'c:{x},{y}')
+            self.native(*(['kd:cmd'] if command else []), f'm:{x},{y}', 'w:300')
+            self.native_click(x, y, command=command)
         finally:
             if command:
                 self.run(['/opt/homebrew/bin/cliclick', 'ku:cmd'])
+
+    def native_click(self, x, y, command=False):
+        # Explicit HID mouse events were independently proved against this
+        # guest after cliclick's combined key/move/click did not activate links.
+        self.ensure_frontmost()
+        class Point(ctypes.Structure):
+            _fields_ = [('x', ctypes.c_double), ('y', ctypes.c_double)]
+        cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, Point, ctypes.c_uint32]
+        cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        cg.CGEventSetFlags.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+        cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        for event_type in (1, 2):
+            event = cg.CGEventCreateMouseEvent(None, event_type, Point(x, y), 0)
+            assert event
+            cg.CGEventSetFlags(event, (1 << 20) if command else 0)
+            cg.CGEventSetIntegerValueField(event, 1, 1)
+            cg.CGEventPost(0, event)
+            cf.CFRelease(event)
+            time.sleep(.12)
 
     def activation(self, kind, workspace, panel):
         before = len(self.decisions())

@@ -15,17 +15,19 @@ final class MailboxNativeDoorbell {
         let agentPID: pid_t
         let processStart: UInt64
         let sessionID: String
+        let claudeSessionID: UUID?
         let route: Route
         let canQueue: Bool
         let supportsAttemptReplay: Bool
 
         init(id: UUID, panelID: UUID, agentPID: pid_t, processStart: UInt64, sessionID: String,
-             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false) {
+             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false, claudeSessionID: UUID? = nil) {
             self.id = id
             self.panelID = panelID
             self.agentPID = agentPID
             self.processStart = processStart
             self.sessionID = sessionID
+            self.claudeSessionID = claudeSessionID
             self.route = route
             self.canQueue = canQueue
             self.supportsAttemptReplay = supportsAttemptReplay
@@ -44,6 +46,34 @@ final class MailboxNativeDoorbell {
         }
     }
     enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, failed(String) }
+
+    /// Attempt-level observability, not a claim that Claude held or refused
+    /// input: its silent inbound-policy decisions remain `unconfirmed`.
+    struct FailureDiagnostic {
+        let deliveryID: UUID
+        let panelID: UUID
+        let claudeSessionID: UUID?
+        let reason: String
+
+        init?(registration: Registration, deliveryID: UUID, failure: String) {
+            guard registration.route == .claudeInbox else { return nil }
+            switch failure {
+            case "native_unconfirmed": reason = "unconfirmed"
+            case "native_timeout": reason = "timeout"
+            case "native_refused": reason = "refused"
+            default: return nil
+            }
+            self.deliveryID = deliveryID
+            panelID = registration.panelID
+            claudeSessionID = registration.claudeSessionID
+        }
+
+        var payload: [String: Any] {
+            ["delivery_id": deliveryID.uuidString, "panel_id": panelID.uuidString,
+             "claude_session_id": claudeSessionID.map { $0.uuidString as Any } ?? NSNull(),
+             "route": Route.claudeInbox.rawValue, "reason": reason]
+        }
+    }
 
     struct Attempt: Equatable {
         let id: UUID
@@ -238,6 +268,7 @@ final class MailboxNativeDoorbell {
 
     private struct Pending {
         let reply: (Result, @escaping () -> Void) -> Void
+        let diagnostic: ((FailureDiagnostic) -> Void)?
         var failed = false
         let at: Date
     }
@@ -295,6 +326,7 @@ final class MailboxNativeDoorbell {
     /// registration cannot race ahead of accepted-ID coverage.
     @discardableResult
     func deliver(_ registration: Registration, timeout: TimeInterval = 2, attemptID: UUID? = nil,
+                 diagnostic: ((FailureDiagnostic) -> Void)? = nil,
                  reply: @escaping (Result, @escaping () -> Void) -> Void) -> UUID {
         let requestID = UUID()
         lock.lock()
@@ -302,7 +334,7 @@ final class MailboxNativeDoorbell {
             lock.unlock(); reply(.failed("native_unavailable"), {}); return requestID
         }
         listener.pending = listener.pending.filter { Date().timeIntervalSince($0.value.at) < MailboxDoorbell.rateWindow }
-        listener.pending[requestID] = Pending(reply: reply, at: Date())
+        listener.pending[requestID] = Pending(reply: reply, diagnostic: diagnostic, at: Date())
         listeners[registration.panelID] = listener
         lock.unlock()
         // A stalled peer must not postpone another panel's two-second bound.
@@ -346,6 +378,13 @@ final class MailboxNativeDoorbell {
         }
         listeners[registration.panelID] = listener
         lock.unlock()
+        // The failed transition above wins once, even if the peer repeats its
+        // rejection, the deadline fires, or acceptance arrives late. Emit on
+        // this worker after unlocking, before the existing main-actor reply.
+        if case .failed(let reason) = resolved,
+           let diagnostic = FailureDiagnostic(registration: registration, deliveryID: requestID, failure: reason) {
+            pending.diagnostic?(diagnostic)
+        }
         let settled: () -> Void
         let confirmsCoverage: Bool
         switch resolved {
@@ -375,7 +414,7 @@ final class MailboxNativeDoorbell {
     /// so a consumer cannot write arbitrary text into `_dispatch.log`.
     static let namedRejections: Set<String> = [
         "transcript_unavailable", "inbox_unavailable", "inbox_write_failed", "unconfirmed", "unsupported_invitation",
-        "session_conflict", "not_ready",
+        "session_conflict", "not_ready", "refused",
     ]
 
     /// One consumer frame from the stream: an acceptance or a rejection.
@@ -428,9 +467,20 @@ extension TerminalController {
         } else {
             supportsAttemptReplay = false
         }
+        let claudeSessionID: UUID?
+        if let rawSession = params["claude_session_id"] {
+            guard route == .claudeInbox, let rawSession = rawSession as? String,
+                  let session = UUID(uuidString: rawSession) else {
+                _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
+                return
+            }
+            claudeSessionID = session
+        } else {
+            claudeSessionID = nil // Older bridges did not report the Claude session.
+        }
         let registration = MailboxNativeDoorbell.Registration(id: UUID(), panelID: panelID, agentPID: pidNumber.int32Value,
             processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false,
-            supportsAttemptReplay: supportsAttemptReplay)
+            supportsAttemptReplay: supportsAttemptReplay, claudeSessionID: claudeSessionID)
         // A slow/dead peer cannot occupy the shared writer indefinitely.
         var timeout = timeval(tv_sec: 1, tv_usec: 0)
         _ = setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))

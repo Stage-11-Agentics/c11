@@ -1868,6 +1868,7 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             ("inbox_unavailable", "native_inbox_unavailable"),
             ("inbox_write_failed", "native_inbox_write_failed"),
             ("unconfirmed", "native_unconfirmed"),
+            ("refused", "native_refused"),
             ("unsupported_invitation", "native_unsupported_invitation"),
             ("session_conflict", "native_session_conflict"),
             (nil, "native_rejected"),

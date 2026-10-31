@@ -417,6 +417,12 @@ The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, 
 
 Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt.
 
+If Claude holds an “unidentified session” message whose complete body is exactly `c11 mail waiting: run c11 mailbox recv --ack`, the operator can safely choose **Deliver**: the invitation only asks the agent to read its own c11 inbox. The typed fallback cannot clear that chooser. The mail remains queued until `c11 mailbox recv --ack` or the Stop hook claims it, whether or not the invitation is delivered.
+
+An unconfirmed Claude native attempt records one `mailbox.native_unconfirmed` event and one `native_unconfirmed` row in the workspace's `_dispatch.log`, independent of the number of queued envelopes. Both carry `delivery_id`, `panel_id`, `claude_session_id`, `route` and `reason`. The reason is `unconfirmed`, `timeout`, or `refused` only when the bridge explicitly reports refusal. Claude's silent `hold` and `refuse` policy decisions cannot be distinguished from missing confirmation and remain `unconfirmed`. Older bridges that do not report the bound Claude session leave `claude_session_id` null; c11 never substitutes the registration epoch. Duplicate replies, the later timeout, and late acceptance do not add another diagnostic for the same attempt. This records observation, not a delivery-mode change, and contains no token, message body, or transcript text.
+
+Read the event with `c11 events tail --filter type=mailbox.native_unconfirmed --since 1h`; `c11 mailbox tail` exposes the workspace log. Event recording follows the existing activity-history policy. The optional `claude_session_id` UUID on `mailbox.native.subscribe` is accepted only for `claude_inbox`; it supplies diagnostic identity and does not change the subscription's fresh `session_id` or delivery checks.
+
 The bridge reports why an offer failed, and `native_failure` names it:
 
 | `native_failure` | Meaning |

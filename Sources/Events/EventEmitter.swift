@@ -602,6 +602,10 @@ final class EventEmitter {
         return actualTextRecorded
     }
 
+    func emitMailboxNativeUnconfirmed(workspace: UUID, diagnostic: MailboxNativeDoorbell.FailureDiagnostic) {
+        emit(.mailboxNativeUnconfirmed, workspace: workspace, surface: diagnostic.panelID, payload: diagnostic.payload)
+    }
+
     func emitMailboxDelivered(
         workspace: UUID,
         id: String,

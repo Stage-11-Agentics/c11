@@ -843,6 +843,15 @@ The capture does not install portals, lay out, refresh, prune, hide, focus or se
 
 **Raw method:** `c11 rpc <method> [json]` calls a local socket method with an optional JSON object and prints the result as JSON. Prefer the friendly command when one exists. For example, `c11 rpc system.ping` prints `pong: true` in the result; unknown methods return the server error. This does nothing over `c11 ssh`, where commands remain unavailable.
 
+**Socket framing:** each V2 reply is one compact JSON object terminated by LF;
+newlines inside strings are escaped. The CLI returns when that LF arrives, even
+while the connection stays open, and retains later frames for subsequent reads.
+Streaming methods keep reading one envelope per line. An older peer that closes
+without LF can still return a complete JSON object; an unterminated open reply
+reaches the request deadline (ten seconds by default). Explicit unbounded waits
+retain their command-specific behavior. Pre-protocol admission errors can be
+plain `ERROR:` lines. Legacy V1 multiline replies retain their idle framing.
+
 - **"Connection refused" / socket errors** — c11 app may not be running. Launch it, then retry.
 - **"Panel not found"** — target panel was closed or the ref is stale. Run `c11 tree --all` for current refs.
 - **"Panel is not a terminal"** — that panel is not a terminal (a browser or markdown panel, or a ref that does not name one). `send`, `read-screen`, and the other terminal commands need a terminal panel. Find one with `c11 tree`.

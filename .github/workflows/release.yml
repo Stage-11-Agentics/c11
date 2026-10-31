@@ -165,6 +165,13 @@ jobs:
           fi
           DERIVED_PUBLIC_KEY=$(swift scripts/derive_sparkle_public_key.swift "$SPARKLE_PRIVATE_KEY")
           echo "Derived Sparkle public key: $DERIVED_PUBLIC_KEY"
+          # Installed c11 builds trust only this key; an update signed with any
+          # other key would be rejected by every user, so stop before building.
+          EXPECTED_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
+          if [ "$DERIVED_PUBLIC_KEY" != "$EXPECTED_PUBLIC_KEY" ]; then
+            echo "SPARKLE_PRIVATE_KEY derives $DERIVED_PUBLIC_KEY, but installed builds trust $EXPECTED_PUBLIC_KEY" >&2
+            exit 1
+          fi
           echo "SPARKLE_PUBLIC_KEY=$DERIVED_PUBLIC_KEY" >> "$GITHUB_ENV"
 
       - name: Build app (Release)
@@ -326,21 +333,6 @@ jobs:
           retry_stapler staple "$DMG_RELEASE"
           retry_stapler validate "$DMG_RELEASE"
 
-      - name: Upload dSYMs to Sentry
-        if: steps.guard_release_assets.outputs.skip_all != 'true'
-        continue-on-error: true
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: stage-11-kl
-          SENTRY_PROJECT: c11
-        run: |
-          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
-            exit 0
-          fi
-          brew install getsentry/tools/sentry-cli || true
-          sentry-cli debug-files upload --include-sources build/Build/Products/Release/
-
       - name: Generate Sparkle appcast
         if: steps.guard_release_assets.outputs.skip_all != 'true'
         env:
@@ -352,7 +344,13 @@ jobs:
             echo "Missing SPARKLE_PRIVATE_KEY secret" >&2
             exit 1
           fi
+          # Prebuilt, checksum-verified Sparkle tools instead of a clone and build.
+          SPARKLE_BIN_DIR="$(./scripts/fetch-sparkle-tools.sh "$RUNNER_TEMP/sparkle")"
+          export SPARKLE_BIN_DIR
           ./scripts/sparkle_generate_appcast.sh c11-macos.dmg "$GITHUB_REF_NAME" appcast.xml
+          # Prove the signature is valid under the app's public key before publishing.
+          swift scripts/verify_sparkle_appcast.swift appcast.xml c11-macos.dmg \
+            "$SPARKLE_PUBLIC_KEY" "${DOWNLOAD_URL_PREFIX}c11-macos.dmg"
 
       - name: Upload release asset
         if: steps.guard_release_assets.outputs.skip_upload != 'true'
@@ -369,6 +367,24 @@ jobs:
             remote-daemon-assets/c11d-remote-manifest.json
           body_path: ${{ steps.release_notes.outputs.path }}
           overwrite_files: false
+
+      # After the upload: the dSYM upload is continue-on-error, so it never
+      # gates publishing and stays off the tag-to-published path. It still runs
+      # when the upload fails partway, so a binary users received symbolicates.
+      - name: Upload dSYMs to Sentry
+        if: ${{ !cancelled() && steps.guard_release_assets.outputs.skip_all != 'true' }}
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: stage-11-kl
+          SENTRY_PROJECT: c11
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
+            exit 0
+          fi
+          brew install getsentry/tools/sentry-cli || true
+          sentry-cli debug-files upload --include-sources build/Build/Products/Release/
 
       - name: Cleanup keychain
         if: always()

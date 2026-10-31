@@ -2,6 +2,8 @@
 
 `AGENTS.md` is a symlink to this file, so every harness (Claude Code, Codex, Grok, …) reads the same rules. Project rules belong here, not in one harness's memory.
 
+Mission, current state and next steps for each c11 workspace: `C11.md`.
+
 ## Mission
 
 c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown panels composed in one window: addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace as the atom of work.

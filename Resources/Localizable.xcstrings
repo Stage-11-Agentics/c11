@@ -80881,6 +80881,54 @@
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "已標記：%@"}},
         "ru": {"stringUnit": {"state": "translated", "value": "Флаг «%@»"}}
       }
+    },
+    "menu.view.sidebar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Sidebar"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "サイドバー"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Бічна панель"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "사이드바"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "侧边栏"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "側邊欄"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Боковое меню"}}
+      }
+    },
+    "menu.sidebar.doubleWide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Double Wide"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "2倍幅"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Подвійна ширина"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "두 배 너비"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "双倍宽度"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "雙倍寬度"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Двойная ширина"}}
+      }
+    },
+    "sidebar.tiles.toggle.tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Double-wide sidebar"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "幅が2倍のサイドバー"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Бічна панель подвійної ширини"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "너비가 두 배인 사이드바"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "双倍宽度侧边栏"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "雙倍寬度側邊欄"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Боковое меню двойной ширины"}}
+      }
+    },
+    "sidebar.tiles.noAgents": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "No agents"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "エージェントなし"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Немає агентів"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트 없음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无代理"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無代理"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Нет агентов"}}
+      }
     }
   }
 }

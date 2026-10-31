@@ -116,7 +116,7 @@ class ShortcutRoutingTestSupport: XCTestCase {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
         }
         XCTAssertTrue(FeedProjectionBridge.shared.snapshot().attentionRows.contains(where: { $0.panelID == panelID }))
-        let controller = TitlebarControlsAccessoryViewController(notificationStore: TerminalNotificationStore.shared)
+        let controller = TitlebarControlsAccessoryViewController(notificationStore: TerminalNotificationStore.shared, sidebarState: SidebarState())
         _ = controller.view
         return QuickViewFixture(appDelegate: appDelegate, windowId: windowId, window: window, manager: manager,
                                 controller: controller, original: original, target: target, panelID: panelID)
@@ -3994,5 +3994,72 @@ private final class CommandPaletteMarkedTextFieldEditor: NSTextView {
 
     override func hasMarkedText() -> Bool {
         hasMarkedTextForTesting
+    }
+}
+
+@MainActor
+final class SidebarTilesWindowTests: ShortcutRoutingTestSupport {
+    private var savedDelegate: AppDelegate?
+    private var savedControllerManager: WorkspaceManager?
+
+    override func setUp() {
+        savedDelegate = AppDelegate.shared
+        savedControllerManager = TerminalController.shared.workspaceManager
+        super.setUp()
+    }
+
+    override func tearDown() {
+        super.tearDown()
+        AppDelegate.shared = savedDelegate
+        TerminalController.shared.workspaceManager = savedControllerManager
+        savedDelegate = nil
+        savedControllerManager = nil
+    }
+
+    func testWindowOwnedModeAndOracleStayIndependent() throws {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let firstId = app.createMainWindow()
+        let secondId = app.createMainWindow()
+        let first = try XCTUnwrap(app.mainWindow(for: firstId))
+        let second = try XCTUnwrap(app.mainWindow(for: secondId))
+        let a = try XCTUnwrap(app.sidebarState(for: first))
+        let b = try XCTUnwrap(app.sidebarState(for: second))
+        a.persistedWidth = 238
+        XCTAssertFalse(a.isDoubleWide)
+        XCTAssertFalse(b.isDoubleWide)
+        a.toggleDoubleWide()
+        XCTAssertTrue(a.isDoubleWide)
+        XCTAssertFalse(b.isDoubleWide)
+        XCTAssertEqual(a.persistedWidth, 400)
+        let manager = try XCTUnwrap(app.workspaceManagerFor(windowId: firstId))
+        let selected = manager.selectedWorkspaceId
+        let key = NSApp.keyWindow
+        let oracle = try XCTUnwrap(app.sidebarLayout(for: manager))
+        XCTAssertEqual(oracle["double_wide"] as? Bool, true)
+        XCTAssertEqual(oracle["window_id"] as? String, firstId.uuidString)
+        XCTAssertEqual(manager.selectedWorkspaceId, selected)
+        XCTAssertTrue(NSApp.keyWindow === key)
+        a.resize(to: 200, initialWidth: 400)
+        XCTAssertTrue(a.isDoubleWide)
+        a.toggleDoubleWide()
+        XCTAssertFalse(a.isDoubleWide)
+        XCTAssertEqual(a.persistedWidth, 238)
+        XCTAssertEqual(b.persistedWidth, 200)
+    }
+
+    func testRestoredWindowUsesItsOwnSidebarSnapshot() throws {
+        let app = try XCTUnwrap(AppDelegate.shared)
+        let snapshot = SessionWindowSnapshot(frame: nil, display: nil,
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: []),
+            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 486,
+                                            doubleWide: true, singleWideWidth: 225))
+        let id = app.createMainWindow(sessionWindowSnapshot: snapshot)
+        let state = try XCTUnwrap(app.sidebarState(for: app.mainWindow(for: id)))
+        XCTAssertTrue(state.isDoubleWide)
+        XCTAssertEqual(state.persistedWidth, 486)
+        state.toggleDoubleWide()
+        XCTAssertEqual(state.persistedWidth, 225)
+        let fresh = app.createMainWindow()
+        XCTAssertFalse(try XCTUnwrap(app.sidebarState(for: app.mainWindow(for: fresh))).isDoubleWide)
     }
 }

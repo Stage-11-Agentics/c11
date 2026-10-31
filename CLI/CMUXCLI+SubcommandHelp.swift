@@ -1707,7 +1707,8 @@ extension CMUXCLI {
             Usage: c11 sidebar-state [flags]
 
             Dump all sidebar metadata for a workspace (cwd, git branch, ports,
-            status entries, progress, log entries).
+            status entries, progress, log entries). With --json, includes read-only
+            window layout: double_wide, requested_width, effective_width, columns.
             A standalone --window is not a workspace target for sidebar commands.
 
             Flags:

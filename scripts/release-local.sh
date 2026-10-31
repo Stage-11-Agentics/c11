@@ -23,11 +23,6 @@ SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 # The public half of the c11mux key; every shipped c11 trusts only this key.
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
 SPARKLE_FEED_URL="https://github.com/${REPO_SLUG}/releases/latest/download/appcast.xml"
-# Prebuilt Sparkle tools at the version sparkle_generate_appcast.sh and the
-# embedded Sparkle.framework pin (Package.resolved), so nothing is xcodebuilt
-# on this machine.
-SPARKLE_TOOLS_VERSION="2.9.3"
-SPARKLE_TOOLS_SHA256="74a07da821f92b79310009954c0e15f350173374a3abe39095b4fc5096916be6"
 # DTXcode of the toolchain the release must be built with. release.yml's
 # macos-15-xlarge runner shipped v0.67.0 with Xcode 16.4 (DTXcode 1640, SDK
 # macosx15.5). Atlas builds with Xcode 26.3 (2630, SDK macosx26.2), which links
@@ -551,17 +546,10 @@ fi
 
 # ---------------------------------------------------------------- appcast --
 step "Generate Sparkle appcast"
-SPARKLE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/c11/sparkle/$SPARKLE_TOOLS_VERSION"
-SPARKLE_BIN="$SPARKLE_DIR/bin"
-if [[ ! -x "$SPARKLE_BIN/generate_appcast" ]]; then
-  mkdir -p "$SPARKLE_DIR"
-  curl -fsSL -o "$SPARKLE_DIR/Sparkle.tar.xz" \
-    "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_TOOLS_VERSION/Sparkle-$SPARKLE_TOOLS_VERSION.tar.xz"
-  [[ "$(shasum -a 256 "$SPARKLE_DIR/Sparkle.tar.xz" | awk '{print $1}')" == "$SPARKLE_TOOLS_SHA256" ]] \
-    || { rm -f "$SPARKLE_DIR/Sparkle.tar.xz"; die "Sparkle $SPARKLE_TOOLS_VERSION tarball checksum mismatch"; }
-  tar -xf "$SPARKLE_DIR/Sparkle.tar.xz" -C "$SPARKLE_DIR"
-fi
-note "Sparkle tools: $SPARKLE_BIN ($SPARKLE_TOOLS_VERSION)"
+# Prebuilt, checksum-verified Sparkle tools (pin in fetch-sparkle-tools.sh),
+# so nothing is xcodebuilt on this machine.
+SPARKLE_BIN="$("$ROOT/scripts/fetch-sparkle-tools.sh")" || die "could not fetch Sparkle tools"
+note "Sparkle tools: $SPARKLE_BIN"
 DOWNLOAD_URL_PREFIX="https://github.com/$REPO_SLUG/releases/download/$TAG/"
 RELEASE_NOTES_URL="https://github.com/$REPO_SLUG/releases/tag/$TAG"
 APPCAST="$OUT/appcast.xml"
@@ -584,7 +572,7 @@ fi
 [[ -s "$KEY_DIR/key" ]] || die "no Sparkle private key"
 # The key goes by path, never through the environment or argv.
 SPARKLE_PRIVATE_KEY_FILE="$KEY_DIR/key" \
-  SPARKLE_BIN_DIR="$SPARKLE_BIN" SPARKLE_VERSION="$SPARKLE_TOOLS_VERSION" \
+  SPARKLE_BIN_DIR="$SPARKLE_BIN" \
   DOWNLOAD_URL_PREFIX="$DOWNLOAD_URL_PREFIX" RELEASE_NOTES_URL="$RELEASE_NOTES_URL" \
   "$ROOT/scripts/sparkle_generate_appcast.sh" "$DMG_RELEASE" "$TAG" "$APPCAST"
 rm -rf "$KEY_DIR"

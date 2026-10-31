@@ -2514,10 +2514,9 @@ class GhosttyApp {
         case GHOSTTY_ACTION_OPEN_URL:
             let openUrl = action.action.open_url
             guard let cstr = openUrl.url else { return false }
-            let urlString = String(
-                data: Data(bytes: cstr, count: Int(openUrl.len)),
-                encoding: .utf8
-            ) ?? ""
+            // Preserve the scheme even when an OSC 8 payload contains invalid
+            // UTF-8: a malformed internal URL must still be consumed.
+            let urlString = String(decoding: Data(bytes: cstr, count: Int(openUrl.len)), as: UTF8.self)
             if PanelLinkTarget.usesScheme(urlString) {
                 // Only mouseUp's synchronous dispatch can authorize a jump.
                 // An unpaired/background callback is still consumed: false

@@ -13,8 +13,31 @@ import UserNotifications
 @testable import c11
 #endif
 
+/// Private delegates replace AppDelegate.shared in init and may update the
+/// socket controller's active manager. Keep both host references alive and
+/// restore them before the next fixture uses the host's window registry.
 @MainActor
-final class AppDelegateWindowContextRoutingTests: XCTestCase {
+class IsolatedAppDelegateTestCase: XCTestCase {
+    private var originalDelegate: AppDelegate?
+    private var originalControllerManager: WorkspaceManager?
+
+    override func setUp() {
+        super.setUp()
+        originalDelegate = AppDelegate.shared
+        originalControllerManager = TerminalController.shared.workspaceManager
+    }
+
+    override func tearDown() {
+        AppDelegate.shared = originalDelegate
+        TerminalController.shared.workspaceManager = originalControllerManager
+        originalDelegate = nil
+        originalControllerManager = nil
+        super.tearDown()
+    }
+}
+
+@MainActor
+final class AppDelegateWindowContextRoutingTests: IsolatedAppDelegateTestCase {
     private func makeMainWindow(id: UUID) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 320),
@@ -333,7 +356,7 @@ final class AppDelegateWindowContextRoutingTests: XCTestCase {
 
 
 @MainActor
-final class AppDelegateLaunchServicesRegistrationTests: XCTestCase {
+final class AppDelegateLaunchServicesRegistrationTests: IsolatedAppDelegateTestCase {
     func testScheduleLaunchServicesRegistrationDefersRegisterWork() {
         _ = NSApplication.shared
         let app = AppDelegate()

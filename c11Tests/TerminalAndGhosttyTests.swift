@@ -1017,6 +1017,12 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
     }
 
     func testTerminalMouseDownDismissesUnreadWhenSurfaceIsAlreadyFirstResponder() {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
@@ -1089,6 +1095,12 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
     }
 
     func testTerminalKeyDownDismissesUnreadWhenSurfaceIsAlreadyFirstResponder() {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
@@ -1398,6 +1410,12 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
     }
 
     func testWorkspaceSelectionReleasesExistingEditorButPreservesEditorOpenedAfterSelection() throws {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let originalManager = appDelegate.workspaceManager
         let originalSidebarState = appDelegate.sidebarState

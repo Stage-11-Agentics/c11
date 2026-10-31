@@ -1407,6 +1407,12 @@ final class SessionPersistenceTests: XCTestCase {
 
     func testResigningActiveDoesNotSaveSessionSnapshot() async {
         await MainActor.run {
+            let hostDelegateBeforeFixture = AppDelegate.shared
+            let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+            defer {
+                AppDelegate.shared = hostDelegateBeforeFixture
+                TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+            }
             let app = AppDelegate()
             var saveCount = 0
             app.resignSnapshotWriterOverrideForTesting = {

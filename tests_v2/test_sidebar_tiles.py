@@ -190,7 +190,8 @@ time.sleep(11)
 assert not layout()['double_wide']
 shot('off-baseline')
 # Self-terminating recording on the already verified isolated guest display.
-RECORDING = subprocess.Popen(['screencapture', '-x', '-v', '-V60', '-D1', '-k', str(OUT/'tiles-toggle-drag.mov')])
+recording_path = OUT/f'tiles-toggle-drag-{PID}.mov'
+RECORDING = subprocess.Popen(['screencapture', '-x', '-v', '-V60', '-D1', '-k', str(recording_path)])
 atexit.register(stop_recording)
 press('titlebarControl.doubleWideSidebar')
 wait_for(lambda: layout()['double_wide'], 'glyph enables Tiles')
@@ -243,5 +244,8 @@ assert not layout(second_ws)['double_wide'] and layout(WS)['double_wide']
 call('session.save', include_scrollback=False)
 (OUT/'restore-expected.json').write_text(json.dumps(dict(first=WS, second=second_ws, first_layout=layout(WS), second_layout=layout(second_ws)), indent=2))
 note('two-window-isolation', first=layout(WS), second=layout(second_ws))
+assert RECORDING.wait(timeout=65) == 0, 'native recording failed'
+assert recording_path.stat().st_size > 1000, 'native recording is empty'
+note('native-recording', path=str(recording_path))
 CLIENT.close()
 print('PASS core Tiles acceptance; restore and extended action proofs are separate phases', flush=True)

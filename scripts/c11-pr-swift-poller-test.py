@@ -203,6 +203,9 @@ class World:
     def test_summary(self):
         return self.test_result
 
+    def phase_timings(self):
+        return {"compile_seconds": None, "test_seconds": None}
+
     def spawn(self, command, log_path=None):
         self.spawned.append(command)
         code = self.exits.pop(0) if self.exits else 0
@@ -211,6 +214,10 @@ class World:
     def post_status(self, body):
         self.posts.append(body)
         return {"status": 201, "headers": {}, "body": {}}
+
+    def main_statuses(self, sha):
+        state = self.head_status(sha)
+        return [{"context": poller.STATUS_CONTEXT, "state": state}] if state else []
 
     def head_status(self, sha):
         return self.reported.get(sha)
@@ -378,6 +385,239 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(restored.fetches, [])
 
 
+class ReleaseReuseTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.git(["init", "-b", "main"])
+        self.write("Sources/App.swift", "let value = 1\n")
+        self.write(poller.VERSION_PROJECT, "buildSettings = {\n\tMARKETING_VERSION = 1.5.1;\n\tCURRENT_PROJECT_VERSION = 141;\n};\n")
+        self.write("skills/MANIFEST.json", "{}\n")
+        self.base = self.commit()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, args):
+        return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", *args],
+                              cwd=self.repo, text=args[0] not in ("cat-file", "ls-tree"), capture_output=True, check=True)
+
+    def write(self, path, value):
+        file = self.repo / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(value)
+
+    def commit(self):
+        self.git(["add", "."])
+        self.git(["commit", "--allow-empty", "-m", "fixture"])
+        return self.git(["rev-parse", "HEAD"]).stdout.strip()
+
+    def release(self):
+        self.write(poller.VERSION_PROJECT, "buildSettings = {\n\tMARKETING_VERSION = 1.6.0;\n\tCURRENT_PROJECT_VERSION = 142;\n};\n")
+        self.write("CHANGELOG.md", "release notes\n")
+        self.write("docs/security.md", "documentation\n")
+        self.write("skills/release/SKILL.md", "release documentation\n")
+        return self.commit()
+
+    def world(self, sha):
+        world = World(body=[pr(sha=sha, ref="release/1.6.0")])
+        world.tip = sha
+        world.reported[self.base] = "success"
+        original = world.git
+
+        def git(args, cwd):
+            if args[0] in ("ls-tree", "cat-file"):
+                return self.git(args)
+            if args == ["rev-parse", "FETCH_HEAD^{commit}"]:
+                return Result(0, self.base + "\n")
+            if args[0] == "rev-list":
+                return Result(0, self.base + "\n")
+            return original(args, cwd)
+
+        world.git = git
+        return world
+
+    def test_release_reuses_successful_main_tree_without_build(self):
+        head = self.release()
+        world = self.world(head)
+        supervisor, outcome = run(world, self.root / "poller")
+        self.assertEqual(outcome, "reused")
+        self.assertEqual(supervisor.spawns, [])
+        self.assertEqual(world.posts[-1]["state"], "success")
+        self.assertIn(self.base, world.posts[-1]["description"])
+        result = _decisions(self.root / "poller")[-1]
+        self.assertEqual(result["reused_main_sha"], self.base)
+
+    def test_release_reuse_does_not_wait_for_a_busy_slot(self):
+        head = self.release()
+        for index, (feature_first, qualifies) in enumerate(((False, True), (True, True), (True, False))):
+            with self.subTest(feature_first=feature_first, qualifies=qualifies):
+                world = self.world(head)
+                world.held_slots.add(1)
+                if feature_first:
+                    world.body.insert(0, pr(number=8, sha=SHA_A, ref="feature"))
+                    world.tips["feature"] = SHA_A
+                if not qualifies:
+                    world.reported[self.base] = "pending"
+                supervisor, outcome = run(world, self.root / ("busy-%s" % index))
+                self.assertEqual(outcome, "reused" if qualifies else "no-start")
+                self.assertEqual(supervisor.spawns, [])
+                self.assertEqual(supervisor.fetches, [])
+                self.assertEqual(world.held_slots, {1})
+                if qualifies:
+                    self.assertEqual(world.posts[-1]["state"], "success")
+                    self.assertIn(self.base, world.posts[-1]["description"])
+                else:
+                    self.assertEqual(world.posts, [])
+                    self.assertEqual(_decisions(self.root / ("busy-%s" % index))[-1]["reason"], "slot")
+
+    def test_other_tree_differences_force_build(self):
+        samples = {
+            "Sources/App.swift": "let value = 2\n",
+            "skills/MANIFEST.json": '{"changed":true}\n',
+            "docs/script.py": "print('changed')\n",
+            "skills/release/helper.sh": "echo changed\n",
+            poller.VERSION_PROJECT: "buildSettings = {\n\tMARKETING_VERSION = 1.6.0;\n\tCURRENT_PROJECT_VERSION = 142;\n\tOTHER_SETTING = YES;\n};\n",
+        }
+        for index, (path, contents) in enumerate(samples.items()):
+            with self.subTest(path=path):
+                self.git(["reset", "--hard", self.base])
+                self.write(path, contents)
+                world = self.world(self.commit())
+                supervisor, outcome = run(world, self.root / ("poller-%s" % index))
+                self.assertEqual(outcome, "started")
+                self.assertEqual(len(supervisor.spawns), 1)
+                self.assertNotIn("reused", world.posts[-1]["description"])
+
+    def test_missing_or_failed_main_status_forces_build(self):
+        head = self.release()
+        for index, state in enumerate((None, "failure", "pending", "error")):
+            world = self.world(head)
+            world.reported[self.base] = state
+            supervisor, outcome = run(world, self.root / str(index))
+            self.assertEqual(outcome, "started")
+            self.assertEqual(len(supervisor.spawns), 1)
+
+    def test_main_backstop_success_reuses_and_other_contexts_or_conflicts_build(self):
+        head = self.release()
+        cases = [
+            ([{"context": "CI main (macOS)", "state": "success"}], True),
+            ([{"context": "c11/main-atlas", "state": "success"}], False),
+            ([], False),
+        ]
+        for bad in ("pending", "failure", "error"):
+            for context in poller.REUSE_CONTEXTS:
+                cases.append(([{"context": name, "state": bad if name == context else "success"}
+                               for name in poller.REUSE_CONTEXTS], False))
+        for index, (statuses, reuse) in enumerate(cases):
+            world = self.world(head)
+            world.main_statuses = lambda sha: statuses
+            supervisor, outcome = run(world, self.root / str(index))
+            self.assertEqual(outcome, "reused" if reuse else "started")
+            self.assertEqual(len(supervisor.spawns), 0 if reuse else 1)
+            if reuse:
+                self.assertIn("CI main (macOS)", world.posts[-1]["description"])
+
+    def test_unreadable_tree_and_version_expression_reject_reuse(self):
+        self.assertFalse(poller.release_tree_matches(lambda args, cwd: Result(1), self.repo, self.base, self.base))
+        self.write(poller.VERSION_PROJECT, "buildSettings = {\n\tMARKETING_VERSION = $(EVIL);\n\tCURRENT_PROJECT_VERSION = 142;\n};\n")
+        head = self.commit()
+        self.assertFalse(poller.release_tree_matches(lambda args, cwd: self.git(args), self.repo, self.base, head))
+
+    def test_project_newline_conversion_and_literal_sentinel_force_build(self):
+        for index, kind in enumerate(("crlf", "sentinel")):
+            self.git(["reset", "--hard", self.base])
+            project = self.repo / poller.VERSION_PROJECT
+            content = project.read_bytes().replace(b"1.5.1", b"1.6.0")
+            content = content.replace(b"\n", b"\r\n") if kind == "crlf" else content.replace(b"1.6.0", b"<VERSION>")
+            project.write_bytes(content)
+            head = self.commit()
+            world = self.world(head)
+            supervisor, outcome = run(world, self.root / str(index))
+            self.assertEqual(outcome, "started")
+            self.assertEqual(len(supervisor.spawns), 1)
+            # Exercise the production binary Git reader as well as the fixture adapter.
+            self.assertFalse(poller.release_tree_matches(poller.run_git, self.repo, self.base, head))
+
+    def test_docs_mode_change_and_symlink_reject_reuse(self):
+        self.write("docs/test.md", "documentation\n")
+        (self.repo / "docs/test.md").chmod(0o755)
+        head = self.commit()
+        self.assertFalse(poller.release_tree_matches(lambda args, cwd: self.git(args), self.repo, self.base, head))
+        self.git(["reset", "--hard", self.base])
+        (self.repo / "docs").mkdir(exist_ok=True)
+        (self.repo / "docs/test.md").symlink_to("../Sources/App.swift")
+        head = self.commit()
+        self.assertFalse(poller.release_tree_matches(lambda args, cwd: self.git(args), self.repo, self.base, head))
+
+    def test_changed_tip_before_reuse_never_posts_success(self):
+        world = self.world(self.release())
+        original = world.head_status
+
+        def status(sha):
+            result = original(sha)
+            if sha == self.base:
+                world.tip = SHA_B
+            return result
+
+        world.head_status = status
+        supervisor, outcome = run(world, self.root / "poller")
+        self.assertEqual(outcome, "no-start")
+        self.assertEqual(world.posts, [])
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_gitlink_change_rejects_reuse(self):
+        self.git(["update-index", "--add", "--cacheinfo", "160000,%s,ghostty" % self.base])
+        self.git(["commit", "-m", "gitlink"])
+        head = self.git(["rev-parse", "HEAD"]).stdout.strip()
+        self.assertFalse(poller.release_tree_matches(lambda args, cwd: self.git(args), self.repo, self.base, head))
+
+    def test_raw_tree_path_newline_change_rejects_reuse(self):
+        old, new = "Sources/name\r\n.swift", "Sources/name\n.swift"
+        self.write(old, "same bytes\n")
+        base = self.commit()
+        (self.repo / old).rename(self.repo / new)
+        head = self.commit()
+        self.assertFalse(poller.release_tree_matches(poller.run_git, self.repo, base, head))
+
+    def test_both_clients_require_status_response_for_exact_sha(self):
+        statuses = [{"context": "CI main (macOS)", "state": "success"}]
+        for client_type in (poller.GhClient, poller.AppClient):
+            for sha in (SHA_A, SHA_B, None):
+                with self.subTest(client=client_type.__name__, sha=sha):
+                    client = object.__new__(client_type)
+                    client.scoped = True
+                    client.narrowed_token = "fixture"
+                    response = {"status": 200, "body": {"sha": sha, "statuses": statuses, "total_count": len(statuses)}}
+                    client._call = unittest.mock.Mock(return_value=response)
+                    client._authed = unittest.mock.Mock(return_value=response)
+                    self.assertEqual(client.main_statuses(SHA_A), statuses if sha == SHA_A else None)
+
+    def test_ambiguous_or_malformed_status_list_rejects_reuse(self):
+        green = {"context": "CI main (macOS)", "state": "success"}
+        for statuses in (None, {}, [green, green], [{"context": "CI main (macOS)"}]):
+            self.assertIsNone(poller.successful_reuse_context(statuses))
+
+    def test_both_clients_reject_incomplete_status_pages(self):
+        page = [{"context": "CI main (macOS)", "state": "success"}]
+        page += [{"context": "other-%s" % index, "state": "success"} for index in range(29)]
+        for client_type in (poller.GhClient, poller.AppClient):
+            for total, link in ((31, None), (30, '<https://api.github.com/next>; rel="next"'),
+                                (None, None), (True, None)):
+                client = object.__new__(client_type)
+                client.scoped = True
+                client.narrowed_token = "fixture"
+                response = {"status": 200, "headers": {"Link": link} if link else {},
+                            "body": {"sha": SHA_A, "statuses": page, "total_count": total}}
+                client._call = unittest.mock.Mock(return_value=response)
+                client._authed = unittest.mock.Mock(return_value=response)
+                self.assertIsNone(client.main_statuses(SHA_A))
+                called = client._call if client_type is poller.GhClient else client._authed
+                self.assertTrue(called.call_args.args[1].endswith("status?per_page=100"))
+
+
 class CapacityAndRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -400,6 +640,36 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         supervisor, outcome = run(world, self.root)
         self.assertEqual(outcome, "no-start")
         self.assertEqual(supervisor.spawns, [])
+
+    def test_release_bypasses_guest_but_not_slot(self):
+        for held in (False, True):
+            world = World(body=[pr(ref="release/1.6.0")])
+            world.guest_names = ["c11-sb-demo"]
+            if held:
+                world.held_slots.add(1)
+            supervisor, outcome = run(world, self.root / str(held))
+            self.assertEqual(outcome, "no-start" if held else "started")
+            self.assertEqual(len(supervisor.spawns), 0 if held else 1)
+            if not held:
+                self.assertIn("--poller", supervisor.spawns[0]["command"])
+
+    def test_release_waiting_behind_feature_bypasses_guest(self):
+        world = World(body=[pr(), pr(number=8, ref="release/1.6.0")])
+        world.guest_names = ["c11-sb-demo"]
+        supervisor, outcome = run(world, self.root)
+        self.assertEqual(outcome, "started")
+        self.assertEqual(supervisor.reported, {8: SHA_A})
+        self.assertEqual([item["pr"] for item in supervisor.queue], [7])
+
+    def test_release_running_does_not_yield_but_still_revalidates(self):
+        world = World(body=[pr(ref="release/1.6.0")])
+        world.guest_names = ["c11-sb-demo"]
+        supervisor = poller.Supervisor(self.root, world)
+        record = {"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "release/1.6.0"}
+        self.assertIsNone(supervisor.watch(record))
+        self.assertEqual(world.kill_log, [])
+        world.tip = SHA_B
+        self.assertEqual(supervisor.watch(record), "superseded")
 
     def test_guest_mid_build_kills_and_posts_pending(self):
         held = subprocess.Popen(["sleep", "30"], start_new_session=True)
@@ -1508,147 +1778,85 @@ class ReviewRegressionTests(unittest.TestCase):
         poller.Supervisor(self.root, world).poll_once()
         self.assertEqual([(item["state"], item["description"]) for item in world.posts], [("success", "121s")])
 
-    def test_cold_success_over_budget_posts_pending_and_retries_warm(self):
+    def test_cold_success_over_budget_posts_success_without_retry(self):
         world = World(body=[pr()])
         spawn = world.spawn
-        durations = iter((121, 12))
 
         def run_spawn(command, log_path=None):
             poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
-            world.now += next(durations)
-            world.build_log = SUCCESS_LOG
-            key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
-            (self.root / "cache" / ("DerivedData-" + key) / "Build").mkdir(parents=True, exist_ok=True)
+            world.now += 293
             return spawn(command, log_path)
 
         world.spawn = run_spawn
         supervisor = poller.Supervisor(self.root, world)
-        supervisor.poll_once()
-        self.assertEqual(
-            [(item["state"], item["description"]) for item in world.posts],
-            [("pending", "cold cache exceeded budget; warm retry queued")],
-        )
-        self.assertFalse(any(item.get("state") == "failure" for item in _decisions(self.root)))
-        self.assertNotIn(7, supervisor.reported)
-        self.assertEqual(len(supervisor.spawns), 1, "the first build must run before any retry status is posted")
-
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertEqual([(item["state"], item["description"]) for item in world.posts],
+                         [("success", "293s")])
         world.now += 26
         supervisor.poll_once()
-        self.assertEqual(
-            [(item["state"], item["description"]) for item in world.posts],
-            [
-                ("pending", "cold cache exceeded budget; warm retry queued"),
-                ("success", "12s"),
-            ],
-        )
-        self.assertEqual(len(supervisor.spawns), 2)
+        self.assertEqual(len(supervisor.spawns), 1)
         self.assertEqual(supervisor.reported, {7: SHA_A})
 
-    def test_cold_retry_memory_survives_cache_eviction_and_yield(self):
-        shas = [SHA_A, SHA_B, "e" * 40, "f" * 40, "1" * 40]
-        items = [pr(number=7 + index, sha=sha, ref="feature-%s" % index)
-                 for index, sha in enumerate(shas)]
-        world = World(body=items)
-        world.tips.update({item["head"]["ref"]: item["head"]["sha"] for item in items})
-        world.resolved = {sha: "dependency-set-%s" % index for index, sha in enumerate(shas)}
-        spawn = world.spawn
-        supervisor = None
-        yield_next = {"value": False}
+    def test_cold_zero_tests_and_unreadable_result_keep_verdict(self):
+        for index, (summary, expected) in enumerate(((None, "error"),
+                ({"result": "Passed", "totalTestCount": 0, "skippedTests": 0, "failedTests": 0}, "failure"))):
+            world = World(body=[pr()])
+            world.test_result = summary
+            world.phase_timings = lambda: {"compile_seconds": 1, "test_seconds": None}
+            supervisor, _ = run(world, self.root / str(index))
+            self.assertEqual(world.posts[-1]["state"], expected)
+            self.assertEqual(len(supervisor.spawns), 1)
 
-        def run_spawn(command, log_path=None):
-            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
-            world.now += 121
-            world.build_log = SUCCESS_LOG
-            derived = Path(command[command.index("-derivedDataPath") + 1])
-            (derived / "Build").mkdir(parents=True, exist_ok=True)
-            if yield_next["value"]:
-                world.guest_names = ["c11-test-guest"]
-                pid = 99999999
-                world.alive[pid] = True
-                record = json.loads((self.root / "state" / "current.json").read_text())
-                record.update({"pgid": pid, "slot": 1})
-                self.assertEqual(supervisor.watch(record), "guest")
-                world.guest_names = []
-            return spawn(command, log_path)
+    def test_phase_timings_do_not_change_verdict(self):
+        for index, (report, expected) in enumerate((
+                ({"startTime": 100, "duration": 21.5}, 21.5),
+                ({"startTime": 100, "duration": -1}, None),
+                ({"startTime": True, "duration": 20}, None),
+                ({"startTime": 100, "duration": float("nan")}, None),
+                ({}, None))):
+            world = World(body=[pr()])
+            report["domainType"] = "Xcode.IDEActivityLogDomainType.BuildLog"
+            action = {"subsections": [{"domainType": "com.apple.dt.IDE.UnitTestLogSection",
+                "title": "Run test suite Fixture", "startTime": 125, "duration": 38.25}]}
+            world.phase_timings = lambda: poller.xcresult_phase_timings(report, action)
+            root = self.root / str(index)
+            run(world, root)
+            result = [row for row in _decisions(root) if row.get("decision") == "result"][-1]
+            self.assertEqual(result["state"], "success")
+            self.assertEqual(result["compile_seconds"], expected)
+            self.assertEqual(result["test_seconds"], 38.25)
 
-        world.spawn = run_spawn
-        supervisor = poller.Supervisor(self.root, world)
-        deps_by_pr = {}
-        for item in items:
-            self.assertEqual(supervisor.poll_once(), "started")
-            deps_by_pr[item["number"]] = poller.dependency_key(
-                [world.resolved[item["head"]["sha"]]] * 2, [GITLINK, GITLINK]
-            )
-            world.now += 26
+    def test_suite_timing_uses_parallel_envelope_without_nested_duplicates(self):
+        def suite(start, duration, children=None):
+            return {"domainType": "com.apple.dt.IDE.UnitTestLogSection", "title": "Run test suite Fixture",
+                    "startTime": start, "duration": duration, "subsections": children or []}
+        action = {"subsections": [suite(100, 20, [suite(105, 10)]), suite(110, 30)]}
+        timings = poller.xcresult_phase_timings({}, action)
+        self.assertEqual(timings, {"compile_seconds": None, "test_seconds": 40})
+        action["subsections"][1]["duration"] = -1
+        self.assertIsNone(poller.xcresult_phase_timings({}, action)["test_seconds"])
 
-        self.assertEqual(len([post for post in world.posts if post["state"] == "pending"]), 5)
-        first = items[0]
-        first_key = deps_by_pr[first["number"]]
-        self.assertFalse(supervisor._dependency_is_warm(first_key), "the first dependency key was pruned")
-        self.assertEqual(supervisor.cold_retries, {(item["number"], item["head"]["sha"]) for item in items})
-
-        # A yield does not consume the pending retry; the second actual build
-        # must classify normally even though the first dependency key was evicted.
-        yield_next["value"] = True
-        self.assertEqual(supervisor.poll_once(), "stopped")
-        self.assertIn((first["number"], first["head"]["sha"]), supervisor.cold_retries)
-        yield_next["value"] = False
-        self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
-        outcomes = []
-        for _ in range(5):
-            world.now += 26
-            outcomes.append(supervisor.poll_once())
-        self.assertEqual(outcomes, ["started"] * 5)
-        self.assertEqual(world.posts[-1]["state"], "success")
-        self.assertEqual(world.posts[-1]["description"], "121s")
-        self.assertEqual(len([post for post in world.posts
-                              if post["state"] == "pending"
-                              and post["description"] == "cold cache exceeded budget; warm retry queued"]), 5)
-        self.assertEqual(len(supervisor.spawns), 11, "five first attempts, one yielded retry, and five classified retries")
-        self.assertEqual(supervisor.cold_retries, set(), [
-            (item.get("pr"), item.get("sha"), item.get("state"))
-            for item in _decisions(self.root) if item.get("decision") == "result"
-        ])
-
-    def test_cold_retry_marker_survives_undelivered_terminal_status(self):
+    def test_timing_reader_error_does_not_hide_test_success(self):
         world = World(body=[pr()])
-        spawn = world.spawn
-        statuses = iter((201, 503, 503, 503, 201))
-        post = world.post_status
+        world.phase_timings = unittest.mock.Mock(side_effect=ValueError("bad timing data"))
+        run(world, self.root)
+        result = [row for row in _decisions(self.root) if row.get("decision") == "result"][-1]
+        self.assertEqual(result["state"], "success")
+        self.assertIsNone(result["compile_seconds"])
+        self.assertIsNone(result["test_seconds"])
 
-        def post_with_one_terminal_miss(body):
-            post(body)
-            return {"status": next(statuses), "headers": {}, "body": {}}
-
-        def run_spawn(command, log_path=None):
-            poller.write_running(self.root, {"pgid": 99999999, "acquired_at": world.now})
-            world.now += 121
-            world.build_log = SUCCESS_LOG
-            key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
-            (self.root / "cache" / ("DerivedData-" + key) / "Build").mkdir(parents=True, exist_ok=True)
-            return spawn(command, log_path)
-
-        world.post_status = post_with_one_terminal_miss
-        world.spawn = run_spawn
+    def test_cold_success_post_failure_rebuilds_without_pending(self):
+        world = World(body=[pr()])
+        replies = iter((503, 503, 503, 201))
+        original = world.post_status
+        world.post_status = lambda body: (original(body), {"status": next(replies), "headers": {}})[1]
         supervisor = poller.Supervisor(self.root, world)
-        self.assertEqual(supervisor.poll_once(), "started")
-        self.assertEqual(supervisor.cold_retries, {(7, SHA_A)})
-
+        supervisor.poll_once()
+        self.assertFalse(supervisor.reported)
         world.now += 26
-        self.assertEqual(supervisor.poll_once(), "started")
-        self.assertEqual(supervisor.reported, {})
-        self.assertEqual(supervisor.cold_retries, {(7, SHA_A)}, "an undelivered terminal status must retain retry memory")
-
-        key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
-        (self.root / "state" / "warmed-dependencies" / key).unlink()
-        self.assertFalse(supervisor._dependency_is_warm(key))
-        world.now += 26
-        self.assertEqual(supervisor.poll_once(), "started")
+        supervisor.poll_once()
         self.assertEqual(supervisor.reported, {7: SHA_A})
-        self.assertEqual(supervisor.cold_retries, set())
-        self.assertEqual(len([body for body in world.posts
-                              if body["state"] == "pending"
-                              and body["description"] == "cold cache exceeded budget; warm retry queued"]), 1)
+        self.assertTrue(all(body["state"] == "success" for body in world.posts))
 
     def test_status_post_retries_honour_retry_after(self):
         world = World(body=[pr()])
@@ -2016,8 +2224,16 @@ class RuntimeHarness(unittest.TestCase):
             root = pathlib.Path(%r)
             with open(root / "xcresult-argv.jsonl", "a") as handle:
                 handle.write(json.dumps(sys.argv[1:]) + "\\n")
-            print(json.dumps({"result": "Passed", "passedTests": 2, "failedTests": 0,
-                              "skippedTests": 0, "totalTestCount": 2}))
+            if sys.argv[3:6] == ["log", "--type", "build"]:
+                report = {"domainType": "Xcode.IDEActivityLogDomainType.BuildLog",
+                          "startTime": 100, "duration": 21.5}
+            elif sys.argv[3:6] == ["log", "--type", "action"]:
+                report = {"subsections": [{"domainType": "com.apple.dt.IDE.UnitTestLogSection",
+                    "title": "Run test suite Fixture", "startTime": 125, "duration": 38.25}]}
+            else:
+                report = {"result": "Passed", "passedTests": 2, "failedTests": 0,
+                          "skippedTests": 0, "totalTestCount": 2}
+            print(json.dumps(report))
         """ % str(self.root))
 
     def build(self, body):
@@ -2190,6 +2406,8 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertEqual(self.github.statuses(), [("pending", "build started"), ("success", self._results()[-1]["description"])])
         decided = self._results()[-1]
         self.assertEqual(decided["state"], "success")
+        self.assertEqual(decided["compile_seconds"], 21.5)
+        self.assertEqual(decided["test_seconds"], 38.25)
         self.assertEqual(decided["description"], "%ss" % int(decided["build_seconds"]))
         self.assertIn("post_seconds", decided)
         argv = json.loads((self.root / "argv.jsonl").read_text().splitlines()[0])
@@ -2209,7 +2427,10 @@ class RuntimeIntegrationTests(RuntimeHarness):
             "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture",
             "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry",
         ])
-        summary_argv = json.loads((self.root / "xcresult-argv.jsonl").read_text().splitlines()[0])
+        calls = [json.loads(line) for line in (self.root / "xcresult-argv.jsonl").read_text().splitlines()]
+        summary_argv = next(call for call in calls if call[2:4] == ["test-results", "summary"])
+        self.assertTrue(any(call[2:5] == ["log", "--type", "build"] for call in calls))
+        self.assertTrue(any(call[2:5] == ["log", "--type", "action"] for call in calls))
         self.assertEqual(summary_argv[:5], ["xcresulttool", "get", "test-results", "summary", "--path"])
         self.assertEqual(summary_argv[5], str(bundle))
         self.assertEqual(summary_argv[6:], ["--compact"])

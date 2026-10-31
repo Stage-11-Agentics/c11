@@ -35,9 +35,10 @@ bounded() { local s="$1"; shift; perl -e "alarm $s; exec @ARGV or exit 127" -- "
 work="$(mktemp -d "${TMPDIR:-/tmp}/c11-signcheck.XXXXXX")"
 chmod 700 "$work"
 account="c11-signcheck-$$"
+leases="${C11_SIGNING_LEASES:-$HOME/.acetate-release/leases}"
 cleanup() {
   bounded 30 security delete-generic-password -s https://sparkle-project.org -a "$account" "$kc" >/dev/null 2>&1 || true
-  bounded 30 "$helper" lock $$ >/dev/null 2>&1 || true
+  bounded 30 "$helper" lock $$ >/dev/null 2>&1 || echo "cleanup: the keychain helper failed to lock (exit $?)" >&2
   /bin/rm -rf "$work"
 }
 trap cleanup EXIT
@@ -112,8 +113,20 @@ cleanup
 trap - EXIT
 left="$( (ls -d "${TMPDIR:-/tmp}"/c11-signcheck.* 2>/dev/null || true) | wc -l | tr -d " ")"
 bounded 30 security find-generic-password -s https://sparkle-project.org -a "$account" "$kc" >/dev/null 2>&1 && item=present || item=gone
-echo "after: keychain $(bounded 30 "$helper" status), scratch dirs left $left, throwaway item $item"
+state="$(bounded 30 "$helper" status)"
+# Locked is required unless another live release still holds its own lease.
+others=""
+for f in "$leases"/*; do
+  [[ -e "$f" ]] || continue
+  holder="$(basename "$f")"
+  [[ "$holder" != "$$" ]] && kill -0 "$holder" 2>/dev/null && others="$others $holder"
+done
+echo "after: keychain $state${others:+ (other live lease:$others)}, scratch dirs left $left, throwaway item $item"
 [[ "$left" == "0" && "$item" == "gone" ]]
+if [[ -z "$others" && "$state" != "locked" ]]; then
+  echo "after: FAILED, the keychain is $state and no other release holds a lease" >&2
+  exit 1
+fi
 '
 
 # Sparkle tools on Atlas, from the same checksum-pinned tarball as releases.

@@ -248,10 +248,12 @@ note "remote daemon assets building in the background (pid $DAEMON_PID, log $DAE
 if [[ -n "$SIGNING_KEYCHAIN" ]]; then
   [[ -f "$SIGNING_KEYCHAIN" ]] || die "signing keychain not found: $SIGNING_KEYCHAIN"
   [[ -x "$SIGNING_KEYCHAIN_HELPER" ]] || die "signing keychain helper not found: $SIGNING_KEYCHAIN_HELPER"
-  # Sized for a cold build plus the tail; the exit trap locks it sooner.
+  # Sized for a cold build plus the tail; the exit trap locks it sooner. The
+  # trap is armed before the request: the helper can unlock and still fail its
+  # probe afterwards, and that keychain must not stay unlocked.
+  KEYCHAIN_LEASED=1
   perl -e 'alarm 90; exec @ARGV' "$SIGNING_KEYCHAIN_HELPER" request-unlock 3600 $$ >/dev/null \
     || die "could not unlock the signing keychain $SIGNING_KEYCHAIN through $SIGNING_KEYCHAIN_HELPER"
-  KEYCHAIN_LEASED=1
   note "signing keychain unlocked for this run (lease $$): $SIGNING_KEYCHAIN"
 fi
 IDENTITIES="$(security find-identity -v -p codesigning ${KC_ARGS[@]+"${SIGNING_KEYCHAIN}"})" || die "security find-identity failed"

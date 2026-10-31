@@ -59,8 +59,10 @@ if [[ "$mode" != "check" ]]; then
   key="$(cat)"
   [[ "$key" =~ ^[A-Za-z0-9+/=]+$ ]] || { echo "key is not base64" >&2; exit 1; }
 fi
+work="$(mktemp -d "${TMPDIR:-/tmp}/c11-key-move.XXXXXX")"
+# Armed before the request: an unlock whose probe then fails still relocks.
+trap "bounded 30 \"$helper\" lock $$ >/dev/null 2>&1 || true; /bin/rm -rf \"$work\"" EXIT
 bounded 60 "$helper" request-unlock 120 $$ >/dev/null
-trap "bounded 30 \"$helper\" lock $$ >/dev/null 2>&1 || true" EXIT
 if [[ "$mode" == "check" ]]; then
   bounded 30 security find-generic-password -s "$service" -a "$account" "$kc" >/dev/null 2>&1 || { echo missing; exit 0; }
 else
@@ -68,7 +70,7 @@ else
     "$service" "$account" "$key" "$kc" | bounded 30 security -i >/dev/null
   unset key
 fi
-derive="$(mktemp "${TMPDIR:-/tmp}/c11-derive.XXXXXX").swift"
+derive="$work/derive.swift"
 cat >"$derive" <<SWIFT
 import CryptoKit
 import Foundation
@@ -83,7 +85,6 @@ if d.count == 32, let k = try? Curve25519.Signing.PrivateKey(rawRepresentation: 
 } else { exit(1) }
 SWIFT
 pub="$(bounded 30 security find-generic-password -s "$service" -a "$account" -w "$kc" | bounded 120 swift "$derive")"
-/bin/rm -f "$derive"
 if [[ "$mode" == "delete" ]]; then
   bounded 30 security delete-generic-password -s "$service" -a "$account" "$kc" >/dev/null
 fi

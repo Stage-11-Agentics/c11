@@ -16,7 +16,7 @@ root="${1:-${XDG_CACHE_HOME:-$HOME/.cache}/c11/sparkle}"
 dir="$root/$SPARKLE_TOOLS_VERSION"
 bin="$dir/bin"
 
-if [[ ! -x "$bin/generate_appcast" || ! -x "$bin/sign_update" ]]; then
+if [[ ! -x "$bin/generate_appcast" || ! -x "$bin/sign_update" || ! -x "$bin/generate_keys" ]]; then
   mkdir -p "$dir"
   tarball="$dir/Sparkle.tar.xz"
   curl -fsSL --retry 3 -o "$tarball" \

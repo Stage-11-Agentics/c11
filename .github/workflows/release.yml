@@ -165,6 +165,13 @@ jobs:
           fi
           DERIVED_PUBLIC_KEY=$(swift scripts/derive_sparkle_public_key.swift "$SPARKLE_PRIVATE_KEY")
           echo "Derived Sparkle public key: $DERIVED_PUBLIC_KEY"
+          # Installed c11 builds trust only this key; an update signed with any
+          # other key would be rejected by every user, so stop before building.
+          EXPECTED_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
+          if [ "$DERIVED_PUBLIC_KEY" != "$EXPECTED_PUBLIC_KEY" ]; then
+            echo "SPARKLE_PRIVATE_KEY derives $DERIVED_PUBLIC_KEY, but installed builds trust $EXPECTED_PUBLIC_KEY" >&2
+            exit 1
+          fi
           echo "SPARKLE_PUBLIC_KEY=$DERIVED_PUBLIC_KEY" >> "$GITHUB_ENV"
 
       - name: Build app (Release)
@@ -362,9 +369,10 @@ jobs:
           overwrite_files: false
 
       # After the upload: the dSYM upload is continue-on-error, so it never
-      # gates publishing and stays off the tag-to-published path.
+      # gates publishing and stays off the tag-to-published path. It still runs
+      # when the upload fails partway, so a binary users received symbolicates.
       - name: Upload dSYMs to Sentry
-        if: steps.guard_release_assets.outputs.skip_all != 'true'
+        if: ${{ !cancelled() && steps.guard_release_assets.outputs.skip_all != 'true' }}
         continue-on-error: true
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

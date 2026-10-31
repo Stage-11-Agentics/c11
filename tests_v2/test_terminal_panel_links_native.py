@@ -265,7 +265,9 @@ class Proof:
         assert len(displays['displays']) == 1
         matches = [w for w in displays['windows'] if w['kCGWindowNumber'] == self.window_number]
         assert len(matches) == 1, displays
-        self.run(['/usr/sbin/screencapture', '-x', '-l', str(self.window_number), '-o', str(OUT / (name + '.png'))])
+        # The sole verified guest display avoids macOS's separate private-window
+        # picker permission, which can steal focus after a window capture.
+        self.run(['/usr/sbin/screencapture', '-x', '-D', '1', str(OUT / (name + '.png'))])
 
     def ax(self, identifier=None):
         entries = self.ui('inspect')
@@ -461,13 +463,28 @@ finally:
     def click_link(self, kind, command=True):
         x, y = self.point(kind)
         try:
-            self.native(*(['kd:cmd'] if command else []), f'm:{x},{y}', 'w:300')
+            if command:
+                # Drive the real focused-terminal flow. Cmd flags must reach
+                # this surface before Ghostty computes the hovered link.
+                self.run(['/opt/homebrew/bin/cliclick', 'ku:cmd'])
+                blank_x = self.terminal_frame['position'][0] + 20
+                blank_y = self.terminal_frame['position'][1] + self.terminal_frame['size'][1] - 30
+                self.native_click(blank_x, blank_y)
+                self.native('kd:cmd')
+                self.native_mouse(x, y, (5,), command=True)
+                self.wait(lambda: any(self.urls[kind] in str(e.get('value', ''))
+                                      for e in self.ax(PREVIEW_ID)), kind + ' actual link preview')
+            else:
+                self.native_mouse(x, y, (5,))
             self.native_click(x, y, command=command)
         finally:
             if command:
                 self.run(['/opt/homebrew/bin/cliclick', 'ku:cmd'])
 
     def native_click(self, x, y, command=False):
+        self.native_mouse(x, y, (1, 2), command=command)
+
+    def native_mouse(self, x, y, event_types, command=False):
         # Explicit HID mouse events were independently proved against this
         # guest after cliclick's combined key/move/click did not activate links.
         self.ensure_frontmost()
@@ -481,7 +498,7 @@ finally:
         cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
         cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         cf.CFRelease.argtypes = [ctypes.c_void_p]
-        for event_type in (1, 2):
+        for event_type in event_types:
             event = cg.CGEventCreateMouseEvent(None, event_type, Point(x, y), 0)
             assert event
             cg.CGEventSetFlags(event, (1 << 20) if command else 0)
@@ -615,18 +632,18 @@ finally:
         self.hover()
         self.call('debug.flash.reset')
         self.flash_counts = {}
+        # The browser was made the destination's remembered panel during
+        # setup. Visit it before terminal links replace that remembered panel.
+        self.activation('workspace', self.destination, self.browser)
+        self.screenshot('03-workspace-remembered-browser')
+        self.back()
         for kind in ('bare', 'claude', 'codex'):
             for index in range(3):
-                self.call('panel.focus', workspace_id=self.destination, panel_id=self.browser)
                 self.activation(kind, self.destination, self.target)
                 self.screenshot(f'0{1 if kind == "bare" else 2}-{kind}-{index + 1}-landing')
                 self.back()
         for _ in range(3):
             self.activation('current', self.source_workspace, self.source)
-        self.call('panel.focus', workspace_id=self.destination, panel_id=self.browser)
-        self.activation('workspace', self.destination, self.browser)
-        self.screenshot('03-workspace-remembered-browser')
-        self.back()
         self.rejected_links()
         self.cli_forms()
         self.copy_link(SOURCE_TITLE, 'c11://panel/' + self.source.lower())

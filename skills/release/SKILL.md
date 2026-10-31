@@ -135,6 +135,11 @@ This is a checklist trigger, not a CI gate.
     build-script changes AND only with explicit operator accept-the-risk).
 - Don't drift past this decision. Default is rebuild; deviating is explicit.
 
+6.7. Pre-build the release on Atlas, in parallel with staging and CI:
+- From a clean checkout at the tested head, run `scripts/release-local.sh --dry-run vX.Y.Z`. It builds the production app on Atlas (cold, wholemodule, arm64, Xcode 26.3; about 6-9 minutes), rehearses every step up to notarization, and keeps the build in `build-release-local/vX.Y.Z/pristine` for the real run to reuse.
+- The tree must be clean: a build that carried uncommitted files cannot be reused. Rerun 6.7 whenever the tested head changes.
+- Before the first real release on a machine: the `c11-notary` notarytool keychain profile must exist (the operator stores it once with `xcrun notarytool store-credentials c11-notary --apple-id <id> --team-id UKQ4QALWD4`), and the first real run shows keychain dialogs for the Sparkle key and the Developer ID key that the operator answers with Always Allow.
+
 7. Create release PR:
 - `gh pr create --title "Release vX.Y.Z" --body "..."`
 - Include a concise changelog summary in the PR body.
@@ -154,18 +159,19 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
   test -n "$SHA" || { echo "STOP: no tested head"; exit 1; }
   test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
   git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | grep -m1 MARKETING_VERSION   # must read X.Y.Z
-  git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # release.yml needs it
+  git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # the release needs it
   gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -qx success || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
   gh pr checks <release PR> || { echo "STOP: a PR check is failing or pending"; exit 1; }
   ```
   Run the gate as a script or in an agent's shell: `exit` closes an interactive terminal.
   A stale local tag (notably `nightly`) makes `git fetch` fail with "would clobber existing tag" and can leave refs unmoved: prune it (`git tag -d nightly` or `git fetch --prune --prune-tags origin`) and re-check.
 - `git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"` (annotated; local git config rejects a lightweight `git tag vX.Y.Z` with "no tag message?")
-- `git push origin vX.Y.Z`
-- **If you tagged the wrong commit and the release run already started:** run `gh run cancel <id>`. Release runs take 33 to 41 minutes, about 30 of them before signing, so a quick catch publishes nothing. Delete the tag in both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), re-verify the gate, then re-tag and push.
+- `git push origin vX.Y.Z`. A tag push starts no workflow.
+- **If you tagged the wrong commit:** nothing is published until step 10 finishes. Stop the release run, delete the tag in both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), re-verify the gate, then re-tag and push.
 
-10. Verify release workflow and assets:
-- `gh run watch <run id> --exit-status`
+10. Publish with `scripts/release-local.sh`:
+- From the same clean checkout at the tag, on the operator's Mac: `scripts/release-local.sh --reuse-build vX.Y.Z`. It reuses the 6.7 build after checking its identity (commit, unsigned executable hash, bundle id, Xcode pin, arm64), then signs, notarizes the app and the DMG, generates and verifies the appcast, publishes the GitHub release, and dispatches the Homebrew cask update. About 3-5 minutes, most of it Apple's notarization. Without a 6.7 build, drop `--reuse-build` and it builds first.
+- The summary prints each step's seconds and appends them to `build-release-local/timings.jsonl`. Add the release's row to `docs/release-speed.md`.
 - Confirm the release exists in GitHub Releases, is neither a draft nor a prerelease, and includes `c11-macos.dmg`.
 - `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints `vX.Y.Z`, and `releases/latest/download/appcast.xml` serves `X.Y.Z` with the new build number.
 
@@ -217,26 +223,22 @@ Updates both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (build number). T
 
 **Default policy:** bump the minor version unless the user explicitly asks for patch or major.
 
-## Manual release (fallback)
+## GitHub fallback (Atlas or this Mac unavailable)
 
-If not using the `/release` command:
+`release.yml` runs the same job on a GitHub `macos-26` runner (Xcode 26.3, arm64) when the local path cannot run. It starts only by hand, on an existing tag:
 
 ```bash
-git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"   # the tested head, after the step 9 gate
-git push origin vX.Y.Z
+gh workflow run release.yml --repo Stage-11-Agentics/c11 --ref vX.Y.Z
 gh run watch --repo Stage-11-Agentics/c11
 ```
 
-Use the annotated form (`-a -m`). A lightweight `git tag vX.Y.Z` is rejected with "no tag message?" because of local git config (likely `tag.gpgSign` or equivalent forcing all tags to be annotated).
+It takes about 25-35 minutes. `release-local.sh` refuses to publish while a `release.yml` run for the same tag is active, so the two never race. Use the annotated tag form (`-a -m`): a lightweight `git tag vX.Y.Z` is rejected with "no tag message?" by local git config.
 
-## Local release (Actions unavailable)
+## Local release notes
 
-When `release.yml` cannot run (runner billing, outage), `scripts/release-local.sh vX.Y.Z` performs the same job: the Release build runs on Atlas through `scripts/remote-build.sh`, and the rest (daemon assets, Sparkle keys, codesign, notarize, staple, DMG, appcast, `gh release`) runs on this Mac. Walkthrough: `.claude/commands/release-local.md`.
-
-- Tag first (step 9). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
-- Run `--dry-run` first. It stops before notarization, rehearses the DMG and appcast with a throwaway Sparkle key, and publishes nothing.
-- A real run needs the `c11-notary` notarytool keychain profile. It also needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
-- The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`). The release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
+- `scripts/release-local.sh --help` lists the options; `.claude/commands/release-local.md` walks through a run.
+- A real run needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin (2630, Xcode 26.3).
+- The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`), and the release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
 
 ## Reference
 

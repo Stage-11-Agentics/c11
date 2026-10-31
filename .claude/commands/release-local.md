@@ -1,6 +1,6 @@
 # Release Local
 
-Ship a c11 production release without GitHub Actions, through `scripts/release-local.sh`. Use it when the Actions release workflow cannot run (runner billing, outage). The script mirrors `.github/workflows/release.yml` step for step: the Release build runs on Atlas, and signing, notarization, DMG, Sparkle appcast and `gh release` run on this Mac. The `gh release` calls use the REST API, so Actions billing does not apply to them.
+Ship a c11 production release through `scripts/release-local.sh`, the default release path (C11-542). `release.yml` is the manual GitHub fallback. The script mirrors `.github/workflows/release.yml` step for step: the Release build runs on Atlas, and signing, notarization, DMG, Sparkle appcast and `gh release` run on this Mac. The `gh release` calls use the REST API, so Actions billing does not apply to them.
 
 ## Steps
 
@@ -8,7 +8,7 @@ Ship a c11 production release without GitHub Actions, through `scripts/release-l
 
 Follow `skills/release/SKILL.md` through tagging: choose the version, update `CHANGELOG.md`, bump with `./scripts/bump-version.sh`, then gate and push the annotated tag `vX.Y.Z` on the tested release-branch head. Merge the branch back into `main` after the release is verified (skill step 11).
 
-The tag push also starts `release.yml`. If that run is queued or in progress, cancel it (`gh run cancel <id> --repo Stage-11-Agentics/c11`); the script refuses to publish while it is active.
+A tag push starts no workflow. If someone dispatched the `release.yml` fallback for this tag, the script refuses to publish while that run is active.
 
 ### 2. Check out the tag cleanly
 

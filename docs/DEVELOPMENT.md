@@ -131,7 +131,7 @@ Covered in [`../CONTRIBUTING.md`](../CONTRIBUTING.md#the-hot-reload-loop) and de
 
 ## Release
 
-Release machinery lives in `scripts/` (signing, notarization, DMG assembly, appcast, Homebrew cask bump) and `.github/workflows/release.yml`. The flow is documented in [`../skills/release/SKILL.md`](../skills/release/SKILL.md) and triggered by the `/release` command.
+Release machinery lives in `scripts/` (signing, notarization, DMG assembly, appcast, Homebrew cask bump). `scripts/release-local.sh` runs a release; `.github/workflows/release.yml` is the manual fallback. The flow is documented in [`../skills/release/SKILL.md`](../skills/release/SKILL.md) and triggered by the `/release` command.
 
 ## Ghostty submodule
 

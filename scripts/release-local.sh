@@ -359,7 +359,7 @@ check_guard() {
     *) die "unexpected guard state: $guard" ;;
   esac
 }
-# A tag push also starts release.yml; two publishers must never race. Fails
+# A dispatched release.yml fallback run would publish too; two publishers must never race. Fails
 # closed: an API error stops a real run.
 check_active_runs() {
   local runs

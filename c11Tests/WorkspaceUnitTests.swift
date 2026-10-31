@@ -3762,3 +3762,47 @@ final class WorkspacePanelIconColorTests: XCTestCase {
         XCTAssertEqual(restored.bonsplitController.tab(restoredBonsplitTabId)?.customColorHex, navy)
     }
 }
+
+@MainActor
+final class WorkspaceMailboxMoveTests: XCTestCase {
+    func testMoveAndRollbackKeepQueueOwnershipCoverageCapAndInFlightReceiver() throws {
+        let source = Workspace(), destination = Workspace()
+        let panel = try XCTUnwrap(source.focusedPanelId)
+        let sourcePane = try XCTUnwrap(source.paneId(forPanelId: panel))
+        let destinationPane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        let now = Date()
+        let state = source.debugMailboxStdinState
+        state.buffer.noteAgentProcess(surfaceId: panel, process: .init(pid: 123, startTime: 456))
+        state.buffer.noteAgentTurn(surfaceId: panel, atPrompt: true, at: now)
+        state.buffer.enqueue(surfaceId: panel, entry: .init(id: "old-mail", recipientName: "agent",
+            block: "held", bufferedAt: now, inboxWorkspaceId: source.id))
+        state.doorbell.update(surfaceId: panel) { ledger in
+            for _ in 0..<MailboxDoorbell.rateCap { ledger.beginAttempt(at: now, epoch: "same-turn") }
+            ledger.coveredIds = ["already-delivered"]
+        }
+        XCTAssertTrue(FeedAnswerInFlight.begin(panelID: panel))
+        defer { FeedAnswerInFlight.end(panelID: panel) }
+        let detached = try XCTUnwrap(source.detachPanel(panelId: panel))
+        let callbackReceiver = detached.mailbox.owner
+        XCTAssertNil(callbackReceiver.workspace)
+        XCTAssertFalse(FeedAnswerInFlight.begin(panelID: panel), "detach must not release an active paste")
+        XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: destinationPane, focus: false), panel)
+        XCTAssertTrue(callbackReceiver.workspace === destination)
+        XCTAssertEqual(destination.debugMailboxStdinState.buffer.agentProcess(surfaceId: panel), .init(pid: 123, startTime: 456))
+        XCTAssertEqual(destination.debugMailboxStdinState.buffer.queuedEntries(surfaceId: panel).first?.inboxWorkspaceId, source.id)
+        let movedLedger = destination.debugMailboxStdinState.doorbell.ledger(for: panel)
+        XCTAssertTrue(movedLedger.inFlight)
+        XCTAssertEqual(movedLedger.coveredIds, ["already-delivered"])
+        XCTAssertEqual(MailboxDoorbell.decide(.init(recentAttempts: movedLedger.rings(at: now))), .skip(reason: "rate_capped"))
+        let rollback = try XCTUnwrap(destination.detachPanel(panelId: panel))
+        XCTAssertEqual(source.attachDetachedPanel(rollback, inPane: sourcePane, focus: false), panel)
+        XCTAssertTrue(callbackReceiver.workspace === source)
+        XCTAssertFalse(FeedAnswerInFlight.begin(panelID: panel), "rollback must not release an active paste")
+        let restored = source.debugMailboxStdinState.doorbell.ledger(for: panel)
+        XCTAssertEqual(restored, movedLedger)
+        // The original async receiver finishes the one reservation after rollback.
+        callbackReceiver.workspace?.debugMailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: panel)
+        XCTAssertFalse(source.debugMailboxStdinState.doorbell.ledger(for: panel).inFlight)
+        XCTAssertEqual(source.debugMailboxStdinState.doorbell.ledger(for: panel).rings(at: now), MailboxDoorbell.rateCap)
+    }
+}

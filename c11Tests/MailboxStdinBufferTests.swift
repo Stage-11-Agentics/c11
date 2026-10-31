@@ -578,3 +578,93 @@ final class MailboxNoOpReturnTests: XCTestCase {
         XCTAssertEqual(admitted, .doorbell(bytes: entry.block.utf8.count, effect: .ring))
     }
 }
+
+/// C11-522: exercise the production transfer, admission and off-main inbox lookup.
+final class MailboxMoveStateTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 5_000)
+
+    func testMoveRetainsWorkingClockPinnedProcessAndOriginalInbox() {
+        let panel = UUID(), origin = UUID()
+        var source = MailboxStdinBuffer(), destination = MailboxStdinBuffer()
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        source.noteAgentProcess(surfaceId: panel, process: process)
+        source.noteAgentAttached(surfaceId: panel, at: now)
+        source.noteAgentTurn(surfaceId: panel, atPrompt: true, at: now)
+        source.noteSubmit(surfaceId: panel, at: now.addingTimeInterval(1))
+        source.enqueue(surfaceId: panel, entry: .init(id: "held", recipientName: "agent",
+            block: "held", bufferedAt: now, inboxWorkspaceId: origin))
+        let epoch = source.ringEpoch(surfaceId: panel)
+        let state = source.takePanel(panel)
+        destination.restorePanel(panel, state: state)
+        XCTAssertNil(source.agentProcess(surfaceId: panel))
+        XCTAssertEqual(source.pendingCount(surfaceId: panel), 0)
+        XCTAssertEqual(destination.agentProcess(surfaceId: panel), process)
+        XCTAssertEqual(destination.ringEpoch(surfaceId: panel), epoch)
+        XCTAssertEqual(destination.queuedEntries(surfaceId: panel).first?.inboxWorkspaceId, origin)
+        // A delayed pre-submit idle report must not open the moved panel.
+        destination.noteAgentTurn(surfaceId: panel, atPrompt: true, at: now)
+        XCTAssertEqual(destination.promptGate(surfaceId: panel, isAgentKind: true,
+            agentOwnsTerminal: true, journalTurnOpen: false, now: now.addingTimeInterval(2)), .closed)
+        XCTAssertEqual(destination.workingDecayDeadline(surfaceId: panel), now.addingTimeInterval(121))
+        destination.noteAgentTurn(surfaceId: panel, atPrompt: true, at: now.addingTimeInterval(3))
+        XCTAssertEqual(destination.promptGate(surfaceId: panel, isAgentKind: true,
+            agentOwnsTerminal: true, journalTurnOpen: false, now: now.addingTimeInterval(4)), .open)
+    }
+
+    func testPendingChecksRetainOriginAcrossMovesAndObserveDrain() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let panel = UUID(), origin = UUID(), destination = UUID()
+        let inbox = MailboxLayout.inboxURL(state: root, workspaceId: origin, panelId: panel)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let entry = MailboxStdinBuffer.Entry(id: "held", recipientName: "agent", block: "held",
+            bufferedAt: now, inboxWorkspaceId: origin)
+        try Data("mail".utf8).write(to: inbox.appendingPathComponent("held.msg"))
+        XCTAssertEqual(MailboxStdinDelivery.pendingIDs([entry], stateURL: root,
+            workspaceId: destination, panelId: panel), ["held"])
+        _ = try MailboxIO.claim(id: "held", inbox: inbox)
+        XCTAssertEqual(MailboxStdinDelivery.pendingIDs([entry], stateURL: root,
+            workspaceId: destination, panelId: panel), [])
+    }
+
+    func testArrivalLogsEveryEarlyHoldWithoutReadingOrTyping() {
+        let cases: [(MailboxStdinDelivery.Gate, String)] = [
+            (.init(isAgentKind: false), "not_agent"),
+            (.init(isAgentKind: true, ownsTerminal: false), "agent_not_foreground"),
+            (.init(ownsTerminal: true, journalTurnOpen: true), "gate_closed"),
+            (.init(ownsTerminal: true, inputTransactionActive: true), "input_transaction"),
+        ]
+        for (gate, reason) in cases {
+            let state = MailboxStdinBufferStore(), panel = UUID()
+            var decisions: [MailboxDoorbell.Decision] = []
+            var reads = 0
+            let result = MailboxStdinDelivery.deliver(state: state, surfaceId: panel,
+                entry: .init(id: "mail", recipientName: "agent", block: "mail", bufferedAt: now),
+                gate: gate, logEvicted: { _ in XCTFail("unexpected eviction") },
+                ringInput: { _ in reads += 1; return .init() },
+                noteRing: { decision, _ in decisions.append(decision) })
+            XCTAssertEqual(result, .buffered(bytes: 4), reason)
+            XCTAssertEqual(decisions, [.skip(reason: reason)], reason)
+            XCTAssertEqual(reads, 0, reason)
+            XCTAssertEqual(state.buffer.pendingCount(surfaceId: panel), 1, reason)
+        }
+    }
+
+    func testPostStatGateRefusesChangedDraftDialogShellAndTransaction() {
+        let state = MailboxStdinBufferStore(), panel = UUID()
+        let open = MailboxStdinDelivery.Gate(ownsTerminal: true, now: now)
+        // The pending stat owns a reservation, not a right to paste over newer input.
+        for (prompt, reason): (PromptInputState, String) in [(.draft, "draft"), (.dialog, "dialog")] {
+            XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: panel,
+                gate: open, input: .init(inFlight: true, prompt: prompt)), .skip(reason: reason))
+        }
+        XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: panel,
+            gate: .init(isAgentKind: false, ownsTerminal: false), input: .init()), .skip(reason: "not_agent"))
+        XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: panel,
+            gate: .init(ownsTerminal: true, inputTransactionActive: true), input: .init()), .skip(reason: "input_transaction"))
+        XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: panel,
+            gate: .init(ownsTerminal: false), input: .init()), .skip(reason: "agent_not_foreground"))
+        XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: panel,
+            gate: open, input: .init(inFlight: true, prompt: .empty)), .ring)
+    }
+}

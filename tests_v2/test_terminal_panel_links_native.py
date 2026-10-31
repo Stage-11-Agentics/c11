@@ -78,6 +78,29 @@ function run(args) {
     var hits = [], menuHits = [];
     function walk(e, depth) {
         if (depth > 18) return;
+        if (op === 'menu') {
+            if (menuHits.length) return;
+            var menuRole = attr(e, 'AXRole');
+            if (menuRole === 'AXMenuItem') {
+                var menuTitle = attr(e, 'AXTitle'), menuDescription = attr(e, 'AXDescription');
+                hits.push({role: menuRole, title: menuTitle, description: menuDescription});
+                if (menuTitle === args[2] || menuDescription === args[2]) menuHits.push(e);
+            }
+            if (menuRole === 'AXTextArea' || menuRole === 'AXWebArea') return;
+            try { e.uiElements().forEach(function(c) { walk(c, depth + 1); }); } catch (_) {}
+            return;
+        }
+        if (op === 'find') {
+            if (hits.length) return;
+            var identifier = attr(e, 'AXIdentifier'), findRole = attr(e, 'AXRole');
+            if (identifier === args[2]) {
+                hits.push({id: identifier, role: findRole, value: attr(e, 'AXValue'), title: attr(e, 'AXTitle')});
+                return;
+            }
+            if (findRole === 'AXTextArea' || findRole === 'AXWebArea') return;
+            try { e.uiElements().forEach(function(c) { walk(c, depth + 1); }); } catch (_) {}
+            return;
+        }
         var role = attr(e, 'AXRole'), title = attr(e, 'AXTitle'), desc = attr(e, 'AXDescription');
         var info = {id: attr(e, 'AXIdentifier'), role: role, title: title, description: desc,
             value: attr(e, 'AXValue'), help: attr(e, 'AXHelp'), position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')};
@@ -87,9 +110,10 @@ function run(args) {
         try { e.uiElements().forEach(function(c) { walk(c, depth + 1); }); } catch (_) {}
     }
     if (op === 'menu') {
-        // Context menus are direct process children; avoid walking web content
-        // or the complete window tree while AppKit is tracking a menu.
+        // AppKit can expose a context menu on the process or beneath its
+        // originating window/control. Search only role/title until found.
         p.menus().forEach(function(m) { walk(m, 0); });
+        if (!menuHits.length) p.windows().forEach(function(w) { walk(w, 0); });
         if (menuHits.length !== 1) throw Error('Expected one native menu item ' + args[2] + ': ' + JSON.stringify(hits));
         menuHits[0].click();
         return JSON.stringify(hits);
@@ -270,8 +294,9 @@ class Proof:
         self.run(['/usr/sbin/screencapture', '-x', '-D', '1', str(OUT / (name + '.png'))])
 
     def ax(self, identifier=None):
-        entries = self.ui('inspect')
-        return [e for e in entries if e['id'] == identifier] if identifier else entries
+        # Query only the required attributes and stop at the target. A full
+        # window inventory can outlast the five-second nonmodal notice.
+        return self.ui('find', identifier) if identifier else self.ui('inspect')
 
     def terminal_text(self):
         result = self.call('panel.read_text', workspace_id=self.source_workspace, panel_id=self.source)
@@ -593,7 +618,7 @@ finally:
 
     def copy_link(self, title, expected, sidebar=False):
         entries = self.ax()
-        sidebars = [e for e in entries if e['id'] == 'Sidebar']
+        sidebars = [e for e in entries if e['id'] == 'Sidebar' and e['role'] == 'AXScrollArea']
         assert len(sidebars) == 1 and sidebars[0]['position'] and sidebars[0]['size'], sidebars
         edge = sidebars[0]['position'][0] + sidebars[0]['size'][0]
         def matches_title(entry):
@@ -604,6 +629,25 @@ finally:
                       and ((e['position'][0] < edge) if sidebar else (e['position'][0] >= edge))]
         if not sidebar:
             candidates = [e for e in candidates if e['position'][1] < self.terminal_frame['position'][1]]
+        if not candidates:
+            # SwiftUI exposes these labels as anonymous controls on the guest.
+            # Bind their AX rectangles to the independently verified fixture
+            # order, then let the exact clipboard URI verify the target.
+            if sidebar:
+                workspaces = self.call('workspace.list', window_id=self.window)['workspaces']
+                assert [w['id'].lower() for w in workspaces] == [self.source_workspace.lower(), self.destination.lower()]
+                rows = sorted((e for e in entries if e['id'] == 'SidebarTabSurfaceMetricsPlaceholder'
+                               and e['position'] and e['size']), key=lambda e: e['position'][1])
+                assert len(rows) == 2 and rows[0]['position'][1] + rows[0]['size'][1] <= rows[1]['position'][1], rows
+                assert title == DESTINATION_TITLE
+                candidates = [rows[1]]
+            else:
+                panels = self.call('panel.list', workspace_id=self.source_workspace)['panels']
+                assert len(panels) == 1 and panels[0]['id'].lower() == self.source.lower()
+                candidates = [e for e in entries if e['role'] == 'AXButton' and e['position'] and e['size']
+                              and e['position'][0] >= edge and e['position'][1] < self.terminal_frame['position'][1]
+                              and e['size'][0] > 50 and e['size'][1] >= 20]
+                assert len(candidates) == 1, candidates
         assert candidates, ('native context target missing', title, sidebar)
         # Nested AX wrappers can share the same label. The smallest labelled
         # rectangle is the actual title; its center must lie inside every

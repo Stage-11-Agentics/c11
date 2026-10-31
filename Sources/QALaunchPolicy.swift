@@ -76,3 +76,5 @@ enum QALaunchPolicy: Equatable {
         self == .on(.fresh)
     }
 }
+
+// C11-538 CI measurement sample 1.

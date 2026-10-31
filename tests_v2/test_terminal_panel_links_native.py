@@ -320,11 +320,17 @@ class Proof:
         assert len(workspaces) == 1, 'fresh QA guest required'
         self.call('workspace.rename', workspace_id=self.source_workspace, title=SOURCE_TITLE + ' Workspace')
         panels = self.call('panel.list', workspace_id=self.source_workspace)['panels']
-        assert len(panels) == 1 and panels[0]['type'] == 'terminal', panels
-        self.source = panels[0]['id']
+        assert panels and all(p['type'] == 'terminal' for p in panels), panels
+        self.source = self.focused()['panel_id']
+        for panel in panels:
+            if panel['id'] != self.source:
+                self.call('panel.close', workspace_id=self.source_workspace, panel_id=panel['id'])
         self.call('panel.action', workspace_id=self.source_workspace, panel_id=self.source, action='rename', title=SOURCE_TITLE)
         self.destination = self.call('workspace.create', window_id=self.window, title=DESTINATION_TITLE)['workspace_id']
         self.target = next(p['id'] for p in self.call('panel.list', workspace_id=self.destination)['panels'] if p['type'] == 'terminal')
+        for panel in self.call('panel.list', workspace_id=self.destination)['panels']:
+            if panel['id'] != self.target:
+                self.call('panel.close', workspace_id=self.destination, panel_id=panel['id'])
         self.call('panel.action', workspace_id=self.destination, panel_id=self.target, action='rename', title=TARGET_TITLE)
         self.browser = self.call('panel.create', workspace_id=self.destination, type='browser')['panel_id']
         self.call('panel.focus', workspace_id=self.destination, panel_id=self.browser)

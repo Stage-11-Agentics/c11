@@ -13,8 +13,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  workflow-guard-tests:
+  workflow-guards:
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,6 +35,9 @@ jobs:
       - name: Validate the backstop CLI test step
         run: ruby tests/test_ci_python_cli_step.rb
 
+      - name: Validate completed-attempt timing
+        run: python3 tests/test_ci_workflow_timing.py
+
       - name: Validate Atlas performance lane
         run: python3 scripts/c11-perf-lane-test.py
 
@@ -49,9 +53,6 @@ jobs:
 
       - name: Validate remote build test routing
         run: python3 tests/test_remote_build_routing.py
-
-      - name: Validate c11 PR Swift poller
-        run: python3 scripts/c11-pr-swift-poller-test.py
 
       - name: Validate GhosttyKit checksum verification
         run: ./tests/test_ci_ghosttykit_checksum_verification.sh
@@ -73,6 +74,19 @@ jobs:
 
       - name: Run drawbridge gate tests
         run: python3 tests/drawbridge/test_gates.py
+
+      # Offline, no token: exercises the alarm paths of the Sentry recurrence
+      # detector, which are otherwise only reachable by actually exhausting a
+      # quota or silencing a real client.
+      - name: Validate Sentry recurrence checks
+        run: ./scripts/telemetry/sentry-position.py --self-test
+
+  agent-runtime-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Synthetic binaries and temporary sockets only; runs for fork PRs too.
       - name: Validate agent wrapper lifecycle and resume
@@ -100,39 +114,25 @@ jobs:
           bun tests/test_omp_native_mail.mjs
           bash tests/test_statusline_prompt_cache_snippet.sh
 
-      # Offline, no token: exercises the alarm paths of the Sentry recurrence
-      # detector, which are otherwise only reachable by actually exhausting a
-      # quota or silencing a real client.
-      - name: Validate Sentry recurrence checks
-        run: ./scripts/telemetry/sentry-position.py --self-test
-
-  offline-activity-cli:
-    runs-on: macos-15
-    timeout-minutes: 25
+  # Keep the required check name stable and fail when either group fails or skips.
+  workflow-guard-tests:
+    needs: [workflow-guards, agent-runtime-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
-
-      - name: Build native CLI only
-        run: |
-          set -euo pipefail
-          ./scripts/with-build-lock.sh xcodebuild \
-            -project GhosttyTabs.xcodeproj -target c11-cli -configuration Debug \
-            -sdk macosx SYMROOT="$RUNNER_TEMP/c11-activity-cli" \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build
-
-      - name: Exercise offline activity commands without an app
+      - name: Require both guard groups
         env:
-          C11_ACTIVITY_MEMORY_PROBE: "1"
+          GUARDS_RESULT: ${{ needs.workflow-guards.result }}
+          RUNTIME_RESULT: ${{ needs.agent-runtime-tests.result }}
         run: |
           set -euo pipefail
-          C11_CLI_BIN="$RUNNER_TEMP/c11-activity-cli/Debug/c11" \
-            python3 tests/test_cli_activity_analysis.py
+          test "$GUARDS_RESULT" = success
+          test "$RUNTIME_RESULT" = success
 
   remote-daemon-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,6 +151,7 @@ jobs:
 
   web-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     defaults:
       run:
         working-directory: web

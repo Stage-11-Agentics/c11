@@ -48,6 +48,20 @@ jobs:
           set -euo pipefail
           ./scripts/ci-backstop-target.sh "$GITHUB_REPOSITORY" "$GITHUB_REF" "$GITHUB_SHA" "$GREEN_STATUS_CONTEXT" | tee -a "$GITHUB_OUTPUT"
 
+  poller-tests:
+    needs: target
+    if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout selected tip
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+
+      - name: Validate c11 PR Swift poller
+        run: python3 scripts/c11-pr-swift-poller-test.py
+
   build:
     needs: target
     if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
@@ -359,6 +373,8 @@ jobs:
 
       - name: CLI tests against the built binary
         shell: bash
+        env:
+          C11_ACTIVITY_MEMORY_PROBE: "1"
         run: |
           set -euo pipefail
           test -x "$CLI_BINARY"
@@ -410,7 +426,7 @@ jobs:
         run: bash tests/test_shell_git_watchers.sh
 
   record-green:
-    needs: [target, build, logic, host-a, host-b, python]
+    needs: [target, build, logic, host-a, host-b, python, poller-tests]
     if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -428,5 +444,5 @@ jobs:
           gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
             -f state=success \
             -f context="$GREEN_STATUS_CONTEXT" \
-            -f description="Native build, parallel logic, host and CLI tests passed" \
+            -f description="Native build, logic, host, CLI and poller tests passed" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

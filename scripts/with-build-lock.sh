@@ -10,7 +10,7 @@
 # test-unit-local.sh, test-unit.sh) runs xcodebuild through this wrapper; raw
 # xcodebuild calls from prompts or shells must do the same.
 #
-# The lock is a directory (mkdir is atomic on APFS) holding the owner's pid, a
+# The lock is a directory (one mkdir syscall) holding the owner's pid, a
 # label, and a start time. A waiter reports who holds the lock every 30 s, takes
 # over a lock whose owner pid is gone, and gives up after C11_BUILD_LOCK_TIMEOUT
 # seconds (default 90 min) with exit 75.
@@ -37,6 +37,20 @@ LABEL="${C11_BUILD_LOCK_LABEL:-${C11_TAG:-$(basename "$PWD")}}"
 
 read_meta() { cat "$LOCK_DIR/$1" 2>/dev/null || true; }
 
+acquire_directory() {
+  # uutils mkdir 0.10.0 can report success to both concurrent creators.
+  # os.mkdir preserves the kernel's EEXIST result, which is the lock contract.
+  python3 -I -c 'import os, sys
+try:
+    os.mkdir(sys.argv[1])
+except FileExistsError:
+    sys.exit(1)
+except OSError as error:
+    print(error, file=sys.stderr)
+    sys.exit(2)
+' "$LOCK_DIR"
+}
+
 # Only the Atlas slot scheduler enables reentrancy. Ordinary local invocations
 # retain the single-lock behavior. Verify that the recorded owner is an ancestor.
 if [[ -n "${C11_ATLAS_BUILD_SLOT:-}" && -n "${C11_ATLAS_LOCK_OWNER:-}" &&
@@ -50,9 +64,28 @@ if [[ -n "${C11_ATLAS_BUILD_SLOT:-}" && -n "${C11_ATLAS_LOCK_OWNER:-}" &&
   done
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[build-lock] python3 is required for atomic directory acquisition" >&2
+  exit 2
+fi
+
+if ! python3 -I -c 'import os, sys' >/dev/null 2>&1; then
+  echo "[build-lock] python3 failed to initialize atomic directory acquisition" >&2
+  exit 2
+fi
+
 start=$(date +%s)
 last_report=0
-while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+while true; do
+  if acquire_directory; then
+    break
+  else
+    acquisition_status=$?
+  fi
+  if [[ "$acquisition_status" -ne 1 ]]; then
+    echo "[build-lock] atomic directory acquisition failed (python3 exit $acquisition_status)" >&2
+    exit 2
+  fi
   owner_pid="$(read_meta pid)"
   if [[ -n "$owner_pid" ]] && ! kill -0 "$owner_pid" 2>/dev/null; then
     echo "[build-lock] owner pid $owner_pid ($(read_meta label)) is gone; taking over the lock" >&2

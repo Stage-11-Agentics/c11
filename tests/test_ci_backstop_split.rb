@@ -8,7 +8,7 @@ root = File.expand_path("..", __dir__)
 workflow = YAML.load_file(File.join(root, ".github/workflows/ci-hourly.yml"))
 jobs = workflow.fetch("jobs")
 test_jobs = %w[logic host-a host-b python]
-expected_jobs = %w[build logic host-a host-b python record-green]
+expected_jobs = %w[build logic host-a host-b python poller-tests record-green]
 missing = expected_jobs - jobs.keys
 abort "backstop is missing jobs: #{missing.join(', ')}" unless missing.empty?
 macos_test_jobs = jobs.select do |name, job|
@@ -171,9 +171,9 @@ abort "Python job must run CLI and shell checks" unless
 
 record = jobs.fetch("record-green")
 record_needs = record.fetch("needs")
-abort "green status must wait for every test job" unless (test_jobs + ["build", "target"]).all? { |name| record_needs.include?(name) }
+abort "green status must wait for every test job" unless (test_jobs + ["build", "target", "poller-tests"]).all? { |name| record_needs.include?(name) }
 abort "record-green must retain implicit success gating" if record.fetch("if", "").include?("always()")
 record_step = record.fetch("steps").find { |step| step["name"] == "Record green for the tested commit" }
 abort "green status must remain success-only" unless record_step && record_step.fetch("run").include?("state=success")
 
-puts "PASS: one exact-head build feeds four independent test jobs; green waits for all four"
+puts "PASS: one exact-head build feeds four independent test jobs; green waits for all four and the poller validation"

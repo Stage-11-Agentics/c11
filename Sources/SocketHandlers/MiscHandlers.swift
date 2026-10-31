@@ -732,6 +732,8 @@ extension TerminalController {
             // Agent chip resolution.
             let chipDict: [String: Any] = self.resolveAgentChipDict(workspace: ws)
             out["agent_chip"] = chipDict
+            // Exact snapshot includes AppKit window geometry and is read-only.
+            out["layout"] = AppDelegate.shared?.sidebarLayout(for: workspaceManager)
 
             payload = out
         }

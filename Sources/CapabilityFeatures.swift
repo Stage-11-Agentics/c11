@@ -19,6 +19,7 @@ struct CapabilityFeatures {
         case browserProfiles = "browser.profiles"
         case feedAsks = "feed.asks"
         case markdownAgentCLI = "markdown.agent_cli"
+        case panelLinks = "links.panel"
     }
 
     struct Entry {
@@ -49,6 +50,7 @@ struct CapabilityFeatures {
         Entry(id: .browserProfiles, version: 1, enabled: true),
         Entry(id: .feedAsks, version: 1, enabled: true),
         Entry(id: .markdownAgentCLI, version: 1, enabled: true),
+        Entry(id: .panelLinks, version: 1, enabled: true),
     ])
 
     private let entries: [ID: Entry]

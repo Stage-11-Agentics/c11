@@ -351,6 +351,7 @@ final class EventEmitter {
     }
 
     func emitFlashRequested(_ request: FocusFlashRequest) {
+        guard request.recordsEvents else { return }
         emit(.flashRequested, workspace: request.workspaceId, surface: request.panelId, payload: [
             "request_id": request.id.uuidString,
             "source": request.source,
@@ -359,6 +360,7 @@ final class EventEmitter {
     }
 
     func emitFlashDrawn(_ request: FocusFlashRequest, channel: String) {
+        guard request.recordsEvents else { return }
         let drawn = FlashRequestTime()
         emit(.flashDrawn, workspace: request.workspaceId, surface: request.panelId, payload: [
             "request_id": request.id.uuidString,

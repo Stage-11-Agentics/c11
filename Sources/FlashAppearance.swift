@@ -16,6 +16,8 @@ struct FocusFlashRequest: Equatable {
     let source: String
     let appearance: FlashAppearance
     let duration: TimeInterval
+    // Repeated persistent pulses animate normally without filling the event log.
+    var recordsEvents = true
     // Pulse lifetime starts at fan-out; request time includes selection latency.
     let startedUptime = ProcessInfo.processInfo.systemUptime
 
@@ -80,9 +82,7 @@ final class SidebarFlashDrawingView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let request, request.remainingDuration > 0,
-              request.appearance.color.alphaComponent > 0,
-              !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty,
-              let window, window.isVisible, window.occlusionState.contains(.visible) else { return }
+              request.appearance.color.alphaComponent > 0 else { return }
         request.appearance.color.withAlphaComponent(
             request.appearance.color.alphaComponent * FlashEnvelope.sidebarFill.peakScale
         ).setFill()
@@ -90,7 +90,11 @@ final class SidebarFlashDrawingView: NSView {
         // This is the real, nontransparent pulse paint, not receipt, onChange,
         // an animation completion or a layout callback. Scanout is measured
         // independently by the guest recording.
-        if !reportedDraw {
+        // Paint the backing layer even while hidden or occluded, so revealing
+        // it during the envelope shows the fill without requiring another draw.
+        // Visibility gates telemetry only; offscreen paint is not a visible draw.
+        if !reportedDraw, !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty,
+           let window, window.isVisible, window.occlusionState.contains(.visible) {
             reportedDraw = true
             EventEmitter.shared.emitFlashDrawn(request, channel: "sidebar")
         }

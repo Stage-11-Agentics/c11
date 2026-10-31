@@ -40,7 +40,7 @@ final class EventLogTests: XCTestCase {
     }
 
     @MainActor
-    func testUnmountedFlashRendererNeverClaimsADraw() {
+    func testUnmountedFlashRendererPaintsWithoutClaimingAVisibleDraw() throws {
         let url = logURL()
         let log = EventLog(url: url, instance: "flash-hidden")
         log.open()
@@ -53,7 +53,19 @@ final class EventLogTests: XCTestCase {
         let view = SidebarFlashDrawingView()
         view.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
         view.play(request)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 200, pixelsHigh: 100,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
         view.draw(view.bounds)
+        NSGraphicsContext.restoreGraphicsState()
+        // An offscreen backing layer must already contain the fill when it is
+        // revealed during this pulse, without claiming an on-screen draw.
+        XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 100, y: 50)).alphaComponent, 0.5)
         EventEmitter.shared.flush()
         let events = readLines(url).map(parse)
         let requested = events.filter { $0["type"] as? String == "flash.requested" }

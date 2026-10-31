@@ -12158,7 +12158,7 @@ final class Workspace: Identifiable, ObservableObject {
                     state.lastBreadcrumbAt = now
                     self.persistentFlashPanels[panelId] = state
                 }
-                self.runFlashPulse(panelId: panelId, appearance: appearance, source: "persistent")
+                self.runFlashPulse(panelId: panelId, appearance: appearance, source: "persistent", recordsEvents: false)
             }
         }
         persistentFlashPanels[panelId] = PersistentFlashState(
@@ -12228,11 +12228,12 @@ final class Workspace: Identifiable, ObservableObject {
         panelId: UUID,
         appearance: FlashAppearance,
         source: String,
-        requestedAt: FlashRequestTime = FlashRequestTime()
+        requestedAt: FlashRequestTime = FlashRequestTime(),
+        recordsEvents: Bool = true
     ) -> FocusFlashRequest {
         let request = FocusFlashRequest(
             workspaceId: id, panelId: panelId, time: requestedAt, source: source,
-            appearance: appearance, duration: appearance.envelope.duration
+            appearance: appearance, duration: appearance.envelope.duration, recordsEvents: recordsEvents
         )
         EventEmitter.shared.emitFlashRequested(request)
         panels[panelId]?.triggerFlash(appearance: appearance)

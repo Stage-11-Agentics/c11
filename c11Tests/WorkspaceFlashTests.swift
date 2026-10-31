@@ -77,6 +77,50 @@ final class WorkspaceFlashTests: XCTestCase {
         XCTAssertNil(workspace.persistentFlashPanels[panelId])
     }
 
+    func testPersistentTimerPulsesKeepAnimatingWithoutRepeatingEvents() async throws {
+        // EventLog reconciles its parent directory. Keep this fixture out of
+        // the host's shared temporary directory and its unrelated history files.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("flash-repeat-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("events.ndjson")
+        let log = EventLog(url: url, instance: "flash-repeat")
+        log.open()
+        EventEmitter.shared.startForTesting(log: log, instance: "flash-repeat")
+        let workspace = Workspace(title: "flash-repeat")
+        let panelId = UUID()
+        defer {
+            workspace.cancelAllPersistentFlashes()
+            EventEmitter.shared.resetForTesting()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let initial = try XCTUnwrap(workspace.triggerFocusFlash(
+            panelId: panelId, appearance: FlashAppearance.current(), persistent: true, source: "socket"
+        ))
+        EventEmitter.shared.emitFlashDrawn(initial, channel: "sidebar")
+        let timer = try XCTUnwrap(workspace.persistentFlashPanels[panelId]?.timer)
+        var ids = Set([initial.id])
+        for _ in 0..<3 {
+            timer.fire()
+            // The real timer enqueues its fan-out on main. Drain that hop.
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            let pulse = try XCTUnwrap(workspace.sidebarFlashRequest)
+            XCTAssertTrue(ids.insert(pulse.id).inserted, "Each timer tick must still start a fresh animation")
+            EventEmitter.shared.emitFlashDrawn(pulse, channel: "sidebar")
+        }
+        EventEmitter.shared.flush()
+        let events = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+        }
+        for type in ["flash.requested", "flash.drawn"] {
+            let matching = events.filter { $0["type"] as? String == type }
+            XCTAssertEqual(matching.count, 1, "Only the initial persistent pulse records \(type)")
+            XCTAssertEqual((matching.first?["payload"] as? [String: Any])?["request_id"] as? String,
+                           initial.id.uuidString)
+        }
+    }
+
     func testCancelAllPersistentFlashesClearsEveryRegistration() {
         let workspace = Workspace(title: "flash-test")
         let panelA = UUID()

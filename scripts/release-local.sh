@@ -23,13 +23,12 @@ SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 # The public half of the c11mux key; every shipped c11 trusts only this key.
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
 SPARKLE_FEED_URL="https://github.com/${REPO_SLUG}/releases/latest/download/appcast.xml"
-# DTXcode of the toolchain the release must be built with. release.yml's
-# macos-15-xlarge runner shipped v0.67.0 with Xcode 16.4 (DTXcode 1640, SDK
-# macosx15.5). Atlas builds with Xcode 26.3 (2630, SDK macosx26.2), which links
-# a newer SDK and changes runtime behavior, so a real run refuses until either
-# Atlas builds with the pinned Xcode or the operator deliberately moves the pin
-# (C11_RELEASE_DTXCODE=2630) and release.yml with it.
-RELEASE_DTXCODE="${C11_RELEASE_DTXCODE:-1640}"
+# DTXcode of the toolchain the release must be built with: Xcode 26.3, which
+# remote-build.sh selects on Atlas for Release builds (SDK macosx26.2). The
+# pin moved from 1640 (Xcode 16.4, which does not launch on macOS 26.2 or
+# later) on Atin's go, 2026-10-31. A real run refuses an app built with any
+# other Xcode; moving the pin is a deliberate SDK change.
+RELEASE_DTXCODE="${C11_RELEASE_DTXCODE:-2630}"
 CREATE_DMG_VERSION="8.0.0"   # release.yml env.CREATE_DMG_VERSION
 SENTRY_ORG="stage-11-kl"
 SENTRY_PROJECT="c11"
@@ -112,7 +111,26 @@ exec > >(tee -a "$LOG") 2>&1
 MODE_LABEL="REAL RUN"
 [[ "$DRY_RUN" -eq 1 ]] && MODE_LABEL="DRY RUN"
 STEP=0
-step() { STEP=$((STEP + 1)); printf '\n==== [%s] step %d: %s (%s)\n' "$(date '+%H:%M:%S')" "$STEP" "$1" "$MODE_LABEL"; }
+TIMINGS="$OUT/timings.tsv"
+: >"$TIMINGS"
+# Every step's wall time goes to $OUT/timings.tsv; the summary prints them and
+# appends one JSON line per run to build-release-local/timings.jsonl.
+RUN_START="$(date +%s)"
+STEP_NAME=""
+STEP_START=0
+PUBLISHED_AT=""
+step_close() {
+  [[ -n "$STEP_NAME" ]] || return 0
+  printf '%s\t%s\n' "$(( $(date +%s) - STEP_START ))" "$STEP_NAME" >>"$TIMINGS"
+  STEP_NAME=""
+}
+step() {
+  step_close
+  STEP=$((STEP + 1))
+  STEP_NAME="$1"
+  STEP_START="$(date +%s)"
+  printf '\n==== [%s] step %d: %s (%s)\n' "$(date '+%H:%M:%S')" "$STEP" "$1" "$MODE_LABEL"
+}
 note() { printf '  %s\n' "$*"; }
 die() { printf '\nRELEASE-LOCAL FAILED: %s\n' "$*" >&2; exit 1; }
 # Prints a command a dry run skips, shell-quoted so it can be pasted.
@@ -184,6 +202,19 @@ if [[ "$PBX_VERSIONS" != "$VERSION" ]]; then
     die "MARKETING_VERSION $PBX_VERSIONS != tag version $VERSION"
   fi
 fi
+
+# The remote daemon assets depend only on the version and tag, so they build
+# here in the background, alongside the Atlas build, and are collected at
+# their step (which still checks the built app carries this same version).
+DAEMON_DIR="$OUT/remote-daemon-assets"
+DAEMON_LOG="$OUT/remote-daemon-assets.log"
+"$ROOT/scripts/build_remote_daemon_release_assets.sh" \
+  --version "$PBX_VERSIONS" \
+  --release-tag "$TAG" \
+  --repo "$REPO_SLUG" \
+  --output-dir "$DAEMON_DIR" >"$DAEMON_LOG" 2>&1 &
+DAEMON_PID=$!
+note "remote daemon assets building in the background (pid $DAEMON_PID, log $DAEMON_LOG)"
 
 IDENTITIES="$(security find-identity -v -p codesigning)" || die "security find-identity failed"
 grep -qF "\"$SIGNING_IDENTITY\"" <<<"$IDENTITIES" || die "signing identity not in the keychain: $SIGNING_IDENTITY"
@@ -405,12 +436,11 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PLIST")
 note "app CFBundleShortVersionString=$APP_VERSION CFBundleVersion=$APP_BUILD"
 [[ "$APP_VERSION" == "$PBX_VERSIONS" && "$APP_BUILD" == "$PBX_BUILDS" ]] \
   || die "built app version $APP_VERSION ($APP_BUILD) != project $PBX_VERSIONS ($PBX_BUILDS)"
-DAEMON_DIR="$OUT/remote-daemon-assets"
-"$ROOT/scripts/build_remote_daemon_release_assets.sh" \
-  --version "$APP_VERSION" \
-  --release-tag "$TAG" \
-  --repo "$REPO_SLUG" \
-  --output-dir "$DAEMON_DIR"
+if ! wait "$DAEMON_PID"; then
+  cat "$DAEMON_LOG"
+  die "remote daemon asset build failed; see $DAEMON_LOG"
+fi
+note "remote daemon assets built for $PBX_VERSIONS ($DAEMON_LOG)"
 MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' "$DAEMON_DIR/c11d-remote-manifest.json")"
 plutil -remove C11RemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
 plutil -remove CMUXRemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
@@ -524,24 +554,6 @@ else
   notarize "$DMG_RELEASE" "DMG"
   xcrun stapler staple "$DMG_RELEASE"
   xcrun stapler validate "$DMG_RELEASE"
-fi
-
-# ----------------------------------------------------------------- Sentry --
-step "Upload dSYMs to Sentry (optional, failure tolerated)"
-if [[ "$SKIP_SENTRY" -eq 1 ]]; then
-  note "skipped (--skip-sentry)"
-elif [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
-  note "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
-elif [[ "$DRY_RUN" -eq 1 ]]; then
-  would rsync -a "$HOST:$REMOTE_PRODUCTS/*.dSYM" "$OUT/pristine/dsyms/"
-  would env SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/"
-elif ! command -v sentry-cli >/dev/null 2>&1; then
-  note "sentry-cli not installed (brew install getsentry/tools/sentry-cli); skipping dSYM upload"
-else
-  # dSYMs were fetched together with the pristine app, so they match it.
-  SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" \
-    sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/" \
-    || note "WARNING: Sentry dSYM upload failed (tolerated, as continue-on-error in release.yml)"
 fi
 
 # ---------------------------------------------------------------- appcast --
@@ -675,6 +687,7 @@ else
   note "draft release id: $RELEASE_ID"
   verify_remote_assets
   gh api -X PATCH "repos/$REPO_SLUG/releases/$RELEASE_ID" -F draft=false -f "make_latest=$TAKE_LATEST" >/dev/null
+  PUBLISHED_AT="$(date +%s)"
   if [[ "$TAKE_LATEST" == "true" ]]; then
     LATEST_NOW="$(gh api "repos/$REPO_SLUG/releases/latest" --jq '.tag_name')"
     [[ "$LATEST_NOW" == "$TAG" ]] || die "latest is $LATEST_NOW, expected $TAG"
@@ -685,10 +698,51 @@ else
   fi
 fi
 
+# ----------------------------------------------------------------- Sentry --
+# After publishing: the upload is optional and failure-tolerated, so it stays
+# off the tag-to-published path.
+step "Upload dSYMs to Sentry (optional, failure tolerated)"
+if [[ "$SKIP_SENTRY" -eq 1 ]]; then
+  note "skipped (--skip-sentry)"
+elif [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+  note "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
+elif [[ "$DRY_RUN" -eq 1 ]]; then
+  would rsync -a "$HOST:$REMOTE_PRODUCTS/*.dSYM" "$OUT/pristine/dsyms/"
+  would env SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/"
+elif ! command -v sentry-cli >/dev/null 2>&1; then
+  note "sentry-cli not installed (brew install getsentry/tools/sentry-cli); skipping dSYM upload"
+else
+  # dSYMs were fetched together with the pristine app, so they match it.
+  SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" \
+    sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/" \
+    || note "WARNING: Sentry dSYM upload failed (tolerated, as continue-on-error in release.yml)"
+fi
+
 step "Summary"
 note "app:     $APP_PATH ($APP_VERSION, build $APP_BUILD, $ARCHS)"
 for asset in "${ASSETS[@]}"; do
   note "$(shasum -a 256 "$asset" | awk '{print $1}')  $(basename "$asset")"
 done
 note "log:     $LOG"
+step_close
+note "step seconds:"
+while IFS=$'\t' read -r secs name; do note "  $(printf '%5s' "$secs")  $name"; done <"$TIMINGS"
+TOTAL_SECS="$(( $(date +%s) - RUN_START ))"
+TO_PUBLISHED=""
+[[ -n "$PUBLISHED_AT" ]] && TO_PUBLISHED="$(( PUBLISHED_AT - RUN_START ))"
+note "total: ${TOTAL_SECS}s; start to published: ${TO_PUBLISHED:-n/a (not published)}s"
+python3 - "$TIMINGS" "$TAG" "$MODE_LABEL" "$REUSE_BUILD" "$TOTAL_SECS" "${TO_PUBLISHED:-}" "$RUN_START" \
+  >>"$ROOT/build-release-local/timings.jsonl" <<'PY'
+import json, sys
+timings, tag, mode, reuse, total, published, start = sys.argv[1:]
+steps = []
+for line in open(timings, encoding="utf-8"):
+    secs, name = line.rstrip("\n").split("\t", 1)
+    steps.append({"step": name, "seconds": int(secs)})
+print(json.dumps({"tag": tag, "mode": mode, "reuse_build": reuse == "1", "started": int(start),
+                  "total_seconds": int(total),
+                  "to_published_seconds": int(published) if published else None,
+                  "steps": steps}))
+PY
+note "timings appended to build-release-local/timings.jsonl"
 printf '\n==== release-local %s %s finished OK\n' "$TAG" "$MODE_LABEL"

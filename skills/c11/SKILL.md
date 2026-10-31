@@ -35,33 +35,49 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. *
 
 Before emitting these links, pages and agents should check the connected server's `features` in `c11 capabilities --json` for `links.panel` version 1, which covers the browser and Markdown navigation described here.
 
-Local pages in c11 browser panels and local markdown panels can offer operator navigation:
+**Mention panels and workspaces in operator reports only as titled links.** Use
+`c11 link --panel <ref> --format markdown` or `c11 link --workspace <ref> --format markdown`
+to resolve the live target and its title. Keep short refs in commands, not in prose
+that asks the operator to find a destination. Never put a short ref inside a URL.
+
+Terminal output, local pages in c11 browser panels, and local markdown panels offer operator navigation:
 
 ```html
 <a href="c11://panel/01234567-89AB-CDEF-0123-456789ABCDEF">Open the agent</a>
 <a href="c11://workspace/01234567-89AB-CDEF-0123-456789ABCDEF">Open the workspace</a>
 ```
 
-Markdown uses `[Open the agent](c11://panel/<uuid>)`. Get real UUIDs from
+Markdown uses `[Open the agent](c11://panel/<uuid>)`. `c11 link` also prints a raw
+URL (the default), `--format osc8`, or all forms with `--json`. It requires an
+explicit live panel or workspace and refuses unknown targets, including stale UUIDs.
+Copy Link in a panel's tab menu or a workspace's sidebar menu copies the UUID URL.
+Get real UUIDs from
 `c11 --id-format both tree --json`, `$C11_PANEL_ID`, or `$C11_WORKSPACE_ID`.
 Short refs such as `panel:10` are process-local and are refused in links.
 UUID case does not matter; surrounding whitespace is trimmed. Query strings, fragments
 and extra path segments are refused. Text such as `c11: notes` is not a panel link and
 follows ordinary browser search handling.
 
-A plain left click or Return on the focused link selects the owning workspace/window,
+In terminals, **Cmd-click** either the bare URL or an OSC 8 titled link. Plain
+click does not navigate. Cmd-hover shows the true destination's live panel title
+and workspace name, even when a program's OSC 8 label says something else. Claude
+Code renders the Markdown form as OSC 8; Codex currently displays the title followed
+by the URL in parentheses, which is also clickable. A closed or malformed `c11:`
+target shows a notice and never opens another app or browser.
+
+In browser and markdown panels, a plain left click or Return on the focused link selects the owning workspace/window,
 reveals the panel's area, and pulses the panel after it becomes visible. A workspace
 link keeps that workspace's focused panel. The pulse follows the flash setting and
 is suppressed with Reduce Motion. Visiting a link does not lower flags or answer asks;
 unread notifications follow the same rules as a sidebar visit. Closed or invalid targets
 show a small notice in the source panel.
 
-For this first slice, browser links work only from a main-frame `file://` page or
+Browser links work only from a main-frame `file://` page or
 HTTP(S) on `localhost`, `127.0.0.1` or `::1` (any port). Other origins show a notice.
 The link itself must be in the top document: links inside iframes are refused,
 even when the outer page is local. A committed page can use links while resources load.
 Scripts, redirects, forms, subframes, popups and browser automation cannot navigate
-these links. Cmd/middle/modified clicks and `target="_blank"` are refused. Opening a
+these links. In web content, Cmd/middle/modified clicks and `target="_blank"` are refused. Opening a
 `c11://` URL through the CLI is also refused; socket focus still cannot switch the
 operator's workspace. Links from other apps and OS scheme registration are not included.
 Browser navigation and creation commands return `operator_activation_required` for these URLs.

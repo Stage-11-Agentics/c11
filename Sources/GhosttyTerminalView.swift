@@ -470,6 +470,9 @@ final class GhosttyDefaultBackgroundNotificationDispatcher {
 
 func resolveTerminalOpenURLTarget(_ rawValue: String) -> TerminalOpenURLTarget? {
     let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Internal schemes are consumed by the native activation adapter. They are
+    // never a web URL, file URL, or external application fallback.
+    guard !PanelLinkTarget.usesScheme(trimmed) else { return nil }
     #if DEBUG
     dlog("link.resolve input=\(trimmed)")
     #endif
@@ -901,6 +904,7 @@ final class GhosttySurfaceCallbackContext {
     let surfaceId: UUID
     let scrollbarUpdates = GhosttyCallbackCoalescer<GhosttyScrollbar>()
     private let cellSizeUpdates = GhosttyCallbackCoalescer<CGSize>()
+    private let linkHoverUpdates = GhosttyCallbackCoalescer<String>()
 
     init(surfaceView: GhosttyNSView, terminalSurface: TerminalSurface) {
         self.surfaceView = surfaceView
@@ -937,6 +941,14 @@ final class GhosttySurfaceCallbackContext {
                 object: surfaceView,
                 userInfo: [GhosttyNotificationKey.scrollbar: scrollbar]
             )
+        }
+    }
+
+    func enqueueLinkHover(_ href: String) {
+        // Ghostty can call this with its renderer mutex held. Copy the payload
+        // at the callback and resolve native titles only after returning.
+        linkHoverUpdates.submit(href) { [weak self] href in
+            self?.currentSurfaceView?.updatePanelLinkPreview(href)
         }
     }
 
@@ -1349,7 +1361,25 @@ class GhosttyApp {
         ghostty_config_load_recursive_files(config)
         loadCmuxAppSupportGhosttyConfigIfNeeded(config)
         loadCJKFontFallbackIfNeeded(config)
+        loadPanelLinkPreviewConfig(config)
         ghostty_config_finalize(config)
+    }
+
+    private func loadPanelLinkPreviewConfig(_ config: ghostty_config_t) {
+        // Enable callbacks for bare URLs as well as OSC 8. c11 presents only
+        // internal destinations; this does not change general URL preview UI
+        // or write the operator's Ghostty configuration.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-link-preview-\(UUID().uuidString).conf")
+        do {
+            try "link-previews = true\n".write(to: url, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: url) }
+            url.path.withCString { ghostty_config_load_file(config, $0) }
+        } catch {
+            #if DEBUG
+            Self.initLog("failed to enable internal link previews: \(error)")
+            #endif
+        }
     }
 
     /// When the user has not configured `font-codepoint-map` for CJK ranges,
@@ -2473,6 +2503,14 @@ class GhosttyApp {
                 surfaceView.updateKeyTable(action.action.key_table)
                 return true
             }
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            let link = action.action.mouse_over_link
+            let href = link.url.flatMap { pointer -> String? in
+                guard link.len <= 16 * 1024 else { return nil }
+                return String(data: Data(bytes: pointer, count: Int(link.len)), encoding: .utf8)
+            } ?? ""
+            callbackContext?.enqueueLinkHover(href)
+            return true
         case GHOSTTY_ACTION_OPEN_URL:
             let openUrl = action.action.open_url
             guard let cstr = openUrl.url else { return false }
@@ -2480,6 +2518,20 @@ class GhosttyApp {
                 data: Data(bytes: cstr, count: Int(openUrl.len)),
                 encoding: .utf8
             ) ?? ""
+            if PanelLinkTarget.usesScheme(urlString) {
+                // Only mouseUp's synchronous dispatch can authorize a jump.
+                // An unpaired/background callback is still consumed: false
+                // would ask Ghostty to invoke the operating-system opener.
+                if Thread.isMainThread {
+                    surfaceView.activatePanelLink(urlString)
+                } else {
+                    DispatchQueue.main.async {
+                        PanelLinkActivation.log(target: urlString, origin: "terminal",
+                                                activation: "refused", result: "missing_native_input")
+                    }
+                }
+                return true
+            }
             #if DEBUG
             dlog("link.openURL raw=\(urlString)")
             #endif
@@ -4916,6 +4968,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     fileprivate private(set) var keyboardCopyModeActive = false
     private var keyboardCopyModeConsumedKeyUps: Set<UInt16> = []
     private var keyboardCopyModeInputState = TerminalKeyboardCopyModeInputState()
+    private var dispatchingPanelLinkClick = false
+    private let panelLinkNotice = PanelLinkNoticePresenter()
+    private let panelLinkPreview = TerminalPanelLinkPreview()
     private var keyboardCopyModeViewportRow: Int?
 
     func beginSyntheticKeyHandoffCapture(expectedSurface: ghostty_surface_t) {
@@ -4998,6 +5053,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         fileprivate var isVisibleInUI: Bool { visibleInUI }
         fileprivate func setVisibleInUI(_ visible: Bool) {
             visibleInUI = visible
+            if !visible { panelLinkPreview.clear() }
         }
 
     override init(frame frameRect: NSRect) {
@@ -5166,6 +5222,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        panelLinkPreview.clear()
         if let windowObserver {
             NotificationCenter.default.removeObserver(windowObserver)
             self.windowObserver = nil
@@ -7044,7 +7101,58 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         dlog("terminal.mouseUp surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil") mods=[\(debugModifierString(event.modifierFlags))]")
         #endif
         guard let surface = surface else { return }
+        dispatchingPanelLinkClick = event.type == .leftMouseUp &&
+            event.modifierFlags.contains(.command) && !isSynthesizingKey
+        defer { dispatchingPanelLinkClick = false }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, modsFromEvent(event))
+    }
+
+    func activatePanelLink(_ href: String) {
+        let policy = TerminalPanelLinkPolicy(
+            isNativeCommandClick: dispatchingPanelLinkClick,
+            isSocketCommand: SocketCommandContext.current != nil,
+            isKeyWindow: window?.isKeyWindow == true,
+            isVisible: isVisibleInUI && !isHiddenOrHasHiddenAncestor
+        )
+        dispatchingPanelLinkClick = false // One native dispatch, one decision.
+        panelLinkPreview.clear()
+        let host: NSView = terminalSurface?.hostedView ?? self
+        if let reason = policy.refusalReason {
+            panelLinkNotice.show(.terminalActivation, in: host)
+            PanelLinkActivation.log(target: href, origin: "terminal", activation: "refused", result: reason)
+            return
+        }
+        guard let target = PanelLinkTarget(href) else {
+            panelLinkNotice.show(.invalid, in: host)
+            PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "invalid_target")
+            return
+        }
+        let sourceID = terminalSurface?.id
+        // Leave Ghostty's event/renderer stack before changing native focus.
+        // The capability is this closure, never a timestamp reusable by RPC.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.terminalSurface?.id == sourceID,
+                  self.window?.isKeyWindow == true, self.isVisibleInUI,
+                  !self.isHiddenOrHasHiddenAncestor else {
+                PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "source_unavailable")
+                return
+            }
+            let opened = AppDelegate.shared?.openPanelLink(target) == true
+            if !opened { self.panelLinkNotice.show(.unavailable, in: self.terminalSurface?.hostedView ?? self) }
+            PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: opened ? "opened" : "unavailable")
+        }
+    }
+
+    func updatePanelLinkPreview(_ href: String) {
+        guard isVisibleInUI, !isHiddenOrHasHiddenAncestor,
+              let window, window.isKeyWindow,
+              NSEvent.modifierFlags.contains(.command),
+              bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)),
+              let host = terminalSurface?.hostedView else {
+            panelLinkPreview.clear()
+            return
+        }
+        panelLinkPreview.show(href, in: host)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -7233,6 +7341,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     override func mouseExited(with event: NSEvent) {
+        panelLinkPreview.clear()
         guard let surface = surface else { return }
         if NSEvent.pressedMouseButtons != 0 {
             return

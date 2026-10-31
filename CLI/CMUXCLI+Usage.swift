@@ -53,6 +53,7 @@ extension CMUXCLI {
           history forward [--json]
           agents [--json] [--bundle-id <id>]
           identify [--workspace <id|ref|index>] [--panel <id|ref|index>] [--no-caller]
+          link (--panel <id|ref|index> [--workspace <scope>] | --workspace <id|ref|index>) [--format url|markdown|osc8] [--json]
           list-windows
           current-window
           new-window

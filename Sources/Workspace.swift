@@ -6032,6 +6032,9 @@ final class Workspace: Identifiable, ObservableObject {
             guard let self, let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId) else { return nil }
             return TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panelId)
         }
+        bonsplitController.copyLinkAvailabilityProvider = { [weak self] bonsplitTabId in
+            self?.panel(for: bonsplitTabId) != nil
+        }
         installPanelSheetDetailProviders()
 
         // Set ourselves as delegate
@@ -15284,6 +15287,8 @@ extension Workspace: BonsplitDelegate {
             showSurfaceDetails(forBonsplitTabId: bonsplitTab.id)
         case .copySurfaceRef:
             copySurfaceRef(forBonsplitTabId: bonsplitTab.id)
+        case .copyLink:
+            copyPanelLink(forBonsplitTabId: bonsplitTab.id)
         @unknown default:
             break
         }
@@ -15299,6 +15304,17 @@ extension Workspace: BonsplitDelegate {
         pasteboard.setString(ref, forType: .string)
         let copied = String(localized: "copyHUD.copiedPrefix", defaultValue: "Copied")
         CopyConfirmationHUD.show(message: "\(copied) \(ref)")
+    }
+
+    /// Copy the clicked panel's durable navigation URL, without changing focus.
+    func copyPanelLink(forBonsplitTabId bonsplitTabId: TabID) {
+        guard let panel = panel(for: bonsplitTabId) else { return }
+        let link = PanelLinkFormat.url(kind: .panel, id: panel.id)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(link, forType: .string)
+        pasteboard.setString(link, forType: .URL)
+        CopyConfirmationHUD.show(message: String(localized: "copyHUD.linkCopied", defaultValue: "Link Copied"))
     }
 
     /// Open the Surface Details panel for the surface backing a tab. Routed

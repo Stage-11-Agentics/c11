@@ -15,6 +15,14 @@ enum PanelLinkTarget: Equatable {
         url.scheme?.lowercased() == "c11"
     }
 
+    /// Consume malformed scheme URLs too: Foundation may reject their spelling,
+    /// but they must never fall through to Ghostty's external opener.
+    static func usesScheme(_ text: String) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: text), usesScheme(url) { return true }
+        return text.prefix(4).lowercased() == "c11:"
+    }
+
     init?(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Parse the wire spelling, not a normalized URL path: escaped path
@@ -39,7 +47,7 @@ enum PanelLinkTarget: Equatable {
 }
 
 enum PanelLinkNotice {
-    case invalid, unavailable, localOnly, activation
+    case invalid, unavailable, localOnly, activation, terminalActivation
 
     var text: String {
         switch self {
@@ -51,6 +59,8 @@ enum PanelLinkNotice {
             return String(localized: "panelLink.notice.localOnly", defaultValue: "Panel links work only from local files and localhost pages.")
         case .activation:
             return String(localized: "panelLink.notice.activation", defaultValue: "Open c11 links by clicking them or pressing Return in a local page.")
+        case .terminalActivation:
+            return String(localized: "panelLink.notice.terminalActivation", defaultValue: "Command-click a c11 link to open its panel or workspace.")
         }
     }
 }
@@ -124,7 +134,7 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
     private weak var webView: WKWebView?
     private var nativeIntent: PanelLinkNativeIntent?
     private var nativeDocumentURL: URL?
-    private var noticeView: NSView?
+    private let noticePresenter = PanelLinkNoticePresenter()
     /// Only the bundled markdown renderer sets this, never browser content.
     private let isMarkdownRenderer: Bool
 
@@ -217,38 +227,7 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
 
     func showNotice(_ notice: PanelLinkNotice) {
         guard let webView else { return }
-        noticeView?.removeFromSuperview()
-        let card = NSVisualEffectView()
-        card.material = .popover
-        card.blendingMode = .withinWindow
-        card.state = .active
-        card.wantsLayer = true
-        card.layer?.borderWidth = 1
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
-        let label = NSTextField(wrappingLabelWithString: notice.text)
-        label.font = .systemFont(ofSize: 13)
-        label.textColor = .labelColor
-        label.setAccessibilityIdentifier("c11.panel-link.notice")
-        card.addSubview(label)
-        webView.addSubview(card, positioned: .above, relativeTo: nil)
-        card.translatesAutoresizingMaskIntoConstraints = false
-        label.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            card.leadingAnchor.constraint(equalTo: webView.leadingAnchor, constant: 12),
-            card.trailingAnchor.constraint(lessThanOrEqualTo: webView.trailingAnchor, constant: -12),
-            card.topAnchor.constraint(equalTo: webView.topAnchor, constant: 12),
-            card.widthAnchor.constraint(lessThanOrEqualToConstant: 440),
-            label.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
-            label.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
-            label.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
-            label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10)
-        ])
-        noticeView = card
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak card] in
-            guard let self, let card, self.noticeView === card else { return }
-            card.removeFromSuperview()
-            self.noticeView = nil
-        }
+        noticePresenter.show(notice, in: webView)
     }
 
     static func log(target: String, origin: String, activation: String, result: String) {
@@ -290,4 +269,140 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
       window.addEventListener('keydown', activate, true);
     })();
     """#
+}
+
+/// One non-modal notice implementation for web and portal-hosted terminals.
+@MainActor
+final class PanelLinkNoticePresenter {
+    private var noticeView: NSView?
+
+    func show(_ notice: PanelLinkNotice, in host: NSView) {
+        noticeView?.removeFromSuperview()
+        let card = NSVisualEffectView()
+        card.material = .popover
+        card.blendingMode = .withinWindow
+        card.state = .active
+        card.wantsLayer = true
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
+        let label = NSTextField(wrappingLabelWithString: notice.text)
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .labelColor
+        label.setAccessibilityIdentifier("c11.panel-link.notice")
+        card.addSubview(label)
+        host.addSubview(card, positioned: .above, relativeTo: nil)
+        card.translatesAutoresizingMaskIntoConstraints = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            card.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 12),
+            card.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: -12),
+            card.topAnchor.constraint(equalTo: host.topAnchor, constant: 12),
+            card.widthAnchor.constraint(lessThanOrEqualToConstant: 440),
+            label.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            label.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            label.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
+            label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10)
+        ])
+        noticeView = card
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak card] in
+            guard let self, let card, self.noticeView === card else { return }
+            card.removeFromSuperview()
+            self.noticeView = nil
+        }
+    }
+
+}
+
+struct TerminalPanelLinkPolicy {
+    var isNativeCommandClick: Bool
+    var isSocketCommand: Bool
+    var isKeyWindow: Bool
+    var isVisible: Bool
+
+    var refusalReason: String? {
+        if isSocketCommand { return "socket_command" }
+        if !isNativeCommandClick { return "missing_native_input" }
+        if !isKeyWindow { return "window_not_key" }
+        if !isVisible { return "view_hidden" }
+        return nil
+    }
+}
+
+/// A portal-layer preview that never intercepts terminal mouse events. The OSC
+/// 8 label is untrusted and intentionally absent: titles come from live state.
+@MainActor
+final class TerminalPanelLinkPreview {
+    private final class Card: NSVisualEffectView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    private var card: NSView?
+    private var displayedText: String?
+
+    func clear() {
+        card?.removeFromSuperview()
+        card = nil
+        displayedText = nil
+    }
+
+    func show(_ href: String, in host: NSView) {
+        guard PanelLinkTarget.usesScheme(href) else { clear(); return }
+        let text = destinationText(href)
+        guard text != displayedText || card?.superview !== host else { return }
+        clear()
+        let card = Card()
+        card.material = .popover
+        card.blendingMode = .withinWindow
+        card.state = .active
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 6
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .labelColor
+        label.maximumNumberOfLines = 5
+        label.lineBreakMode = .byTruncatingTail
+        label.setAccessibilityIdentifier("c11.panel-link.preview")
+        card.addSubview(label)
+        host.addSubview(card, positioned: .above, relativeTo: nil)
+        card.translatesAutoresizingMaskIntoConstraints = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            card.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 12),
+            card.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: -12),
+            card.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -12),
+            card.widthAnchor.constraint(lessThanOrEqualToConstant: 480),
+            label.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
+            label.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -8)
+        ])
+        self.card = card
+        displayedText = text
+    }
+
+    private func destinationText(_ href: String) -> String {
+        let wireText = PanelLinkFormat.sanitizedTitle(href)
+        guard let target = PanelLinkTarget(href) else { return "\(PanelLinkNotice.invalid.text)\n\(wireText)" }
+        let workspace: Workspace?
+        let panelID: UUID?
+        switch target {
+        case .panel(let id):
+            workspace = AppDelegate.shared?.workspaceContainingPanel(panelId: id)?.workspace
+            panelID = id
+        case .workspace(let id):
+            workspace = AppDelegate.shared?.workspaceManagerFor(workspaceId: id)?.workspaces.first { $0.id == id }
+            panelID = nil
+        }
+        guard let workspace else { return "\(PanelLinkNotice.unavailable.text)\n\(wireText)" }
+        let workspaceTitle = PanelLinkFormat.sanitizedTitle(workspace.customTitle ?? workspace.title)
+        let workspaceLine = String(localized: "panelLink.preview.workspace", defaultValue: "Workspace: \(workspaceTitle)")
+        if let panelID {
+            let title = PanelLinkFormat.sanitizedTitle(workspace.panelTitle(panelId: panelID) ?? "")
+            let panelLine = String(localized: "panelLink.preview.panel", defaultValue: "Panel: \(title)")
+            return "\(panelLine)\n\(workspaceLine)\n\(PanelLinkFormat.url(kind: .panel, id: panelID))"
+        }
+        return "\(workspaceLine)\n\(PanelLinkFormat.url(kind: .workspace, id: workspace.id))"
+    }
 }

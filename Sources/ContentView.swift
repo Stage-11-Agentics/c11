@@ -12917,6 +12917,16 @@ private struct WorkspaceRowView: View, Equatable {
         pasteboard.setString(text, forType: .string)
     }
 
+    private func copyWorkspaceLink() {
+        // Copy always targets this row, independently of sidebar multi-selection.
+        let link = PanelLinkFormat.url(kind: .workspace, id: workspace.id)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(link, forType: .string)
+        pasteboard.setString(link, forType: .URL)
+        CopyConfirmationHUD.show(message: String(localized: "copyHUD.linkCopied", defaultValue: "Link Copied"))
+    }
+
     private var visibleAuxiliaryDetails: SidebarWorkspaceAuxiliaryDetailVisibility {
         SidebarWorkspaceAuxiliaryDetailVisibility.resolved(
             showMetadata: sidebarShowMetadata,
@@ -13329,6 +13339,10 @@ private struct WorkspaceRowView: View, Equatable {
             Button(String(localized: "contextMenu.removeCustomWorkspaceName", defaultValue: "Remove Custom Workspace Name")) {
                 workspaceManager.clearCustomTitle(workspaceId: workspace.id)
             }
+        }
+
+        Button(String(localized: "contextMenu.copyLink", defaultValue: "Copy Link")) {
+            copyWorkspaceLink()
         }
 
         if !remoteContextMenuWorkspaceIds.isEmpty {

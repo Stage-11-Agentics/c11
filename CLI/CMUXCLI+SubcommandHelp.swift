@@ -256,6 +256,26 @@ extension CMUXCLI {
               c11 claude-teams --continue
               c11 claude-teams --model sonnet
             """)
+        case "link":
+            return """
+            Usage: c11 [--window <id|ref|index>] link --panel <id|ref|index> [--workspace <scope>] [--format url|markdown|osc8] [--json]
+                   c11 [--window <id|ref|index>] link --workspace <id|ref|index> [--format url|markdown|osc8] [--json]
+
+            Generate a link to an explicitly named live panel or workspace.
+            The command only reads inventory; it never selects or activates a target.
+
+            Flags:
+              --panel <id|ref|index>      Target panel; --workspace optionally scopes lookup
+              --workspace <id|ref|index>  Target workspace when --panel is absent
+              --format <format>          url (default), markdown, or osc8
+              --json                     All three formats, UUID, title, and owning workspace
+
+            UUIDs and refs must still exist in the requested scope. Ambiguous indexes fail;
+            use a UUID, ref, --workspace scope, or global --window scope.
+            Labels are bounded single-line text with terminal controls removed.
+            Markdown labels are escaped; JSON encodes OSC 8 control bytes as escapes.
+            The generated c11:// URLs work inside c11 and do not register an OS URL handler.
+            """
         case "identify":
             return """
             Usage: c11 identify [--workspace <id|ref|index>] [--panel <id|ref|index>] [--no-caller]

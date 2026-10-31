@@ -2,6 +2,162 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "contextMenu.copyLink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Copy Link"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "リンクをコピー"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Копіювати посилання"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "링크 복사"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "复制链接"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製連結"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Копировать ссылку"}}
+      }
+    },
+    "copyHUD.linkCopied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Link Copied"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "リンクをコピーしました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Посилання скопійовано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "링크 복사됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "链接已复制"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "連結已複製"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ссылка скопирована"}}
+      }
+    },
+    "panelLink.notice.terminalActivation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Command-click a c11 link to open its panel or workspace."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "Command キーを押しながら c11 リンクをクリックすると、そのパネルまたはワークスペースが開きます。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Клацніть посилання c11, утримуючи клавішу Command, щоб відкрити його панель або робочий простір."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "Command 키를 누른 채 c11 링크를 클릭하여 해당 패널 또는 작업 공간을 여세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "按住 Command 键并点击 c11 链接，即可打开其面板或工作区。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "按住 Command 鍵並點按 c11 連結，即可開啟其面板或工作區。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Щёлкните ссылку c11, удерживая клавишу Command, чтобы открыть её панель или рабочее пространство."}}
+      }
+    },
+    "panelLink.preview.workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Workspace: %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ワークスペース: %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Робочий простір: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "작업 공간: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "工作区：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "工作區：%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Рабочее пространство: %@"}}
+      }
+    },
+    "panelLink.preview.panel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Panel: %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "パネル: %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Панель: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "패널: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "面板：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "面板：%@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Панель: %@"}}
+      }
+    },
+    "cli.link.optionRepeated": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: %@ may only be supplied once"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ は一度だけ指定できます"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: %@ можна вказати лише один раз"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 옵션은 한 번만 지정할 수 있습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 只能指定一次"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 只能指定一次"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: %@ можно указать только один раз"}}
+      }
+    },
+    "cli.link.optionEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: %@ received an empty value"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ に空の値が指定されました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: для %@ отримано порожнє значення"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 옵션에 빈 값이 전달되었습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 收到了空值"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 收到了空值"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: для %@ получено пустое значение"}}
+      }
+    },
+    "cli.link.targetRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link requires --panel or --workspace; no current target is assumed"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link には --panel または --workspace が必要です。現在の対象は自動で使用されません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link потребує --panel або --workspace; поточна ціль не використовується автоматично"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link에는 --panel 또는 --workspace가 필요합니다. 현재 대상을 자동으로 사용하지 않습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link 需要 --panel 或 --workspace；不会自动使用当前目标"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link 需要 --panel 或 --workspace；不會自動使用目前的目標"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link требует --panel или --workspace; текущая цель не выбирается автоматически"}}
+      }
+    },
+    "cli.link.formatInvalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: --format must be url, markdown, or osc8"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: --format には url、markdown、osc8 のいずれかを指定してください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: --format має бути url, markdown або osc8"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: --format은 url, markdown 또는 osc8이어야 합니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: --format 必须为 url、markdown 或 osc8"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: --format 必須為 url、markdown 或 osc8"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: --format должен быть url, markdown или osc8"}}
+      }
+    },
+    "cli.link.targetInvalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: invalid %@ target '%@'; use a UUID, ref, or index"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ の対象 '%@' が無効です。UUID、参照、またはインデックスを使用してください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: недійсна ціль %@ '%@'; використайте UUID, посилання або індекс"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 대상 '%@'이(가) 유효하지 않습니다. UUID, 참조 또는 인덱스를 사용하세요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 目标 '%@' 无效；请使用 UUID、引用或索引"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 目標 '%@' 無效；請使用 UUID、參照或索引"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: недопустимая цель %@ '%@'; используйте UUID, ссылку или индекс"}}
+      }
+    },
+    "cli.link.inventoryInvalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: c11 returned an invalid target identity"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: c11 が無効な対象識別情報を返しました"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: c11 повернув недійсний ідентифікатор цілі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: c11이 유효하지 않은 대상 식별 정보를 반환했습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: c11 返回了无效的目标标识"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: c11 傳回了無效的目標識別資訊"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: c11 вернул недопустимый идентификатор цели"}}
+      }
+    },
+    "cli.link.targetAmbiguous": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: %@ target '%@' is ambiguous; use a UUID, ref, or narrower scope"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ の対象 '%@' を一意に特定できません。UUID や参照を指定するか、範囲を絞り込んでください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль %@ '%@' неоднозначна; використайте UUID, посилання або вужчу область"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 대상 '%@'이(가) 모호합니다. UUID, 참조 또는 더 좁은 범위를 사용하세요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 目标 '%@' 不明确；请使用 UUID、引用或更小的范围"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 目標 '%@' 不明確；請使用 UUID、參照或更小的範圍"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: цель %@ '%@' неоднозначна; используйте UUID, ссылку или более узкую область"}}
+      }
+    },
+    "cli.link.targetNotFound": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: %@ target '%@' is not available in the requested scope"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ の対象 '%@' は指定された範囲では利用できません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль %@ '%@' недоступна в запитаній області"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 대상 '%@'은(는) 요청한 범위에서 사용할 수 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 目标 '%@' 在请求的范围内不可用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 目標 '%@' 在要求的範圍內無法使用"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: цель %@ '%@' недоступна в запрошенной области"}}
+      }
+    },
     "cli.dragPanelToSplit.direction.count": {
       "extractionState": "manual",
       "localizations": {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C11515C001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */; };
+		C11525A003B2C3D4E5F60718 /* PanelLinkFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11525F003B2C3D4E5F60718 /* PanelLinkFormatTests.swift */; };
 		C11515A001B2C3D4E5F60718 /* PanelLinkActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */; };
 		022A09F1BE71E4DC6867B9FA /* ThemeRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F012 /* ThemeRegistryTests.swift */; };
 		05251A54C599458CAD99E315 /* markdown-viewer in Resources */ = {isa = PBXBuildFile; fileRef = 0D0D85360E4743C8A64E4740 /* markdown-viewer */; };
@@ -613,7 +614,9 @@
 		DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */; };
 		DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */; };
 		DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */; };
+		C11525A001B2C3D4E5F60718 /* PanelLinkFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11525F001B2C3D4E5F60718 /* PanelLinkFormat.swift */; };
 		DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */; };
+		C11525A001B2C3D4E5F60719 /* PanelLinkFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11525F001B2C3D4E5F60718 /* PanelLinkFormat.swift */; };
 		DH021BF0A1B2C3D4E5F60719 /* DoctorCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */; };
 		E0487C8EB075EF8AC02786A3 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353D9F81533C5DBA22A6231B /* JournalStoreTests.swift */; };
 		E1000000A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */; };
@@ -681,6 +684,7 @@
 		C11317B59660638AB77D8DC0 /* CMUXCLI+Mailbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F88974E100430E7CCF /* CMUXCLI+Mailbox.swift */; };
 		C11317BAE95A78731A7A7C64 /* CMUXCLI+Markdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F57CC8471B54A7F59F /* CMUXCLI+Markdown.swift */; };
 		C11317BB17A2A250FDBA1F94 /* CMUXCLI+Metadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317F33291D61B7FF7CD89 /* CMUXCLI+Metadata.swift */; };
+		C11525A002B2C3D4E5F60718 /* CMUXCLI+Link.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11525F002B2C3D4E5F60718 /* CMUXCLI+Link.swift */; };
 		C11317B71FD9710FD1942E8A /* CMUXCLI+Output.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FAACBB81424FF26828 /* CMUXCLI+Output.swift */; };
 		C11317B76B86B29CAF6D4224 /* CMUXCLI+PanelMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FD3EFE0949212AB3E6 /* CMUXCLI+PanelMove.swift */; };
 		C11317B81DD4C6E8FEA54F95 /* CMUXCLI+PanelTitleBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11317FCC87A34703E3893BD /* CMUXCLI+PanelTitleBar.swift */; };
@@ -772,6 +776,7 @@
 
 /* Begin PBXFileReference section */
 		C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkPolicyTests.swift; sourceTree = "<group>"; };
+		C11525F003B2C3D4E5F60718 /* PanelLinkFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PanelLinkFormatTests.swift"; sourceTree = "<group>"; };
 		C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkActivation.swift; sourceTree = "<group>"; };
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		0095C3D72A7722FFA42A7ED1 /* AreaSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AreaSizePolicy.swift; sourceTree = "<group>"; };
@@ -1328,6 +1333,7 @@
 		DH014BF1A1B2C3D4E5F60718 /* HealthFlagsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthFlagsTests.swift; sourceTree = "<group>"; };
 		DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIHealthRuntimeTests.swift; sourceTree = "<group>"; };
 		DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIResolutionSnapshot.swift; sourceTree = "<group>"; };
+		C11525F001B2C3D4E5F60718 /* PanelLinkFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PanelLinkFormat.swift"; sourceTree = "<group>"; };
 		DH021BF1A1B2C3D4E5F60719 /* DoctorCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoctorCommand.swift; sourceTree = "<group>"; };
 		DH022BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIResolutionSnapshotTests.swift; sourceTree = "<group>"; };
 		DH023BF1A1B2C3D4E5F60718 /* TerminalControllerTelemetryWorkerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalControllerTelemetryWorkerTests.swift; sourceTree = "<group>"; };
@@ -1399,6 +1405,7 @@
 		C11317F88974E100430E7CCF /* CMUXCLI+Mailbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Mailbox.swift"; sourceTree = "<group>"; };
 		C11317F57CC8471B54A7F59F /* CMUXCLI+Markdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Markdown.swift"; sourceTree = "<group>"; };
 		C11317F33291D61B7FF7CD89 /* CMUXCLI+Metadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Metadata.swift"; sourceTree = "<group>"; };
+		C11525F002B2C3D4E5F60718 /* CMUXCLI+Link.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Link.swift"; sourceTree = "<group>"; };
 		C11317FAACBB81424FF26828 /* CMUXCLI+Output.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Output.swift"; sourceTree = "<group>"; };
 		C11317FD3EFE0949212AB3E6 /* CMUXCLI+PanelMove.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+PanelMove.swift"; sourceTree = "<group>"; };
 		C11317FCC87A34703E3893BD /* CMUXCLI+PanelTitleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+PanelTitleBar.swift"; sourceTree = "<group>"; };
@@ -1690,6 +1697,7 @@
 				DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */,
 				C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */,
 				DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */,
+				C11525F001B2C3D4E5F60718 /* PanelLinkFormat.swift */,
 				C1128101A1B2C3D4E5F60718 /* SendTextParse.swift */,
 				C11285A00000000000000003 /* RpcCommand.swift */,
 				C30800000000000000000001 /* SendKeyArgs.swift */,
@@ -1919,6 +1927,7 @@
 				C11317F88974E100430E7CCF /* CMUXCLI+Mailbox.swift */,
 				C11317F57CC8471B54A7F59F /* CMUXCLI+Markdown.swift */,
 				C11317F33291D61B7FF7CD89 /* CMUXCLI+Metadata.swift */,
+				C11525F002B2C3D4E5F60718 /* CMUXCLI+Link.swift */,
 				C11317FAACBB81424FF26828 /* CMUXCLI+Output.swift */,
 				C11317FD3EFE0949212AB3E6 /* CMUXCLI+PanelMove.swift */,
 				C11317FCC87A34703E3893BD /* CMUXCLI+PanelTitleBar.swift */,
@@ -1999,6 +2008,7 @@
 				FA000001A1B2C3D4E5F60718 /* WorkspaceStressProfileTests.swift */,
 				A5008380 /* BrowserFindJavaScriptTests.swift */,
 				C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */,
+				C11525F003B2C3D4E5F60718 /* PanelLinkFormatTests.swift */,
 				C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */,
 				C11222B001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift */,
 				C11497D001B2C3D4E5F60718 /* BrowserContextMenuHitTestTests.swift */,
@@ -2437,6 +2447,7 @@
 				8B6BA07B09D5E9E01F141A44 /* BrowserChromeSnapshotTests.swift in Sources */,
 				E6C1381837332D3B253A0C42 /* BrowserFindJavaScriptTests.swift in Sources */,
 				C11515C001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift in Sources */,
+				C11525A003B2C3D4E5F60718 /* PanelLinkFormatTests.swift in Sources */,
 				C11209A001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift in Sources */,
 				C11222A001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift in Sources */,
 				60C99BCDF095711E213AAF1C /* BrowserImportMappingTests.swift in Sources */,
@@ -2755,6 +2766,7 @@
 				DH001BF0A1B2C3D4E5F60718 /* HealthCommandCore.swift in Sources */,
 				C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */,
+				C11525A001B2C3D4E5F60718 /* PanelLinkFormat.swift in Sources */,
 				C1128102A1B2C3D4E5F60718 /* SendTextParse.swift in Sources */,
 				C11285A00000000000000001 /* RpcCommand.swift in Sources */,
 				C30800000000000000000002 /* SendKeyArgs.swift in Sources */,
@@ -2962,6 +2974,7 @@
 				C11317B59660638AB77D8DC0 /* CMUXCLI+Mailbox.swift in Sources */,
 				C11317BAE95A78731A7A7C64 /* CMUXCLI+Markdown.swift in Sources */,
 				C11317BB17A2A250FDBA1F94 /* CMUXCLI+Metadata.swift in Sources */,
+				C11525A002B2C3D4E5F60718 /* CMUXCLI+Link.swift in Sources */,
 				C11317B71FD9710FD1942E8A /* CMUXCLI+Output.swift in Sources */,
 				C11317B76B86B29CAF6D4224 /* CMUXCLI+PanelMove.swift in Sources */,
 				C11317B81DD4C6E8FEA54F95 /* CMUXCLI+PanelTitleBar.swift in Sources */,
@@ -2985,6 +2998,7 @@
 				DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */,
 				C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */,
+				C11525A001B2C3D4E5F60719 /* PanelLinkFormat.swift in Sources */,
 				C1128102A1B2C3D4E5F60719 /* SendTextParse.swift in Sources */,
 				C11285A00000000000000002 /* RpcCommand.swift in Sources */,
 				C30800000000000000000003 /* SendKeyArgs.swift in Sources */,

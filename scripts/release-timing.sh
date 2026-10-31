@@ -8,7 +8,7 @@ set -euo pipefail
 count="${1:-5}"
 repo="Stage-11-Agentics/c11"
 
-printf 'tag\tconclusion\tjob_s\tbuild_s\tdeps_s\tnotarize_s\tappcast_s\tsentry_s\tupload_s\n'
+printf 'tag\tconclusion\tjob_s\tto_published_s\tbuild_s\tdeps_s\tnotarize_s\tappcast_s\tsentry_s\tupload_s\n'
 gh run list -R "$repo" --workflow release.yml --limit "$count" \
   --json databaseId,headBranch,conclusion --jq '.[] | "\(.databaseId) \(.headBranch) \(.conclusion)"' |
 while read -r id tag conclusion; do
@@ -19,6 +19,9 @@ while read -r id tag conclusion; do
           | ((.completed_at | fromdate) - (.started_at | fromdate))] | first // "");
         [ $tag, $c,
           (if $j.completed_at then (($j.completed_at | fromdate) - ($j.started_at | fromdate)) else "" end),
+          # Job start to the end of the release upload: what users wait for.
+          ([$j.steps[] | select(.name == "Upload release asset" and .completed_at != null)
+            | ((.completed_at | fromdate) - ($j.started_at | fromdate))] | first // ""),
           dur("Build app (Release)"), dur("Install build deps"), dur("Notarize app"),
           dur("Generate Sparkle appcast"), dur("Upload dSYMs to Sentry"), dur("Upload release asset")
         ] | @tsv'

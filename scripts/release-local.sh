@@ -19,7 +19,11 @@ set -euo pipefail
 # ---------------------------------------------------------------- constants --
 REPO_SLUG="Stage-11-Agentics/c11"
 SIGNING_IDENTITY="${C11_SIGNING_IDENTITY:-Developer ID Application: Authentic Technologies Inc. (UKQ4QALWD4)}"
-NOTARY_PROFILE="${C11_NOTARY_PROFILE:-c11-notary}"
+# notarytool keychain profiles for team UKQ4QALWD4, tried in order unless
+# C11_NOTARY_PROFILE names one. acetate-notary is the same team's profile that
+# Hyperion already holds.
+NOTARY_PROFILE_CANDIDATES=(c11-notary acetate-notary)
+NOTARY_PROFILE="${C11_NOTARY_PROFILE:-${NOTARY_PROFILE_CANDIDATES[0]}}"
 SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 # The public half of the c11mux key; every shipped c11 trusts only this key.
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
@@ -223,10 +227,24 @@ note "signing identity present: $SIGNING_IDENTITY"
 
 if [[ "$SKIP_NOTARIZE_CHECK" -eq 1 ]]; then
   note "notarytool profile check skipped (--skip-notarize-check)"
-elif xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>"$OUT/notary-check.err"; then
+else
+  candidates=("$NOTARY_PROFILE")
+  [[ -z "${C11_NOTARY_PROFILE:-}" ]] && candidates=("${NOTARY_PROFILE_CANDIDATES[@]}")
+  NOTARY_OK=0
+  for profile in "${candidates[@]}"; do
+    if xcrun notarytool history --keychain-profile "$profile" >/dev/null 2>"$OUT/notary-check.err"; then
+      NOTARY_PROFILE="$profile"
+      NOTARY_OK=1
+      break
+    fi
+  done
+fi
+if [[ "$SKIP_NOTARIZE_CHECK" -eq 1 ]]; then
+  :
+elif [[ "$NOTARY_OK" -eq 1 ]]; then
   note "notarytool profile '$NOTARY_PROFILE' works"
 else
-  msg="notarytool keychain profile '$NOTARY_PROFILE' is missing or rejected: $(tr '\n' ' ' <"$OUT/notary-check.err")"
+  msg="no working notarytool keychain profile (tried: ${candidates[*]}): $(tr '\n' ' ' <"$OUT/notary-check.err")"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     note "WARNING (a real run stops here): $msg"
   else

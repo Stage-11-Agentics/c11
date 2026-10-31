@@ -114,11 +114,14 @@ def preview_count():
 
 
 def drag_width(width):
+    # Resolve the host even if a non-key preview is first in the AX window list.
+    # Let mouse-down establish the native gesture before sending movement.
+    osa('key code 53')
     current = layout()['effective_width']
-    win = [float(v) for v in osa('get {position, size} of window 1').split(', ')]
+    win = [float(v) for v in osa('get {position, size} of (first window whose subrole is "AXStandardWindow")').split(', ')]
     start = (round(win[0]+current), round(win[1]+220))
     finish = (round(win[0]+width), start[1])
-    mouse([f'm:{start[0]},{start[1]}', 'w:100', f'dd:{start[0]},{start[1]}'])
+    mouse([f'm:{start[0]},{start[1]}', 'w:150', f'dd:{start[0]},{start[1]}', 'w:150'])
     try:
         for i in range(1, 11):
             x = round(start[0]+(finish[0]-start[0])*i/10)

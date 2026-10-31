@@ -1,6 +1,6 @@
 # c11v: terminals anywhere, one c11
 
-Status: design draft, 2026-10-24; decisions 6 and 7 and the step 0 results added 2026-10-28. Owner: Atin. Working project name: **c11v** ("c11 Plus" is the alternative).
+Status: design draft, 2026-10-24; decisions 6 and 7 and the step 0 results added 2026-10-28; decision 8, the Prime transport correction and the session finder added 2026-10-30. Owner: Atin. Working project name: **c11v** ("c11 Plus" is the alternative).
 Related: `docs/remote-daemon-spec.md` (today's `c11 ssh` and `c11d-remote`), `upstream-triage/c11-1.0/02-ssh-agents.md` (remote agent research), `upstream-triage/c11-1.0/04-ios-companion.md` (phone view).
 
 ## Decisions so far
@@ -12,6 +12,7 @@ Related: `docs/remote-daemon-spec.md` (today's `c11 ssh` and `c11d-remote`), `up
 5. **c11 stays workable for its users at every step.** Hundreds of people use it daily. Everything here ships behind settings, falls back to today's path, and lands in small steps (see Keeping c11 workable).
 6. **Remote hosts come before the local default.** Step 2 (opt-in remote terminals) ships before step 3 (daemon terminals by default), so the daemon is proven on work that opted in before it touches anyone's everyday terminal.
 7. **The work starts as a spike, not a ticket.** Step 0 runs first with no ticket; tickets are cut from what it settles.
+8. **Mail between hosts is Constellation Bus's job.** `c11d` never sends mail to another host. Each host's `c11d` is the bus's last mile there: the bus registers panel addresses with `c11d` over its socket and drops envelopes into the mailbox outbox, with its own fields under `ext.cbus`. The doorbell and composer checks stay in `c11d`. Without the bus, mail stays within each host and remote terminals still work. Why: Prime boxes accept no inbound connections, systems such as CI and the phone run no `c11d`, and c11 is public while the bus is Stage 11's private setup. (Atin, bus decision D39, 2026-10-29; bus criteria AC-79 to AC-81, AC-120 to AC-125, AC-176 to AC-178.)
 
 ## The idea
 
@@ -45,7 +46,7 @@ flowchart LR
   PH["c11v on a phone<br/>later"]
   V -->|"Unix socket"| DH
   V -->|"TLS on the tailnet"| DA
-  V -->|"TLS on the tailnet"| DP
+  V -->|"SSH stdio, while held"| DP
   PH -.->|"TLS on the tailnet"| DA
 ```
 
@@ -125,7 +126,7 @@ These rules hold at every step.
 | Terminal process, PTY, foreground process group | `c11d` | Survives every viewer event |
 | Screen, scrollback, modes, title, cwd | `c11d` | A headless VT per terminal; the viewer's Ghostty surface is a renderer replayed into |
 | Creation lineage (`parent_panel_id`), agent identity, lifecycle, metadata, status, progress, log, flags, delegate state | `c11d` | Written by agents through their host's socket (step 4) |
-| Mailbox, events stream, journal, conversation refs, transcript scraping, prompt cache, model detection | `c11d` | Read where the transcripts live; c11 aggregates (step 4) |
+| Mailbox, events stream, journal, conversation refs, session index, transcript scraping, prompt cache, model detection | `c11d` | Read where the transcripts live; c11 aggregates (step 4). Mail stays on its host; the bus carries it between hosts (decision 8) |
 | Input guard and doorbell typing | `c11d` | It holds the screen model and the PTY, so composer reads and checked input happen next to the bytes |
 | Windows, workspaces, folders, areas, split geometry, panel order | c11 | A workspace may hold terminals from several hosts |
 | Focus, selection, seen time, focus history, attention routing, Feed | c11 | Per viewer; one viewer's focus never moves another's |
@@ -230,13 +231,23 @@ Programmatic input gains a checked form, after mux's terminal-control API: a cal
 
 Agent detection moves to `c11d`, which sees the PTY's real foreground process (today `AgentDetector` runs `ps -t` against local ttys and sees only `ssh` for remote tabs).
 
+### Finding sessions across hosts
+
+Each `c11d` keeps a read-only index of every agent transcript on its host, not only the sessions it launched: Claude Code (`~/.claude/projects`) and Codex sessions, with session id, harness, cwd, title, last active time, whether the session is live, and which terminal holds it. Transcripts stay on their host.
+
+- `c11 conversation find [query]` combines the indexes of every connected host; `-a` runs a deep search on the transcript's own host.
+- Picking a live session focuses its panel instead of resuming it a second time, because two processes resuming one session is a known hazard.
+- Picking an idle session opens a daemon terminal on its host running the harness's resume command, as `c11 conversation resume` does today.
+- A local-only version can ship before c11v, on today's conversation store plus a transcript scan (C11-518). Step 2 adds hosts; step 4 moves the index into `c11d`. Whether the local version ships first is Atin's call.
+
 ### Hosts and transport
 
 - **Same machine:** Unix socket.
 - **Another machine:** TLS over TCP on the tailnet. The host key is generated at install and pinned on first contact (trust on first use, like `known_hosts`); each viewer holds a client token whose digest the host authorizes. Tailnet addresses are stable across Wi-Fi and LTE changes, so a connection survives roaming without QUIC.
 - **Fallback:** SSH stdio for hosts with no tailnet, reusing today's bootstrap: upload a release-pinned, SHA-verified `c11d`, run it, attach. Unlike today, the daemon it starts is persistent and outlives the SSH link.
+- **Prime boxes:** they never join the tailnet. Their only inbound path is Prime's SSH gateway (a PTY; `-- cmd` works; no port forwarding), so a Prime host always uses the SSH stdio path and is reachable only while a viewer holds that link. Its `c11d` keeps running when the link drops, and the next link reattaches.
 
-Viewers initiate connections to hosts. Hosts never dial a laptop.
+Viewers initiate connections to hosts. Hosts never dial a laptop or each other.
 
 ### Browsers and markdown
 
@@ -266,9 +277,9 @@ Each step ships on its own, behind the rules in Keeping c11 workable.
 |---|---|---|---|
 | 0 Spike | Tagged build: one terminal on the manual IO backend fed by a stub local daemon. Latency, the manual-IO checklist, the TCC check, a separability read of cmux-tui's terminal host | Nothing | Build-or-adopt and language decided, with numbers. Ran 2026-10-28 (Step 0 results); the decisions wait on Atin |
 | 1 Hidden backend | Real `c11d` on this Mac; the daemon backend behind an off-by-default setting. Reattach replay, close grace and reopen, Quit and End All, fd-handoff upgrade, `SMAppService` on opt-in, per-tag isolation, fallback to exec | Nothing unless they opt in | Force-quit c11 mid-run with 20 agents on Atin's machine; relaunch; every agent is still running with its exact screen |
-| 2 Hosts | `c11d` on Atlas, Linux and Prime boxes; tailnet transport and SSH fallback; host badges; New Terminal On; `--host` | Opt-in remote terminals beside local ones | A workspace mixes Hyperion and Atlas terminals; close the laptop for an hour; Atlas work continues; reopen and it is live |
+| 2 Hosts | `c11d` on Atlas, Linux and Prime boxes; tailnet transport, and SSH stdio for Prime boxes and other hosts off the tailnet; host badges; New Terminal On; `--host` | Opt-in remote terminals beside local ones | A workspace mixes Hyperion and Atlas terminals; close the laptop for an hour; Atlas work continues; reopen and it is live. A Prime terminal survives its SSH link dropping and reattaches on the next link |
 | 3 Default | New terminals use the daemon by default; exec stays as a fallback setting; existing terminals finish on exec | Terminals survive quits and crashes | A release cycle on the default with no regression reports that trace to it |
-| 4 Agent state | CLI agent verbs answered by the host daemon; metadata, flags, mailbox, events, journal, conversation scraping and prompt cache per host; checked input; doorbell in the daemon | Remote agents get full sidebar status, flags and mail | The full c11 skill works from an Atlas terminal, and with c11 closed as far as agent-owned verbs go |
+| 4 Agent state | CLI agent verbs answered by the host daemon; metadata, flags, mailbox, events, journal, conversation scraping, the session index and prompt cache per host; the mailbox acknowledges mail after it is handled, not when it is read, and keeps the outbox-file seam unchanged (bus AC-80); checked input; doorbell in the daemon | Remote agents get full sidebar status, flags and mail; `c11 conversation find` searches every connected host | The full c11 skill works from an Atlas terminal, and with c11 closed as far as agent-owned verbs go |
 | 5 Provisioning | One command to create a Prime sandbox with `c11d`, skills, CLIs and dotfiles; other providers as plug-ins | A new box in one command | A new box is a usable host in one command |
 | 6 More viewers | Web and phone viewers; several viewers on one host at once | Steer the fleet from a phone | A blocked agent on Atlas is answered from the phone |
 
@@ -315,7 +326,7 @@ Three bodies of work already solve parts of this.
 
 1. **Build or adopt?** Step 0 recommends a Rust `c11d` around a forked, CMTH-compatible copy of cmux-tui's terminal host (Step 0 results 8). Waiting on Atin.
 2. **Where does a workspace's structure live once agents create panels with no viewer attached?** Lean: `c11d` records terminals, lineage and placement hints; c11 owns geometry and applies hints. Upstream's "frontend projections" are the heavier alternative.
-3. **How does mail cross hosts?** Lean: daemon to daemon over the authenticated transport, so Atlas agents can reach Prime agents with the laptop shut. This is the one place a host dials another host, and it needs its own allowlist.
+3. **How does mail cross hosts?** Decided: Constellation Bus carries it, and `c11d` never sends mail to another host (decision 8).
 4. **Remote transport:** TLS on the tailnet (lean) versus QUIC like mux. QUIC adds roaming the tailnet already gives us.
 5. **Grace period default:** 60 s like mux, or longer for agents? Lean: 60 s, configurable.
 6. **Multi-viewer size policy:** most recently focused viewer owns size (lean), or smallest wins as `c11d-remote` does today.

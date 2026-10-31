@@ -60,7 +60,7 @@ After R1-R4 a release is about 28 min. Reaching 15 min needs B. Its options:
 
 Xcode 16.4 runs only through macOS 26.1.x ([Apple's support table](https://developer.apple.com/support/xcode/)), so it cannot run on Atlas (macOS 26.5), and the pin ends when GitHub retires its `macos-15` images.
 
-1. Move the pin to Xcode 26.x and release from Atlas with `release-local.sh`: about 10-12 min. Users on macOS 26 get the 26 SDK's system look (Apple's `UIDesignRequiresCompatibility` key can keep the old one), and signing credentials move onto Atlas.
+1. Move the pin to Xcode 26.x and release with `release-local.sh`: about 10-12 min. Atlas does only the build; Hyperion signs, notarizes, signs the appcast and publishes, so credentials stay on Hyperion (the `c11-notary` profile has to be stored there once). Users on macOS 26 get the 26 SDK's system look; Apple's `UIDesignRequiresCompatibility` key can keep the old one.
 2. Move the pin to Xcode 26.x and keep the free GitHub runner: fixes the pin, no speed gain (about 28 min).
 3. Keep the pin on paid `macos-15-xlarge`, arm64-only: about 14 min (estimate). Drops Intel Macs, and the pin still ends with `macos-15`.
 4. Paid `macos-15-xlarge` alone, or free per-architecture parallel jobs with a `lipo` merge: about 21 min each; neither meets 15.

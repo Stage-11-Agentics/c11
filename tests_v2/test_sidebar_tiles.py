@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import time
+import atexit
 
 signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('10-minute proof deadline')))
 signal.alarm(600)
@@ -98,8 +99,18 @@ def shot(name):
     subprocess.run(['screencapture', '-x', '-o', str(OUT/(name+'.png'))], check=True, timeout=10)
 
 
+def stop_recording():
+    if RECORDING.poll() is None:
+        RECORDING.terminate()
+        RECORDING.wait(timeout=8)
+
+
 def menu_toggle():
     osa('click menu item "Double Wide" of menu 1 of menu item "Sidebar" of menu 1 of menu bar item "View" of menu bar 1')
+
+
+def preview_count():
+    return int(osa('count of (windows whose subrole is "AXSystemDialog")'))
 
 
 def drag_width(width):
@@ -136,7 +147,9 @@ osa('set frontmost to true')
 time.sleep(.3)
 initial = call('system.identify')['focused']
 WS, WINDOW, TERMINAL = initial['workspace_id'], initial['window_id'], initial['panel_id']
-call('window.resize', window_id=WINDOW, width=1600, height=1000)
+osa('set position of window 1 to {20, 40}')
+display = call('window.resize', window_id=WINDOW, width=1600, height=1000)
+note('verified-display', window=display)
 for panel in call('panel.list', workspace_id=WS)['panels']:
     if panel['id'] != TERMINAL:
         call('panel.close', workspace_id=WS, panel_id=panel['id'])
@@ -150,9 +163,35 @@ for i in range(2, 14):
 group = call('workspace.group.create', window_id=WINDOW, name='Tiles fixture folder')['group_id']
 for ws in FLEET[-3:]:
     call('workspace.group.move', window_id=WINDOW, workspace_id=ws, to_group_id=group)
-time.sleep(.4)
+# Bounded presentation fixtures: an overflow roster, a long flagged reason,
+# and ordinary shell-only workspaces. These are metadata fixtures, not agents.
+for index, ws in enumerate(FLEET[:4]):
+    panels = [] if index == 0 else [call('panel.list', workspace_id=ws)['panels'][0]['id']]
+    for _ in range((9 if index == 0 else 3)-len(panels)):
+        panels.append(call('panel.create', workspace_id=ws, type='terminal', focus=False)['panel_id'])
+    for n, panel in enumerate(panels):
+        metadata = dict(terminal_type=['claude-code', 'codex', 'grok'][n % 3],
+                        title=f'Fixture agent {n+1}', description='Tiles presentation fixture')
+        call('panel.set_metadata', panel_id=panel, workspace_id=ws,
+             mode='merge', source='explicit', metadata=metadata)
+        # An unknown foreground command lets the declared fixture kind render;
+        # an idle shell correctly overrides a stale agent declaration.
+        call('panel.send_text', panel_id=panel, workspace_id=ws,
+             text="python3 -u -c 'import time; time.sleep(600)'\n")
+        if index == 1 and n == 0:
+            call('flag.raise', workspace_id=ws, panel_id=panel, by='operator',
+                 reason='A long review request that must truncate inside the tile')
+        if index == 2 and n == 0:
+            call('notification.create_for_panel', workspace_id=ws, panel_id=panel,
+                 title='Tiles unread fixture', body='Check the existing attention treatment')
+time.sleep(11)
+(OUT/'fixture.json').write_text(json.dumps(dict(workspace=WS, window=WINDOW, terminal=TERMINAL,
+                                              fleet=FLEET, group=group), indent=2))
 assert not layout()['double_wide']
 shot('off-baseline')
+# Self-terminating recording on the already verified isolated guest display.
+RECORDING = subprocess.Popen(['screencapture', '-x', '-v', '-V180', '-D1', '-k', str(OUT/'tiles-toggle-drag-hover.mov')])
+atexit.register(stop_recording)
 press('titlebarControl.doubleWideSidebar')
 wait_for(lambda: layout()['double_wide'], 'glyph enables Tiles')
 assert layout()['effective_width'] == 400
@@ -182,8 +221,10 @@ menu_toggle()
 wait_for(lambda: layout()['double_wide'], 'menu enables Tiles')
 # A real pointer hover while the terminal is focused must not take typing focus.
 call('panel.focus', workspace_id=WS, panel_id=TERMINAL)
+time.sleep(.5)
 frame = rect('sidebar.workspace.'+FLEET[-3])
-mouse([f'm:{round(frame[0]+45)},{round(frame[1]+40)}', 'w:400'])
+mouse(['m:800,500', 'w:150', f'm:{round(frame[0]+45)},{round(frame[1]+40)}', 'w:700'])
+wait_for(lambda: preview_count() == 1, 'full hover card is actually visible')
 assert call('system.identify')['focused']['panel_id'] == TERMINAL
 shot('hover')
 osa('keystroke "tiles-hover-input"')
@@ -192,6 +233,7 @@ screen = call('panel.read_text', workspace_id=WS, panel_id=TERMINAL)
 assert 'tiles-hover-input' in json.dumps(screen), screen
 assert call('system.identify')['focused']['panel_id'] == TERMINAL
 osa('key code 53')
+wait_for(lambda: preview_count() == 0, 'Escape dismisses hover')
 note('hover-keeps-terminal-input', focused=call('system.identify')['focused'])
 # The oracle resolves the requested window even when a second window exists.
 second = call('window.create')

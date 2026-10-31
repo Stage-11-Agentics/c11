@@ -12264,16 +12264,33 @@ final class SidebarTileHoverAnchor: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+#if DEBUG
+        dlog("sidebar.tilePreview.enter bounds=\(bounds) key=\(window?.isKeyWindow == true)")
+#endif
         guard let window, window.isKeyWindow else { return }
-        if let existing = Self.active.object(forKey: window), existing !== self { existing.dismiss() }
+        if let existing = Self.active.object(forKey: window), existing !== self {
+            // Crossing a neighboring cell must not replace the card while the
+            // pointer is travelling through its passage to the preview.
+            if existing.preview != nil, existing.previewPassage.contains(NSEvent.mouseLocation) { return }
+            existing.dismiss()
+        }
+        if preview != nil { return }
         Self.active.setObject(self, forKey: window)
         pending?.cancel()
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss() }
+        })
         let work = DispatchWorkItem { [weak self] in self?.show() }
         pending = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     override func mouseExited(with event: NSEvent) {
+#if DEBUG
+        dlog("sidebar.tilePreview.exit visible=\(preview != nil)")
+#endif
         if preview == nil { dismiss() } else { checkPointer() }
     }
 
@@ -12304,11 +12321,18 @@ final class SidebarTileHoverAnchor: NSView {
 
     private func show() {
         pending = nil
-        guard let window, window.isKeyWindow, !visibleRect.isEmpty,
+#if DEBUG
+        dlog("sidebar.tilePreview.show bounds=\(bounds) visible=\(visibleRect) key=\(window?.isKeyWindow == true)")
+#endif
+        guard NSEvent.pressedMouseButtons == 0,
+              let window, window.isKeyWindow, !visibleRect.isEmpty,
               let workspaceManager,
               let layout = AppDelegate.shared?.sidebarLayout(for: workspaceManager),
               let sidebarWidth = layout["effective_width"] as? Double else { dismiss(); return }
         sourceFrame = window.convertToScreen(convert(bounds, to: nil))
+#if DEBUG
+        dlog("sidebar.tilePreview.position source=\(sourceFrame) pointer=\(NSEvent.mouseLocation)")
+#endif
         guard sourceFrame.contains(NSEvent.mouseLocation) else { dismiss(); return }
         let panel = SidebarTilePreviewPanel(contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -12336,6 +12360,7 @@ final class SidebarTileHoverAnchor: NSView {
         window.acceptsMouseMovedEvents = true
         pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .scrollWheel, .leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self else { return event }
+            if event.type == .scrollWheel, event.window === self.preview { return event }
             if event.type == .leftMouseDragged || event.type == .scrollWheel { self.dismiss() }
             else { self.checkPointer() }
             return event
@@ -12363,10 +12388,14 @@ final class SidebarTileHoverAnchor: NSView {
         let point = NSEvent.mouseLocation
         // The narrow bridge is needed to reach the card from the tile without
         // closing it in the eight-point gap (or over the adjacent grid cell).
-        let bridge = NSRect(x: sourceFrame.minX, y: sourceFrame.minY,
-                            width: max(sourceFrame.width, preview.frame.minX - sourceFrame.minX + 2),
-                            height: sourceFrame.height)
-        if !sourceFrame.contains(point) && !preview.frame.contains(point) && !bridge.contains(point) { dismiss() }
+        if !sourceFrame.contains(point) && !preview.frame.contains(point) && !previewPassage.contains(point) { dismiss() }
+    }
+
+    private var previewPassage: NSRect {
+        guard let preview else { return .zero }
+        return NSRect(x: sourceFrame.minX, y: sourceFrame.minY,
+                      width: max(sourceFrame.width, preview.frame.minX - sourceFrame.minX + 2),
+                      height: sourceFrame.height)
     }
 }
 

@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""C11-523 native acceptance. Only run through sandbox-tests-v2.sh."""
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import socket
+import subprocess
+import time
+
+signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('10-minute proof deadline')))
+signal.alarm(600)
+SOCKET = os.environ.get('C11_SOCKET_PATH', '')
+assert re.fullmatch(r'/tmp/c11-sandbox-[A-Za-z0-9._-]+\.sock', SOCKET), 'sandbox socket required'
+RUN = SOCKET.removeprefix('/tmp/c11-sandbox-').removesuffix('.sock')
+for key in list(os.environ):
+    if key.startswith(('C11_SOCKET', 'CMUX_SOCKET')):
+        del os.environ[key]
+APP_ROOT = f'/Users/admin/c11-sandbox/apps/{RUN}/'
+PIDS = [int(line.strip().split(None, 1)[0]) for line in subprocess.check_output(['ps', '-axo', 'pid,comm'], text=True).splitlines()
+        if APP_ROOT in line and line.endswith('/Contents/MacOS/c11')]
+assert len(PIDS) == 1, ('exact guest app missing', PIDS)
+PID = PIDS[0]
+OUT = Path('/Volumes/My Shared Files/out/sidebar-tiles')
+assert OUT.parent.is_dir()
+OUT.mkdir(exist_ok=True)
+CLIENT = socket.socket(socket.AF_UNIX)
+CLIENT.settimeout(12)
+CLIENT.connect(SOCKET)
+READER = CLIENT.makefile('rb')
+SEQ = 0
+RESULTS = []
+
+
+def call(method, **params):
+    global SEQ
+    SEQ += 1
+    CLIENT.sendall((json.dumps(dict(id=SEQ, method=method, params=params))+'\n').encode())
+    result = json.loads(READER.readline())
+    assert result['id'] == SEQ and result.get('ok'), (method, result)
+    return result['result']
+
+
+def osa(body):
+    return subprocess.check_output(['osascript', '-e',
+        f'tell application "System Events" to tell (first process whose unix id is {PID})\n{body}\nend tell'], text=True, timeout=20).strip()
+
+
+def wait_for(predicate, label, timeout=8):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if predicate():
+            return
+        time.sleep(.1)
+    raise AssertionError(label)
+
+
+def note(name, **data):
+    RESULTS.append(dict(case=name, **data))
+    (OUT/'result.json').write_text(json.dumps(dict(pid=PID, socket=SOCKET, cases=RESULTS), indent=2))
+    print('PASS', name, json.dumps(data), flush=True)
+
+
+def ax(identifier, action='return {position of e, size of e}'):
+    body = f'''set es to entire contents of window 1
+repeat with e in es
+try
+if (value of attribute "AXIdentifier" of e) is {json.dumps(identifier)} then
+{action}
+end if
+end try
+end repeat
+error "missing AX target: {identifier}"'''
+    return osa(body)
+
+
+def rect(identifier):
+    values = [float(v) for v in ax(identifier).split(', ')]
+    assert len(values) == 4, values
+    return values
+
+
+def press(identifier):
+    return ax(identifier, 'perform action "AXPress" of e\nreturn "pressed"')
+
+
+def mouse(command):
+    subprocess.run(['/opt/homebrew/bin/cliclick', *command], check=True, timeout=10)
+
+
+def layout(ws=None):
+    return call('sidebar.state', workspace_id=ws or WS)['layout']
+
+
+def shot(name):
+    assert osa('get frontmost') == 'true'
+    subprocess.run(['screencapture', '-x', '-o', str(OUT/(name+'.png'))], check=True, timeout=10)
+
+
+def menu_toggle():
+    osa('click menu item "Double Wide" of menu 1 of menu item "Sidebar" of menu 1 of menu bar item "View" of menu bar 1')
+
+
+def drag_width(width):
+    current = layout()['effective_width']
+    win = [float(v) for v in osa('get {position, size} of window 1').split(', ')]
+    start = (round(win[0]+current), round(win[1]+220))
+    finish = (round(win[0]+width), start[1])
+    mouse([f'm:{start[0]},{start[1]}', 'w:100', f'dd:{start[0]},{start[1]}'])
+    try:
+        for i in range(1, 11):
+            x = round(start[0]+(finish[0]-start[0])*i/10)
+            mouse([f'dm:{x},{start[1]}', 'w:30'])
+    finally:
+        mouse([f'du:{finish[0]},{finish[1]}'])
+    wait_for(lambda: abs(layout()['effective_width']-width) <= 1, 'drag width')
+
+
+def measure(expected_width, expected_columns):
+    state = layout()
+    assert state['double_wide']
+    assert abs(state['effective_width']-expected_width) <= 1, state
+    assert state['columns'] == expected_columns, state
+    frames = {ws: rect('sidebar.workspace.'+ws) for ws in FLEET}
+    for frame in frames.values():
+        assert abs(frame[3]-75) <= 1, frame
+    win = [float(v) for v in osa('get {position, size} of window 1').split(', ')]
+    assert state['effective_width'] <= min(600, win[2]/3)+1
+    if expected_width == 400:
+        assert all(win[1]+30 <= r[1] and r[1]+r[3] <= win[1]+win[3]-40 for r in frames.values()), (win, frames)
+    note(f'geometry-{expected_width}', layout=state, frames=frames)
+
+
+osa('set frontmost to true')
+time.sleep(.3)
+initial = call('system.identify')['focused']
+WS, WINDOW, TERMINAL = initial['workspace_id'], initial['window_id'], initial['panel_id']
+call('window.resize', window_id=WINDOW, width=1600, height=1000)
+for panel in call('panel.list', workspace_id=WS)['panels']:
+    if panel['id'] != TERMINAL:
+        call('panel.close', workspace_id=WS, panel_id=panel['id'])
+for ws in call('workspace.list', window_id=WINDOW)['workspaces']:
+    if ws['id'] != WS:
+        call('workspace.close', workspace_id=ws['id'])
+call('workspace.rename', workspace_id=WS, title='Tiles 01 terminal')
+FLEET = [WS]
+for i in range(2, 14):
+    FLEET.append(call('workspace.create', window_id=WINDOW, title=f'Tiles {i:02}')['workspace_id'])
+group = call('workspace.group.create', window_id=WINDOW, name='Tiles fixture folder')['group_id']
+for ws in FLEET[-3:]:
+    call('workspace.group.move', window_id=WINDOW, workspace_id=ws, to_group_id=group)
+time.sleep(.4)
+assert not layout()['double_wide']
+shot('off-baseline')
+press('titlebarControl.doubleWideSidebar')
+wait_for(lambda: layout()['double_wide'], 'glyph enables Tiles')
+assert layout()['effective_width'] == 400
+note('glyph-toggle', layout=layout())
+for theme in ['Light', 'Dark']:
+    osa(f'click menu item "{theme}" of menu 1 of menu item "Appearance" of menu 1 of menu bar item "View" of menu bar 1')
+    for width, cols in [(400, 2), (486, 3), (200, 1)]:
+        drag_width(width)
+        # At 200 the fixture scrolls: geometry remains 75 pt even if below viewport.
+        if width != 200:
+            measure(width, cols)
+        else:
+            assert layout()['double_wide'] and layout()['columns'] == 1
+            note('geometry-200', layout=layout(), first_frame=rect('sidebar.workspace.'+FLEET[-3]))
+        shot(f'{theme.lower()}-{width}')
+drag_width(400)
+for width, cols in [(971, 1), (972, 2), (1050, 2), (1200, 2), (1600, 2)]:
+    call('window.resize', window_id=WINDOW, width=width, height=1000)
+    wait_for(lambda: layout()['columns'] == cols, f'window {width} columns')
+    state = layout()
+    assert state['effective_width'] <= min(600, width/3)+1
+    note(f'window-{width}', layout=state)
+menu_toggle()
+wait_for(lambda: not layout()['double_wide'], 'menu disables Tiles')
+assert layout()['effective_width'] == 200
+menu_toggle()
+wait_for(lambda: layout()['double_wide'], 'menu enables Tiles')
+# A real pointer hover while the terminal is focused must not take typing focus.
+call('panel.focus', workspace_id=WS, panel_id=TERMINAL)
+frame = rect('sidebar.workspace.'+FLEET[-3])
+mouse([f'm:{round(frame[0]+45)},{round(frame[1]+40)}', 'w:400'])
+assert call('system.identify')['focused']['panel_id'] == TERMINAL
+shot('hover')
+osa('keystroke "tiles-hover-input"')
+time.sleep(.1)
+screen = call('panel.read_text', workspace_id=WS, panel_id=TERMINAL)
+assert 'tiles-hover-input' in json.dumps(screen), screen
+assert call('system.identify')['focused']['panel_id'] == TERMINAL
+osa('key code 53')
+note('hover-keeps-terminal-input', focused=call('system.identify')['focused'])
+# The oracle resolves the requested window even when a second window exists.
+second = call('window.create')
+second_id = second['window_id']
+second_ws = call('workspace.list', window_id=second_id)['workspaces'][0]['id']
+assert not layout(second_ws)['double_wide'] and layout(WS)['double_wide']
+call('session.save', include_scrollback=False)
+(OUT/'restore-expected.json').write_text(json.dumps(dict(first=WS, second=second_ws, first_layout=layout(WS), second_layout=layout(second_ws)), indent=2))
+note('two-window-isolation', first=layout(WS), second=layout(second_ws))
+CLIENT.close()
+print('PASS core Tiles acceptance; restore and extended action proofs are separate phases', flush=True)

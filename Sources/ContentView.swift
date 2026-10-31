@@ -8523,6 +8523,8 @@ struct WorkspaceSidebar: View {
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(ChromeScaleSettings.presetKey)
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
+    @AppStorage(ChromeScaleSettings.customMultiplierKey)
+    private var chromeScaleCustomMultiplier = Double(ChromeScaleSettings.defaultCustomMultiplier)
     /// C11-104 v2 — chip row is gated by the preserved
     /// `sidebarShowBranchDirectory` key (existing user prefs survive
     /// the legacy-row → chip-row migration).
@@ -8631,7 +8633,10 @@ struct WorkspaceSidebar: View {
         // precomputed `let` to TabItemView so its typing-latency hot-path
         // == comparison stays a single multiplier compare. (C11-6)
         let chromeTokens = ChromeScaleTokens(
-            multiplier: ChromeScaleSettings.multiplier(
+            multiplier: compact ? ChromeScaleSettings.multiplier(
+                presetRaw: chromeScalePresetRaw,
+                customMultiplier: chromeScaleCustomMultiplier
+            ) : ChromeScaleSettings.multiplier(
                 for: ChromeScaleSettings.preset(for: chromeScalePresetRaw)
             )
         )

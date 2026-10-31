@@ -89,9 +89,14 @@ c11.entitlements                                       (the six declarations)
 ## 3. URL handler
 
 c11 declares itself a `Default` handler for the `http` and `https`
-schemes in `Resources/Info.plist`. There is no bespoke `c11://` or
-`cmux://` scheme; URL-as-action is constrained to whatever
-`AppDelegate.application(_:open:)` does with the incoming URL list.
+schemes in `Resources/Info.plist`. No `c11://` or `cmux://` scheme is
+registered with Launch Services; URL-as-action from other apps is
+constrained to whatever `AppDelegate.application(_:open:)` does with the
+incoming URL list. `c11://panel/<uuid>` and `c11://workspace/<uuid>`
+links (1.6) exist only inside c11: they are routed in-process from a
+native click in a terminal, markdown panel or local browser page, and are
+never accepted from another app, the CLI or the socket (section 4, Panel
+links).
 
 The handler converts incoming URLs to *folders* via
 `externalOpenDirectories(from:)` and opens those folders as new c11
@@ -140,9 +145,11 @@ renders HTML. The relevant ATS posture:
 
 The browser exposes no page-reachable bridge to the c11 socket. Markdown
 uses a separate, allowlisted `c11md` script-message channel described below;
-its controller is never shared with browser content. As of 1.1, `c11md` is
-the only `WKScriptMessageHandler` in the app. New handlers must be
-recorded here when introduced. The ATS relaxation applies to markdown too,
+its controller is never shared with browser content. As of 1.6 there are
+two `WKScriptMessageHandler`s: `c11md` (markdown only) and `c11PanelLink`
+(Panel links, below), which is registered only in the isolated
+`c11.panel-links` content world. New handlers must be recorded here when
+introduced. The ATS relaxation applies to markdown too,
 so its CSP and native navigation policy enforce the offline boundary.
 
 Terminal and markdown link clicks share one router (`openC11WebLink`,
@@ -150,6 +157,61 @@ Terminal and markdown link clicks share one router (`openC11WebLink`,
 browser panel when the operator's link settings and host allowlist say
 so, and otherwise hands the URL to `NSWorkspace`; Option-click forces the
 external browser. It never changes the selected workspace.
+
+Panel links (1.6, C11-515, C11-525, C11-532). A `c11://panel/<uuid>` or
+`c11://workspace/<uuid>` link selects the destination workspace and window,
+focuses the panel and flashes it. This is the one path by which something
+other than an operator's sidebar, shortcut or menu action changes the
+selected workspace, so it is gated on native operator input:
+
+- Web views (browser panels and the markdown renderer) get a document-start
+  listener in the isolated `c11.panel-links` content world. Page scripts and
+  socket browser automation run in the page world and cannot call its
+  `c11PanelLink` handler or replace the prototypes it reads. The listener
+  reports only the clicked anchor's `href` and the event's trust bits. Native
+  code then requires all of: a trusted event, the main frame, no socket
+  command in flight, a key and visible window, the same document, a plain
+  left click or Return with no modifiers and no `target` other than `_self`,
+  and a matching native mouse-up (within 2 points) or Return recorded by the
+  web view within one second. A recent input alone never grants navigation.
+- Browser origins are limited to main-frame `file://` pages and HTTP(S) on
+  exactly `localhost`, `127.0.0.1` or `::1`; the markdown renderer only from
+  its own entry page. Other origins, iframes, scripts, redirects, forms,
+  popups, `window.open`, Cmd/middle/modified clicks and `target=_blank` are
+  refused, and every `c11:` navigation that reaches `decidePolicyFor` is
+  cancelled, as is a popup to one. The omnibar refuses a typed `c11://` URL
+  with a notice; `browser open|goto` and the CLI return
+  `operator_activation_required`.
+- Terminals act only on a native Cmd-click on a bare `c11://` URL (Ghostty's
+  `link-url` matcher, pinned in the Ghostty fork) or an OSC 8 link, in a key,
+  visible window. The OSC 8 label is untrusted: the Cmd-hover preview shows
+  the destination's live panel title and workspace, never the label. A
+  malformed `c11:` string is consumed so it never reaches Ghostty's external
+  opener.
+- The parser accepts only the exact canonical spelling (at most 128 bytes,
+  a UUID path, no user, port, query or fragment). Unknown, stale or malformed
+  targets resolve nothing and show a non-modal notice. Each activation logs
+  one structured `panel_link` line (target, origin, activation, result).
+- A link grants navigation only. It answers no asks, lowers no flags, and
+  grants no page-to-agent message, structure read or socket capability.
+  `c11 link` formats links from live inventory and has no activation power.
+  The markdown sanitizer allows `c11:` in `href` so these links survive
+  rendering; activation still goes through the gate above.
+
+Local-file and profile isolation (1.6):
+
+- Download Image and Download Linked File save a `file:` link only when the
+  panel itself shows a local page, only for a regular file in that page's
+  folder, and copy it off the main thread (C11-495). The context menu reads
+  the element under the cursor (C11-497) and no longer falls back to the
+  first image or an iframe's page (C11-504).
+- Open Link in New Panel, Cmd-click, `target=_blank` and `window.open` open
+  a `file:` link only when a local page initiated it; a sandboxed frame's
+  opaque origin is refused, and a popup never hands a `file:` URL to the
+  system opener (C11-505).
+- Favicon fetches and omnibar search suggestions use per-profile ephemeral
+  `URLSession`s with no cookie storage and no disk cache, so neither can link
+  one browser profile to another (C11-496, C11-507).
 
 Browser-triggered modals (the `http://` navigation warning, JavaScript
 `alert`/`confirm`/`prompt`) are raised by page content or by
@@ -224,6 +286,10 @@ Evidence:
 Resources/Info.plist:204-218                           (NSAppTransportSecurity)
 Sources/Panels/BrowserPanel.swift                      (browser substrate; websiteDataStore(for:) per profile)
 Sources/Panels/BrowserPanel.swift:17-38                (openC11WebLink, shared terminal/markdown link router)
+Sources/PanelLinkActivation.swift                      (c11:// parser, origin and native-intent policy, isolated-world listener, terminal policy and preview)
+Sources/AppDelegate.swift                              (openPanelLink: the only link-driven workspace selection)
+Sources/Panels/MarkdownWebRenderer.swift               (installs the panel-link listener for the markdown entry page)
+Resources/markdown-viewer/viewer.js                    (sanitizer ALLOWED_URI_REGEXP admits c11:)
 Sources/SocketHandlers/BrowserQueryHandlers.swift      (cookies, state load, profiles, init scripts and styles)
 Sources/PrivateFileWriter.swift                        (private state file read/write)
 Sources/Messages/MessagesPage.swift                    (messages page renderer, CSP, JSON escaping)
@@ -806,10 +872,12 @@ git diff <last-tag>..HEAD -- \
   Sources/MarkdownCorpusIndex.swift \
   Sources/SocketHandlers/MarkdownFeedbackHandlers.swift \
   Resources/markdown-viewer/ \
-  Sources/Events/EventLog.swift
+  Sources/Events/EventLog.swift \
+  Sources/PanelLinkActivation.swift
 ```
 
-The markdown paths cover the second WebKit surface and its only script
+`PanelLinkActivation.swift` owns the only link-driven workspace switch and
+the second script handler. The markdown paths cover the second WebKit surface and its only script
 bridge; `vendor/MANIFEST.json` moves when a sanitizer or renderer
 library is upgraded. `EventLog.swift` owns the data-at-rest posture for
 the activity history. `skills/release/SKILL.md` carries its own copy of

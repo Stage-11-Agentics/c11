@@ -83,7 +83,8 @@ git diff "$(git describe --tags --abbrev=0 --match 'v*')..HEAD" -- \
   Sources/MarkdownCorpusIndex.swift \
   Sources/SocketHandlers/MarkdownFeedbackHandlers.swift \
   Resources/markdown-viewer/ \
-  Sources/Events/EventLog.swift
+  Sources/Events/EventLog.swift \
+  Sources/PanelLinkActivation.swift
 ```
 
 The URL handler around `Sources/AppDelegate.swift:2301` (`application(_:open:)`)

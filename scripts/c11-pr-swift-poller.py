@@ -1771,7 +1771,7 @@ class Supervisor:
             kept.append(item)
         self.queue = kept
 
-    def _next_item(self, guests=False):
+    def _next_item(self, release_only=False):
         """The first queued head that still revalidates and has no terminal status.
 
         A head whose c11/pr-swift status is already success or failure is
@@ -1780,7 +1780,7 @@ class Supervisor:
         call, until that entry exists.
         """
         for item in list(self.queue):
-            if guests and not release_head(item):
+            if release_only and not release_head(item):
                 continue
             key = (item["pr"], item["sha"])
             if key in self.awaiting_kit:
@@ -1838,16 +1838,22 @@ class Supervisor:
         if guests and not any(release_head(item) for item in self.queue):
             self.log(decision="no-start", reason="guest")
             return "no-start"
-        if self.world.slot_held(1):
+        slot_busy = self.world.slot_held(1)
+        if slot_busy and not any(release_head(item) for item in self.queue):
             self.log(decision="no-start", reason="slot")
             return "no-start"
         self.credential_skipped = False
-        item = self._next_item(guests=guests)
+        # A release can reuse immutable evidence without acquiring build capacity,
+        # including when a feature ahead of it is waiting for the occupied slot.
+        item = self._next_item(release_only=guests or slot_busy)
         if item is None:
             return CREDENTIAL_UNAVAILABLE if self.credential_skipped else "idle"
         reused = self._reuse_release(item)
         if reused is not None:
             return reused
+        if slot_busy or self.world.slot_held(1):
+            self.log(decision="no-start", reason="slot")
+            return "no-start"
         if not self._fetch(item):
             self._rotate(item)
             return "fetch_failed"

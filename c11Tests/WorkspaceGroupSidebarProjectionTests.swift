@@ -9,6 +9,25 @@ import Combine
 #endif
 
 final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
+    func testTileRunsKeepFolderBoundariesAndCanonicalRowMajorOrder() {
+        let group = WorkspaceGroup(name: "Three members")
+        let empty = WorkspaceGroup(name: "Empty")
+        let ids = (0..<6).map { _ in UUID() }
+        let entries = ids.enumerated().map { index, id in
+            WorkspaceOrderEntry(id: id, isPinned: false, groupId: index < 3 ? group.id : nil)
+        }
+        let projection = WorkspaceGroupSidebarProjection.make(groups: [group, empty], workspaces: entries)
+        let runs = WorkspaceSidebarTileRun.pack(projection.rows)
+        XCTAssertEqual(runs.map { $0.rows.count }, [1, 3, 1, 3])
+        XCTAssertEqual(runs.flatMap { $0.rows.map(\.id) }, projection.rows.map(\.id))
+        XCTAssertEqual(Set(runs.map(\.id)).count, runs.count)
+        var collapsed = group
+        collapsed.isCollapsed = true
+        let hidden = WorkspaceGroupSidebarProjection.make(groups: [collapsed, empty], workspaces: entries)
+        XCTAssertEqual(WorkspaceSidebarTileRun.pack(hidden.rows).map { $0.rows.count }, [1, 1, 3])
+        XCTAssertTrue(WorkspaceSidebarTileRun.pack([]).isEmpty)
+    }
+
     func testRootSegmentsUseGroupPinAndCanonicalMemberIndexes() {
         let pinned = WorkspaceGroup(name: "Pinned", isPinned: true)
         let unpinned = WorkspaceGroup(name: "Unpinned")

@@ -133,6 +133,7 @@ struct cmuxApp: App {
     @StateObject private var workspaceManager: WorkspaceManager
     @StateObject private var notificationStore = TerminalNotificationStore.shared
     @StateObject private var sidebarState = SidebarState()
+    @FocusedObject private var focusedSidebarState: SidebarState?
     @StateObject private var sidebarSelectionState = SidebarSelectionState()
     private let primaryWindowId = UUID()
     @AppStorage(AppearanceSettings.appearanceModeKey) private var appearanceMode = AppearanceSettings.defaultMode.rawValue
@@ -577,6 +578,16 @@ struct cmuxApp: App {
                 }
 
                 Divider()
+
+                Menu(String(localized: "menu.view.sidebar", defaultValue: "Sidebar")) {
+                    Toggle(String(localized: "menu.sidebar.doubleWide", defaultValue: "Double Wide"),
+                           isOn: Binding(get: { focusedSidebarState?.isDoubleWide ?? false },
+                                         set: { value in
+                                             guard let state = focusedSidebarState, state.isDoubleWide != value else { return }
+                                             state.toggleDoubleWide()
+                                         }))
+                        .disabled(focusedSidebarState == nil)
+                }
 
                 Menu(String(localized: "menu.view.appearance", defaultValue: "Appearance")) {
                     ForEach(AppearanceMode.allCases) { mode in

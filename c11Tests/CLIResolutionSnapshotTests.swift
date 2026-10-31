@@ -1502,7 +1502,11 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             try process.run()
             let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
             let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-            exited.wait()
+            if exited.wait(timeout: .now() + 15) == .timedOut {
+                process.terminate()
+                XCTFail("Bundled c11 CLI did not exit within 15 seconds", file: file, line: line)
+                return nil
+            }
             return (
                 process.terminationStatus,
                 String(decoding: stdoutData, as: UTF8.self),

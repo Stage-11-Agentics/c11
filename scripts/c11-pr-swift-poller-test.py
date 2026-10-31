@@ -450,6 +450,29 @@ class ReleaseReuseTests(unittest.TestCase):
         result = _decisions(self.root / "poller")[-1]
         self.assertEqual(result["reused_main_sha"], self.base)
 
+    def test_release_reuse_does_not_wait_for_a_busy_slot(self):
+        head = self.release()
+        for index, (feature_first, qualifies) in enumerate(((False, True), (True, True), (True, False))):
+            with self.subTest(feature_first=feature_first, qualifies=qualifies):
+                world = self.world(head)
+                world.held_slots.add(1)
+                if feature_first:
+                    world.body.insert(0, pr(number=8, sha=SHA_A, ref="feature"))
+                    world.tips["feature"] = SHA_A
+                if not qualifies:
+                    world.reported[self.base] = "pending"
+                supervisor, outcome = run(world, self.root / ("busy-%s" % index))
+                self.assertEqual(outcome, "reused" if qualifies else "no-start")
+                self.assertEqual(supervisor.spawns, [])
+                self.assertEqual(supervisor.fetches, [])
+                self.assertEqual(world.held_slots, {1})
+                if qualifies:
+                    self.assertEqual(world.posts[-1]["state"], "success")
+                    self.assertIn(self.base, world.posts[-1]["description"])
+                else:
+                    self.assertEqual(world.posts, [])
+                    self.assertEqual(_decisions(self.root / ("busy-%s" % index))[-1]["reason"], "slot")
+
     def test_other_tree_differences_force_build(self):
         samples = {
             "Sources/App.swift": "let value = 2\n",

@@ -1190,7 +1190,7 @@ final class HeldComposerSeriesTests: XCTestCase {
         let watch = series(.skip(reason: "unknown_prompt"), looks: 3).watch
         for decision: MailboxDoorbell.Decision in [
             .ring, .skip(reason: "no_mail"), .skip(reason: "already_covered"),
-            .skip(reason: "gate_closed"), .skip(reason: "dialog"), .skip(reason: "once_per_idle"),
+            .skip(reason: "gate_closed"), .skip(reason: "once_per_idle"),
         ] {
             let next = plan(decision, watch: watch)
             XCTAssertEqual(next.rearm, .none, "\(decision)")
@@ -1207,6 +1207,16 @@ final class HeldComposerSeriesTests: XCTestCase {
         XCTAssertEqual(second.rearm, .after(15))
         let third = plan(.skip(reason: "unknown_prompt"), watch: second.draftWatch, at: start.addingTimeInterval(20))
         XCTAssertEqual(third.rearm, .after(30))
+    }
+
+    func testDialogKeepsLookingUntilTheComposerChanges() {
+        let run = series(.skip(reason: "dialog"), looks: 40)
+        XCTAssertEqual(run.delays.count, 40)
+        XCTAssertEqual(Array(run.delays.prefix(3)), [5, 15, 30])
+        XCTAssertTrue(run.delays.dropFirst(3).allSatisfy { $0 == 60 })
+        XCTAssertTrue(run.relooks.allSatisfy { $0 == "dialog" })
+        XCTAssertEqual(plan(.ring, watch: run.watch).rearm, .none)
+        XCTAssertNil(plan(.ring, watch: run.watch).draftWatch)
     }
 
     /// C11-400 K: a composer still holding the doorbell line used to look

@@ -406,12 +406,12 @@ else
   [[ "$REUSE_BUILD" -eq 1 ]] && note "--reuse-build: no pristine build for this HEAD; building."
   # reloads.sh --tag (behind remote-build --mode release) builds the prod
   # c11.app identity into derived-release, then returns a re-identified
-  # STAGING copy. --clean --wmo --universal match release.yml's cold,
-  # wholemodule, arm64+x86_64 build. The pristine c11.app is fetched below.
-  note "remote-build: $HOST tag=$REMOTE_TAG (cold, wholemodule, universal)"
+  # STAGING copy. --clean --wmo match release.yml's cold,
+  # wholemodule, arm64-only build. The pristine c11.app is fetched below.
+  note "remote-build: $HOST tag=$REMOTE_TAG (cold, wholemodule, arm64)"
   set +e
   "$ROOT/scripts/remote-build.sh" --host "$HOST" --tag "$REMOTE_TAG" --mode release \
-    --clean --wmo --universal 2>&1 | tee "$OUT/remote-build.out"
+    --clean --wmo 2>&1 | tee "$OUT/remote-build.out"
   rb_status="${PIPESTATUS[0]}"
   set -e
   [[ "$rb_status" -eq 0 ]] || die "remote build failed (exit $rb_status); see $OUT/remote-build.out"
@@ -457,7 +457,8 @@ fi
 verify_pristine
 ARCHS="$(lipo -archs "$PRISTINE/Contents/MacOS/c11")" || die "lipo failed"
 note "architectures: $ARCHS"
-[[ " $ARCHS " == *" arm64 "* && " $ARCHS " == *" x86_64 "* ]] || die "app is not universal (arm64 + x86_64)"
+# Apple silicon only since 1.7 (C11-541); 1.6.0 is the last universal build.
+[[ "$ARCHS" == "arm64" ]] || die "app architectures are '$ARCHS'; releases are arm64-only"
 DTXCODE="$(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$PRISTINE/Contents/Info.plist")"
 DTSDK="$(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$PRISTINE/Contents/Info.plist")"
 note "toolchain: DTXcode $DTXCODE, SDK $DTSDK (pinned DTXcode $RELEASE_DTXCODE)"

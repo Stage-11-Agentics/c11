@@ -95,8 +95,16 @@ jobs:
         run: |
           cat > homebrew-c11/Casks/c11.rb << CASKEOF
           cask "c11" do
-            version "${VERSION}"
-            sha256 "${SHA256}"
+            # Apple silicon gets each release; Intel Macs stay on 1.6.0, the
+            # last universal build (C11-541).
+            on_arm do
+              version "${VERSION}"
+              sha256 "${SHA256}"
+            end
+            on_intel do
+              version "1.6.0"
+              sha256 "3aa74c803e854fae9d615ffe15b34e38bc2ed09ba2e1f9af31a1231390c02cf9"
+            end
 
             url "https://github.com/Stage-11-Agentics/c11/releases/download/v#{version}/c11-macos.dmg"
             name "c11"
@@ -108,7 +116,7 @@ jobs:
               strategy :github_latest
             end
 
-            depends_on macos: ">= :sonoma"
+            depends_on macos: :sonoma
 
             conflicts_with cask: "cmux"
 
@@ -135,7 +143,8 @@ jobs:
       - name: Verify cask SHA matches DMG
         if: steps.version.outputs.skip != 'true'
         run: |
-          CASK_SHA=$(grep 'sha256' homebrew-c11/Casks/c11.rb | sed 's/.*"\(.*\)".*/\1/')
+          # The first sha256 is the on_arm (current release) entry.
+          CASK_SHA=$(grep -m1 'sha256' homebrew-c11/Casks/c11.rb | sed 's/.*"\(.*\)".*/\1/')
           ACTUAL_SHA=$(shasum -a 256 c11.dmg | cut -d' ' -f1)
           if [ "$CASK_SHA" != "$ACTUAL_SHA" ]; then
             echo "SHA mismatch! Cask: $CASK_SHA, Actual: $ACTUAL_SHA" >&2

@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Removed
+
+- Intel Macs: c11 now requires a Mac with Apple silicon. 1.6.0 is the last release for Intel Macs, which stay on it: Sparkle no longer offers them updates, and Homebrew keeps installing 1.6.0 there.
+
 ## [1.7.0] - 2026-10-31
 
 Headline: **c11 1.7.0. The sidebar can go double wide as Tiles: compact workspace tiles packed into columns, so a whole fleet fits on one screen, with the full card a hover away.**

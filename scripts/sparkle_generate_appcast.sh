@@ -30,6 +30,7 @@ RELEASE_NOTES_URL="${RELEASE_NOTES_URL:-https://github.com/Stage-11-Agentics/c11
 
 work_dir="$(mktemp -d)"
 cleanup() {
+  if [[ -d "$work_dir/mnt" ]]; then hdiutil detach -quiet "$work_dir/mnt" 2>/dev/null || true; fi
   rm -rf "$work_dir"
 }
 trap cleanup EXIT
@@ -152,4 +153,26 @@ if grep -q 'sparkle:edSignature' "$OUT_PATH"; then
 else
   echo "ERROR: appcast is missing sparkle:edSignature!" >&2
   exit 1
+fi
+
+# Sparkle 2.9+ clients on Intel skip an item that carries
+# <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>, and
+# generate_appcast emits it only when the app's main executable has no x86_64
+# slice. c11 ships arm64-only since 1.7 (C11-541), so check the tag is there
+# rather than trusting it: without it, Intel Macs would be offered a build
+# they cannot run.
+mkdir -p "$work_dir/mnt"
+hdiutil attach -nobrowse -readonly -noverify -mountpoint "$work_dir/mnt" "$DMG_PATH" >/dev/null
+app_path="$(find "$work_dir/mnt" -maxdepth 1 -name '*.app' | head -n 1)"
+[[ -n "$app_path" ]] || { echo "ERROR: no .app in $DMG_PATH" >&2; exit 1; }
+exe_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+app_archs="$(lipo -archs "$app_path/Contents/MacOS/$exe_name")"
+hdiutil detach -quiet "$work_dir/mnt"
+rmdir "$work_dir/mnt" 2>/dev/null || true
+if [[ " $app_archs " != *" x86_64 "* ]]; then
+  if ! grep -q '<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>' "$OUT_PATH"; then
+    echo "ERROR: app is arm64-only ($app_archs) but the appcast lacks sparkle:hardwareRequirements arm64; Intel Macs would be offered it." >&2
+    exit 1
+  fi
+  echo "Verified: arm64-only app ($app_archs); appcast carries sparkle:hardwareRequirements arm64"
 fi

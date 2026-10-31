@@ -82,6 +82,36 @@ enum WorkspaceGroupSidebarRow: Equatable, Identifiable {
     }
 }
 
+/// Full-width folder headers separate row-major tile runs. Stable IDs preserve
+/// reveal and drag targeting when the number of columns changes.
+struct WorkspaceSidebarTileRun: Identifiable {
+    let rows: [WorkspaceGroupSidebarRow]
+    var id: WorkspaceGroupSidebarRow.ID { rows[0].id }
+
+    static func pack(_ rows: [WorkspaceGroupSidebarRow]) -> [Self] {
+        var runs: [Self] = []
+        var pending: [WorkspaceGroupSidebarRow] = []
+        var previousGroup: UUID?
+        func flush() {
+            if !pending.isEmpty { runs.append(Self(rows: pending)); pending.removeAll(keepingCapacity: true) }
+        }
+        for row in rows {
+            switch row {
+            case .group:
+                flush()
+                runs.append(Self(rows: [row]))
+                previousGroup = nil
+            case .workspace(let item):
+                if !pending.isEmpty && item.groupId != previousGroup { flush() }
+                pending.append(row)
+                previousGroup = item.groupId
+            }
+        }
+        flush()
+        return runs
+    }
+}
+
 struct WorkspaceGroupSidebarProjection: Equatable {
     let rows: [WorkspaceGroupSidebarRow]
     let visibleWorkspaceIds: [UUID]

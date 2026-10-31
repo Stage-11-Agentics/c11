@@ -3955,6 +3955,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
 #endif
         context.workspaceManager.restoreSessionSnapshot(snapshot.workspaceManager)
+        context.sidebarState.isDoubleWide = snapshot.sidebar.doubleWide ?? false
+        context.sidebarState.singleWideWidth = CGFloat(SessionPersistencePolicy.sanitizedSidebarWidth(snapshot.sidebar.singleWideWidth))
         context.sidebarState.isVisible = snapshot.sidebar.isVisible
         context.sidebarState.persistedWidth = CGFloat(
             SessionPersistencePolicy.sanitizedSidebarWidth(snapshot.sidebar.width)
@@ -4460,6 +4462,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             hasher.combine(context.windowId)
             hasher.combine(context.workspaceManager.sessionAutosaveFingerprint())
             hasher.combine(context.sidebarState.isVisible)
+            hasher.combine(context.sidebarState.isDoubleWide)
+            hasher.combine(Double(context.sidebarState.singleWideWidth))
             hasher.combine(
                 Int(SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth)).rounded())
             )
@@ -5073,7 +5077,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     sidebar: SessionSidebarSnapshot(
                         isVisible: context.sidebarState.isVisible,
                         selection: SessionSidebarSelection(selection: context.sidebarSelectionState.selection),
-                        width: SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth))
+                        width: SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth)),
+                        doubleWide: context.sidebarState.isDoubleWide,
+                        singleWideWidth: Double(context.sidebarState.singleWideWidth)
                     )
                 )
             }
@@ -7181,6 +7187,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return false
     }
 
+    func sidebarState(for window: NSWindow?) -> SidebarState? {
+        contextForMainWindow(window)?.sidebarState
+    }
+
+    /// Exact window geometry snapshot; callers must already be on main.
+    func sidebarLayout(for manager: WorkspaceManager) -> [String: Any]? {
+        guard let context = mainWindowContexts.values.first(where: { $0.workspaceManager === manager }),
+              let window = context.window ?? windowForMainWindowId(context.windowId) else { return nil }
+        let state = context.sidebarState
+        let width = SidebarLayoutPolicy.effectiveWidth(Double(state.persistedWidth),
+            windowWidth: Double(window.contentView?.bounds.width ?? window.contentLayoutRect.width))
+        let scale = ChromeScaleTokens.resolved().multiplier
+        return ["window_id": context.windowId.uuidString, "double_wide": state.isDoubleWide,
+                "requested_width": Double(state.persistedWidth), "effective_width": width,
+                "columns": state.isDoubleWide ? SidebarLayoutPolicy.columns(width: width, scale: Double(scale)) : 1]
+    }
+
     func sidebarVisibility(windowId: UUID) -> Bool? {
         mainWindowContexts.values.first(where: { $0.windowId == windowId })?.sidebarState.isVisible
     }
@@ -7723,7 +7746,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ?? SessionPersistencePolicy.defaultSidebarWidth
         let sidebarState = SidebarState(
             isVisible: sessionWindowSnapshot?.sidebar.isVisible ?? true,
-            persistedWidth: CGFloat(sidebarWidth)
+            persistedWidth: CGFloat(sidebarWidth),
+            isDoubleWide: sessionWindowSnapshot?.sidebar.doubleWide ?? false,
+            singleWideWidth: sessionWindowSnapshot?.sidebar.singleWideWidth.map { CGFloat($0) }
         )
         let sidebarSelectionState = SidebarSelectionState(
             selection: sessionWindowSnapshot?.sidebar.selection.sidebarSelection ?? .tabs
@@ -11819,6 +11844,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
                 return true
             }
+            if SidebarTileHoverAnchor.dismiss(in: event.window ?? NSApp.keyWindow) { return true }
 #if DEBUG
             dlog(
                 "shortcut.escape paletteDismiss consumed=0 target={\(debugWindowToken(commandPaletteTargetWindow))} " +

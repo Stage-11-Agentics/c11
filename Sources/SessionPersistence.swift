@@ -6,6 +6,47 @@ enum SessionSnapshotSchema {
     static let currentVersion = 1
 }
 
+/// Operator-owned sidebar geometry. Window clamping never overwrites the
+/// requested Tiles width, so widening a window restores its columns.
+enum SidebarLayoutPolicy {
+    struct State: Equatable {
+        var doubleWide: Bool = false
+        var width: Double = 200
+        var singleWideWidth: Double = 200
+    }
+
+    static func effectiveWidth(_ requested: Double, windowWidth: Double) -> Double {
+        let available = windowWidth.isFinite && windowWidth > 0 ? windowWidth : 1800
+        let maximum = max(SessionPersistencePolicy.minimumSidebarWidth,
+                          min(SessionPersistencePolicy.maximumSidebarWidth, available / 3))
+        return min(SessionPersistencePolicy.sanitizedSidebarWidth(requested), maximum)
+    }
+
+    static func columns(width: Double, scale: Double = 1) -> Int {
+        let scale = scale.isFinite && scale > 0 ? scale : 1
+        let width = width.isFinite ? max(0, min(width, 600)) : 200
+        return max(1, Int(floor(width / (162 * scale))))
+    }
+
+    static func toggled(_ state: State) -> State {
+        if state.doubleWide {
+            return State(width: SessionPersistencePolicy.sanitizedSidebarWidth(state.singleWideWidth),
+                         singleWideWidth: SessionPersistencePolicy.sanitizedSidebarWidth(state.singleWideWidth))
+        }
+        return State(doubleWide: true, width: 400,
+                     singleWideWidth: SessionPersistencePolicy.sanitizedSidebarWidth(state.width))
+    }
+
+    static func dragged(_ state: State, width: Double, initialWidth: Double) -> State {
+        let width = SessionPersistencePolicy.sanitizedSidebarWidth(width)
+        let crossesThreshold = initialWidth < 300 && width >= 300
+        return State(doubleWide: state.doubleWide || crossesThreshold, width: width,
+                     singleWideWidth: !state.doubleWide && crossesThreshold
+                        ? SessionPersistencePolicy.sanitizedSidebarWidth(initialWidth)
+                        : state.singleWideWidth)
+    }
+}
+
 enum WindowGeometryPersistenceStore {
     struct Geometry: Codable, Sendable {
         let frame: SessionRectSnapshot
@@ -291,6 +332,8 @@ struct SessionSidebarSnapshot: Codable, Sendable {
     var isVisible: Bool
     var selection: SessionSidebarSelection
     var width: Double?
+    var doubleWide: Bool? = nil
+    var singleWideWidth: Double? = nil
 }
 
 struct SessionStatusEntrySnapshot: Codable, Sendable {

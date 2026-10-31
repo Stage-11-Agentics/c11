@@ -271,7 +271,7 @@ enum MailboxDoorbellSequence {
     /// Skips that hold mail at an open prompt until the composer changes.
     /// Each looks again on the held-composer series. Nothing else re-arms a
     /// ring there, so without the series the mail waits for the next envelope.
-    static let heldComposerReasons: Set<String> = ["draft", "unknown_prompt"]
+    static let heldComposerReasons: Set<String> = ["draft", "dialog", "unknown_prompt"]
 
     static func shouldRetryBusy(tryIndex: Int) -> Bool {
         tryIndex >= 0 && tryIndex + 1 < busyAttempts

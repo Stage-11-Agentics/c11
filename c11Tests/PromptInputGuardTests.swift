@@ -65,6 +65,20 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(suggestion, harness: "claude-code"), .init(state: .suggestion, draftLength: nil))
     }
 
+    func testPassiveClaudeTipBelowComposerDoesNotHideEmptyPromptOrDraft() {
+        for draft in ["", "operator unfinished text"] {
+            let input = region([
+                Row(y: 0, spans: [Span(text: rule)]),
+                Row(y: 1, spans: [Span(text: "❯\u{00A0}" + draft)]),
+                Row(y: 2, spans: [Span(text: rule)]),
+                Row(y: 3, spans: [Span(text: "Heads up · Claude Code tip")]),
+                Row(y: 4, spans: [Span(text: "1: Learn more  2: Knew this already  0: Dismiss")]),
+            ], cursorY: 1)
+            XCTAssertEqual(PromptInputClassifier.classify(input, harness: "claude-code").state,
+                           draft.isEmpty ? .empty : .draft)
+        }
+    }
+
     func testDraftReportsOnlyLengthAndNeverPromptText() throws {
         let sentinel = "NEVER_EXPOSE_PROMPT_9F31"
         let input = region([

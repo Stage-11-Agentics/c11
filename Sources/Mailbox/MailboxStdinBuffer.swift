@@ -43,6 +43,8 @@ struct MailboxStdinBuffer {
         let recipientName: String
         let block: String
         let bufferedAt: Date
+        /// Mail stays in the inbox where it arrived when its panel moves.
+        var inboxWorkspaceId: UUID? = nil
     }
 
     /// The last agent turn edge c11 saw for a panel.
@@ -88,6 +90,37 @@ struct MailboxStdinBuffer {
     /// (`C11_AGENT_INTERACTIVE_PID`). A ring types only while this process's
     /// group owns the panel's terminal.
     private var agentPids: [UUID: AgentProcess] = [:]
+
+    /// Runtime state follows the same terminal through a workspace move.
+    /// Keeping the submit and report clocks prevents a move from opening a
+    /// working turn or reviving a stale idle report.
+    struct PanelState: Equatable {
+        var queue: [Entry]
+        var turn: AgentTurn?
+        var lastSubmit: Date?
+        var lastReported: Date?
+        var attached: Date?
+        var process: AgentProcess?
+    }
+
+    mutating func takePanel(_ surfaceId: UUID) -> PanelState {
+        let state = PanelState(
+            queue: queuedEntries(surfaceId: surfaceId), turn: turns[surfaceId],
+            lastSubmit: lastSubmitAt[surfaceId], lastReported: lastReportedAt[surfaceId],
+            attached: attachedAt[surfaceId], process: agentPids[surfaceId]
+        )
+        removeSurface(surfaceId)
+        return state
+    }
+
+    mutating func restorePanel(_ surfaceId: UUID, state: PanelState) {
+        queues[surfaceId] = state.queue.isEmpty ? nil : state.queue
+        turns[surfaceId] = state.turn
+        lastSubmitAt[surfaceId] = state.lastSubmit
+        lastReportedAt[surfaceId] = state.lastReported
+        attachedAt[surfaceId] = state.attached
+        agentPids[surfaceId] = state.process
+    }
 
     /// An interactive agent process, pinned by its start time so a later
     /// process that reuses the PID (an editor, a shell) is never mistaken
@@ -356,6 +389,17 @@ final class MailboxStdinBufferStore {
 /// Admit one envelope onto the doorbell queue. Tests call `deliver`; they
 /// do not restage it. Nothing here pastes a block or claims the inbox file.
 enum MailboxStdinDelivery {
+    /// Off-main only. A moved panel can have unread mail in several retained
+    /// inboxes. The entry remembers the arrival workspace; no file is moved.
+    static func pendingIDs(_ entries: [MailboxStdinBuffer.Entry], stateURL: URL,
+                           workspaceId: UUID, panelId: UUID) -> Set<String> {
+        Set(entries.compactMap { entry in
+            let inbox = MailboxLayout.inboxURL(state: stateURL,
+                workspaceId: entry.inboxWorkspaceId ?? workspaceId, panelId: panelId)
+            return MailboxIO.isPending(id: entry.id, inbox: inbox) ? entry.id : nil
+        })
+    }
+
     struct Gate: Equatable {
         var panelPresent: Bool = true
         var nativeRoute: Bool = false
@@ -441,10 +485,17 @@ enum MailboxStdinDelivery {
             noteHeldUntil?(deadline)
         }
         if gate.inputTransactionActive && !gate.nativeRoute {
+            noteRing?(.skip(reason: "input_transaction"), .keep(reason: "input_transaction"))
             noteInputTransactionHeld?()
             return .buffered(bytes: bytes)
         }
-        guard (promptGate != .closed || (gate.nativeRoute && gate.nativeCanQueue && gate.ownsTerminal)), let ringInput else {
+        guard promptGate != .closed || (gate.nativeRoute && gate.nativeCanQueue && gate.ownsTerminal) else {
+            let reason = closedGateReason(state: state, surfaceId: surfaceId, gate: gate)
+            noteRing?(.skip(reason: reason), .keep(reason: reason))
+            return .buffered(bytes: bytes)
+        }
+        guard let ringInput else {
+            noteRing?(.skip(reason: "unavailable"), .keep(reason: "unavailable"))
             return .buffered(bytes: bytes)
         }
         var input = ringInput(false)
@@ -491,6 +542,31 @@ enum MailboxStdinDelivery {
               let deadline = state.buffer.workingDecayDeadline(surfaceId: surfaceId),
               gate.now < deadline else { return nil }
         return deadline
+    }
+
+    static func closedGateReason(state: MailboxStdinBufferStore, surfaceId: UUID, gate: Gate) -> String {
+        guard gate.panelPresent else { return "target_gone" }
+        guard state.buffer.isAgent(surfaceId: surfaceId, isAgentKind: gate.isAgentKind) else { return "not_agent" }
+        guard gate.ownsTerminal else { return "agent_not_foreground" }
+        return "gate_closed"
+    }
+
+    /// The inbox stat is asynchronous. Re-read the live gate and composer
+    /// before a typed paste, including when the terminal moved during that hop.
+    /// This invocation owns the reservation, not permission to bypass a draft.
+    static func typedDecision(state: MailboxStdinBufferStore, surfaceId: UUID,
+                              gate: Gate, input: MailboxDoorbell.Input) -> MailboxDoorbell.Decision {
+        guard gate.panelPresent else { return .skip(reason: "target_gone") }
+        guard !gate.inputTransactionActive else { return .skip(reason: "input_transaction") }
+        guard state.buffer.promptGate(surfaceId: surfaceId, isAgentKind: gate.isAgentKind,
+                agentOwnsTerminal: gate.ownsTerminal, journalTurnOpen: gate.journalTurnOpen,
+                now: gate.now) != .closed else {
+            return .skip(reason: closedGateReason(state: state, surfaceId: surfaceId, gate: gate))
+        }
+        var current = input
+        current.inFlight = false
+        current.nativeRoute = false
+        return MailboxDoorbell.decide(current)
     }
 }
 

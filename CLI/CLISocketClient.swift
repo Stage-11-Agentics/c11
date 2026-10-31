@@ -83,7 +83,7 @@ final class SocketClient {
 
     // responseTimeout: nil = no SO_RCVTIMEO / SO_SNDTIMEO (unbounded); >0 = the
     // deadline in seconds for writing the request (a peer that stops reading
-    // cannot hold the CLI) and for the initial read of the response.
+    // cannot hold the CLI) and V1's initial read; V2 bounds the write through the response LF.
     /// A wall-clock bound every request in this process must finish by, on top
     /// of its own deadline. A hook drain sets it to its claim cutoff, so a c11
     /// that stops reading or answering can never hold the hook past the point

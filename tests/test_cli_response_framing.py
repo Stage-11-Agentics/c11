@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import select
 import socket
 import subprocess
 import sys
@@ -56,6 +57,7 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
                                 pending.extend(data)
                             line, _, rest = pending.partition(b"\n")
                             pending[:] = rest
+                            record.setdefault("request_received", time.monotonic())
                             value = json.loads(line)
                             record["requests"].append(value["method"])
                             return value
@@ -71,12 +73,9 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
             env.update(C11_DEFAULT_SOCKET_DEADLINE_MS=str(deadline_ms),
                        CMUX_CLI_SENTRY_DISABLED="1", CMUX_CLAUDE_HOOK_SENTRY_DISABLED="1",
                        C11_QUIET_DISCOVERY="1")
-            started = time.monotonic()
             try:
                 result = subprocess.run([cli, "--socket", path, "rpc", method], env=env,
                                         capture_output=True, timeout=6)
-                record["elapsed"] = time.monotonic() - started
-                record["returned"] = time.monotonic()
             finally:
                 stopped.set()
                 worker.join(timeout=7)
@@ -85,17 +84,25 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
             return result, record
 
 
+def record_client_close(conn, record):
+    # Observe protocol completion without timing process startup or reaping.
+    assert conn.recv(1) == b"", "CLI sent unexpected bytes after its response"
+    record["client_closed"] = time.monotonic()
+
+
 def reply_handler(chunks, *, close=False, delay=0.015):
     def serve(conn, request, record, stopped):
         request()
         for index, chunk in enumerate(chunks):
             if index:
                 time.sleep(delay)
+            if index == len(chunks) - 1:
+                record["sent"] = time.monotonic()
             conn.sendall(chunk)
-        record["sent"] = time.monotonic()
         if close:
             conn.shutdown(socket.SHUT_WR)
             record["peer_closed"] = True
+        record_client_close(conn, record)
     return serve
 
 
@@ -107,17 +114,17 @@ def assert_success(result, expected):
 def test_fast_open_peer(cli):
     result, record = exchange(cli, reply_handler([frame({"pong": True})]))
     assert_success(result, {"pong": True})
-    latency = record["returned"] - record["sent"]
+    latency = record["client_closed"] - record["sent"]
     assert not record["peer_closed"]
     assert latency < 0.100, f"waited {latency * 1000:.1f} ms after LF while peer stayed open"
-    print(f"  LF to exit: {latency * 1000:.1f} ms (peer still open)")
+    print(f"  LF to client socket close: {latency * 1000:.1f} ms (peer still open)")
 
 
 def test_newline_alone(cli):
     wire = frame({"text": "first\nsecond\r\nthird"})
     result, record = exchange(cli, reply_handler([wire[:5], wire[5:-1], b"\n"]))
     assert_success(result, {"text": "first\nsecond\r\nthird"})
-    assert record["returned"] - record["sent"] < 0.100
+    assert record["client_closed"] - record["sent"] < 0.100
 
 
 def test_fragmented_utf8(cli):
@@ -140,7 +147,7 @@ def test_large_reply(cli):
 def test_error_reply(cli):
     result, record = exchange(cli, reply_handler([frame(error={"code": "fixture_error", "message": "line one\n界"})]))
     assert result.returncode != 0 and b"fixture_error" in result.stderr
-    assert record["returned"] - record["sent"] < 0.100
+    assert record["client_closed"] - record["sent"] < 0.100
 
 
 def test_preprotocol_error(cli):
@@ -157,7 +164,7 @@ def test_eof_without_newline(cli):
 def test_unterminated_open_peer(cli):
     result, record = exchange(cli, reply_handler([frame({"open": True})[:-1]]), deadline_ms=180)
     assert result.returncode != 0 and b"c11: timeout:" in result.stderr, result.stderr
-    assert 0.12 < record["returned"] - record["sent"] < 1
+    assert 0.12 < record["client_closed"] - record["sent"] < 1
 
 
 def test_slow_drip_deadline(cli):
@@ -166,15 +173,20 @@ def test_slow_drip_deadline(cli):
         # Every fragment arrives inside the per-read timeout. The total deadline
         # must still expire rather than being reset by each arriving byte.
         for chunk in [b'{"result":', b'{"text":', b'"', b'a', b'b', b'c', b'd']:
-            if stopped.wait(0.06):
+            if select.select([conn], [], [], 0.06)[0]:
+                record_client_close(conn, record)
                 return
             try:
                 conn.sendall(chunk)
             except BrokenPipeError:
+                record_client_close(conn, record)
                 return
+        record_client_close(conn, record)
     result, record = exchange(cli, serve, deadline_ms=180)
     assert result.returncode != 0 and b"c11: timeout:" in result.stderr, result.stderr
-    assert record["elapsed"] < 0.5, record
+    latency = record["client_closed"] - record["request_received"]
+    assert latency < 0.5, record
+    print(f"  request to client socket close: {latency * 1000:.1f} ms")
 
 
 def test_sequential_replies(cli):

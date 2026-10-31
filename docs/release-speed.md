@@ -14,6 +14,7 @@ PR CI, the hourly backstop and Drawbridge timings are recorded per attempt by `c
 | v1.5.0 | 2126 | 1767 | 39 | 109 | 75 | 26 | 15 |
 | v1.5.1 | 2838 | 2383 | 67 | 124 | 102 | 35 | 16 |
 | v1.6.0 | 1932 | 1581 | 34 | 129 | 66 | 22 | 13 |
+| v1.7.0 | 2113 | 1857 | 24 | 94 | 8 | 20 | 14 |
 
 The build is 84-87% of the job. In v1.5.1's 2383 s build: universal (arm64 + x86_64) whole-module `-O` Swift compile about 1555 s, the uncached `zig build cli-helper` about 538 s, dependencies and the CLI about 235 s, link and dSYM about 55 s. DerivedData is not cached; Swift packages are. The same universal Release build on Atlas (M2 Ultra) takes 172 s fresh and 20 s warm, but Atlas has Xcode 26.x, while releases are pinned to Xcode 16.4 (`RELEASE_DTXCODE` in `scripts/release-local.sh`).
 

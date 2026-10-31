@@ -66,6 +66,7 @@ and workspace name, even when a program's OSC 8 label says something else. Claud
 Code renders the Markdown form as OSC 8; Codex currently displays the title followed
 by the URL in parentheses, which is also clickable. A closed or malformed `c11:`
 target shows a notice and never opens another app or browser.
+Bare `c11://` URLs are detected by Ghostty's `link-url` setting (on by default); OSC 8 links work regardless.
 
 In browser and markdown panels, a plain left click or Return on the focused link selects the owning workspace/window,
 reveals the panel's area, and pulses the panel after it becomes visible. A workspace

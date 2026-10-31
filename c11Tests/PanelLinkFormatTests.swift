@@ -19,8 +19,13 @@ final class PanelLinkFormatTests: XCTestCase {
     }
 
     func testMarkdownCannotEscapeItsLabelOrInterpretMarkup() {
-        let link = PanelLinkFormat(kind: .panel, id: id, title: "[agent](bad) *bold* `code` <b> &amp; \\ end")
-        XCTAssertEqual(link.markdown, #"[\[agent\]\(bad\) \*bold\* \`code\` \<b\> \&amp\; \\ end]("# + link.url + ")")
+        let link = PanelLinkFormat(kind: .panel, id: id, title: "![agent](bad) *bold* _italic_ `code` <b> &amp; \\ end")
+        XCTAssertEqual(link.markdown, #"[\!\[agent\](bad) \*bold\* \_italic\_ \`code\` \<b\> \&amp; \\ end]("# + link.url + ")")
+    }
+
+    func testMarkdownKeepsOrdinaryTitlePunctuationReadable() {
+        let link = PanelLinkFormat(kind: .panel, id: id, title: "C11-525 Review v1.2 (ready): 100%")
+        XCTAssertEqual(link.markdown, "[C11-525 Review v1.2 (ready): 100%](\(link.url))")
     }
 
     func testOSC8LabelCannotInjectTerminalControls() {

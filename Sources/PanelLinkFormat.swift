@@ -26,13 +26,11 @@ struct PanelLinkFormat {
     var url: String { Self.url(kind: kind, id: id) }
 
     var markdown: String {
-        // CommonMark permits a backslash before every ASCII punctuation mark.
-        // Escape all of them so brackets, code, HTML and entities stay label text.
+        // Escape label delimiters and inline markup while keeping ordinary
+        // punctuation readable in terminals and other raw Markdown output.
         let label = title.unicodeScalars.map { scalar -> String in
-            let value = scalar.value
-            let punctuation = (0x21...0x2F).contains(value) || (0x3A...0x40).contains(value)
-                || (0x5B...0x60).contains(value) || (0x7B...0x7E).contains(value)
-            return (punctuation ? "\\" : "") + String(scalar)
+            let needsEscape = "\\[]*_`<>&!".unicodeScalars.contains(scalar)
+            return (needsEscape ? "\\" : "") + String(scalar)
         }.joined()
         return "[\(label)](\(url))"
     }

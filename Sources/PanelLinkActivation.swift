@@ -415,7 +415,8 @@ final class TerminalPanelLinkPreview {
         let workspaceTitle = PanelLinkFormat.sanitizedTitle(workspace.customTitle ?? workspace.title)
         let workspaceLine = String(localized: "panelLink.preview.workspace", defaultValue: "Workspace: \(workspaceTitle)")
         if let panelID {
-            let title = PanelLinkFormat.sanitizedTitle(workspace.panelTitle(panelId: panelID) ?? "")
+            let title = PanelLinkFormat(kind: .panel, id: panelID,
+                                       title: workspace.panelTitle(panelId: panelID) ?? "").title
             let panelLine = String(localized: "panelLink.preview.panel", defaultValue: "Panel: \(title)")
             return "\(panelLine)\n\(workspaceLine)\n\(PanelLinkFormat.url(kind: .panel, id: panelID))"
         }

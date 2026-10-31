@@ -468,6 +468,13 @@ final class GhosttyDefaultBackgroundNotificationDispatcher {
     }
 }
 
+func decodeTerminalOpenURL(_ bytes: Data) -> String? {
+    // Preserve malformed internal schemes so Ghostty never opens them outside
+    // c11. Other schemes retain the existing strict UTF-8 decoding behavior.
+    let decoded = String(decoding: bytes, as: UTF8.self)
+    return PanelLinkTarget.usesScheme(decoded) ? decoded : String(data: bytes, encoding: .utf8)
+}
+
 func resolveTerminalOpenURLTarget(_ rawValue: String) -> TerminalOpenURLTarget? {
     let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     // Internal schemes are consumed by the native activation adapter. They are
@@ -1366,9 +1373,11 @@ class GhosttyApp {
     }
 
     private func loadPanelLinkPreviewConfig(_ config: ghostty_config_t) {
-        // Enable callbacks for bare URLs as well as OSC 8. c11 presents only
-        // internal destinations; this does not change general URL preview UI
-        // or write the operator's Ghostty configuration.
+        // Force callbacks for bare URLs as well as OSC 8: the true-destination
+        // preview is a security control against misleading terminal labels.
+        // The C API has no load-from-string entry point, hence this temporary
+        // file. c11 presents only internal destinations and never writes the
+        // operator's Ghostty configuration or changes general URL preview UI.
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("c11-link-preview-\(UUID().uuidString).conf")
         do {
@@ -2256,6 +2265,27 @@ class GhosttyApp {
             return true
         }
 
+        let openURLString: String?
+        if action.tag == GHOSTTY_ACTION_OPEN_URL, let pointer = action.action.open_url.url {
+            openURLString = decodeTerminalOpenURL(Data(bytes: pointer, count: Int(action.action.open_url.len)))
+        } else {
+            openURLString = nil
+        }
+        if let urlString = openURLString, PanelLinkTarget.usesScheme(urlString) {
+            // Consume internal URLs even after the weak view has disappeared;
+            // returning false would ask Ghostty to invoke the OS opener.
+            if Thread.isMainThread, let surfaceView = callbackContext?.surfaceView {
+                surfaceView.activatePanelLink(urlString)
+            } else {
+                let reason = Thread.isMainThread ? "source_unavailable" : "missing_native_input"
+                DispatchQueue.main.async {
+                    PanelLinkActivation.log(target: urlString, origin: "terminal",
+                                            activation: "refused", result: reason)
+                }
+            }
+            return true
+        }
+
         guard let surfaceView = callbackContext?.surfaceView else { return false }
         if action.tag == GHOSTTY_ACTION_RELOAD_CONFIG ||
             action.tag == GHOSTTY_ACTION_CONFIG_CHANGE ||
@@ -2512,25 +2542,7 @@ class GhosttyApp {
             callbackContext?.enqueueLinkHover(href)
             return true
         case GHOSTTY_ACTION_OPEN_URL:
-            let openUrl = action.action.open_url
-            guard let cstr = openUrl.url else { return false }
-            // Preserve the scheme even when an OSC 8 payload contains invalid
-            // UTF-8: a malformed internal URL must still be consumed.
-            let urlString = String(decoding: Data(bytes: cstr, count: Int(openUrl.len)), as: UTF8.self)
-            if PanelLinkTarget.usesScheme(urlString) {
-                // Only mouseUp's synchronous dispatch can authorize a jump.
-                // An unpaired/background callback is still consumed: false
-                // would ask Ghostty to invoke the operating-system opener.
-                if Thread.isMainThread {
-                    surfaceView.activatePanelLink(urlString)
-                } else {
-                    DispatchQueue.main.async {
-                        PanelLinkActivation.log(target: urlString, origin: "terminal",
-                                                activation: "refused", result: "missing_native_input")
-                    }
-                }
-                return true
-            }
+            guard let urlString = openURLString else { return false }
             #if DEBUG
             dlog("link.openURL raw=\(urlString)")
             #endif
@@ -7121,7 +7133,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             if let reason = policy.refusalReason {
                 if let self {
                     self.panelLinkPreview.clear()
-                    self.panelLinkNotice.show(.terminalActivation, in: self.terminalSurface?.hostedView ?? self)
+                    let notice: PanelLinkNotice = reason == "window_not_key" || reason == "view_hidden"
+                        ? .unavailable : .terminalActivation
+                    self.panelLinkNotice.show(notice, in: self.terminalSurface?.hostedView ?? self)
                 }
                 PanelLinkActivation.log(target: href, origin: "terminal", activation: "refused", result: reason)
                 return
@@ -7146,7 +7160,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     func updatePanelLinkPreview(_ href: String) {
         guard isVisibleInUI, !isHiddenOrHasHiddenAncestor,
-              let window, window.isKeyWindow,
+              let window,
               NSEvent.modifierFlags.contains(.command),
               bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)),
               let host = terminalSurface?.hostedView else {
@@ -8512,6 +8526,8 @@ final class GhosttySurfaceScrollView: NSView {
             queue: .main
         ) { [weak self] _ in
             guard let self, let window = self.window else { return }
+            // Cmd-Tab can prevent Ghostty from receiving the modifier release.
+            self.surfaceView.updatePanelLinkPreview("")
             let searchActive = self.surfaceView.terminalSurface?.searchState != nil
             // Losing key window does not always trigger first-responder resignation, so force
             // the focused terminal view to yield responder to keep Ghostty cursor/focus state in sync.

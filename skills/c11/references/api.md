@@ -74,6 +74,7 @@ sanitized for control characters, and escaped for the output format.
 
 Use titled links whenever mentioning a panel or workspace to the operator.
 Cmd-click opens terminal links; Cmd-hover previews the true live destination.
+Bare `c11://` URLs are detected by Ghostty's `link-url` setting (on by default); OSC 8 links work regardless.
 Browser and markdown links use a plain click or Return, with the local-origin
 restrictions in [the skill](../SKILL.md#links-to-panels-and-workspaces).
 Copy Link in panel and workspace context menus copies the plain UUID URL.

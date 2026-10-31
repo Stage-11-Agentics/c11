@@ -169,6 +169,8 @@ from there, split an area (`⌘D` horizontal, `⌘⇧D` vertical), open an embed
 
 ### a note on hardware.
 
+c11 runs on Apple silicon. 1.7.0 is the last build for Intel Macs; if you want Intel, have your agent build it from source.
+
 c11 assumes RAM. it is conceivable (normal, even) to have fifty terminals open across eight workspaces while an embedded browser runs in area 3 and a markdown viewer scrolls release notes in area 5. we do not apologize for that shape.
 
 c11 puts no ceiling on how many terminals, areas, browsers, or files you have open at once. the limit is your machine, not c11 governing you. the modern hyperengineer runs a tricked-out MacBook with memory to spare, and c11 is built for that machine. fifteen workspaces, six areas to a workspace, six terminals to an area. if the silicon can carry it, carry on.

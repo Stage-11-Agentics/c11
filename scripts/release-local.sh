@@ -457,8 +457,13 @@ fi
 verify_pristine
 ARCHS="$(lipo -archs "$PRISTINE/Contents/MacOS/c11")" || die "lipo failed"
 note "architectures: $ARCHS"
-# Apple silicon only since 1.7 (C11-541); 1.6.0 is the last universal build.
+# Apple silicon only since 1.8 (C11-541); 1.7.0 is the last universal build.
 [[ "$ARCHS" == "arm64" ]] || die "app architectures are '$ARCHS'; releases are arm64-only"
+for binary in Resources/bin/c11 Resources/bin/ghostty; do
+  bin_archs="$(lipo -archs "$PRISTINE/Contents/$binary")" || die "lipo failed on $binary"
+  [[ "$bin_archs" == "arm64" ]] || die "$binary architectures are '$bin_archs'; releases are arm64-only"
+done
+note "bundled CLI and Ghostty helper: arm64"
 DTXCODE="$(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$PRISTINE/Contents/Info.plist")"
 DTSDK="$(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$PRISTINE/Contents/Info.plist")"
 note "toolchain: DTXcode $DTXCODE, SDK $DTSDK (pinned DTXcode $RELEASE_DTXCODE)"

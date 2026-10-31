@@ -219,7 +219,7 @@ jobs:
           echo "App binary architectures: $APP_ARCHS"
           echo "CLI binary architectures: $CLI_ARCHS"
           echo "Ghostty helper architectures: $HELPER_ARCHS"
-          # Apple silicon only since 1.7 (C11-541).
+          # Apple silicon only since 1.8 (C11-541).
           [[ "$APP_ARCHS" == "arm64" ]]
           [[ "$CLI_ARCHS" == "arm64" ]]
           [[ "$HELPER_ARCHS" == "arm64" ]]
@@ -484,6 +484,13 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           DOWNLOAD_URL_PREFIX: https://github.com/Stage-11-Agentics/c11/releases/download/nightly/
           RELEASE_NOTES_URL: https://github.com/Stage-11-Agentics/c11/releases/tag/nightly
+          # Nightlies older than this build run Sparkle 2.8.1, which ignores the
+          # Apple-silicon-only tag, so they see the arm64 nightly as information
+          # only. 3711499935701 is the first published nightly with Sparkle 2.9.3
+          # (run 37114999357, 2026-10-03, after #518); the last one with 2.8.1 is
+          # 3684650524801 (run 36846505248, 2026-10-01). Nightly build numbers are
+          # the run id followed by a two-digit attempt.
+          SPARKLE_LEGACY_BELOW_BUILD: "3711499935701"
         run: |
           if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
             echo "Missing SPARKLE_PRIVATE_KEY secret" >&2

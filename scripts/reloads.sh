@@ -215,9 +215,9 @@ if [[ -z "$TAG" ]]; then
   )
 fi
 # On Apple Silicon the x86_64 slice of a universal build is dead weight at
-# iteration time and roughly doubles the Swift compile cost. CI's release.yml
-# still produces universal because it invokes xcodebuild without these
-# overrides; pass --universal here to catch x86_64-only issues locally.
+# iteration time and roughly doubles the Swift compile cost. Releases are
+# arm64-only since 1.8 (C11-541), so this is also the release shape; pass
+# --universal only to reproduce a pre-1.8 universal build.
 if [[ "$UNIVERSAL" -eq 0 ]]; then
   XCODEBUILD_ARGS+=(ARCHS=arm64 ONLY_ACTIVE_ARCH=YES)
 fi

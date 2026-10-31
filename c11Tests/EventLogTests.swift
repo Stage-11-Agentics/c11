@@ -477,6 +477,85 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(delivered?["via"] as? String, "inbox")
     }
 
+    func testClaudeUnconfirmedAttemptEmitsExactlyOnceInBothLogs() throws {
+        let eventLog = EventLog(url: logURL(), instance: "claude-unconfirmed")
+        EventEmitter.shared.startForTesting(log: eventLog, instance: "claude-unconfirmed")
+        let mailboxURL = logURL("_dispatch.log")
+        let mailboxLog = MailboxDispatchLog(url: mailboxURL)
+        let workspace = UUID(), panel = UUID(), session = UUID()
+        let broker = MailboxNativeDoorbell()
+        let registration = MailboxNativeDoorbell.Registration(
+            id: UUID(), panelID: panel, agentPID: 123, processStart: 456,
+            sessionID: "subscription-epoch-is-not-the-Claude-session", route: .claudeInbox,
+            canQueue: false, claudeSessionID: session)
+        let sent = expectation(description: "native offer")
+        broker.register(registration, write: { _ in sent.fulfill(); return true }, close: {})
+        defer { broker.disconnect(registration) }
+        var results: [MailboxNativeDoorbell.Result] = []
+        let request = broker.deliver(registration, timeout: 30, diagnostic: {
+            mailboxLog.recordNativeFailure($0, workspaceID: workspace)
+        }) { result, _ in results.append(result) }
+        wait(for: [sent], timeout: 1)
+        let rejection = try JSONSerialization.data(withJSONObject: [
+            "type": "rejected", "delivery_id": request.uuidString, "reason": "unconfirmed",
+        ])
+        broker.consume(rejection, registration: registration)
+        broker.consume(rejection, registration: registration)
+        broker.resolve(registration, requestID: request, result: .failed("native_timeout"))
+        broker.resolve(registration, requestID: request, result: .accepted(late: false))
+        broker.consume(rejection, registration: registration)
+        mailboxLog.flush()
+        EventEmitter.shared.flush()
+
+        XCTAssertEqual(results, [.failed("native_unconfirmed"), .accepted(late: true)])
+        let events = readLines(logURL()).map(parse).filter { $0["type"] as? String == "mailbox.native_unconfirmed" }
+        let mailboxEvents = readLines(mailboxURL).map(parse)
+        XCTAssertEqual(events.count, 1, "duplicate rejection, timeout and late acceptance must not inflate frequency")
+        XCTAssertEqual(mailboxEvents.count, 1, "one attempt record, not one per envelope or callback")
+        XCTAssertEqual(events.first?["workspace"] as? String, workspace.uuidString)
+        XCTAssertEqual(events.first?["panel"] as? String, panel.uuidString)
+        let payload = try XCTUnwrap(events.first?["payload"] as? [String: Any])
+        XCTAssertEqual(Set(payload.keys), ["delivery_id", "panel_id", "claude_session_id", "route", "reason"])
+        XCTAssertEqual(payload["claude_session_id"] as? String, session.uuidString)
+        XCTAssertEqual(payload["delivery_id"] as? String, request.uuidString)
+        XCTAssertEqual(payload["panel_id"] as? String, panel.uuidString)
+        XCTAssertEqual(payload["reason"] as? String, "unconfirmed")
+        XCTAssertEqual(mailboxEvents.first?["event"] as? String, "native_unconfirmed")
+        for (key, value) in payload {
+            XCTAssertEqual(mailboxEvents.first?[key] as? String, value as? String)
+        }
+    }
+
+    func testClaudeDeadlineDiagnosticDoesNotInventRefusalOrSessionIdentity() throws {
+        let eventLog = EventLog(url: logURL(), instance: "claude-timeout")
+        EventEmitter.shared.startForTesting(log: eventLog, instance: "claude-timeout")
+        let mailboxLog = MailboxDispatchLog(url: logURL("_dispatch.log"))
+        let broker = MailboxNativeDoorbell(), panel = UUID(), workspace = UUID()
+        let registration = MailboxNativeDoorbell.Registration(
+            id: UUID(), panelID: panel, agentPID: 123, processStart: 456,
+            sessionID: UUID().uuidString, route: .claudeInbox, canQueue: false)
+        broker.register(registration, write: { _ in true }, close: {})
+        defer { broker.disconnect(registration) }
+        let failed = expectation(description: "deadline")
+        let request = broker.deliver(registration, timeout: 0.02, diagnostic: {
+            mailboxLog.recordNativeFailure($0, workspaceID: workspace)
+        }) { result, _ in
+            XCTAssertEqual(result, .failed("native_timeout"))
+            failed.fulfill()
+        }
+        wait(for: [failed], timeout: 2)
+        broker.consume(try JSONSerialization.data(withJSONObject: [
+            "type": "rejected", "delivery_id": request.uuidString, "reason": "refused",
+        ]), registration: registration)
+        mailboxLog.flush()
+        EventEmitter.shared.flush()
+        let events = readLines(logURL()).map(parse).filter { $0["type"] as? String == "mailbox.native_unconfirmed" }
+        XCTAssertEqual(events.count, 1)
+        let payload = try XCTUnwrap(events.first?["payload"] as? [String: Any])
+        XCTAssertEqual(payload["reason"] as? String, "timeout")
+        XCTAssertTrue(payload["claude_session_id"] is NSNull, "an old bridge's random epoch is not a Claude session ID")
+    }
+
     func testEmitterRecordsResumeModeAndTypedDecisions() {
         let log = EventLog(url: logURL(), instance: "resume-inst")
         EventEmitter.shared.startForTesting(log: log, instance: "resume-inst")

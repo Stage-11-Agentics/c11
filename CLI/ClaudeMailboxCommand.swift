@@ -56,6 +56,7 @@ enum ClaudeMailboxCommand {
             "id": requestID, "method": "mailbox.native.subscribe",
             "params": ["panel_id": binding.panelID, "agent_pid": Int(binding.agentPID),
                        "route": "claude_inbox", "session_id": UUID().uuidString,
+                       "claude_session_id": binding.sessionID,
                        "can_queue": false]
         ], deadline: uptime + 1)
         guard let reply = try stream.read(deadline: uptime + 1),

@@ -1886,6 +1886,22 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         }
     }
 
+    func testExplicitRefusalIsNamedOnlyForClaude() throws {
+        let routes: [MailboxNativeDoorbell.Route] = [.claudeInbox, .piExtension, .ompExtension, .opencodePlugin]
+        for route in routes {
+            let broker = MailboxNativeDoorbell(), reg = registration(route: route)
+            let offered = offerNatively(broker, reg)
+            let expected = route == .claudeInbox ? "native_refused" : "native_rejected"
+            let failed = expectation(description: route.rawValue)
+            offered.reply = { result in XCTAssertEqual(result, .failed(expected)); failed.fulfill() }
+            broker.consume(try JSONSerialization.data(withJSONObject: [
+                "type": "rejected", "delivery_id": try offered.deliveryID(), "reason": "refused",
+            ]), registration: reg)
+            wait(for: [failed], timeout: 1)
+            broker.disconnect(reg)
+        }
+    }
+
     func testAcceptanceAfterNamedRejectionIsLate() throws {
         let broker = MailboxNativeDoorbell(), reg = registration()
         let offered = offerNatively(broker, reg)

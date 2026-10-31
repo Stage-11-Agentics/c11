@@ -7003,7 +7003,11 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.beginAttempt(at: startedAt, epoch: epoch) }
         logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "started", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
         let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
-        MailboxNativeDoorbell.shared.deliver(registration, attemptID: attemptID) { result, settled in
+        MailboxNativeDoorbell.shared.deliver(registration, attemptID: attemptID,
+            diagnostic: { [log = mailboxDispatcher?.log, workspaceID = id] diagnostic in
+                log?.recordNativeFailure(diagnostic, workspaceID: workspaceID)
+            }
+        ) { result, settled in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let workspace = owner.workspace, workspace.panels[surfaceId] != nil else { settled(); return }

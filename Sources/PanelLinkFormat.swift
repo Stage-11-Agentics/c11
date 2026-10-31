@@ -29,7 +29,7 @@ struct PanelLinkFormat {
         // Escape label delimiters and inline markup while keeping ordinary
         // punctuation readable in terminals and other raw Markdown output.
         let label = title.unicodeScalars.map { scalar -> String in
-            let needsEscape = "\\[]*_`<>&!".unicodeScalars.contains(scalar)
+            let needsEscape = "\\[]*_`<>&!|".unicodeScalars.contains(scalar)
             return (needsEscape ? "\\" : "") + String(scalar)
         }.joined()
         return "[\(label)](\(url))"

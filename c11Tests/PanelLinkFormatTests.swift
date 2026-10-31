@@ -19,8 +19,8 @@ final class PanelLinkFormatTests: XCTestCase {
     }
 
     func testMarkdownCannotEscapeItsLabelOrInterpretMarkup() {
-        let link = PanelLinkFormat(kind: .panel, id: id, title: "![agent](bad) *bold* _italic_ `code` <b> &amp; \\ end")
-        XCTAssertEqual(link.markdown, #"[\!\[agent\](bad) \*bold\* \_italic\_ \`code\` \<b\> \&amp; \\ end]("# + link.url + ")")
+        let link = PanelLinkFormat(kind: .panel, id: id, title: "![agent](bad) *bold* _italic_ `code` <b> &amp; \\ end | Opus")
+        XCTAssertEqual(link.markdown, #"[\!\[agent\](bad) \*bold\* \_italic\_ \`code\` \<b\> \&amp; \\ end \| Opus]("# + link.url + ")")
     }
 
     func testMarkdownKeepsOrdinaryTitlePunctuationReadable() {

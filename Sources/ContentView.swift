@@ -13857,7 +13857,16 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private var accessibilityTitle: String {
-        String(localized: "accessibility.workspacePosition", defaultValue: "\(workspace.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
+        let position = String(localized: "accessibility.workspacePosition", defaultValue: "\(workspace.title), workspace \(index + 1) of \(accessibilityWorkspaceCount)")
+        guard compact else { return position }
+        let census = workspacePulse.agents.isEmpty
+            ? String(localized: "sidebar.tiles.noAgents", defaultValue: "No agents")
+            : workspacePulseAgentCountText
+        let agents = workspacePulse.agents.map { agent in
+            let state = agent.activityHelp?.accessibilityValue ?? workspacePulseLabel(for: agent.presentedState)
+            return "\(workspacePulseMarkAccessibilityLabel(agent)): \(state)"
+        }
+        return ([position, "WS \(workspace.displayOrdinal)", census] + agents).joined(separator: ", ")
     }
 
     private func moveBy(_ delta: Int) {

@@ -617,7 +617,12 @@ finally:
         self.passed('10 bundled c11 guide teaches titled links and terminal activation')
 
     def copy_link(self, title, expected, sidebar=False):
-        entries = self.ax()
+        def stable_snapshot():
+            snapshot = self.ax()
+            rows = [e for e in snapshot if str(e.get('help') or '').startswith('Activate to focus this workspace.')
+                    and e['position'] and e['size']]
+            return snapshot if not sidebar or len(rows) == 2 else None
+        entries = self.wait(stable_snapshot, 'native workspace rows exposed after Copy Link HUD', timeout=12)
         sidebars = [e for e in entries if e['id'] == 'Sidebar' and e['role'] == 'AXScrollArea']
         assert len(sidebars) == 1 and sidebars[0]['position'] and sidebars[0]['size'], sidebars
         edge = sidebars[0]['position'][0] + sidebars[0]['size'][0]
@@ -636,7 +641,7 @@ finally:
             if sidebar:
                 workspaces = self.call('workspace.list', window_id=self.window)['workspaces']
                 assert [w['id'].lower() for w in workspaces] == [self.source_workspace.lower(), self.destination.lower()]
-                rows = sorted((e for e in entries if e['id'] == 'SidebarTabSurfaceMetricsPlaceholder'
+                rows = sorted((e for e in entries if str(e.get('help') or '').startswith('Activate to focus this workspace.')
                                and e['position'] and e['size']), key=lambda e: e['position'][1])
                 assert len(rows) == 2 and rows[0]['position'][1] + rows[0]['size'][1] <= rows[1]['position'][1], rows
                 assert title == DESTINATION_TITLE
@@ -702,7 +707,7 @@ finally:
                                action='open_link', url=self.target_url)
         assert not denied_link['ok'] and denied_link['error']['code'] == 'invalid_params', denied_link
         decision_count = len(self.decisions())
-        self.call('panel.send_key', workspace_id=self.source_workspace, panel_id=self.source, key='cmd+enter')
+        self.call('panel.send_key', workspace_id=self.source_workspace, panel_id=self.source, key='enter')
         time.sleep(.2)
         assert self.selection() == before and len(self.decisions()) == decision_count
         self.passed('9 socket selection and link action refused; synthetic terminal key cannot activate link',

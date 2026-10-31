@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11515C001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */; };
+		C11515A001B2C3D4E5F60718 /* PanelLinkActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */; };
 		022A09F1BE71E4DC6867B9FA /* ThemeRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F012 /* ThemeRegistryTests.swift */; };
 		05251A54C599458CAD99E315 /* markdown-viewer in Resources */ = {isa = PBXBuildFile; fileRef = 0D0D85360E4743C8A64E4740 /* markdown-viewer */; };
 		0553CFD8D0141F43D50CA586 /* WorkspaceSnapshotSetCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */; };
@@ -769,6 +771,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkPolicyTests.swift; sourceTree = "<group>"; };
+		C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkActivation.swift; sourceTree = "<group>"; };
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
 		0095C3D72A7722FFA42A7ED1 /* AreaSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AreaSizePolicy.swift; sourceTree = "<group>"; };
 		00B9399C201ED734873E67B9 /* EventEmitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EventEmitter.swift; path = Events/EventEmitter.swift; sourceTree = "<group>"; };
@@ -1697,6 +1701,7 @@
 				A5001301 /* PanelSearchOverlay.swift */,
 				A5008370 /* BrowserSearchOverlay.swift */,
 				A5008372 /* BrowserFindJavaScript.swift */,
+				C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */,
 				A5001410 /* Panel.swift */,
 				A5001411 /* TerminalPanel.swift */,
 				A5001412 /* BrowserPanel.swift */,
@@ -1993,6 +1998,7 @@
 				F9000001A1B2C3D4E5F60718 /* GhosttyEnsureFocusWindowActivationTests.swift */,
 				FA000001A1B2C3D4E5F60718 /* WorkspaceStressProfileTests.swift */,
 				A5008380 /* BrowserFindJavaScriptTests.swift */,
+				C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */,
 				C11209B001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift */,
 				C11222B001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift */,
 				C11497D001B2C3D4E5F60718 /* BrowserContextMenuHitTestTests.swift */,
@@ -2430,6 +2436,7 @@
 				A11C0DE0000000000040051F /* UpdateInstallerFailureMappingTests.swift in Sources */,
 				8B6BA07B09D5E9E01F141A44 /* BrowserChromeSnapshotTests.swift in Sources */,
 				E6C1381837332D3B253A0C42 /* BrowserFindJavaScriptTests.swift in Sources */,
+				C11515C001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift in Sources */,
 				C11209A001B2C3D4E5F60718 /* BrowserAwaitPolicyTests.swift in Sources */,
 				C11222A001B2C3D4E5F60718 /* DownloadPathWatcherTests.swift in Sources */,
 				60C99BCDF095711E213AAF1C /* BrowserImportMappingTests.swift in Sources */,
@@ -2759,6 +2766,7 @@
 				A5001303 /* PanelSearchOverlay.swift in Sources */,
 				A5008371 /* BrowserSearchOverlay.swift in Sources */,
 				A5008373 /* BrowserFindJavaScript.swift in Sources */,
+				C11515A001B2C3D4E5F60718 /* PanelLinkActivation.swift in Sources */,
 				A5001400 /* Panel.swift in Sources */,
 				A5001401 /* TerminalPanel.swift in Sources */,
 				A5001402 /* BrowserPanel.swift in Sources */,

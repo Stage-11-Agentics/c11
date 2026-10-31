@@ -37583,6 +37583,194 @@
         }
       }
     },
+    "panelLink.notice.activation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open c11 links by clicking them or pressing Return in a local page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカルページ上の c11 リンクをクリックするか、Return キーを押して開いてください。"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкривайте посилання c11 на локальній сторінці клацанням або клавішею Return."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로컬 페이지에서 c11 링크를 클릭하거나 Return 키를 눌러 여세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在本地页面中点击 c11 链接或按 Return 键将其打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在本機頁面中點按 c11 連結或按 Return 鍵將其開啟。"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открывайте ссылки c11 на локальной странице щелчком или клавишей Return."
+          }
+        }
+      }
+    },
+    "panelLink.notice.invalid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That c11 link is invalid. Use a panel or workspace UUID."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この c11 リンクは無効です。パネルまたはワークスペースの UUID を使用してください。"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це посилання c11 недійсне. Використовуйте UUID панелі або робочого простору."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "유효하지 않은 c11 링크입니다. 패널 또는 작업 공간의 UUID를 사용하세요."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 c11 链接无效。请使用面板或工作区的 UUID。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 c11 連結無效。請使用面板或工作區的 UUID。"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта ссылка c11 недействительна. Используйте UUID панели или рабочего пространства."
+          }
+        }
+      }
+    },
+    "panelLink.notice.localOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panel links work only from local files and localhost pages."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パネルリンクはローカルファイルと localhost のページからのみ利用できます。"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Посилання на панелі працюють лише з локальних файлів і сторінок localhost."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "패널 링크는 로컬 파일과 localhost 페이지에서만 작동합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "面板链接仅可从本地文件和 localhost 页面使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "面板連結僅可從本機檔案和 localhost 頁面使用。"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ссылки на панели работают только из локальных файлов и со страниц localhost."
+          }
+        }
+      }
+    },
+    "panelLink.notice.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That panel or workspace is no longer available."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパネルまたはワークスペースはもう利用できません。"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Панель або робочий простір більше недоступні."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 패널 또는 작업 공간은 더 이상 사용할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此面板或工作区已不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此面板或工作區已無法使用。"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта панель или рабочее пространство больше недоступны."
+          }
+        }
+      }
+    },
     "panel.displayName.fallback": {
       "extractionState": "manual",
       "localizations": {

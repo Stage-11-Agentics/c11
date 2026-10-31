@@ -37,7 +37,7 @@ def report(run, pages):
         job["start_offset_seconds"] = (job.pop("start") - first).total_seconds()
         job.pop("end")
     return {"run_id": run["id"], "run_attempt": attempt, "workflow": run["name"],
-            "head_sha": run["head_sha"], "conclusion": run["conclusion"], "url": run["html_url"],
+            "workflow_head_sha": run["head_sha"], "conclusion": run["conclusion"], "url": run["html_url"],
             "wall_seconds": (last - first).total_seconds() if first else None,
             "queue_seconds": (first - instant(run["run_started_at"])).total_seconds() if first else None,
             "jobs": jobs}
@@ -49,6 +49,7 @@ def markdown(data):
     wall = data["wall_seconds"]
     lines = [f"Attempt {data['run_attempt']}: **{wall if wall is not None else 'no started jobs'} seconds** from first job start to last job end.",
              f"Queue before first job: {data['queue_seconds']} seconds. Result: {cell(data['conclusion'])}.",
+             f"Workflow trigger head: `{data['workflow_head_sha']}`. A backstop may select a newer tip; its target log and commit status identify the tested head.",
              "", "| Job | Start offset (s) | Duration (s) | Result |", "|---|---:|---:|---|"]
     lines += [f"| {cell(j['name'])} | {j['start_offset_seconds']} | {j['seconds']} | {cell(j['conclusion'])} |" for j in data["jobs"]]
     for job in data["jobs"]:

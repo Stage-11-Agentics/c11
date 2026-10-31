@@ -358,25 +358,41 @@ final class TerminalPanelLinkPreview {
         card.layer?.cornerRadius = 6
         card.layer?.borderWidth = 1
         card.layer?.borderColor = NSColor.separatorColor.cgColor
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = .systemFont(ofSize: 12)
-        label.textColor = .labelColor
-        label.maximumNumberOfLines = 5
-        label.lineBreakMode = .byTruncatingTail
-        label.setAccessibilityIdentifier("c11.panel-link.preview")
-        card.addSubview(label)
+        // Reserve one line for each destination component so a long panel
+        // title cannot push the workspace or canonical URL out of the card.
+        let rows = NSStackView()
+        rows.orientation = .vertical
+        rows.alignment = .leading
+        rows.spacing = 3
+        for line in text.split(separator: "\n") {
+            let label = NSTextField(labelWithString: String(line))
+            label.font = .systemFont(ofSize: 12)
+            label.textColor = .labelColor
+            label.lineBreakMode = .byTruncatingTail
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            label.setAccessibilityElement(false)
+            rows.addArrangedSubview(label)
+            label.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
+        }
+        card.setAccessibilityElement(true)
+        card.setAccessibilityRole(.staticText)
+        card.setAccessibilityValue(text)
+        card.setAccessibilityIdentifier("c11.panel-link.preview")
+        card.addSubview(rows)
         host.addSubview(card, positioned: .above, relativeTo: nil)
         card.translatesAutoresizingMaskIntoConstraints = false
-        label.translatesAutoresizingMaskIntoConstraints = false
+        rows.translatesAutoresizingMaskIntoConstraints = false
+        let preferredWidth = card.widthAnchor.constraint(equalToConstant: 480)
+        preferredWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             card.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 12),
             card.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: -12),
             card.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -12),
-            card.widthAnchor.constraint(lessThanOrEqualToConstant: 480),
-            label.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
-            label.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            label.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
-            label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -8)
+            preferredWidth,
+            rows.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
+            rows.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
+            rows.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
+            rows.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -8)
         ])
         self.card = card
         displayedText = text

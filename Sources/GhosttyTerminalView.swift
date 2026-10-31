@@ -7115,26 +7115,28 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             isVisible: isVisibleInUI && !isHiddenOrHasHiddenAncestor
         )
         dispatchingPanelLinkClick = false // One native dispatch, one decision.
-        panelLinkPreview.clear()
-        let host: NSView = terminalSurface?.hostedView ?? self
-        if let reason = policy.refusalReason {
-            panelLinkNotice.show(.terminalActivation, in: host)
-            PanelLinkActivation.log(target: href, origin: "terminal", activation: "refused", result: reason)
-            return
-        }
-        guard let target = PanelLinkTarget(href) else {
-            panelLinkNotice.show(.invalid, in: host)
-            PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "invalid_target")
-            return
-        }
         let sourceID = terminalSurface?.id
-        // Leave Ghostty's event/renderer stack before changing native focus.
+        // Leave Ghostty's event/renderer stack before touching overlays or focus.
         // The capability is this closure, never a timestamp reusable by RPC.
         DispatchQueue.main.async { [weak self] in
+            if let reason = policy.refusalReason {
+                if let self {
+                    self.panelLinkPreview.clear()
+                    self.panelLinkNotice.show(.terminalActivation, in: self.terminalSurface?.hostedView ?? self)
+                }
+                PanelLinkActivation.log(target: href, origin: "terminal", activation: "refused", result: reason)
+                return
+            }
             guard let self, self.terminalSurface?.id == sourceID,
                   self.window?.isKeyWindow == true, self.isVisibleInUI,
                   !self.isHiddenOrHasHiddenAncestor else {
                 PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "source_unavailable")
+                return
+            }
+            self.panelLinkPreview.clear()
+            guard let target = PanelLinkTarget(href) else {
+                self.panelLinkNotice.show(.invalid, in: self.terminalSurface?.hostedView ?? self)
+                PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "invalid_target")
                 return
             }
             let opened = AppDelegate.shared?.openPanelLink(target) == true

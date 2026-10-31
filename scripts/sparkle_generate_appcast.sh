@@ -35,9 +35,9 @@ cleanup() {
 trap cleanup EXIT
 
 # SPARKLE_BIN_DIR points at prebuilt Sparkle tools (the bin/ of a Sparkle
-# release tarball). scripts/release-local.sh sets it so a local release
-# never runs xcodebuild on the operator's machine; CI leaves it unset and
-# builds the tools from source.
+# release tarball, from scripts/fetch-sparkle-tools.sh). release.yml,
+# nightly.yml and release-local.sh set it; without it the tools are built
+# from source.
 if [[ -n "${SPARKLE_BIN_DIR:-}" ]]; then
   generate_appcast="$SPARKLE_BIN_DIR/generate_appcast"
   sign_update="$SPARKLE_BIN_DIR/sign_update"

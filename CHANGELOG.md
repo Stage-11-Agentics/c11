@@ -6,21 +6,43 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-31
+
+Headline: **c11 1.6.0. Panels and workspaces get clickable `c11://` links that jump straight to the panel, take the keyboard and flash it, from a terminal, a markdown note or a local web page. Flags can carry a named kind, mail keeps ringing after a panel moves, and the browser closes several ways a web page could reach local files or link one profile to another.**
+
+### Added
+
+- **Clickable links to panels and workspaces.** `c11://panel/<id>` and `c11://workspace/<id>` jump to the destination across workspaces and windows, reveal its area, give the panel the keyboard and flash it. A workspace link keeps that workspace's focused panel. ([#798](https://github.com/Stage-11-Agentics/c11/pull/798), [#801](https://github.com/Stage-11-Agentics/c11/pull/801))
+  - In a terminal, Cmd-click a bare `c11://` URL or a titled OSC 8 link. Cmd-hover shows the real destination's panel title and workspace, whatever the link's label says. ([#797](https://github.com/Stage-11-Agentics/c11/pull/797), [#801](https://github.com/Stage-11-Agentics/c11/pull/801))
+  - In markdown panels and local browser pages (`file://` or `localhost`), a plain click or Return opens the link. Other sites, frames, scripts and popups cannot trigger one, and a closed or invalid target shows a small notice instead of opening anything. ([#798](https://github.com/Stage-11-Agentics/c11/pull/798))
+  - `c11 link --panel <ref>` and `c11 link --workspace <ref>` print a link from live inventory as a URL, Markdown, OSC 8 or JSON, titled with the destination's name. Copy Link in a panel's tab menu and a workspace's sidebar menu copies the URL. `c11 capabilities --json` advertises `links.panel` and `links.terminal`. ([#800](https://github.com/Stage-11-Agentics/c11/pull/800), [#801](https://github.com/Stage-11-Agentics/c11/pull/801))
+- **Named flag kinds.** A flag can carry a registered kind with its own name, color and emoji: `chief-of-staff` (green) and `merge-issue` (red) are built in and editable. Manage kinds in Settings or with `c11 flag-kind`, and raise one with `c11 raise-flag --kind <id>`. A flag without a kind stays the familiar violet one. ([#793](https://github.com/Stage-11-Agentics/c11/pull/793))
+
+### Changed
+
+- **CLI commands return faster.** Each socket reply is read the moment its line ends, instead of waiting another 120 ms; commands that check capabilities first saved that twice. ([#804](https://github.com/Stage-11-Agentics/c11/pull/804))
+- **New browser panels open beside the agent that asked for them.** `browser open`, `open-split` and `new` place the browser next to the calling panel and reuse its browser area, instead of splitting whatever panel had focus. ([#792](https://github.com/Stage-11-Agentics/c11/pull/792))
+
 ### Fixed
 
+- **Sidebar flashes draw right away.** A flash could stay dark on its workspace card until something unrelated refreshed the sidebar; it now starts on the next frame, and repeated flashes restart cleanly. A link's flash no longer waits a fixed 120 ms. ([#803](https://github.com/Stage-11-Agentics/c11/pull/803))
+- **Mail keeps ringing after an agent's panel moves to another workspace.** The doorbell keeps its retry state, limits and pending delivery across the move. ([#802](https://github.com/Stage-11-Agentics/c11/pull/802))
 - **Commands run from a moved panel follow it to its new workspace.** A shell keeps the `C11_WORKSPACE_ID` it started with; the CLI now looks up where its panel lives, so sidebar status, `browser open`, `markdown open`, `new-area`, `new-panel`, title-bar and panel actions, `send` and the tmux shim land in the panel's workspace. A moved agent's hook lifecycle, turn-end notice and status follow it too. ([#790](https://github.com/Stage-11-Agentics/c11/pull/790))
+- **The browser's right-click Download Image, Download Linked File, Open Link in New Panel and Open Link in Default Browser act on the element under the cursor.** They picked the element mirrored vertically, and drifted at any page zoom other than 100%. ([#785](https://github.com/Stage-11-Agentics/c11/pull/785))
+- **Right-click downloads stay on what is under the cursor.** Download Linked File on a link it can't download no longer saves the page's first image, and Download Image over an embedded frame no longer saves the frame's page. ([#791](https://github.com/Stage-11-Agentics/c11/pull/791))
+- **OpenCode 2 sessions resume and receive mail in the right client.** c11 binds the exact OpenCode client and the session it displays, and refuses to resume when it cannot verify that session. ([#796](https://github.com/Stage-11-Agentics/c11/pull/796))
+- **Inline `data:` favicons with a `#` in them decode correctly**, including on macOS 15. ([#794](https://github.com/Stage-11-Agentics/c11/pull/794), [#795](https://github.com/Stage-11-Agentics/c11/pull/795))
 
 ### Security
 
-- **Browser profiles no longer share favicon cookies or cache.** Favicon fetches send and keep no cookies, and each profile caches its own icons, so a site's favicon can't link one profile to another. ([#786](https://github.com/Stage-11-Agentics/c11/pull/786))
 - **A web page can no longer make Download Image or Download Linked File read a local file.** Saving a `file:` link works only from a page that is itself a local file, only for a regular file in that page's folder, and the copy runs off the main thread. ([#784](https://github.com/Stage-11-Agentics/c11/pull/784))
-- **Search suggestions no longer share cookies or a disk cache across browser profiles.** Each profile's suggestions keep no cookies and only an in-memory cache, so a search engine can't link one profile's typing to another's. ([#789](https://github.com/Stage-11-Agentics/c11/pull/789))
 - **A web page can no longer open a local file in a new panel.** Open Link in New Panel, Cmd-click, target=_blank and window.open open a `file:` link only when a local page asked for it, and a popup never hands one to the system to launch. ([#788](https://github.com/Stage-11-Agentics/c11/pull/788))
+- **Browser profiles no longer share favicon cookies or cache.** Favicon fetches send and keep no cookies, and each profile caches its own icons, so a site's favicon can't link one profile to another. ([#786](https://github.com/Stage-11-Agentics/c11/pull/786))
+- **Search suggestions no longer share cookies or a disk cache across browser profiles.** Each profile's suggestions keep no cookies and only an in-memory cache, so a search engine can't link one profile's typing to another's. ([#789](https://github.com/Stage-11-Agentics/c11/pull/789))
 
-### Fixed
+### Thanks to 1 contributor!
 
-- **The browser's right-click Download Image, Download Linked File, Open Link in New Panel and Open Link in Default Browser act on the element under the cursor.** They picked the element mirrored vertically, and drifted at any page zoom other than 100%. ([#785](https://github.com/Stage-11-Agentics/c11/pull/785))
-- **Right-click downloads stay on what is under the cursor.** Download Linked File on a link it can't download no longer saves the page's first image, and Download Image over an embedded frame no longer saves the frame's page. ([#791](https://github.com/Stage-11-Agentics/c11/pull/791))
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.5.1] - 2026-10-28
 
@@ -1153,20 +1175,20 @@ Stage 11 Agentics. Operator:agent, fused.
 ## [0.42.0] - 2026-04-24
 
 ### Added
-- **Tab bar agent launcher + close-pane buttons.** Every pane's tab bar gets two first-class buttons: **A** (leftmost, spawns a new terminal running the operator's configured agent launcher — default Claude Code) and **X** (rightmost, closes the entire pane after a confirmation alert that names how many tabs will be lost; disabled when only one pane exists). Right-click **A** opens a context menu of all agent kinds (Claude Code, Codex, OpenCode, Kimi, Other) with a checkmark on the current default; picking one updates the default AND spawns that agent immediately. Settings → Agents & Automation gains an *Agent Launcher Button* section at the top for the picker and free-form command field. ([#72](https://github.com/Stage-11-Agentics/c11/pull/72)) — thanks @BenevolentFutures!
-- **Tab bar chrome states.** View → Tab Bar gains Full / Shrunk / Hidden entries with ⌘⇧B to cycle. Shrunk and Hidden give dense multi-agent workspaces more vertical room; the handle overlay stays available in Shrunk state for drag-to-rearrange. Default remains Full. — thanks @BenevolentFutures!
-- **`c11 mailbox` inter-agent messaging primitive.** New CLI surface for sending envelopes between surfaces on the same c11 instance — `c11 mailbox send | recv | trace | tail | outbox-dir | inbox-dir | surface-name`. Envelopes are validated against a v1 schema, written atomically, and delivered through an fsevent watcher. The default `stdin` handler writes the body to the recipient's PTY with a 500 ms timeout; a `silent` no-op handler is available for dry-run routing. Dispatch log is NDJSON at the mailbox layout path. ([#73](https://github.com/Stage-11-Agentics/c11/pull/73)) — thanks @BenevolentFutures!
-- **`c11 workspace apply` and the `workspace.apply` socket method.** Build a whole workspace from a single declarative JSON plan — nested split trees, surface kinds (terminal / browser / markdown), titles, descriptions, pane metadata, surface metadata, and terminal cwd — in one call. Foundation for the upcoming Workspace Snapshots and Blueprints flow. ([#75](https://github.com/Stage-11-Agentics/c11/pull/75)) — thanks @BenevolentFutures!
-- **`c11 notify` on v2 notification methods.** The CLI now routes through the modern `sidebar.notification.*` methods, bringing richer notification metadata and keeping CLI and sidebar v2 plumbing consistent. ([#66](https://github.com/Stage-11-Agentics/c11/pull/66)) — thanks @BenevolentFutures!
+- **Tab bar agent launcher + close-pane buttons.** Every pane's tab bar gets two first-class buttons: **A** (leftmost, spawns a new terminal running the operator's configured agent launcher — default Claude Code) and **X** (rightmost, closes the entire pane after a confirmation alert that names how many tabs will be lost; disabled when only one pane exists). Right-click **A** opens a context menu of all agent kinds (Claude Code, Codex, OpenCode, Kimi, Other) with a checkmark on the current default; picking one updates the default AND spawns that agent immediately. Settings → Agents & Automation gains an *Agent Launcher Button* section at the top for the picker and free-form command field. ([#72](https://github.com/Stage-11-Agentics/c11/pull/72))
+- **Tab bar chrome states.** View → Tab Bar gains Full / Shrunk / Hidden entries with ⌘⇧B to cycle. Shrunk and Hidden give dense multi-agent workspaces more vertical room; the handle overlay stays available in Shrunk state for drag-to-rearrange. Default remains Full.
+- **`c11 mailbox` inter-agent messaging primitive.** New CLI surface for sending envelopes between surfaces on the same c11 instance — `c11 mailbox send | recv | trace | tail | outbox-dir | inbox-dir | surface-name`. Envelopes are validated against a v1 schema, written atomically, and delivered through an fsevent watcher. The default `stdin` handler writes the body to the recipient's PTY with a 500 ms timeout; a `silent` no-op handler is available for dry-run routing. Dispatch log is NDJSON at the mailbox layout path. ([#73](https://github.com/Stage-11-Agentics/c11/pull/73))
+- **`c11 workspace apply` and the `workspace.apply` socket method.** Build a whole workspace from a single declarative JSON plan — nested split trees, surface kinds (terminal / browser / markdown), titles, descriptions, pane metadata, surface metadata, and terminal cwd — in one call. Foundation for the upcoming Workspace Snapshots and Blueprints flow. ([#75](https://github.com/Stage-11-Agentics/c11/pull/75))
+- **`c11 notify` on v2 notification methods.** The CLI now routes through the modern `sidebar.notification.*` methods, bringing richer notification metadata and keeping CLI and sidebar v2 plumbing consistent. ([#66](https://github.com/Stage-11-Agentics/c11/pull/66))
 
 ### Changed
-- **Jump-to-Unread moved from the bottom status bar to the sidebar footer; the bottom status bar is gone.** The jump button is now larger, labeled, and badge-aware in its new home, and its default keyboard shortcut is ⌃⌘⏎. ([#64](https://github.com/Stage-11-Agentics/c11/pull/64)) — thanks @BenevolentFutures!
-- **macOS permissions primer sheet refresh.** Full Disk Access is now the primary CTA, the button order is flipped to match platform conventions, and the body copy is tightened. — thanks @BenevolentFutures!
-- **c11 skill requires a title and a description at orientation.** Every agent that reads the c11 skill now names its surface with both a title and a description on startup — unnamed or undescribed surfaces become the exception, not the norm. ([#65](https://github.com/Stage-11-Agentics/c11/pull/65)) — thanks @BenevolentFutures!
-- **Claude Code hook runs quietly.** The `claude-hook` subcommand now exits cleanly when the c11 socket is unreachable (no stderr noise in Claude Code transcripts), and its advisory guidance speaks c11 vocabulary instead of the older `cmux` names. Real CLI usage (`c11 identify`, etc.) still surfaces missing-socket errors as before. ([#74](https://github.com/Stage-11-Agentics/c11/pull/74)) — thanks @BenevolentFutures!
+- **Jump-to-Unread moved from the bottom status bar to the sidebar footer; the bottom status bar is gone.** The jump button is now larger, labeled, and badge-aware in its new home, and its default keyboard shortcut is ⌃⌘⏎. ([#64](https://github.com/Stage-11-Agentics/c11/pull/64))
+- **macOS permissions primer sheet refresh.** Full Disk Access is now the primary CTA, the button order is flipped to match platform conventions, and the body copy is tightened.
+- **c11 skill requires a title and a description at orientation.** Every agent that reads the c11 skill now names its surface with both a title and a description on startup — unnamed or undescribed surfaces become the exception, not the norm. ([#65](https://github.com/Stage-11-Agentics/c11/pull/65))
+- **Claude Code hook runs quietly.** The `claude-hook` subcommand now exits cleanly when the c11 socket is unreachable (no stderr noise in Claude Code transcripts), and its advisory guidance speaks c11 vocabulary instead of the older `cmux` names. Real CLI usage (`c11 identify`, etc.) still surfaces missing-socket errors as before. ([#74](https://github.com/Stage-11-Agentics/c11/pull/74))
 
 ### Fixed
-- **`c11 set-metadata` / `c11 set-agent` default to the focused surface again.** Omitting the surface argument now resolves to the currently focused surface as documented, rather than targeting the wrong surface in some configurations. ([#63](https://github.com/Stage-11-Agentics/c11/pull/63)) — thanks @BenevolentFutures!
+- **`c11 set-metadata` / `c11 set-agent` default to the focused surface again.** Omitting the surface argument now resolves to the currently focused surface as documented, rather than targeting the wrong surface in some configurations. ([#63](https://github.com/Stage-11-Agentics/c11/pull/63))
 
 ### Thanks to 1 contributor!
 
@@ -1175,12 +1197,12 @@ Stage 11 Agentics. Operator:agent, fused.
 ## [0.41.0] - 2026-04-23
 
 ### Added
-- TCC primer onboarding sheet on first run. Explains why macOS is about to ask about Downloads, Documents, Desktop, iCloud Drive, Music, Photos, and other protected resources before the system dialogs fire — following the iTerm2 / Warp / Ghostty pattern. 14 custom `NS*UsageDescription` strings rewrite the native dialog copy in c11's voice, attributing requests to "a program running within c11." Chains after the Agent Skills sheet on fresh installs; existing users are skipped via a one-shot migration. Settings gains a new Permissions section with "Show permissions primer…" re-entry and a direct deep-link to Full Disk Access. Localized into ja / uk / ko / zh-Hans / zh-Hant / ru. ([#55](https://github.com/Stage-11-Agentics/c11/pull/55), [#56](https://github.com/Stage-11-Agentics/c11/pull/56)) — thanks @BenevolentFutures!
+- TCC primer onboarding sheet on first run. Explains why macOS is about to ask about Downloads, Documents, Desktop, iCloud Drive, Music, Photos, and other protected resources before the system dialogs fire — following the iTerm2 / Warp / Ghostty pattern. 14 custom `NS*UsageDescription` strings rewrite the native dialog copy in c11's voice, attributing requests to "a program running within c11." Chains after the Agent Skills sheet on fresh installs; existing users are skipped via a one-shot migration. Settings gains a new Permissions section with "Show permissions primer…" re-entry and a direct deep-link to Full Disk Access. Localized into ja / uk / ko / zh-Hans / zh-Hant / ru. ([#55](https://github.com/Stage-11-Agentics/c11/pull/55), [#56](https://github.com/Stage-11-Agentics/c11/pull/56))
 
 ### Changed
 - New workspaces now default to a balanced 2×2 terminal grid. Previously the grid was gated behind an off-by-default flag and branched on screen resolution (3×3 on 4K, 2×3 on QHD, 2×2 otherwise); a single predictable shape is the better default.
-- Agent Skills onboarding sheet adapts to install state: title reads "Teach your agent c11" on fresh install, "Update" when something is installed but stale, and "Nothing to do here" when the detected rows are already current. "Later" and "Don't ask again" buttons are hidden when there's nothing to act on, so the all-set state shows only a single primary button. Transparency note clarified about what gets written and where. ([#54](https://github.com/Stage-11-Agentics/c11/pull/54)) — thanks @BenevolentFutures!
-- Notifications empty state and Agent Skills onboarding sheet copy tightened for density and active voice. ([#50](https://github.com/Stage-11-Agentics/c11/pull/50)) — thanks @BenevolentFutures!
+- Agent Skills onboarding sheet adapts to install state: title reads "Teach your agent c11" on fresh install, "Update" when something is installed but stale, and "Nothing to do here" when the detected rows are already current. "Later" and "Don't ask again" buttons are hidden when there's nothing to act on, so the all-set state shows only a single primary button. Transparency note clarified about what gets written and where. ([#54](https://github.com/Stage-11-Agentics/c11/pull/54))
+- Notifications empty state and Agent Skills onboarding sheet copy tightened for density and active voice. ([#50](https://github.com/Stage-11-Agentics/c11/pull/50))
 
 ### Thanks to 1 contributor!
 
@@ -1189,20 +1211,20 @@ Stage 11 Agentics. Operator:agent, fused.
 ## [0.40.0] - 2026-04-22
 
 ### Added
-- Settings sidebar is reorganized into logical pages with a two-column layout, and the Settings window title reads "c11 Settings". — thanks @BenevolentFutures!
+- Settings sidebar is reorganized into logical pages with a two-column layout, and the Settings window title reads "c11 Settings".
 
 ### Changed
-- User-facing copy tightened across the app — 72 strings rewritten for density and active voice across agent onboarding, confirmation dialogs, the notifications empty state, the Sparkle update flow, the sidebar feedback form, and the browser import wizard. Non-English translations for touched strings are marked `needs_review` for the next translation pass. — thanks @BenevolentFutures!
-- About box tagline now reads *"terminal command center for the operator:agent pair. / many surfaces. one workspace. one field of view."* (replacing the previous architecture description). — thanks @BenevolentFutures!
-- Agent Skills onboarding dialog: "Agentically use c11" / "Skillify Your Agent" becomes "Teach your agent c11" / "Teach My Agent". Body copy, transparency note, and empty-detection state rewritten for clarity. — thanks @BenevolentFutures!
-- User-facing copy normalized from "panel" to "pane" throughout dialogs, menus, and command labels ("Flash Focused Pane", "Reopen Closed Browser Pane", "close the workspace and all of its panes"), matching README and skill vocabulary. Internal Swift type names are unchanged. — thanks @BenevolentFutures!
-- Sparkle update flow copy: "Please" filler dropped from error messages, "Update Feed" jargon replaced with "Update Source" / "Update List", and vague error titles rewritten ("App Location Issue" → "c11 isn't in Applications", "Updater Permission Error" → "c11 needs to live in Applications", "Update Signature Error" → "Signature Didn't Verify"). — thanks @BenevolentFutures!
-- The c11-markdown skill now teaches agents to consolidate multi-artifact sessions into one pane or one file rather than scattering top-level tabs. — thanks @BenevolentFutures!
+- User-facing copy tightened across the app — 72 strings rewritten for density and active voice across agent onboarding, confirmation dialogs, the notifications empty state, the Sparkle update flow, the sidebar feedback form, and the browser import wizard. Non-English translations for touched strings are marked `needs_review` for the next translation pass.
+- About box tagline now reads *"terminal command center for the operator:agent pair. / many surfaces. one workspace. one field of view."* (replacing the previous architecture description).
+- Agent Skills onboarding dialog: "Agentically use c11" / "Skillify Your Agent" becomes "Teach your agent c11" / "Teach My Agent". Body copy, transparency note, and empty-detection state rewritten for clarity.
+- User-facing copy normalized from "panel" to "pane" throughout dialogs, menus, and command labels ("Flash Focused Pane", "Reopen Closed Browser Pane", "close the workspace and all of its panes"), matching README and skill vocabulary. Internal Swift type names are unchanged.
+- Sparkle update flow copy: "Please" filler dropped from error messages, "Update Feed" jargon replaced with "Update Source" / "Update List", and vague error titles rewritten ("App Location Issue" → "c11 isn't in Applications", "Updater Permission Error" → "c11 needs to live in Applications", "Update Signature Error" → "Signature Didn't Verify").
+- The c11-markdown skill now teaches agents to consolidate multi-artifact sessions into one pane or one file rather than scattering top-level tabs.
 
 ### Fixed
-- Settings pages keep their scroll position when switching between sections. — thanks @BenevolentFutures!
-- Settings two-column layout rendering. — thanks @BenevolentFutures!
-- Settings sidebar review findings addressed. — thanks @BenevolentFutures!
+- Settings pages keep their scroll position when switching between sections.
+- Settings two-column layout rendering.
+- Settings sidebar review findings addressed.
 
 ### Thanks to 1 contributor!
 
@@ -1211,23 +1233,23 @@ Stage 11 Agentics. Operator:agent, fused.
 ## [0.39.0] - 2026-04-22
 
 ### Added
-- Settings now exposes separate Light and Dark c11 theme slots, each with its own preview and picker. — thanks @BenevolentFutures!
-- Agent Skills onboarding now detects existing c11 skills, defaults detected agents into the install/update flow, handles shared skill folders safely, offers Finder reveal for exact skill files, and uses a clearer "Skillify Your Agent" flow. ([#46](https://github.com/Stage-11-Agentics/c11/pull/46)) — thanks @BenevolentFutures!
+- Settings now exposes separate Light and Dark c11 theme slots, each with its own preview and picker.
+- Agent Skills onboarding now detects existing c11 skills, defaults detected agents into the install/update flow, handles shared skill folders safely, offers Finder reveal for exact skill files, and uses a clearer "Skillify Your Agent" flow. ([#46](https://github.com/Stage-11-Agentics/c11/pull/46))
 
 ### Changed
-- Workspace sidebar cards now keep the workspace name primary, wrap it up to two lines, move agent identity chips below it, and name new default workspaces `Workspace N`. ([#41](https://github.com/Stage-11-Agentics/c11/pull/41)) — thanks @BenevolentFutures!
-- The bottom status-bar notification jump control is larger, labeled, and badge-aware; the sidebar help menu now points to c11-owned GitHub, docs, and changelog links. ([#42](https://github.com/Stage-11-Agentics/c11/pull/42)) — thanks @BenevolentFutures!
-- Default pane tabs are narrower, giving dense multi-agent workspaces more room. ([#44](https://github.com/Stage-11-Agentics/c11/pull/44)) — thanks @BenevolentFutures!
-- Theme CLI naming now distinguishes c11 chrome themes from Ghostty terminal themes: `c11 themes` manages chrome themes, and `c11 terminal-theme` manages terminal themes. ([#47](https://github.com/Stage-11-Agentics/c11/pull/47)) — thanks @BenevolentFutures!
-- The bundled Phosphor c11 theme is now a bright day chrome option. — thanks @BenevolentFutures!
-- Welcome terminal and license surfaces now use current c11 branding. — thanks @BenevolentFutures!
-- Tagged dev launches now default to a single-pane workspace unless the default pane grid is enabled. ([#46](https://github.com/Stage-11-Agentics/c11/pull/46)) — thanks @BenevolentFutures!
+- Workspace sidebar cards now keep the workspace name primary, wrap it up to two lines, move agent identity chips below it, and name new default workspaces `Workspace N`. ([#41](https://github.com/Stage-11-Agentics/c11/pull/41))
+- The bottom status-bar notification jump control is larger, labeled, and badge-aware; the sidebar help menu now points to c11-owned GitHub, docs, and changelog links. ([#42](https://github.com/Stage-11-Agentics/c11/pull/42))
+- Default pane tabs are narrower, giving dense multi-agent workspaces more room. ([#44](https://github.com/Stage-11-Agentics/c11/pull/44))
+- Theme CLI naming now distinguishes c11 chrome themes from Ghostty terminal themes: `c11 themes` manages chrome themes, and `c11 terminal-theme` manages terminal themes. ([#47](https://github.com/Stage-11-Agentics/c11/pull/47))
+- The bundled Phosphor c11 theme is now a bright day chrome option.
+- Welcome terminal and license surfaces now use current c11 branding.
+- Tagged dev launches now default to a single-pane workspace unless the default pane grid is enabled. ([#46](https://github.com/Stage-11-Agentics/c11/pull/46))
 
 ### Fixed
-- The initial main-window chrome layout now reconciles titlebar, sidebar, and content padding during first layout and resize. — thanks @BenevolentFutures!
-- Pane close-confirmation dialogs keep keyboard focus so Return, arrows, and Esc control the dialog instead of leaking into browser or terminal panes. ([#43](https://github.com/Stage-11-Agentics/c11/pull/43)) — thanks @BenevolentFutures!
-- Custom workspace color chrome now keeps the sidebar background neutral, refreshes tab indicators when colors change, and keeps the workspace outline continuous around hosted terminal and browser surfaces. ([#45](https://github.com/Stage-11-Agentics/c11/pull/45)) — thanks @BenevolentFutures!
-- c11 theme lookup now uses the renamed bundled `c11-themes` directory and `Application Support/c11` user theme directory. — thanks @BenevolentFutures!
+- The initial main-window chrome layout now reconciles titlebar, sidebar, and content padding during first layout and resize.
+- Pane close-confirmation dialogs keep keyboard focus so Return, arrows, and Esc control the dialog instead of leaking into browser or terminal panes. ([#43](https://github.com/Stage-11-Agentics/c11/pull/43))
+- Custom workspace color chrome now keeps the sidebar background neutral, refreshes tab indicators when colors change, and keeps the workspace outline continuous around hosted terminal and browser surfaces. ([#45](https://github.com/Stage-11-Agentics/c11/pull/45))
+- c11 theme lookup now uses the renamed bundled `c11-themes` directory and `Application Support/c11` user theme directory.
 
 ### Thanks to 1 contributor!
 
@@ -1236,18 +1258,18 @@ Stage 11 Agentics. Operator:agent, fused.
 ## [0.38.0] - 2026-04-21
 
 ### Changed
-- The product rename from `c11mux` to `c11` is now reflected across structural surfaces, including app naming, release artifacts, Homebrew tap references, docs, and automation. ([#37](https://github.com/Stage-11-Agentics/c11/pull/37)) — thanks @BenevolentFutures!
+- The product rename from `c11mux` to `c11` is now reflected across structural surfaces, including app naming, release artifacts, Homebrew tap references, docs, and automation. ([#37](https://github.com/Stage-11-Agentics/c11/pull/37))
 - **c11 ↔ upstream cmux coexistence.** c11 no longer claims the `cmux` name on the user's system. Practical effects:
   - The "Shell Command: Install…" palette action installs `/usr/local/bin/c11` (previous default: `/usr/local/bin/cmux`). No `cmux` alias is installed.
   - The Homebrew cask (`stage-11-agentics/c11/c11`) no longer creates a `cmux` binary alias and no longer declares `conflicts_with cask: "cmux"`. c11 and upstream cmux can be installed in parallel.
   - The bundled shell integration still prepends the bundled `Resources/bin/` to `PATH` inside c11 terminals, but that directory no longer contains a `cmux` symlink — an upstream `cmux` elsewhere on `PATH` stays visible.
-  - `CMUX_*` environment variables are still honored alongside the new `C11_*` variants; socket paths, protocol, and shell-integration file names remain unchanged. ([#38](https://github.com/Stage-11-Agentics/c11/pull/38)) — thanks @BenevolentFutures!
+  - `CMUX_*` environment variables are still honored alongside the new `C11_*` variants; socket paths, protocol, and shell-integration file names remain unchanged. ([#38](https://github.com/Stage-11-Agentics/c11/pull/38))
 - Release DMG is now `c11-macos.dmg` (was `c11mux-macos.dmg`).
 - Homebrew cask is `stage-11-agentics/c11/c11` (was `stage-11-agentics/c11mux/c11mux`).
 
 ### Fixed
 - The "Open c11 app" shell command now runs `open -a c11` (was `open -a cmux`, which failed because the installed bundle is `c11.app`).
-- Pane close confirmations no longer leak Return or arrow-key events into embedded browser panes while the confirmation is open. ([#39](https://github.com/Stage-11-Agentics/c11/pull/39)) — thanks @BenevolentFutures!
+- Pane close confirmations no longer leak Return or arrow-key events into embedded browser panes while the confirmation is open. ([#39](https://github.com/Stage-11-Agentics/c11/pull/39))
 
 ### Upgrade notes
 - **Stale `/usr/local/bin/cmux` symlinks** created by earlier c11 versions are not removed automatically. `c11 uninstall` only touches `/usr/local/bin/c11`. If you want the stale link gone, remove it manually: `ls -l /usr/local/bin/cmux` to confirm it points at c11, then `sudo rm /usr/local/bin/cmux`.

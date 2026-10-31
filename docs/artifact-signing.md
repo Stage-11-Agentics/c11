@@ -114,5 +114,5 @@ platform tools, source fixtures and secret canaries. It exercises proof/candidat
 identity, expected-SHA mismatch, production-feed rejection, candidate version
 mismatch, missing secrets, signer failure, notarization rejection, cleanup,
 the upload file set and tamper detection. It does not run Xcode or Apple tooling.
-CI runs this in `workflow-guard-tests`; actual signed proof comes from the Actions
+CI runs this in `workflow-guards`; actual signed proof comes from the Actions
 run and Atlas consumer checks.

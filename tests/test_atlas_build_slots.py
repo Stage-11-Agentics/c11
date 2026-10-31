@@ -20,6 +20,7 @@ class SlotsTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.env = dict(os.environ, C11_ATLAS_SLOTS_DIR=str(self.base / "slots"),
                         C11_ATLAS_SLOT_POLL_SECONDS="0.02", C11_BUILD_LOCK_TIMEOUT="3")
+        self.env.pop("C11_BUILD_LOCK", None)
         self.load = self.base / "load"
         self.load.write_text("0")
         self.env["C11_ATLAS_LOAD_FILE"] = str(self.load)
@@ -128,13 +129,42 @@ class SlotsTests(unittest.TestCase):
         event = json.loads(self.log.read_text().splitlines()[0])
         self.assertGreater(float(event["wait"]), 0.0)
 
-    def test_default_local_lock_remains_single_slot(self):
+    def local_lock_processes(self):
         env = dict(self.env, C11_BUILD_LOCK_DIR=str(self.base / "local-lock"))
         env.pop("C11_ATLAS_BUILD_SLOT", None)
         env.pop("C11_ATLAS_LOCK_OWNER", None)
-        processes = [subprocess.Popen([str(ROOT / "scripts/with-build-lock.sh"), *self.command], env=env,
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
-        self.assertEqual(self.finish(processes), 1)
+        return [subprocess.Popen([str(ROOT / "scripts/with-build-lock.sh"), *self.command], env=env,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for _ in range(2)]
+
+    def test_default_local_lock_remains_single_slot(self):
+        self.assertEqual(self.finish(self.local_lock_processes()), 1)
+
+    def test_local_lock_fails_promptly_when_python_is_broken(self):
+        bin_dir = self.base / "bin"
+        bin_dir.mkdir()
+        shim = bin_dir / "python3"
+        shim.write_text("#!/bin/sh\nexit 1\n")
+        shim.chmod(0o755)
+        env = dict(self.env, PATH=str(bin_dir) + os.pathsep + self.env["PATH"],
+                   C11_BUILD_LOCK_DIR=str(self.base / "broken-python-lock"),
+                   C11_BUILD_LOCK_TIMEOUT="30")
+        result = subprocess.run([str(ROOT / "scripts/with-build-lock.sh"), *self.command],
+                                env=env, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("python3", result.stderr)
+        self.assertIn("atomic directory acquisition", result.stderr)
+        self.assertFalse(self.log.exists(), "broken lock dependency must not run the protected command")
+
+    def test_local_lock_rejects_a_second_creator_when_mkdir_reports_success(self):
+        # Model the observed utility behavior: both creators return success.
+        # The lock must use the atomic filesystem result, not this utility.
+        bin_dir = self.base / "bin"
+        bin_dir.mkdir()
+        shim = bin_dir / "mkdir"
+        shim.write_text(f"#!{sys.executable}\nimport os, sys\nos.makedirs(sys.argv[1], exist_ok=True)\n")
+        shim.chmod(0o755)
+        self.env["PATH"] = str(bin_dir) + os.pathsep + self.env["PATH"]
+        self.assertEqual(self.finish(self.local_lock_processes()), 1)
 
 
 if __name__ == "__main__":

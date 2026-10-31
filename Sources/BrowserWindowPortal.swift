@@ -4938,3 +4938,43 @@ enum BrowserWindowPortalRegistry {
     }
 #endif
 }
+
+// C11-530: diagnostics deliberately bypass ensureInstalled and orphan cleanup.
+extension WindowBrowserPortal {
+    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
+        let entriesComplete = entriesByWebViewId.count <= PortalSnapshotGeometry.entryLimit
+        let dividers = chromeOverlayView.diagnosticDividers(geometry)
+        var frames: [NSRect] = []
+        var registeredContainers: Set<ObjectIdentifier> = []
+        let entries = entriesByWebViewId.prefix(PortalSnapshotGeometry.entryLimit).map { key, entry -> [String: Any] in
+            if let container = entry.containerView { registeredContainers.insert(ObjectIdentifier(container)) }
+            if entry.visibleInUI, let container = entry.containerView, !container.isHidden, container.superview === hostView { frames.append(container.frame) }
+            var row = PortalSnapshotGeometry.entry(source: key, content: entry.webView, hosted: entry.containerView,
+                anchor: entry.anchorView, host: hostView, overlay: chromeOverlayView, window: window, visible: entry.visibleInUI,
+                priority: entry.zPriority, style: entry.workspaceFrameStyle, dividers: dividers,
+                identity: identities[key], geometryComplete: !geometry.truncated)
+            row["keep_live_parked"] = isKeepLiveParked(forWebViewId: key)
+            row["pane_top_chrome_height"] = PortalSnapshotGeometry.number(entry.paneTopChromeHeight)
+            row["recovery_retries_remaining"] = entry.transientRecoveryRetriesRemaining
+            row["recovery_reason"] = entry.transientRecoveryReason as Any? ?? NSNull()
+            return row
+        }
+        let children = hostView.subviews
+        let unmatched = children.prefix(PortalSnapshotGeometry.entryLimit).compactMap { child -> Any? in
+            guard entriesComplete, child is WindowBrowserSlotView, !registeredContainers.contains(ObjectIdentifier(child)) else { return nil }
+            return PortalSnapshotGeometry.view(child)
+        }
+        return ["present": true, "host": PortalSnapshotGeometry.view(hostView), "entries": entries,
+                "entry_count": entriesByWebViewId.count, "entries_truncated": !entriesComplete,
+                "anchor_mapping_count": webViewByAnchorId.count,
+                "unmatched_hosted_views": unmatched, "unmatched_classification_complete": entriesComplete,
+                "host_subviews_truncated": children.count > PortalSnapshotGeometry.entryLimit,
+                "overlay": chromeOverlayView.diagnosticSnapshot(geometry, hostedFrames: frames, entriesComplete: entriesComplete)]
+    }
+}
+
+extension BrowserWindowPortalRegistry {
+    static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
+        portalsByWindowId[ObjectIdentifier(window)]?.diagnosticSnapshot(geometry, identities: identities) ?? ["present": false]
+    }
+}

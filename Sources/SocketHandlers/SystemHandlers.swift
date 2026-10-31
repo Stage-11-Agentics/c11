@@ -138,6 +138,7 @@ extension TerminalController {
             "panel.refresh",
             "panel.health",
             "debug.terminals",
+            "debug.portal.snapshot",
             "panel.send_text",
             "panel.send_key",
             "panel.read_text",

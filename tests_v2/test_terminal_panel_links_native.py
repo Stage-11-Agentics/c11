@@ -659,8 +659,11 @@ finally:
         self.native(f'rc:{round(point[0])},{round(point[1])}')
         try:
             menu = self.ui('menu', 'Copy Link')
+            expected_clipboard = dict(text=expected, url=expected)
+            # AXPress returns before AppKit dispatches the menu action.
+            self.wait(lambda: self.ui('clipboard') == expected_clipboard, 'Copy Link pasteboard populated')
             clipboard = self.ui('clipboard')
-            assert clipboard == dict(text=expected, url=expected), clipboard
+            assert clipboard == expected_clipboard, clipboard
             assert self.selection() == before
             self.passed('8 native Copy Link ' + ('nonselected workspace row' if sidebar else 'panel tab'), clipboard=clipboard, menu=menu)
         finally:

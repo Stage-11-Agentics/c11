@@ -1177,33 +1177,26 @@ final class UpdateTitlebarAccessoryController {
         // after didBecomeKey/didBecomeMain notifications. Retry briefly to avoid missing
         // attaching accessories (notably in UI tests).
         if !isMainTerminalWindow(window) {
-            let key = ObjectIdentifier(window)
-            let attempts = pendingAttachRetries[key, default: 0]
-            if attempts < 40 {
-                pendingAttachRetries[key] = attempts + 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak window] in
-                    Task { @MainActor [weak self, weak window] in
-                        guard let self, let window else { return }
-                        self.attachIfNeeded(to: window)
-                    }
-                }
-            } else {
-                pendingAttachRetries.removeValue(forKey: key)
-            }
+            retryAttach(to: window)
             return
         }
 
-        pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
-
         guard !WorkspacePresentationModeSettings.isMinimal() else {
+            pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
             removeAccessoryIfPresent(from: window)
             return
         }
 
-        guard !attachedWindows.contains(window) else { return }
+        guard !attachedWindows.contains(window) else {
+            pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
+            return
+        }
 
         if !window.titlebarAccessoryViewControllers.contains(where: { $0.view.identifier == controlsIdentifier }) {
-            guard let sidebarState = AppDelegate.shared?.sidebarState(for: window) else { return }
+            guard let sidebarState = AppDelegate.shared?.sidebarState(for: window) else {
+                retryAttach(to: window)
+                return
+            }
             let controls = TitlebarControlsAccessoryViewController(
                 notificationStore: TerminalNotificationStore.shared,
                 sidebarState: sidebarState
@@ -1215,6 +1208,7 @@ final class UpdateTitlebarAccessoryController {
         }
 
         attachedWindows.add(window)
+        pendingAttachRetries.removeValue(forKey: ObjectIdentifier(window))
 
 #if DEBUG
         let env = ProcessInfo.processInfo.environment
@@ -1223,6 +1217,22 @@ final class UpdateTitlebarAccessoryController {
             UpdateLogStore.shared.append("attached titlebar accessories to window id=\(ident)")
         }
 #endif
+    }
+
+    private func retryAttach(to window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        let attempts = pendingAttachRetries[key, default: 0]
+        guard attempts < 40 else {
+            pendingAttachRetries.removeValue(forKey: key)
+            return
+        }
+        pendingAttachRetries[key] = attempts + 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak window] in
+            Task { @MainActor [weak self, weak window] in
+                guard let self, let window else { return }
+                self.attachIfNeeded(to: window)
+            }
+        }
     }
 
     private func removeAccessoryIfPresent(from window: NSWindow) {

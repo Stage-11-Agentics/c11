@@ -4011,7 +4011,7 @@ final class SidebarTilesWindowTests: ShortcutRoutingTestSupport {
     override func tearDown() {
         super.tearDown()
         AppDelegate.shared = savedDelegate
-        TerminalController.shared.setActiveWorkspaceManager(savedControllerManager)
+        TerminalController.shared.workspaceManager = savedControllerManager
         savedDelegate = nil
         savedControllerManager = nil
     }

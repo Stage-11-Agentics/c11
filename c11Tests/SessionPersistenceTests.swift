@@ -164,6 +164,23 @@ final class SidebarTilesPolicyTests: XCTestCase {
         XCTAssertNil(decoded.singleWideWidth)
     }
 
+    func testDragStartingAtOrAboveThresholdKeepsCards() {
+        for initialWidth in [300.0, 400, 486] {
+            let start = SidebarLayoutPolicy.State(width: initialWidth)
+            let wider = SidebarLayoutPolicy.dragged(start, width: 500, initialWidth: initialWidth)
+            XCTAssertFalse(wider.doubleWide)
+            XCTAssertEqual(wider.width, 500)
+            let below = SidebarLayoutPolicy.dragged(wider, width: 220, initialWidth: initialWidth)
+            XCTAssertFalse(below.doubleWide)
+            let backAbove = SidebarLayoutPolicy.dragged(below, width: 400, initialWidth: initialWidth)
+            XCTAssertFalse(backAbove.doubleWide)
+            XCTAssertEqual(backAbove.width, 400)
+            let nextDrag = SidebarLayoutPolicy.dragged(below, width: 300, initialWidth: 220)
+            XCTAssertTrue(nextDrag.doubleWide)
+            XCTAssertEqual(nextDrag.singleWideWidth, 220)
+        }
+    }
+
     func testIndependentWindowModesSurviveCodecRoundTrip() throws {
         let windows = [SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 486,
                                              doubleWide: true, singleWideWidth: 238),

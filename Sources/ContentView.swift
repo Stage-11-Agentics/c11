@@ -371,9 +371,9 @@ final class SidebarState: ObservableObject {
     }
 
     private func apply(_ state: SidebarLayoutPolicy.State) {
-        singleWideWidth = CGFloat(state.singleWideWidth)
-        isDoubleWide = state.doubleWide
-        persistedWidth = CGFloat(state.width)
+        if singleWideWidth != CGFloat(state.singleWideWidth) { singleWideWidth = CGFloat(state.singleWideWidth) }
+        if isDoubleWide != state.doubleWide { isDoubleWide = state.doubleWide }
+        if persistedWidth != CGFloat(state.width) { persistedWidth = CGFloat(state.width) }
     }
 
     func toggleDoubleWide() { apply(SidebarLayoutPolicy.toggled(layoutState)) }
@@ -12216,9 +12216,16 @@ private let sidebarRowProbeEnabled = ProcessInfo.processInfo.environment["C11_SI
 
 /// A mouse-only preview. The terminal retains the key window and first responder;
 /// explicit buttons inside the card still perform their normal operator actions.
-private struct SidebarTileHoverPreview: NSViewRepresentable {
+private struct SidebarTileHoverPreview<Identity: Equatable>: NSViewRepresentable {
     let workspaceManager: WorkspaceManager
-    let content: AnyView
+    let contentIdentity: () -> Identity
+    let content: () -> AnyView
+
+    final class Coordinator {
+        var renderedIdentity: Identity?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> SidebarTileHoverAnchor {
         SidebarTileHoverAnchor()
@@ -12226,11 +12233,17 @@ private struct SidebarTileHoverPreview: NSViewRepresentable {
 
     func updateNSView(_ view: SidebarTileHoverAnchor, context: Context) {
         view.workspaceManager = workspaceManager
-        view.previewContent = content
+        let coordinator = context.coordinator
+        view.previewContent = { force in
+            let identity = contentIdentity()
+            guard force || coordinator.renderedIdentity != identity else { return nil }
+            coordinator.renderedIdentity = identity
+            return content()
+        }
         view.refreshVisibleContent()
     }
 
-    static func dismantleNSView(_ view: SidebarTileHoverAnchor, coordinator: ()) { view.dismiss() }
+    static func dismantleNSView(_ view: SidebarTileHoverAnchor, coordinator: Coordinator) { view.dismiss() }
 }
 
 private final class SidebarTilePreviewPanel: NSPanel {
@@ -12242,8 +12255,9 @@ private final class SidebarTilePreviewPanel: NSPanel {
 final class SidebarTileHoverAnchor: NSView {
     private static let active = NSMapTable<NSWindow, SidebarTileHoverAnchor>.weakToWeakObjects()
     weak var workspaceManager: WorkspaceManager?
-    var previewContent = AnyView(EmptyView())
+    var previewContent: ((Bool) -> AnyView?)?
     private var preview: SidebarTilePreviewPanel?
+    private var previewHostingView: NSHostingView<AnyView>?
     private var pending: DispatchWorkItem?
     private var pointerMonitor: Any?
     private var observers: [NSObjectProtocol] = []
@@ -12302,8 +12316,9 @@ final class SidebarTileHoverAnchor: NSView {
     @discardableResult
     static func dismiss(in window: NSWindow?) -> Bool {
         guard let window, let anchor = active.object(forKey: window) else { return false }
+        let wasVisible = anchor.preview != nil
         anchor.dismiss()
-        return true
+        return wasVisible
     }
 
     func dismiss() {
@@ -12319,6 +12334,7 @@ final class SidebarTileHoverAnchor: NSView {
             preview.contentView = nil
         }
         preview = nil
+        previewHostingView = nil
         if let previewHost { previewHost.acceptsMouseMovedEvents = previousMouseMoves }
         previewHost = nil
         if let window, Self.active.object(forKey: window) === self { Self.active.removeObject(forKey: window) }
@@ -12348,7 +12364,7 @@ final class SidebarTileHoverAnchor: NSView {
         panel.hidesOnDeactivate = true
         panel.identifier = NSUserInterfaceItemIdentifier("c11.sidebar.tilePreview")
         preview = panel
-        refreshVisibleContent()
+        refreshVisibleContent(force: true)
         let hostFrame = window.convertToScreen(window.contentView?.bounds ?? window.contentLayoutRect)
         let origin = NSPoint(x: min(hostFrame.minX + sidebarWidth + 8, hostFrame.maxX - panel.frame.width),
                              y: max(hostFrame.minY, min(sourceFrame.maxY - panel.frame.height, hostFrame.maxY - panel.frame.height)))
@@ -12378,14 +12394,32 @@ final class SidebarTileHoverAnchor: NSView {
         }
     }
 
-    func refreshVisibleContent() {
-        guard let preview, let window else { return }
-        let host = NSHostingView(rootView: previewContent.fixedSize(horizontal: false, vertical: true))
-        host.frame.size.width = 200
-        let height = max(75, min(host.fittingSize.height, (window.contentView?.bounds.height ?? 640) - 40))
-        preview.contentView = NSHostingView(rootView: ScrollView { previewContent }
-            .scrollIndicators(.never).frame(width: 200, height: height))
+    func refreshVisibleContent(force: Bool = false) {
+        guard let preview, let window, let content = previewContent?(force) else { return }
+        // Keep the same hosting/scroll views across updates, including a button
+        // press in flight. The width constraint also governs fittingSize.
+        let root = AnyView(content.frame(width: 200).fixedSize(horizontal: false, vertical: true))
+        let host: NSHostingView<AnyView>
+        if let existing = previewHostingView {
+            host = existing
+            host.rootView = root
+        } else {
+            host = NSHostingView(rootView: root)
+            previewHostingView = host
+            let scroll = NSScrollView()
+            scroll.drawsBackground = false
+            scroll.hasVerticalScroller = false
+            scroll.hasHorizontalScroller = false
+            scroll.documentView = host
+            preview.contentView = scroll
+        }
+        let contentHeight = max(75, host.fittingSize.height)
+        host.setFrameSize(NSSize(width: 200, height: contentHeight))
+        let height = min(contentHeight, (window.contentView?.bounds.height ?? 640) - 40)
         preview.setContentSize(NSSize(width: 200, height: height))
+#if DEBUG
+        dlog("sidebar.tilePreview.content host=\(ObjectIdentifier(host)) height=\(height)")
+#endif
     }
 
     private func checkPointer() {
@@ -13209,6 +13243,48 @@ private struct WorkspaceRowView: View, Equatable {
         )
     }
 
+    private struct HoverContentIdentity: Equatable {
+        let pulse: WorkspacePulseSummary
+        let chips: [WorktreeChipRow]
+        let chrome: ChromeScaleTokens
+        let values: [AnyHashable]
+    }
+
+    // Evaluated only when the preview is visible or about to appear. Snapshot
+    // the mutable workspace values; retaining the workspace reference alone
+    // cannot distinguish its old and new content. Flash/hover state is excluded.
+    private var hoverContentIdentity: HoverContentIdentity {
+        let colors = workspacePulseColors
+        var values: [AnyHashable] = [
+            workspace.id, workspace.title, workspace.isPinned, workspace.displayOrdinal,
+            AnyHashable(workspace.customColor), AnyHashable(workspace.focusedPanelId),
+            isActive, canCloseWorkspace, showsWorkspaceId, colorScheme == .light,
+            AnyHashable(themedBackgroundColor?.hexString(includeAlpha: true)),
+            AnyHashable(themedRailColor?.hexString(includeAlpha: true)),
+            AnyHashable(colors.waitingHex), AnyHashable(colors.runningHex),
+            AnyHashable(colors.idleHex), AnyHashable(colors.coldHex),
+            [sidebarShowMetadata, sidebarShowLog, sidebarShowProgress, sidebarShowBranchDirectory,
+             sidebarShowPullRequest, sidebarShowPorts, sidebarHideAllDetails, sidebarShowSSH],
+            AnyHashable(remoteWorkspaceSidebarText), remoteConnectionStatusText,
+            AnyHashable(copyableSidebarSSHError), workspace.listeningPorts,
+            AnyHashable(workspace.logEntries.last?.message), AnyHashable(workspace.logEntries.last?.level.rawValue),
+            AnyHashable(workspace.progress?.value), AnyHashable(workspace.progress?.label),
+            AnyHashable(workspace.progress?.timestamp)
+        ]
+        for block in workspace.sidebarMetadataBlocksInDisplayOrder() {
+            values.append(contentsOf: [AnyHashable(block.key), AnyHashable(block.markdown),
+                                      AnyHashable(block.priority), AnyHashable(block.timestamp)])
+        }
+        if visibleAuxiliaryDetails.showsPullRequests {
+            for request in pullRequestDisplays(orderedPanelIds: workspace.sidebarOrderedPanelIds()) {
+                values.append(contentsOf: [request.id, request.label, request.number, request.url,
+                                           request.status.rawValue, AnyHashable(request.checks?.rawValue)])
+            }
+        }
+        return HoverContentIdentity(pulse: workspacePulse, chips: worktreeChipRows,
+                                    chrome: chromeTokens, values: values)
+    }
+
     private func cardContents(compact: Bool) -> some View {
         let closeWorkspaceTooltip = String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close Workspace")
         let detailVisibility = visibleAuxiliaryDetails
@@ -13472,10 +13548,11 @@ private struct WorkspaceRowView: View, Equatable {
         .background {
             if compact {
                 SidebarTileHoverPreview(workspaceManager: workspaceManager,
-                    content: AnyView(cardContents(compact: false)
+                    contentIdentity: { hoverContentIdentity },
+                    content: { AnyView(cardContents(compact: false)
                         .background(workspacePulseCardBackground(includeFlash: false))
                         .padding(.horizontal, 6)
-                        .frame(width: 200)))
+                        .frame(width: 200)) })
             }
         }
         .onChange(of: workspace.sidebarFlashRequest) { _, request in

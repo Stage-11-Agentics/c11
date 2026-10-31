@@ -39,8 +39,9 @@ enum SidebarLayoutPolicy {
 
     static func dragged(_ state: State, width: Double, initialWidth: Double) -> State {
         let width = SessionPersistencePolicy.sanitizedSidebarWidth(width)
-        return State(doubleWide: state.doubleWide || width >= 300, width: width,
-                     singleWideWidth: !state.doubleWide && width >= 300
+        let crossesThreshold = initialWidth < 300 && width >= 300
+        return State(doubleWide: state.doubleWide || crossesThreshold, width: width,
+                     singleWideWidth: !state.doubleWide && crossesThreshold
                         ? SessionPersistencePolicy.sanitizedSidebarWidth(initialWidth)
                         : state.singleWideWidth)
     }

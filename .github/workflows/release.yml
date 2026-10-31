@@ -326,21 +326,6 @@ jobs:
           retry_stapler staple "$DMG_RELEASE"
           retry_stapler validate "$DMG_RELEASE"
 
-      - name: Upload dSYMs to Sentry
-        if: steps.guard_release_assets.outputs.skip_all != 'true'
-        continue-on-error: true
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: stage-11-kl
-          SENTRY_PROJECT: c11
-        run: |
-          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
-            echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
-            exit 0
-          fi
-          brew install getsentry/tools/sentry-cli || true
-          sentry-cli debug-files upload --include-sources build/Build/Products/Release/
-
       - name: Generate Sparkle appcast
         if: steps.guard_release_assets.outputs.skip_all != 'true'
         env:
@@ -352,6 +337,9 @@ jobs:
             echo "Missing SPARKLE_PRIVATE_KEY secret" >&2
             exit 1
           fi
+          # Prebuilt, checksum-verified Sparkle tools instead of a clone and build.
+          SPARKLE_BIN_DIR="$(./scripts/fetch-sparkle-tools.sh "$RUNNER_TEMP/sparkle")"
+          export SPARKLE_BIN_DIR
           ./scripts/sparkle_generate_appcast.sh c11-macos.dmg "$GITHUB_REF_NAME" appcast.xml
 
       - name: Upload release asset
@@ -369,6 +357,23 @@ jobs:
             remote-daemon-assets/c11d-remote-manifest.json
           body_path: ${{ steps.release_notes.outputs.path }}
           overwrite_files: false
+
+      # After the upload: the dSYM upload is continue-on-error, so it never
+      # gates publishing and stays off the tag-to-published path.
+      - name: Upload dSYMs to Sentry
+        if: steps.guard_release_assets.outputs.skip_all != 'true'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: stage-11-kl
+          SENTRY_PROJECT: c11
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
+            exit 0
+          fi
+          brew install getsentry/tools/sentry-cli || true
+          sentry-cli debug-files upload --include-sources build/Build/Products/Release/
 
       - name: Cleanup keychain
         if: always()

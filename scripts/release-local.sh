@@ -24,6 +24,8 @@ SIGNING_IDENTITY="${C11_SIGNING_IDENTITY:-Developer ID Application: Authentic Te
 # Hyperion already holds.
 NOTARY_PROFILE_CANDIDATES=(c11-notary acetate-notary)
 NOTARY_PROFILE="${C11_NOTARY_PROFILE:-${NOTARY_PROFILE_CANDIDATES[0]}}"
+# The Apple team the release is signed and notarized for, from the identity.
+TEAM_ID="$(sed -nE 's/.*\(([A-Z0-9]{10})\)$/\1/p' <<<"$SIGNING_IDENTITY")"
 SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 # The public half of the c11mux key; every shipped c11 trusts only this key.
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
@@ -148,9 +150,16 @@ fi
 note "release body source: CHANGELOG.md section for $TAG ($RELEASE_NOTES)"
 
 KEY_DIR=""
+DAEMON_PID=""
 cleanup() {
   # The exported Sparkle key lives only in this 0700 dir during step 13.
   if [[ -n "$KEY_DIR" && -d "$KEY_DIR" ]]; then rm -rf "$KEY_DIR"; fi
+  # An early exit must not leave the background daemon build running.
+  if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+    pkill -TERM -P "$DAEMON_PID" 2>/dev/null || true
+    kill "$DAEMON_PID" 2>/dev/null || true
+    wait "$DAEMON_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -242,7 +251,7 @@ fi
 if [[ "$SKIP_NOTARIZE_CHECK" -eq 1 ]]; then
   :
 elif [[ "$NOTARY_OK" -eq 1 ]]; then
-  note "notarytool profile '$NOTARY_PROFILE' works"
+  note "notarytool profile '$NOTARY_PROFILE' works; notarizing for team ${TEAM_ID:-unknown} ($SIGNING_IDENTITY)"
 else
   msg="no working notarytool keychain profile (tried: ${candidates[*]}): $(tr '\n' ' ' <"$OUT/notary-check.err")"
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -516,6 +525,7 @@ fi
 # Returns the submission's status; prints the notary log on rejection.
 notarize() {
   local file="$1" label="$2" json id status
+  note "notarizing $label with notarytool profile '$NOTARY_PROFILE' for team ${TEAM_ID:-unknown}"
   # notarytool exits non-zero on Invalid; keep its JSON so the log is fetched.
   json="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json)" || true
   id="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<<"$json" 2>/dev/null || true)"

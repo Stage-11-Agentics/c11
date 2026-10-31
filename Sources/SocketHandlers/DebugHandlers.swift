@@ -1180,17 +1180,26 @@ extension TerminalController {
 
 extension TerminalController {
     /// Low-frequency explicit snapshot: AppKit requires the single main hop.
-    /// Only copied JSON values escape it; timestamps and encoding run on the worker.
-    nonisolated func v2PortalSnapshotWorker(id: Any?, params: [String: Any]) -> String {
-        let result: V2CallResult
-        if Thread.isMainThread {
-            result = MainActor.assumeIsolated { v2PortalSnapshotOnMain(params: params) }
-        } else {
-            result = DispatchQueue.main.sync {
-                MainActor.assumeIsolated { self.v2PortalSnapshotOnMain(params: params) }
+    /// Only copied values escape it; identity strings, timestamps and JSON encoding run on the worker.
+    nonisolated func v2PortalSnapshotWorker(id: Any?, params: [String: Any], timeout: TimeInterval = 8) -> String {
+        // Reuse the existing deadline form used by terminal inspection. It
+        // cancels unstarted copies and lets the worker return even if a running
+        // main operation stalls; it cannot preempt AppKit work already started.
+        let operation = SelectionReadOperation<V2CallResult>(timeout: timeout)
+        let capture = {
+            MainActor.assumeIsolated {
+                guard operation.beginCapture() else { return }
+                operation.complete(self.v2PortalSnapshotOnMain(params: params))
             }
         }
-        guard case .ok(var payload as [String: Any]) = result else { return v2Result(id: id, result) }
+        if Thread.isMainThread { capture() } else { DispatchQueue.main.async(execute: capture) }
+        guard let result = operation.wait() else {
+            return v2Error(id: id, code: "main_thread_timeout", message: String(
+                localized: "browser.profile.error.mainThreadTimeout", defaultValue: "Main thread did not respond within deadline"
+            ))
+        }
+        guard case .ok(let copied) = result,
+              var payload = PortalSnapshotEncoding.json(copied) as? [String: Any] else { return v2Result(id: id, result) }
         if let epoch = payload.removeValue(forKey: "capture_epoch_seconds") as? Double {
             let formatter = ISO8601DateFormatter()
             formatter.timeZone = .current
@@ -1218,14 +1227,14 @@ extension TerminalController {
             return .err(code: "not_found", message: String(localized: "socket.error.window_not_found", defaultValue: "Window not found"), data: ["window_id": windowId.uuidString])
         }
         // No scriptableMainWindows/context reindex or portal(for:) calls here.
-        var identities: [ObjectIdentifier: [String: String]] = [:]
+        var identities: [ObjectIdentifier: [String: UUID]] = [:]
         var panelsVisited = 0
         var identityTruncated = false
         outer: for workspace in manager.workspaces.prefix(PortalSnapshotGeometry.entryLimit) {
             for (id, panel) in workspace.panels {
                 guard panelsVisited < PortalSnapshotGeometry.entryLimit else { identityTruncated = true; break outer }
                 panelsVisited += 1
-                let identity = ["workspace_id": workspace.id.uuidString, "panel_id": id.uuidString]
+                let identity = ["workspace_id": workspace.id, "panel_id": id]
                 if let terminal = panel as? TerminalPanel { identities[ObjectIdentifier(terminal.surface.hostedView)] = identity }
                 if let browser = panel as? BrowserPanel { identities[ObjectIdentifier(browser.webView)] = identity }
             }
@@ -1234,10 +1243,10 @@ extension TerminalController {
         let geometry = PortalSnapshotGeometry(window: window)
         var payload: [String: Any] = [
             "schema_version": 1, "geometry_semantics": "current calculated geometry; not last painted",
-            "coordinate_units": "points", "window_id": windowId.uuidString,
+            "coordinate_units": "points", "window_id": windowId,
             "window_source_id": PortalSnapshotGeometry.token(window),
             "window_frame": PortalSnapshotGeometry.rect(window.frame), "backing_scale": window.backingScaleFactor,
-            "selected_workspace_id": manager.selectedWorkspaceId?.uuidString as Any? ?? NSNull(),
+            "selected_workspace_id": manager.selectedWorkspaceId as Any? ?? NSNull(),
             "first_responder_source_id": window.firstResponder.map(PortalSnapshotGeometry.token) as Any? ?? NSNull(),
             "capture_epoch_seconds": Date().timeIntervalSince1970, "monotonic_nanoseconds": start,
             "limits": ["entries_per_portal": PortalSnapshotGeometry.entryLimit, "native_views": PortalSnapshotGeometry.viewLimit,

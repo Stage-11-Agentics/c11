@@ -4941,7 +4941,7 @@ enum BrowserWindowPortalRegistry {
 
 // C11-530: diagnostics deliberately bypass ensureInstalled and orphan cleanup.
 extension WindowBrowserPortal {
-    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: String]]) -> [String: Any] {
+    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
         let entriesComplete = entriesByWebViewId.count <= PortalSnapshotGeometry.entryLimit
         let dividers = chromeOverlayView.diagnosticDividers(geometry)
         var frames: [NSRect] = []
@@ -4974,7 +4974,7 @@ extension WindowBrowserPortal {
 }
 
 extension BrowserWindowPortalRegistry {
-    static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: String]]) -> [String: Any] {
+    static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
         portalsByWindowId[ObjectIdentifier(window)]?.diagnosticSnapshot(geometry, identities: identities) ?? ["present": false]
     }
 }

@@ -360,7 +360,7 @@ Working Lattice tickets inside c11? Also load the `lattice` skill for the integr
 
 ### Capture a stray line or stale portal before touching it
 
-Leave the affected workspace, focus, dividers and window size alone. First capture the current portal state with an explicit window UUID/ref:
+Leave the affected workspace, focus, dividers and window size alone. First use the affected window ref from `c11 identify --json` (run from a panel in that window), then capture its current portal state with that explicit UUID/ref; replace `window:1` below:
 
 ```bash
 c11 rpc debug.portal.snapshot '{"window_id":"window:1"}' > /tmp/c11-portal-snapshot.json

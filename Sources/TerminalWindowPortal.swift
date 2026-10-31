@@ -2587,9 +2587,25 @@ enum TerminalWindowPortalRegistry {
 #endif
 }
 
+// Value wrappers keep object-address, UUID and class-name formatting off main.
+// A metatype carries class identity only; no live view escapes the copy.
+enum PortalSnapshotEncoding {
+    struct Source { let address: UInt }
+    struct ClassName { let type: AnyClass }
+
+    static func json(_ value: Any) -> Any {
+        if let source = value as? Source { return "object:\(String(source.address, radix: 16))" }
+        if let name = value as? ClassName { return String(describing: name.type) }
+        if let id = value as? UUID { return id.uuidString }
+        if let dictionary = value as? [String: Any] { return dictionary.mapValues(json) }
+        if let array = value as? [Any] { return array.map(json) }
+        return value
+    }
+}
+
 // C11-530: one-shot diagnostics only. These helpers never install, synchronize,
 // prune or draw a portal. NSView/NSColor references stay inside the main copy;
-// the returned dictionaries contain JSON values only.
+// the returned dictionaries contain values and formatting wrappers only.
 @MainActor
 struct PortalSnapshotGeometry {
     static let entryLimit = 512
@@ -2597,7 +2613,7 @@ struct PortalSnapshotGeometry {
     static let dividerLimit = 256
 
     struct Divider {
-        let source: String
+        let source: PortalSnapshotEncoding.Source
         let index: Int
         let rect: NSRect // Window base coordinates, in points.
         let color: NSColor
@@ -2607,11 +2623,13 @@ struct PortalSnapshotGeometry {
 
     let dividers: [Divider]
     let visitedViews: Int
+    let skippedHiddenSubtrees: Int
     let truncated: Bool
 
     init(window: NSWindow) {
         var rows: [Divider] = []
         var visited = 0
+        var skippedHidden = 0
         var cut = false
         func visit(_ view: NSView, ancestorHidden: Bool) {
             guard visited < Self.viewLimit else { cut = true; return }
@@ -2632,7 +2650,13 @@ struct PortalSnapshotGeometry {
                         vertical: split.isVertical, hidden: hidden))
                 }
             }
-            for child in view.subviews {
+            let children = view.subviews
+            if children.count > Self.viewLimit { cut = true }
+            for child in children.prefix(Self.viewLimit) {
+                // draw() skips hidden branches entirely. Retain immediate split
+                // geometry, but do not spend the visible-geometry budget walking
+                // hidden WebKit/terminal internals or other non-split branches.
+                if hidden && !(child is NSSplitView) { skippedHidden += 1; continue }
                 guard visited < Self.viewLimit else { cut = true; break }
                 visit(child, ancestorHidden: hidden)
             }
@@ -2640,10 +2664,13 @@ struct PortalSnapshotGeometry {
         if let root = window.contentView { visit(root, ancestorHidden: false) }
         dividers = rows
         visitedViews = visited
+        skippedHiddenSubtrees = skippedHidden
         truncated = cut
     }
 
-    static func token(_ object: AnyObject) -> String { String(describing: ObjectIdentifier(object)) }
+    static func token(_ object: AnyObject) -> PortalSnapshotEncoding.Source {
+        PortalSnapshotEncoding.Source(address: UInt(bitPattern: ObjectIdentifier(object)))
+    }
     static func number(_ value: CGFloat) -> Any { value.isFinite ? Double(value) : NSNull() }
     static func rect(_ value: NSRect) -> [String: Any] {
         ["x": number(value.origin.x), "y": number(value.origin.y),
@@ -2656,7 +2683,7 @@ struct PortalSnapshotGeometry {
     }
     static func view(_ view: NSView?) -> Any {
         guard let view else { return NSNull() }
-        return ["source_id": token(view), "class": String(describing: type(of: view)),
+        return ["source_id": token(view), "class": PortalSnapshotEncoding.ClassName(type: type(of: view)),
                 "frame": rect(view.frame), "bounds": rect(view.bounds),
                 "frame_in_window": view.window == nil ? NSNull() : rect(view.convert(view.bounds, to: nil)),
                 "window_source_id": view.window.map(token) as Any? ?? NSNull(),
@@ -2665,7 +2692,7 @@ struct PortalSnapshotGeometry {
                 "alpha": number(view.alphaValue)] as [String: Any]
     }
     var payload: [String: Any] {
-        ["visited_views": visitedViews, "truncated": truncated,
+        ["visited_views": visitedViews, "hidden_non_split_subtrees_skipped": skippedHiddenSubtrees, "truncated": truncated,
          "dividers": dividers.map { row in
              ["source_id": row.source, "divider_index": row.index,
               "rect_in_window": Self.rect(row.rect), "color": Self.color(row.color),
@@ -2677,7 +2704,7 @@ struct PortalSnapshotGeometry {
         source: ObjectIdentifier, content: NSView?, hosted: NSView?, anchor: NSView?,
         host: NSView, overlay: NSView, window: NSWindow?, visible: Bool, priority: Int,
         style: PortalWorkspaceFrameStyle?, dividers: [PortalChromeOverlayDividerSegment],
-        identity: [String: String]?, geometryComplete: Bool
+        identity: [String: UUID]?, geometryComplete: Bool
     ) -> [String: Any] {
         var reasons: [String] = []
         if !visible { reasons.append("not_visible_in_ui") }
@@ -2716,11 +2743,11 @@ struct PortalSnapshotGeometry {
                     "rect_in_overlay": rect(clipped),
                     "pixel_aligned_rect_in_overlay": rect(PortalSplitDividerOverlayView.pixelAligned(clipped)),
                     "rect_in_window": overlay.window == nil || clipped.isNull ? NSNull() : rect(overlay.convert(clipped, to: nil)),
-                    "color": color(resolvedColor), "admitted": guards.isEmpty && geometryComplete,
+                    "color": color(resolvedColor), "admitted": guards.isEmpty,
                     "guard_rejections": guards, "complete": geometryComplete])
             }
         }
-        return ["source_id": String(describing: source), "identity": identity as Any? ?? NSNull(),
+        return ["source_id": PortalSnapshotEncoding.Source(address: UInt(bitPattern: source)), "identity": identity as Any? ?? NSNull(),
                 "content": view(content), "hosted": view(hosted), "anchor": view(anchor),
                 "visible_in_ui": visible, "z_priority": priority,
                 "orphan": anchor == nil || anchor?.window !== window || content == nil,
@@ -2765,7 +2792,7 @@ extension PortalSplitDividerOverlayView {
 }
 
 extension WindowTerminalPortal {
-    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: String]]) -> [String: Any] {
+    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
         let entriesComplete = entriesByHostedId.count <= PortalSnapshotGeometry.entryLimit
         let dividers = dividerOverlayView.diagnosticDividers(geometry)
         var frames: [NSRect] = []
@@ -2786,13 +2813,13 @@ extension WindowTerminalPortal {
         return ["present": true, "host": PortalSnapshotGeometry.view(hostView), "entries": entries,
                 "entry_count": entriesByHostedId.count, "entries_truncated": !entriesComplete,
                 "anchor_mapping_count": hostedByAnchorId.count,
-                "unmatched_hosted_views": unmatched, "host_subviews_truncated": children.count > PortalSnapshotGeometry.entryLimit,
+                "unmatched_hosted_views": unmatched, "unmatched_classification_complete": true, "host_subviews_truncated": children.count > PortalSnapshotGeometry.entryLimit,
                 "overlay": dividerOverlayView.diagnosticSnapshot(geometry, hostedFrames: frames, entriesComplete: entriesComplete)]
     }
 }
 
 extension TerminalWindowPortalRegistry {
-    static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: String]]) -> [String: Any] {
+    static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
         // Lookup only: portal(for:) installs views and is forbidden on this path.
         portalsByWindowId[ObjectIdentifier(window)]?.diagnosticSnapshot(geometry, identities: identities) ?? ["present": false]
     }

@@ -33,6 +33,8 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. *
 
 ## Links to panels and workspaces
 
+Before emitting these links, pages and agents should check the connected server's `features` in `c11 capabilities --json` for `links.panel` version 1, which covers the browser and Markdown navigation described here.
+
 Local pages in c11 browser panels and local markdown panels can offer operator navigation:
 
 ```html

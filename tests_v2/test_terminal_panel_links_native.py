@@ -467,15 +467,25 @@ finally:
 
     def activation(self, kind, workspace, panel):
         before = len(self.decisions())
-        flashes = self.call('debug.flash.count', panel_id=panel)['count']
+        # The existing debug counter resolves only the selected workspace and
+        # counts terminal rings. Read it after native landing, retaining that
+        # value for the next visit. Browser pulse evidence is its screenshot.
+        terminal = panel in (self.source, self.target)
+        flashes = self.flash_counts.get(panel, 0)
+        if terminal and self.selection() == (workspace.lower(), panel.lower()):
+            flashes = self.call('debug.flash.count', panel_id=panel)['count']
         self.click_link(kind)
         self.wait(lambda: self.selection() == (workspace.lower(), panel.lower()), kind + ' landed')
-        self.wait(lambda: self.call('debug.flash.count', panel_id=panel)['count'] > flashes, kind + ' flash')
+        if terminal:
+            self.wait(lambda: self.call('debug.flash.count', panel_id=panel)['count'] > flashes, kind + ' flash')
+            self.flash_counts[panel] = self.call('debug.flash.count', panel_id=panel)['count']
         self.wait(lambda: len(self.decisions()) > before, kind + ' structured decision')
         decisions = self.decisions()[before:]
         assert len(decisions) == 1 and decisions[0] == dict(target=self.urls[kind], origin='terminal',
             activation='native_command_click', result='opened'), decisions
-        self.passed(kind + ' native landing and flash', target=panel, flash_before=flashes, decision=decisions[0])
+        self.passed(kind + ' native landing' + (' and flash' if terminal else ''), target=panel,
+                    flash_before=flashes if terminal else None,
+                    flash_after=self.flash_counts.get(panel), decision=decisions[0])
 
     def hover(self):
         x, y = self.point('deceptive')
@@ -578,6 +588,8 @@ finally:
         assert self.selection() == before and len(self.decisions()) == decisions
         self.passed('4 plain click leaves navigation unchanged')
         self.hover()
+        self.call('debug.flash.reset')
+        self.flash_counts = {}
         for kind in ('bare', 'claude', 'codex'):
             for index in range(3):
                 self.call('panel.focus', workspace_id=self.destination, panel_id=self.browser)

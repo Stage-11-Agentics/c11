@@ -3,6 +3,10 @@
 # without touching a real key or publishing anything (C11-542). Agent-safe.
 #
 #   scripts/atlas-signing-check.sh            # from any Mac on the tailnet
+#   scripts/atlas-signing-check.sh --full     # also: a real notarization of the
+#                                             # scratch binary, and a signature with
+#                                             # the real c11mux Sparkle key checked
+#                                             # against the key installed c11 trusts
 #
 # On Atlas, under one launchd unlock lease of the dedicated signing keychain:
 #   1. codesign a scratch binary with the Developer ID identity (hardened
@@ -26,6 +30,7 @@ helper="${C11_SIGNING_KEYCHAIN_HELPER:-$HOME/.acetate-release/bin/release_keycha
 identity="${C11_SIGNING_IDENTITY:-Developer ID Application: Authentic Technologies Inc. (UKQ4QALWD4)}"
 profile="${C11_NOTARY_PROFILE:-acetate-notary}"
 bin_dir="$1"
+full="${2:-}"
 bounded() { local s="$1"; shift; perl -e "alarm $s; exec @ARGV or exit 127" -- "$@"; }
 work="$(mktemp -d "${TMPDIR:-/tmp}/c11-signcheck.XXXXXX")"
 chmod 700 "$work"
@@ -51,6 +56,29 @@ echo "codesign: ok, signed by \"$authority\" with hardened runtime and timestamp
 bounded 90 xcrun notarytool history --keychain-profile "$profile" --keychain "$kc" >/dev/null 2>"$work/nt.err" \
   || { echo "notarytool: FAILED $(head -c 300 "$work/nt.err")"; exit 1; }
 echo "notarytool: ok, profile $profile authenticates from the signing keychain"
+if [[ "$full" == "--full" ]]; then
+  ditto -c -k --keepParent "$work/hello" "$work/hello.zip"
+  out="$(bounded 900 xcrun notarytool submit "$work/hello.zip" --keychain-profile "$profile" --keychain "$kc" --wait --output-format json 2>&1 || true)"
+  status="$(python3 -c "import json,sys; print(json.load(sys.stdin).get(\"status\",\"?\"))" <<<"$out" 2>/dev/null || echo "?")"
+  echo "notarize: Apple returned \"$status\" for the signed scratch binary"
+  [[ "$status" == "Accepted" ]]
+  ( umask 077; bounded 30 security find-generic-password -s https://sparkle-project.org -a c11mux -w "$kc" >"$work/real-key" )
+  head -c 4096 /dev/urandom >"$work/real.bin"
+  real_sig="$(bounded 60 "$bin_dir/sign_update" -f "$work/real-key" "$work/real.bin" -p)"
+  /bin/rm -f "$work/real-key"
+  pinned="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
+  real_verdict="$(cat >"$work/verify-real.swift" <<SWIFT
+import CryptoKit
+import Foundation
+let a = CommandLine.arguments
+let key = try! Curve25519.Signing.PublicKey(rawRepresentation: Data(base64Encoded: a[1])!)
+let ok = key.isValidSignature(Data(base64Encoded: a[2])!, for: try! Data(contentsOf: URL(fileURLWithPath: a[3])))
+print(ok ? "valid" : "invalid")
+SWIFT
+bounded 120 swift "$work/verify-real.swift" "$pinned" "$real_sig" "$work/real.bin")"
+  echo "sparkle (real c11mux key): signature $real_verdict against the public key installed c11 trusts"
+  [[ "$real_verdict" == "valid" ]]
+fi
 
 seed="$(openssl rand -base64 32)"
 printf "add-generic-password -U -s https://sparkle-project.org -a %s -T /usr/bin/security -w %s %s\n" \
@@ -92,4 +120,4 @@ echo "after: keychain $(bounded 30 "$helper" status), scratch dirs left $left, t
 ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" 'mkdir -p ~/.cache/c11/scripts'
 scp -q -o BatchMode=yes "$ROOT/scripts/fetch-sparkle-tools.sh" "$HOST:.cache/c11/scripts/fetch-sparkle-tools.sh"
 BIN_DIR="$(ssh -o BatchMode=yes "$HOST" 'bash ~/.cache/c11/scripts/fetch-sparkle-tools.sh')"
-ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$(printf '%q ' bash -c "$REMOTE" atlas-signing-check "$BIN_DIR")"
+ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$(printf '%q ' bash -c "$REMOTE" atlas-signing-check "$BIN_DIR" "${1:-}")"

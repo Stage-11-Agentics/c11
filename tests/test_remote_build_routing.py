@@ -542,9 +542,13 @@ class RoutingTests(unittest.TestCase):
         (fake / "rsync").write_text("#!/bin/sh\nexit 0\n")
         # python3 on the local path: answer held-heads, record cwd and the build command, fail it.
         real_rsync = shutil.which("rsync")
+        # It also leaves an artifact where the host's remote() would, so retrieval is checked.
         (fake / "python3").write_text(
             "#!/bin/sh\ncase \"$*\" in *--held-heads*) cat >/dev/null; echo '{}'; exit 0;; esac\n"
-            "printf 'local|%s|python3 %s\\n' \"$PWD\" \"$*\" >>\"$RECORD\"\nexit 23\n")
+            "printf 'local|%s|python3 %s\\n' \"$PWD\" \"$*\" >>\"$RECORD\"\n"
+            "rel=$(echo \"$*\" | sed 's/.*--remote //'); slug=$(echo \"$rel\" | cut -d/ -f2); inv=$(basename \"$rel\")\n"
+            "mkdir -p \"c11-builds/$slug/artifacts/$inv\" && echo artifact >\"c11-builds/$slug/artifacts/$inv/marker.txt\"\n"
+            "exit 23\n")
         for path in fake.iterdir():
             path.chmod(0o755)
         home = self.base / "home"
@@ -566,6 +570,8 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("remote_build.py --remote", ssh_command)
         self.assertEqual(normalize(local_command), normalize(ssh_command))
         self.assertEqual(os.path.realpath(local_cwd), os.path.realpath(home))
+        retrieved = list((self.worktree / "build-remote").glob("*/marker.txt"))
+        self.assertEqual(len(retrieved), 1, "local retrieval copies the artifacts' contents, not a nested directory")
         staged = list((home / "c11-builds").glob("*/incoming/*/remote_build.py"))
         self.assertEqual(len(staged), 1, "the local transport stages the payload under $HOME like the host")
         self.assertEqual(staged[0].read_bytes(), (ROOT / "scripts/remote_build.py").read_bytes())

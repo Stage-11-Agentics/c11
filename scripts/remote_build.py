@@ -259,7 +259,10 @@ class Transport:
         return str(Path.home()) if self.local else None
 
     def location(self, relative):
-        return str(Path.home() / relative) if self.local else self.host + ":" + relative
+        if not self.local:
+            return self.host + ":" + relative
+        # Keep a trailing slash: rsync copies a directory's contents only with one.
+        return str(Path.home() / relative) + ("/" if relative.endswith("/") else "")
 
     def rsync(self, *flags):
         return ["rsync", *flags] if self.local else ["rsync", *flags, "-e", "ssh -o BatchMode=yes"]

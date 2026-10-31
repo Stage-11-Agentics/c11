@@ -342,3 +342,20 @@ teardown repair is relevant upstream; offering it upstream is not a 1.0 gate.
   itself cannot be captured fully, the result remains incomplete.
 - On rebase, preserve the bottom-up row order, the per-row cell offsets, and
   the saved completeness state when discarding a partial row.
+
+### 16) C11-525 recognize c11 terminal URLs
+
+- Commit: `1fe92fa804821088cd01931fa0c47c0bfc16f6bd`
+- File: `src/config/url.zig`
+- Adds `c11://` to the existing URL-scheme matcher in c11's embedded fork.
+  Bare panel and workspace UUID links now use the same Cmd-hover and Cmd-click
+  path as other terminal URLs. No tenant configuration is written or changed.
+- Regression cases cover both target kinds, Codex's `title (c11://...)` output,
+  and Markdown links followed by punctuation. Existing `link-url` and
+  `link-previews` preferences keep their current behavior. Regex-matched links
+  emit `mouse_over_link` when previews are enabled; OSC 8 links already supply
+  their destination URI through that action.
+- This engine patch adds detection only. Native navigation and destination
+  previews belong to the c11 host's C11-525 routing slice, using C11-515's router.
+- On rebase, preserve the `c11://` scheme alternative and its token-boundary
+  regression cases. Do not broaden matching to arbitrary schemes.

@@ -9,6 +9,8 @@ import WebKit
 /// key equivalents first so app-level shortcuts continue to work when WebKit is
 /// the first responder.
 final class CmuxWebView: WKWebView {
+    var panelLinkActivation: PanelLinkActivation?
+
     // Some sites/WebKit paths report middle-click link activations as
     // WKNavigationAction.buttonNumber=4 instead of 2. Track a recent local
     // middle-click so navigation delegates can recover intent reliably.
@@ -273,6 +275,7 @@ final class CmuxWebView: WKWebView {
     var onOperatorInput: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
+        panelLinkActivation?.record(event)
         onOperatorInput?()
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
@@ -306,6 +309,7 @@ final class CmuxWebView: WKWebView {
     // NSView (WKWebView), not to sibling SwiftUI overlays. Notify the panel system so
     // bonsplit focus tracks which pane the user clicked in.
     override func mouseDown(with event: NSEvent) {
+        panelLinkActivation?.invalidate()
         onOperatorInput?()
 #if DEBUG
         let windowNumber = window?.windowNumber ?? -1
@@ -320,6 +324,11 @@ final class CmuxWebView: WKWebView {
         withPointerFocusAllowance {
             super.mouseDown(with: event)
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        panelLinkActivation?.record(event)
+        super.mouseUp(with: event)
     }
 
     // MARK: - Mouse back/forward buttons
@@ -1427,10 +1436,13 @@ final class CmuxWebView: WKWebView {
                 hasDefaultBrowserOpenLinkItem = true
             }
 
-            if openLinkInsertionIndex == nil,
-               (item.identifier?.rawValue == "WKMenuItemIdentifierOpenLink"
-                || item.title == "Open Link") {
-                openLinkInsertionIndex = index + 1
+            if item.identifier?.rawValue == "WKMenuItemIdentifierOpenLink" || item.title == "Open Link" {
+                if openLinkInsertionIndex == nil { openLinkInsertionIndex = index + 1 }
+                if item.target !== self || item.action != #selector(contextMenuOpenLink(_:)) {
+                    captureFallbackForMenuItemIfNeeded(item)
+                }
+                item.target = self
+                item.action = #selector(contextMenuOpenLink(_:))
             }
 
             // Retarget "Open Link in New Window" to open as a tab, not a popup.
@@ -1509,11 +1521,30 @@ final class CmuxWebView: WKWebView {
         onShowSurfaceManifest?()
     }
 
+    private func refuseContextMenuPanelLink(_ url: URL) -> Bool {
+        guard PanelLinkTarget.usesScheme(url) else { return false }
+        // The DOM lookup may be page-controlled. It can only select this notice,
+        // never authorize a panel jump or replace WebKit's ordinary open target.
+        panelLinkActivation?.showNotice(.activation)
+        PanelLinkActivation.log(target: url.absoluteString, origin: self.url?.absoluteString ?? "",
+                                activation: "native_context_menu", result: "context_menu_refused")
+        return true
+    }
+
+    @objc private func contextMenuOpenLink(_ sender: Any?) {
+        let fallback = fallbackFromSender(sender, defaultAction: nil, defaultTarget: nil)
+        resolveContextMenuLinkURL(at: lastContextMenuPoint) { [weak self] url in
+            guard let self else { return }
+            if let url, self.refuseContextMenuPanelLink(url) { return }
+            self.runContextMenuFallback(action: fallback.action, target: fallback.target, sender: sender)
+        }
+    }
+
     @objc private func contextMenuOpenLinkInDefaultBrowser(_ sender: Any?) {
         _ = sender
         let point = lastContextMenuPoint
         resolveContextMenuLinkURL(at: point) { [weak self] url in
-            guard let self, let url, self.canOpenInDefaultBrowser(url) else { return }
+            guard let self, let url, !self.refuseContextMenuPanelLink(url), self.canOpenInDefaultBrowser(url) else { return }
             self.openContextMenuLinkInDefaultBrowser(url)
         }
     }
@@ -1523,7 +1554,7 @@ final class CmuxWebView: WKWebView {
         // The page this menu opened on, read now: a later menu replaces it.
         let menuPageURL = contextMenuPageURL
         resolveContextMenuLinkURL(at: point) { [weak self] url in
-            guard let self, let url else { return }
+            guard let self, let url, !self.refuseContextMenuPanelLink(url) else { return }
             if url.isFileURL, !self.isSettledLocalPage(menuPageURL) {
                 self.debugContextDownload(
                     "browser.ctxmenu.openLink reject=fileFromNonLocalPage menuPage=\(menuPageURL?.scheme ?? "nil")"

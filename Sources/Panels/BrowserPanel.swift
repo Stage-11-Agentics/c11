@@ -1087,6 +1087,7 @@ enum BrowserInsecureHTTPBlockReason: String {
 enum BrowserNavigationDisposition: Equatable {
     /// The load was handed to WebKit.
     case proceeded
+    case internalLinkRefused
     /// A plain-HTTP prompt was sheeted onto a window; a human still has to
     /// answer it before anything loads.
     case prompting(host: String)
@@ -1207,7 +1208,7 @@ func browserInsecureHTTPPayload(
         return browserInsecureHTTPPromptPendingPayload(host: host)
     case .blocked(let host, let reason):
         return browserInsecureHTTPBlockedPayload(host: host, reason: reason)
-    case .proceeded, nil:
+    case .proceeded, .internalLinkRefused, nil:
         return nil
     }
 }
@@ -3065,7 +3066,9 @@ final class BrowserPanel: Panel, ObservableObject {
             )
         )
 
+        PanelLinkActivation.installScript(in: config)
         let webView = CmuxWebView(frame: .zero, configuration: config)
+        webView.panelLinkActivation = PanelLinkActivation(webView: webView)
         webView.allowsBackForwardNavigationGestures = true
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
@@ -3399,7 +3402,7 @@ final class BrowserPanel: Panel, ObservableObject {
         // between construction and the legacy re-hibernate dispatch.
         // Resume reads the URL from `currentURL` (or the snapshot store
         // entry primed below) when the operator unfreezes the workspace.
-        if let url = initialURL {
+        if let url = initialURL, !PanelLinkTarget.usesScheme(url) {
             if pendingHibernate {
                 self.currentURL = url
                 BrowserSnapshotStore.shared.storeMetadataOnly(
@@ -4419,6 +4422,12 @@ final class BrowserPanel: Panel, ObservableObject {
     /// Navigate to a URL
     @discardableResult
     func navigate(to url: URL, recordTypedNavigation: Bool = false) -> BrowserNavigationDisposition {
+        guard !PanelLinkTarget.usesScheme(url) else {
+            PanelLinkActivation.log(target: url.absoluteString, origin: webView.url?.absoluteString ?? "",
+                                    activation: "refused", result: "direct_load_refused")
+            (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.activation)
+            return record(disposition: .internalLinkRefused)
+        }
         updateMessagesPageReloadObserver(for: url)
         supersedeInsecureHTTPConsentIfNeeded(for: url)
         let request = URLRequest(url: url)
@@ -4463,6 +4472,8 @@ final class BrowserPanel: Panel, ObservableObject {
                 message = "Navigation requires operator approval"
             case .blocked:
                 message = "Navigation was blocked"
+            case .internalLinkRefused:
+                message = PanelLinkNotice.activation.text
             case .proceeded:
                 message = "Navigation did not start"
             }
@@ -4523,7 +4534,7 @@ final class BrowserPanel: Panel, ObservableObject {
         recordTypedNavigation: Bool,
         preserveRestoredSessionHistory: Bool = false
     ) {
-        guard let url = request.url else { return }
+        guard let url = request.url, !PanelLinkTarget.usesScheme(url) else { return }
         if usesRemoteWorkspaceProxy, remoteProxyEndpoint == nil {
             pendingRemoteNavigation = PendingRemoteNavigation(
                 request: request,
@@ -4564,6 +4575,7 @@ final class BrowserPanel: Panel, ObservableObject {
         recordTypedNavigation: Bool,
         preserveRestoredSessionHistory: Bool
     ) {
+        guard !PanelLinkTarget.usesScheme(originalURL) else { return }
         if !preserveRestoredSessionHistory {
             abandonRestoredSessionHistoryIfNeeded()
         }
@@ -4638,6 +4650,12 @@ final class BrowserPanel: Panel, ObservableObject {
     func navigateSmart(_ input: String, allowInsecureHTTP: Bool = false) -> BrowserNavigationDisposition {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .proceeded }
+        if PanelLinkTarget.isLink(trimmed) {
+            (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.activation)
+            PanelLinkActivation.log(target: trimmed, origin: webView.url?.absoluteString ?? "",
+                                    activation: "refused", result: "direct_load_refused")
+            return record(disposition: .internalLinkRefused)
+        }
 
         if let url = resolveNavigableURL(from: trimmed) {
             if allowInsecureHTTP {
@@ -5054,6 +5072,7 @@ extension BrowserPanel {
     /// new panel grants it read access to its folder (C11-505). The callers
     /// check the initiating frame first; this is the second gate.
     func shouldOpenLinkInNewPanel(_ url: URL) -> Bool {
+        guard !PanelLinkTarget.usesScheme(url) else { return false }
         guard url.isFileURL else { return true }
         return webView.url?.isFileURL == true
     }
@@ -6133,6 +6152,13 @@ extension BrowserPanel {
 #endif
     }
 
+    /// An explicit native jump to another panel supersedes a queued omnibar
+    /// request. Keep preferredFocusIntent for a later ordinary browser visit.
+    func cancelPendingAddressBarFocusForPanelLink() {
+        pendingAddressBarFocusRequestId = nil
+        invalidateAddressBarPageFocusRestoreAttempts()
+    }
+
     func acknowledgeAddressBarFocusRequest(_ requestId: UUID) {
         guard pendingAddressBarFocusRequestId == requestId else {
 #if DEBUG
@@ -6346,7 +6372,7 @@ extension BrowserPanel {
     }
 
     private static func serializableSessionHistoryURLString(_ url: URL?) -> String? {
-        guard let url else { return nil }
+        guard let url, !PanelLinkTarget.usesScheme(url) else { return nil }
         let value = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value != "about:blank" else { return nil }
         return value
@@ -6355,8 +6381,9 @@ extension BrowserPanel {
     private static func sanitizedSessionHistoryURL(_ raw: String?) -> URL? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != "about:blank" else { return nil }
-        return URL(string: trimmed)
+        guard !trimmed.isEmpty, trimmed != "about:blank",
+              let url = URL(string: trimmed), !PanelLinkTarget.usesScheme(url) else { return nil }
+        return url
     }
 
     private static func sanitizedSessionHistoryURLs(_ values: [String]) -> [URL] {
@@ -6968,6 +6995,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         // requests. Once a provisional navigation has started a web process
         // exists, so JS evaluation will deliver a completion and the socket
         // handlers' fail-fast guard must stop firing.
+        (webView as? CmuxWebView)?.panelLinkActivation?.invalidate()
         (webView as? CmuxWebView)?.markLoadIssued()
         lastAttemptedURL = webView.url
     }
@@ -7141,6 +7169,12 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        if let url = navigationAction.request.url, url.scheme?.lowercased() == "c11" {
+            PanelLinkActivation.log(target: url.absoluteString, origin: navigationAction.sourceFrame.securityOrigin.host,
+                                    activation: "refused", result: "navigation_cancelled")
+            decisionHandler(.cancel)
+            return
+        }
         let hasRecentMiddleClickIntent = CmuxWebView.hasRecentMiddleClickIntent(for: webView)
         let shouldOpenInNewPanel = browserNavigationShouldOpenInNewPanel(
             navigationType: navigationAction.navigationType,
@@ -7357,6 +7391,11 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
             "eventType=\(currentEventType) eventButton=\(currentEventButton)"
         )
 #endif
+        if let url = navigationAction.request.url, url.scheme?.lowercased() == "c11" {
+            PanelLinkActivation.log(target: url.absoluteString, origin: navigationAction.sourceFrame.securityOrigin.host,
+                                    activation: "refused", result: "popup_cancelled")
+            return nil
+        }
         // External URL schemes → hand off to macOS, don't create a popup
         if let url = navigationAction.request.url,
            browserShouldOpenURLExternally(url) {

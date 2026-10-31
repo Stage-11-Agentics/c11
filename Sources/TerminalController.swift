@@ -8320,6 +8320,10 @@ class TerminalController {
         guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
 
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !PanelLinkTarget.isLink(trimmed) else {
+            PanelLinkActivation.log(target: trimmed, origin: "socket", activation: "refused", result: "direct_load_refused")
+            return "ERROR: operator_activation_required: \(PanelLinkNotice.activation.text)"
+        }
         let url: URL? = trimmed.isEmpty ? nil : URL(string: trimmed)
 
         var result = "ERROR: Failed to create browser panel"

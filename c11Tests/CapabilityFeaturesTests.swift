@@ -70,6 +70,23 @@ final class CapabilityFeaturesTests: XCTestCase {
     }
 
     @MainActor
+    func testPanelLinksCapabilityIsAdvertisedOnTheSocketWorker() throws {
+        let controller = TerminalController.makeForTesting()
+        let reply = try workerReply(
+            controller,
+            command: #"{"id":532,"method":"system.capabilities","params":{}}"#
+        )
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+        XCTAssertEqual(envelope["id"] as? Int, 532)
+        XCTAssertEqual(envelope["ok"] as? Bool, true)
+        let result = try XCTUnwrap(envelope["result"] as? [String: Any])
+        let features = try XCTUnwrap(result["features"] as? [[String: Any]])
+        let panelLinks = features.filter { $0["id"] as? String == "links.panel" }
+        XCTAssertEqual(panelLinks.count, 1)
+        XCTAssertEqual(panelLinks.first?["version"] as? Int, 1)
+    }
+
+    @MainActor
     func testMarkdownBacklinksCapabilityIsAdvertised() throws {
         let controller = TerminalController.makeForTesting()
         let data = try XCTUnwrap(controller.v2DispatchSystem("system.capabilities", id: 1, params: [:]).data(using: .utf8))

@@ -328,7 +328,7 @@ try:
         if script_attempt:
             # A deliberately cancelled load-time navigation may delay WebKit's
             # load completion; the marker proves the attempted script ran.
-            wait_for(lambda: javascript('document.title') == 'script-attempted', 'fixture script ran')
+            wait_for(lambda: javascript('document.title') == 'script-attempted', 'fixture script ran', timeout=20)
         else:
             wait_for(lambda: javascript('document.readyState') == 'complete', 'fixture load', timeout=20)
         time.sleep(.25)

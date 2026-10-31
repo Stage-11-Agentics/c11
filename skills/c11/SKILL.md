@@ -31,6 +31,37 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. *
 
 **Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
 
+## Links to panels and workspaces
+
+Local pages in c11 browser panels and local markdown panels can offer operator navigation:
+
+```html
+<a href="c11://panel/01234567-89AB-CDEF-0123-456789ABCDEF">Open the agent</a>
+<a href="c11://workspace/01234567-89AB-CDEF-0123-456789ABCDEF">Open the workspace</a>
+```
+
+Markdown uses `[Open the agent](c11://panel/<uuid>)`. Get real UUIDs from
+`c11 --id-format both tree --json`, `$C11_PANEL_ID`, or `$C11_WORKSPACE_ID`.
+Short refs such as `panel:10` are process-local and are refused in links.
+UUID case does not matter; query strings, fragments and extra path segments are refused.
+
+A plain left click or Return on the focused link selects the owning workspace/window,
+reveals the panel's area, and pulses the panel after it becomes visible. A workspace
+link keeps that workspace's focused panel. The pulse follows the flash setting and
+is suppressed with Reduce Motion. Visiting a link does not lower flags or answer asks;
+unread notifications follow the same rules as a sidebar visit. Closed or invalid targets
+show a small notice in the source panel.
+
+For this first slice, browser links work only from a main-frame `file://` page or
+HTTP(S) on `localhost`, `127.0.0.1` or `::1` (any port). Other origins show a notice.
+Scripts, redirects, forms, subframes, popups and browser automation cannot navigate
+these links. Cmd/middle/modified clicks and `target="_blank"` are refused. Opening a
+`c11://` URL through the CLI is also refused; socket focus still cannot switch the
+operator's workspace. Links from other apps and OS scheme registration are not included.
+Browser navigation and creation commands return `operator_activation_required` for these URLs.
+Local-origin eligibility grants navigation only; it grants no page-to-agent messages,
+structure reads, or other capabilities.
+
 ## Boot fast, orient lazily
 
 **Codex: capture your exact thread before other orientation work.** From one of your own tool subprocesses, run `c11 conversation capture-runtime` with no arguments. It reads `CODEX_THREAD_ID`, the agreeing `C11_PANEL_ID` value, and the subprocess's actual cwd itself. Never expand, copy, relay, or add those values as flags; an orchestrator cannot truthfully capture a child agent's runtime identity on its behalf.

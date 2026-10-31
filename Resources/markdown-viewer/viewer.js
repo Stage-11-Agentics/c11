@@ -166,7 +166,7 @@ function groups(tokens) {
 function sanitize(html) {
   return DOMPurify.sanitize(html, {ADD_ATTR:['data-fn','data-label'],ADD_URI_SAFE_ATTR:['data-fn'],
     FORBID_TAGS:['script','style','iframe','object','embed','form','video','audio','source'],
-    ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11md-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i});
+    ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11|c11md-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i});
 }
 const lineMapSkip='svg,button,.code-head,figcaption,.katex-mathml,.callout-title,.fn-back';
 let lineMetricEpoch=0;

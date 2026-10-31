@@ -1406,6 +1406,10 @@ extension TerminalController {
     }
 
     func v2BrowserPanelNew(params: [String: Any]) -> V2CallResult {
+        if let url = v2String(params, "url"), PanelLinkTarget.isLink(url) {
+            PanelLinkActivation.log(target: url, origin: "socket", activation: "refused", result: "direct_load_refused")
+            return .err(code: "operator_activation_required", message: PanelLinkNotice.activation.text, data: nil)
+        }
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }

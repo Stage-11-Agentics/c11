@@ -9,6 +9,8 @@ import WebKit
 /// key equivalents first so app-level shortcuts continue to work when WebKit is
 /// the first responder.
 final class CmuxWebView: WKWebView {
+    var panelLinkActivation: PanelLinkActivation?
+
     // Some sites/WebKit paths report middle-click link activations as
     // WKNavigationAction.buttonNumber=4 instead of 2. Track a recent local
     // middle-click so navigation delegates can recover intent reliably.
@@ -273,6 +275,7 @@ final class CmuxWebView: WKWebView {
     var onOperatorInput: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
+        panelLinkActivation?.record(event)
         onOperatorInput?()
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
@@ -306,6 +309,7 @@ final class CmuxWebView: WKWebView {
     // NSView (WKWebView), not to sibling SwiftUI overlays. Notify the panel system so
     // bonsplit focus tracks which pane the user clicked in.
     override func mouseDown(with event: NSEvent) {
+        panelLinkActivation?.invalidate()
         onOperatorInput?()
 #if DEBUG
         let windowNumber = window?.windowNumber ?? -1
@@ -320,6 +324,11 @@ final class CmuxWebView: WKWebView {
         withPointerFocusAllowance {
             super.mouseDown(with: event)
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        panelLinkActivation?.record(event)
+        super.mouseUp(with: event)
     }
 
     // MARK: - Mouse back/forward buttons

@@ -56,6 +56,7 @@ final class MarkdownSchemeHandler: NSObject, WKURLSchemeHandler {
 
 /// Read-only content must not claim WebKit's page zoom shortcuts.
 final class MarkdownWKWebView: WKWebView {
+    var panelLinkActivation: PanelLinkActivation?
     var allowsPanelFocus = false
     var schemeHandler: MarkdownSchemeHandler?
     weak var renderer: MarkdownWebRenderer?
@@ -146,9 +147,15 @@ final class MarkdownWKWebView: WKWebView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        panelLinkActivation?.invalidate()
         pointerFocus = true
         defer { pointerFocus = false }
         super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        panelLinkActivation?.record(event)
+        super.mouseUp(with: event)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -165,6 +172,7 @@ final class MarkdownWKWebView: WKWebView {
     }
 
     override func keyDown(with event: NSEvent) {
+        panelLinkActivation?.record(event)
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
            AppDelegate.shared?.handleWebPanelKeyEquivalent(event) == true { return }
         super.keyDown(with: event)
@@ -770,6 +778,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         modifiers: [String: Bool],
         position: MarkdownReadingPosition?
     ) -> Task<Void, Never>? {
+        // c11 links are consumed only by the isolated native activation adapter.
+        // The page-world link message (and link preview) cannot grant intent.
+        guard !PanelLinkTarget.isLink(href) else { return nil }
         guard let panel, let filePath = panel.filePath else { return nil }
         let linkTarget = MarkdownLinkTarget.resolve(href, documentPath: filePath)
         let opensNewPanel = Self.shouldOpenTargetInNewPanel(
@@ -977,7 +988,9 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         let scheme = MarkdownSchemeHandler(policy: policy)
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.viewerScheme)
         config.setURLSchemeHandler(scheme, forURLScheme: MarkdownAssetPolicy.imageScheme)
+        PanelLinkActivation.installScript(in: config)
         let webView = MarkdownWKWebView(frame: NSRect(origin: .zero, size: panel.lastKnownViewportSize), configuration: config)
+        webView.panelLinkActivation = PanelLinkActivation(webView: webView, isMarkdownRenderer: true)
         webView.schemeHandler = scheme
         webView.allowsMagnification = false
         webView.allowsBackForwardNavigationGestures = false

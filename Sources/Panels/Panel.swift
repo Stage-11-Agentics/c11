@@ -39,7 +39,9 @@ struct FocusFlashSegment: Equatable {
 }
 
 enum FocusFlashPattern {
-    static let values: [Double] = [0, 1, 0, 1, 0]
+    // A visible leading edge makes receipt/restart apparent on the first frame,
+    // including when the destination panel has just been revealed.
+    static let values: [Double] = [0.25, 1, 0, 1, 0]
     static let keyTimes: [Double] = [0, 0.25, 0.5, 0.75, 1]
     /// CMUX-10: total duration of one flash pulse, sourced from the
     /// configurable `NotificationFlashDurationSettings` (500–4000ms, default

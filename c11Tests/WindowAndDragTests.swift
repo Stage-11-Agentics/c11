@@ -380,7 +380,7 @@ final class FocusFlashPatternTests: XCTestCase {
     }
 
     func testFocusFlashPatternMatchesTerminalDoublePulseShape() {
-        XCTAssertEqual(FocusFlashPattern.values, [0, 1, 0, 1, 0])
+        XCTAssertEqual(FocusFlashPattern.values, [0.25, 1, 0, 1, 0])
         XCTAssertEqual(FocusFlashPattern.keyTimes, [0, 0.25, 0.5, 0.75, 1])
         XCTAssertEqual(FocusFlashPattern.duration, Double(pinnedMs) / 1000.0, accuracy: 0.0001)
         XCTAssertEqual(FocusFlashPattern.curves, [.easeOut, .easeIn, .easeOut, .easeIn])

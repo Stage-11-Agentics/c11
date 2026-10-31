@@ -59,11 +59,11 @@ final class SidebarFlashDrawingView: NSView {
         request = next
         reportedDraw = false
         layer?.removeAnimation(forKey: "c11.sidebarFlash")
-        guard next.remainingDuration > 0 else { return }
+        guard next.remainingDuration > 0, next.appearance.color.alphaComponent > 0 else { return }
         // Restart from a visible leading edge, even if the preceding pulse is
         // fading. Core Animation replaces the old envelope, never queues it.
         let animation = CAKeyframeAnimation(keyPath: "opacity")
-        animation.values = [0.25, 1, 0, 1, 0]
+        animation.values = FocusFlashPattern.values
         animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
         animation.duration = next.duration
         animation.beginTime = CACurrentMediaTime()

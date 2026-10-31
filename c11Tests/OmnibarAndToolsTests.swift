@@ -17,8 +17,12 @@ final class FinderServicePathResolverTests: XCTestCase {
     @MainActor
     func testSelfOpenAndInvalidServicesLeaveStartupRestorePending() {
         let previousDelegate = AppDelegate.shared
+        let previousControllerManager = TerminalController.shared.workspaceManager
         let app = AppDelegate()
-        defer { AppDelegate.shared = previousDelegate }
+        defer {
+            AppDelegate.shared = previousDelegate
+            TerminalController.shared.workspaceManager = previousControllerManager
+        }
         app.application(NSApplication.shared, open: [Bundle.main.bundleURL])
         XCTAssertFalse(app.didCompleteInitialSessionRestore)
         XCTAssertTrue(app.listMainWindowSummaries().isEmpty)

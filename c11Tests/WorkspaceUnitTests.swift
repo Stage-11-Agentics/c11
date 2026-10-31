@@ -853,6 +853,12 @@ final class WorkspaceReorderTests: XCTestCase {
 @MainActor
 final class WorkspaceNotificationReorderTests: XCTestCase {
     func testNotificationAutoReorderDoesNotMovePinnedWorkspace() {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let notificationStore = TerminalNotificationStore.shared
@@ -2984,6 +2990,12 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
 
     func testReviewOnlyAreaResetReportsOneCloseBatch() async throws {
         _ = NSApplication.shared
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let app = AppDelegate()
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
@@ -3100,6 +3112,12 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
 
     func testLegacySuppressSocketAliasAllowsOwnerlessAgentSuppression() throws {
         _ = NSApplication.shared
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let app = AppDelegate()
         let manager = WorkspaceManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)

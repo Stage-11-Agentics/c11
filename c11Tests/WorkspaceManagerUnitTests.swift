@@ -792,6 +792,12 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
             }
         }
 
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared

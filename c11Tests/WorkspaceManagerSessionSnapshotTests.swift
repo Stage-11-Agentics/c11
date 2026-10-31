@@ -477,6 +477,12 @@ extension WorkspaceManagerSessionSnapshotTests {
 extension WorkspaceManagerSessionSnapshotTests {
     func testRestoredDelegateKeepsWorkspaceProjection() throws {
         _ = NSApplication.shared
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let app = AppDelegate()
         let source = WorkspaceManager()
         let sourceWorkspace = try XCTUnwrap(source.selectedWorkspace)

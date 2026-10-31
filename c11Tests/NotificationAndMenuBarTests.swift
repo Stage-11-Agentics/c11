@@ -253,6 +253,12 @@ final class NotificationAndMenuBarTests: XCTestCase {
     }
 
     func testLegacyCodexNotifyMismatchDoesNotMutateAttention() async throws {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
@@ -332,6 +338,12 @@ final class NotificationAndMenuBarTests: XCTestCase {
     }
 
     func testLegacyCodexNotifyMatchKeepsCurrentCompletionBehavior() async throws {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared
@@ -410,6 +422,12 @@ final class NotificationAndMenuBarTests: XCTestCase {
     }
 
     func testLegacyCodexNotifyWithoutRuntimeCaptureFallsBackToCurrentBehavior() throws {
+        let hostDelegateBeforeFixture = AppDelegate.shared
+        let hostControllerManagerBeforeFixture = TerminalController.shared.workspaceManager
+        defer {
+            AppDelegate.shared = hostDelegateBeforeFixture
+            TerminalController.shared.workspaceManager = hostControllerManagerBeforeFixture
+        }
         let appDelegate = AppDelegate.shared ?? AppDelegate()
         let manager = WorkspaceManager()
         let store = TerminalNotificationStore.shared

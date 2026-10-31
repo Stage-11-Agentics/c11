@@ -281,6 +281,19 @@ find_release() {
   printf '%s' "$found"
 }
 # phase: preflight | publish. Sets RELEASE_ID and RELEASE_DRAFT.
+# update-homebrew.yml runs on its own only after release.yml completes, so a
+# release published here dispatches it. The workflow commits only a changed
+# cask, so dispatching twice is harmless.
+dispatch_homebrew() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    would gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"
+  elif gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"; then
+    note "dispatched update-homebrew.yml for $VERSION (gh run list --repo $REPO_SLUG --workflow update-homebrew.yml)"
+  else
+    note "WARNING: could not dispatch update-homebrew.yml; the release is published. Run: gh workflow run update-homebrew.yml --repo $REPO_SLUG -f version=$VERSION"
+  fi
+}
+
 check_guard() {
   local phase="$1" rel names state guard
   rel="$(find_release)"
@@ -309,6 +322,13 @@ check_guard() {
       fi
       note "Release $TAG already contains immutable assets ($(jq -r '.conflicts|join(", ")' <<<"$state"))."
       note "Skipping build, notarization, and upload to preserve existing signed artifacts."
+      # A run that published and then failed the Homebrew dispatch is
+      # finished by rerunning it: the cask moves only for the latest release.
+      if [[ "$(gh api "repos/$REPO_SLUG/releases/latest" --jq .tag_name 2>/dev/null || true)" == "$TAG" ]]; then
+        dispatch_homebrew
+      else
+        note "Homebrew: $TAG is not the latest release; the cask is left alone."
+      fi
       exit 0 ;;
     *) die "unexpected guard state: $guard" ;;
   esac
@@ -727,18 +747,13 @@ else
   fi
 fi
 
-# update-homebrew.yml runs on its own only after release.yml completes, so a
-# release published here dispatches it. Only a release that took `latest`
-# moves the cask; a hotfix on an older line never pins Homebrew back.
+# Only a release that took `latest` moves the cask; a hotfix on an older line
+# never pins Homebrew back.
 step "Update Homebrew cask"
 if [[ "$TAKE_LATEST" != "true" ]]; then
   note "skipped: $TAG did not take latest"
-elif [[ "$DRY_RUN" -eq 1 ]]; then
-  would gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"
-elif gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"; then
-  note "dispatched update-homebrew.yml for $VERSION (gh run list --repo $REPO_SLUG --workflow update-homebrew.yml)"
 else
-  note "WARNING: could not dispatch update-homebrew.yml; the release is published. Run: gh workflow run update-homebrew.yml --repo $REPO_SLUG -f version=$VERSION"
+  dispatch_homebrew
 fi
 
 # ----------------------------------------------------------------- Sentry --

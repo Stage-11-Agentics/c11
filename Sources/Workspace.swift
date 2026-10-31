@@ -6319,7 +6319,7 @@ final class Workspace: Identifiable, ObservableObject {
                 guard let self else { return }
                 let retryBusy = captureNote.failed && decision == .skip(reason: "unavailable")
                 if !retryBusy {
-                    self.logMailboxDoorbell(entry: entry, effect: effect)
+                    self.logMailboxDoorbell(surfaceId: surfaceId, entry: entry, effect: effect)
                 }
                 guard case .keep(let reason) = effect else { return }
                 if retryBusy {
@@ -6484,29 +6484,31 @@ final class Workspace: Identifiable, ObservableObject {
     /// A ring refusal worth a dispatch line. Empty queues have no envelope to
     /// log; other repeated holds are coalesced. A rate cap is its own outcome.
     private func logMailboxDoorbell(
+        surfaceId: UUID,
         entry: MailboxStdinBuffer.Entry,
         effect: MailboxDoorbell.Arrival
     ) {
-        logMailboxDoorbellEffect([entry], effect: effect)
+        logMailboxDoorbellEffect(surfaceId: surfaceId, entries: [entry], effect: effect)
     }
 
     private func logMailboxDoorbellEffect(
-        _ entries: [MailboxStdinBuffer.Entry],
+        surfaceId: UUID,
+        entries: [MailboxStdinBuffer.Entry],
         effect: MailboxDoorbell.Arrival
     ) {
         switch effect {
         case .ring:
             return
         case .deferRing(_):
-            logMailboxDoorbellEntriesOnce(entries, outcome: .doorbellSkipped, reason: "operator_active")
+            logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: entries, outcome: .doorbellSkipped, reason: "operator_active")
         case .keep(let reason):
             switch reason {
             case "no_mail":
                 return
             case "rate_capped":
-                logMailboxDoorbellEntriesOnce(entries, outcome: .doorbellCapped, reason: reason)
+                logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: entries, outcome: .doorbellCapped, reason: reason)
             default:
-                logMailboxDoorbellEntriesOnce(entries, outcome: .doorbellSkipped, reason: reason)
+                logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: entries, outcome: .doorbellSkipped, reason: reason)
             }
         }
     }
@@ -6514,11 +6516,18 @@ final class Workspace: Identifiable, ObservableObject {
     /// One dispatch line per envelope per hold. The same reason on a later
     /// recheck stays quiet. A ring or a different reason logs again.
     private func logMailboxDoorbellEntriesOnce(
-        _ entries: [MailboxStdinBuffer.Entry],
+        surfaceId: UUID,
+        entries: [MailboxStdinBuffer.Entry],
         outcome: MailboxDispatchLog.HandlerOutcome,
         reason: String
     ) {
-        let fresh = entries.filter { mailboxDoorbellLastReason[$0.id] != reason }
+        let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        let fresh = entries.filter {
+            // A later timer may observe the next working turn after submit.
+            // It has no refused delivery to report for an already-covered id.
+            !(outcome == .doorbellSkipped && covered.contains($0.id))
+                && mailboxDoorbellLastReason[$0.id] != reason
+        }
         guard !fresh.isEmpty else { return }
         for entry in fresh {
             mailboxDoorbellLastReason[entry.id] = reason
@@ -6572,7 +6581,7 @@ final class Workspace: Identifiable, ObservableObject {
     private func ringMailboxDoorbellIfStillBuffered(surfaceId: UUID, busyTry: Int = 0) {
         guard mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0 else { return }
         guard let terminalPanel = panels[surfaceId] as? TerminalPanel else {
-            logMailboxDoorbellEntriesOnce(mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
+            logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
                                          outcome: .doorbellSkipped, reason: "target_gone")
             return
         }
@@ -6582,7 +6591,7 @@ final class Workspace: Identifiable, ObservableObject {
         if gate.inputTransactionActive && !gate.nativeRoute {
             let retry = promptOpen
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
-                workspace.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "input_transaction")
+                workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "input_transaction")
                 if retry, !live.isEmpty {
                     workspace.scheduleMailboxDoorbellRecheck(
                         surfaceId: surfaceId,
@@ -6595,7 +6604,7 @@ final class Workspace: Identifiable, ObservableObject {
         guard promptOpen else {
             let heldUntil = MailboxStdinDelivery.heldUntil(state: mailboxStdinState, surfaceId: surfaceId, gate: gate)
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
-                workspace.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped,
+                workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped,
                     reason: MailboxStdinDelivery.closedGateReason(state: workspace.mailboxStdinState, surfaceId: surfaceId, gate: gate))
                 if let heldUntil, !live.isEmpty {
                     workspace.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: heldUntil)
@@ -6677,13 +6686,13 @@ final class Workspace: Identifiable, ObservableObject {
         case .deferRing:
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
                 guard !live.isEmpty else { return }
-                workspace.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "operator_active")
+                workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "operator_active")
                 workspace.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
         case .keep:
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
                 guard !live.isEmpty else { return }
-                workspace.logMailboxDoorbellEffect(live, effect: plan.arrival)
+                workspace.logMailboxDoorbellEffect(surfaceId: surfaceId, entries: live, effect: plan.arrival)
                 workspace.logMailboxDoorbellRelook(live, plan: plan)
                 workspace.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
@@ -6739,12 +6748,7 @@ final class Workspace: Identifiable, ObservableObject {
                 MainActor.assumeIsolated {
                     guard let workspace = owner.workspace else { return }
                     let gone = MailboxDoorbellSequence.droppedIds(snapshot: ids, stillPending: live)
-                    for id in gone {
-                        if let entry = workspace.mailboxStdinState.buffer.removeQueued(surfaceId: surfaceId, id: id) {
-                            workspace.logMailboxDoorbellEntriesOnce([entry], outcome: .doorbellSkipped, reason: "already_read")
-                        }
-                        workspace.mailboxDoorbellLastReason.removeValue(forKey: id)
-                    }
+                    workspace.removeReadMailboxDoorbellEntries(surfaceId: surfaceId, ids: gone)
                     let remaining = workspace.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
                     workspace.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
                         ledger.draftWatch = MailboxDoorbellSequence.draftWatchAfterPrune(
@@ -6755,6 +6759,20 @@ final class Workspace: Identifiable, ObservableObject {
                     then(workspace, remaining)
                 }
             }
+        }
+    }
+
+    /// A successful invitation remains the final delivery event after recv.
+    /// Uncovered mail that vanished before typing records one read outcome, then
+    /// forgets its coalescing key along with the queue entry.
+    private func removeReadMailboxDoorbellEntries(surfaceId: UUID, ids: [String]) {
+        let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        for id in ids {
+            if let entry = mailboxStdinState.buffer.removeQueued(surfaceId: surfaceId, id: id),
+               !covered.contains(id) {
+                logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: [entry], outcome: .skipped, reason: "already_read")
+            }
+            mailboxDoorbellLastReason.removeValue(forKey: id)
         }
     }
 
@@ -6870,7 +6888,6 @@ final class Workspace: Identifiable, ObservableObject {
                         surfaceId: surfaceId,
                         queued: queued,
                         liveIds: live,
-                        dispatcher: dispatcher,
                         nativeRoute: nativeRoute
                     )
                 }
@@ -6882,28 +6899,17 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceId: UUID,
         queued: [MailboxStdinBuffer.Entry],
         liveIds: Set<String>,
-        dispatcher: MailboxDispatcher,
         nativeRoute: MailboxNativeDoorbell.Registration?
     ) {
         let goneIds = Set(MailboxDoorbellSequence.droppedIds(
             snapshot: queued.map(\.id),
             stillPending: liveIds
         ))
-        let gone = queued.filter { goneIds.contains($0.id) }
-        for entry in gone {
-            _ = mailboxStdinState.buffer.removeQueued(surfaceId: surfaceId, id: entry.id)
-            mailboxDoorbellLastReason.removeValue(forKey: entry.id)
-            dispatcher.logStdinLifecycle(
-                id: entry.id,
-                recipient: entry.recipientName,
-                outcome: .skipped
-            )
-        }
+        removeReadMailboxDoorbellEntries(surfaceId: surfaceId, ids: queued.map(\.id).filter { goneIds.contains($0) })
         let live = queued.filter { !goneIds.contains($0.id) }
         guard !live.isEmpty, let terminalPanel = panels[surfaceId] as? TerminalPanel else {
             mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-            logMailboxDoorbellEntriesOnce(queued, outcome: .doorbellSkipped,
-                                         reason: live.isEmpty ? "already_read" : "target_gone")
+            logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "target_gone")
             if mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0 {
                 scheduleMailboxDoorbellRecheck(
                     surfaceId: surfaceId,
@@ -6920,7 +6926,7 @@ final class Workspace: Identifiable, ObservableObject {
                 let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
                 if failed.blocksTyped(unreadIDs: unread, coveredIDs: covered) {
                     mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                    logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
+                    logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
                     return
                 }
             }
@@ -7102,7 +7108,7 @@ final class Workspace: Identifiable, ObservableObject {
             mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
             let plan = mailboxDoorbellPlan(decision: decision, surfaceId: surfaceId,
                 epoch: input.epoch, busyExhausted: input.prompt == nil, strandedDoorbell: false)
-            logMailboxDoorbellEffect(queued, effect: plan.arrival)
+            logMailboxDoorbellEffect(surfaceId: surfaceId, entries: queued, effect: plan.arrival)
             logMailboxDoorbellRelook(queued, plan: plan)
             scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             if decision == .skip(reason: "input_transaction") {
@@ -7230,14 +7236,14 @@ final class Workspace: Identifiable, ObservableObject {
                   let native = panel.surface.surface,
                   !panel.surface.isInputTransactionActive else {
                 workspace.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                workspace.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "input_unavailable")
+                workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "input_unavailable")
                 holdStranded()
                 return
             }
             let gate = workspace.mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: panel)
             guard workspace.mailboxPromptGate(surfaceId: surfaceId, gate: gate) != .closed else {
                 workspace.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                workspace.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped,
+                workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped,
                     reason: MailboxStdinDelivery.closedGateReason(state: workspace.mailboxStdinState, surfaceId: surfaceId, gate: gate))
                 if let heldUntil = MailboxStdinDelivery.heldUntil(
                     state: workspace.mailboxStdinState,
@@ -7250,7 +7256,7 @@ final class Workspace: Identifiable, ObservableObject {
             }
             guard FeedAnswerInFlight.begin(panelID: surfaceId) else {
                 workspace.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                workspace.logMailboxDoorbellEntriesOnce(live, outcome: .doorbellSkipped, reason: "input_transaction")
+                workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "input_transaction")
                 holdStranded()
                 return
             }
@@ -7318,7 +7324,7 @@ final class Workspace: Identifiable, ObservableObject {
             if rearmOnFailure {
                 self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: logged)
             } else {
-                self.logMailboxDoorbellEntriesOnce(attempted, outcome: .doorbellFailed, reason: logged)
+                self.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: attempted, outcome: .doorbellFailed, reason: logged)
                 return outcome
             }
             let rearm = MailboxDoorbellSequence.rearmAfterPasteFailure(
@@ -7390,14 +7396,18 @@ final class Workspace: Identifiable, ObservableObject {
         // The queue stays. The inbox stays. This submit covers every envelope
         // unread now, so a later idle edge does not ring them again. A new
         // envelope rings, and that ring covers the whole unread set.
-        let unreadNow = MailboxDoorbellSequence.unreadIds(
-            in: self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
-        )
+        let queuedNow = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
+        let previouslyCovered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        let attemptedIds = Set(attempted.map(\.id))
+        let newlyCovered = queuedNow.filter { !attemptedIds.contains($0.id) && !previouslyCovered.contains($0.id) }
+        let unreadNow = MailboxDoorbellSequence.unreadIds(in: queuedNow)
         self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
             MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: unreadNow)
         }
+        // Mail arriving during the paste was held as in_flight. This same
+        // invitation covers it, so its trace must record the successful handoff.
         logMailboxDoorbellEntries(
-            attempted,
+            attempted + newlyCovered,
             outcome: .doorbell,
             reason: submittedReason,
             bytes: MailboxDoorbell.text.utf8.count
@@ -7433,7 +7443,9 @@ final class Workspace: Identifiable, ObservableObject {
 
     private func attachMailboxState(_ transfer: MailboxPanelTransfer, surfaceId: UUID) {
         mailboxStdinState.buffer.restorePanel(surfaceId, state: transfer.buffer)
-        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0 = transfer.ledger }
+        if transfer.ledger != .init() {
+            mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0 = transfer.ledger }
+        }
         mailboxDoorbellDeferTokens[surfaceId] = transfer.recheckToken
         mailboxDoorbellLastReason.merge(transfer.reasons) { _, moved in moved }
         mailboxNativeFallback[surfaceId] = transfer.nativeFallback
@@ -7442,7 +7454,10 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxNativeCovered[surfaceId] = transfer.nativeCovered
         mailboxNativeInFlight[surfaceId] = transfer.nativeInFlight
         mailboxNativeAttempts[surfaceId] = transfer.nativeAttempt
-        mailboxDoorbellOwners[surfaceId] = transfer.owner
+        if transfer.ledger != .init() || !transfer.buffer.queue.isEmpty
+            || transfer.recheckToken != nil || transfer.nativeInFlight != nil {
+            mailboxDoorbellOwners[surfaceId] = transfer.owner
+        }
         transfer.owner.workspace = self
         if !transfer.buffer.queue.isEmpty, transfer.recheckToken == nil, !transfer.ledger.inFlight {
             scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: MailboxDoorbellSequence.shortRecheck)
@@ -7450,8 +7465,11 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func forgetMailboxDoorbell(surfaceId: UUID) {
-        logMailboxDoorbellEntriesOnce(mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
+        let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
+        let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: queued.filter { !covered.contains($0.id) },
                                      outcome: .doorbellSkipped, reason: "panel_closed")
+        for entry in queued { mailboxDoorbellLastReason.removeValue(forKey: entry.id) }
         mailboxDoorbellOwners.removeValue(forKey: surfaceId)?.workspace = nil
         mailboxDoorbellDeferTokens.removeValue(forKey: surfaceId)
         if mailboxStdinState.doorbell.ledger(for: surfaceId).inFlight {
@@ -7546,7 +7564,13 @@ final class Workspace: Identifiable, ObservableObject {
     /// A gate held only by an unsupported working edge looks again when that
     /// edge decays, so queued mail does not wait for a turn that never ends.
     private func scheduleMailboxDoorbellDecayRecheck(surfaceId: UUID, deadline: Date) {
-        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: deadline.timeIntervalSinceNow)
+        let delay = max(0.05, deadline.timeIntervalSinceNow)
+        let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        if let entry = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).first(where: { !covered.contains($0.id) }) {
+            mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
+                reason: "working_decay", nextMs: Int((delay * 1000).rounded()))
+        }
+        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
     }
 
     /// The kernel's answer to "is this tab's interactive agent the process

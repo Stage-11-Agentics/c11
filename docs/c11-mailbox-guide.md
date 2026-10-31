@@ -548,7 +548,7 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 
 Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows the path: rung, held, capped, skipped, or failed with the FeedAnswer code.
 
-**Bounds.** Each panel buffers up to 64 envelopes (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, or until its working state goes unknown (2 minutes with no journal turn behind it; c11 looks again at that moment), and drops from the queue when the panel returns to a shell prompt. Evicted and expired envelopes remain in the filesystem inbox; `recv --drain` is their floor.
+**Bounds.** Each panel buffers up to 64 envelopes (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, or until its working state goes unknown (2 minutes with no journal turn behind it; c11 looks again at that moment), and drops from the queue when the panel returns to a shell prompt. Evicted envelopes and mail dropped at a shell prompt remain in the filesystem inbox; `recv --drain` is their floor.
 
 **Why you still pull.** The inbox copy is written before the ring. The ring is only the invitation. `c11 mailbox recv` (or the hook drain) is how the body arrives.
 
@@ -745,14 +745,14 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecyc
 | stdin outcome | Meaning |
 |---------------|---------|
 | `buffered`    | recipient not ready (agent mid-turn, or no interactive agent reading the terminal); envelope queued |
-| `expired`     | dropped from the queue because no agent was left to read it (shell prompt, agent exited); inbox floor holds it |
+| `expired`     | legacy queue outcome; current shell-prompt drops log `doorbell_skipped` with `reason` `shell_prompt`, and the inbox retains the mail |
 | `evicted`     | a queued envelope dropped because the per-panel cap was exceeded (inbox floor holds it) |
-| `skipped`     | the ring found the envelope already claimed by a drain; nothing typed |
+| `skipped`     | the ring found an uncovered envelope already claimed by a drain (`reason` `already_read`); nothing typed. A covered envelope needs no additional read log |
 | `closed`      | the panel was gone or was not a terminal when the handler ran |
 | `doorbell`    | the invitation was `started` or `submitted`, or Return was pressed on a line already in the composer (`stranded_return`), or a native confirmation arrived after its two-second deadline (`native_late_accept`; those envelopes count as covered). `route` is the route used. `bytes` is the invitation, not the envelope |
-| `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `opted_out`, `not_stdin`, `draft`, `dialog`, `unknown_prompt`, `unavailable`, `gate_closed`, `not_agent`, `agent_not_foreground`, `not_terminal`, `target_gone`, `panel_closed`, `already_read`, `input_transaction`, `input_unavailable`, `in_flight`, `native_attempt_unconfirmed`, or `already_covered` (a submitted ring already covered every unread envelope) |
+| `doorbell_skipped` | the ring did not happen. `reason` is `operator_active`, `once_per_idle`, `flagged`, `opted_out`, `not_stdin`, `draft`, `dialog`, `unknown_prompt`, `unavailable`, `gate_closed`, `not_agent`, `agent_not_foreground`, `not_terminal`, `target_gone`, `panel_closed`, `shell_prompt`, `input_transaction`, `input_unavailable`, `in_flight`, `native_attempt_unconfirmed`, or `already_covered` (a submitted ring already covered every unread envelope) |
 | `doorbell_capped` | this panel already used 20 submitted attempts in the last 10 minutes. `reason` is `rate_capped`. The mail stays queued and is checked again at the end of the window |
-| `doorbell_recheck` | a held composer was looked at again. `reason` is `draft`, `dialog`, `unknown_prompt`, or `stranded` (the composer still holds the doorbell line); `next_ms` is the delay to the next look. One line per look, on the oldest unread envelope |
+| `doorbell_recheck` | a held composer was looked at again. `reason` is `draft`, `dialog`, `unknown_prompt`, or `stranded` (the composer still holds the doorbell line); `next_ms` is the delay to the next look. One line per look, on the oldest unread envelope. `working_decay` records the remaining delay once when an unsupported working-state timer is armed |
 | `doorbell_failed` | the invitation was not submitted. `reason` is `unavailable`, `target_lost`, `turn_open` (the journal showed a turn open at the Return), `interruption_settling`, `pasted_not_submitted`, or `submit_unconfirmed`; or, for a native attempt, `native_timeout`, `native_rejected`, `native_disconnected`, `native_replaced`, `native_unavailable`, `native_write_failed`, `native_transcript_unavailable`, `native_inbox_unavailable`, `native_inbox_write_failed`, `native_unconfirmed` or `native_unsupported_invitation`. A native row is the attempt itself (`route` is the native route); the typed fallback is a later row with `route: typed`, `native_route` and `native_failure`. The mail stays queued. A line left in the composer is not retyped; a later idle look presses Return on it |
 
 ```bash

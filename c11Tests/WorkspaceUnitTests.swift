@@ -3765,6 +3765,15 @@ final class WorkspacePanelIconColorTests: XCTestCase {
 
 @MainActor
 final class WorkspaceMailboxMoveTests: XCTestCase {
+    func testMovingPlainPanelDoesNotCreateDoorbellLedger() throws {
+        let source = Workspace(), destination = Workspace()
+        let panel = try XCTUnwrap(source.focusedPanelId)
+        let pane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        let detached = try XCTUnwrap(source.detachPanel(panelId: panel))
+        XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: pane, focus: false), panel)
+        XCTAssertFalse(destination.debugMailboxStdinState.doorbell.surfaceIds.contains(panel))
+    }
+
     func testMoveAndRollbackKeepQueueOwnershipCoverageCapAndInFlightReceiver() throws {
         let source = Workspace(), destination = Workspace()
         let panel = try XCTUnwrap(source.focusedPanelId)

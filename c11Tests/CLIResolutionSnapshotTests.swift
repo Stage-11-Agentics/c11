@@ -1495,10 +1495,14 @@ final class CLIResolutionSnapshotTests: XCTestCase {
             process.environment = environment
             process.standardOutput = stdout
             process.standardError = stderr
+            // Wait for the process notification directly: waitUntilExit polls a
+            // run loop and adds a delay to every short-lived CLI invocation.
+            let exited = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in exited.signal() }
             try process.run()
             let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
             let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
+            exited.wait()
             return (
                 process.terminationStatus,
                 String(decoding: stdoutData, as: UTF8.self),

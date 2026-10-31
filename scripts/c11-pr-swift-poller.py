@@ -29,6 +29,7 @@ import base64
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -50,6 +51,7 @@ BONSPLIT_URL = "https://github.com/Stage-11-Agentics/bonsplit.git"
 PINNED_URLS = frozenset((PARENT_URL, GHOSTTY_URL, BONSPLIT_URL))
 GITLINKS = (("ghostty", GHOSTTY_URL), ("vendor/bonsplit", BONSPLIT_URL))
 STATUS_CONTEXT = "c11/pr-swift"
+REUSE_CONTEXTS = (STATUS_CONTEXT, "CI main (macOS)")
 SLUG = "fu-371r"
 LABEL = "com.stage11.c11-pr-swift-poller"
 XCODEBUILD = "/Applications/Xcode-26.3.app/Contents/Developer/usr/bin/xcodebuild"
@@ -70,6 +72,9 @@ BUDGET_S = 120
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
+REUSE_MAIN_LIMIT = 100
+VERSION_PROJECT = "GhosttyTabs.xcodeproj/project.pbxproj"
+VERSION_VALUE = re.compile(rb"^([ \t]*(?:MARKETING_VERSION|CURRENT_PROJECT_VERSION) = )([0-9]+(?:\.[0-9]+)*)(;[ \t]*\r?)$", re.MULTILINE)
 POST_TRIES = 3
 PACKAGE_RESOLVED = (
     "GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
@@ -299,14 +304,16 @@ def run_git(args, cwd):
     """C11_POLLER_GIT replaces git for fixtures; the argv guard runs either way."""
     assert_git_args(args)
     override = os.environ.get("C11_POLLER_GIT")
+    # Tree identity and version-only reuse must preserve every byte, including CRLF.
+    text_output = args[0] not in ("cat-file", "ls-tree")
     if override:
         env = git_base_env()
         spec = os.environ.get("C11_POLLER_GIT_SPEC")
         if spec:
             env["C11_POLLER_GIT_SPEC"] = spec
-        return subprocess.run([override, *args], cwd=str(cwd), env=env, capture_output=True, text=True)
+        return subprocess.run([override, *args], cwd=str(cwd), env=env, capture_output=True, text=text_output)
     cmd = ["git", "-c", "protocol.file.allow=never", "-c", "core.hooksPath=/dev/null", *args]
-    return subprocess.run(cmd, cwd=cwd, env=git_base_env(), capture_output=True, text=True)
+    return subprocess.run(cmd, cwd=cwd, env=git_base_env(), capture_output=True, text=text_output)
 
 
 def ls_remote_matches(stdout, sha, ref):
@@ -382,6 +389,90 @@ def fetch_captured(git, worktree, captured):
         if sub_head.stdout.strip() != shown.stdout.strip():
             return False, "fetch_failed"
     return True, "fetched"
+
+
+def release_head(item):
+    ref = item.get("ref")
+    return isinstance(ref, str) and ref.startswith("release/")
+
+
+def successful_reuse_context(statuses):
+    """Combined status has the latest entry per context; any non-green blocks reuse."""
+    if type(statuses) is not list:
+        return None
+    states = {}
+    for item in statuses:
+        if type(item) is not dict or type(item.get("context")) is not str or type(item.get("state")) is not str:
+            return None
+        if item.get("context") in REUSE_CONTEXTS:
+            context = item["context"]
+            if context in states:  # An ambiguous response is not a proof.
+                return None
+            states[context] = item.get("state")
+    if not states or any(state != "success" for state in states.values()):
+        return None
+    return next(context for context in REUSE_CONTEXTS if context in states)
+
+
+def complete_commit_statuses(response, sha):
+    """A partial combined-status page could hide a conflicting required context."""
+    body = response.get("body")
+    if response.get("status") != 200 or type(body) is not dict or body.get("sha") != sha:
+        return None
+    statuses, total = body.get("statuses"), body.get("total_count")
+    if type(statuses) is not list or type(total) is not int or total != len(statuses):
+        return None
+    if link_next(header_get(response.get("headers"), "Link")) is not None:
+        return None
+    return statuses
+
+
+def release_tree_matches(git, worktree, main_sha, release_sha):
+    """Compare immutable trees; only ordinary docs and numeric version values vary."""
+    if any(SHA_RE.fullmatch(sha or "") is None for sha in (main_sha, release_sha)):
+        return False
+    trees = []
+    for sha in (main_sha, release_sha):
+        result = git(["ls-tree", "-rz", "--full-tree", sha], worktree)
+        if result.returncode != 0 or type(result.stdout) is not bytes or not result.stdout:
+            return False
+        entries = {}
+        try:
+            for record in result.stdout.rstrip(b"\0").split(b"\0"):
+                metadata, path = record.split(b"\t", 1)
+                mode, kind, oid = metadata.decode("ascii").split(" ")
+                if not path or path in entries or SHA_RE.fullmatch(oid) is None:
+                    return False
+                entries[path] = (mode, kind, oid)
+        except ValueError:
+            return False
+        trees.append(entries)
+    for path in trees[0].keys() | trees[1].keys():
+        before, after = (tree.get(path) for tree in trees)
+        if before == after:
+            continue
+        # Documentation may be added or removed, but never executable/symlink/gitlink.
+        if path == b"CHANGELOG.md" or (path.endswith(b".md") and path.startswith((b"docs/", b"skills/"))):
+            if all(entry is None or entry[:2] == ("100644", "blob") for entry in (before, after)):
+                continue
+            return False
+        if path != VERSION_PROJECT.encode("ascii") or not before or not after or before[:2] != ("100644", "blob") or after[:2] != before[:2]:
+            return False
+        contents = []
+        for entry in (before, after):
+            blob = git(["cat-file", "blob", entry[2]], worktree)
+            if blob.returncode != 0 or type(blob.stdout) is not bytes or not blob.stdout:
+                return False
+            # Typed segments cannot collide with a literal sentinel in untrusted input.
+            segments, offset = [], 0
+            for match in VERSION_VALUE.finditer(blob.stdout):
+                segments.extend((blob.stdout[offset:match.start()], (match[1], match[3])))
+                offset = match.end()
+            segments.append(blob.stdout[offset:])
+            contents.append(segments)
+        if contents[0] != contents[1]:
+            return False
+    return True
 
 
 def clean_worktree(git, worktree):
@@ -506,9 +597,13 @@ def build_env():
 
 def xcresult_summary(result_path):
     """Read XCTest's result bundle summary; parallel xcodebuild logs omit totals."""
+    return xcresult_report(result_path, ["test-results", "summary"])
+
+
+def xcresult_report(result_path, command):
     tool = os.environ.get("C11_POLLER_XCRUN") or "xcrun"
     result = subprocess.run(
-        [tool, "xcresulttool", "get", "test-results", "summary",
+        [tool, "xcresulttool", "get", *command,
          "--path", str(result_path), "--compact"],
         capture_output=True, text=True, timeout=30,
     )
@@ -518,6 +613,39 @@ def xcresult_summary(result_path):
     if type(report) is not dict:
         raise ValueError("xcresult summary is not an object")
     return report
+
+
+def xcresult_interval(report):
+    """Log-section wall interval; summary dates include compile and cannot split phases."""
+    if type(report) is not dict:
+        return None
+    start, duration = report.get("startTime"), report.get("duration")
+    if any(type(value) not in (int, float) or not math.isfinite(value) or value < 0 for value in (start, duration)):
+        return None
+    end = start + duration
+    return (start, end) if math.isfinite(end) else None
+
+
+def xcresult_phase_timings(build_log, action_log):
+    build = xcresult_interval(build_log) if isinstance(build_log, dict) and build_log.get("domainType") == "Xcode.IDEActivityLogDomainType.BuildLog" else None
+    suites = []
+
+    def visit(section):
+        if type(section) is not dict:
+            return
+        if (section.get("domainType") == "com.apple.dt.IDE.UnitTestLogSection"
+                and str(section.get("title", "")).startswith("Run test suite ")):
+            suites.append(xcresult_interval(section))
+            return  # Nested suites duplicate parent duration; parallel suites overlap.
+        for child in section.get("subsections", []) if isinstance(section.get("subsections"), list) else []:
+            visit(child)
+
+    visit(action_log)
+    tests = None
+    if suites and all(interval is not None for interval in suites):
+        tests = round(max(interval[1] for interval in suites) - min(interval[0] for interval in suites), 3)
+    return {"compile_seconds": round(build[1] - build[0], 3) if build else None,
+            "test_seconds": tests}
 
 
 def xcresult_passes(report):
@@ -1124,6 +1252,14 @@ class AppClient:
         }
         return self._authed("POST", url, self.narrowed_token, body=payload, remint=self._remint_narrowed)
 
+    def main_statuses(self, sha):
+        self._require_scope()
+        if SHA_RE.fullmatch(sha or "") is None:
+            raise ScopeStop("sha")
+        url = "%s/repos/%s/commits/%s/status?per_page=100" % (API, REPO_NAME, sha)
+        response = self._authed("GET", url, self.narrowed_token, remint=self._remint_narrowed)
+        return complete_commit_statuses(response, sha)
+
     def head_status(self, sha):
         """The latest c11/pr-swift state on this commit, or None."""
         self._require_scope()
@@ -1279,6 +1415,14 @@ class GhClient:
         self._require_scope()
         return self._call("GET", "%s/repos/%s/pulls/%s" % (API, REPO_NAME, number))
 
+    def main_statuses(self, sha):
+        self._require_scope()
+        if SHA_RE.fullmatch(sha or "") is None:
+            raise ScopeStop("sha")
+        response = self._call("GET", "%s/repos/%s/commits/%s/status?per_page=100" % (API, REPO_NAME, sha))
+        raise_if_unavailable(response)
+        return complete_commit_statuses(response, sha)
+
     def head_status(self, sha):
         self._require_scope()
         if SHA_RE.fullmatch(sha or "") is None:
@@ -1360,26 +1504,18 @@ class Supervisor:
         self.acquired_at = None
         self.build_end = None
         self.test_summary = None
+        self.phase_timings = []
         self.delivered = False
         self.stopped = None
         self.credential_skipped = False
         self.awaiting_kit = {}
         self.status_owed = {}
-        self.cold_retries = set()
         self.derived = self.root / "cache" / "DerivedData"
 
     def state(self):
         path = self.root / "state"
         path.mkdir(parents=True, exist_ok=True)
         return path
-
-    def _remember_cold_retry(self, item):
-        self.cold_retries.add((item["pr"], item["sha"]))
-
-    def _clear_cold_retry(self, number, sha=None):
-        self.cold_retries.difference_update({
-            key for key in self.cold_retries if key[0] == number and (sha is None or key[1] == sha)
-        })
 
     def log(self, **fields):
         forbidden = ("authorization", "token", "pem", "private")
@@ -1583,9 +1719,6 @@ class Supervisor:
         """
         for captured in admitted:
             number = captured["pr"]
-            for recorded_number, recorded_sha in list(self.cold_retries):
-                if recorded_number == number and recorded_sha != captured["sha"]:
-                    self._clear_cold_retry(number, sha=recorded_sha)
             index = next((i for i, item in enumerate(self.queue) if item["pr"] == number), None)
             done = self.reported.get(number) == captured["sha"] or (number, captured["sha"]) in self.status_owed
             if index is not None and (self.queue[index]["sha"] != captured["sha"] or self.queue[index]["ref"] != captured["ref"]):
@@ -1606,7 +1739,6 @@ class Supervisor:
             if self._post(sha, owed["state"], owed["description"], pr=number, deps=owed.get("deps")):
                 del self.status_owed[key]
                 self.reported[number] = sha
-                self._clear_cold_retry(number, sha=sha)
 
     def _resolve_absent(self, body):
         present = set()
@@ -1633,40 +1765,13 @@ class Supervisor:
                 self.log(decision="revoked", pr=item["pr"], reason=reason)
                 continue
             if fresh["sha"] != item["sha"] or fresh["ref"] != item["ref"]:
-                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.log(decision="superseded", pr=item["pr"])
                 kept.append(fresh)
                 continue
             kept.append(item)
         self.queue = kept
 
-        admitted_by_number = {item["pr"]: item for item in self.queue}
-        body_by_number = {obj["number"]: obj for obj in body
-                          if type(obj) is dict and type(obj.get("number")) is int}
-        for number, sha in list(self.cold_retries):
-            current = admitted_by_number.get(number)
-            if current is not None:
-                if current["sha"] != sha:
-                    self._clear_cold_retry(number, sha=sha)
-                continue
-            if number in body_by_number and (number, sha) in self.status_owed:
-                continue
-            if number in body_by_number:
-                self._clear_cold_retry(number, sha=sha)
-                continue
-            try:
-                looked = self.world.pull(number)
-            except CredentialUnavailable:
-                continue
-            if looked is None or (type(looked) is dict and looked.get("status") == 404):
-                self._clear_cold_retry(number, sha=sha)
-                continue
-            payload = looked.get("body", looked) if type(looked) is dict and "body" in looked else looked
-            ok, _reason, fresh = admit(payload)
-            if not ok or fresh["sha"] != sha:
-                self._clear_cold_retry(number, sha=sha)
-
-    def _next_item(self):
+    def _next_item(self, guests=False):
         """The first queued head that still revalidates and has no terminal status.
 
         A head whose c11/pr-swift status is already success or failure is
@@ -1675,6 +1780,8 @@ class Supervisor:
         call, until that entry exists.
         """
         for item in list(self.queue):
+            if guests and not release_head(item):
+                continue
             key = (item["pr"], item["sha"])
             if key in self.awaiting_kit:
                 if not self.world.kit_available(self.awaiting_kit[key]):
@@ -1699,7 +1806,6 @@ class Supervisor:
                 return self._credential_skip(item)
             if prior in TERMINAL_STATES:
                 self.reported[item["pr"]] = item["sha"]
-                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.log(decision="already-reported", pr=item["pr"], sha=item["sha"])
                 self.queue.remove(item)
                 continue
@@ -1728,16 +1834,20 @@ class Supervisor:
             return "stuck"
         if not self.queue:
             return "idle"
-        if self.world.guests():
+        guests = bool(self.world.guests())
+        if guests and not any(release_head(item) for item in self.queue):
             self.log(decision="no-start", reason="guest")
             return "no-start"
         if self.world.slot_held(1):
             self.log(decision="no-start", reason="slot")
             return "no-start"
         self.credential_skipped = False
-        item = self._next_item()
+        item = self._next_item(guests=guests)
         if item is None:
             return CREDENTIAL_UNAVAILABLE if self.credential_skipped else "idle"
+        reused = self._reuse_release(item)
+        if reused is not None:
+            return reused
         if not self._fetch(item):
             self._rotate(item)
             return "fetch_failed"
@@ -1745,10 +1855,53 @@ class Supervisor:
             self._rotate(item)
             return "residue"
         item["deps"] = self._dependency_key(item)
-        if self.world.guests() or self.world.slot_held(1):
+        if (not release_head(item) and self.world.guests()) or self.world.slot_held(1):
             self.log(decision="no-start", reason="raced")
             return "no-start"
         return self._spawn(item)
+
+    def _reuse_release(self, item):
+        if not release_head(item):
+            return None
+        git, worktree = self.world.git, self.world.worktree
+        try:
+            # No checkout, submodule work, or untrusted branch-name interpolation.
+            for ref in ("refs/heads/main", item["sha"]):
+                result = git(["fetch", "--no-tags", "--no-recurse-submodules", PARENT_URL, ref], worktree)
+                if result.returncode != 0:
+                    return None
+                if ref == "refs/heads/main":
+                    main = git(["rev-parse", "FETCH_HEAD^{commit}"], worktree)
+                    main_sha = main.stdout.strip()
+                    if main.returncode != 0 or SHA_RE.fullmatch(main_sha) is None:
+                        return None
+            history = git(["rev-list", "--first-parent", "--max-count=%s" % REUSE_MAIN_LIMIT, main_sha], worktree)
+            candidates = history.stdout.splitlines()
+            if history.returncode != 0 or not candidates or any(SHA_RE.fullmatch(sha) is None for sha in candidates):
+                return None
+            for sha in candidates:
+                if not release_tree_matches(git, worktree, sha, item["sha"]):
+                    continue
+                source_context = successful_reuse_context(self.world.main_statuses(sha))
+                if source_context is None:
+                    continue
+                ok, reason, _detail = revalidate(item, self.world.pull, self.world.ls_remote)
+                if not ok:
+                    self.log(decision="reuse-rejected", pr=item["pr"], sha=item["sha"], reason=reason)
+                    return "no-start"
+                self.delivered = self._post(item["sha"], "success", "reused %s %s" % (source_context, sha),
+                                            pr=item["pr"], reused_main_sha=sha, reused_context=source_context,
+                                            build_seconds=0, compile_seconds=0, test_seconds=0)
+                if self.delivered:
+                    self.reported[item["pr"]] = item["sha"]
+                    self._drop(item)
+                return "reused" if self.delivered else "reuse-undelivered"
+        except CredentialUnavailable:
+            self._credential_skip(item)
+            return CREDENTIAL_UNAVAILABLE
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            self.log(decision="reuse-unavailable", pr=item["pr"], sha=item["sha"], reason=str(error))
+        return None
 
     def _fetch(self, item):
         def git(args, cwd):
@@ -1856,13 +2009,11 @@ class Supervisor:
         self.stopped = None
         self.delivered = False
         self.test_summary = None
+        self.phase_timings = []
         self._drop(item)
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
-        cold_cache = not self._dependency_is_warm(item["deps"])
-        cold_retry_used = (item["pr"], item["sha"]) in self.cold_retries
         self.derived = self._derived_data(item["deps"])
-        cold_retry_queued = False
         for invocation in (1, 2):
             code = self._spawn_one(item, invocation)
             self.build_end = self.world.time()
@@ -1873,6 +2024,14 @@ class Supervisor:
                 return code
             if self.stopped:
                 return "stopped"
+            timings = {"compile_seconds": None, "test_seconds": None}
+            try:
+                timings = self.world.phase_timings()
+            except Exception as error:
+                # Timing is optional telemetry. Even a malformed log/schema must not
+                # prevent the independent build and XCTest verdict below.
+                self.log(decision="xcresult-timing-unavailable", pr=item["pr"], sha=item["sha"],
+                         invocation=invocation, reason=str(error))
             if self.world.last_exit == 0:
                 try:
                     self.test_summary = self.world.test_summary()
@@ -1882,26 +2041,15 @@ class Supervisor:
                              invocation=invocation, reason=str(error))
                 if xcresult_passes(self.test_summary):
                     self._mark_dependency_warm(item["deps"])
-                    if (invocation == 1 and cold_cache and not cold_retry_used
-                            and self.build_seconds() > BUDGET_S):
-                        self._remember_cold_retry(item)
-                        cold_retry_queued = True
                 elif self.test_summary is not None:
                     self.log(decision="xcresult-tests-failed", pr=item["pr"], sha=item["sha"],
                              invocation=invocation)
+                self.phase_timings.append(timings)
                 break
             self.test_summary = None
+            self.phase_timings.append(timings)
             if STALE_MODULE in (self.world.build_log or ""):
                 return self._cache_fault(item, invocation)
-        if cold_retry_queued:
-            seconds = self.build_seconds()
-            self.log(decision="cold-cache-retry", pr=item["pr"], sha=item["sha"],
-                     deps=item["deps"], build_seconds=round(seconds, 3))
-            self.delivered = self._post(
-                item["sha"], "pending", "cold cache exceeded budget; warm retry queued",
-                pr=item["pr"], build_seconds=round(seconds, 3), deps=item["deps"],
-            )
-            return "started"
         self._finish(item, self.world.last_exit)
         return "started"
 
@@ -1914,7 +2062,6 @@ class Supervisor:
         self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
         self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
         if self.delivered:
-            self._clear_cold_retry(item["pr"], sha=item["sha"])
             self.reported[item["pr"]] = item["sha"]
         else:
             self.status_owed[(item["pr"], item["sha"])] = {
@@ -1944,7 +2091,6 @@ class Supervisor:
             self.delivered = self._post(item["sha"], "error", description, pr=item["pr"],
                                         invocation=invocation, reason=str(error))
             if self.delivered:
-                self._clear_cold_retry(item["pr"], sha=item["sha"])
                 self.reported[item["pr"]] = item["sha"]
             else:
                 self.status_owed[(item["pr"], item["sha"])] = {
@@ -1990,10 +2136,13 @@ class Supervisor:
         state, description = classify_result(seconds, self.test_summary)
         if exit_code != 0:
             state, description = "failure", "failed %ss" % int(seconds)
+        timings = {}
+        for key in ("compile_seconds", "test_seconds"):
+            values = [phase[key] for phase in self.phase_timings]
+            timings[key] = round(sum(values), 3) if values and all(value is not None for value in values) else None
         self.delivered = self._post(item["sha"], state, description, pr=item["pr"],
-                                    build_seconds=round(seconds, 3), deps=item.get("deps"))
+                                    build_seconds=round(seconds, 3), deps=item.get("deps"), **timings)
         if self.delivered:
-            self._clear_cold_retry(item["pr"], sha=item["sha"])
             self.reported[item["pr"]] = item["sha"]
 
     def _post(self, sha, state, description, pr=None, **fields):
@@ -2066,7 +2215,7 @@ class Supervisor:
                 self.log(decision=CREDENTIAL_UNAVAILABLE, pr=record["pr"], sha=record["sha"], during="watch")
             elif not ok:
                 return reason
-        return yield_reason(self.world.guests())
+        return None if release_head(record) else yield_reason(self.world.guests())
 
     def watch(self, record):
         """Every 5s while a build runs. Revalidate, then kill until the group is gone."""
@@ -2332,6 +2481,9 @@ class ProductionWorld:
             return None
         return response.get("body")
 
+    def main_statuses(self, sha):
+        return self.client.main_statuses(sha)
+
     def head_status(self, sha):
         return self.client.head_status(sha)
 
@@ -2388,6 +2540,16 @@ class ProductionWorld:
         return xcodebuild_argv(worktree, derived, result)
 
     def test_summary(self):
+        return xcresult_summary(self._result_path())
+
+    def phase_timings(self):
+        result = self._result_path()
+        return xcresult_phase_timings(
+            xcresult_report(result, ["log", "--type", "build"]),
+            xcresult_report(result, ["log", "--type", "action"]),
+        )
+
+    def _result_path(self):
         try:
             current = json.loads((self.root / "state" / "current.json").read_text())
         except (OSError, ValueError) as error:
@@ -2395,7 +2557,7 @@ class ProductionWorld:
         result_path = current.get("result") if type(current) is dict else None
         if not isinstance(result_path, str) or not result_path:
             raise ValueError("current test result path is invalid")
-        return xcresult_summary(result_path)
+        return result_path
 
     @property
     def build_log(self):

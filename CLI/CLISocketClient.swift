@@ -83,7 +83,7 @@ final class SocketClient {
 
     // responseTimeout: nil = no SO_RCVTIMEO / SO_SNDTIMEO (unbounded); >0 = the
     // deadline in seconds for writing the request (a peer that stops reading
-    // cannot hold the CLI) and for the initial read of the response.
+    // cannot hold the CLI) and V1's initial read; V2 bounds the write through the response LF.
     /// A wall-clock bound every request in this process must finish by, on top
     /// of its own deadline. A hook drain sets it to its claim cutoff, so a c11
     /// that stops reading or answering can never hold the hook past the point
@@ -91,6 +91,19 @@ final class SocketClient {
     static var processDeadline: Date?
 
     func send(command: String, responseTimeout: TimeInterval?) throws -> String {
+        try send(command: command, responseTimeout: responseTimeout, framing: .legacyMultiline)
+    }
+
+    private enum ResponseFraming {
+        case legacyMultiline
+        case jsonLine
+    }
+
+    private func send(
+        command: String,
+        responseTimeout: TimeInterval?,
+        framing: ResponseFraming
+    ) throws -> String {
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
         var responseTimeout = responseTimeout
         if let processDeadline = Self.processDeadline {
@@ -98,6 +111,7 @@ final class SocketClient {
             guard remaining > 0.01 else { throw CLIError(message: SocketClient.commandTimedOutMessage) }
             responseTimeout = min(responseTimeout ?? remaining, remaining)
         }
+        let receiveDeadline = responseTimeout.map { ProcessInfo.processInfo.systemUptime + $0 }
         let payload = Array((command + "\n").utf8)
         try configureTimeout(SO_SNDTIMEO, responseTimeout)
         var offset = 0
@@ -113,6 +127,62 @@ final class SocketClient {
             offset += sent
         }
 
+        let data: Data
+        switch framing {
+        case .legacyMultiline:
+            data = try readLegacyResponse(responseTimeout: responseTimeout)
+        case .jsonLine:
+            data = try readJSONLine(deadline: receiveDeadline)
+        }
+        guard var response = String(data: data, encoding: .utf8) else {
+            throw CLIError(message: "Invalid UTF-8 response")
+        }
+        if response.hasSuffix("\n") {
+            response.removeLast()
+        }
+        return response
+    }
+
+    /// Consume exactly one frame, leaving any following frame in the socket for
+    /// the next request, streaming reader, or connected-descriptor handoff.
+    private func readJSONLine(deadline: TimeInterval?) throws -> Data {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 8192)
+        while true {
+            let remaining = deadline.map { $0 - ProcessInfo.processInfo.systemUptime }
+            if let remaining, remaining <= 0 {
+                throw CLIError(message: Self.commandTimedOutMessage)
+            }
+            // A sub-microsecond remainder must not round to the zero timeval
+            // that disables SO_RCVTIMEO.
+            try configureReceiveTimeout(remaining.map { max(0.000001, $0) })
+            let available = Darwin.recv(socketFD, &buffer, buffer.count, MSG_PEEK)
+            if available < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw CLIError(message: Self.commandTimedOutMessage)
+                }
+                throw CLIError(message: "Socket read error")
+            }
+            // Older peers that close without LF still get their accumulated
+            // response decoded and validated by sendV2Raw.
+            if available == 0 { return data }
+            let length = buffer.prefix(available).firstIndex(of: 0x0A).map { $0 + 1 } ?? available
+            let count = Darwin.read(socketFD, &buffer, length)
+            if count < 0 {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw CLIError(message: Self.commandTimedOutMessage)
+                }
+                throw CLIError(message: "Socket read error")
+            }
+            if count == 0 { return data }
+            data.append(buffer, count: count)
+            if buffer[count - 1] == 0x0A { return data }
+        }
+    }
+
+    private func readLegacyResponse(responseTimeout: TimeInterval?) throws -> Data {
         var data = Data()
         var sawNewline = false
 
@@ -145,13 +215,7 @@ final class SocketClient {
             }
         }
 
-        guard var response = String(data: data, encoding: .utf8) else {
-            throw CLIError(message: "Invalid UTF-8 response")
-        }
-        if response.hasSuffix("\n") {
-            response.removeLast()
-        }
-        return response
+        return data
     }
 
     private func connectOnce() throws {
@@ -620,7 +684,7 @@ final class SocketClient {
 
         let raw: String
         do {
-            raw = try send(command: requestLine, responseTimeout: effectiveTimeout)
+            raw = try send(command: requestLine, responseTimeout: effectiveTimeout, framing: .jsonLine)
         } catch let err as CLIError where err.message == SocketClient.commandTimedOutMessage {
             traceStatus = "timeout"
             let elapsedMs = Int((Date().timeIntervalSince(startTime) * 1000).rounded())

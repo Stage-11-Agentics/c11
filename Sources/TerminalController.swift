@@ -2602,6 +2602,8 @@ class TerminalController {
         // Resize dimensions are validated on the worker; live window resolution
         // and the bounded AppKit frame operation share one main-actor hop.
         "window.resize",
+        // C11-530: one read-only AppKit copy; JSON encoding stays on the worker.
+        "debug.portal.snapshot",
         // C11-468: store read and transcript stats off-main; one main hop
         // decides and schedules the typing.
         "conversation.resume",

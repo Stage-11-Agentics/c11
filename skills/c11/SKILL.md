@@ -358,6 +358,16 @@ If `c11` on PATH isn't the active bundle's CLI, run `c11 doctor` (`--json` for m
 
 Working Lattice tickets inside c11? Also load the `lattice` skill for the integration patterns.
 
+### Capture a stray line or stale portal before touching it
+
+Leave the affected workspace, focus, dividers and window size alone. First capture the current portal state with an explicit window UUID/ref:
+
+```bash
+c11 rpc debug.portal.snapshot '{"window_id":"window:1"}' > /tmp/c11-portal-snapshot.json
+```
+
+Available in Release through `system.capabilities`. Attach this JSON and a screenshot of the undisturbed artifact to C11-527. It contains portal identities, frames, native dividers and overlay guard decisions, not terminal text or browser content. Geometry is **current calculated geometry**, not a record of the last paint. Check truncation flags and `main_copy_duration_ms`; incomplete geometry cannot rule out a source. Do not refresh, switch workspaces or run a session round-trip before capturing. See [snapshot contract](references/api.md#portal-snapshot).
+
 ### Read a terminal selection
 
 Use `c11 read-selection --panel panel:2 --json` to read what the operator highlighted, without changing the selection. No selection is a successful empty result; browser/markdown panels are unsupported. Discovery feature: `read_selection.terminal` version 1. Response cap: 1 MiB on a UTF-8 boundary; `truncated` reports clipping. Retry `busy` later; worker wait is limited to five seconds. Native capture/formatting/allocation and copy/free stay on main, so that wait limit is not a native time/allocation bound. See [API reference](references/api.md#terminal-selection).

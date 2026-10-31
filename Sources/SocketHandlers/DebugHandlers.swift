@@ -7,11 +7,11 @@ import WebKit
 
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
-// debug.terminals is available in all configs; every other debug.* method is
-// #if DEBUG only, exactly as before.
+// debug.terminals and the worker-routed debug.portal.snapshot are available
+// in Release. Other debug methods remain DEBUG-only.
 extension TerminalController {
     /// v2 dispatch slice for the `debug.*` domain. Preserves the original
-    /// #if DEBUG gating: only debug.terminals is compiled in release.
+    /// Portal snapshots use the socket-worker route; terminals are available here in Release.
     func v2DispatchDebug(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
         case "debug.terminals":
@@ -1176,4 +1176,78 @@ extension TerminalController {
     }
 
 #endif
+}
+
+extension TerminalController {
+    /// Low-frequency explicit snapshot: AppKit requires the single main hop.
+    /// Only copied JSON values escape it; timestamps and encoding run on the worker.
+    nonisolated func v2PortalSnapshotWorker(id: Any?, params: [String: Any]) -> String {
+        let result: V2CallResult
+        if Thread.isMainThread {
+            result = MainActor.assumeIsolated { v2PortalSnapshotOnMain(params: params) }
+        } else {
+            result = DispatchQueue.main.sync {
+                MainActor.assumeIsolated { self.v2PortalSnapshotOnMain(params: params) }
+            }
+        }
+        guard case .ok(var payload as [String: Any]) = result else { return v2Result(id: id, result) }
+        if let epoch = payload.removeValue(forKey: "capture_epoch_seconds") as? Double {
+            let formatter = ISO8601DateFormatter()
+            formatter.timeZone = .current
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            payload["local_time"] = formatter.string(from: Date(timeIntervalSince1970: epoch))
+            payload["time_zone"] = TimeZone.current.identifier
+        }
+        payload["serialization_on_main_thread"] = Thread.isMainThread
+        payload["build"] = [
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "number": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        ]
+        payload["process_id"] = ProcessInfo.processInfo.processIdentifier
+        return v2Ok(id: id, result: payload)
+    }
+
+    private func v2PortalSnapshotOnMain(params: [String: Any]) -> V2CallResult {
+        let start = DispatchTime.now().uptimeNanoseconds
+        if let rejection = v2RejectUnresolvedTargetRefs(params) { return rejection }
+        guard let windowId = v2UUID(params, "window_id") else {
+            return .err(code: "invalid_params", message: String(localized: "socket.error.window_id", defaultValue: "Missing or invalid window_id"), data: nil)
+        }
+        guard let window = AppDelegate.shared?.mainWindow(for: windowId),
+              let manager = AppDelegate.shared?.workspaceManagerFor(windowId: windowId) else {
+            return .err(code: "not_found", message: String(localized: "socket.error.window_not_found", defaultValue: "Window not found"), data: ["window_id": windowId.uuidString])
+        }
+        // No scriptableMainWindows/context reindex or portal(for:) calls here.
+        var identities: [ObjectIdentifier: [String: String]] = [:]
+        var panelsVisited = 0
+        var identityTruncated = false
+        outer: for workspace in manager.workspaces.prefix(PortalSnapshotGeometry.entryLimit) {
+            for (id, panel) in workspace.panels {
+                guard panelsVisited < PortalSnapshotGeometry.entryLimit else { identityTruncated = true; break outer }
+                panelsVisited += 1
+                let identity = ["workspace_id": workspace.id.uuidString, "panel_id": id.uuidString]
+                if let terminal = panel as? TerminalPanel { identities[ObjectIdentifier(terminal.surface.hostedView)] = identity }
+                if let browser = panel as? BrowserPanel { identities[ObjectIdentifier(browser.webView)] = identity }
+            }
+        }
+        identityTruncated = identityTruncated || manager.workspaces.count > PortalSnapshotGeometry.entryLimit
+        let geometry = PortalSnapshotGeometry(window: window)
+        var payload: [String: Any] = [
+            "schema_version": 1, "geometry_semantics": "current calculated geometry; not last painted",
+            "coordinate_units": "points", "window_id": windowId.uuidString,
+            "window_source_id": PortalSnapshotGeometry.token(window),
+            "window_frame": PortalSnapshotGeometry.rect(window.frame), "backing_scale": window.backingScaleFactor,
+            "selected_workspace_id": manager.selectedWorkspaceId?.uuidString as Any? ?? NSNull(),
+            "first_responder_source_id": window.firstResponder.map(PortalSnapshotGeometry.token) as Any? ?? NSNull(),
+            "capture_epoch_seconds": Date().timeIntervalSince1970, "monotonic_nanoseconds": start,
+            "limits": ["entries_per_portal": PortalSnapshotGeometry.entryLimit, "native_views": PortalSnapshotGeometry.viewLimit,
+                       "native_dividers": PortalSnapshotGeometry.dividerLimit, "panel_identities": PortalSnapshotGeometry.entryLimit],
+            "panel_identities_visited": panelsVisited, "panel_identities_truncated": identityTruncated,
+            "native_geometry": geometry.payload,
+            "terminal_portal": TerminalWindowPortalRegistry.diagnosticSnapshot(window: window, geometry: geometry, identities: identities),
+            "browser_portal": BrowserWindowPortalRegistry.diagnosticSnapshot(window: window, geometry: geometry, identities: identities)
+        ]
+        payload["main_copy_duration_ms"] = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+        return .ok(payload)
+    }
 }

@@ -4503,3 +4503,150 @@ final class GhosttySurfaceCallbackContextTests: XCTestCase {
     }
 }
 #endif
+
+@MainActor
+final class PortalDiagnosticSnapshotTests: XCTestCase {
+    private func window() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        return window
+    }
+
+    func testAbsentRegistriesAreNotInstalled() {
+        let window = window()
+        defer { window.close() }
+        let root = window.contentView!
+        let siblings = root.superview!.subviews.map(ObjectIdentifier.init)
+        let geometry = PortalSnapshotGeometry(window: window)
+        XCTAssertEqual(TerminalWindowPortalRegistry.diagnosticSnapshot(window: window, geometry: geometry, identities: [:])["present"] as? Bool, false)
+        XCTAssertEqual(BrowserWindowPortalRegistry.diagnosticSnapshot(window: window, geometry: geometry, identities: [:])["present"] as? Bool, false)
+        XCTAssertEqual(root.superview!.subviews.map(ObjectIdentifier.init), siblings)
+    }
+
+    func testTerminalOrphanAndUnmatchedViewRemainUntouched() throws {
+        let window = window()
+        defer { window.close() }
+        let portal = WindowTerminalPortal(window: window)
+        let anchor = NSView(frame: NSRect(x: 20, y: 20, width: 220, height: 160))
+        window.contentView!.addSubview(anchor)
+        let hosted = GhosttySurfaceScrollView(surfaceView: GhosttyNSView(frame: .zero))
+        portal.bind(hostedView: hosted, to: anchor, visibleInUI: true,
+                    workspaceFrameStyle: PortalWorkspaceFrameStyle(colorHex: "#FFD700", thicknessPt: 2, opacity: 1))
+        let host = try XCTUnwrap(hosted.superview)
+        let unmatched = GhosttySurfaceScrollView(surfaceView: GhosttyNSView(frame: .zero))
+        host.addSubview(unmatched)
+        // Preserve the fault as found: no layout/run-loop/cleanup between removal and capture.
+        anchor.removeFromSuperview()
+        let frame = hosted.frame
+        let hidden = hosted.isHidden
+        let siblings = host.subviews.map(ObjectIdentifier.init)
+        let responder = window.firstResponder
+        let snapshot = portal.diagnosticSnapshot(PortalSnapshotGeometry(window: window), identities: [:])
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(snapshot))
+        let entries = try XCTUnwrap(snapshot["entries"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0]["orphan"] as? Bool, true)
+        XCTAssertTrue((entries[0]["chrome_guard_rejections"] as? [String] ?? []).contains("anchor_not_in_window"))
+        XCTAssertEqual((snapshot["unmatched_hosted_views"] as? [Any])?.count, 1)
+        XCTAssertEqual(hosted.frame, frame)
+        XCTAssertEqual(hosted.isHidden, hidden)
+        XCTAssertEqual(host.subviews.map(ObjectIdentifier.init), siblings)
+        XCTAssertTrue(window.firstResponder === responder)
+        XCTAssertNil(anchor.window)
+    }
+
+    func testKeepLiveBrowserSnapshotDoesNotUnparkOrPrune() throws {
+        let window = window()
+        defer { window.close() }
+        let portal = WindowBrowserPortal(window: window)
+        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        webView.isKeepLive = true
+        portal.hostKeepLive(webView: webView)
+        let slot = try XCTUnwrap(webView.superview)
+        let frame = slot.frame
+        let hidden = slot.isHidden
+        let snapshot = portal.diagnosticSnapshot(PortalSnapshotGeometry(window: window), identities: [:])
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(snapshot))
+        let entries = try XCTUnwrap(snapshot["entries"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0]["keep_live_parked"] as? Bool, true)
+        XCTAssertEqual(entries[0]["orphan"] as? Bool, true)
+        XCTAssertTrue(webView.superview === slot)
+        XCTAssertEqual(slot.frame, frame)
+        XCTAssertEqual(slot.isHidden, hidden)
+    }
+
+    func testNativeDividerAndOverlayGuardDecisions() throws {
+        let window = window()
+        defer { window.close() }
+        let root = window.contentView!
+        let split = NSSplitView(frame: root.bounds)
+        split.isVertical = true
+        split.addArrangedSubview(NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 400)))
+        split.addArrangedSubview(NSView(frame: NSRect(x: 321, y: 0, width: 319, height: 400)))
+        root.addSubview(split)
+        let overlay = PortalSplitDividerOverlayView(frame: root.bounds)
+        root.addSubview(overlay)
+        let geometry = PortalSnapshotGeometry(window: window)
+        let divider = try XCTUnwrap(geometry.dividers.first)
+        let covering = overlay.convert(divider.rect, from: nil).insetBy(dx: -20, dy: -20)
+        func candidates(_ geometry: PortalSnapshotGeometry, _ frames: [NSRect]) throws -> [[String: Any]] {
+            try XCTUnwrap(overlay.diagnosticSnapshot(geometry, hostedFrames: frames, entriesComplete: true)["divider_candidates"] as? [[String: Any]])
+        }
+        XCTAssertEqual(try candidates(geometry, [covering]).first?["admitted"] as? Bool, true)
+        XCTAssertEqual(try candidates(geometry, []).first?["admitted"] as? Bool, false)
+        split.isHidden = true
+        let hidden = PortalSnapshotGeometry(window: window)
+        XCTAssertEqual(hidden.dividers.count, 1, "Hidden native geometry must remain observable")
+        XCTAssertEqual(try candidates(hidden, [covering]).first?["admitted"] as? Bool, false)
+    }
+
+    func testTraversalLimitAndNonfiniteGeometryEncodeAsJSON() {
+        let window = window()
+        defer { window.close() }
+        for _ in 0..<PortalSnapshotGeometry.viewLimit { window.contentView!.addSubview(NSView(frame: .zero)) }
+        let geometry = PortalSnapshotGeometry(window: window)
+        XCTAssertEqual(geometry.visitedViews, PortalSnapshotGeometry.viewLimit)
+        XCTAssertTrue(geometry.truncated)
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(geometry.payload))
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(PortalSnapshotGeometry.rect(.null)))
+    }
+
+    func testSocketWorkerEncodesVersionedEnvelopeOffMain() async throws {
+        let delegate = try XCTUnwrap(AppDelegate.shared)
+        let windowId = delegate.createMainWindow()
+        let window = try XCTUnwrap(delegate.mainWindow(for: windowId))
+        defer { window.close() }
+        let command = "{\"id\":1,\"method\":\"debug.portal.snapshot\",\"params\":{\"window_id\":\"\(windowId.uuidString)\"}}"
+        let controller = TerminalController.shared
+        let encoded = await Task.detached {
+            controller.socketWorkerV2Response(controller.parseV2SocketRequest(command)!)
+        }.value
+        let reply = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any])
+        XCTAssertEqual(reply["ok"] as? Bool, true)
+        let payload = try XCTUnwrap(reply["result"] as? [String: Any])
+        XCTAssertEqual(payload["schema_version"] as? Int, 1)
+        XCTAssertEqual(payload["window_id"] as? String, windowId.uuidString)
+        XCTAssertEqual(payload["serialization_on_main_thread"] as? Bool, false)
+        XCTAssertNotNil(payload["local_time"] as? String)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(payload["main_copy_duration_ms"] as? Double), 0)
+        XCTAssertNotNil(payload["native_geometry"] as? [String: Any])
+        XCTAssertNotNil(payload["terminal_portal"] as? [String: Any])
+        XCTAssertNotNil(payload["browser_portal"] as? [String: Any])
+    }
+
+    func testSocketWorkerRejectsMissingAndStaleExplicitWindow() throws {
+        let controller = TerminalController.shared
+        for params in [[:], ["window_id": UUID().uuidString]] {
+            let command = try JSONSerialization.data(withJSONObject: ["id": 1, "method": "debug.portal.snapshot", "params": params])
+            let request = try XCTUnwrap(controller.parseV2SocketRequest(String(decoding: command, as: UTF8.self)))
+            let encoded = controller.socketWorkerV2Response(request)
+            let reply = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any])
+            XCTAssertEqual(reply["ok"] as? Bool, false)
+            let error = try XCTUnwrap(reply["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? String, params.isEmpty ? "invalid_params" : "not_found")
+        }
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "debug.portal.snapshot"), .socketWorker)
+    }
+}

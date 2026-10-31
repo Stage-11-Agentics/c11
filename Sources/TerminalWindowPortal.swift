@@ -644,14 +644,14 @@ enum PortalWorkspaceFrameOverlay {
         }
     }
 
-    private enum Edge {
+    enum Edge {
         case leading
         case trailing
         case bottom
         case top
     }
 
-    private static func edgeTouchesDivider(
+    static func edgeTouchesDivider(
         _ edge: Edge,
         frame: NSRect,
         dividerSegments: [PortalChromeOverlayDividerSegment],
@@ -767,7 +767,7 @@ final class PortalSplitDividerOverlayView: NSView {
 
         if let splitView = view as? NSSplitView {
             let dividerCount = max(0, splitView.arrangedSubviews.count - 1)
-            let dividerColor = overlayDividerColor(for: splitView)
+            let dividerColor = Self.overlayDividerColor(for: splitView)
             for dividerIndex in 0..<dividerCount {
                 let first = splitView.arrangedSubviews[dividerIndex].frame
                 let thickness = max(splitView.dividerThickness, 1)
@@ -853,7 +853,7 @@ final class PortalSplitDividerOverlayView: NSView {
         return false
     }
 
-    private func overlayDividerColor(for splitView: NSSplitView) -> NSColor {
+    fileprivate static func overlayDividerColor(for splitView: NSSplitView) -> NSColor {
         let divider = splitView.dividerColor.usingColorSpace(.deviceRGB) ?? splitView.dividerColor
         let alpha = divider.alphaComponent
         guard alpha < 0.999 else { return divider }
@@ -868,7 +868,7 @@ final class PortalSplitDividerOverlayView: NSView {
         return opaqueBG.blended(withFraction: alpha, of: opaqueDivider) ?? divider
     }
 
-    private static func pixelAligned(_ rect: NSRect) -> NSRect {
+    fileprivate static func pixelAligned(_ rect: NSRect) -> NSRect {
         NSRect(
             x: floor(rect.origin.x),
             y: floor(rect.origin.y),
@@ -2585,4 +2585,215 @@ enum TerminalWindowPortalRegistry {
         ]
     }
 #endif
+}
+
+// C11-530: one-shot diagnostics only. These helpers never install, synchronize,
+// prune or draw a portal. NSView/NSColor references stay inside the main copy;
+// the returned dictionaries contain JSON values only.
+@MainActor
+struct PortalSnapshotGeometry {
+    static let entryLimit = 512
+    static let viewLimit = 2048
+    static let dividerLimit = 256
+
+    struct Divider {
+        let source: String
+        let index: Int
+        let rect: NSRect // Window base coordinates, in points.
+        let color: NSColor
+        let vertical: Bool
+        let hidden: Bool
+    }
+
+    let dividers: [Divider]
+    let visitedViews: Int
+    let truncated: Bool
+
+    init(window: NSWindow) {
+        var rows: [Divider] = []
+        var visited = 0
+        var cut = false
+        func visit(_ view: NSView, ancestorHidden: Bool) {
+            guard visited < Self.viewLimit else { cut = true; return }
+            visited += 1
+            let hidden = ancestorHidden || view.isHidden
+            if let split = view as? NSSplitView {
+                let children = split.arrangedSubviews
+                for index in 0..<max(0, children.count - 1) {
+                    guard rows.count < Self.dividerLimit else { cut = true; break }
+                    let first = children[index].frame
+                    let thickness = max(1, split.dividerThickness)
+                    let rect = split.isVertical
+                        ? NSRect(x: first.maxX, y: 0, width: thickness, height: split.bounds.height)
+                        : NSRect(x: 0, y: first.maxY, width: split.bounds.width, height: thickness)
+                    rows.append(Divider(source: Self.token(split), index: index,
+                        rect: split.convert(rect, to: nil),
+                        color: PortalSplitDividerOverlayView.overlayDividerColor(for: split),
+                        vertical: split.isVertical, hidden: hidden))
+                }
+            }
+            for child in view.subviews {
+                guard visited < Self.viewLimit else { cut = true; break }
+                visit(child, ancestorHidden: hidden)
+            }
+        }
+        if let root = window.contentView { visit(root, ancestorHidden: false) }
+        dividers = rows
+        visitedViews = visited
+        truncated = cut
+    }
+
+    static func token(_ object: AnyObject) -> String { String(describing: ObjectIdentifier(object)) }
+    static func number(_ value: CGFloat) -> Any { value.isFinite ? Double(value) : NSNull() }
+    static func rect(_ value: NSRect) -> [String: Any] {
+        ["x": number(value.origin.x), "y": number(value.origin.y),
+         "width": number(value.width), "height": number(value.height)]
+    }
+    static func color(_ value: NSColor?) -> Any {
+        guard let rgb = value?.usingColorSpace(.deviceRGB) else { return NSNull() }
+        return ["red": number(rgb.redComponent), "green": number(rgb.greenComponent),
+                "blue": number(rgb.blueComponent), "alpha": number(rgb.alphaComponent)]
+    }
+    static func view(_ view: NSView?) -> Any {
+        guard let view else { return NSNull() }
+        return ["source_id": token(view), "class": String(describing: type(of: view)),
+                "frame": rect(view.frame), "bounds": rect(view.bounds),
+                "frame_in_window": view.window == nil ? NSNull() : rect(view.convert(view.bounds, to: nil)),
+                "window_source_id": view.window.map(token) as Any? ?? NSNull(),
+                "superview_source_id": view.superview.map(token) as Any? ?? NSNull(),
+                "hidden": view.isHidden, "hidden_by_ancestor": view.isHiddenOrHasHiddenAncestor,
+                "alpha": number(view.alphaValue)] as [String: Any]
+    }
+    var payload: [String: Any] {
+        ["visited_views": visitedViews, "truncated": truncated,
+         "dividers": dividers.map { row in
+             ["source_id": row.source, "divider_index": row.index,
+              "rect_in_window": Self.rect(row.rect), "color": Self.color(row.color),
+              "vertical": row.vertical, "hidden_by_ancestor": row.hidden] as [String: Any]
+         }]
+    }
+
+    static func entry(
+        source: ObjectIdentifier, content: NSView?, hosted: NSView?, anchor: NSView?,
+        host: NSView, overlay: NSView, window: NSWindow?, visible: Bool, priority: Int,
+        style: PortalWorkspaceFrameStyle?, dividers: [PortalChromeOverlayDividerSegment],
+        identity: [String: String]?, geometryComplete: Bool
+    ) -> [String: Any] {
+        var reasons: [String] = []
+        if !visible { reasons.append("not_visible_in_ui") }
+        if hosted == nil { reasons.append("missing_hosted_view") }
+        if hosted?.isHidden == true { reasons.append("hosted_view_hidden") }
+        if hosted?.superview !== host { reasons.append("hosted_view_not_in_host") }
+        let occlusionEligible = reasons.isEmpty
+        if anchor == nil { reasons.append("missing_anchor") }
+        if anchor?.window == nil || anchor?.window !== window { reasons.append("anchor_not_in_window") }
+        if host.bounds.width <= 1 || host.bounds.height <= 1 { reasons.append("host_too_small") }
+        if style == nil { reasons.append("no_frame_style") }
+        let resolvedColor = style.flatMap(PortalWorkspaceFrameOverlay.color)
+        if style != nil && resolvedColor == nil { reasons.append("invalid_frame_color") }
+        var candidates: [[String: Any]] = []
+        if let style, let hosted {
+            let frame = hosted.frame
+            let thickness = max(1, style.thicknessPt)
+            let edges: [(String, PortalWorkspaceFrameOverlay.Edge, Bool, NSRect)] = [
+                ("leading", .leading, style.edges.leading, NSRect(x: frame.minX, y: frame.minY, width: thickness, height: frame.height)),
+                ("trailing", .trailing, style.edges.trailing, NSRect(x: frame.maxX - thickness, y: frame.minY, width: thickness, height: frame.height)),
+                ("bottom", .bottom, style.edges.bottom, NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: thickness)),
+                ("top", .top, style.edges.top, NSRect(x: frame.minX, y: frame.maxY - thickness, width: frame.width, height: thickness))
+            ]
+            for (name, edge, enabled, raw) in edges {
+                var guards = reasons
+                let visibleFrame = frame.intersection(host.bounds)
+                if visibleFrame.isNull || visibleFrame.width <= 1 || visibleFrame.height <= 1 { guards.append("frame_outside_host_or_too_small") }
+                if !enabled { guards.append("edge_disabled") }
+                // Invalid geometry cannot safely form ClosedRanges in the shared guard.
+                if frame.minX.isFinite && frame.maxX.isFinite && frame.minY.isFinite && frame.maxY.isFinite {
+                    if PortalWorkspaceFrameOverlay.edgeTouchesDivider(edge, frame: frame, dividerSegments: dividers) { guards.append("touches_native_divider") }
+                } else { guards.append("nonfinite_frame") }
+                let clipped = raw.intersection(host.bounds)
+                if clipped.isNull || clipped.width <= 0 || clipped.height <= 0 { guards.append("empty_clipped_rect") }
+                candidates.append(["edge": name, "rect_in_host": rect(clipped),
+                    "rect_in_overlay": rect(clipped),
+                    "pixel_aligned_rect_in_overlay": rect(PortalSplitDividerOverlayView.pixelAligned(clipped)),
+                    "rect_in_window": overlay.window == nil || clipped.isNull ? NSNull() : rect(overlay.convert(clipped, to: nil)),
+                    "color": color(resolvedColor), "admitted": guards.isEmpty && geometryComplete,
+                    "guard_rejections": guards, "complete": geometryComplete])
+            }
+        }
+        return ["source_id": String(describing: source), "identity": identity as Any? ?? NSNull(),
+                "content": view(content), "hosted": view(hosted), "anchor": view(anchor),
+                "visible_in_ui": visible, "z_priority": priority,
+                "orphan": anchor == nil || anchor?.window !== window || content == nil,
+                "divider_occlusion_eligible": occlusionEligible,
+                "chrome_guard_rejections": reasons, "chrome_candidates": candidates,
+                "frame_style": style.map { style in
+                    ["color": color(resolvedColor), "thickness": number(style.thicknessPt),
+                     "opacity": number(CGFloat(style.opacity)), "edges": ["leading": style.edges.leading,
+                     "trailing": style.edges.trailing, "top": style.edges.top, "bottom": style.edges.bottom]] as [String: Any]
+                } as Any? ?? NSNull()]
+    }
+}
+
+extension PortalSplitDividerOverlayView {
+    func diagnosticDividers(_ geometry: PortalSnapshotGeometry) -> [PortalChromeOverlayDividerSegment] {
+        geometry.dividers.compactMap { row in
+            let rect = convert(row.rect, from: nil)
+            guard !row.hidden, rect.intersects(bounds) else { return nil }
+            return PortalChromeOverlayDividerSegment(rect: rect, isVertical: row.vertical)
+        }
+    }
+
+    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, hostedFrames: [NSRect], entriesComplete: Bool) -> [String: Any] {
+        let candidates: [[String: Any]] = geometry.dividers.map { row in
+            let rect = convert(row.rect, from: nil)
+            let segment = DividerSegment(rect: rect, color: row.color, isVertical: row.vertical)
+            var reasons: [String] = []
+            if row.hidden { reasons.append("native_split_hidden") }
+            if !rect.intersects(bounds) { reasons.append("outside_overlay") }
+            if !shouldRenderOverlay(for: segment, hostedFrames: hostedFrames) { reasons.append("no_hosted_frame_occlusion") }
+            return ["source_id": row.source, "divider_index": row.index,
+                    "rect_in_overlay": PortalSnapshotGeometry.rect(rect),
+                    "rect_in_window": PortalSnapshotGeometry.rect(row.rect),
+                    "pixel_aligned_rect_in_overlay": PortalSnapshotGeometry.rect(Self.pixelAligned(rect)),
+                    "color": PortalSnapshotGeometry.color(row.color), "admitted": reasons.isEmpty,
+                    "guard_rejections": reasons, "complete": !geometry.truncated && entriesComplete]
+        }
+        return ["view": PortalSnapshotGeometry.view(self),
+                "occlusion_policy": occlusionPolicy == .crossingCenterline ? "crossing_centerline" : "touching_segment",
+                "divider_candidates": candidates]
+    }
+}
+
+extension WindowTerminalPortal {
+    func diagnosticSnapshot(_ geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: String]]) -> [String: Any] {
+        let entriesComplete = entriesByHostedId.count <= PortalSnapshotGeometry.entryLimit
+        let dividers = dividerOverlayView.diagnosticDividers(geometry)
+        var frames: [NSRect] = []
+        let entries = entriesByHostedId.prefix(PortalSnapshotGeometry.entryLimit).map { key, entry -> [String: Any] in
+            if entry.visibleInUI, let hosted = entry.hostedView, !hosted.isHidden, hosted.superview === hostView { frames.append(hosted.frame) }
+            var row = PortalSnapshotGeometry.entry(source: key, content: entry.hostedView, hosted: entry.hostedView,
+                anchor: entry.anchorView, host: hostView, overlay: dividerOverlayView, window: window, visible: entry.visibleInUI,
+                priority: entry.zPriority, style: entry.workspaceFrameStyle, dividers: dividers,
+                identity: identities[key], geometryComplete: !geometry.truncated)
+            row["recovery_retries_remaining"] = entry.transientRecoveryRetriesRemaining
+            return row
+        }
+        let children = hostView.subviews
+        let unmatched = children.prefix(PortalSnapshotGeometry.entryLimit).compactMap { child -> Any? in
+            guard child is GhosttySurfaceScrollView, entriesByHostedId[ObjectIdentifier(child)] == nil else { return nil }
+            return PortalSnapshotGeometry.view(child)
+        }
+        return ["present": true, "host": PortalSnapshotGeometry.view(hostView), "entries": entries,
+                "entry_count": entriesByHostedId.count, "entries_truncated": !entriesComplete,
+                "anchor_mapping_count": hostedByAnchorId.count,
+                "unmatched_hosted_views": unmatched, "host_subviews_truncated": children.count > PortalSnapshotGeometry.entryLimit,
+                "overlay": dividerOverlayView.diagnosticSnapshot(geometry, hostedFrames: frames, entriesComplete: entriesComplete)]
+    }
+}
+
+extension TerminalWindowPortalRegistry {
+    static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: String]]) -> [String: Any] {
+        // Lookup only: portal(for:) installs views and is forbidden on this path.
+        portalsByWindowId[ObjectIdentifier(window)]?.diagnosticSnapshot(geometry, identities: identities) ?? ["present": false]
+    }
 }

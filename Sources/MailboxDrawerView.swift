@@ -188,8 +188,11 @@ struct MailboxDrawerView: View {
     @State private var insightSenders: [String: MailboxDrawerSender] = [:]
     /// What the reader clicked in Insights; kept while the drawer is open.
     @State private var insightsFilter = MailboxPanelMail.InsightsFilter()
-    @State private var sliceMemo = MailboxInsightsSliceMemo()
-    @State private var resolvedSenderNames: [String] = []
+    /// The slice for `insightsFilter`, computed off the main thread. The
+    /// previous slice stays on screen until the new one lands.
+    @State private var insightsSlice: MailboxPanelMail.Slice?
+    @State private var sliceGeneration = 0
+    @State private var resolvedSenderNames: Set<String> = []
     /// One insights scan at a time. A request during a scan marks it dirty and
     /// one rescan follows, after `insightsRescanDelay`, so a busy inbox costs
     /// one scan every few seconds at most, however fast mail arrives.
@@ -238,6 +241,7 @@ struct MailboxDrawerView: View {
             if newTab == .sent { reloadSent() }
             if newTab == .insights { reloadInsights() }
         }
+        .onChange(of: insightsFilter) { _ in recomputeSlice() }
         // Recipients take mail on their own; their counts do not move this
         // panel's revision, so the open Sent view refreshes itself. One listing
         // of this panel's `_sent/` plus a few stats per message, off the main
@@ -440,7 +444,7 @@ struct MailboxDrawerView: View {
                     MailboxInsightsView(
                         insights: insights,
                         filter: $insightsFilter,
-                        memo: sliceMemo,
+                        slice: insightsSlice,
                         senders: insightSenders,
                         now: timeline.date,
                         width: geometry.width,
@@ -489,11 +493,16 @@ struct MailboxDrawerView: View {
             }
             DispatchQueue.main.async {
                 if generation == insightsGeneration {
-                    if names != resolvedSenderNames {
+                    // A Set: a reordering of the same busiest senders resolves nothing.
+                    let nameSet = Set(names)
+                    if nameSet != resolvedSenderNames {
                         insightSenders = resolveSenders(names)
-                        resolvedSenderNames = names
+                        resolvedSenderNames = nameSet
                     }
-                    if loaded != insights { insights = loaded }
+                    // Assigned without comparing: an equality check walks every
+                    // record on main, and a new scan always differs in time.
+                    insights = loaded
+                    recomputeSlice()
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + Self.insightsRescanDelay) {
                     insightsInFlight = false
@@ -501,6 +510,26 @@ struct MailboxDrawerView: View {
                     insightsDirty = false
                     if tab == .insights { reloadInsights() }
                 }
+            }
+        }
+    }
+
+    /// Filters the latest scan for the current filter on a background queue.
+    /// Only the newest request lands; until then the previous slice shows.
+    private func recomputeSlice() {
+        let filter = insightsFilter
+        guard let insights, !filter.isEmpty, filter.recipient == nil else {
+            sliceGeneration += 1
+            insightsSlice = nil
+            return
+        }
+        sliceGeneration += 1
+        let generation = sliceGeneration
+        DispatchQueue.global(qos: .userInitiated).async {
+            let slice = MailboxPanelMail.slice(insights, filter: filter)
+            DispatchQueue.main.async {
+                guard generation == sliceGeneration else { return }
+                insightsSlice = slice
             }
         }
     }
@@ -956,7 +985,9 @@ private struct MailboxMessageCard: View {
 private struct MailboxInsightsView: View {
     let insights: MailboxPanelMail.Insights
     @Binding var filter: MailboxPanelMail.InsightsFilter
-    let memo: MailboxInsightsSliceMemo
+    /// The slice for `filter`, or the previous one while it computes; nil
+    /// before the first lands, when the totals show under the new chips.
+    let slice: MailboxPanelMail.Slice?
     let senders: [String: MailboxDrawerSender]
     let now: Date
     let width: CGFloat
@@ -1001,10 +1032,9 @@ private struct MailboxInsightsView: View {
             filterRow
             if let key = filter.recipient {
                 sentDrill(key: key)
-            } else if filter.isEmpty {
+            } else if filter.isEmpty || slice == nil {
                 received(overviewFigures, slice: nil)
-            } else {
-                let slice = memo.slice(insights, filter: filter)
+            } else if let slice {
                 received(figures(slice), slice: slice)
             }
         }
@@ -1055,7 +1085,7 @@ private struct MailboxInsightsView: View {
                     chip(windowName(window)) { filter.window = nil }
                 }
                 if let key = filter.recipient {
-                    chip(String(localized: "mailbox.insights.chip.to", defaultValue: "to \(recipientName(key))")) { filter.recipient = nil }
+                    chip(String(localized: "mailbox.insights.chip.to", defaultValue: "to \(recipientName(key))")) { filter = MailboxPanelMail.InsightsFilter() }
                 }
                 Spacer(minLength: 8)
                 Button(String(localized: "mailbox.insights.filter.clear", defaultValue: "Clear all")) {
@@ -1091,7 +1121,7 @@ private struct MailboxInsightsView: View {
     }
 
     private func recipientName(_ key: String) -> String {
-        insights.recipients.top.first { $0.key == key }?.name ?? String(key.prefix(8))
+        filter.recipientName ?? insights.recipients.top.first { $0.key == key }?.name ?? String(key.prefix(8))
     }
 
     // MARK: Received
@@ -1165,7 +1195,7 @@ private struct MailboxInsightsView: View {
                             defaultValue: "\(insights.sentTaken) of \(insights.sentCopies) copies taken"
                         )
                         : nil,
-                    pick: { tally in if let key = tally.key { filter.toggleRecipient(key) } }
+                    pick: { tally in if let key = tally.key { filter.toggleRecipient(key, name: tally.name) } }
                 )
             }
             footnotes
@@ -1733,26 +1763,5 @@ private struct MailboxInsightsRowButton<Label: View>: View {
         .onHover { hovering = $0 }
         .help(help)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-    }
-}
-
-/// Remembers the last slice, so re-renders (the 30-second clock, a parent
-/// update) do not refilter. Keyed by the scan and the filter; main thread only.
-final class MailboxInsightsSliceMemo {
-    private var scannedAt: Date?
-    private var recordCount = -1
-    private var filter: MailboxPanelMail.InsightsFilter?
-    private var value: MailboxPanelMail.Slice?
-
-    func slice(_ insights: MailboxPanelMail.Insights, filter: MailboxPanelMail.InsightsFilter) -> MailboxPanelMail.Slice {
-        if let value, scannedAt == insights.scannedAt, recordCount == insights.records.count, self.filter == filter {
-            return value
-        }
-        let computed = MailboxPanelMail.slice(insights, filter: filter)
-        scannedAt = insights.scannedAt
-        recordCount = insights.records.count
-        self.filter = filter
-        value = computed
-        return computed
     }
 }

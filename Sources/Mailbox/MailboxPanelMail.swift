@@ -1023,11 +1023,12 @@ extension MailboxPanelMail {
             let tally = ordered.first { $0.name == pinned } ?? Tally(name: pinned, count: 0)
             if shown.count == top { shown[top - 1] = tally } else { shown.append(tally) }
         }
-        let shownNames = Set(shown.map(\.name))
+        // By identity, not name: two recipient panels can share a label.
+        let shownIds = Set(shown.map(\.id))
         return Ranking(
             top: shown,
             distinct: ordered.count,
-            others: ordered.reduce(0) { shownNames.contains($1.name) ? $0 : $0 + $1.count }
+            others: ordered.reduce(0) { shownIds.contains($1.id) ? $0 : $0 + $1.count }
         )
     }
 
@@ -1040,8 +1041,10 @@ extension MailboxPanelMail {
         var topic: String?
         /// A time range in absolute dates, so a rescan never slides it.
         var window: TimeWindow?
-        /// A recipient panel key from the "Sent to" list.
+        /// A recipient panel key from the "Sent to" list, and the label its row
+        /// showed when clicked, so the chip keeps a name if the row drops out.
         var recipient: String?
+        var recipientName: String?
 
         var isEmpty: Bool { self == InsightsFilter() }
 
@@ -1049,30 +1052,45 @@ extension MailboxPanelMail {
 
         /// Picking the selected value again clears it. A time range replaces
         /// any other, and the sent and received sides never mix.
-        mutating func toggleFrom(_ value: String) { recipient = nil; from = from == value ? nil : value }
-        mutating func toggleTopic(_ value: String) { recipient = nil; topic = topic == value ? nil : value }
+        mutating func toggleFrom(_ value: String) { leaveSent(); from = from == value ? nil : value }
+        mutating func toggleTopic(_ value: String) { leaveSent(); topic = topic == value ? nil : value }
+
+        /// A received filter ends a recipient drill-down, name and all.
+        private mutating func leaveSent() {
+            recipient = nil
+            recipientName = nil
+        }
 
         /// Picks the hour bar `index` of this scan; the bar already selected clears.
         mutating func pickHour(_ index: Int, in insights: Insights) {
-            recipient = nil
+            leaveSent()
             if selectedHour(in: insights) == index { window = nil; return }
-            let end = insights.scannedAt.addingTimeInterval(-TimeInterval(insightsHours - 1 - index) * 3600)
-            window = TimeWindow(start: end.addingTimeInterval(-3600), end: end, isDay: false)
+            window = Self.hourWindow(index, in: insights)
         }
 
         /// Picks the day bar `index`, a calendar day; the day already selected clears.
         mutating func pickDay(_ index: Int, in insights: Insights, calendar: Calendar = .current) {
-            recipient = nil
+            leaveSent()
             guard insights.dayStarts.indices.contains(index) else { return }
             if selectedDay(in: insights) == index { window = nil; return }
             let start = insights.dayStarts[index]
             window = TimeWindow(start: start, end: calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400), isDay: true)
         }
 
-        /// The hour bar holding the selected hour's middle in this scan.
+        /// The hour bar whose range in this scan is exactly the selected one.
+        /// Hour bars roll with each scan, so after a rescan no bar matches and
+        /// none is highlighted; the chip still names the range.
         func selectedHour(in insights: Insights) -> Int? {
             guard let window, !window.isDay else { return nil }
-            return hourIndex(window.start.addingTimeInterval(window.end.timeIntervalSince(window.start) / 2), now: insights.scannedAt)
+            let ago = Int((insights.scannedAt.timeIntervalSince(window.end) / 3600).rounded())
+            guard (0..<insightsHours).contains(ago) else { return nil }
+            let index = insightsHours - 1 - ago
+            return Self.hourWindow(index, in: insights) == window ? index : nil
+        }
+
+        static func hourWindow(_ index: Int, in insights: Insights) -> TimeWindow {
+            let end = insights.scannedAt.addingTimeInterval(-TimeInterval(insightsHours - 1 - index) * 3600)
+            return TimeWindow(start: end.addingTimeInterval(-3600), end: end, isDay: false)
         }
 
         func selectedDay(in insights: Insights) -> Int? {
@@ -1080,10 +1098,11 @@ extension MailboxPanelMail {
             return insights.dayStarts.firstIndex(of: window.start)
         }
 
-        mutating func toggleRecipient(_ key: String) {
+        mutating func toggleRecipient(_ key: String, name: String? = nil) {
             let same = recipient == key
             self = InsightsFilter()
             recipient = same ? nil : key
+            recipientName = same ? nil : name
         }
     }
 

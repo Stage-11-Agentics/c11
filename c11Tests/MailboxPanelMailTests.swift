@@ -303,13 +303,14 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(pastHour.topics.top.map(\.name), ["freeze"], "topics ignore only the topic filter")
 
         // The hour is an absolute range: a rescan 30 s later keeps the same
-        // messages and the same bar, and picking that bar again clears it.
+        // messages. Its bars have rolled, so none matches the range exactly
+        // and none is highlighted; the chip names the range instead.
         let later = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: root, now: now.addingTimeInterval(30), calendar: calendar, cache: nil)
         XCTAssertEqual(MailboxPanelMail.slice(later, filter: filter, calendar: calendar).count, 1)
-        XCTAssertEqual(filter.selectedHour(in: later), 23)
+        XCTAssertNil(filter.selectedHour(in: later))
         var cleared = filter
-        cleared.pickHour(23, in: later)
-        XCTAssertNil(cleared.window)
+        cleared.pickHour(23, in: insights)
+        XCTAssertNil(cleared.window, "picking the highlighted bar again clears it")
 
         // A day replaces the hour; the same day again clears it.
         let today = MailboxPanelMail.insightsDays - 1
@@ -320,9 +321,10 @@ final class MailboxPanelMailTests: XCTestCase {
         filter.pickDay(today, in: insights, calendar: calendar)
         XCTAssertNil(filter.window)
 
-        // A recipient filter replaces every received filter, and vice versa.
-        filter.toggleRecipient("abc")
-        XCTAssertEqual(filter, MailboxPanelMail.InsightsFilter(recipient: "abc"))
+        // A recipient filter replaces every received filter, and vice versa;
+        // it keeps the label its row showed.
+        filter.toggleRecipient("abc", name: "reviewer")
+        XCTAssertEqual(filter, MailboxPanelMail.InsightsFilter(recipient: "abc", recipientName: "reviewer"))
         filter.toggleFrom("board")
         XCTAssertNil(filter.recipient)
         filter.toggleFrom("board")
@@ -336,6 +338,15 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(pinned.others, tallies.filter { !["s1", "s2", "s7"].contains($0.name) }.reduce(0) { $0 + $1.count })
         let absent = MailboxPanelMail.ranking(tallies, top: 3, pinned: "nobody")
         XCTAssertEqual(absent.top.last, MailboxPanelMail.Tally(name: "nobody", count: 0))
+    }
+
+    func testOthersCountsARecipientThatSharesAShownLabel() {
+        // Two panels share the label "~"; only one makes the top.
+        let ranking = MailboxPanelMail.ranking([
+            .init(name: "~", count: 9, key: "a"), .init(name: "~", count: 2, key: "b"), .init(name: "z", count: 5, key: "c"),
+        ], top: 2)
+        XCTAssertEqual(ranking.top.map(\.id), ["a", "c"])
+        XCTAssertEqual(ranking.others, 2)
     }
 
     func testHeaderCapsUntrustedFields() {

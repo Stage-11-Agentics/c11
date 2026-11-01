@@ -98,12 +98,10 @@ class Server(drain.FakeC11):
                             "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}],
                         }
                     elif method == "mailbox.resolve":
-                        if request.get("params", {}).get("opencode_session_id") == "wrong-session":
-                            conn.sendall(json.dumps({"id": request.get("id"), "ok": False,
-                                "error": {"code": "session_mismatch", "message": "wrong displayed root"}}).encode() + b"\n")
-                            continue
                         target = request.get("params", {}).get("to")
                         panel = drain.TAB if target in (None, "", "watcher", "builder") else drain.SIBLING
+                        if isinstance(target, str) and target.startswith("id:"):
+                            panel = target[3:].upper()
                         result = {
                             "resolution": "unique",
                             "target_workspace_id": drain.WORKSPACE,
@@ -111,13 +109,24 @@ class Server(drain.FakeC11):
                         }
                         if getattr(self, "shared", False):
                             result["recipients"] = [{
-                                "requested_panel_id": drain.TAB, "panel_id": drain.SIBLING,
+                                "requested_panel_id": panel if str(target).startswith("id:") else drain.TAB,
+                                "panel_id": drain.SIBLING,
                                 "workspace_id": drain.MOVED_TO, "name": "owner",
+                                "session_id": "root-session",
                                 "can_ring": False, "doorbell_unavailable_reason": "no_reader_or_native_route",
                                 "shared_inboxes": [
                                     {"panel_id": drain.TAB, "workspace_id": drain.WORKSPACE, "name": "duplicate"},
                                     {"panel_id": drain.SIBLING, "workspace_id": drain.MOVED_TO, "name": "owner"},
                                 ],
+                            }]
+                        expected = request.get("params", {}).get("opencode_session_id")
+                        if getattr(self, "local_v2_state", None) or (expected and expected != "root-session"):
+                            # Actual server scope is covered by the Swift runtime
+                            # test. This fixture drives the compiled recv path with
+                            # that response, including unbound/child tool sessions.
+                            result["recipients"] = [{
+                                "requested_panel_id": panel, "panel_id": panel,
+                                "workspace_id": drain.WORKSPACE, "name": "watcher", "can_ring": True,
                             }]
                     elif method == "panel.get_metadata":
                         result = {"metadata": {"title": "watcher"}}
@@ -212,6 +221,24 @@ def main() -> int:
             finally:
                 fixture.cleanup()
 
+        for state, session in (("unbound", "root-session"), ("pending", "root-session"),
+                               ("displayed-root", "child-session"), ("shared", "wrong-session")):
+            fixture = drain.Fixture()
+            server.shared = state == "shared"
+            server.local_v2_state = state if state != "shared" else None
+            try:
+                own = fixture.deliver(drain.TAB.lower(), "own mail")
+                other = fixture.deliver(drain.SIBLING.lower(), "other inbox", workspace=drain.MOVED_TO)
+                env = dict(fixture.env(server.path), OPENCODE_SESSION_ID=session)
+                proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
+                check(proc.returncode == 0 and own.encode() in proc.stdout and other.encode() not in proc.stdout
+                      and fixture.listing(drain.TAB.lower())[0] == []
+                      and fixture.listing(drain.SIBLING.lower(), workspace=drain.MOVED_TO)[0] == [other + ".msg"],
+                      state + " tool recv drains only its own inbox", repr(proc.stdout) + repr(proc.stderr))
+            finally:
+                fixture.cleanup()
+        server.local_v2_state = None
+
         # Shared identity: recv from either view drains the owner and the
         # older alias backlog, but never an unrelated panel's inbox.
         server.shared = True
@@ -223,11 +250,7 @@ def main() -> int:
                 unrelated = fixture.deliver("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "unrelated")
                 env = fixture.env(server.path)
                 env["C11_PANEL_ID"] = caller
-                stale_env = dict(env, OPENCODE_SESSION_ID="wrong-session")
-                refused, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], stale_env)
-                check(refused.returncode != 0 and not refused.stdout
-                      and fixture.listing(drain.TAB.lower())[0] == [backlog + ".msg"],
-                      "stale tool session cannot fall back to wrong inbox", repr(refused.stderr))
+                env["OPENCODE_SESSION_ID"] = "root-session"
                 proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
                 check(proc.returncode == 0 and backlog.encode() in proc.stdout and current.encode() in proc.stdout
                       and unrelated.encode() not in proc.stdout, "shared recv from " + caller,

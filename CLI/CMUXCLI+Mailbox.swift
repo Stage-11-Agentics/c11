@@ -673,7 +673,6 @@ extension CMUXCLI {
             }
             let resolution: [String: Any]?
             do { resolution = try client.sendV2(method: "mailbox.resolve", params: params) }
-            catch let error as CLIError where error.message.contains("session_mismatch") { throw error }
             catch { resolution = nil } // Older/offline apps retain ordinary local recv.
             let recipients = resolution?["recipients"] as? [[String: Any]] ?? []
             for recipient in recipients {

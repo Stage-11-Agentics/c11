@@ -106,6 +106,37 @@ struct MailboxPanelResolver {
         return result
     }
 
+    /// Shared inboxes widen ordinary recv, so only a matching tool session
+    /// follows them. Child tools and pending/unbound routes keep the caller's
+    /// own panel identity and inbox, exactly as before shared routing existed.
+    static func recipientPayload(
+        panelID: UUID,
+        surfaces: [MailboxGlobalResolver.PanelRecord],
+        sharedOwner: (panelID: UUID, sessionID: String, members: [UUID])?,
+        expectedSession: String?,
+        unavailableReason: (UUID) -> String?
+    ) -> [String: Any] {
+        let shared = expectedSession == nil || expectedSession == sharedOwner?.sessionID ? sharedOwner : nil
+        let ownerID = shared?.panelID ?? panelID
+        guard let owner = surfaces.first(where: { $0.surfaceId == ownerID }) else { return [:] }
+        let unavailable = unavailableReason(ownerID)
+        var result: [String: Any] = [
+            "requested_panel_id": panelID.uuidString,
+            "panel_id": ownerID.uuidString,
+            "workspace_id": owner.workspaceId.uuidString,
+            "name": owner.name.isEmpty ? "id:\(ownerID.uuidString)" : owner.name,
+            "can_ring": unavailable == nil
+        ]
+        if let unavailable { result["doorbell_unavailable_reason"] = unavailable }
+        if let shared {
+            result["session_id"] = shared.sessionID
+            result["shared_inboxes"] = surfaces.filter { shared.members.contains($0.surfaceId) }.map {
+                ["panel_id": $0.surfaceId.uuidString, "workspace_id": $0.workspaceId.uuidString, "name": $0.name]
+            }
+        }
+        return result
+    }
+
     struct PanelMetadata: Equatable {
         let surfaceId: UUID
         let name: String

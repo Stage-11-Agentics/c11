@@ -83762,53 +83762,6 @@
           }
         }
       }
-    },
-    "mailbox.opencode.session-mismatch": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode tool session no longer matches its panel's displayed session."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode ツールのセッションが、そのパネルに表示されているセッションと一致しなくなりました。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сеанс інструмента OpenCode більше не збігається із сеансом, показаним на його панелі."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode 도구 세션이 더 이상 해당 패널에 표시된 세션과 일치하지 않습니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode 工具会话与其面板显示的会话不再匹配。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode 工具工作階段與其面板顯示的工作階段不再相符。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сеанс инструмента OpenCode больше не совпадает с сеансом, отображаемым в его панели."
-          }
-        }
-      }
     }
   }
 }

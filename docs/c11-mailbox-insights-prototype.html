@@ -101,12 +101,39 @@ code { font: 12px var(--mono); color: var(--gold); }
 .cells .c1 { border: 1px solid var(--line); border-radius: 4px; background: var(--bar); padding: 6px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cells .c1 .lbl { color: var(--dim); font-size: 11px; }
 ol li { margin-bottom: 10px; }
+
+/* drill-down */
+.filters { display: flex; align-items: center; gap: 6px; min-height: 22px; flex-wrap: nowrap; overflow: hidden; }
+.filters .hint { font: 10.5px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fchip { all: unset; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font: 10.5px var(--mono); color: var(--fg); border: 1px solid var(--gold); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+.fchip:hover, .fchip:focus-visible { background: var(--hover); }
+.fchip .x { color: var(--dim); }
+.clear { all: unset; cursor: pointer; font: 10.5px var(--mono); color: var(--dim); margin-left: auto; white-space: nowrap; }
+.clear:hover { color: var(--fg); }
+.row.click { cursor: pointer; border-radius: 3px; margin: 0 -4px; padding: 1px 4px; outline: 1px solid transparent; }
+.row.click:hover, .row.click:focus-visible { background: var(--hover); }
+.row.sel { outline-color: var(--gold); }
+.chart .b { cursor: pointer; }
+.chart.has-sel .b i:not(.zero) { opacity: .35; }
+.chart.has-sel .b.sel i { opacity: 1; background: var(--gold); }
+.msgs { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.mcard { padding: 7px 0; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+.mcard .h { display: flex; gap: 8px; align-items: baseline; }
+.mcard .tp { font: 600 10.5px var(--mono); }
+.mcard .tp.none { color: var(--dim); font-weight: 400; }
+.mcard .tm { margin-left: auto; font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; }
+.mcard .fr { font-size: 11.5px; color: var(--dim); }
+.mcard .fr b { color: var(--fg); font-weight: 600; }
+.mcard .bd { font: 11px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st { font-size: 9px; font-weight: 600; padding: 0 4px; border-radius: 3px; border: 1px solid var(--line); color: var(--dim); }
+.st.u { background: var(--amber); color: var(--onamber); border-color: transparent; }
+.st.urg { color: var(--amber); border-color: var(--amber); }
 </style>
 </head>
 <body>
 <main>
 <h1>Mailbox Insights</h1>
-<p class="sub">Prototype of the mailbox drawer's new Insights tab and the uncapped cell counts. Mock data. Click the envelope to open or close the drawer, switch tabs, hover the bars.</p>
+<p class="sub">Prototype of the mailbox drawer's Insights tab with drill-down. Mock data. Click any sender, topic or bar to narrow everything to that slice and see its messages; filters stack (a sender, then a day). Click a chip or the same item again to remove it.</p>
 
 <div class="controls">
   <span>Area width <span class="seg" id="widths"><button data-w="360">360</button><button data-w="620" class="on">620</button><button data-w="900">900</button></span></span>
@@ -144,15 +171,15 @@ ol li { margin-bottom: 10px; }
 <p>Exact counts through 99999, then whole thousands. Both slots are sized for five characters, so the envelope never moves as counts grow.</p>
 <div class="cells" id="cells"></div>
 
-<h2>WHAT IS BUILT</h2>
-<p>The real build (branch <code>c11/mailbox-insights</code>) matches this page: four total tiles, recent rates, 24-hour and 14-day bars, top senders with their unread, top topics, recipients with how many copies were taken, and footnotes when a figure covers only part of the mail. Senders, topics and the urgent, reply, file-body and no-topic counts come from the newest 5,000 envelopes, with a note under them when the mailbox holds more; totals and activity cover every one.</p>
+<h2>DRILL-DOWN</h2>
+<p>Every sender, topic and bar is a filter. Picking one narrows the whole tab to that slice: the tiles, both charts, the other rankings, and a list of that slice's newest messages underneath. Filters stack, one per kind: a sender and a topic and a time (an hour or a day). The chip row at the top always holds its height, so the layout never jumps when a filter comes or goes. With a filter on, the fourth tile shows the slice's share of all mail instead of the sent count.</p>
 
 <h2>QUESTIONS</h2>
 <ol>
-  <li><b>Default tab.</b> The drawer still opens on Received. Should it open on Insights instead, or remember the last tab per panel? Recommendation: remember the last tab, so a reader who lives in Insights stays there.</li>
-  <li><b>Sent over time.</b> The charts show received only, one series each. A second pair of charts could show sent per hour and per day. Recommendation: add them only if sent volume matters to you; the ledger keeps just the newest 300 sends, so long-range sent history would be thin.</li>
-  <li><b>Pickup time.</b> How long mail waits before the agent takes it is probably the most useful health number. The mail files don't carry it, but each claim is recorded as a <code>mailbox.delivered</code> event in the events log. Recommendation: add "median wait" and "slowest wait" in a follow-up that reads those events. It's a bigger read than the mail folders, so it would load a moment after the rest.</li>
-  <li><b>Unread edge strip.</b> Unread cards in the Received tab carry a 3 px orange left edge, which your taste rules rule out. Recommendation: replace it with the full-outline treatment in the same follow-up.</li>
+  <li><b>Exact slices past 5,000 messages.</b> Today senders and topics come from the newest 5,000 envelopes, so on a 12,345-message inbox, "everything from merge-captain" would cover only that sample. Recommendation: cache each envelope's sender, topic and flags by file name (envelopes never change), so the first scan pays once and every later scan and drill-down is exact and fast. The review of #831 suggested the same cache.</li>
+  <li><b>Message list length.</b> The slice lists its newest 50 messages, with a "show in Received" link for the rest. Recommendation: keep 50; the Received tab already handles the long list and could take the same filter.</li>
+  <li><b>Recipients.</b> "Sent to" rows could also be clickable, listing what this panel sent to that agent and whether it was taken. Recommendation: yes, same pattern, after the received side lands.</li>
+  <li><b>Still open from round one:</b> remember the last tab, and add the pickup-wait numbers from <code>mailbox.delivered</code> events.</li>
 </ol>
 </main>
 
@@ -160,118 +187,165 @@ ol li { margin-bottom: 10px; }
 (function () {
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => n.toLocaleString("en-US");
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const cellText = (n) => n <= 99999 ? String(n) : n <= 999999 ? Math.floor(n / 1000) + "k" : Math.floor(n / 1e6) + "M";
 
-  // Deterministic mock data.
+  // Deterministic mock mailbox: one record per message, newest first.
   let seed = 11;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  function dataset(total, unread) {
+  const SENDERS = ["board-move", "merge-captain", "c11-reviewer", "lattice-poller", "overwatch", "codex-seat-3", "grok-seat", "atlas-fleet", "docs-bot"];
+  const WEIGHTS = [30, 18, 12, 10, 8, 6, 5, 3, 1];
+  const TOPICS = ["lattice.freeze", "merge.ready", "review.findings", "build.status", "handoff", "flag.raised"];
+  const PANELS = { "merge-captain": 7, "c11-reviewer": 12, "overwatch": 3 };
+  const BODIES = ["Rebased on main; gate is green.", "Two findings, one blocker in the scan loop.", "Freeze lifted for the 1.7.5 run.", "Build 4812 passed in 96 s.", "Handing the ticket back with notes.", "Flag raised: needs a call on the schema."];
+  const cache = {};
+  function mailbox(total, unread) {
+    const key = total + ":" + unread;
+    if (cache[key]) return cache[key];
     seed = 11 + total;
-    const senders = ["board-move", "merge-captain", "c11-reviewer", "lattice-poller", "overwatch", "codex-seat-3", "grok-seat", "atlas-fleet", "docs-bot"];
-    const weights = [30, 18, 12, 10, 8, 6, 5, 3, 1];
-    const topics = ["lattice.freeze", "merge.ready", "review.findings", "build.status", "handoff", "flag.raised"];
-    const panels = { "merge-captain": 7, "c11-reviewer": 12, "overwatch": 3 };
-    const hourly = new Array(24).fill(0), daily = new Array(14).fill(0);
-    const s = {}, t = {};
-    let lastHour = 0, lastDay = 0, lastWeek = 0, urgent = 0, replies = 0, untitled = 0, scanned = 0;
-    const sample = Math.min(total, 5000);
-    const wsum = weights.reduce((a, b) => a + b, 0);
-    const pick = () => { let r = rnd() * wsum; for (let i = 0; i < weights.length; i++) { r -= weights[i]; if (r <= 0) return senders[i]; } return senders[0]; };
+    const wsum = WEIGHTS.reduce((a, b) => a + b, 0);
+    const pick = () => { let r = rnd() * wsum; for (let i = 0; i < WEIGHTS.length; i++) { r -= WEIGHTS[i]; if (r <= 0) return SENDERS[i]; } return SENDERS[0]; };
+    const msgs = [];
     for (let i = 0; i < total; i++) {
       const age = i < unread ? rnd() * 4 : Math.min(-Math.log(1 - rnd()) * 72, 480); // hours
-      if (age < 1) lastHour++;
-      if (age < 24) { lastDay++; hourly[23 - Math.floor(age)]++; }
-      if (age < 168) lastWeek++;
-      const d = Math.floor((age + 9) / 24); if (d < 14) daily[13 - d]++;
-      if (i < sample) {
-        scanned++;
-        const f = pick(); s[f] = s[f] || { n: 0, u: 0 }; s[f].n++; if (i < unread) s[f].u++;
-        const r = rnd(); if (r < 0.14) untitled++; else { const tp = topics[Math.floor(r * 100) % topics.length]; t[tp] = (t[tp] || 0) + 1; }
-        if (rnd() < 0.04) urgent++; if (rnd() < 0.2) replies++;
-      }
+      const r = rnd();
+      msgs.push({ from: pick(), topic: r < 0.14 ? null : TOPICS[Math.floor(r * 100) % TOPICS.length], age, unread: i < unread,
+        urgent: rnd() < 0.04, reply: rnd() < 0.2, body: BODIES[Math.floor(rnd() * BODIES.length)] });
     }
-    const rank = (o, unreadOf) => {
-      const all = Object.entries(o).map(([k, v]) => ({ name: k, n: typeof v === "number" ? v : v.n, u: unreadOf ? v.u : 0, panel: panels[k] }))
-        .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-      const top = all.slice(0, 6);
-      return { top, distinct: all.length, others: all.slice(6).reduce((a, b) => a + b.n, 0) };
-    };
-    return {
-      total, unread, lastHour, lastDay, lastWeek, hourly, daily, scanned, urgent, replies, untitled,
-      senders: rank(s, true), topics: rank(t, false),
-      sent: 25, sentTaken: 19, sentCopies: 25,
-      recipients: { top: [{ name: "reviewer", n: 25 }], distinct: 1, others: 0 },
-      perDay: total / 20, first: "Oct 11, 9:42 AM", newest: "just now", oldest: "3h"
-    };
+    msgs.sort((a, b) => a.age - b.age);
+    return (cache[key] = msgs);
   }
   const volumes = { small: [38, 2], large: [12345, 7], huge: [123456, 31] };
-  let state = { w: 620, tab: "insights", vol: "large", open: true };
+  let state = { w: 620, tab: "insights", vol: "large", open: true, f: {} };
 
-  const today = new Date(2026, 9, 31);
+  const today = new Date(2026, 9, 31, 20, 0);
+  const dayIndex = (age) => { const d = Math.floor((age + 9) / 24); return d < 14 ? 13 - d : -1; };
+  const hourIndex = (age) => age < 24 ? 23 - Math.floor(age) : -1;
   const dayName = (i) => { const d = new Date(today); d.setDate(d.getDate() - (13 - i)); return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
+  const hourName = (i) => i === 23 ? "Past hour" : `${24 - i} to ${23 - i} hours ago`;
+  const ageText = (h) => h < 1 / 60 ? "just now" : h < 1 ? Math.round(h * 60) + "m ago" : h < 48 ? Math.floor(h) + "h ago" : Math.floor(h / 24) + "d ago";
 
-  function chart(title, values, start, end, label) {
+  // One predicate per filter kind; a chart ignores its own kind so its bars stay visible.
+  function matches(m, f, ignore) {
+    if (f.from && ignore !== "from" && m.from !== f.from) return false;
+    if (f.topic !== undefined && ignore !== "topic" && (m.topic || "(no topic)") !== f.topic) return false;
+    if (f.hour !== undefined && ignore !== "time" && hourIndex(m.age) !== f.hour) return false;
+    if (f.day !== undefined && ignore !== "time" && dayIndex(m.age) !== f.day) return false;
+    return true;
+  }
+  function stats(all, f) {
+    const sub = all.filter((m) => matches(m, f));
+    const timeBase = all.filter((m) => matches(m, f, "time"));
+    const hourly = new Array(24).fill(0), daily = new Array(14).fill(0);
+    for (const m of timeBase) { const h = hourIndex(m.age); if (h >= 0) hourly[h]++; const d = dayIndex(m.age); if (d >= 0) daily[d]++; }
+    const tally = (list, key) => {
+      const o = {};
+      for (const m of list) { const k = key(m); o[k] = o[k] || { n: 0, u: 0 }; o[k].n++; if (m.unread) o[k].u++; }
+      const all = Object.entries(o).map(([name, v]) => ({ name, n: v.n, u: v.u, panel: PANELS[name] })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+      return { top: all.slice(0, 6), distinct: all.length, others: all.slice(6).reduce((a, b) => a + b.n, 0) };
+    };
+    const unread = sub.filter((m) => m.unread).length;
+    return {
+      sub, total: sub.length, unread, hourly, daily,
+      lastHour: sub.filter((m) => m.age < 1).length, lastDay: sub.filter((m) => m.age < 24).length, lastWeek: sub.filter((m) => m.age < 168).length,
+      senders: tally(all.filter((m) => matches(m, f, "from")), (m) => m.from),
+      topics: tally(all.filter((m) => matches(m, f, "topic")), (m) => m.topic || "(no topic)"),
+      urgent: sub.filter((m) => m.urgent).length, replies: sub.filter((m) => m.reply).length, untitled: sub.filter((m) => !m.topic).length,
+      oldestUnread: Math.max(0, ...sub.filter((m) => m.unread).map((m) => m.age))
+    };
+  }
+  const anyFilter = (f) => Object.keys(f).length > 0;
+
+  function chart(title, values, start, end, label, kind) {
     const peak = Math.max(...values, 0);
+    const sel = kind === "hour" ? state.f.hour : state.f.day;
     const bars = values.map((v, i) => {
       const h = v === 0 ? 0 : Math.max(3, 40 * v / Math.max(peak, 1));
-      return `<div class="b" data-tip="${label(i)}: ${fmt(v)} received"><i class="${v === 0 ? "zero" : ""}" style="${v ? `height:${h}px` : ""}"></i></div>`;
+      return `<div class="b${sel === i ? " sel" : ""}" data-kind="${kind}" data-i="${i}" role="button" tabindex="0" data-tip="${label(i)}: ${fmt(v)} received · click to filter"><i class="${v === 0 ? "zero" : ""}" style="${v ? `height:${h}px` : ""}"></i></div>`;
     }).join("");
     return `<section><div class="sect-h"><span class="t">${title}</span><span class="meta">peak ${fmt(peak)}</span></div>
-      <div class="chart" role="img" aria-label="${title}: ${values.join(", ")}">${bars}<div class="tip"></div></div>
+      <div class="chart${sel !== undefined ? " has-sel" : ""}" role="group" aria-label="${title}">${bars}<div class="tip"></div></div>
       <div class="axis"><span>${start}</span><span>${end}</span></div></section>`;
   }
   function ranking(title, r, opts) {
     const peak = Math.max(r.top[0] ? r.top[0].n : 0, 1);
-    const rows = r.top.map((x) => `<div class="row"><div class="nm" title="${x.name}"><span>${x.name}</span>${x.panel ? `<span class="pn">panel ${x.panel}</span>` : ""}</div>
+    const rows = r.top.map((x) => `<div class="row click${opts.selected === x.name ? " sel" : ""}" role="button" tabindex="0" data-kind="${opts.kind}" data-v="${esc(x.name)}" title="Show only ${esc(x.name)}">
+      <div class="nm"><span>${esc(x.name)}</span>${x.panel ? `<span class="pn">panel ${x.panel}</span>` : ""}</div>
       <div class="track"><i style="width:${Math.max(2, 100 * x.n / peak)}%"></i></div><div class="c">${fmt(x.n)}</div>
       ${opts.unread ? `<div class="ur">${x.u ? x.u + " unread" : ""}</div>` : ""}</div>`).join("");
     const more = r.others ? `<div class="row muted"><div class="nm"><span>${r.distinct - r.top.length} more</span></div><div class="track"></div><div class="c">${fmt(r.others)}</div>${opts.unread ? "<div></div>" : ""}</div>` : "";
     return `<section><div class="sect-h"><span class="t">${title}</span><span class="meta">${opts.trailing || r.distinct + " in all"}</span></div>
       <div class="rank" style="--unreadw:${opts.unread ? "72px" : "0px"}">${rows}${more}</div></section>`;
   }
-  function insights(d) {
-    const notes = [];
+  function chips() {
+    const f = state.f, out = [];
+    if (f.from) out.push(["from", `from ${esc(f.from)}`]);
+    if (f.topic !== undefined) out.push(["topic", `topic ${esc(f.topic)}`]);
+    if (f.hour !== undefined) out.push(["time", hourName(f.hour)]);
+    if (f.day !== undefined) out.push(["time", dayName(f.day)]);
+    if (!out.length) return `<div class="filters"><span class="hint">All mail · click a sender, topic or bar to narrow</span></div>`;
+    return `<div class="filters">${out.map(([k, t]) => `<button class="fchip" data-clear="${k}" aria-label="Remove filter ${t}">${t}<span class="x">×</span></button>`).join("")}<button class="clear" data-clear="all">Clear all</button></div>`;
+  }
+  function messageList(d) {
+    const shown = d.sub.slice(0, 50);
+    const cards = shown.map((m) => `<div class="mcard"><div class="h">${m.unread ? '<span class="st u">UNREAD</span>' : '<span class="st">READ</span>'}${m.urgent ? '<span class="st urg">URGENT</span>' : ""}
+      <span class="tp${m.topic ? "" : " none"}">${m.topic || "(no topic)"}</span><span class="tm">${ageText(m.age)}</span></div>
+      <div class="fr">from <b>${m.from}</b>${PANELS[m.from] ? " · panel " + PANELS[m.from] : ""}</div><div class="bd">${m.body}</div></div>`).join("");
+    return `<section><div class="sect-h"><span class="t">Messages</span><span class="meta">newest ${fmt(shown.length)} of ${fmt(d.total)}${d.total > shown.length ? ' · <a href="#" data-goto="received">show all in Received</a>' : ""}</span></div>
+      <div class="msgs">${cards || '<div class="meta" style="padding:8px 0">No messages in this slice.</div>'}</div></section>`;
+  }
+  function insights(all, unreadAll) {
+    const f = state.f, filtered = anyFilter(f), d = stats(all, f);
+    const share = all.length ? (100 * d.total / all.length) : 0;
     return `<div class="pane">
+      ${chips()}
       <div class="tiles">
-        <div class="tile" title="Every message this panel has received."><div class="v">${fmt(d.total)}</div><div class="l">RECEIVED</div></div>
-        <div class="tile" title="Messages the agent has not taken yet."><div class="v ${d.unread ? "accent" : ""}">${fmt(d.unread)}</div><div class="l">UNREAD</div></div>
-        <div class="tile" title="Messages the agent has taken."><div class="v">${fmt(d.total - d.unread)}</div><div class="l">TAKEN</div></div>
-        <div class="tile" title="Messages this panel sent that c11 still records."><div class="v">${fmt(d.sent)}</div><div class="l">SENT</div></div>
+        <div class="tile"><div class="v">${fmt(d.total)}</div><div class="l">RECEIVED</div></div>
+        <div class="tile"><div class="v ${d.unread ? "accent" : ""}">${fmt(d.unread)}</div><div class="l">UNREAD</div></div>
+        <div class="tile"><div class="v">${fmt(d.total - d.unread)}</div><div class="l">TAKEN</div></div>
+        ${filtered ? `<div class="tile" title="This slice's share of all received mail."><div class="v">${share < 10 ? share.toFixed(1) : Math.round(share)}%</div><div class="l">OF ALL MAIL</div></div>`
+                   : `<div class="tile"><div class="v">25</div><div class="l">SENT</div></div>`}
       </div>
       <div class="lines">
         <div class="meta">${fmt(d.lastHour)} in the last hour · ${fmt(d.lastDay)} in 24 hours · ${fmt(d.lastWeek)} in 7 days</div>
-        <div class="meta">First ${d.first} · newest ${d.newest} · about ${d.perDay.toFixed(1)} a day</div>
-        ${d.unread ? `<div class="meta warn">Oldest unread has waited ${d.oldest}</div>` : ""}
+        ${d.unread ? `<div class="meta warn">Oldest unread has waited ${Math.max(1, Math.floor(d.oldestUnread))}h</div>` : `<div class="meta">&nbsp;</div>`}
       </div>
-      ${chart("Received, last 24 hours", d.hourly, "24h ago", "now", (i) => i === 23 ? "Past hour" : `${24 - i} to ${23 - i} hours ago`)}
-      ${chart("Received, last 14 days", d.daily, dayName(0), "today", dayName)}
-      ${ranking("Top senders", d.senders, { unread: true })}
-      ${ranking("Top topics", d.topics, {})}
+      ${chart("Received, last 24 hours", d.hourly, "24h ago", "now", hourName, "hour")}
+      ${chart("Received, last 14 days", d.daily, dayName(0), "today", dayName, "day")}
+      ${ranking("Top senders", d.senders, { unread: true, kind: "from", selected: f.from })}
+      ${ranking("Top topics", d.topics, { kind: "topic", selected: f.topic })}
       <div class="meta">Urgent ${fmt(d.urgent)} · replies ${fmt(d.replies)} · file bodies 0 · no topic ${fmt(d.untitled)}</div>
-      ${d.scanned < d.total ? `<div class="meta" style="white-space:normal">Senders, topics and the urgent, reply, file-body and no-topic counts cover only the newest ${fmt(d.scanned)} of ${fmt(d.total)} messages.</div>` : ""}
-      ${ranking("Sent to", d.recipients, { trailing: `${d.sentTaken} of ${d.sentCopies} copies taken` })}
-      ${notes.length ? `<div class="lines">${notes.map((n) => `<div class="meta">${n}</div>`).join("")}</div>` : ""}
+      ${filtered ? messageList(d) : ranking("Sent to", { top: [{ name: "reviewer", n: 25 }], distinct: 1, others: 0 }, { kind: "to", trailing: "19 of 25 copies taken" })}
     </div>`;
   }
 
   function render() {
     const [total, unread] = volumes[state.vol];
-    const d = dataset(total, unread);
+    const all = mailbox(total, unread);
     $("area").style.width = state.w + "px";
     $("area").style.setProperty("--namew", Math.min(Math.max(state.w * 0.36, 110), 280) + "px");
     $("cellU").textContent = cellText(unread);
     $("cellR").textContent = cellText(total);
     $("cell").setAttribute("aria-label", `Mailbox, ${unread} unread, ${total} received`);
-    $("cell").title = `${unread} unread: the agent has not taken them yet\n${total} received\nClick to read`;
     $("cell").classList.toggle("open", state.open);
     $("drawer").style.display = state.open ? "" : "none";
-    $("tot").textContent = state.tab === "sent" ? `${d.sent} sent` : `${unread} unread · ${total} received`;
+    $("tot").textContent = state.tab === "sent" ? "25 sent" : `${unread} unread · ${total} received`;
     document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === state.tab));
-    $("pane").innerHTML = state.tab === "insights" ? insights(d)
-      : `<div class="placeholder">${state.tab === "sent" ? "The Sent list, unchanged." : "The Received list, unchanged."}</div>`;
-    wireTips();
+    const scroller = document.querySelector(".scroll"), keep = scroller.scrollTop;
+    $("pane").innerHTML = state.tab === "insights" ? insights(all, unread)
+      : `<div class="placeholder">${state.tab === "sent" ? "The Sent list, unchanged." : "The Received list" + (anyFilter(state.f) ? ", narrowed to the same filters." : ", unchanged.")}</div>`;
+    scroller.scrollTop = keep;
+    wire();
   }
-  function wireTips() {
+  function setFilter(kind, value) {
+    const f = { ...state.f };
+    if (kind === "from") { f.from === value ? delete f.from : (f.from = value); }
+    if (kind === "topic") { f.topic === value ? delete f.topic : (f.topic = value); }
+    if (kind === "hour") { const same = f.hour === value; delete f.hour; delete f.day; if (!same) f.hour = value; }
+    if (kind === "day") { const same = f.day === value; delete f.hour; delete f.day; if (!same) f.day = value; }
+    state.f = f; render();
+  }
+  function wire() {
     document.querySelectorAll(".chart").forEach((c) => {
       const tip = c.querySelector(".tip");
       c.querySelectorAll(".b").forEach((b) => {
@@ -279,11 +353,21 @@ ol li { margin-bottom: 10px; }
         b.addEventListener("mouseleave", () => tip.classList.remove("on"));
       });
     });
+    const act = (el, fn) => { el.addEventListener("click", fn); el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(e); } }); };
+    document.querySelectorAll(".chart .b").forEach((b) => act(b, () => setFilter(b.dataset.kind, Number(b.dataset.i))));
+    document.querySelectorAll(".row.click").forEach((r) => { if (r.dataset.kind !== "to") act(r, () => setFilter(r.dataset.kind, r.dataset.v)); });
+    document.querySelectorAll("[data-clear]").forEach((c) => act(c, () => {
+      const k = c.dataset.clear, f = { ...state.f };
+      if (k === "all") state.f = {}; else { if (k === "time") { delete f.hour; delete f.day; } else delete f[k]; state.f = f; }
+      render();
+    }));
+    document.querySelectorAll("[data-goto]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); state.tab = a.dataset.goto; render(); }));
   }
   function seg(id, key, attr, cast) {
     $(id).addEventListener("click", (e) => {
       const b = e.target.closest("button"); if (!b) return;
       state[key] = cast ? cast(b.dataset[attr]) : b.dataset[attr];
+      if (key === "vol") state.f = {};
       $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
       render();
     });
@@ -304,6 +388,12 @@ ol li { margin-bottom: 10px; }
     `<div class="c1"><span class="lbl">${fmt(r)} received</span><div class="mail"><span class="u">${u ? cellText(u) : ""}</span>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg>
       <span class="r">${cellText(r)}</span></div></div>`).join("");
+  // Open on a slice: #from=merge-captain&topic=handoff&day=12 (or hour=23).
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("from")) state.f.from = h.get("from");
+  if (h.get("topic")) state.f.topic = h.get("topic");
+  if (h.get("day")) state.f.day = Number(h.get("day"));
+  else if (h.get("hour")) state.f.hour = Number(h.get("hour"));
   render();
 })();
 </script>

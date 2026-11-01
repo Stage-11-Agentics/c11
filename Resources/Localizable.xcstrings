@@ -84294,18 +84294,6 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Флаг «%@»"}}
       }
     },
-    "sidebar.tiles.noAgents": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "No agents"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "エージェントなし"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "Немає агентів"}},
-        "ko": {"stringUnit": {"state": "translated", "value": "에이전트 없음"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无代理"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無代理"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "Нет агентов"}}
-      }
-    },
     "mailbox.opencode.shared-owner": {
       "comment": "C11-520 shared OpenCode mailbox owner or unavailable doorbell. Preserve literal product and command names.",
       "extractionState": "manual",

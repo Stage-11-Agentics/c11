@@ -12008,7 +12008,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
                 return true
             }
-            if SidebarTileHoverAnchor.dismiss(in: event.window ?? NSApp.keyWindow) { return true }
 #if DEBUG
             dlog(
                 "shortcut.escape paletteDismiss consumed=0 target={\(debugWindowToken(commandPaletteTargetWindow))} " +

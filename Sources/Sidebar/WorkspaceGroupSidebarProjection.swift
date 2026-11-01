@@ -110,6 +110,15 @@ struct WorkspaceSidebarTileRun: Identifiable {
         flush()
         return runs
     }
+
+    /// Splits a run of workspace rows into grid lines of at most `columns`
+    /// rows, in order. Each line is drawn as one row of full cards.
+    func lines(columns: Int) -> [Self] {
+        let width = max(1, columns)
+        return stride(from: 0, to: rows.count, by: width).map {
+            Self(rows: Array(rows[$0..<min($0 + width, rows.count)]))
+        }
+    }
 }
 
 struct WorkspaceGroupSidebarProjection: Equatable {

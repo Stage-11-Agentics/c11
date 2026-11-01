@@ -205,7 +205,9 @@ struct MailboxDrawerView: View {
     @State private var expanded: Set<String> = []
     @State private var contentHeight: CGFloat = 0
     @State private var loadGeneration = 0
-    @State private var linkOpener = MailboxDrawerLinkOpener()
+    /// The notice for a dead or malformed body link, shown over the drawer.
+    @State private var linkNotice: PanelLinkNotice?
+    @State private var linkNoticeGeneration = 0
 
     private var bodyFont: Font { .system(size: 11.5 * style.scale, design: .monospaced) }
     private var metaFont: Font { .system(size: 10.5 * style.scale, design: .monospaced) }
@@ -229,13 +231,18 @@ struct MailboxDrawerView: View {
         }
         .frame(width: geometry.width, alignment: .leading)
         .background(Color(nsColor: style.background))
-        .background(MailboxDrawerHostReader { linkOpener.hostView = $0 })
+        // Over the content, so showing it never moves the drawer's layout.
+        .overlay(alignment: .topLeading) {
+            if let linkNotice {
+                MailboxLinkNoticeCard(text: linkNotice.text).padding(12)
+            }
+        }
         .overlay(Rectangle().stroke(style.border, lineWidth: 1))
         // Every body link in every tab opens here; Text never opens a URL itself.
         .environment(\.openURL, OpenURLAction { url in
             // A link that landed closes the drawer the way its close button does,
             // so the destination and its pulse are not covered.
-            linkOpener.open(url, onPanelLinkOpened: onClose)
+            MailboxDrawerLinkOpener.open(url, onPanelLinkOpened: onClose, showNotice: showLinkNotice)
         })
         .onAppear {
             reload()
@@ -264,6 +271,16 @@ struct MailboxDrawerView: View {
         // Sent refresh, so it repeats less often, and only while showing.
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             if tab == .insights { reloadInsights() }
+        }
+    }
+
+    /// Five seconds, like the notice a panel shows for the same link.
+    private func showLinkNotice(_ notice: PanelLinkNotice) {
+        linkNoticeGeneration &+= 1
+        let generation = linkNoticeGeneration
+        linkNotice = notice
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            if linkNoticeGeneration == generation { linkNotice = nil }
         }
     }
 
@@ -1811,14 +1828,15 @@ private struct MailboxInsightsRowButton<Label: View>: View {
 /// Opens the links `MailboxBodyLinks` found in a body. A `c11://` link takes
 /// the same path as a link in a Markdown panel, `AppDelegate.openPanelLink`,
 /// so it lands, pulses and records Back history the same way; a dead or
-/// malformed target shows the same non-modal notice. `http` and `https` open
-/// in the default browser. Nothing else is ever a link.
+/// malformed target reports the same `PanelLinkNotice`. `http` and `https`
+/// open in the default browser. Nothing else is ever a link.
 @MainActor
-final class MailboxDrawerLinkOpener {
-    weak var hostView: NSView?
-    private let notices = PanelLinkNoticePresenter()
-
-    func open(_ url: URL, onPanelLinkOpened: () -> Void) -> OpenURLAction.Result {
+enum MailboxDrawerLinkOpener {
+    static func open(
+        _ url: URL,
+        onPanelLinkOpened: () -> Void,
+        showNotice: (PanelLinkNotice) -> Void
+    ) -> OpenURLAction.Result {
         let href = url.absoluteString
         if PanelLinkTarget.usesScheme(url) {
             guard let target = PanelLinkTarget(href) else {
@@ -1835,22 +1853,24 @@ final class MailboxDrawerLinkOpener {
         NSWorkspace.shared.open(url)
         return .handled
     }
-
-    private func showNotice(_ notice: PanelLinkNotice) {
-        guard let host = hostView?.window?.contentView ?? hostView else { return }
-        notices.show(notice, in: host)
-    }
 }
 
-/// Hands the drawer's AppKit view to the link opener, for its notice.
-private struct MailboxDrawerHostReader: NSViewRepresentable {
-    let onResolve: (NSView) -> Void
+/// The panel-link notice as the drawer shows it. The shared AppKit card lays
+/// out with Auto Layout, which the drawer's intrinsic-size hosting view does
+/// not run for foreign subviews, so the drawer draws the same card itself.
+private struct MailboxLinkNoticeCard: View {
+    let text: String
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { onResolve(view) }
-        return view
+    var body: some View {
+        Text(text)
+            .font(.system(size: 13))
+            .foregroundColor(Color(nsColor: .labelColor))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+            .frame(maxWidth: 440, alignment: .leading)
+            .accessibilityIdentifier("c11.panel-link.notice")
     }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }

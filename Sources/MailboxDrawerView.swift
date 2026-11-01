@@ -205,6 +205,7 @@ struct MailboxDrawerView: View {
     @State private var expanded: Set<String> = []
     @State private var contentHeight: CGFloat = 0
     @State private var loadGeneration = 0
+    @State private var linkOpener = MailboxDrawerLinkOpener()
 
     private var bodyFont: Font { .system(size: 11.5 * style.scale, design: .monospaced) }
     private var metaFont: Font { .system(size: 10.5 * style.scale, design: .monospaced) }
@@ -228,7 +229,14 @@ struct MailboxDrawerView: View {
         }
         .frame(width: geometry.width, alignment: .leading)
         .background(Color(nsColor: style.background))
+        .background(MailboxDrawerHostReader { linkOpener.hostView = $0 })
         .overlay(Rectangle().stroke(style.border, lineWidth: 1))
+        // Every body link in every tab opens here; Text never opens a URL itself.
+        .environment(\.openURL, OpenURLAction { url in
+            // A link that landed closes the drawer the way its close button does,
+            // so the destination and its pulse are not covered.
+            linkOpener.open(url, onPanelLinkOpened: onClose)
+        })
         .onAppear {
             reload()
             // Warm Insights while the reader looks at Received, so the tab
@@ -639,7 +647,7 @@ private struct MailboxSentCard: View {
                 recipientRow(message.recipients[index])
             }
             if let copy = message.message, copy.problem == nil, !copy.body.isEmpty {
-                Text(verbatim: copy.body)
+                Text(copy.bodyRich)
                     .font(bodyFont)
                     .foregroundColor(style.foreground)
                     .lineLimit(3)
@@ -887,7 +895,7 @@ private struct MailboxMessageCard: View {
                     .foregroundColor(orange)
             } else {
                 if !message.body.isEmpty {
-                    bodyText(message.body)
+                    bodyText(message.bodyRich)
                 }
                 if let reference = message.reference {
                     referenceBlock(reference)
@@ -931,8 +939,10 @@ private struct MailboxMessageCard: View {
         return false
     }
 
-    private func bodyText(_ text: String) -> some View {
-        Text(verbatim: text)
+    /// The body with its links found once at load (C11-524); every other
+    /// character renders exactly as sent.
+    private func bodyText(_ text: AttributedString) -> some View {
+        Text(text)
             .font(bodyFont)
             .foregroundColor(style.foreground)
             .lineLimit(isExpanded ? nil : MailboxPanelMail.foldedLineLimit)
@@ -955,7 +965,7 @@ private struct MailboxMessageCard: View {
                         .font(bodyFont)
                         .foregroundColor(style.secondary)
                 } else {
-                    bodyText(text)
+                    bodyText(message.referenceRich ?? AttributedString(text))
                 }
                 if truncated {
                     Text(String(
@@ -1656,7 +1666,7 @@ private struct MailboxInsightsView: View {
             }
             .font(metaFont)
             if !record.header.preview.isEmpty {
-                Text(verbatim: record.header.preview)
+                Text(record.header.previewRich)
                     .font(metaFont)
                     .foregroundColor(style.foreground.opacity(0.85))
                     .lineLimit(1)
@@ -1794,4 +1804,53 @@ private struct MailboxInsightsRowButton<Label: View>: View {
         .help(help)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
+}
+
+// MARK: - Body links (C11-524)
+
+/// Opens the links `MailboxBodyLinks` found in a body. A `c11://` link takes
+/// the same path as a link in a Markdown panel, `AppDelegate.openPanelLink`,
+/// so it lands, pulses and records Back history the same way; a dead or
+/// malformed target shows the same non-modal notice. `http` and `https` open
+/// in the default browser. Nothing else is ever a link.
+@MainActor
+final class MailboxDrawerLinkOpener {
+    weak var hostView: NSView?
+    private let notices = PanelLinkNoticePresenter()
+
+    func open(_ url: URL, onPanelLinkOpened: () -> Void) -> OpenURLAction.Result {
+        let href = url.absoluteString
+        if PanelLinkTarget.usesScheme(url) {
+            guard let target = PanelLinkTarget(href) else {
+                showNotice(.invalid)
+                PanelLinkActivation.log(target: href, origin: "mailbox_drawer", activation: "native_click", result: "invalid_target")
+                return .handled
+            }
+            let opened = AppDelegate.shared?.openPanelLink(target) == true
+            PanelLinkActivation.log(target: href, origin: "mailbox_drawer", activation: "native_click", result: opened ? "opened" : "unavailable")
+            if opened { onPanelLinkOpened() } else { showNotice(.unavailable) }
+            return .handled
+        }
+        guard MailboxBodyLinks.linkURL(href) != nil else { return .discarded }
+        NSWorkspace.shared.open(url)
+        return .handled
+    }
+
+    private func showNotice(_ notice: PanelLinkNotice) {
+        guard let host = hostView?.window?.contentView ?? hostView else { return }
+        notices.show(notice, in: host)
+    }
+}
+
+/// Hands the drawer's AppKit view to the link opener, for its notice.
+private struct MailboxDrawerHostReader: NSViewRepresentable {
+    let onResolve: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { onResolve(view) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

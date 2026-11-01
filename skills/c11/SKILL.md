@@ -84,6 +84,13 @@ is suppressed with Reduce Motion. Visiting a link does not lower flags or answer
 unread notifications follow the same rules as a sidebar visit. Closed or invalid targets
 show a small notice in the source panel.
 
+Mail bodies in the mailbox drawer show `[Title](c11://panel/<uuid>)` as "Title", and
+bare `c11://panel/<uuid>` and `c11://workspace/<uuid>` URLs are links too. A plain click
+lands exactly as a markdown-panel link does, then closes the drawer; a closed or
+malformed target shows the notice over the drawer. `http` and `https` links open in
+the default browser. Every other scheme stays plain text, and nothing else in a body
+is styled.
+
 Browser links work only from a main-frame `file://` page or
 HTTP(S) on `localhost`, `127.0.0.1` or `::1` (any port). Other origins show a notice.
 The link itself must be in the top document: links inside iframes are refused,

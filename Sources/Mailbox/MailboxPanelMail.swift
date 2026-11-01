@@ -197,6 +197,12 @@ enum MailboxPanelMail {
         /// before the stamp existed or from a sender it could not pin down.
         var senderPanelId: UUID? = nil
 
+        /// The inline body and the referenced file's text with their links
+        /// found (C11-524). Built once when the listing loads, off the main
+        /// thread, so the drawer never parses a body while it renders.
+        var bodyRich = AttributedString()
+        var referenceRich: AttributedString? = nil
+
         /// The TTL ran out before `now`, measured from when it was sent.
         func isExpired(now: Date) -> Bool {
             guard let ttlSeconds, ttlSeconds > 0, let start = sentAt ?? arrivedAt else { return false }
@@ -434,7 +440,9 @@ enum MailboxPanelMail {
             problem: nil,
             isLong: isLong(body) || isLong(referencedText),
             senderPanelId: ((raw["ext"] as? [String: Any])?[MailboxEnvelope.senderPanelKey] as? String)
-                .flatMap(UUID.init(uuidString:))
+                .flatMap(UUID.init(uuidString:)),
+            bodyRich: MailboxBodyLinks.attributed(body),
+            referenceRich: referencedText.isEmpty ? nil : MailboxBodyLinks.attributed(referencedText)
         )
     }
 
@@ -704,6 +712,8 @@ extension MailboxPanelMail {
         let fileBody: Bool
         /// The body's first line, at most `previewLimit` characters.
         let preview: String
+        /// The preview with its links found (C11-524), built with the header.
+        let previewRich: AttributedString
 
         static let previewLimit = 140
         /// Sender and topic are untrusted and cached for the app's life, so
@@ -717,6 +727,7 @@ extension MailboxPanelMail {
             self.reply = reply
             self.fileBody = fileBody
             self.preview = preview
+            self.previewRich = MailboxBodyLinks.attributed(preview)
         }
 
         init(raw: [String: Any]) {
@@ -732,6 +743,7 @@ extension MailboxPanelMail {
             let body = raw["body"] as? String ?? ""
             let firstLine = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
             preview = String(firstLine.prefix(Self.previewLimit))
+            previewRich = MailboxBodyLinks.attributed(preview)
         }
     }
 

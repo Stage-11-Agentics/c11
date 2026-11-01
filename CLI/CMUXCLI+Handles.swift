@@ -661,7 +661,7 @@ extension CMUXCLI {
         case "default-agent": return sub(["get": 1, "set": 2, "launch": 1])
         case "conversation":
             return sub(["capture-runtime": 1, "claim": 1, "push": 1, "tombstone": 1, "list": 1, "get": 1,
-                        "clear": 1, "resume": 1, "help": 1])
+                        "clear": 1, "resume": 1, "find": 2, "help": 1])
         case "state": return sub(["save": 1, "verify": 2, "help": 1])
         case "app": return sub(["restart": 1, "help": 1])
         case "claude-hook":
@@ -1622,6 +1622,12 @@ extension CMUXCLI {
         case "list", "get": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--panel"])
         case "clear": return CLIFlagPreflightSpec(valueOptions: ["--panel"])
         case "resume": return CLIFlagPreflightSpec(flags: ["--all-skipped", "--dry-run", "--json"], valueOptions: ["--panel"])
+        case "find":
+            return CLIFlagPreflightSpec(
+                flags: ["--json", "--open", "-a"],
+                valueOptions: ["--limit", "--session", "--workspace"],
+                honorsEndOfOptions: true
+            )
         default: return CLIFlagPreflightSpec()
         }
     }

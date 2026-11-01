@@ -73,6 +73,14 @@ extension CMUXCLI {
           resume (--panel <id> | --all-skipped) [--dry-run] [--json]
                  Rerun this launch's resume decision and type the command
                  only into panels nobody has used since launch.
+          find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--json]
+                 Search Claude and Codex transcripts on this Mac. -a reads
+                 each file in chunks, at most 1 MiB, skips files over 8 MiB,
+                 prints progress on stderr, and stops a listing at --limit
+                 matches. --open with -a stops at two matches.
+                 --open focuses a live session, or resumes an idle one into
+                 a new panel. It does not change the selected workspace.
+                 A live row prints its c11://panel link.
 
         --panel defaults to $C11_PANEL_ID for every subcommand except
         resume, which needs it explicitly. There is NO focused-panel
@@ -442,4 +450,361 @@ extension CMUXCLI {
             print(line)
         }
     }
+
+    /// `c11 conversation find` scans Claude and Codex transcripts in this process.
+    /// The query, titles, and prompt text stay here. The socket sees ids and,
+    /// for an idle resume, the resume command.
+    func runConversationFind(
+        subArgs: [String],
+        jsonOutput: Bool,
+        socketPath: String,
+        explicitPassword: String?
+    ) throws {
+        let parsed: SessionFinder.Invocation
+        switch SessionFinder.parseArguments(subArgs) {
+        case .success(let invocation):
+            parsed = invocation
+        case .failure(let error):
+            throw conversationFindParseError(error)
+        }
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let roots = SessionFinder.roots(home: home, environment: ProcessInfo.processInfo.environment)
+        let client = conversationFindClient(
+            socketPath: socketPath,
+            explicitPassword: explicitPassword
+        )
+        defer { client?.close() }
+        let hits: [SessionFinder.LiveHit]
+        if let client {
+            do {
+                hits = try conversationFindLiveHits(client: client)
+            } catch {
+                if parsed.open {
+                    throw CLIError(message: String(
+                        localized: "cli.conversation.find.needsApp",
+                        defaultValue: "find --open needs a running c11. Listing works without it."
+                    ))
+                }
+                hits = []
+            }
+        } else {
+            hits = []
+        }
+        let zone = TimeZone.current
+        let matchStop: Int?
+        if parsed.query.deep {
+            if parsed.query.sessionID != nil {
+                matchStop = 1
+            } else if parsed.open {
+                matchStop = 2
+            } else {
+                matchStop = parsed.query.limit
+            }
+        } else {
+            matchStop = nil
+        }
+        let result = SessionFinder.search(
+            query: parsed.query,
+            roots: roots,
+            liveHits: hits,
+            matchStop: matchStop,
+            progress: parsed.query.deep ? { snap in
+                if snap.filesRead > 0, snap.filesRead.isMultiple(of: 250) {
+                    conversationFindWriteProgress(snap)
+                }
+            } : nil
+        )
+        if parsed.query.deep, result.filesRead == 0 || !result.filesRead.isMultiple(of: 250) {
+            conversationFindWriteProgress(SessionFinder.ScanProgress(
+                filesRead: result.filesRead,
+                matches: result.matchCount,
+                bytesRead: result.bytesRead
+            ))
+        }
+        if !parsed.open {
+            try emitConversationFindList(result, jsonOutput: jsonOutput || parsed.json, timeZone: zone)
+            return
+        }
+        guard let client else {
+            throw CLIError(message: String(
+                localized: "cli.conversation.find.needsApp",
+                defaultValue: "find --open needs a running c11. Listing works without it."
+            ))
+        }
+        switch SessionFinder.openChoice(result) {
+        case .none:
+            throw CLIError(message: String(
+                localized: "cli.conversation.find.none",
+                defaultValue: "No session matched."
+            ))
+        case .ambiguous(let count):
+            try emitConversationFindList(result, jsonOutput: jsonOutput || parsed.json, timeZone: zone)
+            throw CLIError(message: String(
+                format: String(
+                    localized: "cli.conversation.find.ambiguous",
+                    defaultValue: "find --open needs one session. %lld matched. Pass --session."
+                ),
+                Int64(count)
+            ))
+        case .gone(let sessionID):
+            try emitConversationFindList(result, jsonOutput: jsonOutput || parsed.json, timeZone: zone)
+            throw CLIError(message: String(
+                format: String(
+                    localized: "cli.conversation.find.gone",
+                    defaultValue: "Session %@ is gone. There is no transcript to resume."
+                ),
+                sessionID
+            ))
+        case .refuse:
+            throw CLIError(message: String(
+                localized: "cli.conversation.find.badId",
+                defaultValue: "Session id is not a UUID, so it was not resumed."
+            ))
+        case .focus(let panelID, let workspaceID):
+            let call = SessionFinder.focusCall(panelID: panelID, workspaceID: workspaceID)
+            var focusParams: [String: Any] = [:]
+            for (key, value) in call.params { focusParams[key] = value }
+            _ = try client.sendV2(method: call.method, params: focusParams)
+            let row = result.rows.first
+            let panelRef = row?.panelRef ?? panelID
+            let workspaceRef = row?.workspaceRef ?? workspaceID
+            if jsonOutput || parsed.json {
+                var object: [String: Any] = [
+                    "action": "focus",
+                    "harness": row?.harness.rawValue ?? "",
+                    "session_id": row?.sessionID ?? "",
+                    "panel_id": panelID,
+                    "panel_ref": panelRef,
+                    "workspace_id": workspaceID,
+                    "workspace_ref": workspaceRef,
+                    "selected_workspace_unchanged": true
+                ]
+                if let link = row?.link { object["link"] = link }
+                print(jsonString(object))
+            } else {
+                print(String(
+                    format: String(
+                        localized: "cli.conversation.find.focused",
+                        defaultValue: "Focused %@ in %@. The selected workspace was not changed."
+                    ),
+                    panelRef,
+                    workspaceRef
+                ))
+                if let link = row?.link {
+                    print(link)
+                }
+            }
+        case .resume(let command, let cwd):
+            let callerWorkspace = parsed.callerWorkspace ?? workspaceFromArgsOrEnv(subArgs)
+            let call = SessionFinder.resumeCall(
+                command: command,
+                cwd: cwd,
+                callerWorkspaceID: callerWorkspace
+            )
+            var params: [String: Any] = [:]
+            for (key, value) in call.params { params[key] = value }
+            params["focus"] = false
+            try addCallingPanel(to: &params)
+            let payload = try client.sendV2(method: call.method, params: params)
+            let panelID = conversationFindString(payload, ["panel_id", "surface_id"]) ?? ""
+            let panelRef = conversationFindString(payload, ["panel_ref", "surface_ref"]) ?? panelID
+            let row = result.rows.first
+            if jsonOutput || parsed.json {
+                var object: [String: Any] = [
+                    "action": "resume",
+                    "harness": row?.harness.rawValue ?? "",
+                    "session_id": row?.sessionID ?? "",
+                    "panel_id": panelID,
+                    "panel_ref": panelRef,
+                    "command": command
+                ]
+                if let cwd { object["cwd"] = cwd }
+                print(jsonString(object))
+            } else {
+                print(String(
+                    format: String(
+                        localized: "cli.conversation.find.resumed",
+                        defaultValue: "Resumed %@ in %@."
+                    ),
+                    row?.sessionID ?? "",
+                    panelRef
+                ))
+            }
+        }
+    }
+
+    private func emitConversationFindList(
+        _ result: SessionFinder.Result,
+        jsonOutput: Bool,
+        timeZone: TimeZone
+    ) throws {
+        if jsonOutput {
+            print(jsonString(SessionFinder.jsonObject(result, timeZone: timeZone)))
+            return
+        }
+        if result.skipped.corruptLines > 0 || result.skipped.hugeFiles > 0 || result.skipped.unreadableFiles > 0 {
+            let line = String(
+                format: String(
+                    localized: "cli.conversation.find.skipped",
+                    defaultValue: "skipped: corrupt_lines=%lld huge_files=%lld unreadable_files=%lld"
+                ),
+                Int64(result.skipped.corruptLines),
+                Int64(result.skipped.hugeFiles),
+                Int64(result.skipped.unreadableFiles)
+            )
+            FileHandle.standardError.c11SafeWrite(Data((line + "\n").utf8))
+        }
+        if result.rows.isEmpty {
+            print(String(localized: "cli.conversation.find.empty", defaultValue: "(no sessions)"))
+            return
+        }
+        for row in result.rows {
+            let state: String
+            switch row.state {
+            case .live:
+                state = String(
+                    format: String(localized: "cli.conversation.find.liveIn", defaultValue: "live in %@"),
+                    row.panelRef ?? row.panelID ?? ""
+                )
+            case .idle:
+                state = String(localized: "cli.conversation.find.state.idle", defaultValue: "idle")
+            case .gone:
+                state = String(localized: "cli.conversation.find.state.gone", defaultValue: "gone")
+            }
+            let cwd = row.cwd ?? "-"
+            let when = SessionFinder.formatLocalTimestamp(row.lastActive, timeZone: timeZone)
+            if let link = row.link {
+                print("\(row.harness.rawValue)  \(row.sessionID)  \(state)  \(link)  \(cwd)  \(when)  \(row.title)")
+            } else {
+                print("\(row.harness.rawValue)  \(row.sessionID)  \(state)  \(cwd)  \(when)  \(row.title)")
+            }
+        }
+    }
+
+    private func conversationFindParseError(_ error: SessionFinder.ParseError) -> CLIError {
+        switch error {
+        case .extraWord(let word):
+            return CLIError(message: String(
+                format: String(
+                    localized: "cli.conversation.find.extra",
+                    defaultValue: "find takes one query. Extra word: %@."
+                ),
+                word
+            ))
+        case .badLimit:
+            return CLIError(message: String(
+                localized: "cli.conversation.find.limit",
+                defaultValue: "--limit must be a whole number from 1 to 200."
+            ))
+        case .badSession:
+            return CLIError(message: String(
+                localized: "cli.conversation.find.session",
+                defaultValue: "--session must be a UUID."
+            ))
+        case .unknownFlag(let flag):
+            return CLIError(message: String(
+                format: String(localized: "cli.conversation.find.unknownFlag", defaultValue: "Unknown flag %@."),
+                flag
+            ))
+        }
+    }
+
+    private func conversationFindClient(
+        socketPath: String,
+        explicitPassword: String?
+    ) -> SocketClient? {
+        let client = SocketClient(path: socketPath)
+        do {
+            try client.connect()
+            try authenticateClientIfNeeded(client, explicitPassword: explicitPassword, socketPath: socketPath)
+            return client
+        } catch {
+            client.close()
+            return nil
+        }
+    }
+
+    private func conversationFindLiveHits(client: SocketClient) throws -> [SessionFinder.LiveHit] {
+        let windowsPayload = try client.sendV2(method: "window.list", params: [:])
+        let windows = windowsPayload["windows"] as? [[String: Any]] ?? []
+        var panels: [String: (ref: String, workspaceID: String, workspaceRef: String)] = [:]
+        for window in windows {
+            guard let windowID = window["id"] as? String, !windowID.isEmpty else { continue }
+            let workspacePayload = try client.sendV2(method: "workspace.list", params: ["window_id": windowID])
+            let workspaces = workspacePayload["workspaces"] as? [[String: Any]] ?? []
+            for workspace in workspaces {
+                guard let workspaceID = workspace["id"] as? String, !workspaceID.isEmpty else { continue }
+                let workspaceRef = (workspace["ref"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? workspaceID
+                let panelPayload = try client.sendV2(
+                    method: "panel.list",
+                    params: ["window_id": windowID, "workspace_id": workspaceID]
+                )
+                let workspaceRefFromList = (panelPayload["workspace_ref"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? workspaceRef
+                let listed = panelPayload["panels"] as? [[String: Any]] ?? []
+                for panel in listed {
+                    guard let panelID = panel["id"] as? String, !panelID.isEmpty else { continue }
+                    let ref = (panel["ref"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? panelID
+                    panels[panelID] = (ref, workspaceID, workspaceRefFromList)
+                }
+            }
+        }
+        let listed = try client.sendV2(method: "conversation.list", params: [:])
+        if SessionFinder.refusesOpen(liveList: listed) {
+            throw CLIError(message: String(
+                localized: "cli.conversation.find.needsApp",
+                defaultValue: "find --open needs a running c11. Listing works without it."
+            ))
+        }
+        let entries = listed["conversations"] as? [[String: Any]] ?? []
+        var hits: [SessionFinder.LiveHit] = []
+        for entry in entries {
+            let panelID = (entry["panel_id"] as? String) ?? (entry["surface_id"] as? String) ?? ""
+            guard let panel = panels[panelID] else { continue }
+            let capturedAt: Date?
+            if let seconds = entry["captured_at"] as? Double {
+                capturedAt = Date(timeIntervalSince1970: seconds)
+            } else if let number = entry["captured_at"] as? NSNumber {
+                capturedAt = Date(timeIntervalSince1970: number.doubleValue)
+            } else {
+                capturedAt = nil
+            }
+            let placeholder = (entry["placeholder"] as? Bool)
+                ?? (entry["placeholder"] as? NSNumber)?.boolValue
+                ?? false
+            hits.append(SessionFinder.LiveHit(
+                kind: entry["kind"] as? String ?? "",
+                sessionID: entry["id"] as? String ?? "",
+                conversationState: entry["state"] as? String ?? "",
+                placeholder: placeholder,
+                panelID: panelID,
+                panelRef: panel.ref,
+                workspaceID: panel.workspaceID,
+                workspaceRef: panel.workspaceRef,
+                cwd: entry["cwd"] as? String,
+                capturedAt: capturedAt,
+                panelExists: true
+            ))
+        }
+        return hits
+    }
+
+    private func conversationFindString(_ payload: [String: Any], _ keys: [String]) -> String? {
+        for key in keys {
+            if let value = payload[key] as? String, !value.isEmpty { return value }
+        }
+        return nil
+    }
+}
+
+private func conversationFindWriteProgress(_ progress: SessionFinder.ScanProgress) {
+    let line = String(
+        format: String(
+            localized: "cli.conversation.find.progress",
+            defaultValue: "find: files=%lld matches=%lld bytes=%lld"
+        ),
+        Int64(progress.filesRead),
+        Int64(progress.matches),
+        Int64(progress.bytesRead)
+    )
+    FileHandle.standardError.c11SafeWrite(Data((line + "\n").utf8))
 }

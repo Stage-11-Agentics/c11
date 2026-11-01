@@ -671,11 +671,27 @@ extension TerminalController {
     func v2ConversationList(params: [String: Any]) -> V2CallResult {
         let snap = conversationStoreSync { store in
             await store.snapshot()
-        } ?? [:]
-        let surfaceFilter = v2UUID(params, "surface_id")
+        }
+        return Self.conversationListPayload(
+            snapshot: snap,
+            isDisabled: ConversationStorePolicy.isDisabled,
+            surfaceFilter: v2UUID(params, "surface_id")
+        )
+    }
+
+    /// A nil snapshot is the 2 s store timeout. An empty list would look like
+    /// "no live sessions" and `find --open` could resume a second copy.
+    nonisolated static func conversationListPayload(
+        snapshot: [String: PanelConversations]?,
+        isDisabled: Bool,
+        surfaceFilter: UUID?
+    ) -> V2CallResult {
+        guard let snap = snapshot else {
+            return .err(code: "internal_error", message: "store timeout", data: nil)
+        }
         var entries: [[String: Any]] = []
         for (sid, surfaceConv) in snap {
-            if let f = surfaceFilter, sid != f.uuidString { continue }
+            if let surfaceFilter, sid != surfaceFilter.uuidString { continue }
             if let active = surfaceConv.active {
                 entries.append([
                     "surface_id": sid,
@@ -685,17 +701,18 @@ extension TerminalController {
                     "captured_via": active.capturedVia.rawValue,
                     "state": active.state.rawValue,
                     "captured_at": active.capturedAt.timeIntervalSince1970,
-                    "diagnostic_reason": v2OrNull(active.diagnosticReason),
-                    "cwd": v2OrNull(active.cwd)
+                    "diagnostic_reason": active.diagnosticReason ?? NSNull(),
+                    "cwd": active.cwd ?? NSNull()
                 ])
             }
         }
         // C11-24 review (M3): expose kill-switch state so operators
         // diagnosing "why isn't my session resuming?" can confirm
-        // whether the store path is even active.
+        // whether the store path is even active. `find --open` refuses
+        // when this flag is true.
         return .ok([
             "conversations": entries,
-            "is_disabled": ConversationStorePolicy.isDisabled
+            "is_disabled": isDisabled
         ])
     }
 

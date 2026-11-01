@@ -371,6 +371,7 @@ c11 ssh in this version". Use the local CLI to operate the workspace.
 | read and answer typed asks (`c11 feed list\|open\|answer\|watch`); generic input is unsupported | [references/api.md](references/api.md#feed) |
 | workspace folders (`workspace-group`), membership transfers, atomic `reorder-workspaces` | [references/api.md#workspace-groups-and-batch-order](references/api.md#workspace-groups-and-batch-order) |
 | workspace persistence, snapshots, conversation resume & lifecycle journal | [references/conversation.md](references/conversation.md) |
+| find a past Claude or Codex session, then focus the live one or resume the idle one | [references/conversation.md](references/conversation.md#find-past-sessions) |
 | read agent lifecycle, journal analytics & export | [references/journal.md](references/journal.md) |
 | offline token usage (30d default; `--since all` for full history), activity reports, attribution and cache pricing | [references/usage-report.md](references/usage-report.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |

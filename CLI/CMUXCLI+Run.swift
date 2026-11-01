@@ -440,6 +440,20 @@ extension CMUXCLI {
         if ["send", "paste", "send-key", "send-panel", "send-key-panel"].contains(command) {
             try CapabilityFeatures.current.dispatch(.explicitPanel) {}
         }
+
+        // C11-518: `conversation find` scans transcripts in this process. Listing
+        // works with c11 down. A best-effort socket read marks live rows; --open
+        // refuses unless that read succeeds, so a live session is never resumed twice.
+        if command == "conversation", commandArgs.first?.lowercased() == "find" {
+            try runConversationFind(
+                subArgs: Array(commandArgs.dropFirst()),
+                jsonOutput: jsonOutput,
+                socketPath: resolvedSocketPath,
+                explicitPassword: socketPasswordArg
+            )
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(

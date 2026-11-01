@@ -2303,7 +2303,7 @@ struct ContentView: View {
     @AppStorage(ThemeAppStorage.Keys.m1bCustomTitlebarMigrated, store: ThemeAppStorage.defaults)
     private var m1bCustomTitlebarMigrated = false
 
-    @State private var titlebarLeadingInset: CGFloat = 12
+    @AppStorage("titlebarControlsStyle") private var titlebarControlsStyleRaw = TitlebarControlsStyle.classic.rawValue
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
     private var fakeTitlebarTextColor: Color {
         _ = titlebarThemeGeneration
@@ -2383,9 +2383,6 @@ struct ContentView: View {
             // view draggable (which breaks drag gestures like tab reordering).
             WindowDragHandleView()
 
-            TitlebarLeadingInsetReader(inset: $titlebarLeadingInset)
-                .allowsHitTesting(false)
-
             HStack(spacing: 8) {
                 if isFullScreen && !sidebarState.isVisible {
                     fullscreenControls
@@ -2442,12 +2439,10 @@ struct ContentView: View {
     }
 
     private var customTitlebarLeadingPadding: CGFloat {
-        if isFullScreen { return sidebarState.isVisible ? 12 : 8 }
-        // The custom strip starts after the sidebar, while native accessory
-        // widths are measured from the window's left edge. Reserve any controls
-        // extending beyond a narrow sidebar before placing the folder/title.
-        let contentOrigin = sidebarState.isVisible ? sidebarWidth : 0
-        return max(12, titlebarLeadingInset - contentOrigin + CGFloat(debugTitlebarLeadingExtra))
+        let config = (TitlebarControlsStyle(rawValue: titlebarControlsStyleRaw) ?? .classic).config
+        return config.titleLeadingPadding(sidebarWidth: sidebarWidth,
+            sidebarVisible: sidebarState.isVisible, isFullScreen: isFullScreen,
+            extra: CGFloat(debugTitlebarLeadingExtra))
     }
 
     private func updateTitlebarText() {
@@ -16056,39 +16051,6 @@ private struct SidebarVisualEffectBackground: NSViewRepresentable {
     }
 }
 
-
-/// Reads the leading inset required to clear traffic lights + left titlebar accessories.
-final class TitlebarLeadingInsetPassthroughView: NSView {
-    override var mouseDownCanMoveWindow: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private struct TitlebarLeadingInsetReader: NSViewRepresentable {
-    @Binding var inset: CGFloat
-
-    func makeNSView(context: Context) -> NSView {
-        let view = TitlebarLeadingInsetPassthroughView()
-        view.setFrameSize(.zero)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
-            // Start past the traffic lights
-            var leading: CGFloat = 78
-            // Add width of all left-aligned titlebar accessories
-            for accessory in window.titlebarAccessoryViewControllers
-                where accessory.layoutAttribute == .leading || accessory.layoutAttribute == .left {
-                leading += accessory.view.frame.width
-            }
-            leading += 0
-            if leading != inset {
-                inset = leading
-            }
-        }
-    }
-}
 
 private struct SidebarBackdrop: View {
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity

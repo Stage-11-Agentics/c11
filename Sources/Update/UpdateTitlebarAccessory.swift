@@ -114,6 +114,28 @@ struct TitlebarControlsStyleConfig {
     let buttonCornerRadius: CGFloat
     let hoverBackground: Bool
 
+    static let leadingPadding: CGFloat = 4
+    static let controlCount = 6
+
+    var titlebarRowWidth: CGFloat {
+        CGFloat(Self.controlCount) * buttonSize
+            + CGFloat(Self.controlCount - 1) * spacing
+            + groupPadding.leading + groupPadding.trailing
+    }
+
+    func titleLeadingPadding(sidebarWidth: CGFloat, sidebarVisible: Bool,
+                             isFullScreen: Bool, extra: CGFloat = 0) -> CGFloat {
+        if isFullScreen { return sidebarVisible ? 12 : 8 }
+        // AppKit places the left accessory after the traffic lights. Use the
+        // same fixed button geometry as the accessory on the very first frame;
+        // measuring an unattached NSView can otherwise report a zero width.
+        let trafficLightInset: CGFloat = 78
+        let titleGap: CGFloat = 8
+        let contentOrigin = sidebarVisible ? sidebarWidth : 0
+        return max(12, trafficLightInset + Self.leadingPadding + titlebarRowWidth
+                   + titleGap - contentOrigin + extra)
+    }
+
     var sidebarRowsHeight: CGFloat {
         2 * buttonSize + spacing + groupPadding.top + groupPadding.bottom
     }
@@ -330,7 +352,7 @@ struct TitlebarControlsView: View {
         let style = TitlebarControlsStyle(rawValue: styleRawValue) ?? .classic
         let config = style.config
         controlsGroup(config: config)
-            .padding(.leading, 4)
+            .padding(.leading, TitlebarControlsStyleConfig.leadingPadding)
             .padding(.trailing, titlebarHintTrailingInset)
             .contentShape(Rectangle())
             .opacity(shouldShowControls ? 1 : 0)

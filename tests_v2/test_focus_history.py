@@ -6,6 +6,8 @@ This activates apps and changes focus in that guest; never run on the operator's
 """
 import json
 import os
+import re
+import signal
 from pathlib import Path
 import subprocess
 import time
@@ -18,24 +20,57 @@ def require(condition, detail):
         raise AssertionError(detail)
 
 
+def activate_guest(socket):
+    require(Path.home() == Path('/Users/admin'), 'Sandbox guest account required')
+    require(re.fullmatch(r'/tmp/c11-sandbox-[A-Za-z0-9._-]+\.sock', socket),
+            'Explicit sandbox socket required')
+    run_id = socket.removeprefix('/tmp/c11-sandbox-').removesuffix('.sock')
+    apps = list((Path.home() / 'c11-sandbox/apps' / run_id).glob('*.app'))
+    require(len(apps) == 1, ('Exact guest app required', apps))
+    executable = apps[0] / 'Contents/MacOS/c11'
+    processes = subprocess.check_output(['/bin/ps', '-axo', 'pid,comm'], text=True, timeout=5)
+    pids = [int(line.strip().split(None, 1)[0]) for line in processes.splitlines()
+            if line.strip().split(None, 1)[-1] == str(executable)]
+    require(len(pids) == 1, ('Exact guest PID required', pids))
+    pid = pids[0]
+    owned = subprocess.check_output(['/usr/sbin/lsof', '-nP', '-a', '-p', str(pid), '-U', '-Fn'],
+                                    text=True, timeout=5)
+    require('n' + socket in owned.splitlines(), 'Socket not owned by exact guest PID')
+    script = f'''tell application "System Events"
+set p to first process whose unix id is {pid}
+set frontmost of p to true
+repeat 50 times
+    if frontmost of p then return
+    delay 0.1
+end repeat
+error "Guest PID failed to activate"
+end tell'''
+    subprocess.run(['/usr/bin/osascript', '-e', script], check=True, timeout=8)
+
+
 def main():
     # The golden guest contains this marker; require it before any focus action.
     require(Path.home().joinpath('c11-sandbox').is_dir(), 'Run only in the c11 sandbox guest')
     socket = os.environ['C11_SOCKET']
     cli = os.environ['C11_CLI']
+    signal.alarm(60)
+    activate_guest(socket)
     with cmux(socket) as client:
         # Agents cannot select a workspace (workspace_switch_blocked), so the visits
         # happen in the guest's already-selected workspace.
         workspace = client._call('workspace.current')['workspace_id']
         targets = [client.new_surface() for _ in range(4)]
         a, b, c, d = targets
-        client.activate_app()
 
         def focus(tab, dwell):
             client._call('panel.focus', {'workspace_id': workspace, 'panel_id': tab})
-            rows = client._call('panel.list', {'workspace_id': workspace})['panels']
-            require(any(row['id'] == tab and row['being_seen'] for row in rows),
-                    f'Target {tab} is not actually being seen')
+            deadline = time.monotonic() + 3
+            while True:
+                rows = client._call('panel.list', {'workspace_id': workspace})['panels']
+                if any(row['id'] == tab and row['being_seen'] for row in rows):
+                    break
+                require(time.monotonic() < deadline, f'Target {tab} is not actually being seen')
+                time.sleep(0.02)
             time.sleep(dwell)
 
         def history(limit=200):

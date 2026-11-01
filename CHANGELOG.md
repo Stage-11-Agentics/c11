@@ -10,6 +10,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 - Intel Macs: c11 now requires a Mac with Apple silicon. 1.7.0 is the last release for Intel Macs. Intel Macs on 1.x stay on 1.7.0: the updater does not offer them newer releases, and Homebrew installs 1.7.0 there. To run a newer c11 on an Intel Mac, build it from source. Any Mac still on a 0.x version is shown this release as an information-only update with a download link, not an install; on Apple silicon, download it from the release page.
 
+### Fixed
+
+- `system.identify` returns a caller panel that can be located even when no window is the active workspace manager. The focused workspace stays empty in that case.
+
 ## [1.7.0] - 2026-10-31
 
 Headline: **c11 1.7.0. The sidebar can go double wide as Tiles: compact workspace tiles packed into columns, so a whole fleet fits on one screen, with the full card a hover away.**

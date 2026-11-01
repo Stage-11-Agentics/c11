@@ -293,8 +293,10 @@ final class SessionFinderTests: XCTestCase {
             phraseAt: 32
         )
         let now = fixture.when
-        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fixture.claudeFile(newest).path)
-        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-10)], ofItemAtPath: fixture.claudeFile(middle).path)
+        // Fixture history is dated `now`, so these matches have to be newer than that
+        // or the newest-first walk opens those older files before it can stop.
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(20)], ofItemAtPath: fixture.claudeFile(newest).path)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(10)], ofItemAtPath: fixture.claudeFile(middle).path)
         try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-200_000)], ofItemAtPath: fixture.claudeFile(oldest).path)
         var reads: [Int] = []
         let stopped = SessionFinder.search(
@@ -305,6 +307,8 @@ final class SessionFinderTests: XCTestCase {
             progress: { reads.append($0.filesRead) }
         )
         XCTAssertEqual(reads, [1, 2])
+        XCTAssertEqual(stopped.filesRead, 2)
+        XCTAssertEqual(Set(stopped.rows.map(\.sessionID)), Set([newest, middle]))
         XCTAssertEqual(stopped.matchCount, 2)
         XCTAssertEqual(stopped.rows.count, 2)
         XCTAssertTrue(stopped.truncated)

@@ -14,6 +14,13 @@ Usage:
 Environment:
   CMUX_SOCKET or CMUX_SOCKET_PATH can override the socket path.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import base64
 import json

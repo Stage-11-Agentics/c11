@@ -5,6 +5,13 @@ Regression test: terminal drop-target overlay should animate on initial show.
 This exercises the focused terminal's drop-overlay code path via debug socket
 commands (no Accessibility/TCC/sudo required).
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

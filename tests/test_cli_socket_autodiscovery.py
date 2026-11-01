@@ -2,6 +2,13 @@
 """Regression test: CLI should auto-discover tagged debug sockets from CMUX_TAG."""
 
 from __future__ import annotations
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import glob
 import os
@@ -11,6 +18,7 @@ import subprocess
 import threading
 
 from fake_server_env import fake_server_env
+from socket_guard import permit_implicit_discovery
 
 
 def resolve_cmux_cli() -> str:
@@ -111,14 +119,17 @@ def main() -> int:
     env["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] = "1"
 
     try:
-        proc = subprocess.run(
-            [cli_path, "ping"],
-            text=True,
-            capture_output=True,
-            env=env,
-            timeout=8,
-            check=False,
-        )
+        # The decoy CMUX_SOCKET_PATH is an implicit default so the CLI will
+        # discover the tagged socket. The guard would otherwise rewrite it.
+        with permit_implicit_discovery():
+            proc = subprocess.run(
+                [cli_path, "ping"],
+                text=True,
+                capture_output=True,
+                env=env,
+                timeout=8,
+                check=False,
+            )
     except Exception as exc:
         print(f"FAIL: invoking cmux ping failed: {exc}")
         return 1

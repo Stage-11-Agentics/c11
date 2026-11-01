@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """Regression: help flags consumed by --text are literal feed.answer text."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import json
 import os

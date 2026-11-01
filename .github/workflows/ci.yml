@@ -99,6 +99,9 @@ jobs:
           python3 tests/test_pi_wrapper_hooks.py
           python3 tests/test_omp_wrapper_hooks.py
           python3 tests/test_agent_wrapper_interactive_marker.py
+          python3 tests/test_socket_guard.py
+          # Full sweep is the hourly python job. This is the incident pair only.
+          python3 tests/test_socket_guard_canary.py --smoke
 
       # The OpenCode plugin, and the Pi and omp extensions (TypeScript, which
       # Bun runs as is), driven through fake hosts: no harness, no network.

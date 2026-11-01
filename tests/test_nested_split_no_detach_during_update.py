@@ -16,6 +16,13 @@ that don't correspond to a user-visible "pane disappeared" flash.
 We therefore tolerate a tiny number of `in_window=false` samples, but still fail if a
 panel is detached for more than a couple of ticks.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

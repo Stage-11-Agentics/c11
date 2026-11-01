@@ -15,6 +15,13 @@ mask view-tree issues). Instead we use:
 If the bug reproduces, `panel_snapshot` typically fails (panel not in window) or returns a
 very small image.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

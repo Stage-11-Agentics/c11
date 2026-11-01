@@ -6,6 +6,13 @@ Run with --fast-only against the old binary to demonstrate the regression red.
 """
 
 from __future__ import annotations
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import json
 import os

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """Behavioral checks for completed-attempt timing, including retries and failures."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import importlib.util
 from pathlib import Path
 import unittest

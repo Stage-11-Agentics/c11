@@ -6,6 +6,13 @@ Goals:
   1) Ensure programmatic splits don't transiently render EmptyPanelView (visible flash).
   2) Validate selected panel bounds are non-zero and aligned with bonsplit pane bounds.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

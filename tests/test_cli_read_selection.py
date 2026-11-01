@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """C11-282: built CLI accepts the skill's trailing --json argv, without an app."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import base64
 import json
 import os

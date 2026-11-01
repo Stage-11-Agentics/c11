@@ -112,6 +112,7 @@ while IFS= read -r rel; do
     CMUX_SOCKET_PATH="\$meta_socket" \
     C11_CLI="\$meta_cli" \
     CMUXTERM_CLI="\$meta_cli" \
+    C11_TEST_ALLOW_LIVE_APP=1 \
     /usr/bin/python3 "\$rel" 2>&1 | /usr/bin/tee -a "\$log"
   rc=\${pipestatus[1]}
   set -e

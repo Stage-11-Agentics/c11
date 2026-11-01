@@ -7,6 +7,13 @@ Regression test:
 4. Cmd+P switcher should list only workspaces, then switching to a workspace with a
    focused blank browser should focus the omnibar.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import json
 import os

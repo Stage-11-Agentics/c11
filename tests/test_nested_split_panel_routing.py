@@ -13,6 +13,13 @@ We validate routing using debug-only `panel_snapshot` diffs:
 This test avoids `layout_debug` because it calls `layoutSubtreeIfNeeded()` and can mask
 layout/view-tree problems.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

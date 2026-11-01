@@ -1,6 +1,6 @@
 # Release Local
 
-Ship a c11 production release without GitHub Actions, through `scripts/release-local.sh`. Use it when the Actions release workflow cannot run (runner billing, outage). The script mirrors `.github/workflows/release.yml` step for step: the Release build runs on Atlas, and signing, notarization, DMG, Sparkle appcast and `gh release` run on this Mac. The `gh release` calls use the REST API, so Actions billing does not apply to them.
+Ship a c11 production release through `scripts/release-local.sh`, the release path (C11-542). It runs on Atlas, so the operator's Mac can sleep: the build happens in place (`--host local`), and signing, notarization, DMG, Sparkle appcast, `gh release` and the Homebrew dispatch use Atlas's release keychain. `release.yml` is the manual GitHub fallback. The `gh release` calls use the REST API, so Actions billing does not apply to them.
 
 ## Steps
 
@@ -8,34 +8,39 @@ Ship a c11 production release without GitHub Actions, through `scripts/release-l
 
 Follow `skills/release/SKILL.md` through tagging: choose the version, update `CHANGELOG.md`, bump with `./scripts/bump-version.sh`, then gate and push the annotated tag `vX.Y.Z` on the tested release-branch head. Merge the branch back into `main` after the release is verified (skill step 11).
 
-The tag push also starts `release.yml`. If that run is queued or in progress, cancel it (`gh run cancel <id> --repo Stage-11-Agentics/c11`); the script refuses to publish while it is active.
+A tag push starts no workflow. If someone dispatched the `release.yml` fallback for this tag, the script refuses to publish while that run is active.
 
-### 2. Check out the tag cleanly
+### 2. Check the signing path, from your own Mac
 
-Run from a clean checkout whose HEAD is the tag's commit, with submodules provisioned (`git submodule update --init --recursive ghostty vendor/bonsplit`). A real run refuses on a dirty tree, a HEAD that is not the tag's commit locally and on origin, or a `MARKETING_VERSION` that does not match the tag.
+Run these from your own Mac, not from the Atlas shell: both drive Atlas over ssh, and Atlas cannot ssh to itself.
+- `scripts/atlas-signing-check.sh` passes: the release keychain unlocks through its launchd lease, codesign and notarytool work from a non-GUI session, and it ends locked.
+- `scripts/move-sparkle-key-to-atlas.sh --check` prints `match`: the `c11mux` Sparkle key is on Atlas.
 
-### 3. Dry run
+### 3. Check out the tag cleanly on Atlas
 
-```bash
-scripts/release-local.sh --dry-run vX.Y.Z
-```
+Over ssh, in `~/c11-release` on Atlas, fetch the tag and check it is the tested commit before anything runs: `git fetch origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z && test "$(git rev-parse 'vX.Y.Z^{commit}')" = "<tested sha>" && git checkout --detach vX.Y.Z && git submodule update --init --recursive ghostty vendor/bonsplit`. A real run refuses on a dirty tree, a HEAD that is not the tag's commit locally and on origin, or a `MARKETING_VERSION` that does not match the tag. The two runs below go there; each command carries `C11_SIGNING_KEYCHAIN` itself, because a fresh ssh session does not keep an exported variable.
 
-This builds on Atlas, then signs, builds a rehearsal DMG and appcast (signed with a throwaway key), and prints every notarize and publish command without running it. It publishes nothing.
-
-### 4. Real run
+### 4. Dry run
 
 ```bash
-scripts/release-local.sh vX.Y.Z
+C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --dry-run vX.Y.Z
 ```
 
-Before it runs, check that:
-- The `c11-notary` notarytool keychain profile exists (the preflight fails fast without it).
-- Atlas builds with the pinned release toolchain. The script refuses an app whose `DTXcode` differs from `RELEASE_DTXCODE` (1640, Xcode 16.4, as v0.67.0 shipped). Moving the pin (`C11_RELEASE_DTXCODE`) is a deliberate SDK change and should move `release.yml` with it.
-- Someone is at the Mac: the first read of the `c11mux` Sparkle key shows one keychain dialog for Sparkle's `generate_keys`, asking for the login password. *Always Allow* makes later runs silent.
+This builds in place, signs with the Developer ID, builds a rehearsal DMG and appcast (signed with a throwaway key), and prints every notarize and publish command without running it. It keeps the build and its dSYMs and publishes nothing. The skill runs it before the go (step 6.7, on the tested head before the tag exists), so the real run reuses its build.
 
-`--reuse-build` reruns the tail from the existing Atlas build of the same HEAD, for example after a notarization failure. If the run fails, run `say "c11 release failed"` and read `build-release-local/vX.Y.Z/release-local.log`.
+### 5. Real run
 
-### 5. Verify
+```bash
+C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --reuse-build vX.Y.Z
+```
+
+Drop `--reuse-build` when there is no dry-run build of this HEAD; the run then builds first. Notes:
+- Notarization uses `c11-notary`, else `acetate-notary` (team UKQ4QALWD4), or the one `C11_NOTARY_PROFILE` names. The log names the profile and team.
+- The build matches the release toolchain pin, `RELEASE_DTXCODE` 2630 (Xcode 26.3). Moving the pin (`C11_RELEASE_DTXCODE`) is a deliberate SDK change and should move `release.yml` with it.
+
+`--reuse-build` also reruns the tail after a failure, for example a notarization error; a rerun on an already-published release only dispatches the Homebrew update. If the run fails, read `build-release-local/vX.Y.Z/release-local.log`.
+
+### 6. Verify
 
 The script itself checks that `latest` names the tag, carries `appcast.xml`, and that the feed URL resolves. Then confirm by hand:
 

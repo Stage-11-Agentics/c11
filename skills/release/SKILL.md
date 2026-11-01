@@ -135,6 +135,13 @@ This is a checklist trigger, not a CI gate.
     build-script changes AND only with explicit operator accept-the-risk).
 - Don't drift past this decision. Default is rebuild; deviating is explicit.
 
+6.7. Pre-build the release on Atlas, in parallel with staging and CI:
+- Releases build and publish on Atlas, so the operator's Mac can sleep. Atlas's `~/c11-release` is used only for those two runs (6.7 and step 10); commits, pushes, the release PR and its checks stay in your release-branch checkout.
+- On Atlas (over ssh), check out the tested head detached, with submodules: `cd ~/c11-release && git fetch origin release/vX.Y.Z && git checkout --detach <tested head> && git submodule update --init --recursive ghostty vendor/bonsplit`. Then run `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --dry-run vX.Y.Z` there. `--host local` builds in place through the same admission slots as `remote-build.sh`. It builds the production app (cold, wholemodule, Apple silicon only, Xcode 26.3; about 6-7 minutes), signs it with the Developer ID from the release keychain, rehearses every step up to notarization, and keeps the build in `build-release-local/vX.Y.Z/pristine` for the real run to reuse.
+- The tree must be clean: a build that carried uncommitted files cannot be reused. Rerun 6.7 whenever the tested head changes.
+- The pristine build keeps its dSYMs, so the real run can upload them to Sentry when `SENTRY_AUTH_TOKEN` is set there.
+- Signing-keychain mode takes one launchd unlock lease of Atlas's release keychain and relocks it on every exit path. That keychain holds the Developer ID identity (team UKQ4QALWD4), the `acetate-notary` profile and the `c11mux` Sparkle key. Notarization uses `c11-notary`, else `acetate-notary` (`C11_NOTARY_PROFILE` picks one), and the log names the profile and team. Before the first release from a machine, run `scripts/atlas-signing-check.sh` and `scripts/move-sparkle-key-to-atlas.sh --check` from your own Mac, not from the Atlas shell: both drive Atlas over ssh, and Atlas cannot ssh to itself.
+
 7. Create release PR:
 - `gh pr create --title "Release vX.Y.Z" --body "..."`
 - Include a concise changelog summary in the PR body.
@@ -153,19 +160,32 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
   SHA=<full tested head sha from the release PR body>
   test -n "$SHA" || { echo "STOP: no tested head"; exit 1; }
   test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
-  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | grep -m1 MARKETING_VERSION   # must read X.Y.Z
-  git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # release.yml needs it
-  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -qx success || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
+  # Readers consume their whole input (no grep -q or -m1): under pipefail an early exit
+  # kills the writer with SIGPIPE (141) and a valid head reads as a STOP. Each awk
+  # reader exits nonzero when nothing matched.
+  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | awk '/MARKETING_VERSION = X\.Y\.Z;/ {p=1} END {exit !p}' \
+    || { echo "STOP: MARKETING_VERSION at $SHA is not X.Y.Z"; exit 1; }
+  git show "$SHA:CHANGELOG.md" | awk '/^## \[X\.Y\.Z\] - / {p=1} END {exit !p}' \
+    || { echo "STOP: CHANGELOG.md at $SHA has no ## [X.Y.Z] section"; exit 1; }
+  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -x success >/dev/null || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
   gh pr checks <release PR> || { echo "STOP: a PR check is failing or pending"; exit 1; }
+  # The tested commit must carry the release path (an old-base hotfix may not; see Hotfix):
+  ON="$(git show "$SHA:.github/workflows/release.yml" | awk '/^on:/{f=1;next} /^[^ #]/{f=0} f')" \
+    || { echo "STOP: cannot read release.yml at $SHA"; exit 1; }
+  grep -E '^[[:space:]]+push:' <<<"$ON" >/dev/null && { echo "STOP: release.yml at $SHA still starts on a tag push"; exit 1; }
+  grep -E '^[[:space:]]+workflow_dispatch:' <<<"$ON" >/dev/null || { echo "STOP: release.yml at $SHA has no workflow_dispatch trigger"; exit 1; }
+  git show "$SHA:scripts/release-local.sh" | grep 'C11_SIGNING_KEYCHAIN' >/dev/null \
+    || { echo "STOP: release-local.sh at $SHA has no signing-keychain mode"; exit 1; }
   ```
   Run the gate as a script or in an agent's shell: `exit` closes an interactive terminal.
   A stale local tag (notably `nightly`) makes `git fetch` fail with "would clobber existing tag" and can leave refs unmoved: prune it (`git tag -d nightly` or `git fetch --prune --prune-tags origin`) and re-check.
 - `git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"` (annotated; local git config rejects a lightweight `git tag vX.Y.Z` with "no tag message?")
-- `git push origin vX.Y.Z`
-- **If you tagged the wrong commit and the release run already started:** run `gh run cancel <id>`. Release runs take 33 to 41 minutes, about 30 of them before signing, so a quick catch publishes nothing. Delete the tag in both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), re-verify the gate, then re-tag and push.
+- `git push origin vX.Y.Z`. A tag push starts `release.yml` only when the tagged commit's workflow still has `on.push.tags` (1.7.0 and earlier); the gate above refuses such a commit, so a tag that passed it starts no workflow. If an old-base tag was pushed anyway, cancel that run (`gh run list --repo Stage-11-Agentics/c11 --workflow release.yml --branch vX.Y.Z`, then `gh run cancel <id>`) before step 10; `release-local.sh` refuses to publish while it is active.
+- **If you tagged the wrong commit:** nothing is published until step 10 finishes. Stop the release run, delete the tag in both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), re-verify the gate, then re-tag and push.
 
-10. Verify release workflow and assets:
-- `gh run watch <run id> --exit-status`
+10. Publish with `scripts/release-local.sh`:
+- On Atlas, fetch the new tag into `~/c11-release` and check it is the tested commit before running: `git fetch origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z && test "$(git rev-parse 'vX.Y.Z^{commit}')" = "$SHA" && git checkout --detach vX.Y.Z` (the script requires the tag locally). Then: `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --reuse-build vX.Y.Z`. It reuses the 6.7 build after checking its identity (commit, unsigned executable hash, bundle id, Xcode pin, arm64 app, CLI and helper), then signs, notarizes the app and the DMG, generates and verifies the appcast, publishes the GitHub release, and dispatches the Homebrew cask update. About 2-3 minutes, most of it Apple's notarization. Without a 6.7 build, drop `--reuse-build` and it builds first (about 7 more minutes).
+- The summary prints each step's seconds and appends them to `build-release-local/timings.jsonl`. Add the release's row to `docs/release-speed.md`.
 - Confirm the release exists in GitHub Releases, is neither a draft nor a prerelease, and includes `c11-macos.dmg`.
 - `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints `vX.Y.Z`, and `releases/latest/download/appcast.xml` serves `X.Y.Z` with the new build number.
 
@@ -184,6 +204,7 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 A hotfix branches from the shipped tag, not from `main`:
 
 - `git checkout -b release/vX.Y.(Z+1) vX.Y.Z`, then `git cherry-pick -x` each fix from `main`.
+- A base tag from before the Atlas release path (1.7.0 and earlier) still starts `release.yml` on a tag push and lacks the release tooling. Bring both from `main` in one commit before staging: `git checkout origin/main -- .github/workflows/release.yml scripts/`. The hotfix then ships Apple silicon only, like every release after 1.7.0. The tag gate in step 9 refuses a tested head without it.
 - Then run the normal flow on that branch: a patch bump, a changelog section, staging, checks, the tag gate on the tested head, and the merge back.
 - A hotfix is valid only while `vX.Y.Z` is the newest shipped release. A hotfix tag takes `releases/latest` and gets a higher build number, so Sparkle would offer it to users already on a newer release. If a newer release has shipped, stop and ask the operator.
 - On the merge back, `main`'s `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` win in `project.pbxproj`. Place the hotfix's changelog section by date, below `[Unreleased]` and any newer release sections.
@@ -217,26 +238,24 @@ Updates both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (build number). T
 
 **Default policy:** bump the minor version unless the user explicitly asks for patch or major.
 
-## Manual release (fallback)
+## GitHub fallback (Atlas unavailable)
 
-If not using the `/release` command:
+`release.yml` runs the same job on a GitHub `macos-26` runner (Xcode 26.3, arm64) when the local path cannot run. It starts only by hand, on an existing tag:
 
 ```bash
-git tag -a vX.Y.Z -m "Release vX.Y.Z" "$SHA"   # the tested head, after the step 9 gate
-git push origin vX.Y.Z
+gh workflow run release.yml --repo Stage-11-Agentics/c11 --ref vX.Y.Z
 gh run watch --repo Stage-11-Agentics/c11
 ```
 
-Use the annotated form (`-a -m`). A lightweight `git tag vX.Y.Z` is rejected with "no tag message?" because of local git config (likely `tag.gpgSign` or equivalent forcing all tags to be annotated).
+It takes about 25-35 minutes. `release-local.sh` refuses to publish while a `release.yml` run for the same tag is active, so the two never race. Use the annotated tag form (`-a -m`): a lightweight `git tag vX.Y.Z` is rejected with "no tag message?" by local git config.
 
-## Local release (Actions unavailable)
+## Local release notes
 
-When `release.yml` cannot run (runner billing, outage), `scripts/release-local.sh vX.Y.Z` performs the same job: the Release build runs on Atlas through `scripts/remote-build.sh`, and the rest (daemon assets, Sparkle keys, codesign, notarize, staple, DMG, appcast, `gh release`) runs on this Mac. Walkthrough: `.claude/commands/release-local.md`.
-
-- Tag first (step 9). Cancel the `release.yml` run the tag push starts; the script refuses to publish while one is active.
-- Run `--dry-run` first. It stops before notarization, rehearses the DMG and appcast with a throwaway Sparkle key, and publishes nothing.
-- A real run needs the `c11-notary` notarytool keychain profile. It also needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin. It shows one keychain dialog the first time it reads the `c11mux` Sparkle key, so someone has to be at the Mac.
-- The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`). The release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
+- `scripts/release-local.sh --help` lists the options; `.claude/commands/release-local.md` walks through a run.
+- A real run needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin (2630, Xcode 26.3).
+- Without `C11_SIGNING_KEYCHAIN` the script signs from the login keychain of the Mac running it, and without `--host local` it builds on Atlas over ssh, so it can also run from the operator's Mac.
+- Releases are Apple silicon only; 1.7.0 is the last build for Intel Macs. The appcast step fails closed unless an arm64-only item carries the hardware requirement and the information-only guard for older updaters.
+- The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`), and the release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
 
 ## Reference
 

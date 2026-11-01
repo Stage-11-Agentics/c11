@@ -1,9 +1,12 @@
 name: Release c11 macOS app
 
+# Releases run through scripts/release-local.sh on Atlas: the build in place
+# (--host local) and signing, notarization and publishing from Atlas's release
+# keychain (C11-542, Atin's go 2026-10-31). This workflow is the manual
+# fallback when that path is down:
+#   gh workflow run release.yml --repo Stage-11-Agentics/c11 --ref vX.Y.Z
+# A tag push no longer starts it, so the two publishers never race.
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +17,7 @@ env:
 
 jobs:
   build-sign-notarize:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 120
     steps:
       - name: Checkout
@@ -96,16 +99,13 @@ jobs:
         if: steps.guard_release_assets.outputs.skip_all != 'true'
         run: |
           set -euo pipefail
-          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
-            XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
-          else
-            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | head -n 1 || true)"
-            if [ -n "$XCODE_APP" ]; then
-              XCODE_DIR="$XCODE_APP/Contents/Developer"
-            else
-              echo "No Xcode.app found under /Applications" >&2
-              exit 1
-            fi
+          # The release toolchain pin: Xcode 26.3, as release-local.sh
+          # (RELEASE_DTXCODE 2630) and remote-build.sh on Atlas use.
+          XCODE_DIR="/Applications/Xcode_26.3.app/Contents/Developer"
+          if [ ! -d "$XCODE_DIR" ]; then
+            echo "Xcode 26.3 is not on this runner image; the release pin is DTXcode 2630" >&2
+            ls -d /Applications/Xcode*.app >&2 || true
+            exit 1
           fi
           echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$XCODE_DIR"

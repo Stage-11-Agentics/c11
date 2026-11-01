@@ -14,8 +14,9 @@ PR CI, the hourly backstop and Drawbridge timings are recorded per attempt by `c
 | v1.5.0 | 2126 | 1767 | 39 | 109 | 75 | 26 | 15 |
 | v1.5.1 | 2838 | 2383 | 67 | 124 | 102 | 35 | 16 |
 | v1.6.0 | 1932 | 1581 | 34 | 129 | 66 | 22 | 13 |
+| v1.7.0 | 2113 | 1857 | 24 | 94 | 8 | 20 | 14 |
 
-The build is 84-87% of the job. In v1.5.1's 2383 s build: universal (arm64 + x86_64) whole-module `-O` Swift compile about 1555 s, the uncached `zig build cli-helper` about 538 s, dependencies and the CLI about 235 s, link and dSYM about 55 s. DerivedData is not cached; Swift packages are. The same universal Release build on Atlas (M2 Ultra) takes 172 s fresh and 20 s warm, but Atlas has Xcode 26.x, while releases are pinned to Xcode 16.4 (`RELEASE_DTXCODE` in `scripts/release-local.sh`).
+The build is 84-88% of the job. In v1.5.1's 2383 s build: universal (arm64 + x86_64) whole-module `-O` Swift compile about 1555 s, the uncached `zig build cli-helper` about 538 s, dependencies and the CLI about 235 s, link and dSYM about 55 s. DerivedData is not cached; Swift packages are. The same universal Release build on Atlas (M2 Ultra) took 172 s fresh and 20 s warm. That baseline (to v1.7.0) was built with Xcode 16.4; releases are now pinned to Xcode 26.3 (see Release path below).
 
 The appcast step used to clone Sparkle and xcodebuild its tools on every release (70-102 s). It now downloads the pinned, checksum-verified tarball through `scripts/fetch-sparkle-tools.sh` (8 s cold). The Sentry dSYM upload (continue-on-error) runs after the release upload, so it is off the tag-to-published path.
 
@@ -51,27 +52,36 @@ The `test_default_local_lock_remains_single_slot` failure (`2 != 1`, seen on #80
 | R1 | Sparkle tools from the pinned tarball | ~1.5 min per release | done |
 | R2 | Sentry upload after publish | ~0.5 min to published | done |
 | R3 | Exact-key zig helper cache | ~9 min per release | C11-538 C |
-| R4 | Cache the zig toolchain and create-dmg | ~0.5 min | none |
+| R4 | Cache the zig toolchain | ~45 s (52 s to 8 s) | #811 |
 | P1 | Release heads skip the guest yield, or reuse a main pass when the release tree is that commit plus version and changelog | ~18 min of prep (v1.6.0) | Lead (poller) |
 | P2 | A green cold `pr-swift` run posts success instead of pending plus a rerun | ~4.5 min when cold | Lead (poller) |
 | Q2 | Shard `CLIResolutionSnapshotTests` | `pr-swift` ~300 s to ~150 s | C11-538 B |
-| B | Build the release faster than the free runner allows | ~15-25 min | Atin |
+| B | Release on Atlas through `release-local.sh`: the build runs before the go, then sign, notarize and publish on Atlas | ~30 min | done (C11-542, C11-541) |
 
-After R1-R4 a release is about 28 min. Reaching 15 min needs B. Its options:
+## Release path (C11-542, C11-541)
 
-Xcode 16.4 runs only through macOS 26.1.x ([Apple's support table](https://developer.apple.com/support/xcode/)), so it cannot run on Atlas (macOS 26.5), and the pin ends when GitHub retires its `macos-15` images.
+Atin decided on 2026-10-31: Atlas builds and signs his releases, so a release runs while his Mac sleeps; c11 ships for Apple silicon only (Intel Macs stay on 1.7.0); the Xcode 26 look is fine. `scripts/release-local.sh` is the release path. `release.yml` is a manual fallback on `macos-26`, and a tag push starts no workflow.
 
-1. Move the pin to Xcode 26.x and release with `release-local.sh`: about 10-12 min. Atlas does only the build; Hyperion signs, notarizes, signs the appcast and publishes, so credentials stay on Hyperion (the `c11-notary` profile has to be stored there once). Users on macOS 26 get the 26 SDK's system look; Apple's `UIDesignRequiresCompatibility` key can keep the old one.
-2. Move the pin to Xcode 26.x and keep the free GitHub runner: fixes the pin, no speed gain (about 28 min).
-3. Keep the pin on paid `macos-15-xlarge`, arm64-only: about 14 min (estimate). Drops Intel Macs, and the pin still ends with `macos-15`.
-4. Paid `macos-15-xlarge` alone, or free per-architecture parallel jobs with a `lipo` merge: about 21 min each; neither meets 15.
+Releases run on Atlas in `~/c11-release`, a clean checkout of the tested head, with the build in place and the signing keychain:
 
-## Releasing on Atlas (signing keychain mode)
+```bash
+C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db \
+  scripts/release-local.sh --host local [--dry-run | --reuse-build] vX.Y.Z
+```
 
-Atin's go on 2026-10-31 ("keys to Atlas"): a release can run end to end on Atlas while his Mac sleeps. Atlas's dedicated release keychain (`~/Library/Keychains/acetate-release.keychain-db`, shared with Acetate) already holds the Developer ID identity for team UKQ4QALWD4 and the `acetate-notary` profile. It is locked at rest and unlocked by launchd for one run through `~/.acetate-release/bin/release_keychain.sh` (lease, auto-lock, lock in the exit trap).
+- `--host local` builds in place: `remote-build.sh --host local` runs the same admitted build (`atlas_build_slots.py`) from `$HOME` with no ssh hop.
+- Signing-keychain mode takes one launchd unlock lease of Atlas's release keychain (`acetate-release`, shared with Acetate; locked at rest; `~/.acetate-release/bin/release_keychain.sh`), passes the keychain to codesign and notarytool, reads the Sparkle key from it into the run's 0700 temp directory, and relocks on every exit path. `C11_SIGNING_IDENTITY` is the single identity setting.
+- The keychain holds the Developer ID (Authentic Technologies Inc., team UKQ4QALWD4) and the `acetate-notary` profile, both from Acetate's operator-run provisioning, plus the `c11mux` Sparkle key, which Atin moved with `scripts/move-sparkle-key-to-atlas.sh` on 2026-10-31. Notarization uses `c11-notary`, else `acetate-notary`, and the log names the profile and team.
+- Before the go, `--dry-run` builds the tested head (cold, wholemodule, arm64, Xcode 26.3) while staging is smoked and CI runs. After the go, `--reuse-build` checks that build's identity, then signs, notarizes, publishes and dispatches the Homebrew update.
+- `scripts/atlas-signing-check.sh [--full]` (agent-safe) proves the path from a non-GUI ssh session and fails unless the keychain ends locked.
 
-- `C11_SIGNING_KEYCHAIN=<that keychain> scripts/release-local.sh ...` takes one unlock lease at preflight, passes the keychain to codesign and notarytool, reads the Sparkle key from it into the run's 0700 temp directory, and locks it on exit. `C11_SIGNING_IDENTITY` stays the single setting for the identity.
-- `scripts/move-sparkle-key-to-atlas.sh` (operator, once, one macOS Allow) copies the c11mux Sparkle key from the operator's login keychain into that keychain over ssh stdin. It is safe to run twice. Agents run only `--check` (`match`, `missing` or `mismatch`) and `--self-test`.
-- `scripts/atlas-signing-check.sh` (agent-safe) proves the path from a non-GUI ssh session: codesign of a scratch binary with hardened runtime and timestamp, `notarytool history`, and a Sparkle signature from a throwaway key read back from the keychain, then confirms the keychain is locked and nothing is left behind.
-- On Atlas itself, `--host local` builds in place: `remote-build.sh --host local` runs the same admitted build (`atlas_build_slots.py`) from `$HOME` with no ssh hop, and the release fetches the products from there. A release run entirely on Atlas: `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local vX.Y.Z`.
+| Measured on Atlas, 2026-10-31 | Seconds |
+|---|---:|
+| Release build, arm64, clean (`remote-build.sh`, plus 54 s slot wait) | 370 |
+| Full dry run, signing-keychain mode, `--host local`, cold arm64 build | 402 (build 375) |
+| Dry run reusing the build, everything but notarization and upload | 25 |
+| Real notarization of app and DMG, with stapling and the signed DMG | 80 |
 
+End-to-end rehearsal (#815 proof, 2026-10-31, nothing published): scratch release branch to would-publish in 8 min 52 s. Cheap CI was green at 1:57, `c11/pr-swift` at 3:45 (166 s), the Atlas dry run finished at 7:10, and notarization at 8:52. With the build done during the staging smoke, tag to published is about 2.5 min. Each run appends its step seconds to `build-release-local/timings.jsonl`; add a row to the release table above.
+
+Xcode 16.4 runs only through macOS 26.1.x ([Apple's support table](https://developer.apple.com/support/xcode/)), which is why the pin moved to Xcode 26.3 (DTXcode 2630).

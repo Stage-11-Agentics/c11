@@ -6318,10 +6318,35 @@ final class Workspace: Identifiable, ObservableObject {
             noteRing: { [weak self] decision, effect in
                 guard let self else { return }
                 let retryBusy = captureNote.failed && decision == .skip(reason: "unavailable")
-                if !retryBusy {
-                    self.logMailboxDoorbell(surfaceId: surfaceId, entry: entry, effect: effect)
+                let strandedDoorbell: Bool
+                if case .keep(let reason) = effect {
+                    strandedDoorbell = reason == "draft" && captureNote.stranded
+                } else {
+                    strandedDoorbell = false
                 }
-                guard case .keep(let reason) = effect else { return }
+                let plan = self.mailboxDoorbellPlan(
+                    decision: decision,
+                    surfaceId: surfaceId,
+                    epoch: ringEpoch,
+                    busyExhausted: false,
+                    strandedDoorbell: strandedDoorbell
+                )
+                if !retryBusy {
+                    if strandedDoorbell, case .keep(let reason) = effect {
+                        self.logMailboxDoorbellEntriesOnce(
+                            surfaceId: surfaceId,
+                            entries: [entry],
+                            outcome: .doorbellSkipped,
+                            reason: MailboxHoldNotice.loggedSkipReason(
+                                decisionReason: reason,
+                                relook: plan.relook
+                            )
+                        )
+                    } else {
+                        self.logMailboxDoorbell(surfaceId: surfaceId, entry: entry, effect: effect)
+                    }
+                }
+                guard case .keep = effect else { return }
                 if retryBusy {
                     self.scheduleMailboxDoorbellRecheck(
                         surfaceId: surfaceId,
@@ -6330,17 +6355,11 @@ final class Workspace: Identifiable, ObservableObject {
                     )
                     return
                 }
-                let plan = self.mailboxDoorbellPlan(
-                    decision: decision,
-                    surfaceId: surfaceId,
-                    epoch: ringEpoch,
-                    busyExhausted: false,
-                    strandedDoorbell: reason == "draft" && captureNote.stranded
-                )
                 // Oldest first, as every later look names it.
                 self.logMailboxDoorbellRelook(
                     self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
-                    plan: plan
+                    plan: plan,
+                    surfaceId: surfaceId
                 )
                 self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             },
@@ -6606,6 +6625,10 @@ final class Workspace: Identifiable, ObservableObject {
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
                 workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped,
                     reason: MailboxStdinDelivery.closedGateReason(state: workspace.mailboxStdinState, surfaceId: surfaceId, gate: gate))
+                MailboxBadgeStore.shared.setDraftHold(
+                    panelId: surfaceId,
+                    count: MailboxHoldNotice.holdAfterClosedGate()
+                )
                 if let heldUntil, !live.isEmpty {
                     workspace.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: heldUntil)
                 }
@@ -6692,8 +6715,18 @@ final class Workspace: Identifiable, ObservableObject {
         case .keep:
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
                 guard !live.isEmpty else { return }
-                workspace.logMailboxDoorbellEffect(surfaceId: surfaceId, entries: live, effect: plan.arrival)
-                workspace.logMailboxDoorbellRelook(live, plan: plan)
+                if case .keep(let reason) = plan.arrival,
+                   MailboxHoldNotice.loggedSkipReason(decisionReason: reason, relook: plan.relook) != reason {
+                    workspace.logMailboxDoorbellEntriesOnce(
+                        surfaceId: surfaceId,
+                        entries: live,
+                        outcome: .doorbellSkipped,
+                        reason: MailboxHoldNotice.loggedSkipReason(decisionReason: reason, relook: plan.relook)
+                    )
+                } else {
+                    workspace.logMailboxDoorbellEffect(surfaceId: surfaceId, entries: live, effect: plan.arrival)
+                }
+                workspace.logMailboxDoorbellRelook(live, plan: plan, surfaceId: surfaceId)
                 workspace.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
         }
@@ -6704,7 +6737,8 @@ final class Workspace: Identifiable, ObservableObject {
     /// series (5, 15, 30, then 60 s) bounds how often it writes.
     private func logMailboxDoorbellRelook(
         _ entries: [MailboxStdinBuffer.Entry],
-        plan: MailboxDoorbellSequence.Plan
+        plan: MailboxDoorbellSequence.Plan,
+        surfaceId: UUID
     ) {
         guard let reason = plan.relook,
               case .after(let next) = plan.rearm,
@@ -6716,6 +6750,14 @@ final class Workspace: Identifiable, ObservableObject {
             reason: reason,
             nextMs: Int((next * 1000).rounded())
         )
+        let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        if let count = MailboxHoldNotice.draftHoldCount(
+            relook: reason,
+            queuedIds: entries.map(\.id),
+            coveredIds: covered
+        ) {
+            MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: count)
+        }
     }
 
     /// Drop envelopes a drain already claimed, then run `then` with what is
@@ -6734,6 +6776,7 @@ final class Workspace: Identifiable, ObservableObject {
                         liveIds: []
                     )
                 }
+                MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: 0)
             }
             then(self, [])
             return
@@ -6757,9 +6800,23 @@ final class Workspace: Identifiable, ObservableObject {
                         )
                     }
                     then(workspace, remaining)
+                    let covered = workspace.mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+                    let uncovered = MailboxHoldNotice.uncoveredCount(
+                        queuedIds: remaining.map(\.id),
+                        coveredIds: covered
+                    )
+                    if uncovered == 0 {
+                        workspace.clearDraftHoldIndicator(surfaceId: surfaceId)
+                    } else if MailboxBadgeStore.shared.draftHoldCount(panelId: surfaceId) > 0 {
+                        MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: uncovered)
+                    }
                 }
             }
         }
+    }
+
+    private func clearDraftHoldIndicator(surfaceId: UUID) {
+        MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: 0)
     }
 
     /// A successful invitation remains the final delivery event after recv.
@@ -6870,6 +6927,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// is marked only once typing starts, so a missed surface does not
     /// consume it.
     private func startMailboxDoorbell(surfaceId: UUID, terminalPanel _: TerminalPanel) {
+        // The composer is no longer a draft, or this ring would not have started.
+        // Clearing the indicator does not type into or clear the composer.
+        MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: 0)
         let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
         guard !queued.isEmpty, let dispatcher = mailboxDispatcher else { return }
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
@@ -7113,7 +7173,7 @@ final class Workspace: Identifiable, ObservableObject {
             let plan = mailboxDoorbellPlan(decision: decision, surfaceId: surfaceId,
                 epoch: input.epoch, busyExhausted: input.prompt == nil, strandedDoorbell: false)
             logMailboxDoorbellEffect(surfaceId: surfaceId, entries: queued, effect: plan.arrival)
-            logMailboxDoorbellRelook(queued, plan: plan)
+            logMailboxDoorbellRelook(queued, plan: plan, surfaceId: surfaceId)
             scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             if decision == .skip(reason: "input_transaction") {
                 scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: MailboxDoorbellSequence.shortRecheck)
@@ -7231,7 +7291,7 @@ final class Workspace: Identifiable, ObservableObject {
                     busyExhausted: false,
                     strandedDoorbell: true
                 )
-                workspace.logMailboxDoorbellRelook(live, plan: plan)
+                workspace.logMailboxDoorbellRelook(live, plan: plan, surfaceId: surfaceId)
                 workspace.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
             guard !live.isEmpty,

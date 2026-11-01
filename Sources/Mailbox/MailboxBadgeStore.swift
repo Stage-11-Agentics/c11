@@ -31,6 +31,8 @@ final class MailboxBadgeStore {
     private let now: () -> Date
 
     private var summaries: [UUID: MailboxPanelMail.Summary] = [:]
+    /// Messages a draft is holding. A file recount does not clear this.
+    private var draftHolds: [UUID: Int] = [:]
     private var workspaceOfPanel: [UUID: UUID] = [:]
     private var models: [UUID: MailboxBadgeModel] = [:]
     private var owners: [UUID: WeakWorkspace] = [:]
@@ -107,10 +109,50 @@ final class MailboxBadgeStore {
         }
         _ = summary(workspace: workspace, panelId: panelId)
         if let model = models[panelId] { return model }
-        let model = MailboxBadgeModel(panelId: panelId)
+        let model = makeModel(panelId: panelId)
         model.apply(summaries[panelId] ?? .empty, now: now())
+        return model
+    }
+
+    /// The cell's model, including a draft hold recorded before the cell existed.
+    /// Tests use this without a workspace. The bar goes through `model(workspace:panelId:)`.
+    func modelForPanel(_ panelId: UUID) -> MailboxBadgeModel {
+        models[panelId] ?? makeModel(panelId: panelId)
+    }
+
+    private func makeModel(panelId: UUID) -> MailboxBadgeModel {
+        let model = MailboxBadgeModel(panelId: panelId)
+        model.setDraftHold(draftHolds[panelId] ?? 0)
         models[panelId] = model
         return model
+    }
+
+    /// How many messages a draft is holding for this panel. Zero when it is not.
+    func draftHoldCount(panelId: UUID) -> Int {
+        draftHolds[panelId] ?? 0
+    }
+
+    /// Publish or clear the draft hold. Any thread. A recount that still has
+    /// unread mail does not call this. A recount that finds the last unread
+    /// message claimed does.
+    func setDraftHold(panelId: UUID, count: Int) {
+        let apply = { [weak self] in
+            guard let self else { return }
+            let next = max(0, count)
+            let previous = self.draftHolds[panelId] ?? 0
+            if next == previous { return }
+            if next == 0 {
+                self.draftHolds.removeValue(forKey: panelId)
+            } else {
+                self.draftHolds[panelId] = next
+            }
+            self.models[panelId]?.setDraftHold(next)
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
     }
 
     func inboxURL(workspaceId: UUID, panelId: UUID) -> URL? {
@@ -136,6 +178,7 @@ final class MailboxBadgeStore {
     /// A closed panel's counts and model go away with it.
     func forget(panelId: UUID) {
         summaries.removeValue(forKey: panelId)
+        draftHolds.removeValue(forKey: panelId)
         workspaceOfPanel.removeValue(forKey: panelId)
         models.removeValue(forKey: panelId)
         owners.removeValue(forKey: panelId)
@@ -197,6 +240,9 @@ final class MailboxBadgeStore {
             let previous = summaries[key.panelId] ?? .empty
             summaries[key.panelId] = summary
             models[key.panelId]?.apply(summary, now: now())
+            if previous.unread > 0, let cleared = MailboxHoldNotice.holdAfterReceipt(unread: summary.unread) {
+                setDraftHold(panelId: key.panelId, count: cleared)
+            }
             if previous.hasMail != summary.hasMail {
                 // Mail can be what gives a panel its bar; the bar's presence is
                 // read from the workspace, so the workspace republishes.
@@ -226,6 +272,8 @@ final class MailboxBadgeStore {
 final class MailboxBadgeModel: ObservableObject {
     let panelId: UUID
     @Published private(set) var summary: MailboxPanelMail.Summary = .empty
+    /// Unread messages the doorbell will not type because the composer holds a draft.
+    @Published private(set) var heldBehindDraft = 0
     /// The newest unread message landed within the last three minutes.
     @Published private(set) var isFresh = false
     /// Bumps on every recount that changed something, so an open drawer reloads.
@@ -241,10 +289,22 @@ final class MailboxBadgeModel: ObservableObject {
         freshTimer?.invalidate()
     }
 
+    func setDraftHold(_ count: Int) {
+        let next = max(0, count)
+        if next != heldBehindDraft { heldBehindDraft = next }
+    }
+
     func apply(_ summary: MailboxPanelMail.Summary, now: Date) {
+        let hadUnread = self.summary.unread > 0
         if summary != self.summary {
             self.summary = summary
             revision &+= 1
+        }
+        // A first empty count is not a receipt. Clearing there would drop a
+        // hold recorded before the cell had a summary. Unread falling to zero
+        // is the claim.
+        if hadUnread, let cleared = MailboxHoldNotice.holdAfterReceipt(unread: summary.unread) {
+            setDraftHold(cleared)
         }
         let fresh = summary.isFresh(now: now)
         if fresh != isFresh { isFresh = fresh }

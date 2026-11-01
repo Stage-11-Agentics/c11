@@ -125,14 +125,16 @@ struct MailboxCellView: View {
             lines.append(line)
         }
         lines.append(String(localized: "mailbox.cell.help.received", defaultValue: "\(received) received"))
+        lines = MailboxHoldCopy.cellHelp(linesBeforeHold: lines, heldBehindDraft: model.heldBehindDraft)
         lines.append(String(localized: "mailbox.cell.help.open", defaultValue: "Click to read"))
         return lines.joined(separator: "\n")
     }
 
     private var accessibilityText: String {
-        String(
-            localized: "mailbox.cell.accessibility",
-            defaultValue: "Mailbox, \(unread) unread, \(received) received"
+        MailboxHoldCopy.cellAccessibility(
+            unread: unread,
+            received: received,
+            heldBehindDraft: model.heldBehindDraft
         )
     }
 }
@@ -188,6 +190,15 @@ struct MailboxDrawerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if let held = MailboxHoldCopy.drawerBanner(heldBehindDraft: model.heldBehindDraft) {
+                Text(held)
+                    .font(metaFont)
+                    .foregroundColor(Color(nsColor: .systemOrange))
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+                    .accessibilityIdentifier("mailbox-draft-hold")
+            }
             tabBar
             Rectangle().fill(style.border).frame(height: 1)
             content

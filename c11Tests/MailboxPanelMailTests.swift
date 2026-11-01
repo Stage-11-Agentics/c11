@@ -430,6 +430,119 @@ final class MailboxBadgeStoreTests: XCTestCase {
         XCTAssertTrue(store.isTracking(panelId: panel))
     }
 
+    /// C11-517: a draft hold is not a file count. A recount leaves it, and
+    /// clearing it or closing the panel removes it. Nothing here types.
+    func testDraftHoldSurvivesARecountAndClears() throws {
+        let workspace = UUID(), panel = UUID()
+        store.track(panelId: panel, workspaceId: workspace)
+        store.setDraftHold(panelId: panel, count: 2)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 2)
+        let model = store.modelForPanel(panel)
+        XCTAssertEqual(model.heldBehindDraft, 2)
+
+        let later = store.modelForPanel(panel)
+        XCTAssertTrue(later === model)
+
+        store.setDraftHold(panelId: panel, count: 2)
+        XCTAssertEqual(model.heldBehindDraft, 2)
+
+        try deliver(to: panel, in: workspace)
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        waitForUnread(1, panelId: panel)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 2)
+        XCTAssertEqual(model.heldBehindDraft, 2)
+        XCTAssertEqual(store.cachedSummary(panelId: panel).unread, 1)
+
+        store.setDraftHold(panelId: panel, count: 0)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 0)
+        XCTAssertEqual(model.heldBehindDraft, 0)
+
+        store.setDraftHold(panelId: panel, count: 4)
+        store.forget(panelId: panel)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 0)
+    }
+
+    /// An empty count before the cell has seen unread mail is not a receipt.
+    /// Unread falling to zero is. The cell reads the model.
+    func testReceiptClearsOnlyAfterUnreadDropsToZero() {
+        let panel = UUID()
+        let model = MailboxBadgeModel(panelId: panel)
+        model.setDraftHold(1)
+        model.apply(.empty, now: Date())
+        XCTAssertEqual(model.heldBehindDraft, 1)
+
+        var unread = MailboxPanelMail.Summary.empty
+        unread.unread = 1
+        unread.received = 1
+        model.apply(unread, now: Date())
+        XCTAssertEqual(model.heldBehindDraft, 1)
+
+        model.apply(.empty, now: Date())
+        XCTAssertEqual(model.heldBehindDraft, 0)
+    }
+
+    /// Claiming the last unread envelope clears the store and the cell.
+    /// A later look is not required. Nothing here types into a composer.
+    func testRecvOfTheLastUnreadClearsADraftHold() throws {
+        let workspace = UUID(), panel = UUID()
+        store.track(panelId: panel, workspaceId: workspace)
+        try deliver(to: panel, in: workspace)
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        waitForUnread(1, panelId: panel)
+        store.setDraftHold(panelId: panel, count: 1)
+        let model = store.modelForPanel(panel)
+        XCTAssertEqual(model.heldBehindDraft, 1)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 1)
+
+        let inbox = try XCTUnwrap(store.inboxURL(workspaceId: workspace, panelId: panel))
+        let read = inbox.appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: read, withIntermediateDirectories: true)
+        let messages = try FileManager.default.contentsOfDirectory(
+            at: inbox,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "msg" }
+        XCTAssertFalse(messages.isEmpty)
+        for message in messages {
+            try FileManager.default.moveItem(
+                at: message,
+                to: read.appendingPathComponent(message.lastPathComponent)
+            )
+        }
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        waitForUnread(0, panelId: panel)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 0)
+        XCTAssertEqual(model.heldBehindDraft, 0)
+    }
+
+    func testDraftHoldRecordedBeforeTheCellIsCopiedOntoTheModel() {
+        let panel = UUID()
+        store.setDraftHold(panelId: panel, count: 3)
+        XCTAssertEqual(store.modelForPanel(panel).heldBehindDraft, 3)
+    }
+
+    /// The cell and the drawer read the model. Removing the sentence from
+    /// that copy fails this test. Nothing here types into a composer.
+    func testCellAndDrawerCopyTheModelHold() {
+        let panel = UUID()
+        store.setDraftHold(panelId: panel, count: 1)
+        let model = store.modelForPanel(panel)
+        XCTAssertEqual(
+            MailboxHoldCopy.cellAccessibility(unread: 1, received: 1, heldBehindDraft: model.heldBehindDraft),
+            "Mailbox, 1 unread, 1 received. 1 message held behind your draft"
+        )
+        XCTAssertEqual(
+            MailboxHoldCopy.drawerBanner(heldBehindDraft: model.heldBehindDraft),
+            "1 message held behind your draft"
+        )
+
+        store.setDraftHold(panelId: panel, count: 0)
+        XCTAssertNil(MailboxHoldCopy.drawerBanner(heldBehindDraft: model.heldBehindDraft))
+        XCTAssertFalse(
+            MailboxHoldCopy.cellAccessibility(unread: 0, received: 0, heldBehindDraft: model.heldBehindDraft)
+                .contains("held behind")
+        )
+    }
+
     func testDeliveryToAPanelMovedToAnotherWorkspaceRecountsItThere() throws {
         let before = UUID(), after = UUID(), panel = UUID()
         store.track(panelId: panel, workspaceId: before)

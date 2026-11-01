@@ -135,7 +135,12 @@ final class SidebarTilesPolicyTests: XCTestCase {
         }
         XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: 404.9, scale: 1.25))
         XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: 405, scale: 1.25))
-        XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: 600, scale: 3))
+        // Every chrome scale can reach Tiles inside the 600 pt maximum, with room to spare.
+        for scale in [0.5, 0.85, 1, 1.25, 1.55, 1.6, 2, 3] {
+            XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: 520, scale: scale), "scale \(scale)")
+        }
+        XCTAssertLessThanOrEqual(2 * SidebarLayoutPolicy.tileColumnWidth * SidebarLayoutPolicy.maximumTileScale,
+                                 SessionPersistencePolicy.maximumSidebarWidth - 80)
         XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: .nan))
     }
 

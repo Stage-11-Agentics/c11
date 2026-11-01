@@ -19,8 +19,12 @@ enum SidebarLayoutPolicy {
         return min(SessionPersistencePolicy.sanitizedSidebarWidth(requested), maximum)
     }
 
+    /// Tile columns stop growing past this chrome scale, so two columns
+    /// (at most 518 pt) always fit inside the 600 pt sidebar maximum.
+    static let maximumTileScale: Double = 1.6
+
     static func columns(width: Double, scale: Double = 1) -> Int {
-        let scale = scale.isFinite && scale > 0 ? scale : 1
+        let scale = scale.isFinite && scale > 0 ? min(scale, maximumTileScale) : 1
         let width = width.isFinite ? max(0, min(width, 600)) : 200
         return max(1, Int(floor(width / (tileColumnWidth * scale))))
     }

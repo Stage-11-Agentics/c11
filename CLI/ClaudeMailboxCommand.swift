@@ -276,3 +276,264 @@ private final class ClaudeMailboxStream {
         }
     }
 }
+
+/// Started by the c11 Grok wrapper beside an interactive Grok it launched in
+/// leader mode on a private socket. It offers the fixed invitation to the bound
+/// session through Grok's own ACP leader, never claims mail, stores nothing,
+/// and never answers a permission request (the TUI owns those). Any failure
+/// leaves the app's typed doorbell decision in place.
+enum GrokMailboxCommand {
+    struct Binding {
+        let panelID: String
+        let agentPID: pid_t
+        let agentBirth: UInt64
+        let sessionID: String
+        let leaderSocket: String
+        let grok: String
+        let registry: String
+
+        init?(environment: [String: String], arguments: [String]) {
+            var values: [String: String] = [:]
+            var index = 0
+            while index < arguments.count {
+                let key = arguments[index]
+                guard ["--leader-socket", "--session-id", "--grok", "--registry"].contains(key),
+                      index + 1 < arguments.count, values[key] == nil else { return nil }
+                values[key] = arguments[index + 1]
+                index += 2
+            }
+            guard let socket = values["--leader-socket"], socket.hasPrefix("/"),
+                  let session = values["--session-id"], UUID(uuidString: session) != nil,
+                  let grok = values["--grok"], grok.hasPrefix("/"),
+                  let registry = values["--registry"], registry.hasPrefix("/"),
+                  let panel = environment["C11_PANEL_ID"] ?? environment["CMUX_SURFACE_ID"],
+                  UUID(uuidString: panel) != nil,
+                  let rawPID = environment["C11_AGENT_INTERACTIVE_PID"], let pid = pid_t(rawPID), pid > 1,
+                  let birth = GrokMailboxCommand.birth(of: pid) else { return nil }
+            panelID = panel
+            agentPID = pid
+            agentBirth = birth
+            sessionID = session.lowercased()
+            leaderSocket = socket
+            self.grok = grok
+            self.registry = registry
+        }
+
+        var isAlive: Bool { GrokMailboxCommand.birth(of: agentPID) == agentBirth }
+
+        /// The leader is up once its socket exists. Grok refuses leader mode
+        /// under a sandbox profile and never creates one: typed mail stays.
+        func waitForLeader(timeout: TimeInterval = 15) -> Bool {
+            let until = GrokMailboxCommand.uptime + timeout
+            while GrokMailboxCommand.uptime < until, isAlive {
+                var metadata = stat()
+                if stat(leaderSocket, &metadata) == 0, metadata.st_uid == getuid(),
+                   metadata.st_mode & S_IFMT == S_IFSOCK { return true }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            return false
+        }
+    }
+
+    static let confirmWindow: TimeInterval = 1.8
+    static let lateWindow: TimeInterval = 10
+
+    static func run(binding: Binding, descriptor: Int32) throws {
+        signal(SIGPIPE, SIG_IGN)
+        var client = readyClient(binding)
+        defer { client?.terminate() }
+        guard client != nil else { return }
+        let stream = try ClaudeMailboxStream(descriptor: descriptor)
+        let requestID = UUID().uuidString
+        try stream.write([
+            "id": requestID, "method": "mailbox.native.subscribe",
+            "params": ["panel_id": binding.panelID, "agent_pid": Int(binding.agentPID),
+                       "route": "grok_leader", "session_id": UUID().uuidString, "can_queue": false]
+        ], deadline: uptime + 1)
+        guard let reply = try stream.read(deadline: uptime + 1),
+              reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
+
+        var late: (deliveryID: String, until: TimeInterval)?
+        while binding.isAlive {
+            let shouldContinue = try autoreleasepool { () throws -> Bool in
+                let readDeadline = late.map { min(uptime + 0.05, $0.until) } ?? uptime + 1
+                guard let frame = try stream.read(deadline: readDeadline) else {
+                    if let watch = late {
+                        if client?.confirmed == true {
+                            late = nil
+                            try stream.write(["type": "accepted", "delivery_id": watch.deliveryID], deadline: uptime + 0.2)
+                        } else if uptime >= watch.until {
+                            late = nil
+                        }
+                    }
+                    return true
+                }
+                if frame["type"] as? String == "replaced" { return false }
+                guard frame["type"] as? String == "deliver" else { return true }
+                guard let deliveryID = frame["delivery_id"] as? String,
+                      UUID(uuidString: deliveryID) != nil else { throw ClaudeMailboxCommand.Failure.invalidFrame }
+                late = nil
+                guard frame["text"] as? String == ClaudeMailboxAcceptance.invitation else {
+                    try reject(stream, deliveryID, "unsupported_invitation")
+                    return true
+                }
+                // Refuse before anything is sent when the TUI may be showing
+                // another session: the typed doorbell types into what it shows.
+                guard let registry = FileManager.default.contents(atPath: binding.registry),
+                      GrokMailboxAcceptance.showsOnlyBoundSession(registry: registry, pid: binding.agentPID,
+                                                                  birthMicros: binding.agentBirth,
+                                                                  sessionID: binding.sessionID) else {
+                    try reject(stream, deliveryID, "session_conflict")
+                    return true
+                }
+                guard let current = client, current.isReady else {
+                    client?.terminate()
+                    client = GrokLeaderClient(grok: binding.grok, socket: binding.leaderSocket,
+                                              sessionID: binding.sessionID)
+                    try reject(stream, deliveryID, "not_ready")
+                    return true
+                }
+                guard current.prompt(ClaudeMailboxAcceptance.invitation) else {
+                    try reject(stream, deliveryID, "inbox_write_failed")
+                    return true
+                }
+                let deadline = uptime + confirmWindow
+                while uptime < deadline, binding.isAlive, stream.isConnected {
+                    if current.confirmed {
+                        try stream.write(["type": "accepted", "delivery_id": deliveryID], deadline: uptime + 0.2)
+                        return true
+                    }
+                    Thread.sleep(forTimeInterval: 0.02)
+                }
+                guard binding.isAlive, stream.isConnected else { return false }
+                try reject(stream, deliveryID, "unconfirmed")
+                late = (deliveryID, uptime + lateWindow)
+                return true
+            }
+            if !shouldContinue { return }
+        }
+    }
+
+    /// One ACP client stays connected for the sidecar's life, so a delivery is
+    /// a single write: starting a client can take seconds.
+    private static func readyClient(_ binding: Binding, timeout: TimeInterval = 10) -> GrokLeaderClient? {
+        let until = uptime + timeout
+        guard let client = GrokLeaderClient(grok: binding.grok, socket: binding.leaderSocket,
+                                            sessionID: binding.sessionID) else { return nil }
+        while uptime < until, binding.isAlive, client.isRunning {
+            if client.isReady { return client }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        client.terminate()
+        return nil
+    }
+
+    private static func reject(_ stream: ClaudeMailboxStream, _ deliveryID: String, _ reason: String) throws {
+        try stream.write(["type": "rejected", "delivery_id": deliveryID, "reason": reason], deadline: uptime + 0.2)
+    }
+
+    static func birth(of pid: pid_t) -> UInt64? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
+              info.pbi_status != UInt32(SZOMB) else { return nil }
+        return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+    }
+
+    fileprivate static var uptime: TimeInterval { ProcessInfo.processInfo.systemUptime }
+}
+
+/// `grok agent --leader --leader-socket <path> stdio`: an ACP client of the
+/// panel's private leader. Output is drained continuously and discarded,
+/// except the initialize reply and echoes of an armed invitation.
+private final class GrokLeaderClient {
+    private let sessionID: String
+    private let process = Process()
+    private let input = Pipe()
+    private let output = Pipe()
+    private let lock = NSLock()
+    private var buffered = Data()
+    private var initialized = false
+    private var armedPromptID: Int?
+    private var hit = false
+    private var nextID = 1
+
+    init?(grok: String, socket: String, sessionID: String) {
+        self.sessionID = sessionID
+        process.executableURL = URL(fileURLWithPath: grok)
+        process.arguments = ["agent", "--leader", "--leader-socket", socket, "stdio"]
+        // The client is Grok's own proxy; it needs no c11 identity or socket.
+        process.environment = ProcessInfo.processInfo.environment.filter {
+            !$0.key.hasPrefix("C11_") && !$0.key.hasPrefix("CMUX_")
+        }
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
+            self?.consume(data)
+        }
+        do { try process.run() } catch { return nil }
+        guard send("initialize", ["protocolVersion": 1,
+                                  "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false],
+                                                         "terminal": false],
+                                  "clientInfo": ["name": "c11-grok-mailbox", "version": "1"]]) != nil else {
+            terminate()
+            return nil
+        }
+    }
+
+    deinit { terminate() }
+
+    var isRunning: Bool { process.isRunning }
+    var isReady: Bool { lock.lock(); defer { lock.unlock() }; return initialized && process.isRunning }
+    var confirmed: Bool { lock.lock(); defer { lock.unlock() }; return hit }
+
+    func terminate() {
+        output.fileHandleForReading.readabilityHandler = nil
+        if process.isRunning { process.terminate() }
+    }
+
+    /// Arms confirmation, then writes the prompt. The leader runs it in the
+    /// bound session even though this client never loaded it.
+    func prompt(_ text: String) -> Bool {
+        lock.lock()
+        hit = false
+        armedPromptID = nextID
+        lock.unlock()
+        return send("session/prompt", ["sessionId": sessionID, "prompt": [["type": "text", "text": text]]]) != nil
+    }
+
+    private func send(_ method: String, _ params: [String: Any]) -> Int? {
+        lock.lock()
+        let id = nextID
+        nextID += 1
+        lock.unlock()
+        guard var data = try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id,
+                                                                     "method": method, "params": params]) else { return nil }
+        data.append(0x0A)
+        do { try input.fileHandleForWriting.write(contentsOf: data) } catch { return nil }
+        return id
+    }
+
+    private func consume(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        buffered.append(data)
+        while let newline = buffered.firstIndex(of: 0x0A) {
+            let line = Data(buffered[..<newline])
+            buffered.removeSubrange(...newline)
+            guard let frame = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
+            let id = (frame["id"] as? NSNumber)?.intValue
+            if id == 1, frame["method"] == nil, frame["result"] != nil { initialized = true }
+            guard let armed = armedPromptID, !hit else { continue }
+            if (id == armed && frame["method"] == nil && frame["result"] != nil)
+                || GrokMailboxAcceptance.confirms(frame: frame, sessionID: sessionID) {
+                hit = true
+            }
+        }
+        // A line this long is no protocol frame the sidecar needs.
+        if buffered.count > 8 * 1024 * 1024 { buffered.removeAll() }
+    }
+}

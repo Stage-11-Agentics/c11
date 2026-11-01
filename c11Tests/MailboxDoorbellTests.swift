@@ -1461,6 +1461,20 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertFalse(reg.matches(process: nil, kind: "opencode"))
     }
 
+    func testGrokLeaderRouteRequiresMatchingHarnessAndProcess() throws {
+        let route = try XCTUnwrap(MailboxNativeDoorbell.Route(rawValue: "grok_leader"))
+        let reg = MailboxNativeDoorbell.Registration(id: UUID(), panelID: UUID(), agentPID: 123,
+            processStart: 456, sessionID: UUID().uuidString, route: route, canQueue: false)
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        XCTAssertTrue(reg.matches(process: process, kind: "grok"))
+        for kind in ["pi", "codex", "claude", "opencode", "omp"] {
+            XCTAssertFalse(reg.matches(process: process, kind: kind))
+        }
+        XCTAssertFalse(reg.matches(process: .init(pid: 124, startTime: 456), kind: "grok"))
+        XCTAssertFalse(reg.matches(process: .init(pid: 123, startTime: 457), kind: "grok"))
+        XCTAssertFalse(reg.matches(process: nil, kind: "grok"))
+    }
+
     func testAcceptedCoverageResetsOnlyForANewTUIProcess() {
         let original = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
         XCTAssertFalse(MailboxNativeDoorbell.shouldResetCoverage(previousProcess: original, currentProcess: original),

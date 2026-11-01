@@ -131,6 +131,29 @@ extension CMUXCLI {
             }
             return
         }
+        if command == "grok-mailbox" {
+            // Internal, launch-scoped sidecar of the c11 Grok wrapper; same
+            // silent contract as claude-mailbox. It waits for the panel's
+            // private leader before contacting the app.
+            guard envSocketPath != nil || socketPathSource == .explicitFlag,
+                  let binding = GrokMailboxCommand.Binding(environment: processEnv, arguments: commandArgs),
+                  binding.waitForLeader() else { return }
+            let priorDeadline = SocketClient.processDeadline
+            defer { SocketClient.processDeadline = priorDeadline }
+            SocketClient.processDeadline = Date().addingTimeInterval(1)
+            let client = SocketClient(path: socketPath)
+            client.usesSingleLineResponses = true
+            defer { client.close() }
+            do {
+                try client.connect()
+                try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: socketPath)
+                SocketClient.processDeadline = priorDeadline
+                try GrokMailboxCommand.run(binding: binding, descriptor: client.takeConnectedDescriptor())
+            } catch {
+                // Silent: the app owns fallback logging.
+            }
+            return
+        }
         let isSendText = ["send", "send-panel", "paste"].contains(command)
         let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
             .contains(where: { $0 == "--help" || $0 == "-h" })

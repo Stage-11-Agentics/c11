@@ -75,3 +75,49 @@ final class ClaudeMailboxAcceptance {
         return text.hasPrefix("Another Claude session sent a message:\n\(invitation)\n\n")
     }
 }
+
+/// Pure checks for the Grok leader route. The sidecar holds no transcript and
+/// reads only Grok's session registry and the leader's protocol echoes.
+enum GrokMailboxAcceptance {
+    /// Grok exposes no "displayed session" signal. Its registry lists every
+    /// session a TUI process has open, so native delivery is allowed only while
+    /// this process holds exactly the bound session. Any `/new`, `/resume` or
+    /// dashboard dispatch adds an entry, and the panel falls back to typed mail.
+    static func showsOnlyBoundSession(registry: Data, pid: Int32, birthMicros: UInt64?,
+                                      sessionID: String) -> Bool {
+        guard registry.count <= 1024 * 1024,
+              let entries = (try? JSONSerialization.jsonObject(with: registry)) as? [[String: Any]] else { return false }
+        let mine = entries.filter { entry in
+            guard (entry["pid"] as? NSNumber)?.int64Value == Int64(pid) else { return false }
+            // A recorded start time far from this process's birth is a reused PID.
+            if let start = (entry["pid_start"] as? NSNumber)?.uint64Value, let birthMicros {
+                let delta = start > birthMicros ? start - birthMicros : birthMicros - start
+                if delta > 2_000_000 { return false }
+            }
+            return true
+        }
+        guard mine.count == 1, let session = mine[0]["session_id"] as? String else { return false }
+        return session.lowercased() == sessionID.lowercased()
+    }
+
+    /// True for a leader echo showing the invitation entered the bound session:
+    /// its prompt queue entry, or its user message.
+    static func confirms(frame: [String: Any], sessionID: String) -> Bool {
+        guard let params = frame["params"] as? [String: Any],
+              (params["sessionId"] as? String)?.lowercased() == sessionID.lowercased() else { return false }
+        switch frame["method"] as? String {
+        case "_x.ai/queue/changed":
+            return (params["entries"] as? [[String: Any]] ?? []).contains {
+                ($0["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) == ClaudeMailboxAcceptance.invitation
+            }
+        case "session/update":
+            guard let update = params["update"] as? [String: Any],
+                  update["sessionUpdate"] as? String == "user_message_chunk",
+                  let content = update["content"] as? [String: Any],
+                  let text = content["text"] as? String else { return false }
+            return text.contains(ClaudeMailboxAcceptance.invitation)
+        default:
+            return false
+        }
+    }
+}

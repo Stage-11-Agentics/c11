@@ -100,13 +100,14 @@ class Proof(native.Proof):
         return json.loads(self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e',
                                     PROMPT_AX, str(self.pid), identifier or ''], text=True).stdout)
 
-    def click(self, identifier):
+    def click(self, identifier, legacy_cliclick=False):
         hits = [x for x in self.ax() if x['id'] == identifier]
         assert len(hits) == 1, (identifier, hits)
         x, y = hits[0]['position']
         w, h = hits[0]['size']
         self.report.setdefault('native_clicks', []).append(
-            dict(identifier=identifier, control=hits[0], elapsed=round(time.monotonic()-self.started, 2)))
+            dict(identifier=identifier, control=hits[0], transport='cliclick' if legacy_cliclick else 'explicit_hid_metadata',
+                 elapsed=round(time.monotonic()-self.started, 2)))
         # Native mouse click, even if the source browser is still foreground.
         # The intentional Confirm path approaches afresh after the arming delay.
         if identifier == 'c11.external-link.confirm':
@@ -114,7 +115,16 @@ class Proof(native.Proof):
             time.sleep(1.1)
             self.run(['/opt/homebrew/bin/cliclick', f'm:{int(x+w/2)},{int(y+h/2)}'])
             time.sleep(.1)
-        self.run(['/opt/homebrew/bin/cliclick', f'c:{int(x+w/2)},{int(y+h/2)}'])
+        if legacy_cliclick:
+            self.run(['/opt/homebrew/bin/cliclick', f'c:{int(x+w/2)},{int(y+h/2)}'])
+        else:
+            self.confirmation_mouse(int(x+w/2), int(y+h/2))
+
+    def confirmation_mouse(self, x, y):
+        foreground = self.ui('foreground')
+        permitted = {self.pid} | {p['safari_pid'] for p in self.report.get('source_preconditions', [])}
+        assert foreground in permitted, ('unexpected app before native click', foreground)
+        self.native_mouse(x, y, (1, 2), foreground_pid=foreground)
 
     def console_open(self, *arguments):
         # Match sandbox_launch_app: enter the console user's Aqua audit
@@ -179,6 +189,14 @@ class Proof(native.Proof):
         self.outside()
         self.call('panel.action', workspace_id=self.destination, panel_id=self.target,
                   action='rename', title='C11-552 live build title changed')
+        # Record the original failure without weakening the gate. A fresh
+        # event pair with explicit time/count must then pass the same prompt.
+        before = self.selection()
+        self.click('c11.external-link.confirm', legacy_cliclick=True)
+        time.sleep(.3)
+        assert self.selection() == before and self.prompt(), 'legacy cliclick unexpectedly confirmed'
+        self.capture('01-legacy-event-refused')
+        self.passed('legacy cliclick Confirm refused before corrected native event pair')
         self.click('c11.external-link.confirm')
         self.wait(lambda: self.selection() == (self.destination.lower(), self.target.lower()),
                   'native Confirm selects exact destination despite live title change')
@@ -249,7 +267,7 @@ end tell'''
         self.run(['/opt/homebrew/bin/cliclick', f'dc:{cx},{cy}'])
         self.wait(self.prompt, 'surprise prompt present')
         time.sleep(1.1)
-        self.run(['/opt/homebrew/bin/cliclick', f'c:{cx},{cy}'])
+        self.confirmation_mouse(cx, cy)
         assert self.selection() == before, 'carried-over click or parked pointer authorized navigation'
         self.capture('04-surprise-click-refused')
         self.click('c11.external-link.confirm')

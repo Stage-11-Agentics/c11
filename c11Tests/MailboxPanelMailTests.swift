@@ -737,12 +737,13 @@ final class MailboxPanelMailTests: XCTestCase {
     private func openThread(
         _ key: MailboxPanelMail.PeerKey,
         in index: MailboxPanelMail.ConversationIndex,
-        limit: Int = MailboxPanelMail.threadLimit
+        limit: Int = MailboxPanelMail.threadLimit,
+        cache: MailboxPanelMail.HeaderCache = MailboxPanelMail.HeaderCache()
     ) throws -> MailboxPanelMail.ConversationThread {
         let conversation = try XCTUnwrap(index.conversation(key))
         return MailboxPanelMail.thread(
             conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: index.ledgerFloor,
-            limit: limit, cache: MailboxPanelMail.HeaderCache()
+            limit: limit, cache: cache
         )
     }
 
@@ -969,6 +970,135 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertTrue(opened.showsLedgerFloor, "the peer's side reaches back past the sent record")
         XCTAssertEqual(opened.ledgerFloorItemId, opened.items[1].id)
         XCTAssertFalse(try openThread(.panel(fresh), in: index).showsLedgerFloor)
+    }
+
+    func testAThreadShowsOnlyMessagesWhoseFileStillCarriesThePeersStamp() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID(), impostor = UUID()
+        let kept = ulid(now - 300), rewritten = ulid(now - 200), moved = ulid(now - 100), named = ulid(now - 50)
+        try receive(kept, from: "p", stamp: peer, read: true, body: "kept")
+        try receive(rewritten, from: "p", stamp: peer, read: true, body: "original")
+        try receive(moved, from: "p", stamp: peer, body: "original")
+        try receive(named, from: "lattice-poller", stamp: nil, read: true, body: "nightly")
+        // One cache for the index and the thread, as in the app, where a file
+        // in the inbox root and one in `_read/` share an entry by name.
+        let cache = MailboxPanelMail.HeaderCache()
+        let index = MailboxPanelMail.conversationIndex(inbox: inbox, mailboxesRoot: root, cache: cache)
+        XCTAssertEqual(index.conversation(.panel(peer))?.received, 3)
+
+        // Other writers' envelopes under the same names: one rewritten in place,
+        // one gone from the root with an unstamped file of its name in `_read/`,
+        // and the name-only one rewritten under another name.
+        try receive(rewritten, from: "p", stamp: impostor, read: true, body: "IMPOSTOR")
+        try FileManager.default.removeItem(at: inbox.appendingPathComponent("\(moved).msg"))
+        try receive(moved, from: "p", stamp: nil, read: true, body: "UNSTAMPED")
+        try receive(named, from: "someone-else", stamp: nil, read: true, body: "LOOKALIKE")
+
+        let opened = try openThread(.panel(peer), in: index, cache: cache)
+        XCTAssertEqual(opened.items.map(\.envelopeId), [kept])
+        XCTAssertEqual(opened.items.map { $0.message?.body }, ["kept"])
+        XCTAssertEqual(opened.total, 1)
+        XCTAssertEqual(opened.received, 1)
+        XCTAssertEqual(opened.unread, 0)
+        XCTAssertEqual(opened.hiddenCount, 0)
+        XCTAssertTrue(try openThread(.name("lattice-poller"), in: index, cache: cache).items.isEmpty)
+    }
+
+    func testAPartialScanLeavesOutSendsOlderThanItReaches() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID()
+        try receive(ulid(now - 900), from: "p", stamp: peer, read: true)
+        let oldestScanned = ulid(now - 200), newest = ulid(now - 100)
+        try receive(oldestScanned, from: "p", stamp: peer, read: true)
+        try receive(newest, from: "p", stamp: peer, read: true)
+        let oldSend = ulid(now - 500), newSend = ulid(now - 150)
+        try send(oldSend, to: [(peer, .taken)])
+        try send(newSend, to: [(peer, .taken)])
+
+        let index = conversationIndex(scanLimit: 2)
+        XCTAssertTrue(index.scanIsPartial)
+        XCTAssertEqual(index.scanFloor, MailboxPanelMail.ulidDate(oldestScanned))
+        // The ledger reaches back further, but this side is cut where the other is.
+        XCTAssertEqual(index.ledgerFloor, MailboxPanelMail.ulidDate(oldSend))
+        let conversation = try XCTUnwrap(index.conversation(.panel(peer)))
+        XCTAssertEqual(conversation.received, 2)
+        XCTAssertEqual(conversation.sent, 1)
+        let opened = try openThread(.panel(peer), in: index)
+        XCTAssertEqual(opened.items.map(\.envelopeId), [oldestScanned, newSend, newest])
+        XCTAssertFalse(opened.showsLedgerFloor)
+
+        // A scan of everything has no floor and keeps every send.
+        let full = conversationIndex()
+        XCTAssertNil(full.scanFloor)
+        XCTAssertEqual(full.conversation(.panel(peer))?.sent, 2)
+        XCTAssertEqual(full.conversation(.panel(peer))?.received, 3)
+    }
+
+    func testMessagesInTheSameMillisecondKeepOneOrder() throws {
+        let millisecond = UInt64(1_800_000_000_000)
+        func sameMillisecond(_ byte: UInt8) -> String {
+            MailboxULID.encode(timestampMs: millisecond, random: [UInt8](repeating: byte, count: MailboxULID.randomByteCount))
+        }
+        let peer = UUID()
+        let first = sameMillisecond(1), second = sameMillisecond(2), third = sameMillisecond(3)
+        try receive(third, from: "p", stamp: peer, read: true)
+        try send(second, to: [(peer, .taken)])
+        try receive(first, from: "p", stamp: peer, read: true)
+        let opened = try openThread(.panel(peer), in: conversationIndex())
+        XCTAssertEqual(opened.items.map(\.envelopeId), [first, second, third])
+        for _ in 0..<3 {
+            XCTAssertEqual(try openThread(.panel(peer), in: conversationIndex()).items.map(\.id), opened.items.map(\.id))
+        }
+
+        // A send to this panel itself: one id in both directions, received first.
+        let own = sameMillisecond(4)
+        try send(own, to: [(thisPanel, .waiting)])
+        let ownThread = try openThread(.panel(thisPanel), in: conversationIndex())
+        XCTAssertEqual(ownThread.items.map(\.id), ["in/" + own, "out/" + own])
+        XCTAssertEqual(ownThread.items.map(\.direction), [.received, .sent])
+    }
+
+    func testTheSameFileInTheInboxRootAndReadShowsTwiceWithDistinctIds() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID()
+        let id = ulid(now - 100)
+        try receive(id, from: "p", stamp: peer, read: true, body: "first delivery")
+        try receive(id, from: "p", stamp: peer, body: "delivered again")
+        let index = conversationIndex()
+        XCTAssertEqual(index.conversation(.panel(peer))?.received, 2)
+        XCTAssertEqual(index.conversation(.panel(peer))?.unread, 1)
+        let opened = try openThread(.panel(peer), in: index)
+        XCTAssertEqual(opened.items.map(\.id), ["in/" + id, "in/" + id + "#2"])
+        XCTAssertEqual(opened.items.map(\.state), [.read, .unread])
+        XCTAssertEqual(opened.items.map { $0.message?.body }, ["first delivery", "delivered again"])
+        XCTAssertEqual(opened.firstUnreadId, "in/" + id + "#2")
+    }
+
+    func testThreadSignatureChangesOnlyWhenWhatTheThreadShowsChanges() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID()
+        let sent = ulid(now - 200)
+        try receive(ulid(now - 300), from: "p", stamp: peer)
+        try send(sent, to: [(peer, .waiting)])
+        let index = conversationIndex()
+        let conversation = try XCTUnwrap(index.conversation(.panel(peer)))
+        func signature() -> String {
+            MailboxPanelMail.threadSignature(
+                conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: index.ledgerFloor,
+                cache: MailboxPanelMail.HeaderCache()
+            )
+        }
+        let first = signature()
+        XCTAssertEqual(signature(), first)
+        XCTAssertEqual(try openThread(.panel(peer), in: index).signature, first)
+
+        // The peer takes this panel's send: the same messages, a new state.
+        try FileManager.default.createDirectory(at: MailboxDrain.readURL(inbox: peerInbox(peer)), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(
+            at: peerInbox(peer).appendingPathComponent("\(sent).msg"),
+            to: MailboxDrain.readURL(inbox: peerInbox(peer)).appendingPathComponent("\(sent).msg")
+        )
+        XCTAssertNotEqual(signature(), first)
     }
 }
 

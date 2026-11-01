@@ -1386,6 +1386,10 @@ extension MailboxPanelMail {
         /// When the `_sent/` ledger's oldest entry was sent. This panel's
         /// sends from before it are not recorded.
         var ledgerFloor: Date?
+        /// When the scan stopped short of the whole inbox: the date of the
+        /// oldest message it read. Conversations cover only the time since;
+        /// older sends are left out too, so no thread shows one side alone.
+        var scanFloor: Date?
 
         var unread: Int { conversations.reduce(0) { $0 + $1.unread } }
         var scanIsPartial: Bool { scanned + unparsed < received }
@@ -1396,9 +1400,10 @@ extension MailboxPanelMail {
     }
 
     /// The conversation list: the newest `scanLimit` received headers, read
-    /// through the header cache as Insights reads them, and every `_sent/`
-    /// entry. No body is read; per conversation, at most a few recipient
-    /// copies' cached headers for its newest send. Call it off the main thread.
+    /// through the header cache as Insights reads them, and the `_sent/`
+    /// entries back to the oldest of those. No body is read; per
+    /// conversation, at most a few recipient copies' cached headers for its
+    /// newest send. Call it off the main thread.
     static func conversationIndex(
         inbox: URL,
         mailboxesRoot: URL,
@@ -1410,16 +1415,19 @@ extension MailboxPanelMail {
         let unreadFiles = envelopeFiles(in: inbox, fileManager: fileManager)
         let readFiles = envelopeFiles(in: MailboxDrain.readURL(inbox: inbox), fileManager: fileManager)
         index.received = unreadFiles.count + readFiles.count
-        let dated = (unreadFiles.map { ($0, true) } + readFiles.map { ($0, false) }).map { entry in
-            (url: entry.0, unread: entry.1, date: arrivalDate(of: entry.0, fileManager: fileManager))
+        // Each name is computed once: a sort compares it many times.
+        let dated = (unreadFiles.map { ($0, true) } + readFiles.map { ($0, false) }).map { entry -> (url: URL, name: String, id: String, unread: Bool, date: Date?) in
+            let name = entry.0.lastPathComponent
+            let id = (name as NSString).deletingPathExtension
+            return (entry.0, name, id, entry.1, ulidDate(id) ?? modificationDate(of: entry.0, fileManager: fileManager))
         }
-        let newestFirst = dated.sorted {
-            isNewer($0.date, $0.url.lastPathComponent, than: $1.date, $1.url.lastPathComponent)
-        }
+        let newestFirst = dated.sorted { isNewer($0.date, $0.name, than: $1.date, $1.name) }
+        let scan = newestFirst.prefix(max(0, scanLimit))
+        if scan.count < newestFirst.count { index.scanFloor = scan.last?.date }
 
         var conversations: [PeerKey: Conversation] = [:]
         var newestHeaders: [PeerKey: Header] = [:]
-        for entry in newestFirst.prefix(max(0, scanLimit)) {
+        for entry in scan {
             guard let header = cachedHeader(of: entry.url, inbox: inbox, cache: cache) else {
                 index.unparsed += 1
                 continue
@@ -1435,9 +1443,9 @@ extension MailboxPanelMail {
             if entry.unread { conversation.unread += 1 }
             conversation.refs.append(ConversationRef(
                 direction: .received,
-                envelopeId: entry.url.deletingPathExtension().lastPathComponent,
+                envelopeId: entry.id,
                 date: entry.date,
-                fileName: entry.url.lastPathComponent,
+                fileName: entry.name,
                 unread: entry.unread
             ))
             conversations[key] = conversation
@@ -1452,6 +1460,10 @@ extension MailboxPanelMail {
         for entry in entries {
             let date = sentDate(of: entry)
             if let date, index.ledgerFloor.map({ date < $0 }) ?? true { index.ledgerFloor = date }
+            // Past the scan the peer's side is unknown, so this side is left out too.
+            if let scanFloor = index.scanFloor {
+                guard let date, date >= scanFloor else { continue }
+            }
             let direct = entry.recipients.count == 1 ? entry.to.flatMap { $0.isEmpty ? nil : $0 } : nil
             var seen = Set<UUID>()
             for recipient in entry.recipients {
@@ -1554,8 +1566,11 @@ extension MailboxPanelMail {
         var ledgerFloor: Date?
         var showsLedgerFloor = false
         var ledgerFloorItemId: String?
-
-        var hiddenCount: Int { max(0, total - items.count) }
+        /// Messages past the cap, older than every item.
+        var hiddenCount = 0
+        /// `threadSignature` when this was read: equal signatures mean the
+        /// same messages in the same states.
+        var signature = ""
     }
 
     /// Reads one conversation's newest `limit` messages in full, oldest
@@ -1571,14 +1586,14 @@ extension MailboxPanelMail {
         fileManager: FileManager = .default
     ) -> ConversationThread {
         var thread = ConversationThread(key: conversation.key)
-        thread.total = conversation.count
-        thread.received = conversation.received
-        thread.sent = conversation.sent
         thread.ledgerFloor = ledgerFloor
+        thread.signature = threadSignature(
+            conversation, inbox: inbox, mailboxesRoot: mailboxesRoot, ledgerFloor: ledgerFloor,
+            limit: limit, cache: cache, fileManager: fileManager
+        )
         let sender = UUID(uuidString: inbox.lastPathComponent)
         let shown = conversation.refs.prefix(max(0, limit))
-        let hiddenUnread = conversation.refs.dropFirst(max(0, limit))
-            .filter { $0.direction == .received && $0.unread }.count
+        let hidden = conversation.refs.dropFirst(max(0, limit))
 
         var items: [ThreadItem] = []
         var ids = Set<String>()
@@ -1586,7 +1601,13 @@ extension MailboxPanelMail {
             let item: ThreadItem
             switch ref.direction {
             case .received:
-                guard let received = receivedItem(ref, inbox: inbox, fileManager: fileManager) else { continue }
+                // The index grouped this file by a cached header, and the file
+                // on disk now may be another writer's under the same name. It
+                // shows only if its own stamp (or, unstamped, its `from`) still
+                // names this peer, as a send's copy is checked before it shows.
+                guard let received = receivedItem(ref, inbox: inbox, fileManager: fileManager),
+                      let message = received.message,
+                      belongs(message, to: conversation.key) else { continue }
                 item = received
             case .sent:
                 guard let entry = ref.entry else { continue }
@@ -1621,8 +1642,12 @@ extension MailboxPanelMail {
         }
 
         thread.items = items
+        thread.hiddenCount = hidden.count
+        thread.total = items.count + hidden.count
+        thread.received = items.filter { $0.direction == .received }.count + hidden.filter { $0.direction == .received }.count
+        thread.sent = items.filter { $0.direction == .sent }.count + hidden.filter { $0.direction == .sent }.count
         let unread = items.filter { $0.direction == .received && $0.state == .unread }
-        thread.unread = unread.count + hiddenUnread
+        thread.unread = unread.count + hidden.filter { $0.direction == .received && $0.unread }.count
         thread.firstUnreadId = unread.first?.id
         if conversation.key.panelId != nil, let ledgerFloor,
            items.contains(where: { $0.direction == .received && ($0.date.map { $0 < ledgerFloor } ?? false) }) {
@@ -1630,6 +1655,60 @@ extension MailboxPanelMail {
             thread.ledgerFloorItemId = items.first(where: { $0.date.map { $0 >= ledgerFloor } ?? false })?.id
         }
         return thread
+    }
+
+    /// A received envelope, read in full, is in `key`'s conversation: its
+    /// stamp names that panel, or it is unstamped and its `from` is that name
+    /// as the header keyed it.
+    static func belongs(_ message: Message, to key: PeerKey) -> Bool {
+        switch key {
+        case .panel(let panel):
+            return message.senderPanelId == panel
+        case .name(let name):
+            guard message.senderPanelId == nil, message.problem == nil else { return false }
+            let from = message.from.isEmpty ? "?" : String(message.from.prefix(Header.fieldLimit))
+            return from == name
+        }
+    }
+
+    /// What a thread shows besides its bodies: which messages, whether each
+    /// received one is in the inbox root or `_read/`, every recipient copy's
+    /// state, the counts past the cap, and where the sent record starts.
+    /// Stats and cached headers only, so a refresh can tell whether the open
+    /// thread changed without reading it again.
+    static func threadSignature(
+        _ conversation: Conversation,
+        inbox: URL,
+        mailboxesRoot: URL,
+        ledgerFloor: Date?,
+        limit: Int = threadLimit,
+        cache: HeaderCache? = .shared,
+        fileManager: FileManager = .default
+    ) -> String {
+        let sender = UUID(uuidString: inbox.lastPathComponent)
+        let hidden = conversation.refs.dropFirst(max(0, limit))
+        var parts = [
+            conversation.key.id,
+            ledgerFloor.map { String($0.timeIntervalSince1970) } ?? "-",
+            "hidden \(hidden.count) \(hidden.filter { $0.direction == .received }.count) \(hidden.filter { $0.direction == .received && $0.unread }.count)",
+        ]
+        for ref in conversation.refs.prefix(max(0, limit)) {
+            switch ref.direction {
+            case .received:
+                parts.append("in \(ref.fileName ?? ref.envelopeId) \(ref.unread ? "u" : "r")")
+            case .sent:
+                guard let entry = ref.entry else { continue }
+                let states = recipientPanels(of: entry).map { panel -> String in
+                    switch sentCopy(id: entry.id, in: panel, sender: sender, mailboxesRoot: mailboxesRoot, cache: cache, fileManager: fileManager).state {
+                    case .unread: return "u"
+                    case .read: return "r"
+                    case .gone: return "g"
+                    }
+                }
+                parts.append("out \(entry.id) \(states.joined())")
+            }
+        }
+        return parts.joined(separator: "\n")
     }
 
     private static func receivedItem(_ ref: ConversationRef, inbox: URL, fileManager: FileManager) -> ThreadItem? {

@@ -1921,6 +1921,9 @@ final class MailboxConversationsModel: ObservableObject {
     @Published private(set) var placement: Placement?
     /// The message a reply chip just pointed at, outlined for a moment.
     @Published private(set) var flashed: String?
+    /// The selected row's place in the list; when a rescan moves it, the
+    /// list scrolls to keep it in view.
+    @Published private(set) var selectedPosition: Int?
 
     struct Placement: Equatable {
         let key: MailboxPanelMail.PeerKey
@@ -1931,7 +1934,8 @@ final class MailboxConversationsModel: ObservableObject {
     static let unreadAnchor = "conversation-unread"
     static let endAnchor = "conversation-end"
     /// Recipients take this panel's sends without moving its revision, so
-    /// the tab rescans on its own while it shows.
+    /// the tab rescans on its own while it shows. Scans start at least this
+    /// far apart, however fast mail arrives.
     static let refreshInterval: TimeInterval = 5
     /// Open panels change rarely: a known set is resolved again this often.
     static let resolveInterval: TimeInterval = 15
@@ -1943,6 +1947,8 @@ final class MailboxConversationsModel: ObservableObject {
     private var indexGeneration = 0
     private var indexInFlight = false
     private var indexDirty = false
+    private var lastScanAt = Date.distantPast
+    private var scanScheduled = false
     private var threadGeneration = 0
     private var threadInFlight = false
     private var threadDirty = false
@@ -1983,6 +1989,18 @@ final class MailboxConversationsModel: ObservableObject {
             indexDirty = true
             return
         }
+        let wait = Self.refreshInterval - Date().timeIntervalSince(lastScanAt)
+        if wait > 0 {
+            guard !scanScheduled else { return }
+            scanScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                guard let self else { return }
+                self.scanScheduled = false
+                if self.isShowing { self.refresh() }
+            }
+            return
+        }
+        lastScanAt = Date()
         indexInFlight = true
         indexGeneration += 1
         let generation = indexGeneration
@@ -2008,6 +2026,7 @@ final class MailboxConversationsModel: ObservableObject {
     private func apply(_ loaded: MailboxPanelMail.ConversationIndex) {
         if loaded != index { index = loaded }
         resolve()
+        defer { updateSelectedPosition() }
         if let selected, loaded.conversation(selected) != nil {
             reloadThread(place: false)
         } else if let first = loaded.conversations.first {
@@ -2030,7 +2049,13 @@ final class MailboxConversationsModel: ObservableObject {
         selected = key
         thread = nil
         flashed = nil
+        updateSelectedPosition()
         reloadThread(place: true)
+    }
+
+    private func updateSelectedPosition() {
+        let position = selected.flatMap { key in index?.conversations.firstIndex(where: { $0.key == key }) }
+        if position != selectedPosition { selectedPosition = position }
     }
 
     func toggleExpanded(_ id: String) {
@@ -2056,15 +2081,24 @@ final class MailboxConversationsModel: ObservableObject {
         let generation = threadGeneration
         let root = inbox.deletingLastPathComponent()
         let floor = index.ledgerFloor
+        // A refresh of the open thread first compares signatures (which
+        // messages, and every state), from stats and cached headers, and
+        // reads no envelope when nothing changed.
+        let known = place || thread?.key != selected ? nil : thread?.signature
         DispatchQueue.global(qos: place ? .userInitiated : .utility).async { [weak self] in
-            let loaded = autoreleasepool {
-                MailboxPanelMail.thread(conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: floor)
+            let loaded = autoreleasepool { () -> MailboxPanelMail.ConversationThread? in
+                if let known,
+                   MailboxPanelMail.threadSignature(conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: floor) == known {
+                    return nil
+                }
+                return MailboxPanelMail.thread(conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: floor)
             }
             DispatchQueue.main.async {
                 guard let self, generation == self.threadGeneration else { return }
                 self.threadInFlight = false
-                if loaded.key == self.selected {
-                    if loaded != self.thread { self.thread = loaded }
+                if let loaded, loaded.key == self.selected {
+                    // Signatures, not a walk of every message on main.
+                    if loaded.signature != self.thread?.signature { self.thread = loaded }
                     self.resolve()
                     if place {
                         self.placementToken += 1
@@ -2212,10 +2246,12 @@ private struct MailboxConversationsView: View {
                 .frame(width: width, height: height, alignment: .topLeading)
             }
         } else {
+            // The loaded view's height, so the first scan landing moves nothing.
             Text(String(localized: "mailbox.drawer.loading", defaultValue: "Reading mail…"))
                 .font(textFont)
                 .foregroundColor(style.secondary)
                 .padding(12)
+                .frame(width: width, height: height, alignment: .topLeading)
         }
     }
 
@@ -2230,7 +2266,7 @@ private struct MailboxConversationsView: View {
                     .allowsHitTesting(!model.showsThread)
                     .accessibilityHidden(model.showsThread)
                 if model.showsThread, let conversation {
-                    threadPane(conversation, now: now)
+                    threadPane(conversation, index: index, now: now)
                         .background(Color(nsColor: style.background))
                 }
             }
@@ -2240,7 +2276,7 @@ private struct MailboxConversationsView: View {
                     .frame(width: listWidth)
                 Rectangle().fill(style.border).frame(width: 1)
                 if let conversation {
-                    threadPane(conversation, now: now)
+                    threadPane(conversation, index: index, now: now)
                         .frame(width: threadWidth)
                 } else {
                     Color.clear.frame(width: threadWidth)
@@ -2301,25 +2337,33 @@ private struct MailboxConversationsView: View {
     // MARK: List
 
     private func listPane(_ index: MailboxPanelMail.ConversationIndex, now: Date) -> some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(index.conversations) { conversation in
-                        row(conversation, now: now)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(index.conversations) { conversation in
+                            row(conversation, now: now)
+                        }
+                        if index.scanIsPartial {
+                            Text(String(
+                                localized: "mailbox.conversations.note.partial",
+                                defaultValue: "Conversations cover the newest \(index.scanned + index.unparsed) of \(index.received) received messages."
+                            ))
+                            .font(metaFont.monospacedDigit())
+                            .foregroundColor(style.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(10 * scale)
+                        }
+                    } header: {
+                        listHeader(index)
                     }
-                    if index.scanIsPartial {
-                        Text(String(
-                            localized: "mailbox.conversations.note.partial",
-                            defaultValue: "Conversations cover the newest \(index.scanned + index.unparsed) of \(index.received) received messages."
-                        ))
-                        .font(metaFont.monospacedDigit())
-                        .foregroundColor(style.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(10 * scale)
-                    }
-                } header: {
-                    listHeader(index)
                 }
+            }
+            // A rescan that re-sorts the list scrolls only as far as it takes to
+            // keep the selected row in view.
+            .onChange(of: model.selectedPosition) { _ in
+                guard let selected = model.selected else { return }
+                proxy.scrollTo(selected.id, anchor: nil)
             }
         }
     }
@@ -2449,7 +2493,11 @@ private struct MailboxConversationsView: View {
         }
     }
 
-    private func threadPane(_ conversation: MailboxPanelMail.Conversation, now: Date) -> some View {
+    private func threadPane(
+        _ conversation: MailboxPanelMail.Conversation,
+        index: MailboxPanelMail.ConversationIndex,
+        now: Date
+    ) -> some View {
         let peer = self.peer(conversation)
         let thread = model.thread?.key == conversation.key ? model.thread : nil
         return ScrollViewReader { proxy in
@@ -2459,7 +2507,7 @@ private struct MailboxConversationsView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if let thread {
-                            ForEach(rows(thread, peer: peer, now: now)) { row in
+                            ForEach(rows(thread, index: index, peer: peer, now: now)) { row in
                                 rowView(row, peer: peer, conversation: conversation, proxy: proxy, now: now)
                             }
                         } else {
@@ -2592,12 +2640,24 @@ private struct MailboxConversationsView: View {
         }
     }
 
-    private func rows(_ thread: MailboxPanelMail.ConversationThread, peer: Peer, now: Date) -> [ThreadRow] {
+    private func rows(
+        _ thread: MailboxPanelMail.ConversationThread,
+        index: MailboxPanelMail.ConversationIndex,
+        peer: Peer,
+        now: Date
+    ) -> [ThreadRow] {
         var rows: [ThreadRow] = []
         if peer.isNameOnly {
             rows.append(.marker(id: "marker-name", text: String(
                 localized: "mailbox.conversations.marker.nameOnly",
                 defaultValue: "These messages carry no sender stamp, so c11 keys them by the name \(peer.name). It cannot tell which panel, if any, sent them, and never merges them into a panel's conversation. A script that writes envelopes directly looks like this."
+            ), edge: true))
+        }
+        // Past the scan, older mail either way is unknown: this is not the start.
+        if let scanFloor = index.scanFloor {
+            rows.append(.marker(id: "marker-scan", text: String(
+                localized: "mailbox.conversations.marker.scanFloor",
+                defaultValue: "Conversations read only this panel's newest \(index.scanned + index.unparsed) received messages, back to \(MailboxConversationsText.dayText(scanFloor)), \(MailboxConversationsText.clock(scanFloor)). Anything older with \(peer.name), sent or received, is not shown."
             ), edge: true))
         }
         if thread.hiddenCount > 0 {
@@ -2607,7 +2667,7 @@ private struct MailboxConversationsView: View {
                     localized: "mailbox.conversations.marker.hiddenSides",
                     defaultValue: "\(thread.hiddenCount) older messages are not shown · \(peer.name) left, \(thisName) right"
                 ), edge: false))
-        } else if !peer.isNameOnly {
+        } else if !peer.isNameOnly && index.scanFloor == nil {
             rows.append(.marker(id: "marker-start", text: String(
                 localized: "mailbox.conversations.marker.start",
                 defaultValue: "Start of the record · \(peer.name) left, \(thisName) right"

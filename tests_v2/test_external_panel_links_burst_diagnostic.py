@@ -108,7 +108,7 @@ class Diagnostic(outside.Proof):
             sample_output.close()
             # These are this verified disposable guest's logs, never host logs.
             paths = [self.log, self.log.with_name(self.log.stem+'-hang.log'),
-                     Path('/tmp')/('c11-sandbox-'+self.run_id+'-stdout.log'),
+                     Path('/tmp')/('c11-sandbox-'+self.run_id+'.stdout'),
                      Path.home()/'Library/Logs/c11/hang.log']
             self.report['exported_logs'] = []
             for index, path in enumerate(paths):

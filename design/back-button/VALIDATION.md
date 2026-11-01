@@ -13,4 +13,4 @@ Recorded 2026-10-31 21:20 PDT. Owner: agent:C11-551-owner.
 
 ## Review boundary
 
-This demonstrates HTML interaction and appearance, not native product behavior. The source inspection found the immediate-Back dwell edge; it has not been reproduced in a native runtime. The plan proposes app-wide reuse, explicit jump checkpoints in the same history, and default shortcuts. These are design decisions for Atin before any implementation or build. The ticket is not complete or merged; no PR, push, release or publication was performed.
+This demonstrates HTML interaction and appearance, not native product behavior. The source inspection found the immediate-Back dwell edge; it has not been reproduced in a native runtime. At 21:25 PDT, c11-lead relayed the CoS decision under Atin's rulings: one app-wide history, both endpoints of every explicit jump, and Option-Command brackets by default (mail 01M6ANP99J36YWAZFQAQJX0CW1). Atin still reviews the unchanged prototype before implementation/build; wait for c11-lead to mail his answer. The ticket is not complete or merged; no PR, push, release or publication was performed.

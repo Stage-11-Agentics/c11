@@ -12,6 +12,13 @@ We detect the underlying cause: a structural update that removes an arranged sub
 from the existing NSSplitView (arrangedSubviews count < 2), which AppKit can render
 as a full collapse/flash of the sibling pane.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

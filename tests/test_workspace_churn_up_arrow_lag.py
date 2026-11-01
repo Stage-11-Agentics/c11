@@ -18,6 +18,13 @@ The test fails when churn latency regresses too far relative to baseline.
 """
 
 from __future__ import annotations
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import select

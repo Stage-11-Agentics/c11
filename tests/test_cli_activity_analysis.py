@@ -4,6 +4,13 @@
 C11_CLI=/path/to/tagged.app/Contents/Resources/bin/c11 python3 tests/test_cli_activity_analysis.py
 All inputs are synthetic and confined to a system temporary directory.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import json
 import datetime
 from contextlib import closing

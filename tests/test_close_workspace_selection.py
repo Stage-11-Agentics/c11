@@ -10,6 +10,13 @@ Desired behavior:
 Usage:
     python3 tests/test_close_workspace_selection.py
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

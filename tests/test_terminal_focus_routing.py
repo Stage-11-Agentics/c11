@@ -11,6 +11,13 @@ This test validates:
   2) Text insertion via debug socket (`simulate_type`) lands in the expected terminal by writing
      $C11_PANEL_ID to a temp file.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

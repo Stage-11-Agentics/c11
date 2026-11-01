@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Exercise the bundled shell integration in disposable shells and repositories."""
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
+import os
 from pathlib import Path
 import shutil
 import signal

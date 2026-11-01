@@ -9,6 +9,13 @@ tab-drag state, then verifies:
 1) A left click changes terminal focus to the clicked pane.
 2) A real right click does not break terminal focus routing.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import subprocess

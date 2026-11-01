@@ -40,6 +40,13 @@ def fake_server_env(
         env.pop(key, None)
         if socket_path is not None:
             env[key] = socket_path
+    if socket_path is not None:
+        # Import lazily so a caller that only needs the env copy still works
+        # if the guard module is unavailable, and so the path is allowlisted
+        # before a child is spawned.
+        import socket_guard
+
+        socket_guard.allow(socket_path)
     if scrub_identity:
         for key in IDENTITY_ENV_KEYS:
             env.pop(key, None)

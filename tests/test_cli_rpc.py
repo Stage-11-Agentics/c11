@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """C11-285: raw-call framing, literal params and pre-connection rejection."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import json
 import os
 from pathlib import Path

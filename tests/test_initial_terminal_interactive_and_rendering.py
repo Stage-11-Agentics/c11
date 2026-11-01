@@ -13,6 +13,13 @@ This test avoids screenshots (which can mask redraw issues) by checking:
   - Typing a command is visible in the terminal text *before* pressing Enter.
   - Pressing Enter executes the command (verified via a tmp file write).
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

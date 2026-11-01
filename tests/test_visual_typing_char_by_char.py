@@ -8,6 +8,13 @@ or a focus toggle (unfocus/refocus, pane switch, alt-tab).
 This test verifies *visual* updates by capturing per-panel screenshots via the debug socket
 (`panel_snapshot`) and asserting the pixel-diff is non-trivial after each character.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

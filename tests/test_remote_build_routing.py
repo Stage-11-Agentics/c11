@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 """Behavioral transport/overlay/result tests. Run on Atlas; no Xcode required."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import argparse
 from datetime import datetime
 import importlib.util

@@ -7,6 +7,13 @@ terminal must be routed to the top terminal (not the bottom one), and vice
 versa.  A coordinate-system bug (y-axis inversion in hitTest) previously
 caused drops to land in the wrong pane.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

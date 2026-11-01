@@ -15,6 +15,13 @@ We validate rendering by:
 Note: We use `panel_snapshot` instead of window screenshots to avoid macOS Screen Recording
 permissions on the UTM VM.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

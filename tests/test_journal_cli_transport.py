@@ -3,6 +3,13 @@
 
 Hermetic Unix peer on Atlas; no live app and no provider config writes.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import json
 import os
 from pathlib import Path

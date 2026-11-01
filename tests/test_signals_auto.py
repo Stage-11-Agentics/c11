@@ -3,6 +3,13 @@
 Automated test for signal handling - tests that SIGINT and EOF work correctly.
 This test doesn't require manual interaction.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import subprocess
 import signal

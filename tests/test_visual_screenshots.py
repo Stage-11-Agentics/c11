@@ -17,6 +17,13 @@ Usage:
     python3 tests/test_visual_screenshots.py
     # Then open tests/visual_report.html in a browser
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

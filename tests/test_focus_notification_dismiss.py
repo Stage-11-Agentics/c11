@@ -4,6 +4,13 @@ E2E: focusing a panel clears its notification and triggers a flash.
 
 Note: This uses the socket focus command (no assistive access needed).
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

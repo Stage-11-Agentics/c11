@@ -4,6 +4,13 @@
 Verifies producer correlation and compatibility status writes, not app folding.
 Run on the build host with C11_CLI_BIN pointing at this branch's built CLI.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 import json
 import os
 from pathlib import Path

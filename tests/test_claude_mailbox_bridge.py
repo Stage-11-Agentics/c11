@@ -5,6 +5,13 @@ The live c11 app and all tenant configuration are outside this test.
 Needs node: the invitation is read from the shipped native-mail transport.
 """
 from __future__ import annotations
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import json
 from datetime import datetime, timezone

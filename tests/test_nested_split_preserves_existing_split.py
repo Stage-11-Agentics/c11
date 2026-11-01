@@ -14,6 +14,13 @@ We validate using the debug-only `layout_debug` socket command:
   - After the second split settles, there are 3 panes.
   - No pane/panel is collapsed or hidden.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

@@ -7,6 +7,13 @@ or app focus toggle.
 This targets an intermittent freeze where the newly-created tab would display stale initial
 output (e.g. "Last login") and ignore input until focus changed away and back.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import os
 import sys

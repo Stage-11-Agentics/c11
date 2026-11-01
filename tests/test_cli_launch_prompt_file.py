@@ -4,6 +4,13 @@
 Set C11_CLI to the executable built from this checkout. No app, agent process,
 user configuration, or production socket is used.
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
 
 import json
 import os

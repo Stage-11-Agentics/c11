@@ -45,6 +45,8 @@ struct MailboxStdinBuffer {
         let bufferedAt: Date
         /// Mail stays in the inbox where it arrived when its panel moves.
         var inboxWorkspaceId: UUID? = nil
+        /// The recipient panel, so its dispatch rows name it exactly (C11-550).
+        var recipientPanelId: UUID? = nil
     }
 
     /// The last agent turn edge c11 saw for a panel.

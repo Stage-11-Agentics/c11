@@ -19,6 +19,8 @@ struct FleetSnapshot {
         let promptCache: PromptCacheObservation?
         let promptCacheUnknown: Bool
         let unreadMail: Int?
+        /// When the oldest unread envelope landed (C11-550).
+        var oldestUnreadMailAt: Date? = nil
         let lastSeenAt: Date?
         let beingSeen: Bool
     }
@@ -97,6 +99,8 @@ struct FleetSnapshot {
                 "prompt_cache": cacheFields as Any? ?? NSNull(),
                 "mailbox_address": values[MetadataKey.mailboxAddress] as? String as Any? ?? NSNull(),
                 "mailbox_unread_count": panel.unreadMail as Any? ?? NSNull(),
+                "mailbox_unread": FleetSnapshot.unreadField(
+                    count: panel.unreadMail, oldestAt: panel.oldestUnreadMailAt, now: capturedAt, formatter: formatter),
                 "description": values[MetadataKey.description] as? String as Any? ?? NSNull(),
                 "last_seen_at": panel.lastSeenAt.map { formatter.string(from: $0) } as Any? ?? NSNull(),
                 "being_seen": panel.beingSeen,
@@ -112,6 +116,20 @@ struct FleetSnapshot {
             "workspace_count": workspaceCount,
             "panels": rows.sorted { ($0["panel_id"] as? String ?? "") < ($1["panel_id"] as? String ?? "") },
         ]
+    }
+}
+
+extension FleetSnapshot {
+    /// `{count, oldest_at, oldest_age_seconds}` from the cached mailbox
+    /// counts; null when the panel's inbox has not been counted yet. Never a body.
+    static func unreadField(count: Int?, oldestAt: Date?, now: Date, formatter: ISO8601DateFormatter) -> Any {
+        guard let count else { return NSNull() }
+        let oldest = count > 0 ? oldestAt : nil
+        return [
+            "count": count,
+            "oldest_at": oldest.map { formatter.string(from: $0) } as Any? ?? NSNull(),
+            "oldest_age_seconds": oldest.map { max(0, Int(now.timeIntervalSince($0).rounded(.down))) } as Any? ?? NSNull(),
+        ] as [String: Any]
     }
 }
 
@@ -172,6 +190,7 @@ extension TerminalController {
                     promptCache: PromptCacheSources.observation(forPanel: id, now: now),
                     promptCacheUnknown: PromptCacheSources.reportsUnknown(forPanel: id),
                     unreadMail: mailboxBadges.knownSummary(panelId: id)?.unread,
+                    oldestUnreadMailAt: mailboxBadges.knownSummary(panelId: id)?.oldestUnreadAt,
                     lastSeenAt: PanelSeenTracker.shared.lastSeenAt(panelId: id),
                     beingSeen: PanelSeenTracker.shared.isBeingSeen(panelId: id)
                 ))

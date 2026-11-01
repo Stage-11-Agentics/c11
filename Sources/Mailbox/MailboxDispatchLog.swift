@@ -50,7 +50,7 @@ final class MailboxDispatchLog {
         case nativeUnconfirmed(MailboxNativeDoorbell.FailureDiagnostic)
         case received(id: String, from: String, to: String?, topic: String?)
         case resolved(id: String, recipients: [String])
-        case copied(id: String, recipient: String, recipientUsageLimit: String? = nil)
+        case copied(id: String, recipient: String, recipientUsageLimit: String? = nil, recipientPanel: UUID? = nil)
         case handler(
             id: String,
             recipient: String,
@@ -61,7 +61,8 @@ final class MailboxDispatchLog {
             reason: String?,
             route: String? = nil,
             nativeRoute: String? = nil,
-            nativeFailure: String? = nil
+            nativeFailure: String? = nil,
+            recipientPanel: UUID? = nil
         )
         case rejected(id: String?, reason: String)
         case cleaned(id: String)
@@ -74,7 +75,7 @@ final class MailboxDispatchLog {
         /// A held ring looked at the composer again and scheduled its next
         /// look. Logged as a `handler` event (outcome `doorbell_recheck`)
         /// with `reason` and `next_ms`, one line per look.
-        case doorbellRecheck(id: String, recipient: String, reason: String, nextMs: Int)
+        case doorbellRecheck(id: String, recipient: String, reason: String, nextMs: Int, recipientPanel: UUID? = nil)
     }
 
     /// Dispatcher-observable outcomes for a single handler invocation.
@@ -140,12 +141,12 @@ final class MailboxDispatchLog {
                     at: parent,
                     withIntermediateDirectories: true
                 )
-                if !FileManager.default.fileExists(atPath: url.path) {
-                    FileManager.default.createFile(atPath: url.path, contents: nil)
-                }
-                let fh = try FileHandle(forWritingTo: url)
-                try fh.seekToEnd()
-                fileHandle = fh
+                // O_APPEND: every write lands at the current end, so a drain's
+                // `claimed` row (MailboxClaimLog) and these rows never overwrite
+                // each other the way a cached seek-to-end offset would.
+                let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0o600)
+                guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
+                fileHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             }
             if let data = line.data(using: .utf8) {
                 try fileHandle?.write(contentsOf: data)
@@ -181,12 +182,13 @@ final class MailboxDispatchLog {
             payload["event"] = "resolved"
             payload["id"] = id
             payload["recipients"] = recipients
-        case .copied(let id, let recipient, let recipientUsageLimit):
+        case .copied(let id, let recipient, let recipientUsageLimit, let recipientPanel):
             payload["event"] = "copied"
             payload["id"] = id
             payload["recipient"] = recipient
             if let recipientUsageLimit { payload["recipient_usage_limit"] = recipientUsageLimit }
-        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure):
+            if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
+        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure, let recipientPanel):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -199,6 +201,7 @@ final class MailboxDispatchLog {
             else if outcome == .doorbell { payload["route"] = "typed" }
             if let nativeRoute { payload["native_route"] = nativeRoute }
             if let nativeFailure { payload["native_failure"] = nativeFailure }
+            if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
         case .rejected(let id, let reason):
             payload["event"] = "rejected"
             if let id { payload["id"] = id }
@@ -219,7 +222,7 @@ final class MailboxDispatchLog {
             payload["handler"] = "stdin"
             payload["outcome"] = HandlerOutcome.claimFailed.rawValue
             payload["errno"] = Int(code)
-        case .doorbellRecheck(let id, let recipient, let reason, let nextMs):
+        case .doorbellRecheck(let id, let recipient, let reason, let nextMs, let recipientPanel):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -227,6 +230,7 @@ final class MailboxDispatchLog {
             payload["outcome"] = HandlerOutcome.doorbellRecheck.rawValue
             payload["reason"] = reason
             payload["next_ms"] = nextMs
+            if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
         }
 
         guard

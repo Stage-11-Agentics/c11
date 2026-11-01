@@ -738,6 +738,19 @@ by exact panel UUID, even when another workspace has the same title. It needs
 `C11_PANEL_ID`, and refuses a root, a closed parent, or an unverified socket
 resolution rather than writing an envelope to the sender's outbox.
 
+`c11 mailbox status <id> [--json]` reports one envelope's receipts, file-first
+(no socket). JSON: `id`, `workspace_id`, `state` (`sent`, `queued` while still
+in an outbox, `rejected` with `rejected_reason`), `from`, `to`, `topic`,
+`accepted_at`, `scanned_bytes`, `scan_truncated`, and `recipients[]`, each with
+`name`, `panel_id`, `sent`/`sent_at`, `delivered` (bool), `delivery`
+(`delivered`, `delivering`, `held`, `pending`, `failed`, `not_rung`,
+`not_pushed`), `delivery_reason`, `delivery_route`, `delivered_at`, `read`
+(bool), `read_state` (`read`, `unread`, `taken`, `claimed_unknown`, `gone`,
+`unknown`), `read_at`, `claimed_by_panel_id` and `usage_limit`. Times are
+ISO-8601 with the local offset. `read` is true only when the recipient panel
+claimed the copy itself. An id that is not a ULID, or is in no dispatch log or
+outbox, exits nonzero.
+
 Every area's JSON output includes: `pixel_rect`, `percent_rect`, `h_range` / `v_range` (both pixel and percent), `split_path` (a non-persistent ordered list of `H:left | H:right | V:top | V:bottom`), and the workspace `content_area` dimensions. Use `split_path` for current-layout reasoning only; use `area:<n>` / area UUID for stable references across layout mutations.
 
 Every terminal panel node (in `tree --json` and `panel.list`) also carries `cwd`, `branch` and `worktree`, each `null` when unknown: the cwd the shell last reported, the git branch (`(detached @ <sha>)` when detached) and the linked worktree's basename (`null` in a main checkout). They are the values the sidebar chips render, refreshed on the sidebar's own cadence (a cwd report triggers one off-main probe), so there is nothing extra to poll. A panel in a remote (`c11 ssh`) workspace, and any browser or markdown panel, reports all three as `null`: a remote path is never resolved against the local filesystem. `c11 get-metadata` returns the same branch and worktree as the derived `branch` / `worktree` keys (`source=derived`; empty string means none). Example: `c11 tree --json | jq '.. | objects | select(.worktree != null) | {ref, cwd, branch, worktree}'`.
@@ -1223,6 +1236,7 @@ and windows without agents. UUIDs always remain UUIDs, regardless of CLI
 | `prompt_cache` | Null or existing tree/panel-list cache projection, described below |
 | `mailbox_address` | `mailbox.address` string or null |
 | `mailbox_unread_count` | Integer or null; last known MailboxBadgeStore count used by the mailbox cell |
+| `mailbox_unread` | Null until the panel's inbox is counted, else `{count, oldest_at, oldest_age_seconds}` from the same cached count; `oldest_*` are null when `count` is 0. No bodies |
 | `description` | Canonical description string or null |
 | `last_seen_at`, `being_seen` | Same timestamp/null and boolean as tree; while being seen the timestamp represents now |
 

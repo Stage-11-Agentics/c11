@@ -589,6 +589,8 @@ Files are sorted lexicographically by ULID, which gives you near-chronological o
 
 **Consuming is a claim, not a delete.** `recv --drain` and a turn-boundary hook rename `<inbox>/<ULID>.msg` to `<inbox>/_read/<ULID>.msg` *before* printing the message. The doorbell does not. The rename is the lock: when two consumers race, exactly one wins and the other finds the file gone and skips it, so each envelope is printed once. A consumer whose print fails renames the file back. `recv` reads only the inbox root; `_read/` is history (the messages page reads it), never a source for re-delivery.
 
+Each claim also appends one `claimed` row per envelope to the `_dispatch.log` of the workspace whose inbox held it: the recipient panel, `by_panel` (the claiming process's `C11_PANEL_ID`, absent from a bare shell) and `via` (`recv` or `hook`). `c11 mailbox status` reads it to tell the recipient's own read from another panel draining that inbox.
+
 **Recording drain deliveries.** A drain (`recv --drain` or a hook) never tells c11 over the socket what it delivered. It writes receipts atomically into `mailboxes/_receipts/<ULID>.receipt` of the workspace whose inbox held the mail, splitting a large batch so each receipt stays within 512 deliveries and 64 KB. The app watches every live workspace's spool, turns each delivery into a `mailbox.delivered` event with `via: "drain"` (panel = the recipient panel), and deletes the receipt; at launch it also sweeps every workspace's spool. So a paused, quit or crashed c11 records the delivery when it next runs, exactly once: duplicates are skipped, and a receipt left by a run that died after recording it is checked against the event logs first. Every delivery is recorded under a globally unique ULID: the envelope's own, or for a file dropped into an inbox by hand (`0note.msg`) a fresh ULID it is claimed under, so its body is at `_read/<ULID>.msg`. A file that is not a receipt goes to `_receipts/_rejected/`; inside a receipt, an invalid entry is dropped and listed in `_rejected/<receipt>.dropped` while the valid ones are recorded.
 
 ### Turn-boundary drain (harness hooks)
@@ -739,8 +741,9 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 |-------------|---------------------------------------------------------------------|
 | `received`  | `id`, `from`, `to?`, `topic?`                                       |
 | `resolved`  | `id`, `recipients[]` (panel names; can be empty)                  |
-| `copied`    | `id`, `recipient`                                                   |
-| `handler`   | `id`, `recipient`, `handler`, `outcome`, `bytes?`, `elapsed_ms?`, `reason?` |
+| `copied`    | `id`, `recipient`, `recipient_panel?`, `recipient_usage_limit?`     |
+| `handler`   | `id`, `recipient`, `recipient_panel?`, `handler`, `outcome`, `bytes?`, `elapsed_ms?`, `reason?` |
+| `claimed`   | `id`, `recipient_panel?`, `by_panel?`, `via` (`recv` or `hook`). Written by the drain, not the dispatcher |
 | `rejected`  | `id?`, `reason`                                                     |
 | `cleaned`   | `id`                                                                |
 | `gc`        | `temp_files_removed`                                                |
@@ -764,7 +767,27 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecyc
 ```bash
 c11 mailbox tail                              # follow log as it grows
 c11 mailbox trace 01K3A2B7X8PQRTVWYZ0123456J  # filter for one envelope id
+c11 mailbox status 01K3A2B7X8PQRTVWYZ0123456J # sent, delivered and read per recipient
 ```
+
+The log is opened `O_APPEND`, so the dispatcher's rows and a drain's `claimed` row never overwrite each other. `recipient_panel` is the recipient's panel UUID; rows written before it existed carry only the title.
+
+### Receipts: `c11 mailbox status`
+
+`c11 mailbox status <id>` answers, per recipient, three questions from records c11 already keeps. No receipt files are added and the delivery path is unchanged.
+
+| State | What proves it |
+|---|---|
+| **sent** | the `copied` row. `rejected` means no inbox got it; an envelope still in an outbox is `queued` |
+| **delivered** | a stdin `doorbell` row for this id with reason `submitted`, `stranded_return`, `native_late_accept` or `native_already_admitted` (a ring logs one row for each envelope it covers), or the recipient's own claim when no ring ran. A later hold row never undoes it |
+| **held** | the latest stdin row is a hold: a draft, a question, an unreadable prompt, a stranded line, the rate cap, or an unconfirmed native invitation (Claude's chooser). Held is never delivered |
+| **read** | the copy is in the recipient's `_read/` and the drain's `claimed` row has `by_panel` equal to the recipient panel. A claim by any other panel (`recv --drain --panel <other>`) shows `taken by panel <uuid>`; a claim with no row (an older CLI) shows `claimed, by a panel c11 did not record` |
+
+Human output prints one block per recipient with local times; `--json` carries the same fields (see `skills/c11/references/api.md`) and never the body. It reads files only, so it works with c11 down.
+
+The query is bounded. It stats each workspace's `_dispatch.log` and skips any not written since the id's ULID time, binary-searches each remaining log by `ts` to just before that time, byte-searches forward for the id, and stats two paths per recipient. It never lists an inbox. Every log written since the send is read, because a panel that moved workspaces keeps its inbox in the old workspace while its doorbell rows land in the new one; the rows are merged by time. A recent message reads a few kilobytes per active log; on a 5,000-envelope log the oldest message reads the log once, in 7 ms on Atlas (`MailboxReceiptStatusTests`). One call reads at most 64 MB: past that, a report says `scan_truncated`, and an id not yet found is a scan-limit error rather than not found. An `--id` pinned to a time far from when it was sent may not be found.
+
+`c11 fleet --json` carries `mailbox_unread` (`count`, `oldest_at`, `oldest_age_seconds`) per agent, from the mailbox cell's cached count, for a sweep of who is sitting on mail.
 
 A draft hold prints a plain line under the JSON: `held: recipient has a draft`. A question prints `held: recipient is answering a question`. An unreadable prompt prints `held: recipient prompt is unreadable`. A doorbell line still sitting in the composer prints `held: doorbell line still in the composer`. Those last three are not a draft. The log file itself stays JSON. Human `trace` and `tail` add the sentence when they print. `c11 --json mailbox trace` and `c11 --json mailbox tail` print only the log records, one JSON object per line.
 
@@ -832,6 +855,7 @@ c11 mailbox panel-name                       # caller's resolved title
 c11 mailbox new-id                             # fresh ULID for raw-file writers
 c11 mailbox tail                               # follow _dispatch.log
 c11 mailbox trace <id>                         # all log lines for <id>, across every workspace
+c11 mailbox status <id>                        # sent, delivered, read per recipient
 ls "$(c11 mailbox outbox-dir)/../_rejected"    # what bounced and why
 ```
 
@@ -928,6 +952,7 @@ sequenceDiagram
 | Panel-name resolver               | `Sources/Mailbox/MailboxPanelResolver.swift`    |
 | Dispatcher (orchestrator)         | `Sources/Mailbox/MailboxDispatcher.swift`       |
 | Dispatch log NDJSON               | `Sources/Mailbox/MailboxDispatchLog.swift`      |
+| Receipts (`mailbox status`, `claimed` rows) | `Sources/Mailbox/MailboxReceiptStatus.swift` |
 | `stdin` handler (PTY injection)   | `Sources/Mailbox/StdinMailboxHandler.swift`     |
 | Production handler registration   | `Sources/Workspace.swift` `startMailboxDispatcher()` |
 | CLI subcommand                    | `CLI/c11.swift` `runMailboxCommand` (~17248)    |

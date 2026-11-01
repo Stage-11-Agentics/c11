@@ -705,7 +705,7 @@ extension CMUXCLI {
             default: return .atMost(1)
             }
         case "mailbox":
-            return sub(["send": 2, "trace": 2, "recv": 1, "view": 1, "inbox-dir": 1, "outbox-dir": 1, "tail": 1,
+            return sub(["send": 2, "trace": 2, "status": 2, "recv": 1, "view": 1, "inbox-dir": 1, "outbox-dir": 1, "tail": 1,
                         "panel-name": 1, "tab-name": 1, "surface-name": 1, "sender-from": 1, "new-id": 1,
                         "watch": 1, "help": 1])
         case "browser":

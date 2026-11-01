@@ -6271,12 +6271,12 @@ final class Workspace: Identifiable, ObservableObject {
     ) -> StdinMailboxHandler.WriteOutcome {
         guard let panel = panels[surfaceId] else {
             mailboxDispatcher?.logStdinLifecycle(id: envelopeId, recipient: recipientName,
-                outcome: .doorbellSkipped, reason: "target_gone")
+                outcome: .doorbellSkipped, reason: "target_gone", recipientPanel: surfaceId)
             return .surfaceNotFound
         }
         guard let terminalPanel = panel as? TerminalPanel else {
             mailboxDispatcher?.logStdinLifecycle(id: envelopeId, recipient: recipientName,
-                outcome: .doorbellSkipped, reason: "not_terminal")
+                outcome: .doorbellSkipped, reason: "not_terminal", recipientPanel: surfaceId)
             return .surfaceNotTerminal
         }
 
@@ -6285,7 +6285,8 @@ final class Workspace: Identifiable, ObservableObject {
             recipientName: recipientName,
             block: block,
             bufferedAt: Date(),
-            inboxWorkspaceId: id
+            inboxWorkspaceId: id,
+            recipientPanelId: surfaceId
         )
         let captureNote = MailboxDoorbellCaptureNote()
         var ringEpoch = "none"
@@ -6299,7 +6300,8 @@ final class Workspace: Identifiable, ObservableObject {
                 self?.mailboxDispatcher?.logStdinLifecycle(
                     id: evicted.id,
                     recipient: evicted.recipientName,
-                    outcome: .evicted
+                    outcome: .evicted,
+                    recipientPanel: evicted.recipientPanelId
                 )
             },
             ringInput: { [weak self] capturePrompt in
@@ -6574,7 +6576,8 @@ final class Workspace: Identifiable, ObservableObject {
                 reason: reason,
                 route: route.rawValue,
                 nativeRoute: fallback?.registration.route.rawValue,
-                nativeFailure: fallback?.reason
+                nativeFailure: fallback?.reason,
+                recipientPanel: entry.recipientPanelId
             )
         }
     }
@@ -6750,7 +6753,8 @@ final class Workspace: Identifiable, ObservableObject {
             id: entry.id,
             recipient: entry.recipientName,
             reason: reason,
-            nextMs: Int((next * 1000).rounded())
+            nextMs: Int((next * 1000).rounded()),
+            recipientPanel: entry.recipientPanelId ?? surfaceId
         )
         let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
         if let count = MailboxHoldNotice.draftHoldCount(
@@ -7574,7 +7578,8 @@ final class Workspace: Identifiable, ObservableObject {
                     id: entry.id,
                     recipient: entry.recipientName,
                     outcome: .doorbellSkipped,
-                    reason: "shell_prompt"
+                    reason: "shell_prompt",
+                    recipientPanel: surfaceId
                 )
             }
         }
@@ -7634,7 +7639,7 @@ final class Workspace: Identifiable, ObservableObject {
         let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
         if let entry = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).first(where: { !covered.contains($0.id) }) {
             mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
-                reason: "working_decay", nextMs: Int((delay * 1000).rounded()))
+                reason: "working_decay", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId)
         }
         scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
     }

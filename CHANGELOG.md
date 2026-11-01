@@ -6,6 +6,26 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.6] - 2026-11-01
+
+Headline: **c11 1.7.6. A `c11://` link clicked in another app now opens in c11, after a confirmation that names the panel or workspace it leads to, and restored OpenCode panels ring for mail right after a restart.**
+
+### Added
+
+- **`c11://` links work from other apps.** Click a `c11://panel/<id>` or `c11://workspace/<id>` link in a chat app, a document or a web page outside c11, and c11 asks you to confirm, naming the panel or workspace it leads to. Confirm takes you there; Cancel leaves everything as it was. A closed, unknown or malformed target shows a notice instead. Links inside c11 work as before, with no prompt. ([#843](https://github.com/Stage-11-Agentics/c11/pull/843))
+
+### Fixed
+
+- **Restored OpenCode panels ring for new mail right away.** After c11 restarts, a restored OpenCode panel now rings for new mail within a second, instead of up to 20 seconds while c11 still took it for a plain shell. ([#848](https://github.com/Stage-11-Agentics/c11/pull/848))
+
+### Security
+
+- **Outside links can only take you to a panel or workspace that already exists, and only after you confirm.** They cannot create panels, type text, run commands, close anything or carry a path or other parameter. The prompt accepts only a fresh click on its button after a short delay, so a click already in progress, a double-click or a parked pointer cannot confirm it; moving or hiding the prompt, or changing Space, cancels it. One request is shown at a time, and a burst of links never queues. Only the released c11 app registers `c11://` with macOS; development and staging copies do not. ([#843](https://github.com/Stage-11-Agentics/c11/pull/843))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.7.5] - 2026-11-01
 
 Headline: **c11 1.7.5. Back and Forward arrows in the titlebar retrace your jumps between panels, `c11 conversation find` brings back any past Claude or Codex session, and every message gets a receipt that says whether it arrived and was read. This is the first release for Apple silicon only.**

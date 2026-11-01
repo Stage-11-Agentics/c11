@@ -4,7 +4,8 @@
 # Mirrors .github/workflows/release.yml step for step, split by machine:
 #   Atlas    the heavy Release build (scripts/remote-build.sh --mode release)
 #   Hyperion the light tail: daemon assets, Sparkle keys, codesign, notarize,
-#            staple, DMG, Sentry dSYMs, Sparkle appcast, GitHub release
+#            staple, DMG, Sparkle appcast, GitHub release, Homebrew cask
+#            dispatch, Sentry dSYMs (after publishing)
 #
 # gh release create/upload use the REST API, so GitHub Actions billing does
 # not apply. Run from a clean checkout of the release tag:
@@ -18,18 +19,33 @@ set -euo pipefail
 # ---------------------------------------------------------------- constants --
 REPO_SLUG="Stage-11-Agentics/c11"
 SIGNING_IDENTITY="${C11_SIGNING_IDENTITY:-Developer ID Application: Authentic Technologies Inc. (UKQ4QALWD4)}"
-NOTARY_PROFILE="${C11_NOTARY_PROFILE:-c11-notary}"
+# notarytool keychain profiles for team UKQ4QALWD4, tried in order unless
+# C11_NOTARY_PROFILE names one. acetate-notary is the same team's profile that
+# Hyperion already holds.
+NOTARY_PROFILE_CANDIDATES=(c11-notary acetate-notary)
+NOTARY_PROFILE="${C11_NOTARY_PROFILE:-${NOTARY_PROFILE_CANDIDATES[0]}}"
+# The Apple team the release is signed and notarized for, from the identity.
+TEAM_ID="$(sed -nE 's/.*\(([A-Z0-9]{10})\)$/\1/p' <<<"$SIGNING_IDENTITY")"
+# Signing-keychain mode (a release run on Atlas while the operator's Mac
+# sleeps): the Developer ID identity, the notary profile and the Sparkle key
+# live in a dedicated keychain that is locked at rest. The run takes one
+# launchd unlock lease through the helper and the exit trap locks it again.
+# Unset, everything comes from the login keychain of the Mac running this.
+SIGNING_KEYCHAIN="${C11_SIGNING_KEYCHAIN:-}"
+SIGNING_KEYCHAIN_HELPER="${C11_SIGNING_KEYCHAIN_HELPER:-$HOME/.acetate-release/bin/release_keychain.sh}"
+KC_ARGS=()
+[[ -n "$SIGNING_KEYCHAIN" ]] && KC_ARGS=(--keychain "$SIGNING_KEYCHAIN")
+KEYCHAIN_LEASED=0
 SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 # The public half of the c11mux key; every shipped c11 trusts only this key.
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
 SPARKLE_FEED_URL="https://github.com/${REPO_SLUG}/releases/latest/download/appcast.xml"
-# DTXcode of the toolchain the release must be built with. release.yml's
-# macos-15-xlarge runner shipped v0.67.0 with Xcode 16.4 (DTXcode 1640, SDK
-# macosx15.5). Atlas builds with Xcode 26.3 (2630, SDK macosx26.2), which links
-# a newer SDK and changes runtime behavior, so a real run refuses until either
-# Atlas builds with the pinned Xcode or the operator deliberately moves the pin
-# (C11_RELEASE_DTXCODE=2630) and release.yml with it.
-RELEASE_DTXCODE="${C11_RELEASE_DTXCODE:-1640}"
+# DTXcode of the toolchain the release must be built with: Xcode 26.3, which
+# remote-build.sh selects on Atlas for Release builds (SDK macosx26.2). The
+# pin moved from 1640 (Xcode 16.4, which does not launch on macOS 26.2 or
+# later) on Atin's go, 2026-10-31. A real run refuses an app built with any
+# other Xcode; moving the pin is a deliberate SDK change.
+RELEASE_DTXCODE="${C11_RELEASE_DTXCODE:-2630}"
 CREATE_DMG_VERSION="8.0.0"   # release.yml env.CREATE_DMG_VERSION
 SENTRY_ORG="stage-11-kl"
 SENTRY_PROJECT="c11"
@@ -59,7 +75,8 @@ Options:
   --reuse-build          Reuse the Atlas build already in
                          build-release-local/<tag>/pristine when it was built
                          from this HEAD (rerun the tail after a failure).
-  --host <ssh-host>      Build host (default: atlas).
+  --host <ssh-host>      Build host (default: atlas). "local" builds in place on
+                         this machine, for a release driven on Atlas itself.
   -h, --help             Show this help.
 
 Environment overrides: C11_SIGNING_IDENTITY, C11_NOTARY_PROFILE,
@@ -112,7 +129,26 @@ exec > >(tee -a "$LOG") 2>&1
 MODE_LABEL="REAL RUN"
 [[ "$DRY_RUN" -eq 1 ]] && MODE_LABEL="DRY RUN"
 STEP=0
-step() { STEP=$((STEP + 1)); printf '\n==== [%s] step %d: %s (%s)\n' "$(date '+%H:%M:%S')" "$STEP" "$1" "$MODE_LABEL"; }
+TIMINGS="$OUT/timings.tsv"
+: >"$TIMINGS"
+# Every step's wall time goes to $OUT/timings.tsv; the summary prints them and
+# appends one JSON line per run to build-release-local/timings.jsonl.
+RUN_START="$(date +%s)"
+STEP_NAME=""
+STEP_START=0
+PUBLISHED_AT=""
+step_close() {
+  [[ -n "$STEP_NAME" ]] || return 0
+  printf '%s\t%s\n' "$(( $(date +%s) - STEP_START ))" "$STEP_NAME" >>"$TIMINGS"
+  STEP_NAME=""
+}
+step() {
+  step_close
+  STEP=$((STEP + 1))
+  STEP_NAME="$1"
+  STEP_START="$(date +%s)"
+  printf '\n==== [%s] step %d: %s (%s)\n' "$(date '+%H:%M:%S')" "$STEP" "$1" "$MODE_LABEL"
+}
 note() { printf '  %s\n' "$*"; }
 die() { printf '\nRELEASE-LOCAL FAILED: %s\n' "$*" >&2; exit 1; }
 # Prints a command a dry run skips, shell-quoted so it can be pasted.
@@ -125,9 +161,20 @@ fi
 note "release body source: CHANGELOG.md section for $TAG ($RELEASE_NOTES)"
 
 KEY_DIR=""
+DAEMON_PID=""
 cleanup() {
   # The exported Sparkle key lives only in this 0700 dir during step 13.
   if [[ -n "$KEY_DIR" && -d "$KEY_DIR" ]]; then rm -rf "$KEY_DIR"; fi
+  # The signing keychain goes back to locked on every exit path.
+  if [[ "$KEYCHAIN_LEASED" -eq 1 ]]; then
+    perl -e 'alarm 30; exec @ARGV' "$SIGNING_KEYCHAIN_HELPER" lock $$ >/dev/null 2>&1 || true
+  fi
+  # An early exit must not leave the background daemon build running.
+  if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
+    pkill -TERM -P "$DAEMON_PID" 2>/dev/null || true
+    kill "$DAEMON_PID" 2>/dev/null || true
+    wait "$DAEMON_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -185,16 +232,54 @@ if [[ "$PBX_VERSIONS" != "$VERSION" ]]; then
   fi
 fi
 
-IDENTITIES="$(security find-identity -v -p codesigning)" || die "security find-identity failed"
+# The remote daemon assets depend only on the version and tag, so they build
+# here in the background, alongside the Atlas build, and are collected at
+# their step (which still checks the built app carries this same version).
+DAEMON_DIR="$OUT/remote-daemon-assets"
+DAEMON_LOG="$OUT/remote-daemon-assets.log"
+"$ROOT/scripts/build_remote_daemon_release_assets.sh" \
+  --version "$PBX_VERSIONS" \
+  --release-tag "$TAG" \
+  --repo "$REPO_SLUG" \
+  --output-dir "$DAEMON_DIR" >"$DAEMON_LOG" 2>&1 &
+DAEMON_PID=$!
+note "remote daemon assets building in the background (pid $DAEMON_PID, log $DAEMON_LOG)"
+
+if [[ -n "$SIGNING_KEYCHAIN" ]]; then
+  [[ -f "$SIGNING_KEYCHAIN" ]] || die "signing keychain not found: $SIGNING_KEYCHAIN"
+  [[ -x "$SIGNING_KEYCHAIN_HELPER" ]] || die "signing keychain helper not found: $SIGNING_KEYCHAIN_HELPER"
+  # Sized for a cold build plus the tail; the exit trap locks it sooner. The
+  # trap is armed before the request: the helper can unlock and still fail its
+  # probe afterwards, and that keychain must not stay unlocked.
+  KEYCHAIN_LEASED=1
+  perl -e 'alarm 90; exec @ARGV' "$SIGNING_KEYCHAIN_HELPER" request-unlock 3600 $$ >/dev/null \
+    || die "could not unlock the signing keychain $SIGNING_KEYCHAIN through $SIGNING_KEYCHAIN_HELPER"
+  note "signing keychain unlocked for this run (lease $$): $SIGNING_KEYCHAIN"
+fi
+IDENTITIES="$(security find-identity -v -p codesigning ${KC_ARGS[@]+"${SIGNING_KEYCHAIN}"})" || die "security find-identity failed"
 grep -qF "\"$SIGNING_IDENTITY\"" <<<"$IDENTITIES" || die "signing identity not in the keychain: $SIGNING_IDENTITY"
 note "signing identity present: $SIGNING_IDENTITY"
 
 if [[ "$SKIP_NOTARIZE_CHECK" -eq 1 ]]; then
   note "notarytool profile check skipped (--skip-notarize-check)"
-elif xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>"$OUT/notary-check.err"; then
-  note "notarytool profile '$NOTARY_PROFILE' works"
 else
-  msg="notarytool keychain profile '$NOTARY_PROFILE' is missing or rejected: $(tr '\n' ' ' <"$OUT/notary-check.err")"
+  candidates=("$NOTARY_PROFILE")
+  [[ -z "${C11_NOTARY_PROFILE:-}" ]] && candidates=("${NOTARY_PROFILE_CANDIDATES[@]}")
+  NOTARY_OK=0
+  for profile in "${candidates[@]}"; do
+    if xcrun notarytool history --keychain-profile "$profile" ${KC_ARGS[@]+"${KC_ARGS[@]}"} >/dev/null 2>"$OUT/notary-check.err"; then
+      NOTARY_PROFILE="$profile"
+      NOTARY_OK=1
+      break
+    fi
+  done
+fi
+if [[ "$SKIP_NOTARIZE_CHECK" -eq 1 ]]; then
+  :
+elif [[ "$NOTARY_OK" -eq 1 ]]; then
+  note "notarytool profile '$NOTARY_PROFILE' works; notarizing for team ${TEAM_ID:-unknown} ($SIGNING_IDENTITY)"
+else
+  msg="no working notarytool keychain profile (tried: ${candidates[*]}): $(tr '\n' ' ' <"$OUT/notary-check.err")"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     note "WARNING (a real run stops here): $msg"
   else
@@ -222,6 +307,19 @@ find_release() {
   printf '%s' "$found"
 }
 # phase: preflight | publish. Sets RELEASE_ID and RELEASE_DRAFT.
+# update-homebrew.yml runs on its own only after release.yml completes, so a
+# release published here dispatches it. The workflow commits only a changed
+# cask, so dispatching twice is harmless.
+dispatch_homebrew() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    would gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"
+  elif gh workflow run update-homebrew.yml --repo "$REPO_SLUG" -f "version=$VERSION"; then
+    note "dispatched update-homebrew.yml for $VERSION (gh run list --repo $REPO_SLUG --workflow update-homebrew.yml)"
+  else
+    note "WARNING: could not dispatch update-homebrew.yml; the release is published. Run: gh workflow run update-homebrew.yml --repo $REPO_SLUG -f version=$VERSION"
+  fi
+}
+
 check_guard() {
   local phase="$1" rel names state guard
   rel="$(find_release)"
@@ -250,6 +348,13 @@ check_guard() {
       fi
       note "Release $TAG already contains immutable assets ($(jq -r '.conflicts|join(", ")' <<<"$state"))."
       note "Skipping build, notarization, and upload to preserve existing signed artifacts."
+      # A run that published and then failed the Homebrew dispatch is
+      # finished by rerunning it: the cask moves only for the latest release.
+      if [[ "$(gh api "repos/$REPO_SLUG/releases/latest" --jq .tag_name 2>/dev/null || true)" == "$TAG" ]]; then
+        dispatch_homebrew
+      else
+        note "Homebrew: $TAG is not the latest release; the cask is left alone."
+      fi
       exit 0 ;;
     *) die "unexpected guard state: $guard" ;;
   esac
@@ -274,6 +379,11 @@ check_guard preflight
 check_active_runs
 
 # ------------------------------------------------------------ Atlas build --
+# --host local runs the build in place on this machine (remote-build.sh's
+# local transport), for a release driven on Atlas itself; otherwise the build
+# host is reached over ssh.
+host_path() { if [[ "$HOST" == "local" ]]; then printf '%s/%s' "$HOME" "$1"; else printf '%s:%s' "$HOST" "$1"; fi; }
+host_rsync() { if [[ "$HOST" == "local" ]]; then rsync "$@"; else rsync -e "ssh -o BatchMode=yes" "$@"; fi; }
 PRISTINE="$OUT/pristine/c11.app"
 IDENTITY_FILE="$OUT/pristine/build-identity.json"
 REMOTE_TAG="release-local-$TAG"
@@ -327,12 +437,12 @@ else
   [[ "$REUSE_BUILD" -eq 1 ]] && note "--reuse-build: no pristine build for this HEAD; building."
   # reloads.sh --tag (behind remote-build --mode release) builds the prod
   # c11.app identity into derived-release, then returns a re-identified
-  # STAGING copy. --clean --wmo --universal match release.yml's cold,
-  # wholemodule, arm64+x86_64 build. The pristine c11.app is fetched below.
-  note "remote-build: $HOST tag=$REMOTE_TAG (cold, wholemodule, universal)"
+  # STAGING copy. --clean --wmo match release.yml's cold,
+  # wholemodule, arm64-only build. The pristine c11.app is fetched below.
+  note "remote-build: $HOST tag=$REMOTE_TAG (cold, wholemodule, arm64)"
   set +e
   "$ROOT/scripts/remote-build.sh" --host "$HOST" --tag "$REMOTE_TAG" --mode release \
-    --clean --wmo --universal 2>&1 | tee "$OUT/remote-build.out"
+    --clean --wmo 2>&1 | tee "$OUT/remote-build.out"
   rb_status="${PIPESTATUS[0]}"
   set -e
   [[ "$rb_status" -eq 0 ]] || die "remote build failed (exit $rb_status); see $OUT/remote-build.out"
@@ -350,15 +460,15 @@ else
   # Fetched right after the build returns. The per-tag derived-data dir is
   # only rebuilt by another remote-build of this same tag, and the hashes
   # below prove the fetched binaries are the build remote-build attested.
-  note "fetching pristine c11.app from $HOST:$REMOTE_PRODUCTS"
+  note "fetching pristine c11.app from $(host_path "$REMOTE_PRODUCTS")"
   rm -rf "$OUT/pristine"
   mkdir -p "$OUT/pristine"
-  rsync -a -e "ssh -o BatchMode=yes" "$HOST:$REMOTE_PRODUCTS/c11.app" "$OUT/pristine/"
+  host_rsync -a "$(host_path "$REMOTE_PRODUCTS/c11.app")" "$OUT/pristine/"
   [[ -d "$PRISTINE" ]] || die "pristine c11.app not retrieved"
   if [[ "$SENTRY_WANTED" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
     note "fetching dSYMs for Sentry"
     mkdir -p "$OUT/pristine/dsyms"
-    rsync -a -e "ssh -o BatchMode=yes" "$HOST:$REMOTE_PRODUCTS/*.dSYM" "$OUT/pristine/dsyms/" \
+    host_rsync -a $(host_path "$REMOTE_PRODUCTS")/*.dSYM "$OUT/pristine/dsyms/" \
       || die "could not fetch dSYMs from $HOST"
   fi
 
@@ -378,7 +488,13 @@ fi
 verify_pristine
 ARCHS="$(lipo -archs "$PRISTINE/Contents/MacOS/c11")" || die "lipo failed"
 note "architectures: $ARCHS"
-[[ " $ARCHS " == *" arm64 "* && " $ARCHS " == *" x86_64 "* ]] || die "app is not universal (arm64 + x86_64)"
+# Apple silicon only since 1.8 (C11-541); 1.7.0 is the last universal build.
+[[ "$ARCHS" == "arm64" ]] || die "app architectures are '$ARCHS'; releases are arm64-only"
+for binary in Resources/bin/c11 Resources/bin/ghostty; do
+  bin_archs="$(lipo -archs "$PRISTINE/Contents/$binary")" || die "lipo failed on $binary"
+  [[ "$bin_archs" == "arm64" ]] || die "$binary architectures are '$bin_archs'; releases are arm64-only"
+done
+note "bundled CLI and Ghostty helper: arm64"
 DTXCODE="$(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$PRISTINE/Contents/Info.plist")"
 DTSDK="$(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$PRISTINE/Contents/Info.plist")"
 note "toolchain: DTXcode $DTXCODE, SDK $DTSDK (pinned DTXcode $RELEASE_DTXCODE)"
@@ -405,12 +521,11 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PLIST")
 note "app CFBundleShortVersionString=$APP_VERSION CFBundleVersion=$APP_BUILD"
 [[ "$APP_VERSION" == "$PBX_VERSIONS" && "$APP_BUILD" == "$PBX_BUILDS" ]] \
   || die "built app version $APP_VERSION ($APP_BUILD) != project $PBX_VERSIONS ($PBX_BUILDS)"
-DAEMON_DIR="$OUT/remote-daemon-assets"
-"$ROOT/scripts/build_remote_daemon_release_assets.sh" \
-  --version "$APP_VERSION" \
-  --release-tag "$TAG" \
-  --repo "$REPO_SLUG" \
-  --output-dir "$DAEMON_DIR"
+if ! wait "$DAEMON_PID"; then
+  cat "$DAEMON_LOG"
+  die "remote daemon asset build failed; see $DAEMON_LOG"
+fi
+note "remote daemon assets built for $PBX_VERSIONS ($DAEMON_LOG)"
 MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' "$DAEMON_DIR/c11d-remote-manifest.json")"
 plutil -remove C11RemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
 plutil -remove CMUXRemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
@@ -449,32 +564,34 @@ note "SUFeedURL=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PLIST")"
 # --------------------------------------------------------------- codesign --
 step "Codesign app"
 # release.yml imports a .p12 into a throwaway build.keychain first; here the
-# Developer ID identity already lives in the login keychain, whose ACL lets
-# /usr/bin/codesign use the key without a prompt.
+# Developer ID identity lives in the login keychain, or in signing-keychain
+# mode in the dedicated keychain, whose partition list lets /usr/bin/codesign
+# use the key without a prompt.
 ENTITLEMENTS="$ROOT/c11.entitlements"
 CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
 HELPER_PATH="$APP_PATH/Contents/Resources/bin/ghostty"
 if [ -f "$CLI_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
+  /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
 fi
 if [ -f "$HELPER_PATH" ]; then
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
+  /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
 fi
-/usr/bin/codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
+/usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 # --------------------------------------------------------- notarize: app --
 # Returns the submission's status; prints the notary log on rejection.
 notarize() {
   local file="$1" label="$2" json id status
+  note "notarizing $label with notarytool profile '$NOTARY_PROFILE' for team ${TEAM_ID:-unknown}"
   # notarytool exits non-zero on Invalid; keep its JSON so the log is fetched.
-  json="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json)" || true
+  json="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" ${KC_ARGS[@]+"${KC_ARGS[@]}"} --wait --output-format json)" || true
   id="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<<"$json" 2>/dev/null || true)"
   status="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' <<<"$json" 2>/dev/null || true)"
   note "$label notarization ${id:-<no id>}: ${status:-<no status>}"
   if [[ "$status" != "Accepted" ]]; then
     printf '%s\n' "$json"
-    [[ -n "$id" ]] && { xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" || true; }
+    [[ -n "$id" ]] && { xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" ${KC_ARGS[@]+"${KC_ARGS[@]}"} || true; }
     die "$label notarization failed with status: ${status:-submit error}"
   fi
 }
@@ -526,24 +643,6 @@ else
   xcrun stapler validate "$DMG_RELEASE"
 fi
 
-# ----------------------------------------------------------------- Sentry --
-step "Upload dSYMs to Sentry (optional, failure tolerated)"
-if [[ "$SKIP_SENTRY" -eq 1 ]]; then
-  note "skipped (--skip-sentry)"
-elif [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
-  note "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
-elif [[ "$DRY_RUN" -eq 1 ]]; then
-  would rsync -a "$HOST:$REMOTE_PRODUCTS/*.dSYM" "$OUT/pristine/dsyms/"
-  would env SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/"
-elif ! command -v sentry-cli >/dev/null 2>&1; then
-  note "sentry-cli not installed (brew install getsentry/tools/sentry-cli); skipping dSYM upload"
-else
-  # dSYMs were fetched together with the pristine app, so they match it.
-  SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" \
-    sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/" \
-    || note "WARNING: Sentry dSYM upload failed (tolerated, as continue-on-error in release.yml)"
-fi
-
 # ---------------------------------------------------------------- appcast --
 step "Generate Sparkle appcast"
 # Prebuilt, checksum-verified Sparkle tools (pin in fetch-sparkle-tools.sh),
@@ -564,9 +663,17 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   VERIFY_PUBLIC_KEY="$(swift "$ROOT/scripts/derive_sparkle_public_key.swift" "$(cat "$KEY_DIR/key")")"
   note "throwaway public key: $VERIFY_PUBLIC_KEY"
 else
-  note "reading the $SPARKLE_ACCOUNT key from the login keychain with Sparkle's generate_keys"
-  note "(macOS asks once for the login keychain password to allow generate_keys; choose Always Allow so later runs are silent)"
-  "$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -x "$KEY_DIR/key" >/dev/null
+  if [[ -n "$SIGNING_KEYCHAIN" ]]; then
+    # The key goes from the keychain to a 0600 file in this 0700 dir: no argv, no log.
+    note "reading the $SPARKLE_ACCOUNT key from the signing keychain"
+    ( umask 077; perl -e 'alarm 30; exec @ARGV' security find-generic-password \
+        -s "https://sparkle-project.org" -a "$SPARKLE_ACCOUNT" -w "$SIGNING_KEYCHAIN" >"$KEY_DIR/key" ) \
+      || die "the signing keychain has no readable $SPARKLE_ACCOUNT Sparkle key (scripts/move-sparkle-key-to-atlas.sh)"
+  else
+    note "reading the $SPARKLE_ACCOUNT key from the login keychain with Sparkle's generate_keys"
+    note "(macOS asks once for the login keychain password to allow generate_keys; choose Always Allow so later runs are silent)"
+    "$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -x "$KEY_DIR/key" >/dev/null
+  fi
   VERIFY_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY"
 fi
 [[ -s "$KEY_DIR/key" ]] || die "no Sparkle private key"
@@ -675,6 +782,7 @@ else
   note "draft release id: $RELEASE_ID"
   verify_remote_assets
   gh api -X PATCH "repos/$REPO_SLUG/releases/$RELEASE_ID" -F draft=false -f "make_latest=$TAKE_LATEST" >/dev/null
+  PUBLISHED_AT="$(date +%s)"
   if [[ "$TAKE_LATEST" == "true" ]]; then
     LATEST_NOW="$(gh api "repos/$REPO_SLUG/releases/latest" --jq '.tag_name')"
     [[ "$LATEST_NOW" == "$TAG" ]] || die "latest is $LATEST_NOW, expected $TAG"
@@ -685,10 +793,60 @@ else
   fi
 fi
 
+# Only a release that took `latest` moves the cask; a hotfix on an older line
+# never pins Homebrew back.
+step "Update Homebrew cask"
+if [[ "$TAKE_LATEST" != "true" ]]; then
+  note "skipped: $TAG did not take latest"
+else
+  dispatch_homebrew
+fi
+
+# ----------------------------------------------------------------- Sentry --
+# After publishing: the upload is optional and failure-tolerated, so it stays
+# off the tag-to-published path.
+step "Upload dSYMs to Sentry (optional, failure tolerated)"
+if [[ "$SKIP_SENTRY" -eq 1 ]]; then
+  note "skipped (--skip-sentry)"
+elif [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+  note "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
+elif [[ "$DRY_RUN" -eq 1 ]]; then
+  would rsync -a "$(host_path "$REMOTE_PRODUCTS")/*.dSYM" "$OUT/pristine/dsyms/"
+  would env SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/"
+elif ! command -v sentry-cli >/dev/null 2>&1; then
+  note "sentry-cli not installed (brew install getsentry/tools/sentry-cli); skipping dSYM upload"
+else
+  # dSYMs were fetched together with the pristine app, so they match it.
+  SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" \
+    sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/" \
+    || note "WARNING: Sentry dSYM upload failed (tolerated, as continue-on-error in release.yml)"
+fi
+
 step "Summary"
 note "app:     $APP_PATH ($APP_VERSION, build $APP_BUILD, $ARCHS)"
 for asset in "${ASSETS[@]}"; do
   note "$(shasum -a 256 "$asset" | awk '{print $1}')  $(basename "$asset")"
 done
 note "log:     $LOG"
+step_close
+note "step seconds:"
+while IFS=$'\t' read -r secs name; do note "  $(printf '%5s' "$secs")  $name"; done <"$TIMINGS"
+TOTAL_SECS="$(( $(date +%s) - RUN_START ))"
+TO_PUBLISHED=""
+[[ -n "$PUBLISHED_AT" ]] && TO_PUBLISHED="$(( PUBLISHED_AT - RUN_START ))"
+note "total: ${TOTAL_SECS}s; start to published: ${TO_PUBLISHED:-n/a (not published)}s"
+python3 - "$TIMINGS" "$TAG" "$MODE_LABEL" "$REUSE_BUILD" "$TOTAL_SECS" "${TO_PUBLISHED:-}" "$RUN_START" \
+  >>"$ROOT/build-release-local/timings.jsonl" <<'PY'
+import json, sys
+timings, tag, mode, reuse, total, published, start = sys.argv[1:]
+steps = []
+for line in open(timings, encoding="utf-8"):
+    secs, name = line.rstrip("\n").split("\t", 1)
+    steps.append({"step": name, "seconds": int(secs)})
+print(json.dumps({"tag": tag, "mode": mode, "reuse_build": reuse == "1", "started": int(start),
+                  "total_seconds": int(total),
+                  "to_published_seconds": int(published) if published else None,
+                  "steps": steps}))
+PY
+note "timings appended to build-release-local/timings.jsonl"
 printf '\n==== release-local %s %s finished OK\n' "$TAG" "$MODE_LABEL"

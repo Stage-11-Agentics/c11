@@ -167,9 +167,18 @@ jobs:
       - name: Build app (Release)
         if: steps.guard_release_assets.outputs.skip_all != 'true'
         run: |
+          # Apple silicon only since 1.8 (C11-541); 1.7.0 is the last universal build.
           xcodebuild -scheme c11 -configuration Release -derivedDataPath build \
+            -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath .spm-cache \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO build
+          APP_DIR=build/Build/Products/Release/c11.app/Contents
+          for BINARY in "$APP_DIR/MacOS/c11" "$APP_DIR/Resources/bin/c11" "$APP_DIR/Resources/bin/ghostty"; do
+            ARCHS_FOUND="$(lipo -archs "$BINARY")"
+            echo "$BINARY architectures: $ARCHS_FOUND"
+            [ "$ARCHS_FOUND" = "arm64" ] || { echo "expected arm64 only in $BINARY, got: $ARCHS_FOUND" >&2; exit 1; }
+          done
 
       - name: Build remote daemon release assets and inject manifest
         if: steps.guard_release_assets.outputs.skip_all != 'true'
@@ -339,8 +348,15 @@ jobs:
           export SPARKLE_BIN_DIR
           ./scripts/sparkle_generate_appcast.sh c11-macos.dmg "$GITHUB_REF_NAME" appcast.xml
           # Prove the signature is valid under the app's public key before publishing.
-          swift scripts/verify_sparkle_appcast.swift appcast.xml c11-macos.dmg \
-            "$SPARKLE_PUBLIC_KEY" "${DOWNLOAD_URL_PREFIX}c11-macos.dmg"
+          VERIFY_JSON="$(swift scripts/verify_sparkle_appcast.swift appcast.xml c11-macos.dmg \
+            "$SPARKLE_PUBLIC_KEY" "${DOWNLOAD_URL_PREFIX}c11-macos.dmg")"
+          echo "$VERIFY_JSON"
+          # The appcast must advertise the version of the app it ships.
+          APP_PLIST="build/Build/Products/Release/c11.app/Contents/Info.plist"
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")"
+          APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")"
+          [ "$(jq -r .shortVersionString <<<"$VERIFY_JSON")" = "$APP_VERSION" ] || { echo "appcast shortVersionString != $APP_VERSION" >&2; exit 1; }
+          [ "$(jq -r .version <<<"$VERIFY_JSON")" = "$APP_BUILD" ] || { echo "appcast version != $APP_BUILD" >&2; exit 1; }
 
       - name: Upload release asset
         if: steps.guard_release_assets.outputs.skip_upload != 'true'

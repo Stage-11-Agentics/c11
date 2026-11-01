@@ -196,13 +196,13 @@ jobs:
           echo "Derived Sparkle public key: $DERIVED_PUBLIC_KEY"
           echo "SPARKLE_PUBLIC_KEY=$DERIVED_PUBLIC_KEY" >> "$GITHUB_ENV"
 
-      - name: Build universal nightly app (Release)
+      - name: Build nightly app (Release, Apple silicon)
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
-          xcodebuild -scheme c11 -configuration Release -derivedDataPath build-universal \
+          xcodebuild -scheme c11 -configuration Release -derivedDataPath build-nightly \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath .spm-cache \
-            ARCHS="arm64 x86_64" \
+            ARCHS="arm64" \
             ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO ASSETCATALOG_COMPILER_APPICON_NAME=AppIcon-Nightly build
 
@@ -210,24 +210,25 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
           set -euo pipefail
-          APP_BINARY="build-universal/Build/Products/Release/c11.app/Contents/MacOS/c11"
-          CLI_BINARY="build-universal/Build/Products/Release/c11.app/Contents/Resources/bin/c11"
-          HELPER_BINARY="build-universal/Build/Products/Release/c11.app/Contents/Resources/bin/ghostty"
+          APP_BINARY="build-nightly/Build/Products/Release/c11.app/Contents/MacOS/c11"
+          CLI_BINARY="build-nightly/Build/Products/Release/c11.app/Contents/Resources/bin/c11"
+          HELPER_BINARY="build-nightly/Build/Products/Release/c11.app/Contents/Resources/bin/ghostty"
           APP_ARCHS="$(lipo -archs "$APP_BINARY")"
           CLI_ARCHS="$(lipo -archs "$CLI_BINARY")"
           HELPER_ARCHS="$(lipo -archs "$HELPER_BINARY")"
           echo "App binary architectures: $APP_ARCHS"
           echo "CLI binary architectures: $CLI_ARCHS"
           echo "Ghostty helper architectures: $HELPER_ARCHS"
-          [[ "$APP_ARCHS" == *arm64* && "$APP_ARCHS" == *x86_64* ]]
-          [[ "$CLI_ARCHS" == *arm64* && "$CLI_ARCHS" == *x86_64* ]]
-          [[ "$HELPER_ARCHS" == *arm64* && "$HELPER_ARCHS" == *x86_64* ]]
+          # Apple silicon only since 1.8 (C11-541).
+          [[ "$APP_ARCHS" == "arm64" ]]
+          [[ "$CLI_ARCHS" == "arm64" ]]
+          [[ "$HELPER_ARCHS" == "arm64" ]]
 
       - name: Run CLI version memory guard regression
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
           set -euo pipefail
-          CLI_BINARY="build-universal/Build/Products/Release/c11.app/Contents/Resources/bin/c11"
+          CLI_BINARY="build-nightly/Build/Products/Release/c11.app/Contents/Resources/bin/c11"
           [ -x "$CLI_BINARY" ] || { echo "c11 CLI binary not found at $CLI_BINARY" >&2; exit 1; }
           C11_CLI_BIN="$CLI_BINARY" CMUX_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_version_memory_guard.py
 
@@ -257,7 +258,7 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA="${{ needs.decide.outputs.short_sha }}"
-          APP_DIR="build-universal/Build/Products/Release"
+          APP_DIR="build-nightly/Build/Products/Release"
 
           BASE_MARKETING=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_DIR}/c11.app/Contents/Info.plist")
           NIGHTLY_DATE=$(date -u +%Y%m%d)
@@ -322,7 +323,7 @@ jobs:
             --repo "Stage-11-Agentics/c11" \
             --output-dir "remote-daemon-assets"
           MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' remote-daemon-assets/c11d-remote-manifest.json)"
-          APP_PLIST="build-universal/Build/Products/Release/c11 NIGHTLY.app/Contents/Info.plist"
+          APP_PLIST="build-nightly/Build/Products/Release/c11 NIGHTLY.app/Contents/Info.plist"
           if [ ! -f "$APP_PLIST" ]; then
             echo "Missing nightly app Info.plist at $APP_PLIST" >&2
             exit 1
@@ -367,7 +368,7 @@ jobs:
           fi
           ENTITLEMENTS="c11.entitlements"
           for APP_PATH in \
-            "build-universal/Build/Products/Release/c11 NIGHTLY.app"
+            "build-nightly/Build/Products/Release/c11 NIGHTLY.app"
           do
             CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
             HELPER_PATH="$APP_PATH/Contents/Resources/bin/ghostty"
@@ -457,7 +458,7 @@ jobs:
           }
 
           notarize_and_package \
-            "build-universal/Build/Products/Release/c11 NIGHTLY.app" \
+            "build-nightly/Build/Products/Release/c11 NIGHTLY.app" \
             "c11-nightly-macos.dmg" \
             "$NIGHTLY_DMG_IMMUTABLE"
 
@@ -475,7 +476,7 @@ jobs:
           fi
           brew install getsentry/tools/sentry-cli || true
           sentry-cli debug-files upload --include-sources \
-            build-universal/Build/Products/Release/
+            build-nightly/Build/Products/Release/
 
       - name: Generate Sparkle appcasts (nightly)
         if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
@@ -483,6 +484,13 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           DOWNLOAD_URL_PREFIX: https://github.com/Stage-11-Agentics/c11/releases/download/nightly/
           RELEASE_NOTES_URL: https://github.com/Stage-11-Agentics/c11/releases/tag/nightly
+          # Nightlies older than this build run Sparkle 2.8.1, which ignores the
+          # Apple-silicon-only tag, so they see the arm64 nightly as information
+          # only. 3711499935701 is the first published nightly with Sparkle 2.9.3
+          # (run 37114999357, 2026-10-03, after #518); the last one with 2.8.1 is
+          # 3684650524801 (run 36846505248, 2026-10-01). Nightly build numbers are
+          # the run id followed by a two-digit attempt.
+          SPARKLE_LEGACY_BELOW_BUILD: "3711499935701"
         run: |
           if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
             echo "Missing SPARKLE_PRIVATE_KEY secret" >&2
@@ -533,10 +541,10 @@ jobs:
           body: |
             Automated nightly build for `${{ needs.decide.outputs.short_sha }}`.
 
-            **c11 NIGHTLY** is published as a universal app:
+            **c11 NIGHTLY** is published for Apple silicon Macs:
             - bundle ID `com.stage11.c11.nightly`
             - feed `appcast.xml`
-            - compatibility feed `appcast-universal.xml` for older universal nightlies
+            - compatibility feed `appcast-universal.xml` for older nightlies (Intel Macs are not offered these builds)
 
             [Download c11-nightly-macos.dmg](https://github.com/Stage-11-Agentics/c11/releases/download/nightly/c11-nightly-macos.dmg)
           files: |

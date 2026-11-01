@@ -65,3 +65,13 @@ Xcode 16.4 runs only through macOS 26.1.x ([Apple's support table](https://devel
 2. Move the pin to Xcode 26.x and keep the free GitHub runner: fixes the pin, no speed gain (about 28 min).
 3. Keep the pin on paid `macos-15-xlarge`, arm64-only: about 14 min (estimate). Drops Intel Macs, and the pin still ends with `macos-15`.
 4. Paid `macos-15-xlarge` alone, or free per-architecture parallel jobs with a `lipo` merge: about 21 min each; neither meets 15.
+
+## Releasing on Atlas (signing keychain mode)
+
+Atin's go on 2026-10-31 ("keys to Atlas"): a release can run end to end on Atlas while his Mac sleeps. Atlas's dedicated release keychain (`~/Library/Keychains/acetate-release.keychain-db`, shared with Acetate) already holds the Developer ID identity for team UKQ4QALWD4 and the `acetate-notary` profile. It is locked at rest and unlocked by launchd for one run through `~/.acetate-release/bin/release_keychain.sh` (lease, auto-lock, lock in the exit trap).
+
+- `C11_SIGNING_KEYCHAIN=<that keychain> scripts/release-local.sh ...` takes one unlock lease at preflight, passes the keychain to codesign and notarytool, reads the Sparkle key from it into the run's 0700 temp directory, and locks it on exit. `C11_SIGNING_IDENTITY` stays the single setting for the identity.
+- `scripts/move-sparkle-key-to-atlas.sh` (operator, once, one macOS Allow) copies the c11mux Sparkle key from the operator's login keychain into that keychain over ssh stdin. It is safe to run twice. Agents run only `--check` (`match`, `missing` or `mismatch`) and `--self-test`.
+- `scripts/atlas-signing-check.sh` (agent-safe) proves the path from a non-GUI ssh session: codesign of a scratch binary with hardened runtime and timestamp, `notarytool history`, and a Sparkle signature from a throwaway key read back from the keychain, then confirms the keychain is locked and nothing is left behind.
+- On Atlas itself, `--host local` builds in place: `remote-build.sh --host local` runs the same admitted build (`atlas_build_slots.py`) from `$HOME` with no ssh hop, and the release fetches the products from there. A release run entirely on Atlas: `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local vX.Y.Z`.
+

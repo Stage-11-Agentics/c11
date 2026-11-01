@@ -30,6 +30,7 @@ RELEASE_NOTES_URL="${RELEASE_NOTES_URL:-https://github.com/Stage-11-Agentics/c11
 
 work_dir="$(mktemp -d)"
 cleanup() {
+  if [[ -d "$work_dir/mnt" ]]; then hdiutil detach -quiet "$work_dir/mnt" 2>/dev/null || true; fi
   rm -rf "$work_dir"
 }
 trap cleanup EXIT
@@ -153,3 +154,93 @@ else
   echo "ERROR: appcast is missing sparkle:edSignature!" >&2
   exit 1
 fi
+
+# Sparkle 2.9+ clients on Intel skip an item that carries
+# <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>, and
+# generate_appcast emits it only when the app's main executable has no x86_64
+# slice. c11 ships arm64-only since 1.8 (C11-541), so check the tag is there
+# rather than trusting it: without it, Intel Macs would be offered a build
+# they cannot run.
+mkdir -p "$work_dir/mnt"
+hdiutil attach -nobrowse -readonly -noverify -mountpoint "$work_dir/mnt" "$DMG_PATH" >/dev/null
+app_path="$(find "$work_dir/mnt" -maxdepth 1 -name '*.app' | head -n 1)"
+[[ -n "$app_path" ]] || { echo "ERROR: no .app in $DMG_PATH" >&2; exit 1; }
+exe_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+app_archs="$(lipo -archs "$app_path/Contents/MacOS/$exe_name")"
+hdiutil detach -quiet "$work_dir/mnt"
+rmdir "$work_dir/mnt" 2>/dev/null || true
+# The first build whose Sparkle honors hardwareRequirements. Releases: 132,
+# c11 1.0.0 (0.67.0, the last 0.x, is build 131). Nightly builds number by run
+# id, so nightly.yml passes its own threshold.
+legacy_below_build="${SPARKLE_LEGACY_BELOW_BUILD:-132}"
+[[ "$legacy_below_build" =~ ^[0-9]+$ ]] || { echo "SPARKLE_LEGACY_BELOW_BUILD must be a build number" >&2; exit 1; }
+if [[ " $app_archs " != *" x86_64 "* ]]; then
+  if ! grep -q '<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>' "$OUT_PATH"; then
+    echo "ERROR: app is arm64-only ($app_archs) but the appcast lacks sparkle:hardwareRequirements arm64; Intel Macs would be offered it." >&2
+    exit 1
+  fi
+  echo "Verified: arm64-only app ($app_archs); appcast carries sparkle:hardwareRequirements arm64"
+
+  # Sparkle before 2.9 ignores hardwareRequirements, and c11 0.x (builds up to
+  # 131) ships Sparkle 2.8.1, so an Intel Mac still on 0.x would install a
+  # build it cannot run. Make the item information-only below build 132 (c11
+  # 1.0.0, the first with Sparkle 2.9): those hosts are told about the update
+  # but cannot install it, and Apple-silicon ones download it by hand from the
+  # release page. Sparkle honors informationalUpdate only on an item with an
+  # http(s) <link>, so the release page goes in as the link. The edSignature
+  # covers the DMG, not this XML, so editing the item keeps it valid.
+  python3 - "$OUT_PATH" "$legacy_below_build" "$RELEASE_NOTES_URL" <<'PY_INFORMATIONAL'
+import re
+import sys
+from xml.sax.saxutils import escape
+
+path, below, link = sys.argv[1:]
+if not re.match(r"https?://", link):
+    sys.exit(f"release page URL is not http(s): {link}")
+xml = open(path, encoding="utf-8").read()
+if xml.count("<item>") != 1:
+    sys.exit(f"expected one item in {path}")
+if "sparkle:informationalUpdate" in xml or "<link>" in xml:
+    sys.exit(f"{path} already has sparkle:informationalUpdate or <link>")
+anchor = re.search(r"^([ \t]*)<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>\n", xml, re.M)
+if anchor is None:
+    sys.exit(f"no sparkle:hardwareRequirements line in {path}")
+indent = anchor.group(1)
+block = (
+    f"{indent}<link>{escape(link)}</link>\n"
+    f"{indent}<sparkle:informationalUpdate>\n"
+    f"{indent}    <sparkle:belowVersion>{below}</sparkle:belowVersion>\n"
+    f"{indent}</sparkle:informationalUpdate>\n"
+)
+open(path, "w", encoding="utf-8").write(xml[:anchor.end()] + block + xml[anchor.end():])
+PY_INFORMATIONAL
+fi
+
+# Fail closed: the appcast must still parse; an arm64-only app's item must
+# carry hardwareRequirements arm64, an http(s) <link> and informationalUpdate
+# belowVersion 132; a universal app's item must carry neither guard.
+python3 - "$OUT_PATH" "$app_archs" "$legacy_below_build" <<'PY_VERIFY'
+import sys
+import xml.dom.minidom
+
+path, archs, below = sys.argv[1:]
+ns = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+items = xml.dom.minidom.parse(path).getElementsByTagName("item")
+if len(items) != 1:
+    sys.exit(f"ERROR: expected one item in {path}, found {len(items)}")
+item = items[0]
+text = lambda e: "".join(n.data for n in e.childNodes if n.nodeType == n.TEXT_NODE).strip()
+hardware = [text(e) for e in item.getElementsByTagNameNS(ns, "hardwareRequirements")]
+informational = item.getElementsByTagNameNS(ns, "informationalUpdate")
+below_versions = [text(e) for e in item.getElementsByTagNameNS(ns, "belowVersion")]
+links = [text(e) for e in item.childNodes if e.nodeType == e.ELEMENT_NODE and e.tagName == "link"]
+if "x86_64" in archs.split():
+    if hardware or informational:
+        sys.exit(f"ERROR: universal app ({archs}) but the appcast item carries hardwareRequirements or informationalUpdate")
+    print(f"Verified: universal app ({archs}); appcast item carries neither hardware nor informational guard")
+else:
+    if (hardware != ["arm64"] or len(informational) != 1 or below_versions != [below]
+            or len(links) != 1 or not links[0].startswith(("https://", "http://"))):
+        sys.exit(f"ERROR: arm64-only app ({archs}) but the appcast item lacks an http(s) <link> with informationalUpdate belowVersion {below}; Intel Macs on c11 0.x would install it")
+    print(f"Verified: arm64-only app; appcast item is information-only below build {below} (link {links[0]})")
+PY_VERIFY

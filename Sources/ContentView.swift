@@ -13650,6 +13650,7 @@ private struct WorkspaceRowView: View, Equatable {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.workspace.\(workspace.id.uuidString)")
         .accessibilityLabel(Text(accessibilityTitle))
+        .accessibilityValue(Text(workspace.mission?.paragraph ?? ""))
         .accessibilityHint(Text(accessibilityHintText))
         .accessibilityAction(named: Text(moveUpActionText)) {
             moveBy(-1)

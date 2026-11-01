@@ -75,9 +75,12 @@ extension CMUXCLI {
                  only into panels nobody has used since launch.
           find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--json]
                  Search Claude and Codex transcripts on this Mac. -a reads
-                 transcript bodies up to 1 MiB and skips files over 8 MiB.
+                 each file in chunks, at most 1 MiB, skips files over 8 MiB,
+                 prints progress on stderr, and stops a listing at --limit
+                 matches. --open with -a stops at two matches.
                  --open focuses a live session, or resumes an idle one into
                  a new panel. It does not change the selected workspace.
+                 A live row prints its c11://panel link.
 
         --panel defaults to $C11_PANEL_ID for every subcommand except
         resume, which needs it explicitly. There is NO focused-panel
@@ -488,7 +491,36 @@ extension CMUXCLI {
             hits = []
         }
         let zone = TimeZone.current
-        let result = SessionFinder.search(query: parsed.query, roots: roots, liveHits: hits)
+        let matchStop: Int?
+        if parsed.query.deep {
+            if parsed.query.sessionID != nil {
+                matchStop = 1
+            } else if parsed.open {
+                matchStop = 2
+            } else {
+                matchStop = parsed.query.limit
+            }
+        } else {
+            matchStop = nil
+        }
+        let result = SessionFinder.search(
+            query: parsed.query,
+            roots: roots,
+            liveHits: hits,
+            matchStop: matchStop,
+            progress: parsed.query.deep ? { snap in
+                if snap.filesRead > 0, snap.filesRead.isMultiple(of: 250) {
+                    conversationFindWriteProgress(snap)
+                }
+            } : nil
+        )
+        if parsed.query.deep, result.filesRead == 0 || !result.filesRead.isMultiple(of: 250) {
+            conversationFindWriteProgress(SessionFinder.ScanProgress(
+                filesRead: result.filesRead,
+                matches: result.matchCount,
+                bytesRead: result.bytesRead
+            ))
+        }
         if !parsed.open {
             try emitConversationFindList(result, jsonOutput: jsonOutput || parsed.json, timeZone: zone)
             return
@@ -537,7 +569,7 @@ extension CMUXCLI {
             let panelRef = row?.panelRef ?? panelID
             let workspaceRef = row?.workspaceRef ?? workspaceID
             if jsonOutput || parsed.json {
-                print(jsonString([
+                var object: [String: Any] = [
                     "action": "focus",
                     "harness": row?.harness.rawValue ?? "",
                     "session_id": row?.sessionID ?? "",
@@ -546,7 +578,9 @@ extension CMUXCLI {
                     "workspace_id": workspaceID,
                     "workspace_ref": workspaceRef,
                     "selected_workspace_unchanged": true
-                ]))
+                ]
+                if let link = row?.link { object["link"] = link }
+                print(jsonString(object))
             } else {
                 print(String(
                     format: String(
@@ -556,6 +590,9 @@ extension CMUXCLI {
                     panelRef,
                     workspaceRef
                 ))
+                if let link = row?.link {
+                    print(link)
+                }
             }
         case .resume(let command, let cwd):
             let callerWorkspace = parsed.callerWorkspace ?? workspaceFromArgsOrEnv(subArgs)
@@ -636,7 +673,11 @@ extension CMUXCLI {
             }
             let cwd = row.cwd ?? "-"
             let when = SessionFinder.formatLocalTimestamp(row.lastActive, timeZone: timeZone)
-            print("\(row.harness.rawValue)  \(row.sessionID)  \(state)  \(cwd)  \(when)  \(row.title)")
+            if let link = row.link {
+                print("\(row.harness.rawValue)  \(row.sessionID)  \(state)  \(link)  \(cwd)  \(when)  \(row.title)")
+            } else {
+                print("\(row.harness.rawValue)  \(row.sessionID)  \(state)  \(cwd)  \(when)  \(row.title)")
+            }
         }
     }
 
@@ -747,4 +788,17 @@ extension CMUXCLI {
         }
         return nil
     }
+}
+
+private func conversationFindWriteProgress(_ progress: SessionFinder.ScanProgress) {
+    let line = String(
+        format: String(
+            localized: "cli.conversation.find.progress",
+            defaultValue: "find: files=%lld matches=%lld bytes=%lld"
+        ),
+        Int64(progress.filesRead),
+        Int64(progress.matches),
+        Int64(progress.bytesRead)
+    )
+    FileHandle.standardError.c11SafeWrite(Data((line + "\n").utf8))
 }

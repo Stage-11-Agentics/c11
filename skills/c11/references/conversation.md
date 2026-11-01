@@ -93,7 +93,7 @@ c11 conversation find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--
 
 It looks at one directory level of `~/.claude/projects/<slug>/<uuid>.jsonl` plus `~/.claude/history.jsonl`, and at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` plus `~/.codex/history.jsonl`. Nested Claude subagent transcripts are out of scope.
 
-The default match is the title, the working directory, and the user's prompts. A case-insensitive substring is enough. The query is one word, so quote a phrase. `-a` also searches transcript text. A file larger than 8 MiB is counted and its body is not scanned. Every other file is read up to 1 MiB, and the read stops when the phrase matches. Assistant text matches only with `-a`.
+The default match is the title, the working directory, and the user's prompts. A case-insensitive substring is enough. The query is one word, so quote a phrase. `-a` also searches transcript text. A file larger than 8 MiB is counted and its body is not scanned. Every other file is read in 64 KiB chunks, at most 1 MiB, and that file's read stops when the phrase matches. Assistant text matches only with `-a`. While `-a` runs, progress goes to stderr and stdout stays clean for `--json`: `find: files=%lld matches=%lld bytes=%lld`. The numbers are counts only. With `-a`, a listing stops once it has `--limit` matches, newest first, and `--json` sets `"truncated": true` when files remain unread. With `-a`, `--open` stops at two matches, so a second match still refuses and the scan does not continue. With `-a`, `--session` stops when that one id is resolved. Without `-a`, `--open` still counts every match.
 
 An empty query lists transcript files, newest first, 30 rows. It does not list history-only ids. `--limit` is a whole number from 1 to 200. When more matches exist than the limit, `--json` sets `"truncated": true`. `--session <uuid>` keeps that id. A query and `--session` both have to match.
 
@@ -105,7 +105,7 @@ Each row is harness (`claude` or `codex`), the full session id, state, cwd, last
 | `idle` | The transcript is on disk and the session is not live. |
 | `gone` | History names the id and the transcript file is gone. A gone row appears only when a query matches. |
 
-`--json` is the stable shape. Key names are the contract. Key order is not. `last_active` is ISO-8601 with the local offset. Human rows use `yyyy-MM-dd HH:mm zzz`. `cwd` is omitted when it is unknown. A live row also has `panel_id`, `panel_ref`, `workspace_id`, and `workspace_ref`.
+`--json` is the stable shape. Key names are the contract. Key order is not. `last_active` is ISO-8601 with the local offset. Human rows use `yyyy-MM-dd HH:mm zzz`. `cwd` is omitted when it is unknown. A live row also has `panel_id`, `panel_ref`, `workspace_id`, `workspace_ref`, and `link`. `link` is `c11://panel/<uuid>`, the same URL `c11 link --panel <uuid>` prints. Human rows print it too, so the operator can Cmd-click that panel. `panel.focus` does not change the selected workspace. The link is how a person opens the workspace that holds the session.
 
 ```json
 {
@@ -133,7 +133,7 @@ When a skip count is nonzero, human output prints one stderr line, `skipped: cor
 
 `--open` acts only when exactly one session matches. That count is the full match count, not the `--limit` page. Zero matches exits nonzero with `No session matched.` More than one match prints the rows and exits nonzero: `find --open needs one session. N matched. Pass --session.` A gone session is refused. A session id that is not a UUID is not resumed.
 
-**Live.** Focus that panel inside the workspace that already holds it. The command is `panel.focus` with that panel id and that workspace id. It does not change which workspace is selected, and it does not open a second copy. Human output: `Focused panel:N in workspace:M. The selected workspace was not changed.` JSON includes `"action": "focus"` and `"selected_workspace_unchanged": true`.
+**Live.** Focus that panel inside the workspace that already holds it. The command is `panel.focus` with that panel id and that workspace id. It does not change which workspace is selected, and it does not open a second copy. Human output: `Focused panel:N in workspace:M. The selected workspace was not changed.` The next line is the `c11://panel/<uuid>` link when the panel id is a UUID. JSON includes `"action": "focus"`, `"link"`, and `"selected_workspace_unchanged": true`.
 
 **Idle.** Open a new terminal in the caller's workspace (`$C11_WORKSPACE_ID`, or `--workspace`), in the session's cwd, and run the same resume line `c11 conversation resume` types. The new panel is not focused, and the selected workspace does not change.
 

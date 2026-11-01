@@ -105,6 +105,8 @@ final class SessionFinderTests: XCTestCase {
         XCTAssertEqual(claude.state, .live)
         XCTAssertEqual(claude.panelRef, "panel:4")
         XCTAssertEqual(claude.workspaceRef, "workspace:2")
+        XCTAssertNil(claude.link)
+        XCTAssertNil(SessionFinder.panelLink(panelID: "PANEL-LIVE"))
         guard case .focus(let panelID, let workspaceID) = SessionFinder.action(for: claude) else {
             return XCTFail("live row must focus, not resume")
         }
@@ -243,6 +245,97 @@ final class SessionFinderTests: XCTestCase {
         guard case .ambiguous(2) = SessionFinder.openChoice(result) else {
             return XCTFail("limit must not hide a second match from --open")
         }
+    }
+
+    func testLiveRowCarriesPanelLink() throws {
+        let panel = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let hit = SessionFinder.LiveHit(
+            kind: "claude-code", sessionID: claudeID, conversationState: "alive",
+            placeholder: false, panelID: panel, panelRef: "panel:4",
+            workspaceID: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB", workspaceRef: "workspace:2",
+            cwd: "/Users/test/proj"
+        )
+        let result = SessionFinder.search(
+            query: SessionFinder.Query(text: "zephyr-needle", deep: false),
+            roots: fixture.roots,
+            liveHits: [hit]
+        )
+        let row = try XCTUnwrap(result.rows.first { $0.sessionID == claudeID })
+        let id = try XCTUnwrap(UUID(uuidString: panel))
+        let expected = PanelLinkFormat.url(kind: .panel, id: id)
+        XCTAssertEqual(expected, "c11://panel/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+        XCTAssertEqual(row.link, expected)
+        let json = SessionFinder.jsonRow(row, timeZone: zone)
+        XCTAssertEqual(json["link"] as? String, expected)
+        let idle = try XCTUnwrap(result.rows.first { $0.sessionID == codexID })
+        XCTAssertNil(idle.link)
+        XCTAssertNil(SessionFinder.jsonRow(idle, timeZone: zone)["link"])
+        let call = SessionFinder.focusCall(panelID: panel, workspaceID: hit.workspaceID)
+        XCTAssertFalse(SessionFinder.paramsContain(call.params, needle: "c11://"))
+        XCTAssertFalse(SessionFinder.paramsContain(call.params, needle: "zephyr-needle"))
+    }
+
+    func testDeepScanStopsAtTheMatchLimit() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let phrase = "stop-early-pearl"
+        let newest = "44444444-4444-4444-8444-444444444441"
+        let middle = "44444444-4444-4444-8444-444444444442"
+        let oldest = "44444444-4444-4444-8444-444444444443"
+        try Data("{\"type\":\"user\",\"message\":{\"content\":\"\(phrase)\"}}\n".utf8).write(to: fixture.claudeFile(newest))
+        try Data("{\"type\":\"user\",\"message\":{\"content\":\"\(phrase)\"}}\n".utf8).write(to: fixture.claudeFile(middle))
+        _ = try fixture.addClaude(
+            id: oldest,
+            bytes: SessionFinder.hugeFileBytes + 4096,
+            phrase: phrase,
+            phraseAt: 32
+        )
+        let now = fixture.when
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fixture.claudeFile(newest).path)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-10)], ofItemAtPath: fixture.claudeFile(middle).path)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-200_000)], ofItemAtPath: fixture.claudeFile(oldest).path)
+        var reads: [Int] = []
+        let stopped = SessionFinder.search(
+            query: SessionFinder.Query(text: phrase, deep: true, limit: 2),
+            roots: fixture.roots,
+            now: now,
+            matchStop: 2,
+            progress: { reads.append($0.filesRead) }
+        )
+        XCTAssertEqual(reads, [1, 2])
+        XCTAssertEqual(stopped.matchCount, 2)
+        XCTAssertEqual(stopped.rows.count, 2)
+        XCTAssertTrue(stopped.truncated)
+        XCTAssertEqual(stopped.skipped.hugeFiles, 0)
+        XCTAssertLessThan(stopped.bytesRead, SessionFinder.headByteCap * 2)
+        XCTAssertFalse(stopped.rows.contains { $0.sessionID == oldest })
+        let opened = SessionFinder.search(
+            query: SessionFinder.Query(text: phrase, deep: true, limit: 1),
+            roots: fixture.roots,
+            now: now,
+            matchStop: 2
+        )
+        XCTAssertEqual(opened.rows.count, 1)
+        XCTAssertEqual(opened.matchCount, 2)
+        XCTAssertEqual(opened.skipped.hugeFiles, 0)
+        guard case .ambiguous(2) = SessionFinder.openChoice(opened) else {
+            return XCTFail("stopping at two matches must still refuse --open")
+        }
+    }
+
+    func testDeepReadStopsInsideTheMatchingFile() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let id = "44444444-4444-4444-8444-444444444449"
+        _ = try fixture.addClaude(id: id, bytes: 2 * 1024 * 1024, phrase: "stream-pearl", phraseAt: 100)
+        let result = SessionFinder.search(
+            query: SessionFinder.Query(text: "stream-pearl", deep: true),
+            roots: fixture.roots
+        )
+        XCTAssertEqual(result.rows.map(\.sessionID), [id])
+        XCTAssertLessThan(result.bytesRead, SessionFinder.headByteCap * 2)
     }
 
     func testDeepReadDoesNotFindPhrasePastCaps() throws {

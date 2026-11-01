@@ -74,6 +74,8 @@ enum SessionFinder {
         var cwd: String?
         var lastActive: Date
         var title: String
+        /// `c11://panel/<uuid>`, the same URL `c11 link --panel` prints. Nil unless the panel id is a UUID.
+        var link: String?
     }
 
     struct Skipped: Equatable {
@@ -91,6 +93,14 @@ enum SessionFinder {
         var skipped: Skipped
         var rows: [Row]
         var matchCount: Int
+        var filesRead: Int
+        var bytesRead: Int
+    }
+
+    struct ScanProgress: Equatable {
+        var filesRead: Int
+        var matches: Int
+        var bytesRead: Int
     }
 
     enum Action: Equatable {
@@ -252,11 +262,16 @@ enum SessionFinder {
         ))
     }
 
+    /// `matchStop` ends a deep scan once that many matches are in hand.
+    /// Listing passes `--limit`. `--open` passes 2, so a second match still refuses
+    /// and the rest of a large transcript set is not read. Nil reads every candidate.
     static func search(
         query: Query,
         roots: Roots,
         liveHits: [LiveHit] = [],
-        now: Date = Date()
+        now: Date = Date(),
+        matchStop: Int? = nil,
+        progress: ((ScanProgress) -> Void)? = nil
     ) -> Result {
         var skipped = Skipped.zero
         let files = indexFiles(roots: roots, skipped: &skipped)
@@ -266,31 +281,85 @@ enum SessionFinder {
             query: query.text,
             skipped: &skipped
         )
-        var drafts: [Draft] = []
-        for file in files.values {
-            var draft = history.files[file.key] ?? Draft(sessionID: file.sessionID, kind: file.kind)
-            draft.sessionID = file.sessionID
-            draft.kind = file.kind
-            draft.hasFile = true
-            draft.mtime = file.mtime
-            readFile(file, query: query, draft: &draft, skipped: &skipped)
-            drafts.append(draft)
-        }
-        for (key, draft) in history.gone where files[key] == nil {
-            drafts.append(draft)
-        }
-
         let live = indexLive(liveHits)
         var rows: [Row] = []
         var seen = Set<String>()
-        for draft in drafts {
-            let key = liveKey(kind: draft.kind, sessionID: draft.sessionID)
-            guard seen.insert(key).inserted else { continue }
-            guard include(draft, query: query.text) else { continue }
-            if let wanted = query.sessionID, wanted.lowercased() != draft.sessionID.lowercased() {
+        var filesRead = 0
+        var bytesRead = 0
+        var stoppedEarly = false
+
+        struct Candidate {
+            var sortKey: Date
+            var sessionID: String
+            var file: FileRec?
+            var preset: Draft?
+        }
+        var candidates: [Candidate] = []
+        candidates.reserveCapacity(files.count + history.gone.count)
+        for file in files.values {
+            let prior = history.files[file.key]
+            var dates = [file.mtime]
+            if let historyDate = prior?.historyDate { dates.append(historyDate) }
+            if let captured = live[file.key]?.capturedAt { dates.append(captured) }
+            candidates.append(Candidate(
+                sortKey: dates.max() ?? file.mtime,
+                sessionID: file.sessionID,
+                file: file,
+                preset: prior
+            ))
+        }
+        for (key, draft) in history.gone where files[key] == nil {
+            candidates.append(Candidate(
+                sortKey: draft.historyDate ?? now,
+                sessionID: draft.sessionID,
+                file: nil,
+                preset: draft
+            ))
+        }
+        candidates.sort { lhs, rhs in
+            if lhs.sortKey != rhs.sortKey { return lhs.sortKey > rhs.sortKey }
+            return lhs.sessionID.lowercased() < rhs.sessionID.lowercased()
+        }
+
+        for (index, candidate) in candidates.enumerated() {
+            let draft: Draft
+            let didRead: Bool
+            if let file = candidate.file {
+                var reading = candidate.preset ?? Draft(sessionID: file.sessionID, kind: file.kind)
+                reading.sessionID = file.sessionID
+                reading.kind = file.kind
+                reading.hasFile = true
+                reading.mtime = file.mtime
+                let bytes = readFile(file, query: query, draft: &reading, skipped: &skipped)
+                filesRead += 1
+                bytesRead += bytes
+                draft = reading
+                didRead = true
+            } else if var preset = candidate.preset {
+                preset.hasFile = false
+                draft = preset
+                didRead = false
+            } else {
                 continue
             }
-            rows.append(makeRow(draft, live: live[key], now: now))
+            let key = liveKey(kind: draft.kind, sessionID: draft.sessionID)
+            let isNew = seen.insert(key).inserted
+            var counted = false
+            if isNew, include(draft, query: query.text) {
+                let sessionOK = query.sessionID.map { $0.lowercased() == draft.sessionID.lowercased() } ?? true
+                if sessionOK {
+                    rows.append(makeRow(draft, live: live[key], now: now))
+                    counted = true
+                }
+            }
+            if didRead {
+                progress?(ScanProgress(filesRead: filesRead, matches: rows.count, bytesRead: bytesRead))
+            }
+            // GUARD early-stop: once matchStop matches are known, do not open another transcript.
+            if counted, let matchStop, rows.count >= matchStop, index + 1 < candidates.count {
+                stoppedEarly = true
+                break
+            }
         }
         for hit in live.values {
             let key = liveKey(kind: hit.kind, sessionID: hit.sessionID)
@@ -314,7 +383,8 @@ enum SessionFinder {
                 workspaceRef: hit.workspaceRef.isEmpty ? hit.workspaceID : hit.workspaceRef,
                 cwd: usableCwd(hit.cwd),
                 lastActive: hit.capturedAt ?? now,
-                title: ""
+                title: "",
+                link: panelLink(panelID: hit.panelID)
             ))
         }
 
@@ -327,11 +397,19 @@ enum SessionFinder {
         return Result(
             query: query.text,
             deep: query.deep,
-            truncated: matchCount > limit,
+            truncated: stoppedEarly || matchCount > limit,
             skipped: skipped,
             rows: Array(rows.prefix(limit)),
-            matchCount: matchCount
+            matchCount: matchCount,
+            filesRead: filesRead,
+            bytesRead: bytesRead
         )
+    }
+
+    /// Same URL `c11 link --panel <uuid>` prints. A non-UUID panel id has no link.
+    static func panelLink(panelID: String) -> String? {
+        guard let id = UUID(uuidString: panelID) else { return nil }
+        return PanelLinkFormat.url(kind: .panel, id: id)
     }
 
     /// GUARD live-never-resumes: a live row focuses its panel. Do not build a resume command for it.
@@ -481,6 +559,7 @@ enum SessionFinder {
             if let panelRef = row.panelRef { item["panel_ref"] = panelRef }
             if let workspaceID = row.workspaceID { item["workspace_id"] = workspaceID }
             if let workspaceRef = row.workspaceRef { item["workspace_ref"] = workspaceRef }
+            if let link = row.link { item["link"] = link }
         }
         if let cwd = row.cwd { item["cwd"] = cwd }
         return item
@@ -695,7 +774,10 @@ enum SessionFinder {
         skipped.corruptLines += outcome.corruptLines
     }
 
-    private static func readFile(_ file: FileRec, query: Query, draft: inout Draft, skipped: inout Skipped) {
+    /// Reads at most `deepReadCap` bytes, in `headByteCap` chunks, and stops when the
+    /// phrase matches. A huge file contributes only its head. Returns bytes read.
+    @discardableResult
+    private static func readFile(_ file: FileRec, query: Query, draft: inout Draft, skipped: inout Skipped) -> Int {
         let huge = file.bytes > hugeFileBytes
         if query.deep && huge {
             skipped.hugeFiles += 1
@@ -706,16 +788,33 @@ enum SessionFinder {
         // GUARD read-only: FileHandle(forReadingFrom:) only. This function does not create or write.
         guard let handle = try? FileHandle(forReadingFrom: file.url) else {
             skipped.unreadableFiles += 1
-            return
+            return 0
         }
         defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: cap) else {
-            skipped.unreadableFiles += 1
-            return
+        var data = Data()
+        var matchedInStream = false
+        while data.count < cap {
+            let room = min(headByteCap, cap - data.count)
+            let piece: Data
+            do {
+                guard let read = try handle.read(upToCount: room) else { break }
+                piece = read
+            } catch {
+                if data.isEmpty { skipped.unreadableFiles += 1 }
+                break
+            }
+            if piece.isEmpty { break }
+            data.append(piece)
+            if wantBody, let partial = decodeUTF8(data),
+               partial.range(of: query.text, options: .caseInsensitive) != nil {
+                matchedInStream = true
+                break
+            }
+            if !wantBody { break }
         }
         guard let text = decodeUTF8(data) else {
             skipped.unreadableFiles += 1
-            return
+            return data.count
         }
         let headData = data.prefix(headByteCap)
         let headText = decodeUTF8(Data(headData)) ?? ""
@@ -727,7 +826,7 @@ enum SessionFinder {
             dropPartial: headWasCut,
             draft: &draft
         )
-        if wantBody, text.range(of: query.text, options: .caseInsensitive) != nil {
+        if matchedInStream || (wantBody && text.range(of: query.text, options: .caseInsensitive) != nil) {
             draft.matched = true
         }
         if wantBody, data.count > headByteCap {
@@ -735,6 +834,7 @@ enum SessionFinder {
             let bodyCut = file.bytes > data.count
             skipped.corruptLines += countCorruptLines(String(body), dropPartial: bodyCut)
         }
+        return data.count
     }
 
     private static func applyHead(
@@ -853,7 +953,8 @@ enum SessionFinder {
             workspaceRef: live.map { $0.workspaceRef.isEmpty ? $0.workspaceID : $0.workspaceRef },
             cwd: usableCwd(draft.cwd ?? live?.cwd),
             lastActive: lastActive,
-            title: displayTitle(rawTitle)
+            title: displayTitle(rawTitle),
+            link: live.flatMap { panelLink(panelID: $0.panelID) }
         )
     }
 

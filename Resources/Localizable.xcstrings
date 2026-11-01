@@ -17225,6 +17225,53 @@
         }
       }
     },
+    "cli.conversation.find.progress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "find: files=%lld matches=%lld bytes=%lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索: files=%lld matches=%lld bytes=%lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "찾기: files=%lld matches=%lld bytes=%lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "поиск: files=%lld matches=%lld bytes=%lld"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "пошук: files=%lld matches=%lld bytes=%lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找: files=%lld matches=%lld bytes=%lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尋找: files=%lld matches=%lld bytes=%lld"
+          }
+        }
+      }
+    },
     "cli.focus.workspace.requiresValue": {
       "extractionState": "manual",
       "localizations": {

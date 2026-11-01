@@ -1991,11 +1991,14 @@ extension CMUXCLI {
                 on next workspace open.
               find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--json]
                 Search local Claude Code and Codex transcripts by title,
-                cwd, and prompts. -a also searches transcript text, up to
-                1 MiB per file, and skips files larger than 8 MiB.
-                --open focuses the one live match inside its own workspace
-                and does not change which workspace is selected. An idle
-                match resumes into a new panel in the caller's workspace.
+                cwd, and prompts. -a also searches transcript text. It reads
+                each file in chunks, at most 1 MiB, skips files larger than
+                8 MiB, and prints progress on stderr. A listing stops at
+                --limit matches. --open stops at two, so a second match
+                still refuses. --open focuses the one live match inside its
+                own workspace and does not change which workspace is selected.
+                A live row prints the panel's c11:// link. An idle match
+                resumes into a new panel in the caller's workspace.
                 Listing works when c11 is not running.
 
             Panel resolution: --panel flag, else $C11_PANEL_ID env

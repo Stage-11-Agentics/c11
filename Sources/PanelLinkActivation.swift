@@ -727,17 +727,20 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         rows.orientation = .vertical
         rows.alignment = .leading
         rows.spacing = 10
-        func label(_ text: String, identifier: String) {
+        func label(_ text: String, identifier: String, wraps: Bool = false) {
             let field = NSTextField(wrappingLabelWithString: text)
             field.font = .systemFont(ofSize: 13)
-            field.maximumNumberOfLines = 2
-            field.lineBreakMode = .byTruncatingTail
+            // Trusted guidance must remain readable; destination titles are
+            // untrusted display text and keep one bounded, truncated row.
+            field.maximumNumberOfLines = wraps ? 0 : 1
+            field.lineBreakMode = wraps ? .byWordWrapping : .byTruncatingTail
+            field.preferredMaxLayoutWidth = 480
             field.setAccessibilityIdentifier(identifier)
             rows.addArrangedSubview(field)
             field.widthAnchor.constraint(equalToConstant: 480).isActive = true
         }
         if let destination = prompt.destination {
-            label(String(localized: "panelLink.external.explanation", defaultValue: "An outside link wants to select this destination. Confirm only if you intended to open it."), identifier: "c11.external-link.explanation")
+            label(String(localized: "panelLink.external.explanation", defaultValue: "An outside link wants to select this destination. Confirm only if you intended to open it."), identifier: "c11.external-link.explanation", wraps: true)
             if let title = destination.panelTitle {
                 label(String(localized: "panelLink.preview.panel", defaultValue: "Panel: \(title)"), identifier: "c11.external-link.panel")
             }
@@ -745,7 +748,7 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
             label(String(localized: "panelLink.preview.workspace", defaultValue: "Workspace: \(title)"), identifier: "c11.external-link.workspace")
             label(destination.url, identifier: "c11.external-link.url")
         } else {
-            label((prompt.notice ?? .unavailable).text, identifier: "c11.external-link.notice")
+            label((prompt.notice ?? .unavailable).text, identifier: "c11.external-link.notice", wraps: true)
         }
         let buttons = NSStackView()
         buttons.orientation = .horizontal

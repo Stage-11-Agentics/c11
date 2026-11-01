@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import plistlib
 import pwd
+import re
 import signal
 import subprocess
 import time
@@ -81,6 +82,7 @@ class Proof(native.Proof):
         self.target_url = 'c11://panel/' + self.target.lower()
         self.workspace_url = 'c11://workspace/' + self.destination.lower()
         self.report['limitations'] = ['Single verified guest display; multiple physical displays not exercised.']
+        self.report['limitations'].append('Synthetic primary-button HID input only. Physical tap-to-click, Magic Mouse, Force Touch, Mouse Keys and Head Pointer compatibility is unproved.')
         self.report['identity'].update(source=self.source, destination=self.destination, target=self.target)
         schemes = [scheme for entry in self.bundle.get('CFBundleURLTypes', []) for scheme in entry.get('CFBundleURLSchemes', [])]
         assert 'c11' in schemes, 'built app must register c11'
@@ -276,30 +278,40 @@ end tell'''
         time.sleep(2.1)
         self.back()
 
-    def mixed_event(self):
-        before = self.selection()
-        workspaces = self.call('workspace.list', window_id=self.window)['workspaces']
-        folder = self.fixture / 'mixed-directory'
-        folder.mkdir(exist_ok=True)
-        for urls in [[self.target_url, folder.as_uri()], [folder.as_uri(), 'c11:invalid']]:
-            # Explicit -a is needed to deliver file and c11 URLs in ONE Apple
-            # Event to this verified guest app rather than separate handlers.
+    def separate_folder_event(self):
+        baseline = {w['id'] for w in self.call('workspace.list', window_id=self.window)['workspaces']}
+        for index, link in enumerate([self.target_url, 'c11:invalid']):
+            folder = self.fixture / ('mixed-directory-' + str(index))
+            folder.mkdir(exist_ok=True)
+            urls = [link, folder.as_uri()] if index == 0 else [folder.as_uri(), link]
+            log_start = len((OUT / 'native-events.log').read_text())
+            # One open argv is not necessarily one Apple Event. Verify the
+            # actual GURL/odoc boundary before classifying folder behavior.
             self.safari_foreground()
             self.console_open('-a', str(self.app), *urls)
-            self.wait(self.prompt, 'mixed event notice or confirmation')
-            assert self.selection() == before
-            assert self.call('workspace.list', window_id=self.window)['workspaces'] == workspaces
-            self.safari_foreground()
-            self.console_open('-a', str(self.app), *urls)  # pending
-            assert self.selection() == before
-            self.click('c11.external-link.cancel')
-            self.wait(lambda: not self.prompt(), 'dismiss mixed event')
-            self.safari_foreground()
-            self.console_open('-a', str(self.app), *urls)  # cooldown
-            assert self.selection() == before
-            assert self.call('workspace.list', window_id=self.window)['workspaces'] == workspaces
-            time.sleep(2.1)
-        self.passed('mixed folder and c11 events never create a workspace, including pending/cooldown')
+            self.wait(self.prompt, 'link notice or confirmation alongside folder event')
+            def split_observed():
+                lines = (OUT / 'native-events.log').read_text()[log_start:]
+                batches = re.findall(r'event=([0-9a-f]{8}).*?([0-9a-f]{8}),urls=(\d+),c11=(\d+),files=(\d+)', lines)
+                expected = {('4755524c', '4755524c', '1', '1', '0'),
+                            ('61657674', '6f646f63', '1', '0', '1')}
+                return batches if expected.issubset(set(batches)) else None
+            batches = self.wait(split_observed, 'separate GURL and odoc batches observed')
+            def added_workspace():
+                current = {w['id'] for w in self.call('workspace.list', window_id=self.window)['workspaces']}
+                added = current - baseline
+                return next(iter(added)) if len(added) == 1 else None
+            added = self.wait(added_workspace, 'ordinary file event creates its workspace')
+            assert self.selection()[0] == added.lower(), self.selection()
+            self.capture('04-separate-events-' + str(index))
+            self.cancel()
+            assert self.selection()[0] == added.lower(), 'Cancel must not undo separate folder intent'
+            self.report.setdefault('separate_event_batches', []).append(dict(order=index, batches=batches))
+            self.call('workspace.close', workspace_id=added)
+            self.ui('activate')
+            self.back()
+        self.passed('one open command yields separate GURL/odoc events; only file event opens its folder')
+        self.report['limitations'].append('Single delivered mixed-array exclusivity, including pending/cooldown, is covered by executable route tests; Launch Services split this native command into two events.')
 
     def burst(self):
         self.ui('activate')
@@ -355,7 +367,7 @@ end tell'''
         self.outside_origin()
         self.presentation_cancellation()
         self.surprise_click()
-        self.mixed_event()
+        self.separate_folder_event()
         self.burst()
         self.refusals()
         self.report['status'] = 'passed'

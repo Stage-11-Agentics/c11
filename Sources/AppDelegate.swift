@@ -2629,6 +2629,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        // Record event boundaries without logging untrusted URL text. Launch
+        // Services may split one sender's URL list into distinct Apple Events.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let eventClass = String(format: "%08x", event?.eventClass ?? 0)
+        let eventID = String(format: "%08x", event?.eventID ?? 0)
+        let panelLinks = urls.filter(PanelLinkTarget.usesScheme).count
+        let files = urls.filter(\.isFileURL).count
+        PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch",
+            result: "event=\(eventClass)/\(eventID),urls=\(urls.count),c11=\(panelLinks),files=\(files)")
         Self.routeExternalOpenURLs(urls, panelLink: { receiveExternalPanelLink($0) }, directories: { urls in
             let directories = externalOpenDirectories(from: urls)
             guard !directories.isEmpty else { return }

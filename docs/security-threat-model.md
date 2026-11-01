@@ -170,8 +170,12 @@ Separately, incoming file URLs go through `externalOpenDirectories(from:)`
 and open folders as new c11 workspaces. Only `file://` URLs enter that route;
 a URL resolving through symlinks into c11's own app bundle is dropped, so
 Launch Services handing c11 itself to c11 does not suppress session restore.
-A `c11:` event never invokes the folder route. The Services menu and folder
-Apple Events retain their existing behavior (section 5).
+A delivered batch containing `c11:` never invokes the folder route. A sender's
+single `open` command can instead produce separate URL and folder Apple Events;
+the separate file-only event keeps ordinary folder-opening behavior, even while
+a link confirmation is pending. The Services menu and folder Apple Events retain
+their existing behavior (section 5). Bounded logs record event class/ID and URL
+kind counts without the sender's payload, so this boundary can be inspected.
 
 Evidence:
 

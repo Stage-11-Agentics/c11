@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -8,6 +9,7 @@ import XCTest
 
 /// C11-562: the Settings editor for sites allowed to open apps writes only on
 /// Save, and reports a line that could never match instead of dropping it.
+@MainActor
 final class BrowserExternalSchemeAllowlistDraftTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName = ""
@@ -67,6 +69,28 @@ final class BrowserExternalSchemeAllowlistDraftTests: XCTestCase {
         XCTAssertNil(draft.invalidLine)
         XCTAssertTrue(draft.save(to: defaults))
         XCTAssertTrue(BrowserExternalSchemeSettings.isAllowed(originKey: "https://zoom.us", scheme: "zoommtg", defaults: defaults))
+    }
+
+    /// C11-562 review: the Settings window outlives a close, so an abandoned
+    /// edit must not come back on reopen and ride along with the next Save.
+    func testClosingSettingsDiscardsUnsavedEditsWithoutWriting() {
+        defaults.set("https://zoom.us zoommtg", forKey: BrowserExternalSchemeSettings.allowlistKey)
+        var draft = BrowserExternalSchemeAllowlistDraft(saved: stored ?? "")
+        draft.text = ""
+        XCTAssertTrue(draft.canSave)
+
+        let other = NSView()
+        other.identifier = NSUserInterfaceItemIdentifier("cmux.main")
+        draft.settingsWindowWillClose(Notification(name: NSWindow.willCloseNotification, object: other), stored: stored ?? "")
+        XCTAssertEqual(draft.text, "", "another window closing keeps the edit")
+
+        let settings = NSView()
+        settings.identifier = NSUserInterfaceItemIdentifier("cmux.settings")
+        draft.settingsWindowWillClose(Notification(name: NSWindow.willCloseNotification, object: settings), stored: stored ?? "")
+        XCTAssertEqual(draft.text, "https://zoom.us zoommtg")
+        XCTAssertFalse(draft.hasUnsavedChanges)
+        XCTAssertFalse(draft.canSave)
+        XCTAssertEqual(stored, "https://zoom.us zoommtg")
     }
 
     func testOutsideChangeFollowsUnlessDraftIsDirty() {

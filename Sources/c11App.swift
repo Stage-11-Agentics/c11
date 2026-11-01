@@ -5070,6 +5070,9 @@ struct SettingsView: View {
         .onChange(of: notificationSoundCustomFilePath) { _, _ in
             refreshNotificationCustomSoundStatus()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
+            browserExternalSchemeAllowlistDraft.settingsWindowWillClose(notification, stored: browserExternalSchemeAllowlist)
+        }
         .onChange(of: browserExternalSchemeAllowlist) { _, newValue in
             // "Always allow" adds a line while Settings is open; unsaved edits win.
             browserExternalSchemeAllowlistDraft.storedValueChanged(to: newValue)

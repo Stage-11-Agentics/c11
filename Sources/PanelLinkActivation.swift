@@ -799,8 +799,10 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
     /// Confirm, when there is a destination, then Cancel. Cancel is the
     /// rightmost button, where a habitual "proceed" click lands, and the only
     /// one with Return; Confirm starts disabled until its gesture arms.
+    /// Escape cancels too, through an invisible twin outside the arranged row.
     static func makeButtonRow(requestID: UUID, hasDestination: Bool, target: ExternalPanelLinkPresenter?)
-        -> (stack: NSStackView, confirm: ExternalPanelLinkButton?, cancel: ExternalPanelLinkButton) {
+        -> (stack: NSStackView, confirm: ExternalPanelLinkButton?, cancel: ExternalPanelLinkButton,
+            escape: ExternalPanelLinkButton) {
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 12
@@ -821,7 +823,17 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         cancel.keyEquivalent = "\r"
         cancel.setAccessibilityIdentifier("c11.external-link.cancel")
         stack.addArrangedSubview(cancel)
-        return (stack, confirm, cancel)
+        // A button holds one key equivalent and Cancel holds Return, so Escape
+        // gets a zero-size twin with Cancel's action. The prompt never becomes
+        // key; AppKit still offers it key equivalents the key window declines.
+        let escape = ExternalPanelLinkButton(title: "", requestID: requestID, target: target,
+                                             action: #selector(ExternalPanelLinkPresenter.cancelClicked(_:)))
+        escape.frame = .zero
+        escape.isBordered = false
+        escape.keyEquivalent = "\u{1b}"
+        escape.setAccessibilityElement(false)
+        stack.addSubview(escape)
+        return (stack, confirm, cancel, escape)
     }
 
     @objc private func cancelClicked(_ sender: ExternalPanelLinkButton) {

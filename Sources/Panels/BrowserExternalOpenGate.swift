@@ -121,6 +121,18 @@ struct BrowserExternalSchemeAllowlistDraft: Equatable {
         saved = value
     }
 
+    /// Closing Settings abandons unsaved edits: the Settings window keeps its
+    /// view alive between openings, so the draft starts over from the stored
+    /// value. Writes nothing. Other windows closing leave the draft alone.
+    @MainActor
+    mutating func settingsWindowWillClose(_ notification: Notification, stored: String) {
+        guard (notification.object as? NSUserInterfaceItemIdentification)?.identifier?.rawValue == Self.settingsWindowIdentifier
+        else { return }
+        self = BrowserExternalSchemeAllowlistDraft(saved: stored)
+    }
+
+    static let settingsWindowIdentifier = "cmux.settings"
+
     /// Writes the draft and returns true, or writes nothing and returns false
     /// when a line is invalid.
     @discardableResult

@@ -453,6 +453,23 @@ final class ExternalPanelLinkButtonRowTests: XCTestCase {
         XCTAssertTrue(row.cancel.isEnabled)
     }
 
+    /// C11-562 review: Escape cancels through a hidden twin; the visible row
+    /// and Cancel's Return stay as they are.
+    func testEscapeCancelsThroughAHiddenTwin() {
+        for hasDestination in [true, false] {
+            let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: hasDestination, target: nil)
+            XCTAssertEqual(row.escape.keyEquivalent, "\u{1b}")
+            XCTAssertEqual(row.escape.action.map(NSStringFromSelector), "cancelClicked:")
+            XCTAssertEqual(row.escape.requestID, row.cancel.requestID)
+            XCTAssertTrue(row.escape.superview === row.stack)
+            XCTAssertFalse(row.stack.arrangedSubviews.contains(row.escape))
+            XCTAssertFalse(row.escape.isAccessibilityElement())
+            XCTAssertEqual(row.escape.frame.size, .zero)
+            XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+            XCTAssertEqual(row.stack.subviews.filter { ($0 as? NSButton)?.keyEquivalent == "\u{1b}" }.count, 1)
+        }
+    }
+
     func testNoticeShowsCancelAlone() {
         let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: false, target: nil)
         XCTAssertNil(row.confirm)

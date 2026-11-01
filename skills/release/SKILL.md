@@ -115,10 +115,20 @@ This is a checklist trigger, not a CI gate.
   v1.4.0). A fresh release worktree needs `git submodule update --init ghostty
   vendor/bonsplit` first, or remote-build refuses with "ghostty must be provisioned".
   Launch it on the operator's Mac yourself as soon as it is built or replaced,
-  without waiting to be asked: `open --env C11_QA_LAUNCH=fresh <app>` keeps the
-  startup dialogs closed. If a staging copy is already running, ask the operator
-  before quitting it. Prune both Atlas caches for the tag afterwards (c11-hotload,
-  Tag hygiene).
+  without waiting to be asked: `env -i HOME="$HOME" open --env C11_QA_LAUNCH=fresh <app>`
+  keeps the startup dialogs closed. The `env -i` matters: `open` from inside a c11
+  terminal passes that shell's `C11_SOCKET*`, `CMUX_SOCKET*` and `C11_PANEL_ID` to
+  the app, which then holds the daily c11's socket path. If a staging copy is
+  already running, ask the operator before quitting it. Prune both Atlas caches
+  for the tag afterwards (c11-hotload, Tag hygiene).
+- Once the staging app is built and launched, write a **spin script** for it: one
+  bash file the operator runs inside a staging terminal (staging accepts socket
+  commands only from its own terminals). It sets up a live demo of every changelog
+  item through the bundled CLI: workspaces, panels, a local page and a Markdown
+  panel of clickable links, a browser-automation step, a mail round trip with
+  receipts. Each step prints what it did and what to click next. It refuses to run
+  unless its socket is the staging socket, and `--cleanup` removes what it created.
+  Hand the operator the one command to run it.
 - Before handing off, screenshot the staging window and inspect every surface
   the changelog touches (sheets, titlebar, sidebar, new or redesigned modals).
   Release-only layout regressions have shipped past Debug builds before.

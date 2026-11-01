@@ -2067,6 +2067,30 @@
         "ru": {"stringUnit": {"state": "translated", "value": "срочно"}}
       }
     },
+    "mailbox.drawer.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Close mailbox"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "メールボックスを閉じる"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Закрити поштову скриньку"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "메일박스 닫기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "关闭邮箱"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "關閉信箱"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Закрыть почтовый ящик"}}
+      }
+    },
+    "mailbox.drawer.close.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Close (or click the envelope again)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "閉じる（または封筒アイコンをもう一度クリック）"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Закрити (або знову натисніть значок конверта)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "닫기 (또는 봉투 아이콘을 다시 클릭)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "关闭（或再次点击信封图标）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "關閉（或再次點擊信封圖示）"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Закрыть (или снова нажмите значок конверта)"}}
+      }
+    },
     "mailbox.drawer.copy": {
       "extractionState": "manual",
       "localizations": {

@@ -55,6 +55,8 @@ struct PanelTitleBarView: View {
     @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
     private var m1bSurfaceTitleBarMigrated = false
     @State private var measuredDescriptionHeight: CGFloat = 0
+    /// The width the description gets beside the mailbox cell and chevron slot.
+    @State private var descriptionWidth: CGFloat = 0
     @StateObject private var drawerPresenter = CollapsedSheetPresenter()
     @StateObject private var drawerGeometry = MailboxDrawerGeometry()
     @State private var isDrawerOpen = false
@@ -230,7 +232,13 @@ struct PanelTitleBarView: View {
             inboxURL: MailboxBadgeStore.shared.inboxURL(workspaceId: workspaceId, panelId: panelId),
             geometry: drawerGeometry,
             style: drawerStyle,
-            resolveSenders: { names in Self.resolveSenders(names, preferring: workspaceId) }
+            resolveSenders: { names in Self.resolveSenders(names, preferring: workspaceId) },
+            onClose: { [weak presenter = drawerPresenter, open = $isDrawerOpen] in
+                // Same path as a second click on the envelope.
+                open.wrappedValue = false
+                presenter?.onDismiss = nil
+                presenter?.dismissAnimated()
+            }
         )
         // Capture the binding, not the view: the view holds the presenter and
         // the workspace, and the presenter holds this closure.
@@ -289,6 +297,14 @@ struct PanelTitleBarView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: TitleBarDescriptionWidthKey.self, value: proxy.size.width)
+                }
+            )
+            .onPreferenceChange(TitleBarDescriptionWidthKey.self) { newValue in
+                if abs(newValue - descriptionWidth) > 0.5 { descriptionWidth = newValue }
+            }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
             if let model = mailboxModel {
@@ -316,16 +332,54 @@ struct PanelTitleBarView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(chevronAccessibilityLabel))
-            // A mail-only bar keeps the chevron's slot, so the mailbox cell
-            // does not move when a description arrives.
-            .opacity(descriptionText.isEmpty ? 0 : 1)
-            .disabled(descriptionText.isEmpty)
-            .accessibilityHidden(descriptionText.isEmpty)
+            // The chevron shows only when there is more to see: a collapsed
+            // line that is cut off, or an expanded description taller than a
+            // line. Its slot stays either way, so neither the description nor
+            // the mailbox cell moves when it appears.
+            .opacity(showsChevron ? 1 : 0)
+            .disabled(!showsChevron)
+            .accessibilityHidden(!showsChevron)
         }
         // One height for every collapsed bar (placeholder or description,
         // mailbox cell or not), so the panel below never moves. Expanded,
         // the bar only grows from there.
         .frame(minHeight: rowHeight, maxHeight: effectiveCollapsed ? rowHeight : nil, alignment: .top)
+    }
+
+    private var showsChevron: Bool {
+        Self.chevronVisible(
+            description: descriptionText,
+            collapsed: effectiveCollapsed,
+            fontSize: chromeTokens.surfaceTitleBarTitle,
+            availableWidth: descriptionWidth,
+            expandedHeight: measuredDescriptionHeight,
+            rowHeight: rowHeight
+        )
+    }
+
+    /// Whether the expand/collapse chevron means anything. Collapsed: only
+    /// when the one-line description is cut off. Expanded: also when the
+    /// description runs past one line, so it can be folded back. Before the
+    /// bar has a width it shows nothing.
+    static func chevronVisible(
+        description: String,
+        collapsed: Bool,
+        fontSize: CGFloat,
+        availableWidth: CGFloat,
+        expandedHeight: CGFloat,
+        rowHeight: CGFloat
+    ) -> Bool {
+        guard !description.isEmpty, availableWidth > 0 else { return false }
+        if lineOverflows(collapsedLine(description).text, fontSize: fontSize, width: availableWidth) { return true }
+        return !collapsed && expandedHeight > rowHeight + 1
+    }
+
+    /// The line is wider than `width` in the bar's font. Biased by 2 pt
+    /// toward overflowing, so a line SwiftUI truncates by a hair still gets
+    /// its chevron.
+    static func lineOverflows(_ text: String, fontSize: CGFloat, width: CGFloat) -> Bool {
+        let natural = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width
+        return ceil(natural) > width - 2
     }
 
     /// The collapsed row's height: one line of the description font with its
@@ -404,6 +458,13 @@ struct PanelTitleBarView: View {
 }
 
 // MARK: - Description height measurement
+
+private struct TitleBarDescriptionWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
 
 private struct TitleBarDescriptionHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0

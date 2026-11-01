@@ -2606,16 +2606,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var externalPanelLinkStartupHold = ExternalPanelLinkStartupHold()
 
-    private func receiveExternalPanelLink(_ url: URL) {
+    private func receiveExternalPanelLink(_ href: String) {
         if !didCompleteInitialSessionRestore {
-            if let held = externalPanelLinkStartupHold.capture(url.absoluteString, now: ProcessInfo.processInfo.systemUptime) {
+            if let held = externalPanelLinkStartupHold.capture(href, now: ProcessInfo.processInfo.systemUptime) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
                     self?.externalPanelLinkStartupHold.expire(id: held.id, now: ProcessInfo.processInfo.systemUptime)
                 }
             }
             return
         }
-        externalPanelLinks.receive(url.absoluteString)
+        externalPanelLinks.receive(href)
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // The SwiftUI delegate continues scene creation after forwarding its
+        // open-URL callback to this adaptor. Consume c11 at the Apple Event
+        // boundary instead, before that window-creation fallback can run.
+        NSAppleEventManager.shared().setEventHandler(self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        Self.routeExternalGetURL(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+            panelLink: { href in
+                let started = ProcessInfo.processInfo.systemUptime
+                PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch",
+                    result: "event=4755524c/4755524c,urls=1,c11=1,files=0")
+                receiveExternalPanelLink(href)
+                PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch_end",
+                    result: "elapsed_us=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1_000_000))")
+            }, otherURL: { url in
+                // Preserve the existing SwiftUI/AppKit delegate route for web
+                // and other URLs. Only c11 bypasses it. odoc and Dock reopen
+                // keep their original Apple Event handlers entirely.
+                NSApp.delegate?.application?(NSApp, open: [url])
+            })
+    }
+
+    /// A bounded prefix recognizes c11 before URL parsing, including malformed
+    /// payloads. Never forward a c11 spelling into SwiftUI scene creation.
+    static func routeExternalGetURL(_ href: String?, panelLink: (String) -> Void, otherURL: (URL) -> Void) {
+        guard let href else { return }
+        let prefix = String(decoding: href.utf8.prefix(129), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard prefix.contains(":") else { return }
+        if prefix.prefix(4).lowercased() == "c11:" {
+            panelLink(href)
+            return
+        }
+        guard let url = URL(string: href) else { return }
+        if PanelLinkTarget.usesScheme(url) {
+            panelLink(href)
+        } else {
+            otherURL(url)
+        }
     }
 
     /// Event classification is exclusive even when a c11 request is malformed,
@@ -2644,7 +2689,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let files = urls.filter(\.isFileURL).count
         PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch",
             result: "event=\(eventClass)/\(eventID),urls=\(urls.count),c11=\(panelLinks),files=\(files)")
-        Self.routeExternalOpenURLs(urls, panelLink: { receiveExternalPanelLink($0) }, directories: { urls in
+        Self.routeExternalOpenURLs(urls, panelLink: { receiveExternalPanelLink($0.absoluteString) }, directories: { urls in
             let directories = externalOpenDirectories(from: urls)
             guard !directories.isEmpty else { return }
             prepareForExplicitOpenIntentAtStartup()

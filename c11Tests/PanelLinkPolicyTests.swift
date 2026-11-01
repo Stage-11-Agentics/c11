@@ -10,6 +10,39 @@ import CoreGraphics
 final class PanelLinkPolicyTests: XCTestCase {
     private let id = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
 
+    func testExternalGetURLConsumesC11BeforeSceneFallback() {
+        let inputs = ["c11://panel/\(id)", " C11://workspace/\(id) ", "c11:invalid",
+                      "c11://%", "c11://panel/\(id)?run=x", "c11:" + String(repeating: "x", count: 10_000)]
+        var consumed: [String] = []
+        var forwarded: [URL] = []
+        for input in inputs {
+            AppDelegate.routeExternalGetURL(input, panelLink: { consumed.append($0) }, otherURL: { forwarded.append($0) })
+        }
+        XCTAssertEqual(consumed, inputs)
+        XCTAssertTrue(forwarded.isEmpty)
+        // An oversized whitespace prefix cannot hide c11 from classification
+        // and reach the scene fallback.
+        AppDelegate.routeExternalGetURL(String(repeating: " ", count: 1000) + "c11:invalid",
+            panelLink: { consumed.append($0) }, otherURL: { forwarded.append($0) })
+        XCTAssertTrue(forwarded.isEmpty)
+    }
+
+    func testExternalGetURLPreservesOtherURLRouteAndDropsMissingPayload() throws {
+        let inputs = ["http://localhost:1234/a", "https://example.com/c11:notes", "file:///tmp/example",
+                      "https://example.com/" + String(repeating: "x", count: 2000)]
+        var forwarded: [URL] = []
+        for input in inputs {
+            AppDelegate.routeExternalGetURL(input, panelLink: { XCTFail("Unexpected c11 consumption: \($0)") },
+                otherURL: { forwarded.append($0) })
+        }
+        XCTAssertEqual(forwarded, try inputs.map { try XCTUnwrap(URL(string: $0)) })
+        let missing: [String?] = [nil, "", String(repeating: " ", count: 1000)]
+        for input in missing {
+            AppDelegate.routeExternalGetURL(input, panelLink: { _ in XCTFail("Missing payload cannot navigate") },
+                otherURL: { _ in XCTFail("Missing payload cannot create a scene") })
+        }
+    }
+
     func testTerminalConsumesEveryInternalSchemeBeforeExternalResolution() {
         for link in ["c11://panel/\(id)", "C11:panel/\(id)", "c11:notes", "c11://%", "c11://panel/not-a-uuid", " c11://workspace/\(id) "] {
             XCTAssertTrue(PanelLinkTarget.usesScheme(link), link)

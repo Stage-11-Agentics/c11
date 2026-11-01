@@ -137,6 +137,11 @@ requests are dropped and an expired held URL is discarded. A multi-URL event con
 c11 request is considered, even when refused or rate-limited, and every folder
 in that event is ignored. File-only events retain the existing folder route. A burst
 cannot replace the destination under the Confirm button or pile up windows.
+The process installs a Get URL Apple Event handler before launch completes.
+It consumes c11 spellings before SwiftUI's scene fallback, including rejected
+and rate-limited requests, so even one outside link cannot create an extra
+main window. Other URL schemes retain the existing delegate route; document
+and Dock-reopen Apple Event handlers are unchanged.
 The handler never activates the app or restores focus on receipt. macOS
 may independently launch or activate a URL's registered handler on each send,
 as `open -a c11` already can; this existing OS behavior is not authority to

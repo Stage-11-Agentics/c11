@@ -62,7 +62,8 @@ final class MailboxDispatchLog {
             route: String? = nil,
             nativeRoute: String? = nil,
             nativeFailure: String? = nil,
-            recipientPanel: UUID? = nil
+            recipientPanel: UUID? = nil,
+            nativeState: String? = nil
         )
         case rejected(id: String?, reason: String)
         case cleaned(id: String)
@@ -191,7 +192,7 @@ final class MailboxDispatchLog {
             if let recipientUsageLimit { payload["recipient_usage_limit"] = recipientUsageLimit }
             if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
             if let recipientWorkspace { payload["recipient_workspace"] = recipientWorkspace.uuidString }
-        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure, let recipientPanel):
+        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure, let recipientPanel, let nativeState):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -204,6 +205,7 @@ final class MailboxDispatchLog {
             else if outcome == .doorbell { payload["route"] = "typed" }
             if let nativeRoute { payload["native_route"] = nativeRoute }
             if let nativeFailure { payload["native_failure"] = nativeFailure }
+            if let nativeState { payload["native_state"] = nativeState }
             if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
         case .rejected(let id, let reason):
             payload["event"] = "rejected"
@@ -253,5 +255,15 @@ final class MailboxDispatchLog {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
+    }
+}
+
+extension MailboxDispatchLog {
+    /// A wrapper-recorded native-route state, kept only when it is a short
+    /// lowercase token such as `grok_leader` or `off:no_socket`.
+    static func nativeStateToken(_ raw: String) -> String? {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789_:")
+        guard !raw.isEmpty, raw.count <= 48, raw.allSatisfy({ allowed.contains($0) }) else { return nil }
+        return raw
     }
 }

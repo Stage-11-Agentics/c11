@@ -242,23 +242,47 @@ grok_reap_stale_leaders() {
     done
 }
 
+# Record why this panel's rings are or are not native, as the panel's
+# `mailbox.native_state`; c11 adds it to each typed ring's `_dispatch.log` row.
+grok_native_state() {
+    [[ -n "$c11_bin" ]] || return 0
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-metadata --panel "${CMUX_SURFACE_ID}" \
+        --key mailbox.native_state --value "$1" --type string >/dev/null 2>&1
+}
+
 grok_native=0
-if [[ "${C11_GROK_NATIVE_MAIL_DISABLED:-}" != "1" && -z "${GROK_SANDBOX:-}" \
-        && -n "${C11_AGENT_INTERACTIVE_PID:-}" && -n "$capture_id" && -n "$c11_bin" ]]; then
+grok_off=""
+if [[ -z "${C11_AGENT_INTERACTIVE_PID:-}" ]]; then
+    grok_off="off:non_interactive"
+elif [[ "${C11_GROK_NATIVE_MAIL_DISABLED:-}" == "1" ]]; then
+    grok_off="off:opt_out"
+elif [[ -n "${GROK_SANDBOX:-}" ]]; then
+    grok_off="off:sandbox"
+elif [[ -z "$capture_id" ]]; then
+    grok_off="off:no_session"
+elif [[ -n "$c11_bin" ]]; then
     grok_native=1
     # The operator's own leader or sandbox choice wins. Grok refuses leader
     # mode under any sandbox profile, so skipping costs nothing there.
     for arg in "$@"; do
         case "$arg" in
             --) break ;;
-            --leader|--leader=*|--no-leader|--leader-socket|--leader-socket=*|--sandbox|--sandbox=*)
-                grok_native=0 ;;
+            --leader|--leader=*|--no-leader|--leader-socket|--leader-socket=*)
+                grok_native=0; grok_off="off:operator_leader" ;;
+            --sandbox|--sandbox=*)
+                grok_native=0; grok_off="off:sandbox" ;;
         esac
     done
 fi
 # A Grok that no longer accepts --leader would exit on it: probe first.
 if [[ "$grok_native" == "1" ]] && ! "$REAL_GROK" --leader --version >/dev/null 2>&1; then
     grok_native=0
+    grok_off="off:no_leader_flag"
+fi
+if [[ -n "$grok_off" && -n "$c11_bin" ]]; then
+    ( grok_native_state "$grok_off" ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
 fi
 leader_args=()
 if [[ "$grok_native" == "1" ]]; then
@@ -268,11 +292,13 @@ if [[ "$grok_native" == "1" ]]; then
     ( grok_reap_stale_leaders ) >/dev/null 2>&1 &
     disown 2>/dev/null || true
     (
+        grok_native_state grok_leader
         "$c11_bin" --socket "${CMUX_SOCKET_PATH}" grok-mailbox \
             --leader-socket "$leader_socket" --session-id "$capture_id" \
             --grok "$REAL_GROK" --registry "${GROK_HOME:-$HOME/.grok}/active_sessions.json" \
             </dev/null >/dev/null 2>&1
-    ) &
+        [[ $? == 3 ]] && grok_native_state off:no_socket
+    ) </dev/null >/dev/null 2>&1 &
     disown 2>/dev/null || true
     (
         while /bin/kill -0 "$wrapped_pid" >/dev/null 2>&1; do /bin/sleep 1; done

@@ -136,8 +136,10 @@ extension CMUXCLI {
             // silent contract as claude-mailbox. It waits for the panel's
             // private leader before contacting the app.
             guard envSocketPath != nil || socketPathSource == .explicitFlag,
-                  let binding = GrokMailboxCommand.Binding(environment: processEnv, arguments: commandArgs),
-                  binding.waitForLeader() else { return }
+                  let binding = GrokMailboxCommand.Binding(environment: processEnv, arguments: commandArgs) else { return }
+            // Exit 3 tells the wrapper no leader came up (sandbox, a config
+            // that refuses leader mode, or a Grok that ignores the flag).
+            guard binding.waitForLeader() else { Foundation.exit(3) }
             let priorDeadline = SocketClient.processDeadline
             defer { SocketClient.processDeadline = priorDeadline }
             SocketClient.processDeadline = Date().addingTimeInterval(1)

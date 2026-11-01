@@ -1497,13 +1497,13 @@
     "mailbox.insights.composition": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "%lld urgent · %lld replies · %lld with a file body · %lld without a topic"}},
+        "en": {"stringUnit": {"state": "translated", "value": "Urgent %lld · replies %lld · file bodies %lld · no topic %lld"}},
         "ja": {"stringUnit": {"state": "translated", "value": "緊急 %lld · 返信 %lld · ファイル本文 %lld · トピックなし %lld"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "терміново: %lld · відповідей: %lld · з файлом: %lld · без теми: %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Терміново %lld · відповіді %lld · вміст із файлів %lld · без теми %lld"}},
         "ko": {"stringUnit": {"state": "translated", "value": "긴급 %lld · 답장 %lld · 파일 본문 %lld · 주제 없음 %lld"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 紧急 · %lld 回复 · %lld 带文件正文 · %lld 无主题"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 緊急 · %lld 回覆 · %lld 附檔案內文 · %lld 無主題"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "срочных: %lld · ответов: %lld · с файлом: %lld · без темы: %lld"}}
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "紧急 %lld · 回复 %lld · 文件正文 %lld · 无主题 %lld"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "緊急 %lld · 回覆 %lld · 檔案內文 %lld · 無主題 %lld"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Срочные %lld · ответы %lld · тексты из файлов %lld · без темы %lld"}}
       }
     },
     "mailbox.insights.note.partial": {
@@ -1521,25 +1521,25 @@
     "mailbox.insights.note.unparsed": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "%lld files could not be read as envelopes."}},
-        "ja": {"stringUnit": {"state": "translated", "value": "%lld 個のファイルをエンベロープとして読み取れませんでした。"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "Не вдалося прочитати як конверти файлів: %lld."}},
-        "ko": {"stringUnit": {"state": "translated", "value": "파일 %lld개를 봉투로 읽을 수 없습니다."}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "有 %lld 个文件无法解析为信封。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "有 %lld 個檔案無法解析為信封。"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "Не удалось прочитать как конверты файлов: %lld."}}
+        "en": {"stringUnit": {"state": "translated", "value": "Unreadable as envelopes: %lld"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "エンベロープとして読めない: %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Не читаються як конверти: %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "봉투로 읽을 수 없음: %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法解析为信封：%lld"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法解析為信封：%lld"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Не читаются как конверты: %lld"}}
       }
     },
     "mailbox.insights.note.sentTrimmed": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "c11 keeps the newest %lld sent records, so older sends are not counted."}},
-        "ja": {"stringUnit": {"state": "translated", "value": "c11 は最新の送信記録 %lld 件のみ保持するため、それより古い送信は集計されません。"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "c11 зберігає лише %lld найновіших записів про надіслане, тож старіші не враховано."}},
-        "ko": {"stringUnit": {"state": "translated", "value": "c11은 최신 발신 기록 %lld개만 보관하므로 더 오래된 발신은 집계되지 않습니다."}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 仅保留最新的 %lld 条发送记录，更早的发送不计入。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 僅保留最新的 %lld 則傳送記錄，更早的傳送不計入。"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "c11 хранит только %lld новейших записей об отправленном, поэтому более старые не учтены."}}
+        "en": {"stringUnit": {"state": "translated", "value": "c11 keeps about the newest %lld sent records, so older sends may not be counted."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "c11 は最新の送信記録を約 %lld 件保持するため、それより古い送信は集計されない場合があります。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "c11 зберігає найновіші записи про надіслане (близько %lld), тож старіші можуть не враховуватися."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "c11은 최신 발신 기록을 약 %lld개 보관하므로 더 오래된 발신은 집계되지 않을 수 있습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 约保留最新的 %lld 条发送记录，更早的发送可能不计入。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 約保留最新的 %lld 則傳送記錄，更早的傳送可能不計入。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "c11 хранит новейшие записи об отправленном (около %lld), поэтому более старые могут не учитываться."}}
       }
     },
     "markdown.reader.history.back": {

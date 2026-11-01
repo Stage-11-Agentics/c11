@@ -158,7 +158,7 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(insights.replies, 1)
         XCTAssertEqual(insights.fileBodies, 1)
         XCTAssertEqual(insights.oldestUnreadAt!.timeIntervalSince1970, now.addingTimeInterval(-30 * 60).timeIntervalSince1970, accuracy: 0.01)
-        XCTAssertEqual(insights.perDay!, 6.0 / (30 - 10.0 / 86400), accuracy: 0.001)
+        XCTAssertEqual(insights.perDay!, 6.0 / 30, accuracy: 0.001, "measured from the first message to now")
     }
 
     func testInsightsScanStopsAtTheLimitButCountsEverything() throws {
@@ -190,22 +190,23 @@ final class MailboxPanelMailTests: XCTestCase {
             MailboxSentLedger.Recipient(panel: id.uuidString.lowercased(), name: name)
         }
         XCTAssertTrue(MailboxSentLedger.record(
-            MailboxSentLedger.Entry(id: first, ts: nil, to: "team", topic: nil, recipients: [recipient(takerId, "taker"), recipient(waiterId, "waiter")]),
+            MailboxSentLedger.Entry(id: first, ts: nil, to: "team", topic: nil, recipients: [recipient(takerId, "Taker Title"), recipient(waiterId, "Waiter Title")]),
             senderInbox: sender
         ))
         XCTAssertTrue(MailboxSentLedger.record(
-            MailboxSentLedger.Entry(id: second, ts: nil, to: "taker", topic: nil, recipients: [recipient(takerId, "~")]),
+            MailboxSentLedger.Entry(id: second, ts: nil, to: "taker-address", topic: nil, recipients: [recipient(takerId, "~")]),
             senderInbox: sender
         ))
         let insights = MailboxPanelMail.insights(inbox: sender, mailboxesRoot: root, now: now)
         XCTAssertEqual(insights.sent, 2)
-        XCTAssertEqual(insights.sentLastDay, 1)
-        // A broadcast counts each recipient by its label; a one-recipient send
-        // by the address it went to.
+        // One row per recipient panel: the broadcast and the direct send to the
+        // taker share a row, named by the direct send's address. The waiter only
+        // got the broadcast and keeps its label.
         XCTAssertEqual(insights.recipients.top, [
-            MailboxPanelMail.Tally(name: "taker", count: 2),
-            MailboxPanelMail.Tally(name: "waiter", count: 1),
+            MailboxPanelMail.Tally(name: "taker-address", count: 2),
+            MailboxPanelMail.Tally(name: "Waiter Title", count: 1),
         ])
+        XCTAssertEqual(insights.recipients.distinct, 2)
         XCTAssertEqual(insights.sentCopies, 2, "the second send's copy is gone")
         XCTAssertEqual(insights.sentTaken, 1)
         XCTAssertFalse(insights.sentIsTrimmed)

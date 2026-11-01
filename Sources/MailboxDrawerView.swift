@@ -186,6 +186,12 @@ struct MailboxDrawerView: View {
     @State private var insights: MailboxPanelMail.Insights?
     @State private var insightsGeneration = 0
     @State private var insightSenders: [String: MailboxDrawerSender] = [:]
+    /// One insights scan at a time. A request during a scan marks it dirty and
+    /// one rescan follows, after `insightsRescanDelay`, so a busy inbox costs
+    /// one scan every few seconds at most, however fast mail arrives.
+    @State private var insightsInFlight = false
+    @State private var insightsDirty = false
+    private static let insightsRescanDelay: TimeInterval = 2
     @State private var senders: [String: MailboxDrawerSender] = [:]
     @State private var expanded: Set<String> = []
     @State private var contentHeight: CGFloat = 0
@@ -246,7 +252,7 @@ struct MailboxDrawerView: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(width: 270 * style.scale)
+        .fixedSize()
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
     }
@@ -453,15 +459,27 @@ struct MailboxDrawerView: View {
             insights = MailboxPanelMail.Insights()
             return
         }
+        guard !insightsInFlight else {
+            insightsDirty = true
+            return
+        }
+        insightsInFlight = true
         insightsGeneration += 1
         let generation = insightsGeneration
         let root = inboxURL.deletingLastPathComponent()
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .utility).async {
             let loaded = autoreleasepool { MailboxPanelMail.insights(inbox: inboxURL, mailboxesRoot: root) }
             DispatchQueue.main.async {
-                guard generation == insightsGeneration else { return }
-                insightSenders = resolveSenders(loaded.senders.top.map(\.name))
-                if loaded != insights { insights = loaded }
+                if generation == insightsGeneration {
+                    insightSenders = resolveSenders(loaded.senders.top.map(\.name))
+                    if loaded != insights { insights = loaded }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.insightsRescanDelay) {
+                    insightsInFlight = false
+                    guard insightsDirty else { return }
+                    insightsDirty = false
+                    if tab == .insights { reloadInsights() }
+                }
             }
         }
     }
@@ -929,7 +947,7 @@ private struct MailboxInsightsView: View {
     private var sectionFont: Font { metaFont.weight(.semibold) }
     private var countWidth: CGFloat { 62 * style.scale }
     private var unreadWidth: CGFloat { 72 * style.scale }
-    private var nameWidth: CGFloat { min(max(width * 0.36, 110), 280) }
+    private var nameWidth: CGFloat { min(max(width * 0.36, 110 * style.scale), 280 * style.scale) }
     private var chartHeight: CGFloat { 40 * style.scale }
 
     var body: some View {
@@ -1266,7 +1284,7 @@ private struct MailboxInsightsView: View {
     private var compositionLine: some View {
         Text(String(
             localized: "mailbox.insights.composition",
-            defaultValue: "\(insights.urgent) urgent · \(insights.replies) replies · \(insights.fileBodies) with a file body · \(insights.untitled) without a topic"
+            defaultValue: "Urgent \(insights.urgent) · replies \(insights.replies) · file bodies \(insights.fileBodies) · no topic \(insights.untitled)"
         ))
         .font(metaFont.monospacedDigit())
         .foregroundColor(style.secondary)
@@ -1290,13 +1308,13 @@ private struct MailboxInsightsView: View {
             if insights.unparsed > 0 {
                 metaLine(String(
                     localized: "mailbox.insights.note.unparsed",
-                    defaultValue: "\(insights.unparsed) files could not be read as envelopes."
+                    defaultValue: "Unreadable as envelopes: \(insights.unparsed)"
                 ))
             }
             if insights.sentIsTrimmed {
                 metaLine(String(
                     localized: "mailbox.insights.note.sentTrimmed",
-                    defaultValue: "c11 keeps the newest \(MailboxSentLedger.retain) sent records, so older sends are not counted."
+                    defaultValue: "c11 keeps about the newest \(MailboxSentLedger.retain) sent records, so older sends may not be counted."
                 ))
             }
         }

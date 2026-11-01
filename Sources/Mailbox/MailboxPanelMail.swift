@@ -726,20 +726,25 @@ extension MailboxPanelMail {
 
         /// Messages this panel sent that the ledger still records.
         var sent = 0
-        var sentLastDay = 0
         var recipients = Ranking()
         /// Recipient copies still on disk, and how many of those were taken.
         var sentCopies = 0
         var sentTaken = 0
 
-        /// The ledger keeps only its newest entries, so older sends are not counted.
+        /// The ledger keeps only about its newest `retain` entries, so at that
+        /// size older sends may be missing. A ledger between `retain` and its
+        /// trim threshold may not have been trimmed yet; the note says "may".
         var sentIsTrimmed: Bool { sent >= MailboxSentLedger.retain }
         var scanIsPartial: Bool { scanned + unparsed < received }
 
-        /// Received per day across the whole span of mail, when it spans a day or more.
+        /// When the scan ran; rates are measured up to it.
+        var scannedAt = Date()
+
+        /// Received per day from the first message until the scan, when that
+        /// spans a day or more. A burst long ago reads as a low rate now.
         var perDay: Double? {
-            guard let firstAt, let lastAt else { return nil }
-            let days = lastAt.timeIntervalSince(firstAt) / 86400
+            guard let firstAt else { return nil }
+            let days = scannedAt.timeIntervalSince(firstAt) / 86400
             guard days >= 1 else { return nil }
             return Double(received) / days
         }
@@ -757,6 +762,7 @@ extension MailboxPanelMail {
         fileManager: FileManager = .default
     ) -> Insights {
         var result = Insights()
+        result.scannedAt = now
         let unreadFiles = envelopeFiles(in: inbox, fileManager: fileManager)
         let readFiles = envelopeFiles(in: MailboxDrain.readURL(inbox: inbox), fileManager: fileManager)
         result.unread = unreadFiles.count
@@ -774,7 +780,11 @@ extension MailboxPanelMail {
             guard let date = entry.date else { continue }
             if result.firstAt.map({ date < $0 }) ?? true { result.firstAt = date }
             if result.lastAt.map({ date > $0 }) ?? true { result.lastAt = date }
-            if entry.unread, result.oldestUnreadAt.map({ date < $0 }) ?? true { result.oldestUnreadAt = date }
+            // Unread waits are measured from landing, as the cell measures them.
+            if entry.unread, let landed = landingDate(of: entry.url, fileManager: fileManager),
+               result.oldestUnreadAt.map({ landed < $0 }) ?? true {
+                result.oldestUnreadAt = landed
+            }
             let age = now.timeIntervalSince(date)
             if age >= 0 {
                 if age < 3600 { result.lastHour += 1 }
@@ -818,17 +828,20 @@ extension MailboxPanelMail {
 
         let (entries, total) = MailboxSentLedger.entries(senderInbox: inbox, limit: Int.max, fileManager: fileManager)
         result.sent = total
-        var recipients: [String: Int] = [:]
+        // Tallied by recipient panel, so direct and broadcast sends to one panel
+        // share a row. A panel is named by the address of its newest direct
+        // send when it had one (the dispatcher's label is often only a title),
+        // else by its newest label. Entries come newest first.
+        var recipientCounts: [String: Int] = [:]
+        var directNames: [String: String] = [:]
+        var labels: [String: String] = [:]
         for entry in entries {
-            if let sentAt = entry.ts.flatMap(parseTimestamp) ?? ulidDate(entry.id) {
-                let age = now.timeIntervalSince(sentAt)
-                if age >= 0, age < 86400 { result.sentLastDay += 1 }
-            }
-            // A one-recipient send is named by the address it was sent to; the
-            // dispatcher's label is often only the recipient's title.
-            let single = entry.recipients.count == 1 ? entry.to.flatMap { $0.isEmpty ? nil : $0 } : nil
+            let direct = entry.recipients.count == 1 ? entry.to.flatMap { $0.isEmpty ? nil : $0 } : nil
             for recipient in entry.recipients {
-                recipients[single ?? (recipient.name.isEmpty ? recipient.panel : recipient.name), default: 0] += 1
+                let key = recipient.panel.lowercased()
+                recipientCounts[key, default: 0] += 1
+                if let direct, directNames[key] == nil { directNames[key] = direct }
+                if labels[key] == nil, !recipient.name.isEmpty { labels[key] = recipient.name }
                 guard let panel = UUID(uuidString: recipient.panel) else { continue }
                 let copyInbox = inboxURL(mailboxesRoot: mailboxesRoot, panelId: panel)
                 let file = MailboxLayout.envelopeFilename(id: entry.id)
@@ -840,7 +853,9 @@ extension MailboxPanelMail {
                 }
             }
         }
-        result.recipients = ranking(recipients.map { Tally(name: $0.key, count: $0.value) })
+        result.recipients = ranking(recipientCounts.map { key, count in
+            Tally(name: directNames[key] ?? labels[key] ?? key, count: count)
+        })
         return result
     }
 

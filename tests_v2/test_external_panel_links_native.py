@@ -161,9 +161,16 @@ class Proof(native.Proof):
 
     def outside(self, url=None, background=False):
         safari_pid = self.safari_foreground()
+        windows = self.native_main_window_ids()
         self.console_open(*(['-g'] if background else []), url or self.target_url)
         self.wait(self.prompt, 'outside request shows confirmation')
+        assert self.native_main_window_ids() == windows, 'outside link created a native main window'
         return safari_pid
+
+    def native_main_window_ids(self):
+        # CGWindow inventory catches SwiftUI windows that were never registered
+        # in c11's socket window model. The floating prompt is not layer zero.
+        return sorted(w['kCGWindowNumber'] for w in self.ui('displays')['windows'])
 
     def cancel(self):
         self.click('c11.external-link.cancel')
@@ -323,6 +330,7 @@ end tell'''
     def burst(self):
         self.ui('activate')
         before = self.selection()
+        windows = self.native_main_window_ids()
         self.ensure_frontmost()
         self.console_open(self.target_url)
         self.wait(self.prompt, "outside prompt over active c11 terminal")
@@ -335,6 +343,7 @@ end tell'''
         self.console_open(*([self.workspace_url] * 50))
         self.native('t:_AFTER')
         assert self.selection() == before
+        assert self.native_main_window_ids() == windows, 'burst created native main windows'
         assert self.ui('foreground') == self.pid
         labels = self.ax()
         assert len([x for x in labels if x['id'] == 'c11.external-link.confirmation']) == 1

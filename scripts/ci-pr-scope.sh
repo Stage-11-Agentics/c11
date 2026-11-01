@@ -125,3 +125,5 @@ case "${1:-}" in
     exit 2
     ;;
 esac
+
+# C11-564 ruleset proof (code PR); closed unmerged.

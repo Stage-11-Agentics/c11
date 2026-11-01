@@ -105,10 +105,119 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertNil(MailboxPanelMail.ulidDate("01M4JF4F3KD9YCWKK4W0YPQM3!"))
     }
 
-    func testCountTextCapsAtNinetyNinePlus() {
+    func testCountTextIsExactThroughTensOfThousandsAndNeverOutgrowsItsSlot() {
+        XCTAssertEqual(MailboxPanelMail.countText(-3), "0")
         XCTAssertEqual(MailboxPanelMail.countText(0), "0")
-        XCTAssertEqual(MailboxPanelMail.countText(99), "99")
-        XCTAssertEqual(MailboxPanelMail.countText(100), "99+")
+        XCTAssertEqual(MailboxPanelMail.countText(100), "100")
+        XCTAssertEqual(MailboxPanelMail.countText(12_345), "12345")
+        XCTAssertEqual(MailboxPanelMail.countText(99_999), "99999")
+        XCTAssertEqual(MailboxPanelMail.countText(100_000), "100k")
+        XCTAssertEqual(MailboxPanelMail.countText(999_999), "999k")
+        XCTAssertEqual(MailboxPanelMail.countText(1_000_000), "1M")
+        for count in [0, 9, 99_999, 123_456, 999_999, 12_000_000, Int.max] {
+            XCTAssertLessThanOrEqual(MailboxPanelMail.countText(count).count, MailboxPanelMail.countSlotCharacters, "\(count)")
+        }
+    }
+
+    // MARK: - Insights
+
+    func testInsightsCountsActivityRanksSendersAndTopics() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        try write(["from": "board", "topic": "lattice.freeze", "urgent": true], id: ulid(now.addingTimeInterval(-30 * 60)))
+        try write(["from": "board", "topic": "lattice.freeze"], id: ulid(now.addingTimeInterval(-90 * 60)), read: true)
+        try write(["from": "captain", "topic": "merge", "in_reply_to": "01X"], id: ulid(now.addingTimeInterval(-5 * 3600)), read: true)
+        try write(["from": "board", "body_ref": "/tmp/x"], id: ulid(now.addingTimeInterval(-3 * 86400)), read: true)
+        try write([:], id: ulid(now.addingTimeInterval(-30 * 86400)), read: true)
+        try Data("not json".utf8).write(to: inbox.appendingPathComponent("\(ulid(now.addingTimeInterval(-10))).msg"))
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let insights = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: root, now: now, calendar: calendar)
+
+        XCTAssertEqual(insights.received, 6)
+        XCTAssertEqual(insights.unread, 2)
+        XCTAssertEqual(insights.lastHour, 2)
+        XCTAssertEqual(insights.lastDay, 4)
+        XCTAssertEqual(insights.lastWeek, 5)
+        XCTAssertEqual(insights.hourly.reduce(0, +), 4)
+        XCTAssertEqual(insights.hourly[23], 2, "the past hour is the last bucket")
+        XCTAssertEqual(insights.hourly[22], 1)
+        XCTAssertEqual(insights.hourly[18], 1)
+        XCTAssertEqual(insights.daily.reduce(0, +), 5, "the 30-day-old message is outside 14 days")
+        XCTAssertEqual(insights.dayStarts.count, MailboxPanelMail.insightsDays)
+        XCTAssertEqual(insights.dayStarts.last, calendar.startOfDay(for: now))
+
+        XCTAssertEqual(insights.scanned, 5)
+        XCTAssertEqual(insights.unparsed, 1)
+        XCTAssertFalse(insights.scanIsPartial)
+        XCTAssertEqual(insights.senders.top.first, MailboxPanelMail.Tally(name: "board", count: 3, unread: 1))
+        XCTAssertEqual(insights.senders.distinct, 3)
+        XCTAssertEqual(insights.topics.top.map(\.name), ["lattice.freeze", "merge"])
+        XCTAssertEqual(insights.untitled, 2)
+        XCTAssertEqual(insights.urgent, 1)
+        XCTAssertEqual(insights.replies, 1)
+        XCTAssertEqual(insights.fileBodies, 1)
+        XCTAssertEqual(insights.oldestUnreadAt!.timeIntervalSince1970, now.addingTimeInterval(-30 * 60).timeIntervalSince1970, accuracy: 0.01)
+        XCTAssertEqual(insights.perDay!, 6.0 / (30 - 10.0 / 86400), accuracy: 0.001)
+    }
+
+    func testInsightsScanStopsAtTheLimitButCountsEverything() throws {
+        let now = Date()
+        for minute in 1...8 {
+            try write(["from": "a\(minute)"], id: ulid(now.addingTimeInterval(TimeInterval(-60 * minute))), read: true)
+        }
+        let insights = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: root, now: now, scanLimit: 3)
+        XCTAssertEqual(insights.received, 8)
+        XCTAssertEqual(insights.lastHour, 8)
+        XCTAssertEqual(insights.scanned, 3)
+        XCTAssertTrue(insights.scanIsPartial)
+        XCTAssertEqual(Set(insights.senders.top.map(\.name)), ["a1", "a2", "a3"], "the newest are scanned")
+    }
+
+    func testInsightsSentCountsRecipientsAndWhatTheyTook() throws {
+        let now = Date()
+        let sender = inbox!
+        let takerId = UUID(), waiterId = UUID()
+        let taker = MailboxPanelMail.inboxURL(mailboxesRoot: root, panelId: takerId)
+        let waiter = MailboxPanelMail.inboxURL(mailboxesRoot: root, panelId: waiterId)
+        try FileManager.default.createDirectory(at: MailboxDrain.readURL(inbox: taker), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: waiter, withIntermediateDirectories: true)
+        let first = ulid(now.addingTimeInterval(-120))
+        let second = ulid(now.addingTimeInterval(-3 * 86400))
+        try Data("{}".utf8).write(to: MailboxDrain.readURL(inbox: taker).appendingPathComponent(MailboxLayout.envelopeFilename(id: first)))
+        try Data("{}".utf8).write(to: waiter.appendingPathComponent(MailboxLayout.envelopeFilename(id: first)))
+        func recipient(_ id: UUID, _ name: String) -> MailboxSentLedger.Recipient {
+            MailboxSentLedger.Recipient(panel: id.uuidString.lowercased(), name: name)
+        }
+        XCTAssertTrue(MailboxSentLedger.record(
+            MailboxSentLedger.Entry(id: first, ts: nil, to: "team", topic: nil, recipients: [recipient(takerId, "taker"), recipient(waiterId, "waiter")]),
+            senderInbox: sender
+        ))
+        XCTAssertTrue(MailboxSentLedger.record(
+            MailboxSentLedger.Entry(id: second, ts: nil, to: "taker", topic: nil, recipients: [recipient(takerId, "~")]),
+            senderInbox: sender
+        ))
+        let insights = MailboxPanelMail.insights(inbox: sender, mailboxesRoot: root, now: now)
+        XCTAssertEqual(insights.sent, 2)
+        XCTAssertEqual(insights.sentLastDay, 1)
+        // A broadcast counts each recipient by its label; a one-recipient send
+        // by the address it went to.
+        XCTAssertEqual(insights.recipients.top, [
+            MailboxPanelMail.Tally(name: "taker", count: 2),
+            MailboxPanelMail.Tally(name: "waiter", count: 1),
+        ])
+        XCTAssertEqual(insights.sentCopies, 2, "the second send's copy is gone")
+        XCTAssertEqual(insights.sentTaken, 1)
+        XCTAssertFalse(insights.sentIsTrimmed)
+    }
+
+    func testRankingFoldsTheRestIntoOthersInAStableOrder() {
+        let ranking = MailboxPanelMail.ranking([
+            .init(name: "b", count: 2), .init(name: "a", count: 2), .init(name: "c", count: 5), .init(name: "d", count: 1),
+        ], top: 2)
+        XCTAssertEqual(ranking.top.map(\.name), ["c", "a"])
+        XCTAssertEqual(ranking.distinct, 4)
+        XCTAssertEqual(ranking.others, 3)
     }
 
     // MARK: - Listing

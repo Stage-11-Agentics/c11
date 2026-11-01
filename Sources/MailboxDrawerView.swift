@@ -5,10 +5,12 @@ import AppKit
 //
 // The cell is `[unread] envelope [received]`: unread in orange (on an orange
 // backdrop for three minutes after the newest unread message lands), received
-// in gray. Each number has a fixed slot sized for `99+`, so nothing in the bar
-// moves when a count changes. The drawer is read-only: it lists the panel's
-// mail newest first and never claims, deletes or sends anything. Every string
-// in a message is untrusted text from another agent and renders verbatim.
+// in gray. Each number has a fixed slot sized for five characters (exact
+// through 99999, then `123k`), so nothing in the bar moves when a count
+// changes. The drawer is read-only: it lists the panel's mail newest first,
+// shows what it sent, and summarizes both in Insights; it never claims,
+// deletes or sends anything. Every string in a message is untrusted text from
+// another agent and renders verbatim.
 
 /// Colors and sizes the drawer needs. The drawer is hosted in its own child
 /// panel, outside the bar's SwiftUI environment, so the bar hands them over.
@@ -63,8 +65,10 @@ struct MailboxCellView: View {
 
     private var unread: Int { model.summary.unread }
     private var received: Int { model.summary.received }
-    /// Wide enough for `99+` at this size in tabular digits.
-    private var slotWidth: CGFloat { ceil(fontSize * 2.2) + 6 }
+    /// Wide enough for the widest count text at this size in monospaced digits.
+    private var slotWidth: CGFloat {
+        ceil(fontSize * 0.62 * CGFloat(MailboxPanelMail.countSlotCharacters)) + 6
+    }
 
     var body: some View {
         Button(action: action) {
@@ -172,12 +176,16 @@ struct MailboxDrawerView: View {
     let resolveSenders: ([String]) -> [String: MailboxDrawerSender]
 
     /// C11-399: the drawer reads what the panel received, or what it sent.
-    enum Tab: Hashable { case received, sent }
+    /// Insights summarizes both.
+    enum Tab: Hashable { case received, sent, insights }
 
     @State private var tab: Tab = .received
     @State private var listing: MailboxPanelMail.Listing?
     @State private var sentListing: MailboxPanelMail.SentListing?
     @State private var sentGeneration = 0
+    @State private var insights: MailboxPanelMail.Insights?
+    @State private var insightsGeneration = 0
+    @State private var insightSenders: [String: MailboxDrawerSender] = [:]
     @State private var senders: [String: MailboxDrawerSender] = [:]
     @State private var expanded: Set<String> = []
     @State private var contentHeight: CGFloat = 0
@@ -207,9 +215,13 @@ struct MailboxDrawerView: View {
         .background(Color(nsColor: style.background))
         .overlay(Rectangle().stroke(style.border, lineWidth: 1))
         .onAppear(perform: reload)
-        .onChange(of: model.revision) { _ in reload() }
+        .onChange(of: model.revision) { _ in
+            reload()
+            if tab == .insights { reloadInsights() }
+        }
         .onChange(of: tab) { newTab in
             if newTab == .sent { reloadSent() }
+            if newTab == .insights { reloadInsights() }
         }
         // Recipients take mail on their own; their counts do not move this
         // panel's revision, so the open Sent view refreshes itself. One listing
@@ -218,16 +230,23 @@ struct MailboxDrawerView: View {
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
             if tab == .sent { reloadSent() }
         }
+        // The hourly and daily buckets slide with the clock, and recipients
+        // take sent mail on their own. A full insights scan is heavier than a
+        // Sent refresh, so it repeats less often, and only while showing.
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            if tab == .insights { reloadInsights() }
+        }
     }
 
     private var tabBar: some View {
         Picker("", selection: $tab) {
             Text(String(localized: "mailbox.drawer.tab.received", defaultValue: "Received")).tag(Tab.received)
             Text(String(localized: "mailbox.drawer.tab.sent", defaultValue: "Sent")).tag(Tab.sent)
+            Text(String(localized: "mailbox.drawer.tab.insights", defaultValue: "Insights")).tag(Tab.insights)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(width: 180 * style.scale)
+        .frame(width: 270 * style.scale)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
     }
@@ -280,6 +299,8 @@ struct MailboxDrawerView: View {
     private var content: some View {
         if tab == .sent {
             sentContent
+        } else if tab == .insights {
+            insightsContent
         } else if let listing {
             if listing.messages.isEmpty {
                 Text(String(localized: "mailbox.drawer.empty", defaultValue: "No mail yet."))
@@ -393,6 +414,55 @@ struct MailboxDrawerView: View {
                 .font(textFont)
                 .foregroundColor(style.secondary)
                 .padding(12)
+        }
+    }
+
+    @ViewBuilder
+    private var insightsContent: some View {
+        if let insights {
+            ScrollView(.vertical, showsIndicators: true) {
+                TimelineView(.periodic(from: .now, by: 30)) { timeline in
+                    MailboxInsightsView(
+                        insights: insights,
+                        senders: insightSenders,
+                        now: timeline.date,
+                        width: geometry.width,
+                        style: style,
+                        metaFont: metaFont,
+                        textFont: textFont
+                    )
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: MailboxDrawerHeightKey.self, value: geometry.size.height)
+                        }
+                    )
+                }
+            }
+            .frame(height: min(max(contentHeight, 1), geometry.maxHeight))
+            .onPreferenceChange(MailboxDrawerHeightKey.self) { contentHeight = $0 }
+        } else {
+            Text(String(localized: "mailbox.drawer.loading", defaultValue: "Reading mail…"))
+                .font(textFont)
+                .foregroundColor(style.secondary)
+                .padding(12)
+        }
+    }
+
+    private func reloadInsights() {
+        guard let inboxURL else {
+            insights = MailboxPanelMail.Insights()
+            return
+        }
+        insightsGeneration += 1
+        let generation = insightsGeneration
+        let root = inboxURL.deletingLastPathComponent()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loaded = autoreleasepool { MailboxPanelMail.insights(inbox: inboxURL, mailboxesRoot: root) }
+            DispatchQueue.main.async {
+                guard generation == insightsGeneration else { return }
+                insightSenders = resolveSenders(loaded.senders.top.map(\.name))
+                if loaded != insights { insights = loaded }
+            }
         }
     }
 
@@ -832,6 +902,403 @@ private struct MailboxMessageCard: View {
             )
         case .unreadable(let reason):
             return String(localized: "mailbox.drawer.ref.unreadable", defaultValue: "c11 could not read the referenced file: \(reason)")
+        }
+    }
+}
+
+// MARK: - Insights
+
+/// The drawer's Insights view: totals, recent activity, who writes and about
+/// what, and where this panel's own mail went. Names and topics are untrusted
+/// text from other agents and render verbatim. Every row has a fixed shape,
+/// so a refresh changes numbers, never the layout.
+private struct MailboxInsightsView: View {
+    let insights: MailboxPanelMail.Insights
+    let senders: [String: MailboxDrawerSender]
+    let now: Date
+    let width: CGFloat
+    let style: MailboxDrawerStyle
+    let metaFont: Font
+    let textFont: Font
+
+    private var orange: Color { Color(nsColor: .systemOrange) }
+    private var barColor: Color { style.foreground.opacity(0.55) }
+    private var trackColor: Color { style.border.opacity(0.6) }
+    private var numberFont: Font { .system(size: 17 * style.scale, weight: .semibold, design: .monospaced).monospacedDigit() }
+    private var labelFont: Font { .system(size: 9 * style.scale, weight: .semibold) }
+    private var sectionFont: Font { metaFont.weight(.semibold) }
+    private var countWidth: CGFloat { 62 * style.scale }
+    private var unreadWidth: CGFloat { 72 * style.scale }
+    private var nameWidth: CGFloat { min(max(width * 0.36, 110), 280) }
+    private var chartHeight: CGFloat { 40 * style.scale }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            tiles
+            recentLines
+            barChart(
+                title: String(localized: "mailbox.insights.hourly.title", defaultValue: "Received, last 24 hours"),
+                values: insights.hourly,
+                leading: String(localized: "mailbox.insights.hourly.start", defaultValue: "24h ago"),
+                trailing: String(localized: "mailbox.insights.hourly.end", defaultValue: "now"),
+                help: hourHelp
+            )
+            barChart(
+                title: String(localized: "mailbox.insights.daily.title", defaultValue: "Received, last 14 days"),
+                values: insights.daily,
+                leading: insights.dayStarts.first.map(dayText) ?? "",
+                trailing: String(localized: "mailbox.insights.daily.end", defaultValue: "today"),
+                help: dayHelp
+            )
+            if insights.scanned > 0 {
+                rankingSection(
+                    title: String(localized: "mailbox.insights.senders.title", defaultValue: "Top senders"),
+                    ranking: insights.senders,
+                    showUnread: true,
+                    detail: senderDetail
+                )
+                rankingSection(
+                    title: String(localized: "mailbox.insights.topics.title", defaultValue: "Top topics"),
+                    ranking: insights.topics,
+                    showUnread: false,
+                    detail: { _ in nil }
+                )
+                compositionLine
+            }
+            if insights.sent > 0 {
+                rankingSection(
+                    title: String(localized: "mailbox.insights.recipients.title", defaultValue: "Sent to"),
+                    ranking: insights.recipients,
+                    showUnread: false,
+                    detail: { _ in nil },
+                    trailing: insights.sentCopies > 0
+                        ? String(
+                            localized: "mailbox.insights.recipients.taken",
+                            defaultValue: "\(insights.sentTaken) of \(insights.sentCopies) copies taken"
+                        )
+                        : nil
+                )
+            }
+            footnotes
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Totals
+
+    private var tiles: some View {
+        HStack(spacing: 8) {
+            tile(
+                insights.received,
+                label: String(localized: "mailbox.insights.tile.received", defaultValue: "RECEIVED"),
+                help: String(localized: "mailbox.insights.tile.received.help", defaultValue: "Every message this panel has received.")
+            )
+            tile(
+                insights.unread,
+                label: String(localized: "mailbox.insights.tile.unread", defaultValue: "UNREAD"),
+                help: String(localized: "mailbox.insights.tile.unread.help", defaultValue: "Messages the agent has not taken yet."),
+                accent: insights.unread > 0
+            )
+            tile(
+                max(0, insights.received - insights.unread),
+                label: String(localized: "mailbox.insights.tile.taken", defaultValue: "TAKEN"),
+                help: String(localized: "mailbox.insights.tile.taken.help", defaultValue: "Messages the agent has taken.")
+            )
+            tile(
+                insights.sent,
+                label: String(localized: "mailbox.insights.tile.sent", defaultValue: "SENT"),
+                help: String(localized: "mailbox.insights.tile.sent.help", defaultValue: "Messages this panel sent that c11 still records.")
+            )
+        }
+    }
+
+    private func tile(_ value: Int, label: String, help: String, accent: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: value.formatted())
+                .font(numberFont)
+                .foregroundColor(accent ? orange : style.foreground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(label)
+                .font(labelFont)
+                .foregroundColor(style.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(style.border, lineWidth: 1))
+        .help(help)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var recentLines: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            metaLine(String(
+                localized: "mailbox.insights.recent",
+                defaultValue: "\(insights.lastHour) in the last hour · \(insights.lastDay) in 24 hours · \(insights.lastWeek) in 7 days"
+            ))
+            if let firstAt = insights.firstAt, let lastAt = insights.lastAt {
+                if let perDay = insights.perDay {
+                    metaLine(String(
+                        localized: "mailbox.insights.span.rate",
+                        defaultValue: "First \(MailboxDrawerText.stamp(firstAt)) · newest \(MailboxDrawerText.age(of: lastAt, now: now)) · about \(perDay.formatted(.number.precision(.fractionLength(1)))) a day"
+                    ))
+                } else {
+                    metaLine(String(
+                        localized: "mailbox.insights.span",
+                        defaultValue: "First \(MailboxDrawerText.stamp(firstAt)) · newest \(MailboxDrawerText.age(of: lastAt, now: now))"
+                    ))
+                }
+            }
+            if insights.unread > 0, let oldest = insights.oldestUnreadAt {
+                Text(String(
+                    localized: "mailbox.insights.oldestUnread",
+                    defaultValue: "Oldest unread has waited \(MailboxDrawerText.span(now.timeIntervalSince(oldest)))"
+                ))
+                .font(metaFont)
+                .foregroundColor(orange)
+                .lineLimit(1)
+            }
+        }
+    }
+
+    private func metaLine(_ text: String) -> some View {
+        Text(text)
+            .font(metaFont.monospacedDigit())
+            .foregroundColor(style.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    // MARK: Activity
+
+    private func barChart(
+        title: String,
+        values: [Int],
+        leading: String,
+        trailing: String,
+        help: @escaping (Int) -> String
+    ) -> some View {
+        let peak = values.max() ?? 0
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(sectionFont)
+                    .foregroundColor(style.foreground)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(String(localized: "mailbox.insights.peak", defaultValue: "peak \(peak)"))
+                    .font(metaFont.monospacedDigit())
+                    .foregroundColor(style.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(values.indices, id: \.self) { index in
+                    let value = values[index]
+                    let height = value == 0 ? 1 : max(3, chartHeight * CGFloat(value) / CGFloat(max(peak, 1)))
+                    RoundedRectangle(cornerRadius: value == 0 ? 0 : 2)
+                        .fill(value == 0 ? trackColor : barColor)
+                        .frame(height: height)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .contentShape(Rectangle())
+                        .help(help(index))
+                }
+            }
+            .frame(height: chartHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(title))
+            .accessibilityValue(Text(values.map(String.init).joined(separator: ", ")))
+            HStack {
+                Text(leading)
+                Spacer(minLength: 8)
+                Text(trailing)
+            }
+            .font(metaFont)
+            .foregroundColor(style.secondary)
+            .lineLimit(1)
+        }
+    }
+
+    private func hourHelp(_ index: Int) -> String {
+        let count = insights.hourly[index]
+        let hoursAgo = MailboxPanelMail.insightsHours - 1 - index
+        if hoursAgo == 0 {
+            return String(localized: "mailbox.insights.hour.current.help", defaultValue: "Past hour: \(count) received")
+        }
+        return String(
+            localized: "mailbox.insights.hour.help",
+            defaultValue: "\(hoursAgo + 1) to \(hoursAgo) hours ago: \(count) received"
+        )
+    }
+
+    private func dayHelp(_ index: Int) -> String {
+        let count = insights.daily[index]
+        guard insights.dayStarts.indices.contains(index) else { return "\(count)" }
+        return String(
+            localized: "mailbox.insights.day.help",
+            defaultValue: "\(dayText(insights.dayStarts[index])): \(count) received"
+        )
+    }
+
+    private func dayText(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    // MARK: Rankings
+
+    private func senderDetail(_ tally: MailboxPanelMail.Tally) -> String? {
+        guard let number = senders[tally.name]?.panelNumber else { return nil }
+        return String(localized: "mailbox.drawer.panelNumber", defaultValue: "panel \(number)")
+    }
+
+    private func rankingSection(
+        title: String,
+        ranking: MailboxPanelMail.Ranking,
+        showUnread: Bool,
+        detail: @escaping (MailboxPanelMail.Tally) -> String?,
+        trailing: String? = nil
+    ) -> some View {
+        let peak = max(ranking.top.first?.count ?? 0, 1)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(sectionFont)
+                    .foregroundColor(style.foreground)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(trailing ?? String(
+                    localized: "mailbox.insights.distinct",
+                    defaultValue: "\(ranking.distinct) in all"
+                ))
+                .font(metaFont.monospacedDigit())
+                .foregroundColor(style.secondary)
+                .lineLimit(1)
+                .fixedSize()
+            }
+            if ranking.top.isEmpty {
+                Text(String(localized: "mailbox.insights.none", defaultValue: "None yet."))
+                    .font(metaFont)
+                    .foregroundColor(style.secondary)
+            }
+            ForEach(ranking.top) { tally in
+                rankingRow(
+                    name: tally.name,
+                    detail: detail(tally),
+                    count: tally.count,
+                    fraction: CGFloat(tally.count) / CGFloat(peak),
+                    unread: showUnread ? tally.unread : nil
+                )
+            }
+            if ranking.others > 0 {
+                rankingRow(
+                    name: String(
+                        localized: "mailbox.insights.others",
+                        defaultValue: "\(ranking.distinct - ranking.top.count) more"
+                    ),
+                    detail: nil,
+                    count: ranking.others,
+                    fraction: nil,
+                    unread: showUnread ? 0 : nil,
+                    muted: true
+                )
+            }
+        }
+    }
+
+    private func rankingRow(
+        name: String,
+        detail: String?,
+        count: Int,
+        fraction: CGFloat?,
+        unread: Int?,
+        muted: Bool = false
+    ) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            HStack(spacing: 4) {
+                Text(verbatim: name)
+                    .font(textFont)
+                    .foregroundColor(muted ? style.secondary : style.foreground)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let detail {
+                    Text(verbatim: detail)
+                        .font(metaFont)
+                        .foregroundColor(style.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(width: nameWidth, alignment: .leading)
+            .help(name)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2).fill(trackColor)
+                    if let fraction {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(barColor)
+                            .frame(width: max(2, geometry.size.width * min(fraction, 1)))
+                    }
+                }
+            }
+            .frame(height: 6)
+            Text(verbatim: count.formatted())
+                .font(metaFont.monospacedDigit())
+                .foregroundColor(style.foreground)
+                .lineLimit(1)
+                .frame(width: countWidth, alignment: .trailing)
+            if let unread {
+                Text(unread > 0
+                    ? String(localized: "mailbox.insights.unreadCount", defaultValue: "\(unread) unread")
+                    : "")
+                .font(metaFont.monospacedDigit())
+                .foregroundColor(orange)
+                .lineLimit(1)
+                .frame(width: unreadWidth, alignment: .trailing)
+            }
+        }
+    }
+
+    /// Wraps instead of truncating: every count in it matters.
+    private var compositionLine: some View {
+        Text(String(
+            localized: "mailbox.insights.composition",
+            defaultValue: "\(insights.urgent) urgent · \(insights.replies) replies · \(insights.fileBodies) with a file body · \(insights.untitled) without a topic"
+        ))
+        .font(metaFont.monospacedDigit())
+        .foregroundColor(style.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: Notes
+
+    @ViewBuilder
+    private var footnotes: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if insights.received == 0 && insights.sent == 0 {
+                metaLine(String(localized: "mailbox.drawer.empty", defaultValue: "No mail yet."))
+            }
+            if insights.scanIsPartial {
+                metaLine(String(
+                    localized: "mailbox.insights.note.partial",
+                    defaultValue: "Senders and topics cover the newest \(insights.scanned + insights.unparsed) of \(insights.received) messages."
+                ))
+            }
+            if insights.unparsed > 0 {
+                metaLine(String(
+                    localized: "mailbox.insights.note.unparsed",
+                    defaultValue: "\(insights.unparsed) files could not be read as envelopes."
+                ))
+            }
+            if insights.sentIsTrimmed {
+                metaLine(String(
+                    localized: "mailbox.insights.note.sentTrimmed",
+                    defaultValue: "c11 keeps the newest \(MailboxSentLedger.retain) sent records, so older sends are not counted."
+                ))
+            }
         }
     }
 }

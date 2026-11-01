@@ -1134,6 +1134,414 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Почта для %@"}}
       }
     },
+    "mailbox.drawer.tab.insights": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Insights"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "インサイト"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Аналітика"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "인사이트"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "洞察"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "洞察"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Аналитика"}}
+      }
+    },
+    "mailbox.insights.hourly.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Received, last 24 hours"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "受信数：過去24時間"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Отримано за останні 24 години"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "받음, 최근 24시간"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已收到，近 24 小时"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已收到，近 24 小時"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Получено за последние 24 часа"}}
+      }
+    },
+    "mailbox.insights.hourly.start": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "24h ago"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "24時間前"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "24 год тому"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "24시간 전"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "24 小时前"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "24 小時前"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "24 ч назад"}}
+      }
+    },
+    "mailbox.insights.hourly.end": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "now"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "現在"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "зараз"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "지금"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "现在"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "現在"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "сейчас"}}
+      }
+    },
+    "mailbox.insights.daily.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Received, last 14 days"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "受信数：過去14日間"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Отримано за останні 14 днів"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "받음, 최근 14일"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已收到，近 14 天"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已收到，近 14 天"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Получено за последние 14 дней"}}
+      }
+    },
+    "mailbox.insights.daily.end": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "today"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "今日"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "сьогодні"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "오늘"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "今天"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "今天"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "сегодня"}}
+      }
+    },
+    "mailbox.insights.senders.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Top senders"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "主な送信元"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Основні відправники"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "상위 보낸 이"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "主要发件方"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "主要寄件者"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Главные отправители"}}
+      }
+    },
+    "mailbox.insights.topics.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Top topics"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "主なトピック"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Основні теми"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "상위 주제"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "主要主题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "主要主題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Главные темы"}}
+      }
+    },
+    "mailbox.insights.recipients.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Sent to"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "送信先"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Кому надіслано"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보낸 대상"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "发送至"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "傳送至"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Кому отправлено"}}
+      }
+    },
+    "mailbox.insights.recipients.taken": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld of %lld copies taken"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%lld / %lld 件のコピーを受け取り済み"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Забрано копій: %lld з %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "복사본 %lld/%lld개 가져감"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已取走 %lld/%lld 份副本"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已取走 %lld/%lld 份副本"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Забрано копий: %lld из %lld"}}
+      }
+    },
+    "mailbox.insights.tile.received": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "RECEIVED"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "受信"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ОТРИМАНО"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "받음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已收"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已收"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ПОЛУЧЕНО"}}
+      }
+    },
+    "mailbox.insights.tile.received.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Every message this panel has received."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このパネルが受信したすべてのメッセージ。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Усі повідомлення, отримані цією панеллю."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 패널이 받은 모든 메시지."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此面板收到的所有消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此面板收到的所有訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Все сообщения, полученные этой панелью."}}
+      }
+    },
+    "mailbox.insights.tile.unread": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "UNREAD"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "未読"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "НЕПРОЧИТАНО"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "안 읽음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "未读"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "未讀"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "НЕПРОЧИТАНО"}}
+      }
+    },
+    "mailbox.insights.tile.unread.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Messages the agent has not taken yet."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "エージェントがまだ受け取っていないメッセージ。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Повідомлення, яких агент ще не забрав."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트가 아직 가져가지 않은 메시지."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "智能体尚未取走的消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "代理尚未取走的訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сообщения, которые агент ещё не забрал."}}
+      }
+    },
+    "mailbox.insights.tile.taken": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "TAKEN"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "受け取り済み"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ЗАБРАНО"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "가져감"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已取走"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已取走"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ЗАБРАНО"}}
+      }
+    },
+    "mailbox.insights.tile.taken.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Messages the agent has taken."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "エージェントが受け取ったメッセージ。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Повідомлення, які агент забрав."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "에이전트가 가져간 메시지."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "智能体已取走的消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "代理已取走的訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сообщения, которые агент забрал."}}
+      }
+    },
+    "mailbox.insights.tile.sent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "SENT"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "送信"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "НАДІСЛАНО"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보냄"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "已发送"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "已傳送"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ОТПРАВЛЕНО"}}
+      }
+    },
+    "mailbox.insights.tile.sent.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Messages this panel sent that c11 still records."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このパネルが送信し、c11 がまだ記録しているメッセージ。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Повідомлення, надіслані цією панеллю, які c11 ще зберігає."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 패널이 보냈고 c11이 아직 기록하고 있는 메시지."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此面板发送且 c11 仍有记录的消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此面板傳送且 c11 仍有記錄的訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Сообщения, отправленные этой панелью, которые c11 ещё хранит."}}
+      }
+    },
+    "mailbox.insights.recent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld in the last hour · %lld in 24 hours · %lld in 7 days"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "過去1時間 %lld 件 · 24時間 %lld 件 · 7日間 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "За останню годину: %lld · за 24 години: %lld · за 7 днів: %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "최근 1시간 %lld개 · 24시간 %lld개 · 7일 %lld개"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "近 1 小时 %lld 条 · 24 小时 %lld 条 · 7 天 %lld 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "近 1 小時 %lld 則 · 24 小時 %lld 則 · 7 天 %lld 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "За последний час: %lld · за 24 часа: %lld · за 7 дней: %lld"}}
+      }
+    },
+    "mailbox.insights.span.rate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "First %@ · newest %@ · about %@ a day"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "最初 %@ · 最新 %@ · 1日あたり約 %@ 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перше: %@ · найновіше: %@ · приблизно %@ на день"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "첫 메시지 %@ · 최신 %@ · 하루 약 %@개"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "最早 %@ · 最新 %@ · 每天约 %@ 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "最早 %@ · 最新 %@ · 每天約 %@ 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Первое: %@ · новейшее: %@ · около %@ в день"}}
+      }
+    },
+    "mailbox.insights.span": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "First %@ · newest %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "最初 %@ · 最新 %@"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Перше: %@ · найновіше: %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "첫 메시지 %@ · 최신 %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "最早 %@ · 最新 %@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "最早 %@ · 最新 %@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Первое: %@ · новейшее: %@"}}
+      }
+    },
+    "mailbox.insights.oldestUnread": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Oldest unread has waited %@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "最も古い未読は %@ 待っています"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Найстаріше непрочитане чекає %@"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "가장 오래된 안 읽음: %@ 대기 중"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "最早的未读已等待 %@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "最早的未讀已等待 %@"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Самое старое непрочитанное ждёт %@"}}
+      }
+    },
+    "mailbox.insights.peak": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "peak %lld"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ピーク %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "пік %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "최대 %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "峰值 %lld"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "峰值 %lld"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "пик %lld"}}
+      }
+    },
+    "mailbox.insights.hour.current.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Past hour: %lld received"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "過去1時間：受信 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Остання година: отримано %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "최근 1시간: %lld개 받음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "近 1 小时：收到 %lld 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "近 1 小時：收到 %lld 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Последний час: получено %lld"}}
+      }
+    },
+    "mailbox.insights.hour.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld to %lld hours ago: %lld received"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%lld〜%lld 時間前：受信 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%lld–%lld год тому: отримано %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%lld~%lld시간 전: %lld개 받음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 至 %lld 小时前：收到 %lld 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 至 %lld 小時前：收到 %lld 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%lld–%lld ч назад: получено %lld"}}
+      }
+    },
+    "mailbox.insights.day.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%@: %lld received"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%@：受信 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%@: отримано %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "%@: %lld개 받음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%@：收到 %lld 条"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@：收到 %lld 則"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%@: получено %lld"}}
+      }
+    },
+    "mailbox.insights.distinct": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld in all"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "計 %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "усього %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "총 %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "共 %lld"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "共 %lld"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "всего %lld"}}
+      }
+    },
+    "mailbox.insights.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "None yet."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "まだありません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Поки немає."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "아직 없음."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "暂无。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "尚無。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Пока нет."}}
+      }
+    },
+    "mailbox.insights.others": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld more"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "他 %lld 件"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "ще %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "외 %lld개"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "另外 %lld 个"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "另外 %lld 個"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "ещё %lld"}}
+      }
+    },
+    "mailbox.insights.unreadCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld unread"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "未読 %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "непрочитаних %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "읽지 않음 %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 未读"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 未讀"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "непрочитанных %lld"}}
+      }
+    },
+    "mailbox.insights.composition": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld urgent · %lld replies · %lld with a file body · %lld without a topic"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "緊急 %lld · 返信 %lld · ファイル本文 %lld · トピックなし %lld"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "терміново: %lld · відповідей: %lld · з файлом: %lld · без теми: %lld"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "긴급 %lld · 답장 %lld · 파일 본문 %lld · 주제 없음 %lld"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 紧急 · %lld 回复 · %lld 带文件正文 · %lld 无主题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 緊急 · %lld 回覆 · %lld 附檔案內文 · %lld 無主題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "срочных: %lld · ответов: %lld · с файлом: %lld · без темы: %lld"}}
+      }
+    },
+    "mailbox.insights.note.partial": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Senders and topics cover the newest %lld of %lld messages."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "送信元とトピックは、最新の %lld 件（全 %lld 件中）が対象です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Відправники й теми враховують найновіші %lld із %lld повідомлень."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보낸 이와 주제는 최신 %lld개 / 전체 %lld개 메시지 기준입니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "发件方和主题仅统计最新 %lld 条（共 %lld 条）消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "寄件者與主題僅統計最新 %lld 則（共 %lld 則）訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Отправители и темы учитывают новейшие %lld из %lld сообщений."}}
+      }
+    },
+    "mailbox.insights.note.unparsed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld files could not be read as envelopes."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "%lld 個のファイルをエンベロープとして読み取れませんでした。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Не вдалося прочитати як конверти файлів: %lld."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "파일 %lld개를 봉투로 읽을 수 없습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "有 %lld 个文件无法解析为信封。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "有 %lld 個檔案無法解析為信封。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Не удалось прочитать как конверты файлов: %lld."}}
+      }
+    },
+    "mailbox.insights.note.sentTrimmed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "c11 keeps the newest %lld sent records, so older sends are not counted."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "c11 は最新の送信記録 %lld 件のみ保持するため、それより古い送信は集計されません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "c11 зберігає лише %lld найновіших записів про надіслане, тож старіші не враховано."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "c11은 최신 발신 기록 %lld개만 보관하므로 더 오래된 발신은 집계되지 않습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "c11 仅保留最新的 %lld 条发送记录，更早的发送不计入。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "c11 僅保留最新的 %lld 則傳送記錄，更早的傳送不計入。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "c11 хранит только %lld новейших записей об отправленном, поэтому более старые не учтены."}}
+      }
+    },
     "markdown.reader.history.back": {
     "extractionState": "manual",
     "localizations": {

@@ -148,7 +148,38 @@ export default {
     if (!panelID || !socketPath || !c11Bin || agentPID !== process.pid ||
         !context.ui?.router?.current || !context.data?.session?.get) return;
 
+    // OpenTUI requires a text renderable at a box slot boundary; a raw
+    // string is an orphan text node. Keep import failure nonfatal to mail.
+    let TextRenderable;
+    if (context.renderer) {
+      try { ({ TextRenderable } = await import('@opentui/core')); } catch {}
+    }
     let disposed = false;
+    let ownerNotice;
+    let stopOwnerNotice;
+    const clearOwnerNotice = () => {
+      stopOwnerNotice?.();
+      stopOwnerNotice = undefined;
+      ownerNotice = undefined;
+    };
+    const showOwnerNotice = (result, sessionID) => {
+      const text = result.mailbox_owner_notice;
+      const owner = result.mailbox_owner?.panel_id;
+      if (typeof text !== 'string' || !owner || !result.owner_surface_ids?.includes(owner)) return;
+      if (ownerNotice === text) return;
+      clearOwnerNotice();
+      ownerNotice = text;
+      // Client-local UI only. Do not close a panel, change routes, or mutate
+      // the shared session environment (another view may be using it).
+      if (TextRenderable) {
+        stopOwnerNotice = context.ui?.slot?.({
+          before: 'session.composer.top',
+          render: input => input.sessionID === sessionID
+            ? new TextRenderable(context.renderer, { content: text, wrapMode: 'word' }) : undefined,
+        });
+      }
+      context.ui?.toast?.show?.({ message: text, variant: 'info', duration: 12_000 });
+    };
     let tuiClaimed = process.env.C11_OPENCODE_TUI_CLAIMED === '1';
     let claimAttempts = 0;
     let nextClaimAt = 0;
@@ -477,6 +508,7 @@ export default {
       }
       const candidateID = currentRoute(context);
       if (candidateID !== visibleID) {
+        clearOwnerNotice();
         const nextGeneration = ++generation;
         const previousID = visibleID;
         const shouldUnbind = hasObservedRoute && Boolean(candidateID || previousID);
@@ -591,6 +623,7 @@ export default {
       });
       if (disposed || generation !== routeGeneration || currentRoute(context) !== candidateID) return;
       if (result?.outcome === 'accepted' && result.id === candidateID) {
+        clearOwnerNotice();
         boundID = candidateID;
         conflict = false;
         nativeNotReady = false;
@@ -602,6 +635,7 @@ export default {
           replaceMailboxStream(candidateID, routeGeneration);
         }
       } else if (result?.outcome === 'identity_conflict') {
+        showOwnerNotice(result, candidateID);
         conflict = true;
         captureState = 'identity-conflict';
         retryCaptureAt = Date.now() + 500;
@@ -638,6 +672,7 @@ export default {
     monitor.unref?.();
     await capture();
     return () => {
+      clearOwnerNotice();
       disposed = true;
       generation++;
       clearInterval(monitor);

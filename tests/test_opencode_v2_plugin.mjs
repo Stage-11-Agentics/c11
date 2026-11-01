@@ -67,7 +67,7 @@ async function fixture(t, {
   ]);
   const statusBySession = new Map([[rootA, status], [rootB, 'idle'], [child, 'idle']]);
   const state = { route: { type: 'session', sessionID: rootA }, sessions, callbacks: [], lifecycleHandlers: [],
-    calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0, activeCalls: 0,
+    notices: [], slots: [], calls: [], syncCalls: 0, conflictID: conflictID ?? '', statusBySession, unbindCalls: 0, activeCalls: 0,
     activeSessions: activeSessions ?? (status === 'running' ? { [rootA]: 'running' } : {}),
     permissionList: permissionHydrated ? [] : undefined, permissionSyncCalls: 0,
     formList: formHydrated ? [] : undefined, formSyncCalls: 0, pendingList: [],
@@ -115,7 +115,7 @@ async function fixture(t, {
           const result = frame.params.displayed_route_state
             ? { outcome: 'unbound', id: `wrapper-claim:${frame.params.panel_id}:unbound-route` }
             : id === state.conflictID
-            ? { outcome: 'identity_conflict', id, owner_surface_ids: ['other'] }
+            ? { outcome: 'identity_conflict', id, owner_surface_ids: ['other'], mailbox_owner: { panel_id: 'other' }, mailbox_owner_notice: 'Shared session: mail uses owner other.' }
             : { outcome: 'accepted', id };
           const respond = () => send(socket, { id: frame.id, ok: true, result });
           if (isUnbind && holdUnbindResponses) state.pendingUnbindResponses.push(respond);
@@ -134,7 +134,10 @@ async function fixture(t, {
     Object.assign(process.env, envBefore);
   });
   const context = {
-    ui: { router: { current: () => state.route } },
+    ui: { router: { current: () => state.route },
+      toast: { show: notice => state.notices.push(notice) },
+      slot: claim => { state.slots.push(claim); return () => { state.slots = state.slots.filter(item => item !== claim); }; },
+    },
     data: {
       session: {
         get: id => state.sessions.get(id), sync: async id => {
@@ -699,4 +702,17 @@ test('native mail disabled still captures the exact root and marks child routes 
     frame.params.displayed_route_state === 'child'));
   assert.equal(f.subscriptions.length, 0);
   assert.equal(f.state.calls.length, 0);
+});
+
+
+test('v2 duplicate notice identifies the shared inbox and retires on route change without navigating', async t => {
+  const f = await fixture(t, { conflictID: rootA });
+  await until(() => f.state.notices.length === 1);
+  assert.equal(f.state.notices[0].message, 'Shared session: mail uses owner other.');
+  await delay(650);
+  assert.equal(f.state.notices.length, 1, 'capture retries must not flood the operator');
+  assert.equal(f.state.route.sessionID, rootA, 'a duplicate remains open');
+  f.state.route = { type: 'session', sessionID: rootB };
+  await until(() => f.frames.some(frame => frame.method === 'conversation.push' && frame.params.id === rootB));
+  assert.equal(f.state.notices.length, 1);
 });

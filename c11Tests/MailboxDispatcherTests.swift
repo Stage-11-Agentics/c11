@@ -46,6 +46,54 @@ final class MailboxDispatcherTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    func testDuplicateMailboxRoutesToOwnerAcrossWorkspacesAndLogsBothAddresses() throws {
+        let alias = seedSurface(name: "duplicate", delivery: "stdin")
+        let owner = UUID(), ownerWorkspace = UUID()
+        _ = try PanelMetadataStore.shared.setMetadata(workspaceId: ownerWorkspace, surfaceId: owner,
+            partial: [MetadataKey.title: "owner", "mailbox.delivery": "stdin"], mode: .merge, source: .explicit)
+        let resolver = MailboxPanelResolver(workspaceId: workspaceId,
+            canonicalOwner: { $0 == alias ? (owner, ownerWorkspace) : nil }, livePanels: { [alias] })
+        let dispatcher = MailboxDispatcher(workspaceId: workspaceId, stateURL: tempState, resolver: resolver)
+        self.dispatcher = dispatcher
+        let delivered = expectation(description: "owner handler")
+        dispatcher.registerHandler(name: "stdin") { _, panel, _ in
+            XCTAssertEqual(panel, owner)
+            delivered.fulfill()
+            return .init(outcome: .ok)
+        }
+        let envelope = try MailboxEnvelope.build(from: "sender", to: "duplicate", body: "shared inbox")
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        wait(for: [delivered], timeout: 3)
+        let ownerFile = MailboxLayout.inboxURL(state: tempState, workspaceId: ownerWorkspace, panelId: owner)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id))
+        XCTAssertEqual(try MailboxEnvelope.validate(data: Data(contentsOf: ownerFile)).body, "shared inbox")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: MailboxLayout.inboxURL(
+            state: tempState, workspaceId: workspaceId, panelId: alias).path))
+        dispatcher.log.flush()
+        let log = try String(contentsOf: dispatcher.log.url, encoding: .utf8)
+        XCTAssertTrue(log.contains("requested_recipient"))
+        XCTAssertTrue(log.contains("duplicate"))
+        XCTAssertTrue(log.contains(owner.uuidString))
+
+        // Receipt status follows the canonical inbox across workspaces, even
+        // though dispatch and claim rows live in different workspace logs.
+        let workspaces = tempState.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        var status = try MailboxReceiptStatus.status(id: envelope.id, workspacesRoot: workspaces)
+        XCTAssertEqual(try XCTUnwrap(status.recipients.first).read, .unread)
+        let inbox = ownerFile.deletingLastPathComponent()
+        let drained = MailboxDrain.claimPending(inbox: inbox)
+        XCTAssertEqual(drained.claimed.map(\.id), [envelope.id])
+        MailboxClaimLog.append(ids: drained.claimed.map(\.id), recipientPanel: owner, byPanel: owner,
+                               via: "recv", mailboxesRoot: inbox.deletingLastPathComponent())
+        status = try MailboxReceiptStatus.status(id: envelope.id, workspacesRoot: workspaces)
+        let receipt = try XCTUnwrap(status.recipients.first)
+        XCTAssertEqual(receipt.panelId, owner)
+        XCTAssertEqual(receipt.read, .read)
+        XCTAssertEqual(receipt.claimedBy, owner)
+    }
+
     // MARK: - Test helpers
 
     private func seedSurface(name: String, delivery: String? = nil) -> UUID {

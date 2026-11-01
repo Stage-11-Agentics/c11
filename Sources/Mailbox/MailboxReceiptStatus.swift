@@ -233,6 +233,7 @@ enum MailboxReceiptStatus {
                             scannedBytes: 0, scanTruncated: false)
         var recipients: [Recipient] = []
         var claims: [(recipient: UUID?, by: UUID?, at: Date?)] = []
+        var inboxWorkspaces: [UUID: UUID] = [:]
 
         func index(name: String?, panel: UUID?) -> Int? {
             if let panel, let found = recipients.firstIndex(where: { $0.panelId == panel }) { return found }
@@ -256,6 +257,9 @@ enum MailboxReceiptStatus {
                 report.acceptedAt = report.acceptedAt ?? at
             case "copied":
                 guard let name else { continue }
+                if let panel, let workspace = (row["recipient_workspace"] as? String).flatMap(UUID.init(uuidString:)) {
+                    inboxWorkspaces[panel] = workspace
+                }
                 if let existing = index(name: name, panel: panel) {
                     recipients[existing].sentAt = recipients[existing].sentAt ?? at
                 } else {
@@ -290,7 +294,14 @@ enum MailboxReceiptStatus {
         let filename = MailboxLayout.envelopeFilename(id: id)
         for index in recipients.indices {
             guard let panel = recipients[index].panelId, !recipients[index].copyFailed else { continue }
-            let inbox = mailboxesRoot.appendingPathComponent(MailboxLayout.inboxDirectoryName(panelId: panel), isDirectory: true)
+            // A shared view can dispatch from one workspace into its root
+            // owner's inbox in another. Older rows retain the original root.
+            let recipientRoot = inboxWorkspaces[panel].map { workspace in
+                mailboxesRoot.deletingLastPathComponent().deletingLastPathComponent()
+                    .appendingPathComponent(workspace.uuidString, isDirectory: true)
+                    .appendingPathComponent(MailboxLayout.mailboxesDirectoryName, isDirectory: true)
+            } ?? mailboxesRoot
+            let inbox = recipientRoot.appendingPathComponent(MailboxLayout.inboxDirectoryName(panelId: panel), isDirectory: true)
             if fileManager.fileExists(atPath: inbox.appendingPathComponent(filename).path) {
                 recipients[index].read = .unread
             } else if fileManager.fileExists(atPath: MailboxDrain.readURL(inbox: inbox).appendingPathComponent(filename).path) {
@@ -509,7 +520,8 @@ enum MailboxReceiptStatus {
 
 /// C11-550: the `claimed` row a drain appends to the dispatch log of the
 /// workspace whose inbox held the mail. `by_panel` is the claiming process's
-/// panel, so a receipt can tell the recipient's own read from another panel
+/// panel (or the inbox owner for an authenticated shared OpenCode view), so
+/// a receipt can tell the recipient's own read from another panel
 /// draining its inbox. The file is opened `O_APPEND`, so this line and the
 /// dispatcher's rows never overwrite each other.
 enum MailboxClaimLog {

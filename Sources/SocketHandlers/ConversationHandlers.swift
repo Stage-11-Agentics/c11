@@ -496,6 +496,22 @@ extension TerminalController {
                     "outcome": "identity_conflict",
                     "owner_surface_ids": owners
                 ]
+                // Conflict polling stays off-main. Journal target identity
+                // and panel metadata are lock-backed; names do not authorize
+                // routing, which uses the authenticated cache alone.
+                if let owner = ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: surfaceId),
+                   owner.panelID != surfaceId,
+                   let workspace = JournalCoordinator.shared.target(panelID: owner.panelID) {
+                    let title = PanelMetadataStore.shared.metadataValue(workspaceId: workspace,
+                        surfaceId: owner.panelID, key: MetadataKey.title) as? String ?? ""
+                    let name = title.isEmpty ? "id:\(owner.panelID.uuidString)" : title
+                    response["mailbox_owner"] = ["panel_id": owner.panelID.uuidString,
+                        "workspace_id": workspace.uuidString, "name": name, "session_id": owner.sessionID]
+                    response["mailbox_owner_notice"] = String(format: String(
+                        localized: "mailbox.opencode.shared-owner",
+                        defaultValue: "Shared OpenCode session. Mail and recv use %@ (%@)."
+                    ), name, owner.panelID.uuidString)
+                }
                 if let preservedRef {
                     response["preserved_state"] = preservedRef.state.rawValue
                     if !preservedRef.placeholder { response["preserved_id"] = preservedRef.id }

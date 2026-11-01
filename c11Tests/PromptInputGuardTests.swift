@@ -1019,6 +1019,28 @@ extension PromptInputClassifierTests {
         XCTAssertEqual(PromptInputClassifier.classify(typed, harness: "opencode").state, .draft)
     }
 
+    func testOpenCodeClippedRealPlaceholderRingsButUnfinishedDraftDoesNot() {
+        func capture(_ text: String, cursorX: Int) -> PromptRegionSnapshot {
+            let value = region([
+                Row(y: 0, spans: [Span(text: "  ┃")]),
+                Row(y: 1, spans: [Span(text: "  ┃  " + text)]),
+                Row(y: 2, spans: [Span(text: "  ┃")]),
+                Row(y: 3, spans: [Span(text: "  ┃  Build · Fixture Fixture")]),
+                Row(y: 4, spans: [Span(text: "  ╹" + String(repeating: "▀", count: 54))]),
+            ], cursorY: 1)
+            return PromptRegionSnapshot(cursorX: cursorX, cursorY: value.cursorY, cursorPendingWrap: false,
+                complete: true, rows: value.rows, cells: value.cells, text: value.text)
+        }
+        let real = "Ask anything… \"What is the tech stack of this pr"
+        let state = PromptInputClassifier.classify(capture(real, cursorX: 5), harness: "opencode").state
+        XCTAssertEqual(state, .suggestion)
+        var input = MailboxDoorbell.Input()
+        input.prompt = state
+        XCTAssertEqual(MailboxDoorbell.decide(input), .ring)
+        XCTAssertEqual(PromptInputClassifier.classify(capture(real, cursorX: 20), harness: "opencode").state, .draft)
+        XCTAssertEqual(PromptInputClassifier.classify(capture("Ask anything… \"operator draft", cursorX: 5), harness: "opencode").state, .draft)
+    }
+
     func testReviewProbePiIdleComposerAdmitsDoorbell() {
         let rule = String(repeating: "─", count: 69)
         let rows = [

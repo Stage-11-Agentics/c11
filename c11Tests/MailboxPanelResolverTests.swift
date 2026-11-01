@@ -19,6 +19,101 @@ final class MailboxPanelResolverTests: XCTestCase {
         store = PanelMetadataStore.shared
     }
 
+    func testOpenCodeDuplicateSharesOnlyAuthenticatedCurrentOwnerInbox() async {
+        let cwd = "/tmp/c11-shared-mailbox-test"
+        let store = ConversationStore.shared
+        let owner = UUID(), duplicate = UUID(), unrelated = UUID()
+        let root = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let otherRoot = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let pid = Int32(ProcessInfo.processInfo.processIdentifier)
+        for panel in [owner, duplicate, unrelated] {
+            _ = await store.claim(surfaceId: panel.uuidString, kind: "opencode", cwd: cwd,
+                                  placeholderId: "wrapper-claim:\(panel.uuidString)", interactivePID: pid)
+        }
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: owner.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: unrelated.uuidString, id: otherRoot, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid + 1, routeGeneration: 1)
+        let cache = ConversationStorePanelRefCache.shared
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "an environment-inheriting subprocess cannot mint a shared inbox")
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: duplicate)?.panelID, owner)
+        XCTAssertEqual(Set(cache.mailboxOwner(surfaceId: owner)?.members ?? []), Set([owner, duplicate]))
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: unrelated)?.panelID, unrelated)
+        XCTAssertTrue(cache.beginOpenCodeRouteChange(surfaceId: duplicate, tuiPID: pid, routeGeneration: 2,
+                                                    capturesRoot: true, targetID: otherRoot))
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "route transition revokes alias before the actor runs")
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "delayed capture must not restore the old alias")
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 2)
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: duplicate)?.panelID, owner)
+        XCTAssertTrue(cache.beginOpenCodeRouteChange(surfaceId: owner, tuiPID: pid, routeGeneration: 2,
+                                                    capturesRoot: false, targetID: otherRoot))
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "an owner's route transition revokes dependent aliases")
+        for panel in [owner, duplicate, unrelated] { await store.clear(surfaceId: panel.uuidString) }
+    }
+
+    func testOpenCodeToolRecvKeepsOwnInboxForChildPendingAndMismatchedSharedRoutes() async {
+        let conversations = ConversationStore.shared
+        let cache = ConversationStorePanelRefCache.shared
+        let owner = UUID(), duplicate = UUID(), otherWorkspace = UUID()
+        let root = "ses_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(26)
+        let child = "ses_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(26)
+        let pid = Int32(ProcessInfo.processInfo.processIdentifier)
+        let cwd = "/tmp/c11-recv-scope-\(owner.uuidString)"
+        let surfaces = [
+            MailboxGlobalResolver.PanelRecord(workspaceId: workspaceId, surfaceId: owner, name: "owner"),
+            MailboxGlobalResolver.PanelRecord(workspaceId: otherWorkspace, surfaceId: duplicate, name: "duplicate")
+        ]
+        func recipient(_ panel: UUID, session: String?) -> [String: Any] {
+            MailboxPanelResolver.recipientPayload(
+                panelID: panel, surfaces: surfaces, sharedOwner: cache.mailboxOwner(surfaceId: panel),
+                expectedSession: session, unavailableReason: { _ in nil }
+            )
+        }
+        func assertLocal(_ panel: UUID, workspace: UUID, session: String, file: StaticString = #filePath, line: UInt = #line) {
+            let result = recipient(panel, session: session)
+            XCTAssertEqual(result["panel_id"] as? String, panel.uuidString, file: file, line: line)
+            XCTAssertEqual(result["workspace_id"] as? String, workspace.uuidString, file: file, line: line)
+            XCTAssertNil(result["shared_inboxes"], "recv must not widen beyond its own panel", file: file, line: line)
+            XCTAssertNil(result["session_id"], file: file, line: line)
+        }
+        for panel in [owner, duplicate] {
+            _ = await conversations.claim(surfaceId: panel.uuidString, kind: "opencode", cwd: cwd,
+                                          placeholderId: "wrapper-claim:\(panel.uuidString)", interactivePID: pid)
+        }
+        // A claimed but unbound v2 panel still has an ordinary readable inbox.
+        assertLocal(owner, workspace: workspaceId, session: root)
+        _ = await conversations.captureDisplayedOpenCodeRoot(surfaceId: owner.uuidString, id: root, cwd: cwd,
+                                                             callerPID: pid, routeGeneration: 1)
+        XCTAssertNotNil(cache.mailboxOwner(surfaceId: owner))
+        // OPENCODE_SESSION_ID is the executing child tool, not the displayed root.
+        assertLocal(owner, workspace: workspaceId, session: child)
+        _ = await conversations.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                             callerPID: pid, routeGeneration: 1)
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: duplicate)?.members.count, 2)
+        assertLocal(duplicate, workspace: otherWorkspace, session: child)
+        assertLocal(owner, workspace: workspaceId, session: child)
+        // Matching root tools, and explicit send resolution without a tool
+        // session, still resolve the duplicate to the owner's shared group.
+        for session in [root, nil] as [String?] {
+            let result = recipient(duplicate, session: session)
+            XCTAssertEqual(result["panel_id"] as? String, owner.uuidString)
+            XCTAssertEqual((result["shared_inboxes"] as? [[String: String]])?.count, 2)
+        }
+        XCTAssertTrue(cache.beginOpenCodeRouteChange(surfaceId: owner, tuiPID: pid, routeGeneration: 2,
+                                                    capturesRoot: false, targetID: child))
+        XCTAssertNil(cache.mailboxOwner(surfaceId: owner))
+        assertLocal(owner, workspace: workspaceId, session: root)
+        assertLocal(duplicate, workspace: otherWorkspace, session: root)
+        for panel in [owner, duplicate] { await conversations.clear(surfaceId: panel.uuidString) }
+    }
+
     // MARK: - Helpers
 
     private func seedSurface(name: String?, extraMailbox: [String: String] = [:]) -> UUID {

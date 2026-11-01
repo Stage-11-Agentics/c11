@@ -535,8 +535,14 @@ extension TerminalController {
             )
             switch resolution {
             case .unique(let workspaceId, let surfaceIds):
+                let recipients = surfaceIds.map {
+                    self.mailboxRecipientPayload(panelID: $0, surfaces: surfaces,
+                                                 expectedSession: v2String(params, "opencode_session_id"))
+                }
                 return .ok([
                     "resolution": "unique",
+                    "requested_recipient": to,
+                    "recipients": recipients,
                     "target_workspace_id": workspaceId.uuidString,
                     "target_workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
                     "surface_ids": surfaceIds.map(\.uuidString),
@@ -553,6 +559,21 @@ extension TerminalController {
                     "candidates": candidates
                 ])
             }
+        }
+    }
+
+    /// Called on main: capability checks inspect the current native route and
+    /// panel kind; the identity itself comes only from authenticated capture.
+    private func mailboxRecipientPayload(panelID: UUID, surfaces: [MailboxGlobalResolver.PanelRecord],
+                                         expectedSession: String?) -> [String: Any] {
+        MailboxPanelResolver.recipientPayload(
+            panelID: panelID, surfaces: surfaces,
+            sharedOwner: ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: panelID),
+            expectedSession: expectedSession
+        ) { ownerID in
+            let workspace = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerID)?.workspace
+            return workspace?.mailboxDoorbellUnavailableReason(surfaceId: ownerID)
+                ?? (workspace == nil ? "target_gone" : nil)
         }
     }
 

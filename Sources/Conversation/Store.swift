@@ -53,6 +53,11 @@ enum OpenCodeUnboundRouteResult: Sendable, Equatable {
     case staleRouteGeneration
 }
 
+struct OpenCodeMailboxAlias: Sendable, Equatable {
+    let sessionID: String
+    let ownerPanelID: UUID
+}
+
 /// Nonblocking projection of the active conversation refs used by main-thread
 /// delivery gates. The actor remains the source of truth; this cache is updated
 /// synchronously from its `bySurface` observer before each actor mutation ends.
@@ -62,6 +67,7 @@ struct ConversationStorePanelRefSnapshot: Sendable {
     let routeGeneration: Int64
     let routePending: Bool
     let boundRouteID: String?
+    var mailboxAlias: OpenCodeMailboxAlias? = nil
 }
 
 final class ConversationStorePanelRefCache: @unchecked Sendable {
@@ -78,7 +84,8 @@ final class ConversationStorePanelRefCache: @unchecked Sendable {
         authenticatedOpenCodeTuiPID: Int32?,
         routeGeneration: Int64,
         routePending: Bool,
-        boundRouteID: String?
+        boundRouteID: String?,
+        mailboxAlias: OpenCodeMailboxAlias? = nil
     ) {
         lock.lock()
         defer { lock.unlock() }
@@ -105,7 +112,8 @@ final class ConversationStorePanelRefCache: @unchecked Sendable {
             authenticatedOpenCodeTuiPID: authenticatedOpenCodeTuiPID,
             routeGeneration: effectiveGeneration,
             routePending: effectivePending,
-            boundRouteID: effectiveBoundRouteID
+            boundRouteID: effectiveBoundRouteID,
+            mailboxAlias: preserveNewerPending ? existing?.mailboxAlias : mailboxAlias
         )
     }
 
@@ -113,6 +121,31 @@ final class ConversationStorePanelRefCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return bySurface[surfaceId.uuidString]
+    }
+
+    /// One inbox for authenticated views of the same OpenCode root. Neither
+    /// metadata nor restored PID payloads can mint an alias. A route/claim
+    /// transition clears it synchronously, and an owner's changed root makes
+    /// every alias unusable before another actor capture is needed.
+    func mailboxOwner(surfaceId: UUID) -> (panelID: UUID, sessionID: String, members: [UUID])? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let view = bySurface[surfaceId.uuidString],
+              view.authenticatedOpenCodeTuiPID != nil else { return nil }
+        let ownerID = view.mailboxAlias?.ownerPanelID ?? surfaceId
+        guard let owner = bySurface[ownerID.uuidString],
+              owner.authenticatedOpenCodeTuiPID != nil, !owner.routePending,
+              let root = owner.boundRouteID, let active = owner.active,
+              active.kind == "opencode", !active.placeholder, active.id == root,
+              active.state == .alive,
+              ownerID == surfaceId || view.mailboxAlias?.sessionID == root else { return nil }
+        let members = bySurface.compactMap { key, value -> UUID? in
+            guard value.authenticatedOpenCodeTuiPID != nil,
+                  value.mailboxAlias == OpenCodeMailboxAlias(sessionID: root, ownerPanelID: ownerID)
+            else { return nil }
+            return UUID(uuidString: key)
+        }
+        return (ownerID, root, ([ownerID] + members).sorted { $0.uuidString < $1.uuidString })
     }
 
     func latestRouteGeneration(surfaceId: String) -> Int64 {
@@ -432,7 +465,8 @@ actor ConversationStore {
                     authenticatedOpenCodeTuiPID: authenticatedOpenCodeTuiPIDBySurface[key],
                     routeGeneration: openCodeRouteGenerationBySurface[key] ?? 0,
                     routePending: openCodeRoutePendingBySurface.contains(key),
-                    boundRouteID: openCodeBoundRouteIDBySurface[key]
+                    boundRouteID: openCodeBoundRouteIDBySurface[key],
+                    mailboxAlias: openCodeMailboxAliasBySurface[key]
                 )
                 guard oldValue[key]?.active != ref,
                       let panelID = UUID(uuidString: key) else { continue }
@@ -451,6 +485,7 @@ actor ConversationStore {
     private var openCodeRouteGenerationBySurface: [String: Int64] = [:]
     private var openCodeRoutePendingBySurface: Set<String> = []
     private var openCodeBoundRouteIDBySurface: [String: String] = [:]
+    private var openCodeMailboxAliasBySurface: [String: OpenCodeMailboxAlias] = [:]
 
     init() {}
 
@@ -566,6 +601,7 @@ extension ConversationStore {
         openCodeRouteGenerationBySurface.removeAll()
         openCodeRoutePendingBySurface.removeAll()
         openCodeBoundRouteIDBySurface.removeAll()
+        openCodeMailboxAliasBySurface.removeAll()
         bySurface = records
         return auditGlobalOwnership()
     }
@@ -643,6 +679,7 @@ extension ConversationStore {
         openCodeRouteGenerationBySurface.removeValue(forKey: surfaceId)
         openCodeRoutePendingBySurface.remove(surfaceId)
         openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
+        openCodeMailboxAliasBySurface.removeValue(forKey: surfaceId)
         if kind == "opencode" {
             if let interactivePID, interactivePID > 0 {
                 authenticatedOpenCodeTuiPIDBySurface[surfaceId] = interactivePID
@@ -864,6 +901,10 @@ extension ConversationStore {
             }
             openCodeRoutePendingBySurface.insert(surfaceId)
             openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
+            openCodeMailboxAliasBySurface.removeValue(forKey: surfaceId)
+            if owners.count == 1, let ownerID = UUID(uuidString: owners[0]) {
+                openCodeMailboxAliasBySurface[surfaceId] = OpenCodeMailboxAlias(sessionID: id, ownerPanelID: ownerID)
+            }
             bySurface[surfaceId] = snap
             return .conflict(ownerSurfaceIds: owners, preservedRef: snap.active)
         }
@@ -885,6 +926,7 @@ extension ConversationStore {
         var snap = bySurface[surfaceId] ?? .empty
         snap.active = ref
         openCodeRoutePendingBySurface.remove(surfaceId)
+        openCodeMailboxAliasBySurface.removeValue(forKey: surfaceId)
         openCodeBoundRouteIDBySurface[surfaceId] = id
         bySurface[surfaceId] = snap
         _ = auditGlobalOwnership()
@@ -955,6 +997,7 @@ extension ConversationStore {
         snap.active = ref
         openCodeRoutePendingBySurface.insert(surfaceId)
         openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
+        openCodeMailboxAliasBySurface.removeValue(forKey: surfaceId)
         bySurface[surfaceId] = snap
         _ = auditGlobalOwnership()
         return .accepted(bySurface[surfaceId]?.active ?? ref)
@@ -998,6 +1041,7 @@ extension ConversationStore {
             openCodeRouteGenerationBySurface[surfaceId] = routeGeneration
             openCodeRoutePendingBySurface.insert(surfaceId)
             openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
+            openCodeMailboxAliasBySurface.removeValue(forKey: surfaceId)
             return true
         }
         if openCodeRoutePendingBySurface.contains(surfaceId) { return true }
@@ -1345,6 +1389,7 @@ extension ConversationStore {
         openCodeRouteGenerationBySurface.removeValue(forKey: surfaceId)
         openCodeRoutePendingBySurface.remove(surfaceId)
         openCodeBoundRouteIDBySurface.removeValue(forKey: surfaceId)
+        openCodeMailboxAliasBySurface.removeValue(forKey: surfaceId)
         bySurface.removeValue(forKey: surfaceId)
     }
 

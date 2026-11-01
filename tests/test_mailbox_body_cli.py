@@ -21,6 +21,7 @@ import socket_guard
 socket_guard.install()
 
 import importlib.util
+from datetime import datetime, timezone
 import json
 import os
 import pathlib
@@ -100,11 +101,34 @@ class Server(drain.FakeC11):
                     elif method == "mailbox.resolve":
                         target = request.get("params", {}).get("to")
                         panel = drain.TAB if target in (None, "", "watcher", "builder") else drain.SIBLING
+                        if isinstance(target, str) and target.startswith("id:"):
+                            panel = target[3:].upper()
                         result = {
                             "resolution": "unique",
                             "target_workspace_id": drain.WORKSPACE,
                             "panel_ids": [panel],
                         }
+                        if getattr(self, "shared", False):
+                            result["recipients"] = [{
+                                "requested_panel_id": panel if str(target).startswith("id:") else drain.TAB,
+                                "panel_id": drain.SIBLING,
+                                "workspace_id": drain.MOVED_TO, "name": "owner",
+                                "session_id": "root-session",
+                                "can_ring": False, "doorbell_unavailable_reason": "no_reader_or_native_route",
+                                "shared_inboxes": [
+                                    {"panel_id": drain.TAB, "workspace_id": drain.WORKSPACE, "name": "duplicate"},
+                                    {"panel_id": drain.SIBLING, "workspace_id": drain.MOVED_TO, "name": "owner"},
+                                ],
+                            }]
+                        expected = request.get("params", {}).get("opencode_session_id")
+                        if getattr(self, "local_v2_state", None) or (expected and expected != "root-session"):
+                            # Actual server scope is covered by the Swift runtime
+                            # test. This fixture drives the compiled recv path with
+                            # that response, including unbound/child tool sessions.
+                            result["recipients"] = [{
+                                "requested_panel_id": panel, "panel_id": panel,
+                                "workspace_id": drain.WORKSPACE, "name": "watcher", "can_ring": True,
+                            }]
                     elif method == "panel.get_metadata":
                         result = {"metadata": {"title": "watcher"}}
                     conn.sendall(
@@ -113,6 +137,22 @@ class Server(drain.FakeC11):
                     )
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
+
+
+def record_dispatch(fixture, message_id, panel, workspace=drain.WORKSPACE, dispatch_workspace=None):
+    """Real status reads the copied recipient and the recv-written claim log."""
+    root = pathlib.Path(fixture.mailboxes.replace(drain.WORKSPACE, dispatch_workspace or workspace))
+    root.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    with (root / "_dispatch.log").open("a") as log:
+        for row in ({"event": "received", "from": "builder", "to": "shared-view"},
+                    {"event": "copied", "recipient": "shared-view", "recipient_panel": panel.lower(), "recipient_workspace": workspace}):
+            log.write(json.dumps(dict(row, id=message_id, ts=now), separators=(",", ":")) + "\n")
+
+
+def receipt_status(cli, server, fixture, message_id):
+    proc, _ = drain.run(cli, ["--socket", server.path, "--json", "mailbox", "status", message_id], fixture.env(server.path))
+    return json.loads(proc.stdout) if proc.returncode == 0 else {"error": proc.stderr.decode()}
 
 
 FAILURES: list[str] = []
@@ -197,6 +237,87 @@ def main() -> int:
                 )
             finally:
                 fixture.cleanup()
+
+        for state, session in (("unbound", "root-session"), ("pending", "root-session"),
+                               ("displayed-root", "child-session"), ("shared", "wrong-session")):
+            fixture = drain.Fixture()
+            server.shared = state == "shared"
+            server.local_v2_state = state if state != "shared" else None
+            try:
+                own = fixture.deliver(drain.TAB.lower(), "own mail")
+                other = fixture.deliver(drain.SIBLING.lower(), "other inbox", workspace=drain.MOVED_TO)
+                env = dict(fixture.env(server.path), OPENCODE_SESSION_ID=session)
+                proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
+                check(proc.returncode == 0 and own.encode() in proc.stdout and other.encode() not in proc.stdout
+                      and fixture.listing(drain.TAB.lower())[0] == []
+                      and fixture.listing(drain.SIBLING.lower(), workspace=drain.MOVED_TO)[0] == [other + ".msg"],
+                      state + " tool recv drains only its own inbox", repr(proc.stdout) + repr(proc.stderr))
+            finally:
+                fixture.cleanup()
+        server.local_v2_state = None
+
+        # Shared identity: recv from either view drains the owner and the
+        # older alias backlog, but never an unrelated panel's inbox.
+        server.shared = True
+        for caller in (drain.TAB, drain.SIBLING):
+            fixture = drain.Fixture()
+            try:
+                backlog = fixture.deliver(drain.TAB.lower(), "alias backlog")
+                current = fixture.deliver(drain.SIBLING.lower(), "owner mail", workspace=drain.MOVED_TO)
+                unrelated = fixture.deliver("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "unrelated")
+                record_dispatch(fixture, backlog, drain.TAB)
+                record_dispatch(fixture, current, drain.SIBLING, drain.MOVED_TO, dispatch_workspace=drain.WORKSPACE)
+                env = fixture.env(server.path)
+                env["C11_PANEL_ID"] = caller
+                env["OPENCODE_SESSION_ID"] = "root-session"
+                proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
+                check(proc.returncode == 0 and backlog.encode() in proc.stdout and current.encode() in proc.stdout
+                      and unrelated.encode() not in proc.stdout, "shared recv from " + caller,
+                      repr(proc.stdout) + repr(proc.stderr))
+                owner_receipts = fixture.receipts(drain.MOVED_TO)
+                alias_receipts = fixture.receipts()
+                check(len(owner_receipts) == 1 and owner_receipts[0].get("panel_id", "").upper() == drain.SIBLING
+                      and len(alias_receipts) == 1 and alias_receipts[0].get("panel_id", "").upper() == drain.TAB,
+                      "shared receipts identify the actual inbox owner", repr(owner_receipts) + repr(alias_receipts))
+                statuses = [receipt_status(cli, server, fixture, mid) for mid in (backlog, current)]
+                rows = [report.get("recipients", [{}])[0] for report in statuses]
+                check(all(row.get("read") is True and row.get("read_state") == "read"
+                          and (row.get("claimed_by_panel_id") or "").upper() == panel
+                          for row, panel in zip(rows, (drain.TAB, drain.SIBLING))),
+                      "shared status records each inbox as read from " + caller, repr(statuses))
+                empty, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
+                check(empty.returncode == 0 and not empty.stdout, "shared recv claims once")
+                inbox, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir"], env)
+                check(drain.SIBLING.lower().encode() in inbox.stdout and drain.MOVED_TO.encode() in inbox.stdout,
+                      "shared inbox-dir names owner", repr(inbox.stdout))
+                sent, _ = drain.run(cli, ["--socket", server.path, "mailbox", "send", "--to", "duplicate", "--body", "hello"], env)
+                check(sent.returncode == 0 and b"shared OpenCode inbox" in sent.stderr and b"cannot ring" in sent.stderr,
+                      "send names owner and unavailable doorbell", repr(sent.stderr))
+                report, _ = drain.run(cli, ["--socket", server.path, "--json", "mailbox", "send", "--to", "duplicate", "--body", "hello"], env)
+                value = json.loads(report.stdout)
+                check(value.get("requested_recipient") == "duplicate"
+                      and value.get("recipients", [{}])[0].get("panel_id") == drain.SIBLING
+                      and value.get("recipients", [{}])[0].get("can_ring") is False, "send JSON reports route")
+            finally:
+                fixture.cleanup()
+        # An unrelated caller using an explicit target is still a takeover,
+        # even when the target resolves to a shared OpenCode identity.
+        fixture = drain.Fixture()
+        try:
+            current = fixture.deliver(drain.SIBLING.lower(), "external read", workspace=drain.MOVED_TO)
+            record_dispatch(fixture, current, drain.SIBLING, drain.MOVED_TO, dispatch_workspace=drain.WORKSPACE)
+            outsider = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            env = dict(fixture.env(server.path), C11_PANEL_ID=outsider)
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--panel", drain.TAB, "--ack"], env)
+            status = receipt_status(cli, server, fixture, current)
+            row = status.get("recipients", [{}])[0]
+            check(proc.returncode == 0 and current.encode() in proc.stdout
+                  and row.get("read") is False and row.get("read_state") == "taken"
+                  and (row.get("claimed_by_panel_id") or "").lower() == outsider,
+                  "unrelated explicit shared drain stays taken, not read", repr(status) + repr(proc.stderr))
+        finally:
+            fixture.cleanup()
+        server.shared = False
 
         # The default socket and the command's --socket name different
         # inboxes. The retry is the emitted text alone: no socket is added

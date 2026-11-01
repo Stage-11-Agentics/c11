@@ -6220,7 +6220,11 @@ final class Workspace: Identifiable, ObservableObject {
         } catch {
             return
         }
-        let resolver = MailboxPanelResolver(workspaceId: self.id) { [weak self] in
+        let resolver = MailboxPanelResolver(workspaceId: self.id, canonicalOwner: { panelID in
+            guard let owner = ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: panelID),
+                  let workspaceID = JournalCoordinator.shared.target(panelID: owner.panelID) else { return nil }
+            return (owner.panelID, workspaceID)
+        }) { [weak self] in
             guard let self else { return [] }
             // `panels` is @Published. Read it from main to avoid the SwiftUI/Combine
             // non-main warning under Swift 5.10+; dispatch volume is low enough
@@ -6242,7 +6246,12 @@ final class Workspace: Identifiable, ObservableObject {
         }
         let stdinHandler = StdinMailboxHandler { [weak self] surfaceId, envelopeId, recipientName, text in
             guard let self else { return .surfaceNotFound }
-            return self.deliverOrBufferMailboxStdin(
+            // Canonical OpenCode mail may have arrived through an alias in
+            // another workspace. The handler is already on the main actor.
+            let target = self.panels[surfaceId] != nil ? self
+                : AppDelegate.shared?.workspaceContainingPanel(panelId: surfaceId)?.workspace
+            guard let target else { return .surfaceNotFound }
+            return target.deliverOrBufferMailboxStdin(
                 surfaceId: surfaceId,
                 envelopeId: envelopeId,
                 recipientName: recipientName,
@@ -6278,6 +6287,11 @@ final class Workspace: Identifiable, ObservableObject {
             mailboxDispatcher?.logStdinLifecycle(id: envelopeId, recipient: recipientName,
                 outcome: .doorbellSkipped, reason: "not_terminal", recipientPanel: surfaceId)
             return .surfaceNotTerminal
+        }
+
+        if let reason = mailboxDoorbellUnavailableReason(surfaceId: surfaceId) {
+            mailboxDispatcher?.logStdinLifecycle(id: envelopeId, recipient: recipientName,
+                outcome: .doorbellSkipped, reason: reason)
         }
 
         let entry = MailboxStdinBuffer.Entry(
@@ -7014,6 +7028,16 @@ final class Workspace: Identifiable, ObservableObject {
                                    arrivingID: arrivingID) { return nil }
         }
         return registration
+    }
+
+    /// Capability, not current readiness: a draft or running turn can delay
+    /// a supported route, while an unsupported harness cannot ever be typed.
+    func mailboxDoorbellUnavailableReason(surfaceId: UUID) -> String? {
+        guard panels[surfaceId] is TerminalPanel else { return "not_terminal" }
+        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId) else { return "stdin_delivery_disabled" }
+        if registeredNativeMailbox(surfaceId: surfaceId) != nil { return nil }
+        return PromptInputClassifier.supportsComposer(harness: surfaceActivityTerminalKind(panelId: surfaceId))
+            ? nil : "no_reader_or_native_route"
     }
 
     func nativeMailboxRouteChanged(surfaceId: UUID) {

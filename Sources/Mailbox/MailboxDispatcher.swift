@@ -400,7 +400,8 @@ final class MailboxDispatcher {
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
         let recipients = resolveRecipients(envelope: envelope)
-        log.append(.resolved(id: envelope.id, recipients: recipients.map(\.name)))
+        log.append(.resolved(id: envelope.id, recipients: recipients.map(\.displayName),
+                             requestedRecipient: envelope.to, recipientPanelIds: recipients.map { $0.surfaceId.uuidString }))
 
         // Step 3a: a `to`-addressed envelope that resolves to nobody must NOT
         // be silently cleaned-and-discarded. Quarantine it like a validation
@@ -503,11 +504,9 @@ final class MailboxDispatcher {
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
         // address > role > title; `panel:`/`role:` qualifiers honored).
-        return MailboxMatcher.select(
-            MailboxAddress.parse(to),
-            from: all,
-            identity: { $0.identity }
-        )
+        let requested = MailboxMatcher.select(MailboxAddress.parse(to), from: all, identity: { $0.identity })
+        var seen = Set<UUID>()
+        return requested.map { resolver.canonicalRecipient($0) }.filter { seen.insert($0.surfaceId).inserted }
     }
 
     /// The panel the CLI said ran the send, if it is live in this workspace.
@@ -531,7 +530,7 @@ final class MailboxDispatcher {
         do {
             let inbox = MailboxLayout.inboxURL(
                 state: stateURL,
-                workspaceId: workspaceId,
+                workspaceId: recipient.inboxWorkspaceId ?? workspaceId,
                 panelId: recipient.surfaceId
             )
             try FileManager.default.createDirectory(
@@ -545,10 +544,11 @@ final class MailboxDispatcher {
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
             log.append(.copied(id: envelope.id, recipient: recipient.displayName,
                                recipientUsageLimit: recipientUsageLimit(recipient.surfaceId)?.rawValue,
-                               recipientPanel: recipient.surfaceId))
+                               recipientPanel: recipient.surfaceId,
+                               recipientWorkspace: recipient.inboxWorkspaceId ?? workspaceId))
             // C11-163: mailbox envelope delivered to a recipient inbox.
             EventEmitter.shared.emitMailboxDelivered(
-                workspace: workspaceId,
+                workspace: recipient.inboxWorkspaceId ?? workspaceId,
                 id: envelope.id,
                 recipient: recipient.displayName,
                 surface: recipient.surfaceId,

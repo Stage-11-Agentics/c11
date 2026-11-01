@@ -20,15 +20,18 @@ struct MailboxPanelResolver {
     let workspaceId: UUID
     let metadataStore: PanelMetadataStore
     let livePanels: () -> [UUID]
+    let canonicalOwner: (UUID) -> (panelID: UUID, workspaceID: UUID)?
 
     init(
         workspaceId: UUID,
         metadataStore: PanelMetadataStore = .shared,
+        canonicalOwner: @escaping (UUID) -> (panelID: UUID, workspaceID: UUID)? = { _ in nil },
         livePanels: @escaping () -> [UUID]
     ) {
         self.workspaceId = workspaceId
         self.metadataStore = metadataStore
         self.livePanels = livePanels
+        self.canonicalOwner = canonicalOwner
     }
 
     // MARK: - Name → surface
@@ -87,12 +90,60 @@ struct MailboxPanelResolver {
         }
     }
 
+    func canonicalRecipient(_ requested: PanelMetadata) -> PanelMetadata {
+        guard let owner = canonicalOwner(requested.surfaceId), owner.panelID != requested.surfaceId else {
+            return requested
+        }
+        let (metadata, _) = metadataStore.getMetadata(workspaceId: owner.workspaceID, surfaceId: owner.panelID)
+        let keys = metadata.reduce(into: [String: String]()) { result, entry in
+            if entry.key.hasPrefix(Self.metadataPrefix), let value = entry.value as? String {
+                result[entry.key] = value
+            }
+        }
+        var result = PanelMetadata(surfaceId: owner.panelID, name: metadata[MetadataKey.title] as? String ?? "",
+                                   mailboxKeys: keys)
+        result.inboxWorkspaceId = owner.workspaceID
+        return result
+    }
+
+    /// Shared inboxes widen ordinary recv, so only a matching tool session
+    /// follows them. Child tools and pending/unbound routes keep the caller's
+    /// own panel identity and inbox, exactly as before shared routing existed.
+    static func recipientPayload(
+        panelID: UUID,
+        surfaces: [MailboxGlobalResolver.PanelRecord],
+        sharedOwner: (panelID: UUID, sessionID: String, members: [UUID])?,
+        expectedSession: String?,
+        unavailableReason: (UUID) -> String?
+    ) -> [String: Any] {
+        let shared = expectedSession == nil || expectedSession == sharedOwner?.sessionID ? sharedOwner : nil
+        let ownerID = shared?.panelID ?? panelID
+        guard let owner = surfaces.first(where: { $0.surfaceId == ownerID }) else { return [:] }
+        let unavailable = unavailableReason(ownerID)
+        var result: [String: Any] = [
+            "requested_panel_id": panelID.uuidString,
+            "panel_id": ownerID.uuidString,
+            "workspace_id": owner.workspaceId.uuidString,
+            "name": owner.name.isEmpty ? "id:\(ownerID.uuidString)" : owner.name,
+            "can_ring": unavailable == nil
+        ]
+        if let unavailable { result["doorbell_unavailable_reason"] = unavailable }
+        if let shared {
+            result["session_id"] = shared.sessionID
+            result["shared_inboxes"] = surfaces.filter { shared.members.contains($0.surfaceId) }.map {
+                ["panel_id": $0.surfaceId.uuidString, "workspace_id": $0.workspaceId.uuidString, "name": $0.name]
+            }
+        }
+        return result
+    }
+
     struct PanelMetadata: Equatable {
         let surfaceId: UUID
         let name: String
         /// Parsed from mailbox.* metadata keys. Comma-split helpers live on
         /// the type so callers don't re-implement the alignment-doc contract.
         let mailboxKeys: [String: String]
+        var inboxWorkspaceId: UUID? = nil
 
         var delivery: [String] {
             splitCommaSeparated(mailboxKeys["mailbox.delivery"])

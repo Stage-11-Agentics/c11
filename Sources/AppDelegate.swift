@@ -8757,6 +8757,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         updateViewModel.overrideState = .installing(.init(isAutoUpdate: true, retryTerminatingApplication: {}, dismiss: {}))
     }
 
+    @objc func showUpdatePillRestartToUpdate(_ sender: Any?) {
+        updateViewModel.debugOverrideText = nil
+        updateViewModel.clearDetectedUpdate()
+        updateViewModel.overrideState = .installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: false,
+            retryTerminatingApplication: {},
+            dismiss: {}
+        ))
+    }
+
     @objc func showUpdatePillLongNightly(_ sender: Any?) {
         updateViewModel.debugOverrideText = "Update Available: 0.32.0-nightly+20260216.abc1234"
         updateViewModel.overrideState = .notFound(.init(acknowledgement: {}))

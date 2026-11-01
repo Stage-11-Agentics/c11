@@ -131,8 +131,10 @@ class UpdateDriver: NSObject, SPUUserDriver {
     }
 
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
-        UpdateLogStore.shared.append("show installing update")
+        UpdateLogStore.shared.append("show installing update (terminated=\(applicationTerminated))")
         setState(.installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: applicationTerminated,
             retryTerminatingApplication: retryTerminatingApplication,
             dismiss: { [weak viewModel] in
                 viewModel?.state = .idle
@@ -298,7 +300,7 @@ class UpdateDriver: NSObject, SPUUserDriver {
         case .extracting(let extracting):
             return String(format: "extracting(%.0f%%)", extracting.progress * 100)
         case .installing(let installing):
-            return "installing(auto=\(installing.isAutoUpdate))"
+            return "installing(auto=\(installing.isAutoUpdate), terminated=\(installing.applicationTerminated))"
         }
     }
 

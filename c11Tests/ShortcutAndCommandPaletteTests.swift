@@ -998,6 +998,98 @@ final class UpdateViewModelPresentationTests: XCTestCase {
         XCTAssertFalse(viewModel.showsDetectedBackgroundUpdate)
         XCTAssertEqual(viewModel.text, "Checking for Updates…")
     }
+
+    func testStagedInstallWaitingForUserSaysRestartToUpdate() {
+        let viewModel = UpdateViewModel()
+        var restarts = 0
+        // Sparkle showInstallingUpdate, applicationTerminated == false, not an automatic install.
+        viewModel.state = .installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: false,
+            retryTerminatingApplication: { restarts += 1 },
+            dismiss: {}
+        ))
+
+        XCTAssertTrue(viewModel.showsRestartToUpdate)
+        XCTAssertEqual(viewModel.text, "Restart to Update")
+        XCTAssertEqual(viewModel.description, "The update is ready. Restart c11 to install it.")
+        XCTAssertEqual(viewModel.foregroundColor, .white)
+        XCTAssertEqual(viewModel.backgroundColor, cmuxAccentColor())
+        XCTAssertEqual(viewModel.iconColor, cmuxAccentColor())
+        XCTAssertEqual(viewModel.performPillAction(), .restart)
+        XCTAssertEqual(restarts, 1)
+    }
+
+    func testInstallingAfterTerminationKeepsInstallingLabel() {
+        let viewModel = UpdateViewModel()
+        var restarts = 0
+        viewModel.state = .installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: true,
+            retryTerminatingApplication: { restarts += 1 },
+            dismiss: {}
+        ))
+
+        XCTAssertFalse(viewModel.showsRestartToUpdate)
+        XCTAssertEqual(viewModel.text, "Installing…")
+        XCTAssertEqual(viewModel.description, "Installing the update, then restarting.")
+        XCTAssertEqual(viewModel.performPillAction(), .togglePopover)
+        XCTAssertEqual(restarts, 0)
+        XCTAssertEqual(viewModel.iconColor, .secondary)
+    }
+
+    func testAutoUpdateInstallLabelUnchanged() {
+        let viewModel = UpdateViewModel()
+        var restarts = 0
+        viewModel.state = .installing(.init(
+            isAutoUpdate: true,
+            applicationTerminated: false,
+            retryTerminatingApplication: { restarts += 1 },
+            dismiss: {}
+        ))
+
+        XCTAssertFalse(viewModel.showsRestartToUpdate)
+        XCTAssertEqual(viewModel.text, "Restart to Complete Update")
+        XCTAssertEqual(viewModel.description, "Restart to Complete Update")
+        XCTAssertEqual(viewModel.performPillAction(), .togglePopover)
+        XCTAssertEqual(restarts, 0)
+    }
+
+    func testDownloadAndExtractLabelsUnchanged() {
+        let viewModel = UpdateViewModel()
+        viewModel.state = .downloading(.init(cancel: {}, expectedLength: 200, progress: 50))
+        XCTAssertEqual(viewModel.text, "Downloading: 25%")
+        XCTAssertFalse(viewModel.showsRestartToUpdate)
+
+        viewModel.state = .downloading(.init(cancel: {}, expectedLength: nil, progress: 0))
+        XCTAssertEqual(viewModel.text, "Downloading…")
+
+        viewModel.state = .extracting(.init(progress: 0.4))
+        XCTAssertEqual(viewModel.text, "Preparing: 40%")
+        XCTAssertFalse(viewModel.showsRestartToUpdate)
+    }
+
+    func testInstallingEqualityIncludesTerminationFlag() {
+        let waiting = UpdateState.installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: false,
+            retryTerminatingApplication: {},
+            dismiss: {}
+        ))
+        let terminated = UpdateState.installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: true,
+            retryTerminatingApplication: {},
+            dismiss: {}
+        ))
+        XCTAssertNotEqual(waiting, terminated)
+        XCTAssertEqual(waiting, UpdateState.installing(.init(
+            isAutoUpdate: false,
+            applicationTerminated: false,
+            retryTerminatingApplication: {},
+            dismiss: {}
+        )))
+    }
 }
 
 @MainActor

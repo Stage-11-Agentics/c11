@@ -34,6 +34,16 @@ class UpdateViewModel: ObservableObject {
         !effectiveState.isIdle || showsDetectedBackgroundUpdate
     }
 
+    /// User-driven install, staged, app still running.
+    /// Sparkle 2.9.3 `SPUUserDriver.showInstallingUpdateWithApplicationTerminated:retryTerminatingApplication:`
+    /// with `applicationTerminated == NO` (Sparkle/SPUUserDriver.h). The handler must not run when the flag is YES.
+    var showsRestartToUpdate: Bool {
+        if case .installing(let install) = effectiveState {
+            return install.awaitsUserRestart
+        }
+        return false
+    }
+
     func recordDetectedUpdate(_ item: SUAppcastItem) {
         detectedUpdateVersion = Self.normalizedDetectedUpdateVersion(from: item.displayVersionString)
     }
@@ -73,6 +83,9 @@ class UpdateViewModel: ObservableObject {
             let percent = String(format: "%.0f%%", extracting.progress * 100)
             return String(localized: "update.extracting.progress", defaultValue: "Preparing: \(percent)")
         case .installing(let install):
+            if install.awaitsUserRestart {
+                return String(localized: "update.restartToUpdate", defaultValue: "Restart to Update")
+            }
             return install.isAutoUpdate ? String(localized: "update.restartToComplete", defaultValue: "Restart to Complete Update") : String(localized: "update.installing.status", defaultValue: "Installing…")
         case .notFound:
             return String(localized: "update.noUpdates.title", defaultValue: "No Updates Available")
@@ -136,6 +149,9 @@ class UpdateViewModel: ObservableObject {
         case .extracting:
             return String(localized: "update.preparingUpdate", defaultValue: "Preparing the update.")
         case let .installing(install):
+            if install.awaitsUserRestart {
+                return String(localized: "update.popover.restartRequired.message", defaultValue: "The update is ready. Restart c11 to install it.")
+            }
             return install.isAutoUpdate ? String(localized: "update.restartToComplete", defaultValue: "Restart to Complete Update") : String(localized: "update.installingAndRestarting", defaultValue: "Installing the update, then restarting.")
         case .notFound:
             return String(localized: "update.noUpdates.message", defaultValue: "You're on the latest version.")
@@ -163,7 +179,7 @@ class UpdateViewModel: ObservableObject {
     }
 
     var iconColor: Color {
-        if showsDetectedBackgroundUpdate {
+        if showsDetectedBackgroundUpdate || showsRestartToUpdate {
             return cmuxAccentColor()
         }
         switch effectiveState {
@@ -185,7 +201,7 @@ class UpdateViewModel: ObservableObject {
     }
 
     var backgroundColor: Color {
-        if showsDetectedBackgroundUpdate {
+        if showsDetectedBackgroundUpdate || showsRestartToUpdate {
             return cmuxAccentColor()
         }
         switch effectiveState {
@@ -203,7 +219,7 @@ class UpdateViewModel: ObservableObject {
     }
 
     var foregroundColor: Color {
-        if showsDetectedBackgroundUpdate {
+        if showsDetectedBackgroundUpdate || showsRestartToUpdate {
             return .white
         }
         switch effectiveState {
@@ -417,6 +433,45 @@ class UpdateViewModel: ObservableObject {
         guard showsDetectedBackgroundUpdate, let version = detectedUpdateVersion else { return nil }
         return String(localized: "update.available.withVersion", defaultValue: "Update Available: \(version)")
     }
+
+    /// Sidebar footer click. The staged install reads `effectiveState` so a DEBUG override is clickable.
+    /// The other branches keep reading `state`, which is what the pill did before.
+    func performPillAction() -> UpdatePillActivation {
+        if performRestartIfWaiting(source: "pill") {
+            return .restart
+        }
+        if showsDetectedBackgroundUpdate {
+            if case .idle = state {
+                state = .checking(.init(cancel: {}))
+            }
+            return .checkDetectedUpdate
+        }
+        if case .notFound(let notFound) = state {
+            state = .idle
+            notFound.acknowledgement()
+            return .acknowledgeNotFound
+        }
+        return .togglePopover
+    }
+
+    /// Same restart as the popover's Restart Now button: Sparkle's `retryTerminatingApplication`.
+    /// No-ops when `applicationTerminated` is already true, per Sparkle's contract.
+    @discardableResult
+    func performRestartIfWaiting(source: String) -> Bool {
+        guard case .installing(let install) = effectiveState, install.awaitsUserRestart else {
+            return false
+        }
+        UpdateLogStore.shared.append("retry terminating application (source=\(source))")
+        install.retryTerminatingApplication()
+        return true
+    }
+}
+
+enum UpdatePillActivation: Equatable {
+    case restart
+    case checkDetectedUpdate
+    case acknowledgeNotFound
+    case togglePopover
 }
 
 enum UpdateState: Equatable {
@@ -508,6 +563,7 @@ enum UpdateState: Equatable {
             return lExt.progress == rExt.progress
         case (.installing(let lInstall), .installing(let rInstall)):
             return lInstall.isAutoUpdate == rInstall.isAutoUpdate
+                && lInstall.applicationTerminated == rInstall.applicationTerminated
         default:
             return false
         }
@@ -624,7 +680,14 @@ enum UpdateState: Equatable {
 
     struct Installing {
         var isAutoUpdate = false
+        /// Sparkle `showInstallingUpdate` `applicationTerminated`.
+        /// False means the update is staged and Sparkle is waiting for this app to quit.
+        var applicationTerminated = false
         let retryTerminatingApplication: () -> Void
         let dismiss: () -> Void
+
+        var awaitsUserRestart: Bool {
+            !isAutoUpdate && !applicationTerminated
+        }
     }
 }

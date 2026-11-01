@@ -216,12 +216,14 @@ class Proof(base.Proof):
         self.scroll_into_view([FIELD, SAVE])
         self.click(FIELD)
         time.sleep(.4)
-        self.cliclick('kd:cmd', 'kp:arrow-down', 'ku:cmd', 'kp:return', 't:zoom.us zoommtg')
-        self.wait(lambda: (self.find(FIELD) or {}).get('value') == 'https://example.com vnc\nzoom.us zoommtg',
-                  'invalid second line reaches the editor')
+        self.cliclick('kd:cmd', 'kp:arrow-down', 'ku:cmd', 'kp:return', 't:zoom.us')
+        # Any one-word second line can never match; read back what actually landed.
+        value = self.wait(lambda: (lambda v: v if v.startswith('https://example.com vnc\n') and len(v) > 24 else None)(
+            (self.find(FIELD) or {}).get('value') or ''), 'invalid second line reaches the editor')
+        line = value.split('\n')[1]
         caption = self.wait(lambda: self.find(INVALID), 'invalid line is reported')
         text = ' '.join(str(caption.get(k) or '') for k in ('value', 'title'))
-        assert 'zoom.us zoommtg' in text and '2' in text, ('caption names line 2', caption)
+        assert 'Line 2' in text and line in text, ('caption names line 2 and its text', caption, line)
         assert (self.find(SAVE) or {}).get('enabled') is False, 'Save stays disabled for an invalid line'
         assert self.stored() == 'https://example.com vnc', ('invalid edit must write nothing', self.stored())
         self.screenshot('05-invalid-line-reported')

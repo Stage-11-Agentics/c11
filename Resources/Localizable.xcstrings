@@ -525,43 +525,137 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A page that links to another app (vnc:, smb:, zoommtg: and the like) asks before it opens. “Always allow” adds a line here: the site, then the link type (for example: https://zoom.us zoommtg). Delete a line to make that site ask again."
+            "value": "A page that links to another app (vnc:, smb:, zoommtg: and the like) asks before it opens. “Always allow” adds a line here: the site, then the link type (for example: https://zoom.us zoommtg). Delete a line and Save to make that site ask again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "別のアプリへのリンク（vnc:, smb:, zoommtg: など）があるページは、開く前に確認を求めます。「常に許可」を選ぶと、ここに 1 行追加されます。サイト、リンクの種類の順です（例: https://zoom.us zoommtg）。行を削除すると、そのサイトは再び確認を求めるようになります。"
+            "value": "別のアプリへのリンク（vnc:, smb:, zoommtg: など）があるページは、開く前に確認を求めます。「常に許可」を選ぶと、ここに 1 行追加されます。サイト、リンクの種類の順です（例: https://zoom.us zoommtg）。行を削除して「保存」を押すと、そのサイトは再び確認を求めるようになります。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сторінка з посиланням на іншу програму (vnc:, smb:, zoommtg: тощо) запитує дозвіл перед відкриттям. «Завжди дозволяти» додає сюди рядок: сайт, потім тип посилання (наприклад: https://zoom.us zoommtg). Видаліть рядок, щоб цей сайт знову запитував дозвіл."
+            "value": "Сторінка з посиланням на іншу програму (vnc:, smb:, zoommtg: тощо) запитує дозвіл перед відкриттям. «Завжди дозволяти» додає сюди рядок: сайт, потім тип посилання (наприклад: https://zoom.us zoommtg). Видаліть рядок і натисніть «Зберегти», щоб цей сайт знову запитував дозвіл."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다른 앱으로 연결되는 링크(vnc:, smb:, zoommtg: 등)가 있는 페이지는 열기 전에 먼저 묻습니다. “항상 허용”을 선택하면 여기에 한 줄이 추가됩니다. 사이트, 링크 유형 순서입니다(예: https://zoom.us zoommtg). 줄을 삭제하면 해당 사이트는 다시 묻습니다."
+            "value": "다른 앱으로 연결되는 링크(vnc:, smb:, zoommtg: 등)가 있는 페이지는 열기 전에 먼저 묻습니다. “항상 허용”을 선택하면 여기에 한 줄이 추가됩니다. 사이트, 링크 유형 순서입니다(예: https://zoom.us zoommtg). 줄을 삭제하고 “저장”을 누르면 해당 사이트는 다시 묻습니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "指向其他 App 的链接（vnc:, smb:, zoommtg: 等）在打开前会先询问。“始终允许”会在此处添加一行：先是网站，再是链接类型（例如：https://zoom.us zoommtg）。删除某一行，该网站将再次询问。"
+            "value": "指向其他 App 的链接（vnc:, smb:, zoommtg: 等）在打开前会先询问。“始终允许”会在此处添加一行：先是网站，再是链接类型（例如：https://zoom.us zoommtg）。删除某一行并点按“保存”后，该网站将再次询问。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "連結到其他 App 的頁面（vnc:, smb:, zoommtg: 等）在開啟前會先詢問。「一律允許」會在此新增一行：先是網站，再是連結類型（例如：https://zoom.us zoommtg）。刪除某一行，該網站就會再次詢問。"
+            "value": "連結到其他 App 的頁面（vnc:, smb:, zoommtg: 等）在開啟前會先詢問。「一律允許」會在此新增一行：先是網站，再是連結類型（例如：https://zoom.us zoommtg）。刪除某一行並按一下「儲存」後，該網站就會再次詢問。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Страница со ссылкой на другое приложение (vnc:, smb:, zoommtg: и т. п.) спрашивает разрешения перед открытием. «Всегда разрешать» добавляет сюда строку: сайт, затем тип ссылки (например: https://zoom.us zoommtg). Удалите строку, чтобы этот сайт снова спрашивал."
+            "value": "Страница со ссылкой на другое приложение (vnc:, smb:, zoommtg: и т. п.) спрашивает разрешения перед открытием. «Всегда разрешать» добавляет сюда строку: сайт, затем тип ссылки (например: https://zoom.us zoommtg). Удалите строку и нажмите «Сохранить», чтобы этот сайт снова спрашивал."
+          }
+        }
+      }
+    },
+    "settings.browser.externalSchemeAllowlist.save": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зберегти"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить"
+          }
+        }
+      }
+    },
+    "settings.browser.externalSchemeAllowlist.invalidLine": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Line %1$lld can never match: %2$@. Write the site, then the link type (for example: https://zoom.us zoommtg)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld 行目は一致することがありません: %2$@。サイト、リンクの種類の順で書いてください（例: https://zoom.us zoommtg）。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Рядок %1$lld ніколи не збігатиметься: %2$@. Напишіть сайт, потім тип посилання (наприклад: https://zoom.us zoommtg)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld번째 줄은 일치할 수 없습니다: %2$@. 사이트, 링크 유형 순서로 입력하세요(예: https://zoom.us zoommtg)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %1$lld 行永远无法匹配：%2$@。请先写网站，再写链接类型（例如：https://zoom.us zoommtg）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %1$lld 行永遠無法比對：%2$@。請先寫網站，再寫連結類型（例如：https://zoom.us zoommtg）。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Строка %1$lld никогда не совпадёт: %2$@. Напишите сайт, затем тип ссылки (например: https://zoom.us zoommtg)."
           }
         }
       }

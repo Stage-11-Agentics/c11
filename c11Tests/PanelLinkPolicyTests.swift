@@ -436,3 +436,44 @@ final class ExternalPanelLinkGestureTests: XCTestCase {
         XCTAssertFalse(gate.end(at: 102.1, plain: true, clickCount: 1, inside: true))
     }
 }
+
+@MainActor
+final class ExternalPanelLinkButtonRowTests: XCTestCase {
+    /// C11-562: Cancel is the rightmost button and the only Return default;
+    /// Confirm sits left of it, disabled until its gesture arms.
+    func testConfirmSitsLeftOfCancelAndCancelKeepsReturn() throws {
+        let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: true, target: nil)
+        let ids = row.stack.arrangedSubviews.map { $0.accessibilityIdentifier() }
+        XCTAssertEqual(ids, ["c11.external-link.confirm", "c11.external-link.cancel"])
+        let confirm = try XCTUnwrap(row.confirm)
+        XCTAssertTrue(row.stack.arrangedSubviews.last === row.cancel)
+        XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+        XCTAssertEqual(confirm.keyEquivalent, "")
+        XCTAssertFalse(confirm.isEnabled)
+        XCTAssertTrue(row.cancel.isEnabled)
+    }
+
+    /// C11-562 review: Escape cancels through a hidden twin; the visible row
+    /// and Cancel's Return stay as they are.
+    func testEscapeCancelsThroughAHiddenTwin() {
+        for hasDestination in [true, false] {
+            let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: hasDestination, target: nil)
+            XCTAssertEqual(row.escape.keyEquivalent, "\u{1b}")
+            XCTAssertEqual(row.escape.action.map(NSStringFromSelector), "cancelClicked:")
+            XCTAssertEqual(row.escape.requestID, row.cancel.requestID)
+            XCTAssertTrue(row.escape.superview === row.stack)
+            XCTAssertFalse(row.stack.arrangedSubviews.contains(row.escape))
+            XCTAssertFalse(row.escape.isAccessibilityElement())
+            XCTAssertEqual(row.escape.frame.size, .zero)
+            XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+            XCTAssertEqual(row.stack.subviews.filter { ($0 as? NSButton)?.keyEquivalent == "\u{1b}" }.count, 1)
+        }
+    }
+
+    func testNoticeShowsCancelAlone() {
+        let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: false, target: nil)
+        XCTAssertNil(row.confirm)
+        XCTAssertEqual(row.stack.arrangedSubviews.map { $0.accessibilityIdentifier() }, ["c11.external-link.cancel"])
+        XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+    }
+}

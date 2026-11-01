@@ -98,7 +98,7 @@ A URL whose scheme is not a web scheme (`vnc:`, `smb:`, `ssh:`, `zoommtg:`, `x-a
 - **Every dropped request is explainable.** A request refused because the panel was hidden, a prompt was showing, the cooldown was running, or the operator had cancelled leaves a warning line with source `browser` in the workspace log (`c11 list-log`), at most one per reason, site and scheme every 30 seconds.
 - **`mailto:` opens without asking**, as in Safari and Chrome: it only drafts a message.
 - **No app for the scheme:** a short notice appears in the panel instead of a prompt.
-- **Always allow** stores the site and scheme (`https://zoom.us zoommtg`) in Settings → Browser → Sites Allowed to Open Apps. Delete the line to make that site ask again. Local `file:` pages always ask.
+- **Always allow** stores the site and scheme (`https://zoom.us zoommtg`) in Settings → Browser → Sites Allowed to Open Apps. Delete the line and Save to make that site ask again; the editor writes nothing until Save and names a line that can never match. Local `file:` pages always ask.
 - `c11://` links keep their own rules (Links to panels and workspaces, in the c11 skill).
 
 ## Wait Support

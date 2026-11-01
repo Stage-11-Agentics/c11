@@ -50,26 +50,39 @@ enum MailboxBodyLinks {
 
     /// One left-to-right scan of the body.
     static func segments(_ text: String) -> [Segment] {
+        segments(text, cutAt: nil)
+    }
+
+    /// The segments of `text` cut after `limit` characters. The scan sees the
+    /// whole text, so a link the cut splits is recognized as one and shown as
+    /// plain text of its visible part: a preview never links a truncated URL.
+    static func segments(_ text: String, cutAt limit: Int?) -> [Segment] {
+        let cut = limit.map { text.index(text.startIndex, offsetBy: max(0, $0), limitedBy: text.endIndex) ?? text.endIndex }
+            ?? text.endIndex
         var result: [Segment] = []
         var plain = ""
         func flush() {
             if !plain.isEmpty { result.append(Segment(text: plain, url: nil)); plain = "" }
         }
         var index = text.startIndex
-        while index < text.endIndex {
+        while index < cut {
             let character = text[index]
+            var link: (text: String, url: URL, end: String.Index)?
             if character == "[", let titled = titledLink(in: text, at: index) {
-                flush()
-                result.append(Segment(text: titled.title, url: titled.url))
-                index = titled.end
-                continue
+                link = (titled.title, titled.url, titled.end)
+            } else if (character == "c" || character == "C" || character == "h" || character == "H"),
+                      startsBareLink(in: text, at: index),
+                      let bare = bareLink(in: text, at: index) {
+                link = bare
             }
-            if (character == "c" || character == "C" || character == "h" || character == "H"),
-               startsBareLink(in: text, at: index),
-               let bare = bareLink(in: text, at: index) {
+            if let link {
+                if link.end > cut {
+                    plain += text[index..<cut]
+                    break
+                }
                 flush()
-                result.append(Segment(text: bare.text, url: bare.url))
-                index = bare.end
+                result.append(Segment(text: link.text, url: link.url))
+                index = link.end
                 continue
             }
             plain.append(character)
@@ -81,8 +94,14 @@ enum MailboxBodyLinks {
 
     /// The body with each link's text carrying its URL; nothing else is styled.
     static func attributed(_ text: String) -> AttributedString {
+        attributed(text, cutAt: nil)
+    }
+
+    /// The first `limit` characters of `text`, with only the links that end
+    /// inside them; see `segments(_:cutAt:)`.
+    static func attributed(_ text: String, cutAt limit: Int?) -> AttributedString {
         var result = AttributedString()
-        for segment in segments(text) {
+        for segment in segments(text, cutAt: limit) {
             var piece = AttributedString(segment.text)
             if let url = segment.url {
                 piece.link = url

@@ -90,6 +90,89 @@ enum BrowserExternalSchemeSettings {
     }
 }
 
+/// The Settings editor for the always-allow list: the operator edits a draft,
+/// and nothing reaches UserDefaults until Save. Save refuses while a line can
+/// never match, so a typo is reported instead of silently ignored.
+struct BrowserExternalSchemeAllowlistDraft: Equatable {
+    struct InvalidLine: Equatable {
+        /// 1-based, as the editor shows it.
+        let number: Int
+        let text: String
+    }
+
+    var text: String
+    private(set) var saved: String
+
+    init(saved: String) {
+        self.text = saved
+        self.saved = saved
+    }
+
+    var hasUnsavedChanges: Bool { text != saved }
+
+    var invalidLine: InvalidLine? { Self.firstInvalidLine(in: text) }
+
+    var canSave: Bool { hasUnsavedChanges && invalidLine == nil }
+
+    /// The stored value changed outside the editor ("Always allow" while
+    /// Settings is open): follow it unless the operator has unsaved edits.
+    mutating func storedValueChanged(to value: String) {
+        if !hasUnsavedChanges { text = value }
+        saved = value
+    }
+
+    /// Closing Settings abandons unsaved edits: the Settings window keeps its
+    /// view alive between openings, so the draft starts over from the stored
+    /// value. Writes nothing. Other windows closing leave the draft alone.
+    @MainActor
+    mutating func settingsWindowWillClose(_ notification: Notification, stored: String) {
+        guard (notification.object as? NSUserInterfaceItemIdentification)?.identifier?.rawValue == Self.settingsWindowIdentifier
+        else { return }
+        self = BrowserExternalSchemeAllowlistDraft(saved: stored)
+    }
+
+    static let settingsWindowIdentifier = "cmux.settings"
+
+    /// Writes the draft and returns true, or writes nothing and returns false
+    /// when a line is invalid.
+    @discardableResult
+    mutating func save(to defaults: UserDefaults = .standard) -> Bool {
+        guard invalidLine == nil else { return false }
+        defaults.set(text, forKey: BrowserExternalSchemeSettings.allowlistKey)
+        saved = text
+        return true
+    }
+
+    /// A line matches only as `scheme://host[:port] linktype`, the origin in
+    /// the form the gate compares (lowercase, no path, no default port).
+    static func firstInvalidLine(in text: String) -> InvalidLine? {
+        let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        for (index, line) in lines.enumerated() {
+            let words = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            if words.isEmpty { continue }
+            if words.count != 2 || !isOrigin(words[0]) || !isScheme(words[1]) {
+                return InvalidLine(number: index + 1, text: line.trimmingCharacters(in: .whitespaces))
+            }
+        }
+        return nil
+    }
+
+    private static func isOrigin(_ word: String) -> Bool {
+        let lowered = word.lowercased()
+        guard let url = URL(string: lowered), url.user == nil, url.password == nil,
+              url.query == nil, url.fragment == nil else { return false }
+        return BrowserExternalOpenOrigin(pageURL: url).allowKey == lowered
+    }
+
+    private static func isScheme(_ word: String) -> Bool {
+        let scheme = word.hasSuffix(":") ? String(word.dropLast()) : word
+        let letters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        guard let first = scheme.unicodeScalars.first, letters.contains(first) else { return false }
+        let allowed = letters.union(CharacterSet(charactersIn: "0123456789+-."))
+        return scheme.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+}
+
 /// Where a prompt for one request would appear. Production binds this to the
 /// requesting web view; tests supply their own.
 @MainActor

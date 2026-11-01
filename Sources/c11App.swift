@@ -4581,6 +4581,7 @@ struct SettingsView: View {
     @State private var browserHistoryEntryCount: Int = 0
     @State private var detectedImportBrowsers: [InstalledBrowserCandidate] = []
     @State private var browserInsecureHTTPAllowlistDraft = BrowserInsecureHTTPSettings.defaultAllowlistText
+    @State private var browserExternalSchemeAllowlistDraft = BrowserExternalSchemeAllowlistDraft(saved: "")
     @State private var socketPasswordDraft = ""
     @State private var socketPasswordStatusMessage: String?
     @State private var socketPasswordStatusIsError = false
@@ -5058,6 +5059,7 @@ struct SettingsView: View {
             browserImportHintVariantRaw = BrowserImportHintSettings.variant(for: browserImportHintVariantRaw).rawValue
             browserHistoryEntryCount = BrowserHistoryStore.shared.entries.count
             browserInsecureHTTPAllowlistDraft = browserInsecureHTTPAllowlist
+            browserExternalSchemeAllowlistDraft = BrowserExternalSchemeAllowlistDraft(saved: browserExternalSchemeAllowlist)
             refreshDetectedImportBrowsers()
             reloadWorkspaceColorSettings()
             refreshNotificationCustomSoundStatus()
@@ -5067,6 +5069,13 @@ struct SettingsView: View {
         }
         .onChange(of: notificationSoundCustomFilePath) { _, _ in
             refreshNotificationCustomSoundStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
+            browserExternalSchemeAllowlistDraft.settingsWindowWillClose(notification, stored: browserExternalSchemeAllowlist)
+        }
+        .onChange(of: browserExternalSchemeAllowlist) { _, newValue in
+            // "Always allow" adds a line while Settings is open; unsaved edits win.
+            browserExternalSchemeAllowlistDraft.storedValueChanged(to: newValue)
         }
         .onChange(of: browserInsecureHTTPAllowlist) { oldValue, newValue in
             // Keep draft in sync with external changes unless the operator has local unsaved edits.
@@ -5947,12 +5956,12 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 SettingsCardRow(
                     String(localized: "settings.browser.externalSchemeAllowlist", defaultValue: "Sites Allowed to Open Apps"),
-                    subtitle: String(localized: "settings.browser.externalSchemeAllowlist.subtitle", defaultValue: "A page that links to another app (vnc:, smb:, zoommtg: and the like) asks before it opens. \u{201C}Always allow\u{201D} adds a line here: the site, then the link type (for example: https://zoom.us zoommtg). Delete a line to make that site ask again.")
+                    subtitle: String(localized: "settings.browser.externalSchemeAllowlist.subtitle", defaultValue: "A page that links to another app (vnc:, smb:, zoommtg: and the like) asks before it opens. \u{201C}Always allow\u{201D} adds a line here: the site, then the link type (for example: https://zoom.us zoommtg). Delete a line and Save to make that site ask again.")
                 ) {
                     EmptyView()
                 }
 
-                TextEditor(text: $browserExternalSchemeAllowlist)
+                TextEditor(text: $browserExternalSchemeAllowlistDraft.text)
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 60, maxHeight: 120)
                     .scrollContentBackground(.hidden)
@@ -5966,6 +5975,28 @@ struct SettingsView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
                     .accessibilityIdentifier("SettingsBrowserExternalSchemeAllowlistField")
+
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if let invalid = browserExternalSchemeAllowlistDraft.invalidLine {
+                        Text(String(localized: "settings.browser.externalSchemeAllowlist.invalidLine", defaultValue: "Line \(invalid.number) can never match: \(invalid.text). Write the site, then the link type (for example: https://zoom.us zoommtg)."))
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("SettingsBrowserExternalSchemeAllowlistInvalidLine")
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button(String(localized: "settings.browser.externalSchemeAllowlist.save", defaultValue: "Save")) {
+                        saveBrowserExternalSchemeAllowlist()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!browserExternalSchemeAllowlistDraft.canSave)
+                    .accessibilityIdentifier("SettingsBrowserExternalSchemeAllowlistSaveButton")
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
             }
 
             SettingsCardDivider()
@@ -6775,6 +6806,7 @@ struct SettingsView: View {
         browserHostWhitelist = BrowserLinkOpenSettings.defaultBrowserHostWhitelist
         browserExternalOpenPatterns = BrowserLinkOpenSettings.defaultBrowserExternalOpenPatterns
         browserExternalSchemeAllowlist = ""
+        browserExternalSchemeAllowlistDraft = BrowserExternalSchemeAllowlistDraft(saved: "")
         browserInsecureHTTPAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
         browserInsecureHTTPAllowlistDraft = BrowserInsecureHTTPSettings.defaultAllowlistText
         notificationSound = NotificationSoundSettings.defaultValue
@@ -6871,6 +6903,10 @@ struct SettingsView: View {
     private func reloadWorkspaceColorSettings() {
         workspaceDefaultEntries = WorkspaceColorSettings.defaultPaletteWithOverrides()
         workspaceCustomColors = WorkspaceColorSettings.customColors()
+    }
+
+    private func saveBrowserExternalSchemeAllowlist() {
+        browserExternalSchemeAllowlistDraft.save()
     }
 
     private func saveBrowserInsecureHTTPAllowlist() {

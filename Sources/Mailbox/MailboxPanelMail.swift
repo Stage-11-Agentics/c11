@@ -759,7 +759,8 @@ extension MailboxPanelMail {
             let body = raw["body"] as? String ?? ""
             let firstLine = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
             preview = String(firstLine.prefix(Self.previewLimit))
-            previewRich = MailboxBodyLinks.attributed(preview)
+            // Scan the whole line so a link the cut splits stays plain text.
+            previewRich = MailboxBodyLinks.attributed(firstLine, cutAt: Self.previewLimit)
             senderPanel = ((raw["ext"] as? [String: Any])?[MailboxEnvelope.senderPanelKey] as? String)
                 .flatMap(UUID.init(uuidString:))
             fileName = string("body_ref")

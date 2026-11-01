@@ -339,8 +339,15 @@ jobs:
           export SPARKLE_BIN_DIR
           ./scripts/sparkle_generate_appcast.sh c11-macos.dmg "$GITHUB_REF_NAME" appcast.xml
           # Prove the signature is valid under the app's public key before publishing.
-          swift scripts/verify_sparkle_appcast.swift appcast.xml c11-macos.dmg \
-            "$SPARKLE_PUBLIC_KEY" "${DOWNLOAD_URL_PREFIX}c11-macos.dmg"
+          VERIFY_JSON="$(swift scripts/verify_sparkle_appcast.swift appcast.xml c11-macos.dmg \
+            "$SPARKLE_PUBLIC_KEY" "${DOWNLOAD_URL_PREFIX}c11-macos.dmg")"
+          echo "$VERIFY_JSON"
+          # The appcast must advertise the version of the app it ships.
+          APP_PLIST="build/Build/Products/Release/c11.app/Contents/Info.plist"
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")"
+          APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")"
+          [ "$(jq -r .shortVersionString <<<"$VERIFY_JSON")" = "$APP_VERSION" ] || { echo "appcast shortVersionString != $APP_VERSION" >&2; exit 1; }
+          [ "$(jq -r .version <<<"$VERIFY_JSON")" = "$APP_BUILD" ] || { echo "appcast version != $APP_BUILD" >&2; exit 1; }
 
       - name: Upload release asset
         if: steps.guard_release_assets.outputs.skip_upload != 'true'

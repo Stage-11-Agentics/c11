@@ -56,7 +56,22 @@ func installCmuxUnitTestInspectorOverride() {
     cmuxUnitTestInspectorOverrideInstalled = true
 }
 
+@MainActor
 final class CmuxWebViewKeyEquivalentTests: XCTestCase {
+    private var savedMainMenu: NSMenu?
+
+    override func setUp() {
+        super.setUp()
+        _ = NSApplication.shared
+        savedMainMenu = NSApp.mainMenu
+    }
+
+    override func tearDown() {
+        NSApp.mainMenu = savedMainMenu
+        savedMainMenu = nil
+        super.tearDown()
+    }
+
     private final class ActionSpy: NSObject {
         private(set) var invoked: Bool = false
 
@@ -650,7 +665,7 @@ final class CmuxWebViewKeyEquivalentTests: XCTestCase {
     }
 
     @MainActor
-    func testCmdBacktickMenuActionThatChangesKeyWindowOnlyRunsOnceWhenTerminalIsFirstResponder() {
+    func testCmdBacktickMenuActionThatChangesKeyWindowOnlyRunsOnceWhenTerminalIsFirstResponder() async {
         _ = NSApplication.shared
         AppDelegate.installWindowResponderSwizzlesForTesting()
 
@@ -683,13 +698,8 @@ final class CmuxWebViewKeyEquivalentTests: XCTestCase {
         let spy = WindowCyclingActionSpy()
         spy.firstWindow = firstWindow
         spy.secondWindow = secondWindow
-        installMenu(
-            target: spy,
-            action: #selector(WindowCyclingActionSpy.cycleWindow(_:)),
-            key: "`",
-            modifiers: [.command]
-        )
 
+        NSApp.activate(ignoringOtherApps: true)
         secondWindow.orderFront(nil)
         firstWindow.makeKeyAndOrderFront(nil)
         defer {
@@ -698,6 +708,20 @@ final class CmuxWebViewKeyEquivalentTests: XCTestCase {
         }
 
         XCTAssertTrue(firstWindow.makeFirstResponder(firstTerminal))
+        let ready = await waitForC11HostCondition {
+            NSApp.isActive && NSApp.keyWindow === firstWindow && firstWindow.firstResponder === firstTerminal
+        }
+        XCTAssertTrue(ready, "The test host and first terminal window must be active before Cmd+`")
+        guard ready else { return }
+
+        // Changing key windows can make SwiftUI rebuild the application's menu
+        // contents on macOS 15. Install the fixture only after focus is ready.
+        let menuItem = installMenu(
+            target: spy,
+            action: #selector(WindowCyclingActionSpy.cycleWindow(_:)),
+            key: "`",
+            modifiers: [.command]
+        )
         guard let event = makeKeyDownEvent(
             key: "`",
             modifiers: [.command],
@@ -708,10 +732,14 @@ final class CmuxWebViewKeyEquivalentTests: XCTestCase {
             return
         }
 
+        XCTAssertTrue(menuItem.menu?.supermenu === NSApp.mainMenu, "The spy item must still belong to the live main menu")
+        XCTAssertTrue(menuItem.target === spy)
         NSApp.sendEvent(event)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        let invoked = await waitForC11HostCondition { spy.invocationCount > 0 }
+        XCTAssertTrue(invoked, "Cmd+` must reach the installed menu action")
 
         XCTAssertEqual(spy.invocationCount, 1, "Cmd+` should only trigger one window-cycle action")
+        XCTAssertTrue(NSApp.keyWindow === secondWindow, "The action must make the second window key")
     }
 
     @MainActor
@@ -773,12 +801,13 @@ final class CmuxWebViewKeyEquivalentTests: XCTestCase {
         )
     }
 
+    @discardableResult
     private func installMenu(
         target: NSObject,
         action: Selector,
         key: String,
         modifiers: NSEvent.ModifierFlags
-    ) {
+    ) -> NSMenuItem {
         let mainMenu = NSMenu()
 
         let fileItem = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
@@ -795,6 +824,7 @@ final class CmuxWebViewKeyEquivalentTests: XCTestCase {
         // Ensure NSApp exists and has a menu for performKeyEquivalent to consult.
         _ = NSApplication.shared
         NSApp.mainMenu = mainMenu
+        return item
     }
 
     private func makeKeyDownEvent(

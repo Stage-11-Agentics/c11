@@ -2348,3 +2348,104 @@ final class TurnlessReringTests: XCTestCase {
         XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "other|attach", hasTurnEdge: false))
     }
 }
+
+/// C11-557: an OpenCode 2 hold after an ambiguous native failure. The
+/// exact snapshot stays off typed delivery while c11 waits for the plugin to
+/// reconnect and replay the same attempt, but only for a bounded time.
+final class OpenCodeHeldAttemptTests: XCTestCase {
+    private let hold = MailboxNativeDoorbell.openCodeReplayHold
+    private let failedAt = Date(timeIntervalSince1970: 1_000)
+    private let ambiguous = ["native_timeout", "native_disconnected", "native_write_failed",
+                             "native_replaced", "native_unavailable", "native_unconfirmed", "native_rejected"]
+
+    private func openCode2(replay: Bool = true) -> MailboxNativeDoorbell.Registration {
+        .init(id: UUID(), panelID: UUID(), agentPID: 123, processStart: 456,
+              sessionID: UUID().uuidString, route: .opencodePlugin, canQueue: false,
+              supportsAttemptReplay: replay)
+    }
+
+    private func held(_ reg: MailboxNativeDoorbell.Registration, _ reason: String) -> MailboxNativeDoorbell.Fallback {
+        .init(registration: reg, ids: ["mail-a"], reason: reason, failedAt: failedAt)
+    }
+
+    func testBoundIsAMinute() {
+        XCTAssertEqual(hold, 60)
+    }
+
+    /// The plugin never re-subscribes: the snapshot, and later mail with it,
+    /// is offered to the typed gate once the bound passes.
+    func testAmbiguousHoldLiftsForTypedDeliveryAfterTheBound() {
+        let reg = openCode2()
+        for reason in ambiguous {
+            let fallback = held(reg, reason)
+            XCTAssertEqual(fallback.typedHoldUntil, failedAt.addingTimeInterval(hold), reason)
+            XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                               now: failedAt.addingTimeInterval(hold - 1)),
+                          "\(reason): inside the bound the attempt waits for its replay")
+            XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a", "mail-b"], coveredIDs: [],
+                                               now: failedAt.addingTimeInterval(hold - 1)),
+                          "\(reason): later mail waits with it inside the bound")
+            XCTAssertFalse(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                                now: failedAt.addingTimeInterval(hold)),
+                           "\(reason): the held snapshot is offered again at the bound")
+            XCTAssertFalse(fallback.blocksTyped(unreadIDs: ["mail-a", "mail-b"], coveredIDs: [],
+                                                now: failedAt.addingTimeInterval(3_600)),
+                           "\(reason): it never waits indefinitely")
+        }
+    }
+
+    /// The stream that failed the attempt stays off native for those IDs at
+    /// any time, so a wedged open stream cannot loop timeouts and starve the
+    /// typed route. Only a new registration replays.
+    func testSameStreamStaysOffNativeAndANewRegistrationReplays() {
+        let reg = openCode2()
+        let fallback = held(reg, "native_timeout")
+        XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: []))
+        XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: [],
+                                            arrivingID: "mail-b"))
+        XCTAssertFalse(fallback.blocksNative(registrationID: UUID(), unreadIDs: ["mail-a"], coveredIDs: []))
+
+        // A reconnect inside the bound reuses the exact attempt for the same TUI.
+        let process = MailboxStdinBuffer.AgentProcess(pid: reg.agentPID, startTime: reg.processStart)
+        let attempt = MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: ["mail-a"])
+        XCTAssertEqual(MailboxNativeDoorbell.reusableAttempt(attempt, process: process, unreadIDs: ["mail-a", "mail-b"]),
+                       attempt)
+        XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                           now: failedAt.addingTimeInterval(30)),
+                      "nothing is typed while a reconnect inside the bound can still replay")
+        // A typed ring after the bound covers the snapshot, so a late
+        // reconnect finds nothing uncovered to replay.
+        XCTAssertFalse(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+        XCTAssertTrue(MailboxDoorbellSequence.unreadIsCovered(unreadIds: ["mail-a"], coveredIds: ["mail-a"]))
+    }
+
+    /// A refusal before any prompt keeps waiting for the plugin's own
+    /// readiness or route recovery, as before.
+    func testDefiniteRefusalsKeepTheirHold() {
+        let reg = openCode2()
+        for reason in MailboxNativeDoorbell.Fallback.definiteRefusals {
+            let fallback = held(reg, reason)
+            XCTAssertNil(fallback.typedHoldUntil, reason)
+            XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                               now: failedAt.addingTimeInterval(3_600)), reason)
+        }
+    }
+
+    /// OpenCode v1, Pi, omp and Claude never had a typed hold; the bound adds none.
+    func testOtherRoutesAreUnchanged() {
+        let others: [MailboxNativeDoorbell.Registration] = [openCode2(replay: false)] +
+            [MailboxNativeDoorbell.Route.piExtension, .ompExtension, .claudeInbox].map {
+                .init(id: UUID(), panelID: UUID(), agentPID: 123, processStart: 456,
+                      sessionID: UUID().uuidString, route: $0, canQueue: false)
+            }
+        for reg in others {
+            let fallback = held(reg, "native_timeout")
+            XCTAssertNil(fallback.typedHoldUntil, reg.route.rawValue)
+            for offset in [0.0, hold - 1, hold, 3_600] {
+                XCTAssertFalse(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                                    now: failedAt.addingTimeInterval(offset)), reg.route.rawValue)
+            }
+            XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: []))
+        }
+    }
+}

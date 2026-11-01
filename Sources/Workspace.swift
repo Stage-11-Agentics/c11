@@ -7027,6 +7027,17 @@ final class Workspace: Identifiable, ObservableObject {
                 if failed.blocksTyped(unreadIDs: unread, coveredIDs: covered) {
                     mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
                     logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
+                    // Nothing else re-looks while the plugin stays away: look
+                    // again when the hold lifts, on every held look so a newer
+                    // recheck token cannot drop it.
+                    if let until = failed.typedHoldUntil {
+                        let delay = max(0.05, until.timeIntervalSinceNow)
+                        if let entry = live.first(where: { failed.ids.contains($0.id) }) {
+                            mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
+                                reason: "native_hold", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId)
+                        }
+                        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
+                    }
                     return
                 }
             }

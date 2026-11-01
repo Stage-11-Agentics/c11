@@ -100,10 +100,18 @@ final class MailboxNativeDoorbell {
         return previousProcess != currentProcess
     }
 
+    /// How long an OpenCode 2 ambiguous attempt holds its exact snapshot off
+    /// typed delivery while c11 waits for the plugin to reconnect and replay
+    /// it. The plugin reconnects once its own prompt result settles, with a
+    /// backoff capped at 10 s, so this is several reconnects of margin. After
+    /// it, the snapshot goes through the ordinary typed gate.
+    static let openCodeReplayHold: TimeInterval = 60
+
     struct Fallback {
         let registration: Registration
         let ids: Set<String>
         let reason: String
+        var failedAt = Date()
 
         /// A hard failure holds the same uncovered mail off native delivery.
         /// omp has no typed reader, so a genuinely new uncovered envelope may
@@ -125,10 +133,24 @@ final class MailboxNativeDoorbell {
         /// have been admitted by a prompt whose native acknowledgement was
         /// lost. Only the v2 TUI advertises replay support; v1 retains its
         /// documented at-least-once typed fallback behavior.
-        func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
+        func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>, now: Date = Date()) -> Bool {
             guard registration.route == .opencodePlugin, registration.supportsAttemptReplay else { return false }
+            if let until = typedHoldUntil, now >= until { return false }
             return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
         }
+
+        /// When an ambiguous OpenCode 2 hold stops blocking typed delivery, so
+        /// mail is never held for a plugin that does not come back. Nil for a
+        /// hold that does not expire: a definite refusal before any prompt
+        /// (`native_not_ready`, `native_session_conflict`) keeps waiting for
+        /// the plugin's own readiness or route recovery to re-register.
+        var typedHoldUntil: Date? {
+            guard registration.route == .opencodePlugin, registration.supportsAttemptReplay,
+                  !Fallback.definiteRefusals.contains(reason) else { return nil }
+            return failedAt.addingTimeInterval(MailboxNativeDoorbell.openCodeReplayHold)
+        }
+
+        static let definiteRefusals: Set<String> = ["native_not_ready", "native_session_conflict"]
     }
 
     /// Whether a failed native attempt hands its envelopes to the typed gate

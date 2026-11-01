@@ -441,6 +441,22 @@ final class MailboxReceiptStatusTests: XCTestCase {
         XCTAssertEqual(row.deliveryReason, "turnless_idle")
     }
 
+    /// C11-557: an OpenCode 2 snapshot waiting for its native replay is
+    /// pending, not a composer hold.
+    func testNativeHoldRecheckIsPendingNotHeld() throws {
+        let t = Date().addingTimeInterval(-30)
+        let id = newId(t)
+        try writeLog(dispatched(id, at: t) + [
+            line(stdin(id, .doorbellSkipped, "native_attempt_unconfirmed"), t.addingTimeInterval(1)),
+            line(.doorbellRecheck(id: id, recipient: "lead", reason: "native_hold", nextMs: 58_000,
+                                  recipientPanel: recipient), t.addingTimeInterval(1)),
+        ])
+        try deliverFile(id, to: recipient, read: false)
+        let row = try XCTUnwrap(try status(id).recipients.first)
+        XCTAssertEqual(row.delivery, .pending)
+        XCTAssertEqual(row.deliveryReason, "native_hold")
+    }
+
     /// An id whose rows lie past the byte budget is a scan-limit error, never
     /// "not found".
     func testBudgetExhaustedBeforeTheIdIsAScanLimitError() throws {

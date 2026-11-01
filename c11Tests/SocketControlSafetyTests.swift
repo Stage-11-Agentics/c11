@@ -142,8 +142,9 @@ final class SocketControlIsLocalDevBuildTests: XCTestCase {
 }
 
 /// `LaunchResumePicker.resolveEffectivePolicy` — QA launch overrides win; a
-/// local dev build replaces the default `.ask` picker with silent `.always`
-/// restore; an explicit operator policy is always honored.
+/// local dev build replaces a stored `.ask` picker with silent `.always`
+/// restore; an explicit operator policy is otherwise honored. The absent
+/// default and the Option launch are covered by `LaunchResumePolicyTests`.
 final class LaunchResumeGateTests: XCTestCase {
     func testQAResumeForcesAlways() {
         XCTAssertEqual(

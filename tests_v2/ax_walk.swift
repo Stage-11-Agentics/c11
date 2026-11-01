@@ -1,10 +1,13 @@
 // C11-510 guest helper: a compiled accessibility walk of one exact PID, for
 // guests where System Events has no Accessibility grant.
 // Build: xcrun swiftc -O -target arm64-apple-macos14 tests_v2/ax_walk.swift -o tests_v2/.ax-walk
-// Usage: .ax-walk <pid> tree|activate|foreground|menus|fields
+// Usage: .ax-walk <pid> tree|activate|foreground|menus|fields|ids, or <pid> scroll <AXIdentifier>
 //   menus: every open AXMenu's items in order (title "" is a separator)
 //   fields: text fields (value, placeholder) and buttons, plus elements
 //           whose AX identifier starts with "sidebar.workspace."
+//   ids: every element with an AX identifier, and every button, in all
+//        windows, with enabled state and the owning window's id and title
+//   scroll <id>: AXScrollToVisible on the element with that identifier
 import AppKit
 import ApplicationServices
 
@@ -15,8 +18,8 @@ func emit(_ object: Any) {
 }
 
 let args = CommandLine.arguments
-guard args.count == 3, let pid = pid_t(args[1]) else {
-    FileHandle.standardError.write("usage: ax-walk <pid> tree|activate|foreground|menus|fields\n".data(using: .utf8)!)
+guard args.count == 3 || (args.count == 4 && args[2] == "scroll"), let pid = pid_t(args[1]) else {
+    FileHandle.standardError.write("usage: ax-walk <pid> tree|activate|foreground|menus|fields|ids, or <pid> scroll <id>\n".data(using: .utf8)!)
     exit(2)
 }
 
@@ -28,7 +31,7 @@ case "activate":
     guard let app = NSRunningApplication(processIdentifier: pid) else { emit(false); exit(1) }
     emit(app.activate(options: [.activateAllWindows]))
     exit(0)
-case "tree", "menus", "fields":
+case "tree", "menus", "fields", "ids", "scroll":
     break
 default:
     exit(2)
@@ -135,6 +138,40 @@ func collect(_ element: AXUIElement, depth: Int) {
     for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
         collect(child, depth: depth + 1)
     }
+}
+
+// C11-562: identified elements, for proofs that locate controls by AX id.
+if args[2] == "ids" || args[2] == "scroll" {
+    var found: [[String: Any]] = []
+    var target: AXUIElement?
+    var visited = 0
+    func collectIdentified(_ element: AXUIElement, depth: Int, window: [String: Any]) {
+        visited += 1
+        guard depth <= 40, visited <= 20000 else { return }
+        var item = info(element)
+        let role = item["role"] as? String
+        let id = item["id"] as? String
+        if args[2] == "scroll", id == args[3] { target = element }
+        if (id?.isEmpty == false) || role == "AXButton" {
+            item["enabled"] = (attribute(element, kAXEnabledAttribute) as? Bool) ?? NSNull()
+            item["window_id"] = window["id"] ?? NSNull()
+            item["window_title"] = window["title"] ?? NSNull()
+            found.append(item)
+        }
+        if role == "AXWebArea" || role == "AXTextArea" { return }
+        guard let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { return }
+        for child in children { collectIdentified(child, depth: depth + 1, window: window) }
+    }
+    for window in (attribute(application, kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
+        collectIdentified(window, depth: 0, window: info(window))
+    }
+    if args[2] == "scroll" {
+        guard let target else { emit(["error": "not_found"]); exit(4) }
+        emit(AXUIElementPerformAction(target, "AXScrollToVisible" as CFString) == .success)
+        exit(0)
+    }
+    emit(found)
+    exit(0)
 }
 
 switch args[2] {

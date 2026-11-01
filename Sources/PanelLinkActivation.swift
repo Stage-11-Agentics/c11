@@ -594,7 +594,7 @@ struct ExternalPanelLinkGesture {
     mutating func cancelPress() { downAt = nil }
 }
 
-private final class ExternalPanelLinkButton: NSButton {
+final class ExternalPanelLinkButton: NSButton {
     let requestID: UUID
     private var gesture: ExternalPanelLinkGesture?
     private var confirmationTracking: NSTrackingArea?

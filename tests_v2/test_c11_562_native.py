@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""C11-562 native proof. ONLY via sandbox-tests-v2.sh.
+
+(a) An outside c11:// link's confirmation shows Confirm left of Cancel; a real
+    HID click on Cancel dismisses it with the selection unchanged, and a fresh
+    click on Confirm still opens the destination.
+(b) Settings > Browser > Sites Allowed to Open Apps writes nothing until Save,
+    and an invalid line is named while Save stays disabled.
+
+Every control is located by its accessibility identifier through the compiled
+tests_v2/ax_walk.swift (compile it to tests_v2/.ax-walk first) and clicked with
+timestamped HID mouse events. Socket calls only seed a workspace and read
+selection. 240-second active / 280-second hard limit (inherited).
+"""
+import ctypes
+import json
+import os
+from pathlib import Path
+import pwd
+import subprocess
+import time
+import traceback
+
+import test_browser_external_open_native as base
+
+OUT = Path('/Volumes/My Shared Files/out/c11-562-proof')
+base.OUT = OUT
+PROMPT = 'c11.external-link.confirmation'
+CONFIRM = 'c11.external-link.confirm'
+CANCEL = 'c11.external-link.cancel'
+FIELD = 'SettingsBrowserExternalSchemeAllowlistField'
+SAVE = 'SettingsBrowserExternalSchemeAllowlistSaveButton'
+INVALID = 'SettingsBrowserExternalSchemeAllowlistInvalidLine'
+KEY = 'browserExternalSchemeAllowlist'
+
+
+class Proof(base.Proof):
+    def ax(self, op='tree', *args):
+        assert base.AX_WALK.is_file(), 'compile tests_v2/ax_walk.swift to tests_v2/.ax-walk first'
+        result = json.loads(self.run([str(base.AX_WALK), str(self.pid), op, *args], text=True).stdout)
+        assert not (isinstance(result, dict) and result.get('error')), result
+        return result
+
+    def ids(self):
+        return self.ax('ids')
+
+    def find(self, identifier, window_id=None):
+        hits = [x for x in self.ids() if x.get('id') == identifier and (window_id is None or x.get('window_id') == window_id)]
+        return hits[0] if len(hits) == 1 else None
+
+    def center(self, element):
+        (x, y), (w, h) = element['position'], element['size']
+        return round(x + w / 2), round(y + h / 2)
+
+    def hid(self, x, y, label, event_types=(5, 1, 2)):
+        # Timestamped HID events, as C11-510 and C11-552 proved in this guest.
+        # The prompt is nonactivating, so the foreground app is recorded, not required.
+        class Point(ctypes.Structure):
+            _fields_ = [('x', ctypes.c_double), ('y', ctypes.c_double)]
+        cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, Point, ctypes.c_uint32]
+        cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
+        cg.CGEventSetTimestamp.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        foreground = self.ax('foreground')
+        for event_type in event_types:
+            event = cg.CGEventCreateMouseEvent(None, event_type, Point(x, y), 0)
+            assert event
+            if event_type != 5:
+                cg.CGEventSetIntegerValueField(event, 1, 1)
+            cg.CGEventSetTimestamp(event, time.monotonic_ns())
+            cg.CGEventPost(0, event)
+            cf.CFRelease(event)
+            time.sleep(.12)
+        self.report['clicks'].append(dict(label=label, x=x, y=y, foreground=foreground,
+                                          elapsed=round(time.monotonic() - self.started, 2)))
+
+    def click(self, identifier, window_id=None):
+        element = self.wait(lambda: self.find(identifier, window_id), 'locate ' + identifier)
+        x, y = self.center(element)
+        self.hid(x, y, identifier)
+        return element
+
+    def keys(self, code, command=False):
+        cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        cg.CGEventCreateKeyboardEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_bool]
+        cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        cg.CGEventSetFlags.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        for down in (True, False):
+            event = cg.CGEventCreateKeyboardEvent(None, code, down)
+            cg.CGEventSetFlags(event, (1 << 20) if command else 0)
+            cg.CGEventPost(0, event)
+            cf.CFRelease(event)
+            time.sleep(.05)
+
+    def type_text(self, text):
+        cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        cg.CGEventCreateKeyboardEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_bool]
+        cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        cg.CGEventKeyboardSetUnicodeString.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p]
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        for character in text:
+            units = character.encode('utf-16-le')
+            buffer = ctypes.create_string_buffer(units)
+            for down in (True, False):
+                event = cg.CGEventCreateKeyboardEvent(None, 0, down)
+                cg.CGEventKeyboardSetUnicodeString(event, len(units) // 2, buffer)
+                cg.CGEventPost(0, event)
+                cf.CFRelease(event)
+            time.sleep(.03)
+
+    def stored(self):
+        result = subprocess.run(['/usr/bin/defaults', 'read', self.bundle['CFBundleIdentifier'], KEY],
+                                capture_output=True, text=True, timeout=5)
+        return result.stdout.rstrip('\n') if result.returncode == 0 else None
+
+    def console_open(self, *arguments):
+        # A real console-user Launch Services send, as C11-552's proof does.
+        uid = os.getuid()
+        user = pwd.getpwuid(uid).pw_name
+        assert user == 'admin', ('unexpected guest console user', user)
+        return self.run(['/usr/bin/sudo', '-n', '/bin/launchctl', 'asuser', str(uid),
+                         '/usr/bin/sudo', '-n', '-u', user, '/usr/bin/open', *arguments])
+
+    def selected_workspace(self):
+        return self.call('system.identify', window_id=self.window)['focused']['workspace_id'].lower()
+
+    def prompt_buttons(self):
+        controls = [x for x in self.ids() if x.get('window_id') == PROMPT]
+        confirm = [x for x in controls if x.get('id') == CONFIRM]
+        cancel = [x for x in controls if x.get('id') == CANCEL]
+        return (confirm[0], cancel[0]) if len(confirm) == len(cancel) == 1 else None
+
+    def outside_request(self):
+        self.console_open('-b', self.bundle['CFBundleIdentifier'], self.url)
+        return self.wait(self.prompt_buttons, 'outside link shows the confirmation', timeout=10)
+
+    def link_prompt(self):
+        confirm, cancel = self.outside_request()
+        assert confirm['position'][0] + confirm['size'][0] <= cancel['position'][0], ('Confirm must sit left of Cancel', confirm, cancel)
+        assert confirm['position'][1] == cancel['position'][1], ('buttons share one row', confirm, cancel)
+        self.screenshot('01-prompt-confirm-left-of-cancel')
+        self.passed('prompt shows Confirm left of Cancel', confirm=confirm, cancel=cancel)
+
+        self.click(CANCEL, PROMPT)
+        self.wait(lambda: not self.prompt_buttons(), 'native Cancel dismisses the prompt')
+        assert self.selected_workspace() == self.source, 'Cancel must not change the selection'
+        self.screenshot('02-after-cancel')
+        self.passed('real Cancel click dismisses; selection unchanged', selected=self.source)
+
+        time.sleep(2.2)  # the prompt's cooldown after a dismissal
+        confirm, _ = self.outside_request()
+        x, y = self.center(confirm)
+        self.hid(x - 60, y - 60, 'approach from outside Confirm', (5,))
+        time.sleep(1.2)  # past the arming delay
+        self.hid(x, y, 'move onto Confirm', (5,))
+        self.wait(lambda: (self.find(CONFIRM, PROMPT) or {}).get('enabled') is True, 'Confirm arms')
+        self.hid(x, y, CONFIRM)
+        self.wait(lambda: self.selected_workspace() == self.destination, 'fresh Confirm click opens the destination')
+        self.screenshot('03-after-confirm')
+        self.passed('fresh Confirm click at its new position opens the destination', selected=self.destination)
+
+    def allowlist_editor(self):
+        assert self.stored() in (None, ''), ('allowlist must start empty', self.stored())
+        self.ax('activate')
+        self.wait(lambda: self.ax('foreground') == self.pid, 'guest app frontmost')
+        self.keys(43, command=True)  # Command-comma opens Settings
+        self.click('settings.sidebar.browser')
+        self.wait(lambda: self.find(FIELD), 'allowlist editor shown')
+        self.ax('scroll', FIELD)
+        time.sleep(.5)
+        self.click(FIELD)
+        self.keys(0, command=True)  # select all
+        self.type_text('https://example.com vnc')
+        time.sleep(.5)
+        save = self.wait(lambda: self.find(SAVE), 'Save button shown')
+        assert self.stored() in (None, ''), ('typing must not write the allowlist', self.stored())
+        assert save.get('enabled') is True, ('Save enabled with a valid unsaved edit', save)
+        self.screenshot('04-draft-unsaved')
+        self.passed('typing a line writes nothing; Save is enabled', stored=self.stored())
+
+        self.click(SAVE)
+        self.wait(lambda: self.stored() == 'https://example.com vnc', 'Save writes the allowlist')
+        self.wait(lambda: (self.find(SAVE) or {}).get('enabled') is False, 'Save disables once saved')
+        self.passed('real Save click writes the allowlist', stored=self.stored())
+
+        self.click(FIELD)
+        self.keys(125, command=True)  # Command-Down: end of text
+        self.keys(36)  # Return
+        self.type_text('zoom.us zoommtg')
+        caption = self.wait(lambda: self.find(INVALID), 'invalid line is reported')
+        text = ' '.join(str(caption.get(k) or '') for k in ('value', 'title'))
+        assert 'zoom.us zoommtg' in text and '2' in text, ('caption names line 2', caption)
+        assert (self.find(SAVE) or {}).get('enabled') is False, 'Save stays disabled for an invalid line'
+        assert self.stored() == 'https://example.com vnc', ('invalid edit must write nothing', self.stored())
+        self.screenshot('05-invalid-line-reported')
+        self.passed('invalid line is named, Save disabled, nothing written', caption=caption, stored=self.stored())
+
+    def execute(self):
+        # Guest only: a System Settings window would sit over the prompt.
+        subprocess.run(['/usr/bin/pkill', '-x', 'System Settings'], capture_output=True, timeout=5)
+        self.ax('activate')
+        self.wait(lambda: self.ax('foreground') == self.pid, 'guest app frontmost')
+        key = self.wait(lambda: next((w for w in self.call('window.list')['windows'] if w['key']), None),
+                        'guest app key window', timeout=15)
+        self.window = key['id']
+        self.source = self.selected_workspace()
+        self.destination = self.call('workspace.create', window_id=self.window, title='C11-562 Destination')['workspace_id'].lower()
+        assert self.selected_workspace() == self.source
+        self.url = 'c11://workspace/' + self.destination
+        self.report['identity'].update(source=self.source, destination=self.destination)
+        self.link_prompt()
+        self.allowlist_editor()
+        self.report['status'] = 'passed'
+
+    def cleanup(self):
+        subprocess.run(['/usr/bin/defaults', 'delete', self.bundle['CFBundleIdentifier'], KEY],
+                       capture_output=True, timeout=5)
+        super().cleanup()
+
+
+if __name__ == '__main__':
+    proof = Proof()
+    try:
+        proof.execute()
+        print('PASS C11-562 native proof; evidence=' + str(OUT), flush=True)
+    except BaseException as error:
+        proof.report.update(status='failed', error=str(error), traceback=traceback.format_exc())
+        try:
+            proof.screenshot('failure')
+            (OUT / 'ax-ids-at-failure.json').write_text(json.dumps(proof.ids(), indent=2))
+        except Exception as capture_error:
+            proof.report['failure_screenshot_error'] = str(capture_error)
+        raise
+    finally:
+        proof.cleanup()

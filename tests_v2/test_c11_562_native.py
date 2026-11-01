@@ -117,6 +117,39 @@ class Proof(base.Proof):
                 cf.CFRelease(event)
             time.sleep(.03)
 
+    def wheel(self, x, y, pixels):
+        # A real scroll-wheel event over the Settings page; SwiftUI's ScrollView
+        # ignores AXScrollToVisible. Negative pixels scroll the content up.
+        cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        cg.CGEventCreateScrollWheelEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_int32]
+        cg.CGEventCreateScrollWheelEvent.restype = ctypes.c_void_p
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        self.hid(x, y, 'pointer over Settings page', (5,))
+        event = cg.CGEventCreateScrollWheelEvent(None, 0, 1, pixels)
+        assert event
+        cg.CGEventPost(0, event)
+        cf.CFRelease(event)
+        time.sleep(.4)
+
+    def scroll_into_view(self, identifiers):
+        window = self.wait(lambda: next((x for x in self.ids() if x.get('id') == 'cmux.settings'), None), 'Settings window')
+        (wx, wy), (ww, wh) = window['position'], window['size']
+        top, bottom = wy + 60, wy + wh - 30
+        for _ in range(40):
+            elements = [self.find(i) for i in identifiers]
+            if all(elements):
+                low = max(e['position'][1] + e['size'][1] for e in elements)
+                high = min(e['position'][1] for e in elements)
+                if high >= top and low <= bottom:
+                    self.report.setdefault('scrolled', []).append(dict(ids=identifiers, frames=elements))
+                    return elements
+                self.wheel(round(wx + ww * .7), round(wy + wh / 2), -120 if low > bottom else 120)
+            else:
+                self.wheel(round(wx + ww * .7), round(wy + wh / 2), -120)
+        raise AssertionError(('could not scroll into view', identifiers))
+
     def stored(self):
         result = subprocess.run(['/usr/bin/defaults', 'read', self.bundle['CFBundleIdentifier'], KEY],
                                 capture_output=True, text=True, timeout=5)
@@ -175,8 +208,7 @@ class Proof(base.Proof):
         self.keys(43, command=True)  # Command-comma opens Settings
         self.click('settings.sidebar.browser')
         self.wait(lambda: self.find(FIELD), 'allowlist editor shown')
-        self.ax('scroll', FIELD)
-        time.sleep(.5)
+        self.scroll_into_view([FIELD, SAVE])
         self.click(FIELD)
         self.keys(0, command=True)  # select all
         self.type_text('https://example.com vnc')
@@ -192,6 +224,7 @@ class Proof(base.Proof):
         self.wait(lambda: (self.find(SAVE) or {}).get('enabled') is False, 'Save disables once saved')
         self.passed('real Save click writes the allowlist', stored=self.stored())
 
+        self.scroll_into_view([FIELD, SAVE])
         self.click(FIELD)
         self.keys(125, command=True)  # Command-Down: end of text
         self.keys(36)  # Return

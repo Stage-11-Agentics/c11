@@ -619,6 +619,9 @@
 		DE7ECA78E4F2C589D4D91CBB /* AgentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4086104E408313BEAFE9EC11 /* AgentPickerView.swift */; };
 		DH001BF0A1B2C3D4E5F60718 /* HealthCommandCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */; };
 		DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */; };
+		C1151800A1B2C3D4E5F60702 /* SessionFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1151800A1B2C3D4E5F60701 /* SessionFinder.swift */; };
+		C1151800A1B2C3D4E5F60703 /* SessionFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1151800A1B2C3D4E5F60701 /* SessionFinder.swift */; };
+		C1151800A1B2C3D4E5F60705 /* SessionFinderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1151800A1B2C3D4E5F60704 /* SessionFinderTests.swift */; };
 		DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */; };
 		DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */; };
 		C11525A001B2C3D4E5F60718 /* PanelLinkFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11525F001B2C3D4E5F60718 /* PanelLinkFormat.swift */; };
@@ -1340,6 +1343,8 @@
 		DA7A10CA710E000000000005 /* welcome.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = welcome.md; sourceTree = "<group>"; };
 		DEC6775014AC879E643E79D6 /* ConfigCommand.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigCommand.swift; sourceTree = "<group>"; };
 		DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCommandCore.swift; sourceTree = "<group>"; };
+		C1151800A1B2C3D4E5F60701 /* SessionFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFinder.swift; sourceTree = "<group>"; };
+		C1151800A1B2C3D4E5F60704 /* SessionFinderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFinderTests.swift; sourceTree = "<group>"; };
 		DH002BF1A1B2C3D4E5F60719 /* HealthCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCommand.swift; sourceTree = "<group>"; };
 		DH010BF1A1B2C3D4E5F60718 /* HealthIPSParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthIPSParserTests.swift; sourceTree = "<group>"; };
 		DH011BF1A1B2C3D4E5F60718 /* HealthSentryParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSentryParserTests.swift; sourceTree = "<group>"; };
@@ -1715,6 +1720,7 @@
 				A5001225 /* SocketControlSettings.swift */,
 				A5001600 /* SentryHelper.swift */,
 				DH001BF1A1B2C3D4E5F60718 /* HealthCommandCore.swift */,
+				C1151800A1B2C3D4E5F60701 /* SessionFinder.swift */,
 				C1128000A1B2C3D4E5F60011 /* CreateInitialInput.swift */,
 				DH020BF1A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift */,
 				C11525F001B2C3D4E5F60718 /* PanelLinkFormat.swift */,
@@ -2189,6 +2195,7 @@
 				C585662B5CFF4AFB27E65C1E /* OpencodeResumeTests.swift */,
 				6B79605DD09AE47DB4B228AD /* PiConversationTests.swift */,
 				8D79AA02822FFBE8B15FA2B6 /* OmpConversationTests.swift */,
+				C1151800A1B2C3D4E5F60704 /* SessionFinderTests.swift */,
 				5722C355F6B94E193AEC96B1 /* MetadataSourceTimestampTests.swift */,
 				20BC9700748D344154CAF30D /* PanelLivenessDeriverTests.swift */,
 				9A99FEE21A45CCAB920CC627 /* WorkspaceDerivedActivityTests.swift */,
@@ -2604,6 +2611,7 @@
 				7FFBFB92E1EA4343FB71DCA8 /* OpencodeResumeTests.swift in Sources */,
 				E123B16B00B33A73F7527FF1 /* PiConversationTests.swift in Sources */,
 				D49911F30C44874C90103A16 /* OmpConversationTests.swift in Sources */,
+				C1151800A1B2C3D4E5F60705 /* SessionFinderTests.swift in Sources */,
 				74E85E0F622B71329F48271F /* MetadataSourceTimestampTests.swift in Sources */,
 				184473838C930BCC99D9E3FB /* PanelLivenessDeriverTests.swift in Sources */,
 				9E41ED7321B6C6644A698D8C /* WorkspaceDerivedActivityTests.swift in Sources */,
@@ -2795,6 +2803,7 @@
 				A5001226 /* SocketControlSettings.swift in Sources */,
 				A5001601 /* SentryHelper.swift in Sources */,
 				DH001BF0A1B2C3D4E5F60718 /* HealthCommandCore.swift in Sources */,
+				C1151800A1B2C3D4E5F60702 /* SessionFinder.swift in Sources */,
 				C1128000A1B2C3D4E5F60001 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60718 /* CLIResolutionSnapshot.swift in Sources */,
 				C11525A001B2C3D4E5F60718 /* PanelLinkFormat.swift in Sources */,
@@ -3026,6 +3035,7 @@
 				C11317BCFB3B1ED9789925EF /* CMUXCLI+Version.swift in Sources */,
 				C11317B7F5BDB77DA49F81F3 /* CMUXCLI+WorkspaceGroup.swift in Sources */,
 				DH001BF0A1B2C3D4E5F60719 /* HealthCommandCore.swift in Sources */,
+				C1151800A1B2C3D4E5F60703 /* SessionFinder.swift in Sources */,
 				DH002BF0A1B2C3D4E5F60719 /* HealthCommand.swift in Sources */,
 				C1128000A1B2C3D4E5F60002 /* CreateInitialInput.swift in Sources */,
 				DH020BF0A1B2C3D4E5F60719 /* CLIResolutionSnapshot.swift in Sources */,

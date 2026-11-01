@@ -1989,6 +1989,14 @@ extension CMUXCLI {
               clear [--panel <id>]
                 Wipe the panel's conversations. Forces a fresh launch
                 on next workspace open.
+              find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--json]
+                Search local Claude Code and Codex transcripts by title,
+                cwd, and prompts. -a also searches transcript text, up to
+                1 MiB per file, and skips files larger than 8 MiB.
+                --open focuses the one live match inside its own workspace
+                and does not change which workspace is selected. An idle
+                match resumes into a new panel in the caller's workspace.
+                Listing works when c11 is not running.
 
             Panel resolution: --panel flag, else $C11_PANEL_ID env
             var. There is NO focused-panel fallback (the silent-misroute

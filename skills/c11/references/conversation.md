@@ -64,6 +64,7 @@ c11 conversation list [--panel <id>] [--json]
 c11 conversation get [--panel <id>] [--json]
 c11 conversation clear [--panel <id>]
 c11 conversation resume (--panel <id> | --all-skipped) [--dry-run] [--json]
+c11 conversation find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--json]
 ```
 
 | Verb | Use |
@@ -76,14 +77,80 @@ c11 conversation resume (--panel <id> | --all-skipped) [--dry-run] [--json]
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a panel. The debugging entry point. |
 | `clear` | Wipe the panel's conversations. Forces a fresh launch on next workspace open. |
 | `resume` | Recover panels this launch did not resume. Reruns the shared resume decision for every panel the launch skipped (`--all-skipped`) or for one named panel, and types the resume command only into a panel nobody has used since launch (no operator keystroke, shell not running a command). `--dry-run` reports without typing. Each JSON row carries `outcome` (`scheduled`, `would_resume`, `refused`, `skipped`), `skip_code`, `reason`, and the `command`, so a refused panel can still be resumed deliberately with `c11 send`. A scheduled resume is typed after the usual stagger and rechecked then (still untouched, no live writer elsewhere, not already resumed); a later `--dry-run` shows what happened. |
+| `find` | Search this Mac's Claude Code and Codex transcripts. See [Find past sessions](#find-past-sessions). |
 
-**Panel resolution.** Every verb except `resume` resolves `--panel` from `C11_PANEL_ID` if unset; `resume` needs `--panel` or `--all-skipped` explicitly. **No focused-panel fallback** (the silent-misroute footgun the architecture exists to avoid). If the env var is missing and no flag was given, the command errors out with `missing_surface`.
+**Panel resolution.** `claim`, `push`, `tombstone`, `list`, `get`, and `clear` resolve `--panel` from `C11_PANEL_ID` if unset. `resume` needs `--panel` or `--all-skipped` explicitly. `find` does not take `--panel`. **No focused-panel fallback** (the silent-misroute footgun the architecture exists to avoid). If a panel-scoped verb has neither the flag nor the env var, it errors out with `missing_surface`.
 
 **`--payload`** accepts inline JSON or `@<path>` to read JSON from a file (mirrors the `HOOKS_FILE` ergonomics in `Resources/bin/claude` so hook authors writing bash do not have to shell-quote JSON).
 
 **Codex runtime capture has no identity flags.** `capture-runtime` rejects every argument, alias disagreement, malformed/missing environment identity, stale/non-terminal/non-live panels, and panels not owned by the addressed c11 socket instance. This is cooperative causal evidence from the target process, not an adversarial authentication boundary. Orchestrators must instruct each Codex agent to run the command itself; they must not expand or relay a child thread ID.
 
 **State verification requires a recovery mode.** Use `c11 state verify --mode clean|dirty|no-resume [snapshot-path]`. The mode is explicit because a snapshot path cannot reveal the app's sentinel/relaunch policy. Clean evaluates persisted exact ownership; dirty additionally requires on-disk transcript evidence (including direct exact Codex lookup without a recency window); no-resume always reports a policy skip.
+
+## Find past sessions
+
+`c11 conversation find` searches this Mac's Claude Code and Codex transcripts, including sessions that were started outside c11. The scan reads files. It writes nothing under `~/.claude` or `~/.codex`. The query, titles, and prompt text stay in the CLI process: they are not sent on the socket and they are not written to c11's event stream.
+
+It looks at one directory level of `~/.claude/projects/<slug>/<uuid>.jsonl` plus `~/.claude/history.jsonl`, and at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` plus `~/.codex/history.jsonl`. Nested Claude subagent transcripts are out of scope.
+
+The default match is the title, the working directory, and the user's prompts. A case-insensitive substring is enough. The query is one word, so quote a phrase. `-a` also searches transcript text. A file larger than 8 MiB is counted and its body is not scanned. Every other file is read up to 1 MiB, and the read stops when the phrase matches. Assistant text matches only with `-a`.
+
+An empty query lists transcript files, newest first, 30 rows. It does not list history-only ids. `--limit` is a whole number from 1 to 200. When more matches exist than the limit, `--json` sets `"truncated": true`. `--session <uuid>` keeps that id. A query and `--session` both have to match.
+
+Each row is harness (`claude` or `codex`), the full session id, state, cwd, last active in local time, and title.
+
+| State | Meaning |
+|-------|---------|
+| `live in panel:N` | The session is on a panel that still exists. A placeholder or a tombstoned ref is not live. |
+| `idle` | The transcript is on disk and the session is not live. |
+| `gone` | History names the id and the transcript file is gone. A gone row appears only when a query matches. |
+
+`--json` is the stable shape. Key names are the contract. Key order is not. `last_active` is ISO-8601 with the local offset. Human rows use `yyyy-MM-dd HH:mm zzz`. `cwd` is omitted when it is unknown. A live row also has `panel_id`, `panel_ref`, `workspace_id`, and `workspace_ref`.
+
+```json
+{
+  "query": "zephyr",
+  "deep": false,
+  "truncated": false,
+  "skipped": {"corrupt_lines": 0, "huge_files": 0, "unreadable_files": 0},
+  "results": [
+    {
+      "harness": "claude",
+      "kind": "claude-code",
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "state": "idle",
+      "cwd": "/Users/test/proj",
+      "last_active": "2026-10-31T15:04:00-07:00",
+      "title": "Lattice notes"
+    }
+  ]
+}
+```
+
+When a skip count is nonzero, human output prints one stderr line, `skipped: corrupt_lines=%lld huge_files=%lld unreadable_files=%lld`. JSON puts those counts in `skipped`. An empty list prints `(no sessions)` and exits 0. A missing history directory is an empty result, not an error. A corrupt line, an unreadable file, or a file over 8 MiB is counted and skipped. The skip object is counts only.
+
+### Open one session
+
+`--open` acts only when exactly one session matches. That count is the full match count, not the `--limit` page. Zero matches exits nonzero with `No session matched.` More than one match prints the rows and exits nonzero: `find --open needs one session. N matched. Pass --session.` A gone session is refused. A session id that is not a UUID is not resumed.
+
+**Live.** Focus that panel inside the workspace that already holds it. The command is `panel.focus` with that panel id and that workspace id. It does not change which workspace is selected, and it does not open a second copy. Human output: `Focused panel:N in workspace:M. The selected workspace was not changed.` JSON includes `"action": "focus"` and `"selected_workspace_unchanged": true`.
+
+**Idle.** Open a new terminal in the caller's workspace (`$C11_WORKSPACE_ID`, or `--workspace`), in the session's cwd, and run the same resume line `c11 conversation resume` types. The new panel is not focused, and the selected workspace does not change.
+
+- Claude: `cd '<cwd>' && claude --dangerously-skip-permissions --resume '<uuid>'`
+- Codex: `cd '<cwd>' && codex resume --yolo '<uuid>'`
+
+Human output: `Resumed <session id> in panel:N.` JSON includes `"action": "resume"` and `"command"`.
+
+`--open` needs a running c11. If the socket is down, or the live-session read fails, it refuses. Listing works with c11 down. Those rows are `idle` or `gone`, because liveness could not be checked.
+
+Listing reads ids from `window.list`, `workspace.list`, `panel.list`, and `conversation.list`. `--open` sends the panel id and workspace id to `panel.focus`, or the cwd and the resume command to `panel.create`. It never sends the query, the title, or prompt text, and it never calls `workspace.select`.
+
+```bash
+c11 conversation find zephyr-needle --json
+c11 conversation find zephyr-needle -a --limit 50
+c11 conversation find --session 11111111-1111-4111-8111-111111111111 --open
+```
 
 ## Lifecycle states
 

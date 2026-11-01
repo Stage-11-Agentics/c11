@@ -163,6 +163,8 @@ struct MailboxDrawerSender: Equatable {
     var panelNumber: Int?
     var address: String?
     var isOpen: Bool
+    /// The open panel's title, when it is resolved by id (Conversations).
+    var title: String? = nil
 }
 
 struct MailboxDrawerView: View {
@@ -176,10 +178,12 @@ struct MailboxDrawerView: View {
     let resolveSenders: ([String]) -> [String: MailboxDrawerSender]
     /// Closes the drawer, as a second click on the envelope does.
     var onClose: () -> Void = {}
+    /// Open panels by id, for Conversations: a stamp names a panel exactly.
+    var resolvePanels: ([UUID]) -> [UUID: MailboxDrawerSender] = { _ in [:] }
 
     /// C11-399: the drawer reads what the panel received, or what it sent.
-    /// Insights summarizes both.
-    enum Tab: Hashable { case received, sent, insights }
+    /// Conversations pairs both by peer; Insights summarizes both.
+    enum Tab: Hashable { case received, sent, conversations, insights }
 
     @State private var tab: Tab = .received
     @State private var listing: MailboxPanelMail.Listing?
@@ -208,6 +212,8 @@ struct MailboxDrawerView: View {
     /// The notice for a dead or malformed body link, shown over the drawer.
     @State private var linkNotice: PanelLinkNotice?
     @State private var linkNoticeGeneration = 0
+    /// Kept by the drawer, so a look at another tab keeps the open thread.
+    @StateObject private var conversations = MailboxConversationsModel()
 
     private var bodyFont: Font { .system(size: 11.5 * style.scale, design: .monospaced) }
     private var metaFont: Font { .system(size: 10.5 * style.scale, design: .monospaced) }
@@ -288,6 +294,7 @@ struct MailboxDrawerView: View {
         Picker("", selection: $tab) {
             Text(String(localized: "mailbox.drawer.tab.received", defaultValue: "Received")).tag(Tab.received)
             Text(String(localized: "mailbox.drawer.tab.sent", defaultValue: "Sent")).tag(Tab.sent)
+            Text(String(localized: "mailbox.drawer.tab.conversations", defaultValue: "Conversations")).tag(Tab.conversations)
             Text(String(localized: "mailbox.drawer.tab.insights", defaultValue: "Insights")).tag(Tab.insights)
         }
         .pickerStyle(.segmented)
@@ -310,7 +317,12 @@ struct MailboxDrawerView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            Text(tab == .sent
+            Text(tab == .conversations
+                ? MailboxConversationsText.headerCounts(
+                    conversations: conversations.index?.conversations.count ?? 0,
+                    unread: model.summary.unread
+                )
+                : tab == .sent
                 ? String(
                     localized: "mailbox.drawer.sent.counts",
                     defaultValue: "\(sentListing?.total ?? 0) sent"
@@ -348,6 +360,20 @@ struct MailboxDrawerView: View {
     private var content: some View {
         if tab == .sent {
             sentContent
+        } else if tab == .conversations {
+            MailboxConversationsView(
+                model: conversations,
+                inboxURL: inboxURL,
+                revision: model.revision,
+                thisName: mailboxAddress ?? headerName,
+                width: geometry.width,
+                height: geometry.maxHeight,
+                style: style,
+                bodyFont: bodyFont,
+                metaFont: metaFont,
+                textFont: textFont,
+                resolvePanels: resolvePanels
+            )
         } else if tab == .insights {
             insightsContent
         } else if let listing {
@@ -1872,5 +1898,1523 @@ private struct MailboxLinkNoticeCard: View {
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
             .frame(maxWidth: 440, alignment: .leading)
             .accessibilityIdentifier("c11.panel-link.notice")
+    }
+}
+
+// MARK: - Conversations
+
+/// The Conversations tab's state. The drawer holds it, so the selection and
+/// the open thread survive a look at another tab. Every load runs off the
+/// main thread; a generation guard drops a result a newer request replaced,
+/// and a request during a load marks it dirty so one reload follows.
+final class MailboxConversationsModel: ObservableObject {
+    @Published private(set) var index: MailboxPanelMail.ConversationIndex?
+    @Published private(set) var thread: MailboxPanelMail.ConversationThread?
+    @Published private(set) var selected: MailboxPanelMail.PeerKey?
+    /// A narrow drawer shows the list or the open thread; a wide one, both.
+    @Published var showsThread = false
+    @Published private(set) var expanded: Set<String> = []
+    /// The panels this tab names, by id: numbers, names, and whether open.
+    @Published private(set) var panels: [UUID: MailboxDrawerSender] = [:]
+    /// Where the open thread scrolls once it lands: its first unread
+    /// message, else its end.
+    @Published private(set) var placement: Placement?
+    /// The message a reply chip just pointed at, outlined for a moment.
+    @Published private(set) var flashed: String?
+    /// The selected row's place in the list; when a rescan moves it, the
+    /// list scrolls to keep it in view.
+    @Published private(set) var selectedPosition: Int?
+
+    struct Placement: Equatable {
+        let key: MailboxPanelMail.PeerKey
+        let target: String
+        let token: Int
+    }
+
+    static let unreadAnchor = "conversation-unread"
+    static let endAnchor = "conversation-end"
+    /// Recipients take this panel's sends without moving its revision, so
+    /// the tab rescans on its own while it shows. Scans start at least this
+    /// far apart, however fast mail arrives.
+    static let refreshInterval: TimeInterval = 5
+    /// Open panels change rarely: a known set is resolved again this often.
+    static let resolveInterval: TimeInterval = 15
+
+    private var inbox: URL?
+    private var resolvePanels: ([UUID]) -> [UUID: MailboxDrawerSender] = { _ in [:] }
+    private var isShowing = false
+    private var tickGeneration = 0
+    private var indexGeneration = 0
+    private var indexInFlight = false
+    private var indexDirty = false
+    private var lastScanAt = Date.distantPast
+    private var scanScheduled = false
+    private var threadGeneration = 0
+    private var threadInFlight = false
+    private var threadDirty = false
+    private var placementToken = 0
+    private var resolvedIds: Set<UUID> = []
+    private var resolvedAt = Date.distantPast
+
+    func appeared(inbox: URL?, resolvePanels: @escaping ([UUID]) -> [UUID: MailboxDrawerSender]) {
+        self.inbox = inbox
+        self.resolvePanels = resolvePanels
+        isShowing = true
+        refresh()
+        scheduleTick()
+    }
+
+    func disappeared() {
+        isShowing = false
+        tickGeneration += 1
+    }
+
+    private func scheduleTick() {
+        tickGeneration += 1
+        let generation = tickGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.refreshInterval) { [weak self] in
+            guard let self, self.isShowing, generation == self.tickGeneration else { return }
+            self.refresh()
+            self.scheduleTick()
+        }
+    }
+
+    /// Rescans the list, then refreshes the open thread from it.
+    func refresh() {
+        guard let inbox else {
+            index = MailboxPanelMail.ConversationIndex()
+            return
+        }
+        guard !indexInFlight else {
+            indexDirty = true
+            return
+        }
+        let wait = Self.refreshInterval - Date().timeIntervalSince(lastScanAt)
+        if wait > 0 {
+            guard !scanScheduled else { return }
+            scanScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                guard let self else { return }
+                self.scanScheduled = false
+                if self.isShowing { self.refresh() }
+            }
+            return
+        }
+        lastScanAt = Date()
+        indexInFlight = true
+        indexGeneration += 1
+        let generation = indexGeneration
+        let root = inbox.deletingLastPathComponent()
+        // The first load is what the reader waits for; refreshes are background.
+        let qos: DispatchQoS.QoSClass = index == nil ? .userInitiated : .utility
+        DispatchQueue.global(qos: qos).async { [weak self] in
+            let loaded = autoreleasepool {
+                MailboxPanelMail.conversationIndex(inbox: inbox, mailboxesRoot: root)
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.indexInFlight = false
+                if generation == self.indexGeneration { self.apply(loaded) }
+                if self.indexDirty {
+                    self.indexDirty = false
+                    self.refresh()
+                }
+            }
+        }
+    }
+
+    private func apply(_ loaded: MailboxPanelMail.ConversationIndex) {
+        if loaded != index { index = loaded }
+        resolve()
+        defer { updateSelectedPosition() }
+        if let selected, loaded.conversation(selected) != nil {
+            reloadThread(place: false)
+        } else if let first = loaded.conversations.first {
+            // A wide drawer opens on the newest conversation; a narrow one
+            // on the list, with that thread ready behind it.
+            selected = first.key
+            thread = nil
+            showsThread = false
+            reloadThread(place: true)
+        } else {
+            selected = nil
+            thread = nil
+            showsThread = false
+        }
+    }
+
+    func select(_ key: MailboxPanelMail.PeerKey) {
+        showsThread = true
+        guard key != selected else { return }
+        selected = key
+        thread = nil
+        flashed = nil
+        updateSelectedPosition()
+        reloadThread(place: true)
+    }
+
+    private func updateSelectedPosition() {
+        let position = selected.flatMap { key in index?.conversations.firstIndex(where: { $0.key == key }) }
+        if position != selectedPosition { selectedPosition = position }
+    }
+
+    func toggleExpanded(_ id: String) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    func flash(_ id: String) {
+        flashed = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+            if self?.flashed == id { self?.flashed = nil }
+        }
+    }
+
+    private func reloadThread(place: Bool) {
+        guard let inbox, let index, let selected, let conversation = index.conversation(selected) else { return }
+        // A refresh waits for the load in flight; a new selection never does.
+        if !place, threadInFlight {
+            threadDirty = true
+            return
+        }
+        threadInFlight = true
+        threadGeneration += 1
+        let generation = threadGeneration
+        let root = inbox.deletingLastPathComponent()
+        let floor = index.ledgerFloor
+        // A refresh of the open thread first compares signatures (which
+        // messages, and every state), from stats and cached headers, and
+        // reads no envelope when nothing changed.
+        let known = place || thread?.key != selected ? nil : thread?.signature
+        DispatchQueue.global(qos: place ? .userInitiated : .utility).async { [weak self] in
+            let loaded = autoreleasepool { () -> MailboxPanelMail.ConversationThread? in
+                if let known,
+                   MailboxPanelMail.threadSignature(conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: floor) == known {
+                    return nil
+                }
+                return MailboxPanelMail.thread(conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: floor)
+            }
+            DispatchQueue.main.async {
+                guard let self, generation == self.threadGeneration else { return }
+                self.threadInFlight = false
+                if let loaded, loaded.key == self.selected {
+                    // Signatures, not a walk of every message on main.
+                    if loaded.signature != self.thread?.signature { self.thread = loaded }
+                    self.resolve()
+                    if place {
+                        self.placementToken += 1
+                        self.placement = Placement(
+                            key: loaded.key,
+                            target: loaded.firstUnreadId == nil ? Self.endAnchor : Self.unreadAnchor,
+                            token: self.placementToken
+                        )
+                    }
+                }
+                if self.threadDirty {
+                    self.threadDirty = false
+                    self.reloadThread(place: false)
+                }
+            }
+        }
+    }
+
+    /// Resolves the list's panels and the open thread's recipients when that
+    /// set grows, and every `resolveInterval` so closed panels dim.
+    private func resolve() {
+        var ids = Set(index?.conversations.compactMap(\.key.panelId) ?? [])
+        for item in thread?.items ?? [] {
+            for recipient in item.recipients { if let id = recipient.panelId { ids.insert(id) } }
+        }
+        guard !ids.isSubset(of: resolvedIds) || Date().timeIntervalSince(resolvedAt) >= Self.resolveInterval else { return }
+        let resolved = resolvePanels(Array(ids))
+        resolvedIds = ids
+        resolvedAt = Date()
+        if resolved != panels { panels = resolved }
+    }
+}
+
+/// Strings the Conversations tab shares with the drawer header.
+enum MailboxConversationsText {
+    static func headerCounts(conversations: Int, unread: Int) -> String {
+        conversations == 1
+            ? String(
+                localized: "mailbox.conversations.header.countsOne",
+                defaultValue: "1 conversation · \(unread) unread"
+            )
+            : String(
+                localized: "mailbox.conversations.header.counts",
+                defaultValue: "\(conversations) conversations · \(unread) unread"
+            )
+    }
+
+    /// Today's time, a weekday within six days, else a date.
+    static func listTime(_ date: Date?, now: Date, calendar: Calendar = .current) -> String {
+        guard let date else { return "" }
+        if calendar.isDate(date, inSameDayAs: now) { return date.formatted(date: .omitted, time: .shortened) }
+        if now.timeIntervalSince(date) < 6 * 86400 { return date.formatted(.dateTime.weekday(.abbreviated)) }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    static func clock(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    static func dayText(_ date: Date) -> String {
+        date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    /// A day separator in local time.
+    static func dayLabel(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        let text = dayText(date)
+        if calendar.isDate(date, inSameDayAs: now) {
+            return String(localized: "mailbox.conversations.day.today", defaultValue: "Today · \(text)")
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return String(localized: "mailbox.conversations.day.yesterday", defaultValue: "Yesterday · \(text)")
+        }
+        return text
+    }
+}
+
+/// The Conversations tab: this panel's mail with one peer, both directions,
+/// in time order. Read-only like the rest of the drawer. Two panes when the
+/// drawer is wide, the list then the thread when it is narrow; both a fixed
+/// height, so opening another thread never resizes the drawer. Every name,
+/// topic and body is untrusted text from another agent and renders verbatim.
+private struct MailboxConversationsView: View {
+    @ObservedObject var model: MailboxConversationsModel
+    let inboxURL: URL?
+    let revision: Int
+    /// What the thread calls this panel: its address, else its title.
+    let thisName: String
+    let width: CGFloat
+    let height: CGFloat
+    let style: MailboxDrawerStyle
+    let bodyFont: Font
+    let metaFont: Font
+    let textFont: Font
+    let resolvePanels: ([UUID]) -> [UUID: MailboxDrawerSender]
+
+    /// The prototype's breakpoints, against the drawer's width.
+    static let narrowBelow: CGFloat = 500
+    static let wideListFrom: CGFloat = 900
+    static let fullFooterFrom: CGFloat = 700
+
+    private var scale: CGFloat { style.scale }
+    private var isNarrow: Bool { width < Self.narrowBelow }
+    private var listWidth: CGFloat { (width >= Self.wideListFrom ? 280 : 220) * scale }
+    private var footerHeight: CGFloat { 26 * scale }
+    private var paneHeight: CGFloat { max(0, height - footerHeight - 1) }
+    private var threadWidth: CGFloat { isNarrow ? width : max(0, width - listWidth - 1) }
+    private var orange: Color { Color(nsColor: .systemOrange) }
+    private var link: Color { Color(nsColor: .linkColor) }
+
+    /// Who one side of a conversation is, as the list and thread name it.
+    struct Peer {
+        let name: String
+        let number: Int?
+        let isOpen: Bool
+        let isNameOnly: Bool
+    }
+
+    var body: some View {
+        // One container, so loading giving way to the list is not an
+        // appearance: the refresh loop runs exactly while the tab shows.
+        VStack(alignment: .leading, spacing: 0) { content }
+            .onAppear { model.appeared(inbox: inboxURL, resolvePanels: resolvePanels) }
+            .onDisappear { model.disappeared() }
+            .onChange(of: revision) { _ in model.refresh() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let index = model.index {
+            if index.conversations.isEmpty {
+                Text(String(localized: "mailbox.conversations.empty", defaultValue: "No conversations yet."))
+                    .font(textFont)
+                    .foregroundColor(style.secondary)
+                    .padding(12)
+            } else {
+                TimelineView(.periodic(from: .now, by: 30)) { timeline in
+                    VStack(spacing: 0) {
+                        panes(index, now: timeline.date)
+                            .frame(width: width, height: paneHeight, alignment: .topLeading)
+                            .clipped()
+                        Rectangle().fill(style.border).frame(height: 1)
+                        footer
+                    }
+                }
+                .frame(width: width, height: height, alignment: .topLeading)
+            }
+        } else {
+            // The loaded view's height, so the first scan landing moves nothing.
+            Text(String(localized: "mailbox.drawer.loading", defaultValue: "Reading mail…"))
+                .font(textFont)
+                .foregroundColor(style.secondary)
+                .padding(12)
+                .frame(width: width, height: height, alignment: .topLeading)
+        }
+    }
+
+    @ViewBuilder
+    private func panes(_ index: MailboxPanelMail.ConversationIndex, now: Date) -> some View {
+        let conversation = model.selected.flatMap { index.conversation($0) }
+        if isNarrow {
+            ZStack(alignment: .topLeading) {
+                // Kept underneath, so going back finds the list where it was.
+                listPane(index, now: now)
+                    .opacity(model.showsThread ? 0 : 1)
+                    .allowsHitTesting(!model.showsThread)
+                    .accessibilityHidden(model.showsThread)
+                if model.showsThread, let conversation {
+                    threadPane(conversation, index: index, now: now)
+                        .background(Color(nsColor: style.background))
+                }
+            }
+        } else {
+            HStack(spacing: 0) {
+                listPane(index, now: now)
+                    .frame(width: listWidth)
+                Rectangle().fill(style.border).frame(width: 1)
+                if let conversation {
+                    threadPane(conversation, index: index, now: now)
+                        .frame(width: threadWidth)
+                } else {
+                    Color.clear.frame(width: threadWidth)
+                }
+            }
+        }
+    }
+
+    private var footer: some View {
+        let detail: String
+        if isNarrow {
+            detail = String(localized: "mailbox.conversations.footer.short", defaultValue: "Never sends, claims or deletes mail.")
+        } else if width < Self.fullFooterFrom {
+            detail = String(localized: "mailbox.conversations.footer.medium", defaultValue: "The drawer never sends, claims or deletes mail.")
+        } else {
+            detail = String(
+                localized: "mailbox.conversations.footer.long",
+                defaultValue: "The drawer never sends, claims or deletes mail. Agents reply with c11 mailbox send."
+            )
+        }
+        return (
+            Text(String(localized: "mailbox.conversations.footer.readOnly", defaultValue: "Read-only."))
+                .fontWeight(.semibold)
+                .foregroundColor(style.foreground)
+            + Text(verbatim: " " + detail)
+        )
+        .font(metaFont)
+        .foregroundColor(style.secondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .padding(.horizontal, 12 * scale)
+        .frame(width: width, height: footerHeight, alignment: .leading)
+    }
+
+    // MARK: Peers
+
+    func peer(_ conversation: MailboxPanelMail.Conversation) -> Peer {
+        switch conversation.key {
+        case .name(let name):
+            return Peer(name: name, number: nil, isOpen: false, isNameOnly: true)
+        case .panel(let id):
+            let resolved = model.panels[id]
+            let live = resolved?.isOpen == true ? (resolved?.address ?? resolved?.title) : nil
+            let name = live ?? (conversation.label.isEmpty ? nil : conversation.label) ?? String(id.uuidString.lowercased().prefix(8))
+            return Peer(name: name, number: resolved?.panelNumber, isOpen: resolved?.isOpen == true, isNameOnly: false)
+        }
+    }
+
+    private func recipientName(_ recipient: MailboxPanelMail.SentRecipient) -> String {
+        if let id = recipient.panelId, let resolved = model.panels[id], resolved.isOpen,
+           let name = resolved.address ?? resolved.title {
+            return name
+        }
+        if !recipient.name.isEmpty { return recipient.name }
+        return recipient.panelId.map { String($0.uuidString.lowercased().prefix(8)) } ?? "?"
+    }
+
+    // MARK: List
+
+    private func listPane(_ index: MailboxPanelMail.ConversationIndex, now: Date) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(index.conversations) { conversation in
+                            row(conversation, now: now)
+                        }
+                        if index.scanIsPartial {
+                            Text(String(
+                                localized: "mailbox.conversations.note.partial",
+                                defaultValue: "Conversations cover the newest \(index.scanned + index.unparsed) of \(index.received) received messages."
+                            ))
+                            .font(metaFont.monospacedDigit())
+                            .foregroundColor(style.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(10 * scale)
+                        }
+                    } header: {
+                        listHeader(index)
+                    }
+                }
+            }
+            // A rescan that re-sorts the list scrolls only as far as it takes to
+            // keep the selected row in view.
+            .onChange(of: model.selectedPosition) { _ in
+                guard let selected = model.selected else { return }
+                proxy.scrollTo(selected.id, anchor: nil)
+            }
+        }
+    }
+
+    private func listHeader(_ index: MailboxPanelMail.ConversationIndex) -> some View {
+        let count = index.conversations.count
+        return HStack(spacing: 8) {
+            Text(count == 1
+                ? String(localized: "mailbox.conversations.list.countOne", defaultValue: "1 conversation")
+                : String(localized: "mailbox.conversations.list.count", defaultValue: "\(count) conversations"))
+            Spacer(minLength: 8)
+            Text(String(localized: "mailbox.insights.unreadCount", defaultValue: "\(index.unread) unread"))
+        }
+        .font(metaFont.monospacedDigit())
+        .foregroundColor(style.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 10 * scale)
+        .frame(height: 26 * scale)
+        .background(Color(nsColor: style.background))
+        .overlay(alignment: .bottom) { Rectangle().fill(style.border).frame(height: 1) }
+    }
+
+    private func row(_ conversation: MailboxPanelMail.Conversation, now: Date) -> some View {
+        let peer = self.peer(conversation)
+        let status = statusLine(conversation, peer: peer, now: now)
+        let numberText: String
+        let numberHelp: String
+        if peer.isNameOnly {
+            numberText = "?"
+            numberHelp = String(localized: "mailbox.conversations.number.nameOnly", defaultValue: "No panel: matched by name only")
+        } else if let number = peer.number {
+            numberText = String(number)
+            numberHelp = String(localized: "mailbox.conversations.number.panel", defaultValue: "Panel \(number)")
+        } else {
+            numberText = "–"
+            numberHelp = String(localized: "mailbox.conversations.number.unknown", defaultValue: "This panel is not open, and its number is not known")
+        }
+        return MailboxConversationRow(
+            name: peer.name,
+            numberText: numberText,
+            numberIsPanel: !peer.isNameOnly && peer.number != nil,
+            numberHelp: numberHelp,
+            isAway: peer.isNameOnly || !peer.isOpen,
+            isSelected: model.selected == conversation.key,
+            unread: conversation.unread,
+            time: MailboxConversationsText.listTime(conversation.lastAt, now: now),
+            direction: conversation.lastDirection,
+            preview: previewText(conversation.lastPreview),
+            status: status.text,
+            statusHelp: status.help,
+            accessibility: String(
+                localized: "mailbox.conversations.row.accessibility",
+                defaultValue: "Conversation with \(peer.name), \(conversation.unread) unread"
+            ),
+            style: style,
+            metaFont: metaFont,
+            textFont: textFont,
+            action: { model.select(conversation.key) }
+        )
+    }
+
+    private func previewText(_ preview: MailboxPanelMail.Preview) -> String {
+        switch preview {
+        case .text(let text): return text
+        case .file(let name): return String(localized: "mailbox.conversations.preview.file", defaultValue: "file \(name)")
+        case .copyGone: return String(localized: "mailbox.conversations.preview.copyGone", defaultValue: "(copy gone)")
+        case .empty: return String(localized: "mailbox.conversations.preview.empty", defaultValue: "(no body)")
+        }
+    }
+
+    /// Line 3 of a row: the state of this panel's last send, then where the
+    /// peer stands.
+    private func statusLine(_ conversation: MailboxPanelMail.Conversation, peer: Peer, now: Date) -> (text: Text, help: String) {
+        if peer.isNameOnly {
+            return (
+                Text(String(localized: "mailbox.conversations.status.nameOnly", defaultValue: "name only")),
+                String(localized: "mailbox.conversations.status.nameOnly.help", defaultValue: "Matched by name only, so there is no panel to send to")
+            )
+        }
+        let tail = peer.isOpen
+            ? Text(verbatim: "")
+            : Text(verbatim: " · " + String(localized: "mailbox.drawer.sender.notOpen", defaultValue: "not open"))
+        guard let state = conversation.lastSendState else {
+            return (
+                Text(String(localized: "mailbox.conversations.status.nothingSent", defaultValue: "nothing sent")) + tail,
+                String(localized: "mailbox.conversations.status.nothingSent.help", defaultValue: "\(thisName) has sent nothing to \(peer.name)")
+            )
+        }
+        let ago = conversation.lastSendAt.map { MailboxDrawerText.span(now.timeIntervalSince($0)) } ?? "?"
+        switch state {
+        case .read:
+            return (
+                Text(String(localized: "mailbox.conversations.status.taken", defaultValue: "sent · taken")) + tail,
+                String(localized: "mailbox.conversations.status.taken.help", defaultValue: "\(thisName)'s last send to \(peer.name), \(ago) ago: taken")
+            )
+        case .unread:
+            return (
+                Text(String(localized: "mailbox.conversations.status.sent", defaultValue: "sent ·")) + Text(verbatim: " ")
+                    + Text(String(localized: "mailbox.conversations.status.waiting", defaultValue: "waiting \(ago)")).foregroundColor(orange)
+                    + tail,
+                peer.isOpen
+                    ? String(localized: "mailbox.conversations.status.waiting.help", defaultValue: "\(thisName)'s last send to \(peer.name), \(ago) ago: not taken yet")
+                    : String(localized: "mailbox.conversations.status.waitingClosed.help", defaultValue: "\(thisName)'s last send to \(peer.name), \(ago) ago: not taken yet; the panel is not open")
+            )
+        case .gone:
+            return (
+                Text(String(localized: "mailbox.conversations.status.gone", defaultValue: "sent · copy gone")) + tail,
+                String(localized: "mailbox.conversations.status.gone.help", defaultValue: "\(thisName)'s last send to \(peer.name), \(ago) ago: the copy is no longer on disk")
+            )
+        }
+    }
+
+    // MARK: Thread
+
+    private enum ThreadRow: Identifiable {
+        case marker(id: String, text: String, edge: Bool)
+        case day(id: String, text: String)
+        case unread(text: String)
+        case item(MailboxPanelMail.ThreadItem)
+
+        var id: String {
+            switch self {
+            case .marker(let id, _, _), .day(let id, _): return id
+            case .unread: return MailboxConversationsModel.unreadAnchor
+            case .item(let item): return item.id
+            }
+        }
+    }
+
+    private func threadPane(
+        _ conversation: MailboxPanelMail.Conversation,
+        index: MailboxPanelMail.ConversationIndex,
+        now: Date
+    ) -> some View {
+        let peer = self.peer(conversation)
+        let thread = model.thread?.key == conversation.key ? model.thread : nil
+        return ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                threadHeader(conversation, peer: peer, thread: thread, proxy: proxy)
+                Rectangle().fill(style.border).frame(height: 1)
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if let thread {
+                            ForEach(rows(thread, index: index, peer: peer, now: now)) { row in
+                                rowView(row, peer: peer, conversation: conversation, proxy: proxy, now: now)
+                            }
+                        } else {
+                            Text(String(localized: "mailbox.drawer.loading", defaultValue: "Reading mail…"))
+                                .font(textFont)
+                                .foregroundColor(style.secondary)
+                                .padding(.vertical, 8 * scale)
+                        }
+                        Color.clear.frame(height: 1).id(MailboxConversationsModel.endAnchor)
+                    }
+                    .padding(.horizontal, 12 * scale)
+                    .padding(.top, 4 * scale)
+                    .padding(.bottom, 14 * scale)
+                }
+                .id(conversation.key)
+            }
+            .onAppear { place(proxy, key: conversation.key) }
+            .onChange(of: model.placement) { _ in place(proxy, key: conversation.key) }
+        }
+    }
+
+    /// Scrolls a thread that just opened to its first unread message, else its end.
+    private func place(_ proxy: ScrollViewProxy, key: MailboxPanelMail.PeerKey) {
+        guard let placement = model.placement, placement.key == key else { return }
+        let anchor: UnitPoint = placement.target == MailboxConversationsModel.endAnchor ? .bottom : .top
+        // After this layout pass, and once more as the lazy rows settle.
+        DispatchQueue.main.async { proxy.scrollTo(placement.target, anchor: anchor) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { proxy.scrollTo(placement.target, anchor: anchor) }
+    }
+
+    private func threadHeader(
+        _ conversation: MailboxPanelMail.Conversation,
+        peer: Peer,
+        thread: MailboxPanelMail.ConversationThread?,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        let unread = thread?.unread ?? conversation.unread
+        let canJump = thread?.firstUnreadId != nil
+        let total = thread?.total ?? conversation.count
+        let received = thread?.received ?? conversation.received
+        let sent = thread?.sent ?? conversation.sent
+        return VStack(alignment: .leading, spacing: 1 * scale) {
+            HStack(alignment: .firstTextBaseline, spacing: 8 * scale) {
+                if isNarrow {
+                    Button { model.showsThread = false } label: {
+                        Text(String(localized: "mailbox.conversations.back", defaultValue: "‹ All"))
+                            .font(metaFont)
+                            .foregroundColor(link)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .accessibilityLabel(Text(String(localized: "mailbox.conversations.back.accessibility", defaultValue: "Back to all conversations")))
+                }
+                Text(verbatim: peer.name)
+                    .font(textFont.weight(.semibold))
+                    .foregroundColor(style.foreground)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if peer.isNameOnly {
+                    MailboxConversationChip(
+                        label: String(localized: "mailbox.conversations.nameOnly", defaultValue: "NAME ONLY"),
+                        kind: .plain,
+                        help: String(localized: "mailbox.conversations.status.nameOnly.help", defaultValue: "Matched by name only, so there is no panel to send to"),
+                        style: style
+                    )
+                } else {
+                    Text(verbatim: whereText(peer))
+                        .font(metaFont)
+                        .foregroundColor(style.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                Spacer(minLength: 8 * scale)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        proxy.scrollTo(MailboxConversationsModel.unreadAnchor, anchor: .top)
+                    }
+                } label: {
+                    Text(String(localized: "mailbox.conversations.jump", defaultValue: "\(unread) unread ↓"))
+                        .font(metaFont.monospacedDigit())
+                        .foregroundColor(orange)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .help(String(localized: "mailbox.conversations.jump.help", defaultValue: "Show the first unread message"))
+                .opacity(canJump ? 1 : 0)
+                .disabled(!canJump)
+                .accessibilityHidden(!canJump)
+            }
+            .frame(height: 19 * scale)
+            HStack(alignment: .firstTextBaseline, spacing: 8 * scale) {
+                Text(verbatim: howText(conversation))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8 * scale)
+                Text(total == 1
+                    ? String(localized: "mailbox.conversations.thread.countsOne", defaultValue: "1 message · \(received) in · \(sent) out")
+                    : String(localized: "mailbox.conversations.thread.counts", defaultValue: "\(total) messages · \(received) in · \(sent) out"))
+                .lineLimit(1)
+                .fixedSize()
+            }
+            .font(metaFont.monospacedDigit())
+            .foregroundColor(style.secondary)
+            .frame(height: 16 * scale)
+        }
+        .padding(.horizontal, 12 * scale)
+        .padding(.vertical, 5 * scale)
+        .frame(height: 46 * scale, alignment: .top)
+    }
+
+    private func whereText(_ peer: Peer) -> String {
+        let state = peer.isOpen
+            ? String(localized: "mailbox.conversations.open", defaultValue: "open")
+            : String(localized: "mailbox.drawer.sender.notOpen", defaultValue: "not open")
+        guard let number = peer.number else { return state }
+        return String(localized: "mailbox.drawer.panelNumber", defaultValue: "panel \(number)") + " · " + state
+    }
+
+    private func howText(_ conversation: MailboxPanelMail.Conversation) -> String {
+        switch conversation.key {
+        case .name:
+            return String(localized: "mailbox.conversations.how.name", defaultValue: "no sender stamp: keyed by the name in from")
+        case .panel(let id):
+            let short = String(id.uuidString.lowercased().prefix(8))
+            return conversation.received > 0
+                ? String(localized: "mailbox.conversations.how.stamp", defaultValue: "keyed by sender stamp \(short)")
+                : String(localized: "mailbox.conversations.how.recipient", defaultValue: "keyed by recipient panel \(short)")
+        }
+    }
+
+    private func rows(
+        _ thread: MailboxPanelMail.ConversationThread,
+        index: MailboxPanelMail.ConversationIndex,
+        peer: Peer,
+        now: Date
+    ) -> [ThreadRow] {
+        var rows: [ThreadRow] = []
+        if peer.isNameOnly {
+            rows.append(.marker(id: "marker-name", text: String(
+                localized: "mailbox.conversations.marker.nameOnly",
+                defaultValue: "These messages carry no sender stamp, so c11 keys them by the name \(peer.name). It cannot tell which panel, if any, sent them, and never merges them into a panel's conversation. A script that writes envelopes directly looks like this."
+            ), edge: true))
+        }
+        // Past the scan, older mail either way is unknown: this is not the start.
+        if let scanFloor = index.scanFloor {
+            rows.append(.marker(id: "marker-scan", text: String(
+                localized: "mailbox.conversations.marker.scanFloor",
+                defaultValue: "Conversations read only this panel's newest \(index.scanned + index.unparsed) received messages, back to \(MailboxConversationsText.dayText(scanFloor)), \(MailboxConversationsText.clock(scanFloor)). Anything older with \(peer.name), sent or received, is not shown."
+            ), edge: true))
+        }
+        if thread.hiddenCount > 0 {
+            rows.append(.marker(id: "marker-hidden", text: peer.isNameOnly
+                ? String(localized: "mailbox.conversations.marker.hidden", defaultValue: "\(thread.hiddenCount) older messages are not shown.")
+                : String(
+                    localized: "mailbox.conversations.marker.hiddenSides",
+                    defaultValue: "\(thread.hiddenCount) older messages are not shown · \(peer.name) left, \(thisName) right"
+                ), edge: false))
+        } else if !peer.isNameOnly && index.scanFloor == nil {
+            rows.append(.marker(id: "marker-start", text: String(
+                localized: "mailbox.conversations.marker.start",
+                defaultValue: "Start of the record · \(peer.name) left, \(thisName) right"
+            ), edge: false))
+        }
+        let floorMarker: ThreadRow? = thread.showsLedgerFloor ? thread.ledgerFloor.map { floor in
+            ThreadRow.marker(id: "marker-floor", text: String(
+                localized: "mailbox.conversations.marker.ledgerFloor",
+                defaultValue: "This panel's sent record starts \(MailboxConversationsText.dayText(floor)), \(MailboxConversationsText.clock(floor)). Anything \(thisName) sent \(peer.name) before then is not recorded, so only \(peer.name)'s side shows above."
+            ), edge: true)
+        } : nil
+        let calendar = Calendar.current
+        let unreadShown = thread.items.filter { $0.direction == .received && $0.state == .unread }.count
+        var day: Date?
+        for item in thread.items {
+            if let floorMarker, item.id == thread.ledgerFloorItemId { rows.append(floorMarker) }
+            if let date = item.date, day.map({ !calendar.isDate($0, inSameDayAs: date) }) ?? true {
+                day = date
+                rows.append(.day(id: "day-" + item.id, text: MailboxConversationsText.dayLabel(date, now: now, calendar: calendar)))
+            }
+            if item.id == thread.firstUnreadId {
+                rows.append(.unread(text: unreadShown == 1
+                    ? String(localized: "mailbox.conversations.unreadDivider.one", defaultValue: "1 unread: \(thisName) has not taken it yet")
+                    : String(localized: "mailbox.conversations.unreadDivider", defaultValue: "\(unreadShown) unread: \(thisName) has not taken these yet")))
+            }
+            rows.append(.item(item))
+        }
+        if let floorMarker, thread.ledgerFloorItemId == nil { rows.append(floorMarker) }
+        return rows
+    }
+
+    @ViewBuilder
+    private func rowView(
+        _ row: ThreadRow,
+        peer: Peer,
+        conversation: MailboxPanelMail.Conversation,
+        proxy: ScrollViewProxy,
+        now: Date
+    ) -> some View {
+        switch row {
+        case .marker(_, let text, let edge):
+            if edge {
+                Text(verbatim: text)
+                    .font(metaFont)
+                    .foregroundColor(style.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8 * scale)
+                    .padding(.vertical, 5 * scale)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(style.border, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+                    .padding(.top, 10 * scale)
+                    .padding(.bottom, 4 * scale)
+            } else {
+                Text(verbatim: text)
+                    .font(metaFont)
+                    .foregroundColor(style.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8 * scale)
+                    .padding(.bottom, 2 * scale)
+            }
+        case .day(_, let text):
+            separator(text, color: style.secondary, line: style.border, weight: .semibold)
+        case .unread(let text):
+            separator(text, color: orange, line: orange.opacity(0.5), weight: .regular)
+        case .item(let item):
+            let inner = max(0, threadWidth - 24 * scale)
+            let maxWidth = inner * 0.86
+            MailboxConversationBubble(
+                item: item,
+                peerName: peer.name,
+                thisName: thisName,
+                recipientNames: item.recipients.map(recipientName),
+                peerPanel: conversation.key.panelId,
+                isExpanded: model.expanded.contains(item.id),
+                isFlashing: model.flashed == item.id,
+                now: now,
+                minWidth: min(250 * scale, maxWidth),
+                maxWidth: maxWidth,
+                style: style,
+                bodyFont: bodyFont,
+                metaFont: metaFont,
+                onToggleExpanded: { model.toggleExpanded(item.id) },
+                onShowParent: { id in
+                    withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.33)) }
+                    model.flash(id)
+                }
+            )
+        }
+    }
+
+    private func separator(_ text: String, color: Color, line: Color, weight: Font.Weight) -> some View {
+        HStack(spacing: 8 * scale) {
+            Rectangle().fill(line).frame(height: 1)
+            Text(verbatim: text)
+                .font(.system(size: 10 * scale, weight: weight, design: .monospaced))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .fixedSize()
+            Rectangle().fill(line).frame(height: 1)
+        }
+        .padding(.top, 12 * scale)
+        .padding(.bottom, 4 * scale)
+    }
+}
+
+/// One conversation in the list: three fixed lines, so counts can change
+/// without the list moving.
+private struct MailboxConversationRow: View {
+    let name: String
+    let numberText: String
+    let numberIsPanel: Bool
+    let numberHelp: String
+    let isAway: Bool
+    let isSelected: Bool
+    let unread: Int
+    let time: String
+    let direction: MailboxPanelMail.Direction?
+    let preview: String
+    let status: Text
+    let statusHelp: String
+    let accessibility: String
+    let style: MailboxDrawerStyle
+    let metaFont: Font
+    let textFont: Font
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private var scale: CGFloat { style.scale }
+    private var monoFont: Font { .system(size: 11 * scale, design: .monospaced) }
+    private var numberWidth: CGFloat { 22 * scale }
+    private var faint: Color { style.secondary.opacity(0.6) }
+    private var orange: Color { Color(nsColor: .systemOrange) }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 1 * scale) {
+                HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+                    Text(verbatim: numberText)
+                        .font(monoFont.monospacedDigit())
+                        .foregroundColor(numberIsPanel ? BrandColors.goldSwiftUI : faint)
+                        .lineLimit(1)
+                        .frame(width: numberWidth, alignment: .leading)
+                        .help(numberHelp)
+                    Text(verbatim: name)
+                        .font(textFont.weight(.semibold))
+                        .foregroundColor(isAway ? style.secondary : style.foreground)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 6 * scale)
+                    Text(verbatim: time)
+                        .font(metaFont.monospacedDigit())
+                        .foregroundColor(style.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .frame(height: 17 * scale)
+                HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+                    Text(verbatim: direction == .sent ? "→" : "←")
+                        .font(monoFont)
+                        .foregroundColor(faint)
+                        .frame(width: numberWidth, alignment: .leading)
+                    Text(verbatim: preview)
+                        .font(monoFont)
+                        .foregroundColor(unread > 0 ? style.foreground : style.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 16 * scale)
+                HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+                    status
+                        .font(metaFont)
+                        .foregroundColor(style.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(statusHelp)
+                    Spacer(minLength: 6 * scale)
+                    Text(unread > 0
+                        ? String(localized: "mailbox.insights.unreadCount", defaultValue: "\(unread) unread")
+                        : "")
+                    .font(metaFont.weight(.semibold).monospacedDigit())
+                    .foregroundColor(Color.black.opacity(0.85))
+                    .lineLimit(1)
+                    .padding(.horizontal, unread > 0 ? 4 : 0)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(unread > 0 ? orange : Color.clear))
+                    .fixedSize()
+                    .frame(minWidth: 56 * scale, alignment: .trailing)
+                }
+                .padding(.leading, numberWidth + 6 * scale)
+                .frame(height: 16 * scale)
+            }
+            .padding(.horizontal, 10 * scale)
+            .padding(.vertical, 6 * scale)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: 62 * scale, alignment: .topLeading)
+            .background(isSelected ? Color.black.opacity(0.18) : Color.primary.opacity(hovering ? 0.08 : 0))
+            .overlay(Rectangle().inset(by: 0.5).stroke(isSelected ? BrandColors.goldSwiftUI : Color.clear, lineWidth: 1))
+            .overlay(alignment: .bottom) { Rectangle().fill(style.border).frame(height: 1) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(Text(accessibility))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// A small label with a border: a state, or a fact about a message.
+private struct MailboxConversationChip: View {
+    enum Kind { case plain, filled, waiting, gone }
+
+    let label: String
+    let kind: Kind
+    let help: String
+    let style: MailboxDrawerStyle
+
+    private var orange: Color { Color(nsColor: .systemOrange) }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 9 * style.scale, weight: .semibold))
+            .foregroundColor(kind == .filled ? Color.black.opacity(0.85) : (kind == .waiting ? orange : style.secondary))
+            .lineLimit(1)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 3).fill(kind == .filled ? orange : Color.clear))
+            .overlay(
+                RoundedRectangle(cornerRadius: 3).stroke(
+                    kind == .filled ? Color.clear : style.border,
+                    style: StrokeStyle(lineWidth: 1, dash: kind == .gone ? [2, 2] : [])
+                )
+            )
+            .fixedSize()
+            .help(help)
+    }
+}
+
+/// One message in a thread: the peer's on the left, this panel's on the
+/// right. A bubble is as wide as its widest line, between `minWidth` and
+/// `maxWidth`. Text is untrusted and renders verbatim.
+private struct MailboxConversationBubble: View {
+    let item: MailboxPanelMail.ThreadItem
+    let peerName: String
+    let thisName: String
+    /// One per `item.recipients`.
+    let recipientNames: [String]
+    let peerPanel: UUID?
+    let isExpanded: Bool
+    let isFlashing: Bool
+    let now: Date
+    let minWidth: CGFloat
+    let maxWidth: CGFloat
+    let style: MailboxDrawerStyle
+    let bodyFont: Font
+    let metaFont: Font
+    let onToggleExpanded: () -> Void
+    let onShowParent: (String) -> Void
+
+    @State private var copied = false
+
+    private var scale: CGFloat { style.scale }
+    private var isSent: Bool { item.direction == .sent }
+    private var orange: Color { Color(nsColor: .systemOrange) }
+    private var link: Color { Color(nsColor: .linkColor) }
+    private var gold: Color { BrandColors.goldSwiftUI }
+    private var horizontalPadding: CGFloat { 8 * scale }
+
+    private var isDark: Bool {
+        guard let color = style.background.usingColorSpace(.sRGB) else { return true }
+        return 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent < 0.5
+    }
+
+    private var fill: Color {
+        if isSent { return isDark ? Color.white.opacity(0.05) : Color.white }
+        return isDark ? Color.black.opacity(0.22) : Color.black.opacity(0.04)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if isSent { Spacer(minLength: 0) }
+            bubble
+            if !isSent { Spacer(minLength: 0) }
+        }
+        .padding(.vertical, 3.5 * scale)
+    }
+
+    private var bubble: some View {
+        MailboxBubbleStack(
+            spacing: 4 * scale,
+            minWidth: max(0, minWidth - 2 * horizontalPadding),
+            maxWidth: max(0, maxWidth - 2 * horizontalPadding)
+        ) {
+            header
+            if isSent && item.recipients.count > 1 { recipientsLine }
+            if !chipItems.isEmpty { chipsRow }
+            bodyBlock
+            if showsActions { actions }
+        }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.top, 6 * scale)
+        .padding(.bottom, 5 * scale)
+        .background(RoundedRectangle(cornerRadius: 6).fill(fill))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(!isSent && item.state == .unread ? orange : style.border, lineWidth: 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(gold, lineWidth: 2)
+                .padding(-4)
+                .opacity(isFlashing ? 1 : 0)
+        )
+        .animation(.easeInOut(duration: 0.25), value: isFlashing)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(isSent
+            ? String(localized: "mailbox.conversations.bubble.sent", defaultValue: "\(thisName) to \(peerName)")
+            : String(localized: "mailbox.conversations.bubble.received", defaultValue: "\(peerName) to \(thisName)")))
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+            stateChip(item.state, who: isSent ? peerName : thisName, received: !isSent)
+            Text(verbatim: item.topic ?? String(localized: "mailbox.drawer.noTopic", defaultValue: "(no topic)"))
+                .font(metaFont.weight(item.topic == nil ? .regular : .semibold))
+                .foregroundColor(item.topic == nil ? style.secondary : style.foreground)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 10 * scale)
+            if let date = item.date {
+                Text(verbatim: MailboxConversationsText.clock(date))
+                    .font(metaFont.monospacedDigit())
+                    .foregroundColor(style.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help(MailboxDrawerText.stamp(date) + " · " + MailboxDrawerText.age(of: date, now: now))
+            }
+        }
+    }
+
+    private func stateChip(_ state: MailboxPanelMail.SentState, who: String, received: Bool) -> MailboxConversationChip {
+        let label: String
+        let help: String
+        let kind: MailboxConversationChip.Kind
+        switch (received, state) {
+        case (true, .unread):
+            label = String(localized: "mailbox.drawer.state.unread", defaultValue: "UNREAD")
+            help = String(localized: "mailbox.conversations.state.unread.help", defaultValue: "\(who) has not taken this message yet.")
+            kind = .filled
+        case (true, _):
+            label = String(localized: "mailbox.insights.tile.taken", defaultValue: "TAKEN")
+            help = String(localized: "mailbox.conversations.state.taken.help", defaultValue: "\(who) has taken this message.")
+            kind = .plain
+        case (false, .unread):
+            label = String(localized: "mailbox.insights.tile.waiting", defaultValue: "WAITING")
+            help = String(localized: "mailbox.conversations.state.unread.help", defaultValue: "\(who) has not taken this message yet.")
+            kind = .waiting
+        case (false, .read):
+            label = String(localized: "mailbox.insights.tile.taken", defaultValue: "TAKEN")
+            help = String(localized: "mailbox.conversations.state.taken.help", defaultValue: "\(who) has taken this message.")
+            kind = .plain
+        case (false, .gone):
+            label = String(localized: "mailbox.drawer.sent.state.gone", defaultValue: "GONE")
+            help = String(localized: "mailbox.conversations.state.gone.help", defaultValue: "\(who)'s copy is no longer on disk.")
+            kind = .gone
+        }
+        return MailboxConversationChip(label: label, kind: kind, help: help, style: style)
+    }
+
+    /// A broadcast: where it was addressed, and each recipient's copy.
+    private var recipientsLine: some View {
+        MailboxFlowLayout(spacing: 10 * scale, lineSpacing: 2 * scale) {
+            Text(verbatim: item.to.map {
+                String(localized: "mailbox.conversations.recipients.to", defaultValue: "to \($0) · \(item.recipients.count) panels")
+            } ?? String(localized: "mailbox.conversations.recipients", defaultValue: "to \(item.recipients.count) panels"))
+            .font(metaFont)
+            .foregroundColor(style.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            ForEach(item.recipients.indices, id: \.self) { index in
+                let recipient = item.recipients[index]
+                let name = recipientNames.indices.contains(index) ? recipientNames[index] : recipient.name
+                HStack(alignment: .firstTextBaseline, spacing: 4 * scale) {
+                    Text(verbatim: name)
+                        .font(metaFont.weight(.semibold))
+                        .foregroundColor(recipient.panelId != nil && recipient.panelId == peerPanel ? style.foreground : style.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    stateChip(recipient.state, who: name, received: false)
+                }
+            }
+        }
+    }
+
+    // MARK: Chips
+
+    private enum ChipKind { case plain, warn, link(String) }
+    private struct Chip {
+        let text: String
+        let kind: ChipKind
+        var help: String? = nil
+    }
+
+    private var chipItems: [Chip] {
+        guard let message = item.message, message.problem == nil else { return [] }
+        var items: [Chip] = []
+        if message.urgent {
+            items.append(Chip(text: String(localized: "mailbox.drawer.chip.urgent", defaultValue: "urgent"), kind: .warn))
+        }
+        if let replyTo = message.inReplyTo {
+            if let parent = item.parent {
+                let topic = parent.topic ?? String(localized: "mailbox.drawer.noTopic", defaultValue: "(no topic)")
+                let when = parent.date.map {
+                    $0.formatted(.dateTime.weekday(.abbreviated)) + " " + MailboxConversationsText.clock($0)
+                } ?? ""
+                items.append(Chip(
+                    text: String(localized: "mailbox.conversations.chip.replyTo", defaultValue: "↳ reply to \(topic) · \(when)"),
+                    kind: .link(parent.id),
+                    help: String(localized: "mailbox.conversations.chip.replyTo.help", defaultValue: "Show the message this replies to")
+                ))
+            } else {
+                items.append(Chip(
+                    text: String(localized: "mailbox.drawer.chip.replyToId", defaultValue: "↳ reply to \(String(replyTo.prefix(10)))…"),
+                    kind: .plain,
+                    help: String(localized: "mailbox.conversations.chip.replyOutside.help", defaultValue: "The parent is not in this conversation")
+                ))
+            }
+        }
+        if let ttl = message.ttlSeconds, ttl > 0, let expiry = message.expiresAt() {
+            let ttlText = MailboxDrawerText.span(TimeInterval(ttl))
+            if message.isExpired(now: now) {
+                items.append(Chip(text: String(
+                    localized: "mailbox.drawer.chip.ttlExpired",
+                    defaultValue: "ttl \(ttlText) · expired \(MailboxDrawerText.span(now.timeIntervalSince(expiry))) ago"
+                ), kind: .warn))
+            } else {
+                items.append(Chip(text: String(
+                    localized: "mailbox.drawer.chip.ttlLive",
+                    defaultValue: "ttl \(ttlText) · expires in \(MailboxDrawerText.span(expiry.timeIntervalSince(now)))"
+                ), kind: .plain))
+            }
+        }
+        if let replyAddress = message.replyTo {
+            items.append(Chip(text: String(localized: "mailbox.drawer.chip.replyAddress", defaultValue: "replies to \(replyAddress)"), kind: .plain))
+        }
+        if let contentType = message.contentType {
+            items.append(Chip(text: contentType, kind: .plain))
+        }
+        return items
+    }
+
+    private var chipsRow: some View {
+        let items = chipItems
+        return MailboxFlowLayout(spacing: 4 * scale, lineSpacing: 4 * scale) {
+            ForEach(items.indices, id: \.self) { index in
+                chip(items[index])
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chip(_ chip: Chip) -> some View {
+        let label = Text(verbatim: chip.text)
+            .font(metaFont)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 0.5)
+        switch chip.kind {
+        case .plain:
+            label.foregroundColor(style.secondary)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(style.border, lineWidth: 1))
+                .help(chip.help ?? chip.text)
+        case .warn:
+            label.foregroundColor(orange)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(orange.opacity(0.45), lineWidth: 1))
+        case .link(let id):
+            Button { onShowParent(id) } label: {
+                label.foregroundColor(link)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(link.opacity(0.45), lineWidth: 1))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(chip.help ?? chip.text)
+        }
+    }
+
+    // MARK: Body
+
+    @ViewBuilder
+    private var bodyBlock: some View {
+        if let message = item.message {
+            if let problem = message.problem {
+                Text(verbatim: problem)
+                    .font(bodyFont)
+                    .foregroundColor(orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: 6 * scale) {
+                    // Links found by MailboxBodyLinks (C11-524) open through the
+                    // drawer's openURL handler, as they do in Received.
+                    if !message.body.isEmpty {
+                        bodyText(message.bodyRich, isLong: message.isLong)
+                    }
+                    if let reference = message.reference {
+                        referenceBlock(reference, rich: message.referenceRich, isLong: message.isLong)
+                    }
+                    if message.body.isEmpty && message.reference == nil {
+                        Text(String(localized: "mailbox.drawer.emptyBody", defaultValue: "This message has no body."))
+                            .font(bodyFont)
+                            .foregroundColor(style.secondary)
+                    }
+                }
+            }
+        } else {
+            Text(verbatim: String(
+                localized: "mailbox.conversations.copyGone",
+                defaultValue: "Copy gone. \(peerName)'s copy is no longer on disk, so the text cannot be shown. The sent record keeps the topic, time and recipients."
+            ))
+            .font(bodyFont)
+            .foregroundColor(style.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 7 * scale)
+            .padding(.vertical, 5 * scale)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(style.border, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+        }
+    }
+
+    /// Long text folds to its first lines and fades out, until "Show all".
+    /// The text carries only the links MailboxBodyLinks found; it is never
+    /// parsed as Markdown.
+    private func bodyText(_ text: AttributedString, isLong: Bool) -> some View {
+        let folded = isLong && !isExpanded
+        return Text(text)
+            .font(bodyFont)
+            .foregroundColor(style.foreground)
+            .lineLimit(folded ? MailboxPanelMail.foldedLineLimit : nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .mask {
+                LinearGradient(
+                    stops: folded
+                        ? [.init(color: .black, location: 0), .init(color: .black, location: 0.72), .init(color: .black.opacity(0), location: 1)]
+                        : [.init(color: .black, location: 0), .init(color: .black, location: 1)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+    }
+
+    @ViewBuilder
+    private func referenceBlock(_ reference: MailboxPanelMail.Reference, rich: AttributedString?, isLong: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3 * scale) {
+            Text(verbatim: referenceCaption(reference))
+                .font(metaFont)
+                .foregroundColor(style.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(reference.path)
+            switch reference.content {
+            case .text(let text, let truncated, let bytes):
+                if text.isEmpty {
+                    Text(String(localized: "mailbox.drawer.ref.emptyFile", defaultValue: "The referenced file is empty."))
+                        .font(bodyFont)
+                        .foregroundColor(style.secondary)
+                } else {
+                    bodyText(rich ?? AttributedString(text), isLong: isLong)
+                }
+                if truncated {
+                    Text(String(
+                        localized: "mailbox.drawer.ref.truncated",
+                        defaultValue: "Showing the first \(MailboxDrawerText.byteCount(MailboxPanelMail.maxReferencedBytes)) of \(MailboxDrawerText.byteCount(bytes))."
+                    ))
+                    .font(metaFont)
+                    .foregroundColor(orange)
+                }
+            default:
+                Text(verbatim: referenceProblem(reference.content))
+                    .font(bodyFont)
+                    .foregroundColor(orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func referenceCaption(_ reference: MailboxPanelMail.Reference) -> String {
+        if case .text(_, _, let bytes) = reference.content {
+            return String(
+                localized: "mailbox.drawer.ref.captionSized",
+                defaultValue: "from file \(reference.path) · \(MailboxDrawerText.byteCount(bytes))"
+            )
+        }
+        return String(localized: "mailbox.drawer.ref.caption", defaultValue: "from file \(reference.path)")
+    }
+
+    private func referenceProblem(_ content: MailboxPanelMail.Reference.Content) -> String {
+        switch content {
+        case .text:
+            return ""
+        case .missing:
+            return String(localized: "mailbox.drawer.ref.missing", defaultValue: "The referenced file is gone (no such file).")
+        case .notAbsolute:
+            return String(localized: "mailbox.drawer.ref.notAbsolute", defaultValue: "The reference is not an absolute path, so c11 did not open it.")
+        case .notRegularFile:
+            return String(localized: "mailbox.drawer.ref.notRegular", defaultValue: "The reference is not a regular file, so c11 did not open it.")
+        case .notText(let bytes):
+            return String(
+                localized: "mailbox.drawer.ref.notText",
+                defaultValue: "The referenced file is not text (\(MailboxDrawerText.byteCount(bytes)))."
+            )
+        case .unreadable(let reason):
+            return String(localized: "mailbox.drawer.ref.unreadable", defaultValue: "c11 could not read the referenced file: \(reason)")
+        }
+    }
+
+    // MARK: Actions
+
+    private var hasCopyableText: Bool {
+        guard let message = item.message, message.problem == nil else { return false }
+        if !message.body.isEmpty { return true }
+        if case .text(let text, _, _)? = message.reference?.content { return !text.isEmpty }
+        return false
+    }
+
+    private var showsActions: Bool {
+        guard let message = item.message, message.problem == nil else { return false }
+        return message.isLong || hasCopyableText
+    }
+
+    private var actions: some View {
+        HStack(spacing: 14 * scale) {
+            if item.message?.isLong == true {
+                Button(isExpanded
+                    ? String(localized: "mailbox.drawer.showLess", defaultValue: "Show less")
+                    : String(localized: "mailbox.drawer.showAll", defaultValue: "Show all")
+                ) { onToggleExpanded() }
+                .buttonStyle(.link)
+                .font(metaFont)
+                .fixedSize()
+            }
+            if hasCopyableText {
+                // The drawer's panel never becomes key, so a selection could
+                // not be copied with Command-C; this button is the copy path.
+                Button(copied
+                    ? String(localized: "mailbox.conversations.copied", defaultValue: "Copied")
+                    : String(localized: "mailbox.drawer.copy", defaultValue: "Copy text")
+                ) {
+                    guard let text = item.message?.fullText else { return }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+                }
+                .buttonStyle(.link)
+                .font(metaFont)
+                .fixedSize()
+                .frame(minWidth: 64 * scale, alignment: .leading)
+            }
+        }
+    }
+}
+
+/// Stacks a bubble's rows at one width: the widest row's natural width,
+/// kept between `minWidth` and `maxWidth`, so a short message makes a narrow
+/// bubble and a long one wraps.
+private struct MailboxBubbleStack: Layout {
+    var spacing: CGFloat
+    var minWidth: CGFloat
+    var maxWidth: CGFloat
+
+    private func width(of subviews: Subviews) -> CGFloat {
+        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        return min(max(widest, minWidth), maxWidth)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = self.width(of: subviews)
+        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+        let gaps = spacing * CGFloat(max(0, subviews.count - 1))
+        return CGSize(width: width, height: heights.reduce(0, +) + gaps)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let child = ProposedViewSize(width: bounds.width, height: nil)
+        var y = bounds.minY
+        for subview in subviews {
+            let height = subview.sizeThatFits(child).height
+            subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: height))
+            y += height + spacing
+        }
+    }
+}
+
+/// Lays chips out left to right, wrapping to a new line when the next one
+/// does not fit. A chip wider than a line is narrowed to it.
+private struct MailboxFlowLayout: Layout {
+    var spacing: CGFloat
+    var lineSpacing: CGFloat
+
+    private struct Line {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func lines(width: CGFloat?, subviews: Subviews) -> [Line] {
+        let limit = width ?? .infinity
+        var lines: [Line] = []
+        var line = Line()
+        for index in subviews.indices {
+            var size = subviews[index].sizeThatFits(.unspecified)
+            if size.width > limit {
+                size = subviews[index].sizeThatFits(ProposedViewSize(width: limit, height: nil))
+                size.width = min(size.width, limit)
+            }
+            if !line.items.isEmpty, line.width + spacing + size.width > limit {
+                lines.append(line)
+                line = Line()
+            }
+            line.width += (line.items.isEmpty ? 0 : spacing) + size.width
+            line.height = max(line.height, size.height)
+            line.items.append((index, size))
+        }
+        if !line.items.isEmpty { lines.append(line) }
+        return lines
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let lines = self.lines(width: proposal.width, subviews: subviews)
+        let width = lines.map(\.width).max() ?? 0
+        let height = lines.map(\.height).reduce(0, +) + lineSpacing * CGFloat(max(0, lines.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in self.lines(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for item in line.items {
+                subviews[item.index].place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += line.height + lineSpacing
+        }
     }
 }

@@ -313,7 +313,9 @@ enum GrokMailboxCommand {
             panelID = panel
             agentPID = pid
             agentBirth = birth
-            sessionID = session.lowercased()
+            // Grok keys sessions by the exact string it was given (the wrapper's
+            // uuidgen is uppercase); comparisons elsewhere ignore case.
+            sessionID = session
             leaderSocket = socket
             self.grok = grok
             self.registry = registry

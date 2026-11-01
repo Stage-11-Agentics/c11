@@ -133,8 +133,8 @@ enum PromptInputClassifier {
     /// `opencode`, `pi`). Anything else, including omp and GitHub Copilot,
     /// runs the unboxed prefix reader only to refuse a draft or a dialog.
     /// Empty and suggestion on those panels stay unknown, so they are not rung.
-    static func classify(_ region: PromptRegionSnapshot, harness: String?) -> PromptInputClassification {
-        analyze(region, harness: harness).classification
+    static func classify(_ region: PromptRegionSnapshot, harness: String?, forSupervisor: Bool = false) -> PromptInputClassification {
+        analyze(region, harness: harness, forSupervisor: forSupervisor).classification
     }
 
     /// Transiently returns the typed text for an exact composer comparison.
@@ -155,8 +155,10 @@ enum PromptInputClassifier {
 
     /// Grok keeps its composer at the bottom of the screen and, unfocused,
     /// parks its hidden cursor anywhere. Its panels also read the bottom rows.
-    static func readsScreenBottom(harness: String?) -> Bool {
-        composerReader(for: harness) == .grok || composerReader(for: harness) == .pi
+    /// Pi's extra chooser context is supervisor-only; send and doorbell reads
+    /// retain their cursor-based composer path.
+    static func readsScreenBottom(harness: String?, forSupervisor: Bool = false) -> Bool {
+        composerReader(for: harness) == .grok || (forSupervisor && composerReader(for: harness) == .pi)
     }
 
     private static func composerReader(for harness: String?) -> ComposerReader? {
@@ -174,7 +176,7 @@ enum PromptInputClassifier {
         }
     }
 
-    private static func analyze(_ region: PromptRegionSnapshot, harness: String?) -> Analysis {
+    private static func analyze(_ region: PromptRegionSnapshot, harness: String?, forSupervisor: Bool = false) -> Analysis {
         guard region.complete,
               !region.rows.isEmpty,
               region.rows.count <= maxRows,
@@ -193,12 +195,12 @@ enum PromptInputClassifier {
             return Analysis(classification: .unknown, composerText: nil)
         }
 
-        if let kind = supervisorDialog(lines, harness: harness, cursorY: region.cursorY) {
+        if let kind = supervisorDialog(lines, harness: harness, cursorY: region.cursorY, forSupervisor: forSupervisor) {
             return Analysis(classification: .init(state: .dialog, draftLength: nil, dialogKind: kind), composerText: nil)
         }
         // Pi's extension chooser hides the cursor. Read its bounded bottom
         // rows as well, but require the chooser footer and bottom status rails.
-        if composerReader(for: harness) == .pi, let bottom = region.screenBottom,
+        if forSupervisor, composerReader(for: harness) == .pi, let bottom = region.screenBottom,
            bottom.complete, bottom.rows.count <= maxRows, bottom.cells.count <= maxCells,
            bottom.text.count <= maxTextBytes,
            let bottomLines = makeLines(rows: bottom.rows, cells: bottom.cells, bytes: Array(bottom.text)),
@@ -658,9 +660,9 @@ enum PromptInputClassifier {
 
     /// Native permission menus captured from Claude 2.1.316, Codex 0.166.0,
     /// OpenCode 1.15.13 and Pi 0.81.1. A heading alone never guards a prompt.
-    private static func supervisorDialog(_ lines: [Line], harness: String?, cursorY: Int) -> String? {
+    private static func supervisorDialog(_ lines: [Line], harness: String?, cursorY: Int, forSupervisor: Bool) -> String? {
         let type = harness?.lowercased()
-        if type == "pi", piChoice(lines) { return "choice" }
+        if forSupervisor, type == "pi", piChoice(lines) { return "choice" }
         let normalized = lines.map { collapsedLowercased($0.text) }
         for index in lines.indices {
             let text = normalized[index]

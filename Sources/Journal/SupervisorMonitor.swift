@@ -364,7 +364,7 @@ final class SupervisorMonitor: @unchecked Sendable {
                     captures.append((candidate, nil)); continue
                 }
                 let region = terminal.surface.surface.flatMap {
-                    TerminalController.shared.capturePromptInputRegion(surface: $0, harness: current.owner.agentKind)
+                    TerminalController.shared.capturePromptInputRegion(surface: $0, harness: current.owner.agentKind, forSupervisor: true)
                 }
                 captures.append((current, region))
             }
@@ -378,7 +378,7 @@ final class SupervisorMonitor: @unchecked Sendable {
                           current.owner == expected.owner, current.turnID == expected.turnID,
                           current.lastSequence == expected.lastSequence,
                           SupervisorProjection.needsScreen(current) else { continue }
-                    let prompt = region.map { PromptInputClassifier.classify($0, harness: current.owner.agentKind) }
+                    let prompt = region.map { PromptInputClassifier.classify($0, harness: current.owner.agentKind, forSupervisor: true) }
                     update(current, prompt: prompt, now: Self.nowMs)
                 }
                 lock.lock()

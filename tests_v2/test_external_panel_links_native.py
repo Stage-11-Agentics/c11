@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """C11-552 outside-link proof. ONLY through sandbox-tests-v2.sh.
 
-Real Launch Services delivery, native confirmation clicks, and Safari links.
+Real console-user Launch Services delivery and native confirmation clicks.
 420-second active deadline; 470-second hard kill of the verified guest app.
 """
 import json
 import os
 from pathlib import Path
 import plistlib
+import pwd
 import signal
 import subprocess
 import time
@@ -74,101 +75,85 @@ class Proof(native.Proof):
             time.sleep(.1)
         self.run(['/opt/homebrew/bin/cliclick', f'c:{int(x+w/2)},{int(y+h/2)}'])
 
-    def outside(self, url=None):
-        # No -a or -g: use the real registered OS scheme and normal activation.
-        self.run(['/usr/bin/open', url or self.target_url])
+    def console_open(self, *arguments):
+        # Match sandbox_launch_app: enter the console user's Aqua audit
+        # session as root, then drop uid before calling Launch Services.
+        uid = os.getuid()
+        user = pwd.getpwuid(uid).pw_name
+        assert user == 'admin', ('unexpected guest console user', user)
+        return self.run(['/usr/bin/sudo', '-n', '/bin/launchctl', 'asuser', str(uid),
+                         '/usr/bin/sudo', '-n', '-u', user, '/usr/bin/open', *arguments])
+
+    def safari_foreground(self):
+        self.console_open('-a', 'Safari')
+        def observed_foreground():
+            safari_pid = int(self.run(['/usr/bin/osascript', '-e',
+                'tell application "System Events" to get unix id of process "Safari"'], text=True).stdout)
+            foreground = self.ui('foreground')
+            self.report.setdefault('source_preconditions', []).append(
+                dict(safari_pid=safari_pid, foreground=foreground,
+                     elapsed=round(time.monotonic()-self.started, 2)))
+            return safari_pid if foreground == safari_pid else None
+        return self.wait(observed_foreground,
+                         'console-user open makes Safari foreground before delivery')
+
+    def precondition(self):
+        # Standalone first step: no c11 URL is delivered until the source app
+        # can be placed in front and that state is independently observed.
+        display = self.ui('displays')
+        assert len(display['displays']) == 1, display
+        safari_pid = self.safari_foreground()
+        self.capture('00-source-precondition')
+        self.passed('standalone source-app foreground precondition', safari_pid=safari_pid)
+
+    def outside(self, url=None, background=False):
+        safari_pid = self.safari_foreground()
+        self.console_open(*(['-g'] if background else []), url or self.target_url)
         self.wait(self.prompt, 'outside request shows confirmation')
+        return safari_pid
 
     def cancel(self):
         self.click('c11.external-link.cancel')
         self.wait(lambda: not self.prompt(), 'native Cancel dismisses')
         time.sleep(2.1)
 
-    def terminal_origin(self):
-        self.run(['/usr/bin/open', '-a', 'Terminal'])
-        terminal_pid = int(self.run(['/usr/bin/osascript', '-e',
-            'tell application "System Events" to get unix id of process "Terminal"'], text=True).stdout)
-        self.wait(lambda: self.ui('foreground') == terminal_pid, 'Terminal.app is foreground before typing')
-        self.run(['/opt/homebrew/bin/cliclick', 't:/usr/bin/open ' + self.target_url, 'kp:enter'])
-        self.wait(self.prompt, 'Terminal.app open shows confirmation')
-        self.capture('01-terminal-origin')
+    def outside_origin(self):
+        # The lead's replacement for Terminal/app AppleEvents: a real
+        # console-user Launch Services send, with Safari verified in front.
+        safari_pid = self.outside()
+        front = self.ui('foreground')
+        self.capture('01-console-user-origin')
         assert self.selection()[0] == self.source_workspace.lower()
         labels = self.ax()
         assert any(x['id'] == 'c11.external-link.panel' and native.TARGET_TITLE in str(x.get('value')) for x in labels), labels
         assert any(x['id'] == 'c11.external-link.workspace' and native.DESTINATION_TITLE in str(x.get('value')) for x in labels), labels
+        assert front in (safari_pid, self.pid), ('unexpected foreground app', front)
+        self.report['normal_handoff'] = dict(source=safari_pid, foreground_after_delivery=front)
+        if front != safari_pid:
+            self.report['limitations'].append('Normal Launch Services delivery activated c11; background delivery separately checks the prompt adds no activation.')
         self.cancel()
         assert self.selection()[0] == self.source_workspace.lower()
-        self.passed('Terminal.app outside link names panel/workspace; Cancel preserves selection')
+        self.passed('console-user outside URL names panel/workspace; native Cancel preserves selection')
 
-    def safari_origin(self):
-        page = self.fixture / 'outside.html'
-        page.write_text('<!doctype html><html><head><title>C11-552 outside browser</title><link rel="icon" href="data:,"></head>'
-                        '<body style="font:24px monospace;padding:70px"><h1>Outside link proof</h1>'
-                        '<p><a href="' + self.target_url + '">OPEN C11 DESTINATION</a></p>'
-                        '<input aria-label="Typing proof" style="font:24px monospace" placeholder="Typing stays here">'
-                        '</body></html>')
-        self.run(['/usr/bin/open', '-a', 'Safari', page.as_uri()])
-        time.sleep(2)
-        # AXPress is a real browser link activation; no JavaScript or c11
-        # socket method triggers the outside link. Permission UI is recorded.
-        script = '''tell application "System Events" to tell process "Safari"
-set frontmost to true
-set xs to entire contents of window 1
-repeat with e in xs
-try
-if role of e is "AXLink" and description of e contains "OPEN C11" then
-perform action "AXPress" of e
-return "clicked"
-end if
-end try
-end repeat
-return "missing"
-end tell'''
-        result = self.run(['/usr/bin/osascript', '-e', script], text=True).stdout.strip()
-        assert result == 'clicked', ('Safari AX link', result)
-        time.sleep(.5)
-        # Safari can ask whether to open this scheme. Accept only the native
-        # browser permission; the c11 confirmation must still follow it.
-        if not self.prompt():
-            permission = '''tell application "System Events" to tell process "Safari"
-if exists sheet 1 of window 1 then
-if exists button "Allow" of sheet 1 of window 1 then
-click button "Allow" of sheet 1 of window 1
-else if exists button "Open" of sheet 1 of window 1 then
-click button "Open" of sheet 1 of window 1
-end if
-end if
-end tell'''
-            self.run(['/usr/bin/osascript', '-e', permission])
-        self.wait(self.prompt, 'real Safari link shows c11 confirmation')
-        front = self.ui('foreground')
-        safari_pid = int(self.run(['/usr/bin/osascript', '-e', 'tell application "System Events" to get unix id of process "Safari"'], text=True).stdout)
-        self.capture('02-browser-confirmation')
-        self.report['browser_focus'] = dict(safari_pid=safari_pid, foreground_before_confirm=front)
-        assert front in (safari_pid, self.pid), ('unexpected foreground app', front)
-        if front != safari_pid:
-            self.report['limitations'].append('The real Safari scheme handoff activated c11 through Launch Services; background delivery separately checks that the prompt adds no activation.')
-        assert self.selection()[0] == self.source_workspace.lower()
+        self.outside()
         self.call('panel.action', workspace_id=self.destination, panel_id=self.target,
                   action='rename', title='C11-552 live build title changed')
         self.click('c11.external-link.confirm')
-        self.wait(lambda: self.selection() == (self.destination.lower(), self.target.lower()), 'Confirm selects exact destination despite live title change')
+        self.wait(lambda: self.selection() == (self.destination.lower(), self.target.lower()),
+                  'native Confirm selects exact destination despite live title change')
         self.wait(lambda: self.ui('foreground') == self.pid, 'Confirm activates target app')
-        self.capture('03-confirmed-destination')
-        self.passed('real Safari link requires native Confirm before exact destination selection',
-                    source_stayed_foreground=front == safari_pid)
+        self.capture('02-confirmed-destination')
+        self.passed('real Launch Services delivery requires native Confirm for exact destination selection')
         time.sleep(2.1)
         self.back()
-        self.run(['/usr/bin/open', '-a', 'Safari'])
-        self.run(['/usr/bin/open', '-g', self.target_url])
-        self.wait(self.prompt, 'background delivery shows visible confirmation')
+
+        safari_pid = self.outside(background=True)
         assert self.ui('foreground') == safari_pid, 'prompt itself activated c11'
         self.capture('03-background-prompt-over-browser')
         self.cancel()
         assert self.ui('foreground') == safari_pid, 'Cancel activated c11'
         self.passed('prompt visible and clickable over Safari without adding app activation')
-        self.run(['/usr/bin/open', '-g', self.target_url])
-        self.wait(self.prompt, 'background confirmation presented')
+        safari_pid = self.outside(background=True)
         assert self.ui('foreground') == safari_pid
         self.click('c11.external-link.confirm')
         self.wait(lambda: self.selection() == (self.destination.lower(), self.target.lower()),
@@ -177,7 +162,7 @@ end tell'''
         self.passed('fresh native Confirm works while source app is foreground')
         time.sleep(2.1)
         self.back()
-        self.ui('activate')
+        self.report['limitations'].append('Outside transport uses console-user /usr/bin/open; no Terminal command or browser-page click is claimed.')
 
     def presentation_cancellation(self):
         before = self.selection()
@@ -216,10 +201,10 @@ end tell'''
         self.cancel()
         # Safari's local fixture is the source surface underneath the future
         # confirmation. The native clicks start there, not in a c11 web view.
-        self.run(['/usr/bin/open', '-a', 'Safari'])
+        self.safari_foreground()
         self.run(['/opt/homebrew/bin/cliclick', f'm:{cx},{cy}'])
         before = self.selection()
-        self.run(['/usr/bin/open', self.target_url])
+        self.console_open(self.target_url)
         self.run(['/opt/homebrew/bin/cliclick', f'dc:{cx},{cy}'])
         self.wait(self.prompt, 'surprise prompt present')
         time.sleep(1.1)
@@ -240,15 +225,18 @@ end tell'''
         for urls in [[self.target_url, folder.as_uri()], [folder.as_uri(), 'c11:invalid']]:
             # Explicit -a is needed to deliver file and c11 URLs in ONE Apple
             # Event to this verified guest app rather than separate handlers.
-            self.run(['/usr/bin/open', '-a', str(self.app), *urls])
+            self.safari_foreground()
+            self.console_open('-a', str(self.app), *urls)
             self.wait(self.prompt, 'mixed event notice or confirmation')
             assert self.selection() == before
             assert self.call('workspace.list', window_id=self.window)['workspaces'] == workspaces
-            self.run(['/usr/bin/open', '-a', str(self.app), *urls])  # pending
+            self.safari_foreground()
+            self.console_open('-a', str(self.app), *urls)  # pending
             assert self.selection() == before
             self.click('c11.external-link.cancel')
             self.wait(lambda: not self.prompt(), 'dismiss mixed event')
-            self.run(['/usr/bin/open', '-a', str(self.app), *urls])  # cooldown
+            self.safari_foreground()
+            self.console_open('-a', str(self.app), *urls)  # cooldown
             assert self.selection() == before
             assert self.call('workspace.list', window_id=self.window)['workspaces'] == workspaces
             time.sleep(2.1)
@@ -257,14 +245,16 @@ end tell'''
     def burst(self):
         self.ui('activate')
         before = self.selection()
-        self.outside()
+        self.ensure_frontmost()
+        self.console_open(self.target_url)
+        self.wait(self.prompt, "outside prompt over active c11 terminal")
         prompts = [x for x in self.ax() if x['id'] == 'c11.external-link.confirmation']
         assert len(prompts) == 1
         # A raw terminal draft and Return must remain in the terminal; the
         # prompt neither becomes key nor interprets Return as confirmation.
         marker = 'C11_552_' + uuid.uuid4().hex
         self.native('t:' + marker)
-        self.run(['/usr/bin/open', *([self.workspace_url] * 50)])
+        self.console_open(*([self.workspace_url] * 50))
         self.native('t:_AFTER')
         assert self.selection() == before
         assert self.ui('foreground') == self.pid
@@ -301,9 +291,9 @@ end tell'''
         self.passed('invalid decorated oversized short unknown and closed targets never navigate')
 
     def execute(self):
+        self.precondition()
         self.seed()
-        self.terminal_origin()
-        self.safari_origin()
+        self.outside_origin()
         self.presentation_cancellation()
         self.surprise_click()
         self.mixed_event()

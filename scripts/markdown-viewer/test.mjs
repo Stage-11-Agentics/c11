@@ -549,6 +549,84 @@ try {
   const hardRestoredTop=await readLineTop('Hard line060');
   assert.ok(Math.abs(hardRestoredTop+8.25)<=1,`restored hard-break line sits at ${hardRestoredTop}px, not -8.25px`);
   scenario('hard-break paragraphs map one line per source line and restore their reading position');
+  // Line points once counted renderer whitespace between list items and table cells as lines,
+  // and dropped source lines with no text (blank lines in loose lists and quotes, setext
+  // underlines, callout titles, image-only lines). Each case needs one point per source line
+  // of its block, scrollToLine on the exact line, and a reading position that survives reload.
+  // Multi-line paragraphs use hard breaks: soft-broken lines share a visual row and so a top.
+  const lineCaseFiller=n=>Array.from({length:n},(_,i)=>`Filler paragraph ${i} keeps the document scrollable.`).join('\n\n');
+  const lineCasePrefix=`# Line cases\n\n${lineCaseFiller(12)}\n\n`,lineCaseBase=lineCasePrefix.split('\n').length;
+  const lineCases=[
+    {name:'loose list',body:'- Loose alpha\n\n- Loose beta\n\n- Loose gamma',lines:[[0,'Loose alpha'],[2,'Loose beta'],[4,'Loose gamma']],blank:[1,2]},
+    {name:'nested list',body:'- Nest one\n  - Nest two\n    - Nest three\n  - Nest four\n- Nest five\n  1. Nest six',lines:[[0,'Nest one'],[1,'Nest two'],[2,'Nest three'],[3,'Nest four'],[4,'Nest five'],[5,'Nest six']]},
+    {name:'nested loose list',body:'- Mixed one\n\n  - Mixed two\n  - Mixed three\n\n- Mixed four\\\n  continued four',lines:[[0,'Mixed one'],[2,'Mixed two'],[3,'Mixed three'],[5,'Mixed four'],[6,'continued four']],blank:[4,5]},
+    {name:'callout title',body:'> [!NOTE] Callout heading\n> Callout first\\\n> Callout second\n>\n> Callout third',lines:[[0,'Callout heading'],[1,'Callout first'],[2,'Callout second'],[4,'Callout third']],blank:[3,4]},
+    {name:'callout without title text',body:'> [!WARNING]\n> Warning body',lines:[[0,'warning'],[1,'Warning body']]},
+    {name:'setext heading',body:'Setext title\\\nsecond title line\n=================\n\nAfter setext',lines:[[0,'Setext title'],[1,'second title line']],blank:[2,1]},
+    {name:'trailing image-only line',body:'Image caption line\\\n![pixel](pixel.png)',lines:[[0,'Image caption line'],[1,null]]},
+    // After a soft break the inline image shares the caption's row, so only the image line has its own top.
+    {name:'image-only line after a soft break',body:'Soft caption line\n![pixel](pixel.png)',lines:[[1,null]]},
+    {name:'table rows',body:'| Head a | Head b |\n|---|---|\n| Row one | x |\n| Row two | y |\n| Row three | z |',lines:[[0,'Head a'],[2,'Row one'],[3,'Row two'],[4,'Row three']],blank:[1,2]},
+    // A top-level code block keeps the fence's own points; an indented block has no opening delimiter.
+    {name:'indented code block',fencePoints:true,body:'    indented zero\n    indented one\n    indented two',lines:[[0,'indented zero'],[1,'indented one'],[2,'indented two']]},
+    {name:'footnote definitions',footnote:true,body:'Body with a note[^a] and another[^b].'+Array.from({length:30},(_,i)=>`[^n${i}]`).join('')+'\n\n[^a]: Note alpha first\\\n    Note alpha second\n\n[^b]: Note beta'+Array.from({length:30},(_,i)=>`\n\n[^n${i}]: Later note ${i} leaves room to scroll.`).join(''),lines:[[2,'Note alpha first'],[3,'Note alpha second'],[5,'Note beta']]},
+  ];
+  const lineCaseDocument=c=>c.footnote?`${lineCasePrefix}${c.body}\n`:`${lineCasePrefix}${c.body}\n\n${lineCaseFiller(40)}\n`;
+  const lineCaseLoad=async(c,revision)=>{
+    await load(lineCaseDocument(c),`/synthetic/line-case-${revision}.md`,revision);
+    // The synthetic image has no bytes here; give it a fixed box and let the viewer re-measure.
+    await page.evaluate(()=>{for(const img of document.querySelectorAll('#article img')){img.style.display='inline-block';img.style.width='40px';img.style.height='120px';img.dispatchEvent(new Event('load',{bubbles:true}));}});
+  };
+  const lineCaseTop=needle=>needle===null?page.evaluate(()=>document.querySelector('#article img').getBoundingClientRect().top-document.querySelector('#scroller').getBoundingClientRect().top):readLineTop(needle);
+  // Every case runs, so a regression names each construct it breaks.
+  const lineCaseFailures=[];
+  for(const [index,c] of lineCases.entries()) {
+    if(c.footnote)await page.setViewportSize({width:560,height:820});
+    const errorMark=errors.length;
+    try {
+      await lineCaseLoad(c,700+index);
+      const first=lineCaseBase+c.lines[0][0];
+      const block=await page.evaluate(line=>{
+        const b=[...document.querySelectorAll('#article > *')].find(x=>+x.dataset.ls<=line&&+x.dataset.le>=line&&x._linePoints?.length);
+        return b?{points:b._linePoints.length,span:+b.dataset.le-+b.dataset.ls+1}:null;
+      },first);
+      assert.ok(block,`${c.name}: no block holds line ${first}`);
+      if(!c.fencePoints)assert.equal(block.points,block.span,`${c.name}: ${block.points} line points for ${block.span} source lines`);
+      for(const [offset,needle] of c.lines) {
+        const line=lineCaseBase+offset,result=await page.evaluate(line=>c11md.scrollToLine(line).lines,line),top=await lineCaseTop(needle);
+        assert.equal(result.first,line,`${c.name}: scrollToLine(${line}) reported line ${result.first}`);
+        assert.ok(Math.abs(top)<1,`${c.name}: line ${line} (${needle??'image'}) was placed at ${top}px, not the viewport top`);
+      }
+      if(c.blank) {
+        // A line with no rendered text lands on its neighbour, and the neighbour is what visible() reports.
+        const [blank,lands]=c.blank,result=await page.evaluate(line=>c11md.scrollToLine(line).lines,lineCaseBase+blank);
+        assert.equal(result.first,lineCaseBase+lands,`${c.name}: scrollToLine on empty line ${lineCaseBase+blank} reported ${result.first}`);
+      }
+      const [deepOffset,deepNeedle]=c.lines.at(-1),deep=lineCaseBase+deepOffset;
+      await page.evaluate(line=>c11md.scrollToLine(line),deep);
+      await page.evaluate(top=>{document.querySelector('#scroller').scrollTop+=top;},await lineCaseTop(deepNeedle)+8.25);
+      const capture=await page.evaluate(()=>c11md.visible().lines);
+      assert.equal(capture.first,deep,`${c.name}: visible() reported line ${capture.first}, not ${deep}`);
+      assert.ok(Math.abs(capture.offset-8.25)<=1,`${c.name}: captured offset ${capture.offset}`);
+      await page.reload();await page.waitForFunction(()=>window.testMessages.some(m=>m.type==='ready'));
+      await settings({theme:'light',typeface:'serif',scale:1});await lineCaseLoad(c,800+index);
+      await page.evaluate(({first,offset})=>c11md.scrollToLine(first,offset),capture);
+      const restored=await lineCaseTop(deepNeedle);
+      assert.ok(Math.abs(restored+8.25)<=1,`${c.name}: restored line ${deep} sits at ${restored}px, not -8.25px`);
+      scenario(`${c.name} map one line point per source line, scroll to each line and restore the reading position`);
+    } catch(e) {lineCaseFailures.push(`${c.name}: ${e.message.split('\n')[0]}`);console.log('FAIL '+c.name+': '+e.message.split('\n')[0]);}
+    if(c.footnote)await page.setViewportSize({width:1200,height:820});
+    // Chromium has no handler for the private image scheme; only those misses are expected here.
+    for(let i=errors.length-1;i>=errorMark;i--)if(errors[i]==='Failed to load resource: net::ERR_UNKNOWN_URL_SCHEME')errors.splice(i,1);
+  }
+  assert.deepEqual(lineCaseFailures,[],'line point cases failed');
+  // A block whose text is unchanged but whose blank lines moved must not keep its old line points.
+  const spacedList=gap=>`${lineCasePrefix}- Spaced alpha${'\n'.repeat(gap)}- Spaced beta\n\n${lineCaseFiller(40)}\n`;
+  await load(spacedList(2),'/synthetic/spaced-list.md',901);await load(spacedList(4),'/synthetic/spaced-list.md',902);
+  const spaced=await page.evaluate(line=>{const b=[...document.querySelectorAll('#article > ul')][0];return {points:b._linePoints.length,span:+b.dataset.le-+b.dataset.ls+1,first:c11md.scrollToLine(line).lines.first};},lineCaseBase+4);
+  assert.deepEqual(spaced,{points:spaced.span,span:spaced.span,first:lineCaseBase+4},`edited list spacing kept stale line points: ${JSON.stringify(spaced)}`);
+  assert.ok(Math.abs(await readLineTop('Spaced beta'))<1,'Spaced beta was not placed at the viewport top after the edit');
+  scenario('changing only the blank lines inside a list rebuilds its line points');
   // Line metrics once measured every line of a block up front, and a range rect inside one
   // long text node costs time in proportion to the node. The same lines split into 100-line
   // blocks cancel machine speed. Alternating the filler keeps unchanged-block reuse out.

@@ -111,11 +111,13 @@ extension UpdateDriver: SPUUpdaterDelegate {
         QuitConfirmationPolicy.armBypass()
         Task { @MainActor in
             AppDelegate.shared?.persistSessionForUpdateRelaunch()
-            TerminalController.shared.stop()
             NSApp.invalidateRestorableState()
             for window in NSApp.windows {
                 window.invalidateRestorableState()
             }
+            AppDelegate.shared?.finishQuitConfirmationForUpdateRelaunch()
+            // applicationWillTerminate closes the listener once AppKit has
+            // committed to exit. Keep it usable while a quit is still pending.
         }
     }
 }

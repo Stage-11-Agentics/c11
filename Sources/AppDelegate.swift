@@ -3244,15 +3244,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // relaunch) answers the open sheet as Quit; anything else
                 // leaves it waiting.
                 if !needsConfirmation {
-                    pending.host.endSheet(pending.alert.window, returnCode: Self.quitConfirmationQuitResponse)
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else {
+                            pending.reply.resolve(false)
+                            return
+                        }
+                        self.finishQuitConfirmation(pending, shouldQuit: true)
+                    }
                 }
                 return .terminateLater
             }
             // The sheet went away with its window and never answered. Settle
             // the old request so AppKit leaves its termination wait, then
             // treat this one as new.
-            pendingQuitConfirmation = nil
-            NSApp.reply(toApplicationShouldTerminate: false)
+            finishQuitConfirmation(pending, shouldQuit: false)
         }
         if needsConfirmation, let host = quitConfirmationHostWindow() {
             return presentQuitConfirmation(on: host)
@@ -3311,6 +3316,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         isTerminatingApp = true
         let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
         _ = persistCleanShutdownSnapshot(bundleId: bundleId)
+    }
+
+    func finishQuitConfirmationForUpdateRelaunch() {
+        guard let pending = pendingQuitConfirmation else { return }
+        // Sparkle's quit Apple Event may arrive while AppKit is already
+        // waiting for this reply, without calling applicationShouldTerminate
+        // again. The operator chose restart, so settle the existing request.
+        finishQuitConfirmation(pending, shouldQuit: true)
     }
 
     // MARK: - C11-131: explicit state save + clean app restart
@@ -11515,9 +11528,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Quit confirmation
 
-    private struct PendingQuitConfirmation {
+    @MainActor
+    private final class PendingQuitConfirmation {
         let alert: NSAlert
         let host: NSWindow
+        let reply = DeferredTerminationReply { NSApp.reply(toApplicationShouldTerminate: $0) }
+        var closeObservers: [NSObjectProtocol] = []
+
+        init(alert: NSAlert, host: NSWindow) {
+            self.alert = alert
+            self.host = host
+        }
     }
 
     private var pendingQuitConfirmation: PendingQuitConfirmation?
@@ -11569,17 +11590,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             NSSound.beep()
             return .terminateCancel
         }
-        pendingQuitConfirmation = PendingQuitConfirmation(alert: alert, host: host)
-        alert.beginSheetModal(for: host) { [weak self] response in
-            guard let self else { return }
-            self.pendingQuitConfirmation = nil
-            let shouldQuit = response == Self.quitConfirmationQuitResponse
-            if shouldQuit {
-                self.isTerminatingApp = true
+        let pending = PendingQuitConfirmation(alert: alert, host: host)
+        pendingQuitConfirmation = pending
+        for window in [host, alert.window] {
+            pending.closeObservers.append(NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self, weak pending, reply = pending.reply] _ in
+                // Let the normal sheet completion win when it has an answer.
+                // Otherwise a disappearing host must not strand AppKit.
+                DispatchQueue.main.async {
+                    guard let self, let pending else {
+                        reply.resolve(false)
+                        return
+                    }
+                    self.finishQuitConfirmation(pending, shouldQuit: false)
+                }
+            })
+        }
+        alert.beginSheetModal(for: host) { [weak self, weak pending, reply = pending.reply] response in
+            guard let self, let pending else {
+                reply.resolve(false)
+                return
             }
-            NSApp.reply(toApplicationShouldTerminate: shouldQuit)
+            self.finishQuitConfirmation(pending, shouldQuit: response == Self.quitConfirmationQuitResponse)
         }
         return .terminateLater
+    }
+
+    private func finishQuitConfirmation(_ pending: PendingQuitConfirmation, shouldQuit: Bool) {
+        pending.reply.resolve(shouldQuit) {
+            if pendingQuitConfirmation === pending {
+                pendingQuitConfirmation = nil
+            }
+            pending.closeObservers.forEach(NotificationCenter.default.removeObserver)
+            pending.closeObservers.removeAll()
+            if shouldQuit { isTerminatingApp = true }
+            if pending.host.attachedSheet === pending.alert.window {
+                pending.host.endSheet(pending.alert.window, returnCode: shouldQuit
+                    ? Self.quitConfirmationQuitResponse : .alertFirstButtonReturn)
+            }
+        }
     }
 
     func promptRenameSelectedWorkspace() -> Bool {

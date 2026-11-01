@@ -152,6 +152,7 @@ final class PanelSeenTracker {
             EventEmitter.shared.observePresence(screenLocked: interruptions.contains(.locked) || interruptions.contains(.sessionInactive))
         } else if reason == .systemAsleep {
             EventEmitter.shared.observePresence(sleeping: active)
+            SupervisorMonitor.shared.setSleeping(active)
         }
         refresh()
     }

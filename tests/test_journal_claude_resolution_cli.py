@@ -106,8 +106,11 @@ def main():
             assert ordinary.returncode == 0, ordinary.stderr
             assert ordinary.stdout.strip() == 'OK', ordinary.stdout
             ordinary_appends = [c for c in calls if isinstance(c, dict)]
-            assert len(ordinary_appends) == 1, calls
-            ordinary_draft = ordinary_appends[0]['params']['event']
+            assert len(ordinary_appends) == 2, calls
+            resolution = ordinary_appends[0]['params']['event']
+            assert resolution['kind'] == 'agent.attention.resolved'
+            assert resolution['resolution'] == 'resumed' and resolution['request_id'] == 'tool-9'
+            ordinary_draft = ordinary_appends[1]['params']['event']
             assert ordinary_draft['kind'] == 'agent.state.changed'
             assert ordinary_draft['signal'] == 'tool_activity'
             assert ordinary_draft['native_event'] == 'PostToolUse'

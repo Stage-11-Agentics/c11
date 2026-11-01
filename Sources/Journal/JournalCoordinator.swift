@@ -46,6 +46,7 @@ final class JournalCoordinator: @unchecked Sendable {
         if changed { refreshOwners([panelID]) }
     }
     func remove(panelID: UUID) {
+        SupervisorMonitor.shared.remove(panel: panelID)
         lock.lock()
         targets.removeValue(forKey: panelID)
         let hadProjection = snapshots.removeValue(forKey: panelID) != nil
@@ -63,6 +64,7 @@ final class JournalCoordinator: @unchecked Sendable {
     func setOwner(panelID: UUID, owner: JournalOwner?) {
         lock.lock()
         guard owners[panelID] != owner else { lock.unlock(); return }
+        SupervisorMonitor.shared.remove(panel: panelID, reason: "owner_changed")
         owners[panelID] = owner
         let hadProjection = snapshots.removeValue(forKey: panelID) != nil
         turnStartedMs.removeValue(forKey: panelID)
@@ -145,7 +147,10 @@ final class JournalCoordinator: @unchecked Sendable {
         storageError = nil
         let callback = sink
         lock.unlock()
-        for panelID in panelIDs { callback?(panelID, nil, nil, nil) }
+        for panelID in panelIDs {
+            SupervisorMonitor.shared.remove(panel: panelID, reason: "journal_cleared")
+            callback?(panelID, nil, nil, nil)
+        }
     }
 
     /// Existing metadata readback can expose this value without consulting SQLite.
@@ -276,6 +281,7 @@ final class JournalCoordinator: @unchecked Sendable {
             }
             if !historical, !result.receipt.replayed {
                 emitLifecycle(draft: draft, result: result)
+                SupervisorMonitor.shared.applied(draft, result: result)
             }
             lock.lock(); storageError = nil; lock.unlock()
             return result
@@ -290,6 +296,7 @@ final class JournalCoordinator: @unchecked Sendable {
         snapshots[value.owner.panelID] = value
         let callback = sink
         lock.unlock()
+        SupervisorMonitor.shared.observe(value)
         callback?(value.owner.panelID, value, boundary, eventID)
     }
 

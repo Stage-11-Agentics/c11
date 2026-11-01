@@ -2105,6 +2105,7 @@ extension TerminalController {
         fullSources.removeValue(forKey: MetadataKey.parentPanelRef)
         fullSources.removeValue(forKey: MetadataKey.parentPanelTitle)
         fullMetadata["journal"] = JournalCoordinator.shared.readback(panelID: resolved.surfaceId)
+        fullMetadata["supervisor"] = SupervisorMonitor.shared.readback(panel: resolved.surfaceId)
         var metadataOut: [String: Any] = fullMetadata
         var sourcesOut: [String: [String: Any]] = fullSources
         if let filterKeys = keys {

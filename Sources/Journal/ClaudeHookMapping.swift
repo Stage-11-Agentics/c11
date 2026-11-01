@@ -88,6 +88,21 @@ enum ClaudeHookMapping {
         }
     }
 
+    /// Create both identities before delivery. A tool result closes only the
+    /// matching native permission request; the ordinary observation still
+    /// refreshes working state even when no request matches. Neither carries
+    /// tool input, output, or an approval decision.
+    static func deliveryDrafts(_ draft: JournalDraft) -> [JournalDraft] {
+        guard draft.nativeEvent == "PostToolUse", draft.kind == .stateChanged,
+              draft.signal == .toolActivity, draft.requestID != nil else { return [draft] }
+        var resolution = draft
+        resolution.eventID = UUID()
+        resolution.kind = .attentionResolved
+        resolution.signal = nil
+        resolution.resolution = .resumed
+        return [resolution, draft]
+    }
+
     /// Ask continuation emits nothing without a usable id. Other hooks keep the event and leave the id null.
     private static func requestID(_ subcommand: String, _ object: [String: Any]) -> String? {
         switch subcommand {

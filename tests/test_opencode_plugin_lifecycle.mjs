@@ -46,6 +46,35 @@ try {
   await hooks.event({ event: { type: "permission.asked", properties: { sessionID: "ses_root", id: "ask-1", body: "PRIVATE-SENTINEL" } } });
   assert.equal(events().at(-1).kind, "agent.approval.requested");
   assert.equal(events().at(-1).request_id, "ask-1");
+  for (const reply of ["once", "always", "reject"]) {
+    await hooks.event({ event: { type: "permission.replied", properties: {
+      sessionID: "ses_root", requestID: "ask-1", reply, message: "PRIVATE-SENTINEL",
+    } } });
+    assert.equal(events().at(-1).kind, "agent.attention.resolved");
+    assert.equal(events().at(-1).request_id, "ask-1");
+    assert.equal(events().at(-1).resolution, reply === "reject" ? "unknown" : "resumed");
+  }
+  for (const properties of [
+    { sessionID: "ses_root", requestID: "ask-1", reply: "unexpected" },
+    { sessionID: "ses_root", reply: "once" },
+    { requestID: "ask-1", reply: "once" },
+  ]) {
+    const before = events().length;
+    await hooks.event({ event: { type: "permission.replied", properties } });
+    assert.equal(events().length, before, "malformed replies do not resolve requests");
+  }
+  await hooks.event({ event: { type: "question.asked", properties: {
+    sessionID: "ses_root", id: "question-1", questions: [{ question: "PRIVATE-SENTINEL" }],
+  } } });
+  assert.equal(events().at(-1).kind, "agent.question.requested");
+  assert.equal(events().at(-1).request_id, "question-1");
+  for (const type of ["question.replied", "question.rejected"]) {
+    await hooks.event({ event: { type, properties: {
+      sessionID: "ses_root", requestID: "question-1", answers: [["PRIVATE-SENTINEL"]],
+    } } });
+    assert.equal(events().at(-1).kind, "agent.attention.resolved");
+    assert.equal(events().at(-1).resolution, type === "question.replied" ? "resumed" : "unknown");
+  }
   await hooks.event({ event: { type: "session.error", properties: { sessionID: "ses_root", error: { message: "PRIVATE-SENTINEL" } } } });
   assert.equal(events().at(-1).reason_code, "session_failure");
   await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_root" } } });

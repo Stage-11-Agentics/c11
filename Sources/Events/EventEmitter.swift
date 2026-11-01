@@ -735,6 +735,11 @@ final class EventEmitter {
 
     // MARK: - Core
 
+    func emitSupervisor(_ type: EventEnvelope.EventType, workspace: UUID, panel: UUID, payload: [String: Any]) {
+        guard EventEnvelope.supervisorTypes.contains(type.rawValue) else { return }
+        emit(type, workspace: workspace, surface: panel, payload: payload)
+    }
+
     @discardableResult
     private func emit(
         _ type: EventEnvelope.EventType,

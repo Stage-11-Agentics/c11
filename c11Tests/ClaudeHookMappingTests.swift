@@ -170,6 +170,31 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertNil(own.snapshot)
     }
 
+    func testOrdinaryToolCompletionResolvesOnlyMatchingApprovalAndKeepsRefresh() throws {
+        let approval = try owned("permission-request", base(tool: "Bash", request: "tool-1"), panel: panelA)
+        let blocked = try XCTUnwrap(JournalTestData.fold(nil, approval, seq: 1).snapshot)
+        for request in ["tool-1", "different-tool", ""] {
+            let post = try owned("post-tool-use", base(tool: "Bash", request: request), panel: panelA)
+            let drafts = ClaudeHookMapping.deliveryDrafts(post)
+            XCTAssertEqual(drafts.count, request.isEmpty ? 1 : 2)
+            XCTAssertEqual(drafts.last?.kind, .stateChanged)
+            XCTAssertEqual(drafts.last?.signal, .toolActivity)
+            XCTAssertEqual(Set(drafts.map(\.eventID)).count, drafts.count)
+            var state = blocked
+            for (index, draft) in drafts.enumerated() {
+                try draft.validate()
+                state = try XCTUnwrap(JournalTestData.fold(state, draft, seq: Int64(index + 2)).snapshot)
+            }
+            XCTAssertEqual(state.phase, request == "tool-1" ? .working : .blocked)
+            XCTAssertEqual(state.requestID, request == "tool-1" ? nil : "tool-1")
+            // An ordinary post still refreshes an already-working turn.
+            var working = blocked; working.phase = .working; working.reason = nil; working.requestID = nil
+            let refresh = JournalTestData.fold(working, try XCTUnwrap(drafts.last), seq: 10)
+            XCTAssertEqual(refresh.snapshot?.phase, .working)
+            XCTAssertEqual(refresh.reason, "working_refreshed")
+        }
+    }
+
     func testPermissionRequestObservesWithoutADecisionAndDropsBodies() throws {
         let approval = try owned("permission-request", [
             "session_id": "sess-1", "tool_name": "Bash", "tool_use_id": "tool-1",

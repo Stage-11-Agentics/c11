@@ -1039,14 +1039,15 @@ extension CMUXCLI {
 
     func eventsUsage() -> String {
         """
-        Usage: c11 events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
+        Usage: c11 events tail [--follow|-f] [--filter type=<type>|supervisor] [--since <seq|duration>] [--instance <id>]
 
         Stream the c11 events log (NDJSON). The file is the contract — this is
         sugar over `~/Library/Application Support/c11/events/events-<instance>.ndjson`.
         Works with no running app.
 
           --follow, -f          Keep streaming new events (rotation-aware).
-          --filter type=<type>  Only lines whose `type` equals <type>.
+          --filter <value>     Exact type=<type>, or supervisor for lifecycle,
+                                permission, interruption and stall events.
           --since <seq|dur>     Start at a seq number (e.g. 1200) or a duration
                                 ago (e.g. 10m, 90s, 2h), resolved against `ts`.
           --instance <id>       Target a specific instance log (default: newest).
@@ -1054,6 +1055,7 @@ extension CMUXCLI {
         Examples:
           c11 events tail
           c11 events tail -f --filter type=panel.closed
+          c11 events tail -f --filter supervisor
           c11 events tail --since 5m
         """
     }
@@ -1066,7 +1068,7 @@ extension CMUXCLI {
         let follow = hasFlag(subArgs, name: "--follow") || hasFlag(subArgs, name: "-f")
         // C11-337: compare canonical types so a v1 spelling (`surface.created`,
         // `tab.input_sent`) and its v2 name (`panel.*`) match either line form.
-        let typeFilter = eventsTypeFilter(subArgs).map(EventEnvelope.canonicalType(_:))
+        let typeFilter = eventsTypeFilter(subArgs)
         let sinceSeq = eventsSinceSeq(subArgs)
         let sinceDate = eventsSinceDate(subArgs)
         let instance = optionValue(subArgs, name: "--instance")
@@ -1089,7 +1091,7 @@ extension CMUXCLI {
         func emit(_ line: String) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
-            if let typeFilter, EventEnvelope.canonicalType(fromLine: trimmed) != typeFilter { return }
+            if !EventEnvelope.matchesFilter(typeFilter, type: EventEnvelope.canonicalType(fromLine: trimmed)) { return }
             if let sinceSeq, let s = EventEnvelope.seq(fromLine: trimmed), s < sinceSeq { return }
             if let sinceDate, let ts = EventEnvelope.timestamp(fromLine: trimmed), ts < sinceDate { return }
             print(trimmed)

@@ -443,6 +443,7 @@
 		C11274000000000000000003 /* ClaudeHookMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000001 /* ClaudeHookMapping.swift */; };
 		C11274000000000000000012 /* ClaudeHookMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11274000000000000000011 /* ClaudeHookMappingTests.swift */; };
 		C11276000000000000000002 /* JournalTranscriptProducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11276000000000000000001 /* JournalTranscriptProducer.swift */; };
+		C11519000000000000000002 /* SupervisorMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11519000000000000000001 /* SupervisorMonitor.swift */; };
 		C11277000000000000000101 /* JournalQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11277000000000000000001 /* JournalQuery.swift */; };
 		C11277000000000000000102 /* JournalQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11277000000000000000001 /* JournalQuery.swift */; };
 		C11277000000000000000201 /* JournalExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11277000000000000000002 /* JournalExport.swift */; };
@@ -1144,6 +1145,7 @@
 		C11274000000000000000001 /* ClaudeHookMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeHookMapping.swift; path = Journal/ClaudeHookMapping.swift; sourceTree = "<group>"; };
 		C11274000000000000000011 /* ClaudeHookMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookMappingTests.swift; sourceTree = "<group>"; };
 		C11276000000000000000001 /* JournalTranscriptProducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalTranscriptProducer.swift; path = Journal/JournalTranscriptProducer.swift; sourceTree = "<group>"; };
+		C11519000000000000000001 /* SupervisorMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SupervisorMonitor.swift; path = Journal/SupervisorMonitor.swift; sourceTree = "<group>"; };
 		C11277000000000000000001 /* JournalQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalQuery.swift; path = Journal/JournalQuery.swift; sourceTree = "<group>"; };
 		C11277000000000000000002 /* JournalExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalExport.swift; path = Journal/JournalExport.swift; sourceTree = "<group>"; };
 		C11277000000000000000301 /* JournalQueryCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalQueryCommand.swift; sourceTree = "<group>"; };
@@ -1581,6 +1583,7 @@
 				C11274000000000000000001 /* ClaudeHookMapping.swift */,
 				849A52B8ABDD27C1A671CBE2 /* JournalCoordinator.swift */,
 				C11276000000000000000001 /* JournalTranscriptProducer.swift */,
+				C11519000000000000000001 /* SupervisorMonitor.swift */,
 				24D19453A1A87060AC00C9CC /* JournalStorageLayout.swift */,
 				EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */,
 				193AECCF771604D4FFC20573 /* JournalStore.swift */,
@@ -2653,6 +2656,7 @@
 				C11274000000000000000002 /* ClaudeHookMapping.swift in Sources */,
 				65631BA6FFA800CEC5F61F99 /* JournalCoordinator.swift in Sources */,
 				C11276000000000000000002 /* JournalTranscriptProducer.swift in Sources */,
+				C11519000000000000000002 /* SupervisorMonitor.swift in Sources */,
 				DD7DDF8F72DE2E0646F89E04 /* JournalStorageLayout.swift in Sources */,
 				31C140AD458A0058070C992D /* JournalReducer.swift in Sources */,
 				B9139F7F4E89C12E276551BB /* JournalStore.swift in Sources */,

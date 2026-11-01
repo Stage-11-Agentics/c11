@@ -69,6 +69,23 @@ final class AgentModelDetectionTests: XCTestCase {
         ".claude/projects/\(ClaudeCodeStrategy.projectSlug(forCwd: "/work/demo"))/\(claudeId).jsonl"
     }
 
+    func testRepeatedCodexUsageAndHeartbeatAreNotOutputProgress() throws {
+        var signals = TranscriptSignals()
+        for timestamp in ["2026-10-31T10:00:00Z", "2026-10-31T10:01:00Z"] {
+            let line = "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":10,\"output_tokens\":5},\"total_token_usage\":{\"total_tokens\":15}}}}"
+            let parsed = AgentModelProbe.parseLine(kind: "codex", line: Data(line.utf8))
+            signals.apply(try XCTUnwrap(parsed.event))
+        }
+        XCTAssertEqual(signals.turnTokens, 15)
+        XCTAssertNotNil(signals.lastEventAt)
+        XCTAssertNil(signals.lastOutputAt)
+        signals.lastEventAt = Date() // Aggregate session/heartbeat activity is also not output.
+        XCTAssertNil(SupervisorProjection.Progress(signals).outputAt)
+        let output = Date()
+        signals.apply(.toolResult(at: output))
+        XCTAssertEqual(SupervisorProjection.Progress(signals).outputAt, output)
+    }
+
     func testClaudeTakesLatestAssistantModelIgnoringSidechainAndSynthetic() throws {
         try place(fixture("claude-session.jsonl"), at: claudePath())
         var state = ModelTailState()
@@ -379,6 +396,24 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertTrue(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.isEmpty)
     }
 
+    func testGrokRecordedCancellationAndInterruptionAreNotNormalCompletion() throws {
+        for outcome in ["cancelled", "interrupted"] {
+            let id = "grok-interrupt-" + outcome
+            let lines = """
+            {"type":"turn_started","ts":"2026-01-01T06:10:00.123456Z","turn_number":42,"session_id":"\(id)","session_relationship":"primary"}
+            {"type":"turn_ended","ts":"2026-01-01T06:10:02.123456Z","outcome":"\(outcome)"}
+            """
+            let url = try place(Data((lines + "\n").utf8), at: "\(id)/events.jsonl")
+            let r = ref("grok", id: id, payload: [GrokStrategy.sessionDirectoryPayloadKey: .string(url.deletingLastPathComponent().path)])
+            var state = ModelTailState()
+            let result = probe.detectWithObservations(kind: "grok", ref: r, state: &state)
+            XCTAssertEqual(result.lifecycle.map(\.kind), [.turnStarted, .turnInterrupted])
+            XCTAssertEqual(result.lifecycle.last?.turnID, "42")
+            XCTAssertEqual(result.lifecycle.last?.reasonCode, outcome == "interrupted" ? .observation : nil)
+            XCTAssertTrue(probe.detectWithObservations(kind: "grok", ref: r, state: &state).lifecycle.isEmpty)
+        }
+    }
+
     func testGrokRetainedStartAfterInitialGapCanPairWithIncrementalEnd() throws {
         let sessionID = "grok-session-276"
         let dir = "grok-retained-start-gap"
@@ -608,7 +643,7 @@ final class AgentModelDetectionTests: XCTestCase {
         ))
         XCTAssertEqual(grokStart.adapterVersion, JournalNativeClockEvidence.grokTranscriptVersion)
         XCTAssertTrue(JournalNativeClockEvidence.verifies(grokStart))
-        XCTAssertNil(JournalTranscriptProducer.makeDraft(
+        XCTAssertNotNil(JournalTranscriptProducer.makeDraft(
             observation: .init(kind: .turnInterrupted, occurredAt: t("09:05:07"),
                                nativeEvent: "turn.interrupted", turnID: "7", isChild: false),
             target: grokTarget, ref: ref("grok", id: "grok-session-276"), emittedAt: t("09:05:08")
@@ -785,7 +820,7 @@ final class AgentModelDetectionTests: XCTestCase {
         // An assistant message whose tool arguments contain {"role":"user"}.
         let line = Data((#"{"type":"message","id":"a","timestamp":"2026-01-01T08:00:00.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"x","arguments":{"role":"user"}}],"usage":{"input":1,"output":2,"cacheWrite":0}}}"#).utf8)
         let parsed = AgentModelProbe.parseLine(kind: "pi", line: line)
-        guard case .agent(let at, let tools, let tokens, _)? = parsed.event else { return XCTFail("not an agent event: \(String(describing: parsed.event))") }
+        guard case .agent(let at, let tools, let tokens, _, _)? = parsed.event else { return XCTFail("not an agent event: \(String(describing: parsed.event))") }
         XCTAssertEqual(at, t("08:00:00"))
         XCTAssertEqual(tools, 1)
         XCTAssertEqual(tokens, 3)

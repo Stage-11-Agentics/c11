@@ -122,6 +122,43 @@ final class PanelTitleBarRenderTests: XCTestCase {
         }
     }
 
+    func testChevronShowsOnlyWhenThereIsMoreToSee() {
+        let font: CGFloat = 12
+        let short = "Working on it."
+        let long = String(repeating: "A long description that cannot fit on one line. ", count: 4)
+        func needs(_ text: String, width: CGFloat = 400) -> Bool {
+            PanelTitleBarView.needsMoreThanOneLine(description: text, fontSize: font, availableWidth: width)
+        }
+        // One line that fits: nothing to expand, no chevron.
+        XCTAssertFalse(needs(short))
+        // Cut off, or its own line breaks: the chevron shows.
+        XCTAssertTrue(needs(long))
+        XCTAssertTrue(needs("Working.\nNext: verify."))
+        // A narrow bar cuts off even a short line; no width yet shows nothing.
+        XCTAssertTrue(needs(short, width: 40))
+        XCTAssertFalse(needs(long, width: 0))
+        // No description (a mail-only bar): never.
+        XCTAssertFalse(needs("", width: 10))
+    }
+
+    func testShortDescriptionIsNeverStuckExpanded() {
+        let font: CGFloat = 12
+        func draws(_ text: String, collapsed: Bool, width: CGFloat = 400) -> Bool {
+            PanelTitleBarView.displaysCollapsed(collapsed: collapsed, description: text, fontSize: font, availableWidth: width)
+        }
+        // set-metadata auto-expands; a one-line description still draws as
+        // one line, with no chevron, so there is nothing left to collapse.
+        XCTAssertTrue(draws("Working on it.", collapsed: false))
+        XCTAssertTrue(draws("Working on it.", collapsed: true))
+        // A description that needs more draws expanded when the panel says so.
+        let long = String(repeating: "A long description that cannot fit on one line. ", count: 4)
+        XCTAssertFalse(draws(long, collapsed: false))
+        XCTAssertTrue(draws(long, collapsed: true))
+        XCTAssertFalse(draws("Working.\nNext: verify.", collapsed: false))
+        // Before the bar is measured it follows the panel's state.
+        XCTAssertFalse(draws("Working on it.", collapsed: false, width: 0))
+    }
+
     func testRenderingNeverFiresTheToggle() {
         var fireCount = 0
         let state = PanelTitleBarState(title: "t", description: "Some description", collapsed: false)

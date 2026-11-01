@@ -174,6 +174,8 @@ struct MailboxDrawerView: View {
     @ObservedObject var geometry: MailboxDrawerGeometry
     let style: MailboxDrawerStyle
     let resolveSenders: ([String]) -> [String: MailboxDrawerSender]
+    /// Closes the drawer, as a second click on the envelope does.
+    var onClose: () -> Void = {}
 
     /// C11-399: the drawer reads what the panel received, or what it sent.
     /// Insights summarizes both.
@@ -296,8 +298,11 @@ struct MailboxDrawerView: View {
             .foregroundColor(style.secondary)
             .lineLimit(1)
             .fixedSize()
+            MailboxDrawerCloseButton(style: style, action: onClose)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 * style.scale }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
         .padding(.vertical, 8)
     }
 
@@ -570,6 +575,31 @@ struct MailboxDrawerView: View {
                 listing = loaded
             }
         }
+    }
+}
+
+/// The drawer's close control, at the far right of its header: an × with a
+/// hover wash, the same action as a second click on the envelope.
+private struct MailboxDrawerCloseButton: View {
+    let style: MailboxDrawerStyle
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10 * style.scale, weight: .semibold))
+                .foregroundColor(hovering ? style.foreground : style.secondary)
+                .frame(width: 20 * style.scale, height: 20 * style.scale)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(hovering ? 0.10 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(String(localized: "mailbox.drawer.close.help", defaultValue: "Close (or click the envelope again)"))
+        .accessibilityLabel(Text(String(localized: "mailbox.drawer.close", defaultValue: "Close mailbox")))
+        .accessibilityIdentifier("mailbox-drawer-close")
     }
 }
 

@@ -10,10 +10,12 @@ import SwiftUI
 /// choice: resume all, resume a chosen subset, or skip and start fresh.
 ///
 /// **Policy.** `LaunchResumePolicy.current()` reads the operator's pref
-/// from `UserDefaults.standard`. Default is `.ask`. `.always` skips the
-/// picker and restores everything (legacy behavior). `.never` skips both
-/// the picker and the restore. The policy is stored under
-/// `c11.launch.resumePolicy` so other tools can observe / set it.
+/// from `UserDefaults.standard`. Default is `.always`: the previous session
+/// comes back with no picker. `.ask` shows the picker on every launch, and
+/// `.never` skips both the picker and the restore. The policy is stored
+/// under `c11.launch.resumePolicy` (Settings > General > On Launch) so other
+/// tools can observe / set it. Holding Option while c11 starts shows the
+/// picker for that launch only.
 ///
 /// **Hook point.** `AppDelegate.attemptStartupSessionRestoreIfNeeded`
 /// calls `LaunchResumePicker.presentIfNeeded(...)` before applying the
@@ -28,22 +30,30 @@ enum LaunchResumePolicy: String, CaseIterable {
 
     static let defaultsKey = "c11.launch.resumePolicy"
 
-    /// Read the current policy from `UserDefaults.standard`. Unknown /
-    /// empty values fall back to `.ask` so a typo or absent key is the
-    /// "show me a picker" default rather than a silent skip.
+    /// What an operator who never chose gets: resume the previous session
+    /// silently. Launching fresh, or picking workspaces, is the explicit choice.
+    static let defaultPolicy: LaunchResumePolicy = .always
+
+    /// Read the current policy from `UserDefaults.standard`. Absent, empty
+    /// or unknown values fall back to `defaultPolicy`, so a typo never
+    /// throws a session away and never puts a picker in the way.
+    ///
+    /// c11 itself writes this key only from the Settings picker; no launch
+    /// path has ever stored a value on the operator's behalf.
     static func current(defaults: UserDefaults = .standard) -> LaunchResumePolicy {
-        guard let raw = defaults.string(forKey: defaultsKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased(),
-              !raw.isEmpty,
-              let parsed = LaunchResumePolicy(rawValue: raw) else {
-            return .ask
-        }
-        return parsed
+        parse(defaults.string(forKey: defaultsKey))
     }
 
-    func persist(defaults: UserDefaults = .standard) {
-        defaults.set(rawValue, forKey: Self.defaultsKey)
+    /// Parse a stored raw value. Pure, so the Settings picker and tests share it.
+    static func parse(_ raw: String?) -> LaunchResumePolicy {
+        guard let normalized = raw?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !normalized.isEmpty,
+              let parsed = LaunchResumePolicy(rawValue: normalized) else {
+            return defaultPolicy
+        }
+        return parsed
     }
 }
 
@@ -84,23 +94,29 @@ enum LaunchResumePicker {
     ///
     /// - QA launch (`C11_QA_LAUNCH`) overrides everything: `.on(.resume)` →
     ///   `.always` (silent restore), `.on(.fresh)` → `.never` (skip).
-    /// - Otherwise the persisted policy applies — except that on a **local dev
-    ///   build** the default `.ask` becomes `.always` (silent restore), so a
-    ///   developer rebuilding c11 isn't blocked by the picker modal on every
-    ///   relaunch. An explicit `.always` / `.never` the operator set is always
-    ///   honored (a dev build never forces a restore the operator opted out of).
+    /// - Holding Option while c11 starts (`optionHeld`) shows the picker for
+    ///   this launch only, whatever the persisted policy says. It is never
+    ///   written back; the picker's Skip starts fresh.
+    /// - Otherwise the persisted policy applies (absent means `.always`),
+    ///   except that on a **local dev build** a stored `.ask` becomes
+    ///   `.always` (silent restore), so a developer rebuilding c11 isn't
+    ///   blocked by the picker modal on every relaunch. An explicit `.never`
+    ///   is always honored (a dev build never forces a restore the operator
+    ///   opted out of).
     ///
     /// `nonisolated` — pure value-logic with no main-actor needs, so it's
     /// callable from the main-actor launch path and from off-main tests alike.
     nonisolated static func resolveEffectivePolicy(
         qa: QALaunchPolicy,
         persisted: LaunchResumePolicy,
-        isLocalDevBuild: Bool
+        isLocalDevBuild: Bool,
+        optionHeld: Bool = false
     ) -> LaunchResumePolicy {
         switch qa {
         case .on(.resume): return .always
         case .on(.fresh): return .never
         case .off:
+            if optionHeld { return .ask }
             if persisted == .ask && isLocalDevBuild { return .always }
             return persisted
         }

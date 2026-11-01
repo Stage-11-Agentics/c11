@@ -4448,6 +4448,7 @@ private struct ShortcutSettingsGroup: Identifiable {
 
 struct SettingsView: View {
     private let pickerColumnWidth: CGFloat = 196
+    private let launchPickerColumnWidth: CGFloat = 248
     private let notificationSoundControlWidth: CGFloat = 280
 
     @AppStorage(LanguageSettings.languageKey) private var appLanguage = LanguageSettings.defaultLanguage.rawValue
@@ -4513,6 +4514,16 @@ struct SettingsView: View {
     @AppStorage(NotificationAreaFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationAreaFlashSettings.defaultEnabled
     @AppStorage(NotificationFlashDurationSettings.storageKey) private var notificationFlashDurationMs: Int = NotificationFlashDurationSettings.defaultMs
     @AppStorage(QuitWarningSettings.warnBeforeQuitKey) private var warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
+    @AppStorage(LaunchResumePolicy.defaultsKey)
+    private var launchResumePolicy = LaunchResumePolicy.defaultPolicy.rawValue
+    /// The picker's selection. An outside `defaults write` can leave a typo or
+    /// odd casing; it resolves the way launch reads it, so a tag always matches.
+    private var launchResumePolicySelection: Binding<String> {
+        Binding(
+            get: { LaunchResumePolicy.parse(launchResumePolicy).rawValue },
+            set: { launchResumePolicy = $0 }
+        )
+    }
     @AppStorage(CommandPaletteRenameSelectionSettings.selectAllOnFocusKey)
     private var commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
     @AppStorage(CommandPaletteSwitcherSearchSettings.searchAllSurfacesKey)
@@ -5178,6 +5189,31 @@ struct SettingsView: View {
             }
         }
 
+        SettingsSectionHeader(title: String(localized: "settings.section.launchBehavior", defaultValue: "Launch Behavior"))
+        SettingsCard {
+            SettingsCardRow(
+                String(localized: "settings.app.onLaunch", defaultValue: "On Launch"),
+                subtitle: launchResumeSubtitle,
+                controlWidth: launchPickerColumnWidth
+            ) {
+                Picker("", selection: launchResumePolicySelection) {
+                    Text(String(localized: "settings.app.onLaunch.resume", defaultValue: "Resume previous session"))
+                        .tag(LaunchResumePolicy.always.rawValue)
+                    Text(String(localized: "settings.app.onLaunch.ask", defaultValue: "Ask which workspaces to resume"))
+                        .tag(LaunchResumePolicy.ask.rawValue)
+                    Text(String(localized: "settings.app.onLaunch.fresh", defaultValue: "Start fresh"))
+                        .tag(LaunchResumePolicy.never.rawValue)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("SettingsOnLaunchPicker")
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.app.onLaunch.optionNote", defaultValue: "Hold Option while c11 starts to choose which workspaces to resume for that launch only."))
+        }
+
         SettingsSectionHeader(title: String(localized: "settings.section.quitBehavior", defaultValue: "Quit Behavior"))
         SettingsCard {
             SettingsCardRow(
@@ -5280,6 +5316,17 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .accessibilityIdentifier("SettingsTabLayoutPicker")
             }
+        }
+    }
+
+    private var launchResumeSubtitle: String {
+        switch LaunchResumePolicy.parse(launchResumePolicy) {
+        case .always:
+            return String(localized: "settings.app.onLaunch.subtitleResume", defaultValue: "c11 reopens every workspace from your last session.")
+        case .ask:
+            return String(localized: "settings.app.onLaunch.subtitleAsk", defaultValue: "c11 lists your last session's workspaces and asks which to bring back.")
+        case .never:
+            return String(localized: "settings.app.onLaunch.subtitleFresh", defaultValue: "c11 opens with a new, empty workspace.")
         }
     }
 
@@ -6683,6 +6730,7 @@ struct SettingsView: View {
         showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
         showWorkspaceIdsInSidebar = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
         panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
+        launchResumePolicy = LaunchResumePolicy.defaultPolicy.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         recordUsageAnalytics = true

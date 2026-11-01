@@ -117,7 +117,7 @@ A Release/staging build launched by `reloads.sh` binds its **own** socket in aut
 
 **When a change needs the operator to see or try it, launch the tagged build yourself** (`./scripts/launch-tagged-automation.sh <tag> --qa fresh`), seed it with whatever the check needs through its socket, and report that it is open. Don't ask permission to launch a tagged build.
 
-A normal launch can present three blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet, the **"Resume previous session?"** picker, and, when notifications are already off, the **"Turn on notifications for c11"** sheet. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var suppresses **all three** and makes the resume decision deterministic:
+A normal launch can present three blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet, the **"Resume previous session?"** picker (shown only when Settings > On Launch is "Ask which workspaces to resume" or Option is held at launch; the default resumes silently), and, when notifications are already off, the **"Turn on notifications for c11"** sheet. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var suppresses **all three** and makes the resume decision deterministic:
 
 | `C11_QA_LAUNCH` | Skill sheet | Resume picker | Notifications-off sheet | Session |
 |---|---|---|---|---|

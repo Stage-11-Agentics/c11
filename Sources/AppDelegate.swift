@@ -2494,6 +2494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private(set) var startupConversationSeedWaitMs = 0
     private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
+    /// Option was held while c11 started: show the resume picker for this
+    /// launch only. Sampled at launch, kept in memory, never persisted.
+    private var startupOptionHeld = false
     private(set) var didCompleteInitialSessionRestore = false
     private var deferredStartupSessionRestore: ((NSWindow) -> Void)?
     private var isApplyingStartupSessionRestore = false
@@ -2619,6 +2622,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // C11-559: sample Option as early as possible; the restore decision
+        // runs later (after the socket listens), when the key may be released.
+        startupOptionHeld = NSEvent.modifierFlags.contains(.option)
         // The SwiftUI delegate continues scene creation after forwarding its
         // open-URL callback to this adaptor. Consume c11 at the Apple Event
         // boundary instead, before that window-creation fallback can run.
@@ -3842,25 +3848,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
-        // C11-34: per-workspace resume picker. Sits between
-        // snapshot-load and snapshot-apply: the operator picks which
-        // workspaces from the previous session come back. Policy lives
-        // under `c11.launch.resumePolicy` (default `.ask`); `.always`
-        // keeps the legacy "restore everything" behavior, `.never`
-        // skips restore entirely.
+        // C11-34 / C11-559: per-workspace resume picker. Sits between
+        // snapshot-load and snapshot-apply. Policy lives under
+        // `c11.launch.resumePolicy` (Settings > General > On Launch):
+        // absent or `.always` restores everything silently, `.ask` shows
+        // the picker, `.never` skips restore entirely. Holding Option while
+        // c11 starts shows the picker for this launch only.
         //
-        // QA launch (`C11_QA_LAUNCH`) overrides that persisted policy for
-        // this launch only (never written back): `resume` → `.always`
-        // (silent restore), `fresh` → `.never` (skip). Both bypass the
-        // `.ask` picker so an automated run never blocks on the modal. A local
-        // dev / tagged build likewise bypasses the `.ask` picker (silent
-        // restore) so frequent rebuilds don't block on it — see
+        // QA launch (`C11_QA_LAUNCH`) overrides all of that for this launch
+        // only (never written back): `resume` → `.always` (silent restore),
+        // `fresh` → `.never` (skip), so an automated run never blocks on the
+        // modal. A local dev / tagged build turns a stored `.ask` into a
+        // silent restore so frequent rebuilds don't block on it — see
         // `LaunchResumePicker.resolveEffectivePolicy`.
+        let optionHeld = startupOptionHeld || NSEvent.modifierFlags.contains(.option)
         let policy = LaunchResumePicker.resolveEffectivePolicy(
             qa: QALaunchPolicy.current(),
             persisted: LaunchResumePolicy.current(),
-            isLocalDevBuild: SocketControlSettings.isLocalDevBuild()
+            isLocalDevBuild: SocketControlSettings.isLocalDevBuild(),
+            optionHeld: optionHeld
         )
+        NSLog("session.restore.policy resolved=%@ option_held=%d", policy.rawValue, optionHeld ? 1 : 0)
         if policy == .ask,
            let snapshot = startupSessionSnapshot,
            snapshot.windows.contains(where: { !$0.workspaceManager.workspaces.isEmpty }) {

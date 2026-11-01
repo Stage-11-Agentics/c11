@@ -749,9 +749,16 @@ extension CMUXCLI {
         if sharedInboxRecipients.isEmpty {
             writeDeliveryReceipts(claimed, recipientPanelId: panelId, via: "recv", recipient: { _ in panelName })
         } else {
+            // Only a member of this authenticated shared identity reads on
+            // behalf of its inbox owners. An unrelated --panel drain keeps
+            // the actual caller, so status continues to report it as taken.
+            let sharedCaller = MailboxClaimLog.callerPanelId().map { caller in
+                sharedInboxRecipients.values.contains { $0.id == caller }
+            } ?? false
             for (inbox, messages) in Dictionary(grouping: claimed, by: { $0.inbox.standardizedFileURL }) {
                 let recipient = sharedInboxRecipients[inbox]
                 writeDeliveryReceipts(messages, recipientPanelId: recipient?.id ?? panelId, via: "recv",
+                                      sharedClaimantPanelId: sharedCaller ? recipient?.id : nil,
                                       recipient: { _ in recipient?.name ?? panelName })
             }
         }
@@ -972,12 +979,13 @@ extension CMUXCLI {
         _ claimed: [MailboxDrain.ClaimedMessage],
         recipientPanelId: UUID?,
         via: String,
+        sharedClaimantPanelId: UUID? = nil,
         recipient: (MailboxDrain.ClaimedMessage) -> String
     ) {
         let byMailboxesRoot = Dictionary(grouping: claimed) { $0.inbox.deletingLastPathComponent().path }
         // C11-550: who claimed it, so a receipt can tell the recipient's own
         // read from another panel draining its inbox.
-        let claimer = MailboxClaimLog.callerPanelId()
+        let claimer = sharedClaimantPanelId ?? MailboxClaimLog.callerPanelId()
         for (root, messages) in byMailboxesRoot {
             let mailboxesRoot = URL(fileURLWithPath: root, isDirectory: true)
             MailboxDeliveryReceipt(

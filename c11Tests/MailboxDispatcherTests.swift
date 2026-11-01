@@ -76,6 +76,22 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertTrue(log.contains("requested_recipient"))
         XCTAssertTrue(log.contains("duplicate"))
         XCTAssertTrue(log.contains(owner.uuidString))
+
+        // Receipt status follows the canonical inbox across workspaces, even
+        // though dispatch and claim rows live in different workspace logs.
+        let workspaces = tempState.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        var status = try MailboxReceiptStatus.status(id: envelope.id, workspacesRoot: workspaces)
+        XCTAssertEqual(try XCTUnwrap(status.recipients.first).read, .unread)
+        let inbox = ownerFile.deletingLastPathComponent()
+        let drained = MailboxDrain.claimPending(inbox: inbox)
+        XCTAssertEqual(drained.claimed.map(\.id), [envelope.id])
+        MailboxClaimLog.append(ids: drained.claimed.map(\.id), recipientPanel: owner, byPanel: owner,
+                               via: "recv", mailboxesRoot: inbox.deletingLastPathComponent())
+        status = try MailboxReceiptStatus.status(id: envelope.id, workspacesRoot: workspaces)
+        let receipt = try XCTUnwrap(status.recipients.first)
+        XCTAssertEqual(receipt.panelId, owner)
+        XCTAssertEqual(receipt.read, .read)
+        XCTAssertEqual(receipt.claimedBy, owner)
     }
 
     // MARK: - Test helpers

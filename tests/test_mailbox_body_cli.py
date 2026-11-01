@@ -21,6 +21,7 @@ import socket_guard
 socket_guard.install()
 
 import importlib.util
+from datetime import datetime, timezone
 import json
 import os
 import pathlib
@@ -138,6 +139,22 @@ class Server(drain.FakeC11):
             pass
 
 
+def record_dispatch(fixture, message_id, panel, workspace=drain.WORKSPACE, dispatch_workspace=None):
+    """Real status reads the copied recipient and the recv-written claim log."""
+    root = pathlib.Path(fixture.mailboxes.replace(drain.WORKSPACE, dispatch_workspace or workspace))
+    root.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    with (root / "_dispatch.log").open("a") as log:
+        for row in ({"event": "received", "from": "builder", "to": "shared-view"},
+                    {"event": "copied", "recipient": "shared-view", "recipient_panel": panel.lower(), "recipient_workspace": workspace}):
+            log.write(json.dumps(dict(row, id=message_id, ts=now), separators=(",", ":")) + "\n")
+
+
+def receipt_status(cli, server, fixture, message_id):
+    proc, _ = drain.run(cli, ["--socket", server.path, "--json", "mailbox", "status", message_id], fixture.env(server.path))
+    return json.loads(proc.stdout) if proc.returncode == 0 else {"error": proc.stderr.decode()}
+
+
 FAILURES: list[str] = []
 
 
@@ -248,6 +265,8 @@ def main() -> int:
                 backlog = fixture.deliver(drain.TAB.lower(), "alias backlog")
                 current = fixture.deliver(drain.SIBLING.lower(), "owner mail", workspace=drain.MOVED_TO)
                 unrelated = fixture.deliver("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "unrelated")
+                record_dispatch(fixture, backlog, drain.TAB)
+                record_dispatch(fixture, current, drain.SIBLING, drain.MOVED_TO, dispatch_workspace=drain.WORKSPACE)
                 env = fixture.env(server.path)
                 env["C11_PANEL_ID"] = caller
                 env["OPENCODE_SESSION_ID"] = "root-session"
@@ -260,6 +279,12 @@ def main() -> int:
                 check(len(owner_receipts) == 1 and owner_receipts[0].get("panel_id", "").upper() == drain.SIBLING
                       and len(alias_receipts) == 1 and alias_receipts[0].get("panel_id", "").upper() == drain.TAB,
                       "shared receipts identify the actual inbox owner", repr(owner_receipts) + repr(alias_receipts))
+                statuses = [receipt_status(cli, server, fixture, mid) for mid in (backlog, current)]
+                rows = [report.get("recipients", [{}])[0] for report in statuses]
+                check(all(row.get("read") is True and row.get("read_state") == "read"
+                          and (row.get("claimed_by_panel_id") or "").upper() == panel
+                          for row, panel in zip(rows, (drain.TAB, drain.SIBLING))),
+                      "shared status records each inbox as read from " + caller, repr(statuses))
                 empty, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
                 check(empty.returncode == 0 and not empty.stdout, "shared recv claims once")
                 inbox, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir"], env)
@@ -275,6 +300,23 @@ def main() -> int:
                       and value.get("recipients", [{}])[0].get("can_ring") is False, "send JSON reports route")
             finally:
                 fixture.cleanup()
+        # An unrelated caller using an explicit target is still a takeover,
+        # even when the target resolves to a shared OpenCode identity.
+        fixture = drain.Fixture()
+        try:
+            current = fixture.deliver(drain.SIBLING.lower(), "external read", workspace=drain.MOVED_TO)
+            record_dispatch(fixture, current, drain.SIBLING, drain.MOVED_TO, dispatch_workspace=drain.WORKSPACE)
+            outsider = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            env = dict(fixture.env(server.path), C11_PANEL_ID=outsider)
+            proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--panel", drain.TAB, "--ack"], env)
+            status = receipt_status(cli, server, fixture, current)
+            row = status.get("recipients", [{}])[0]
+            check(proc.returncode == 0 and current.encode() in proc.stdout
+                  and row.get("read") is False and row.get("read_state") == "taken"
+                  and (row.get("claimed_by_panel_id") or "").lower() == outsider,
+                  "unrelated explicit shared drain stays taken, not read", repr(status) + repr(proc.stderr))
+        finally:
+            fixture.cleanup()
         server.shared = False
 
         # The default socket and the command's --socket name different

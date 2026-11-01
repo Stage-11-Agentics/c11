@@ -468,7 +468,7 @@ Every interactive v2 wrapper launch records the OpenCode TUI PID and kernel proc
 
 OpenCode does not emit `session.created` on resume. The v1 server plugin restores its lifecycle owner on the first prompt. The v2 adapter captures the loaded root from its own TUI before the first prompt and reports its exact-root execution lifecycle; it does not claim v1 prompt-cache or permission-notification parity. No tenant configuration is written. An explicit v1 `OPENCODE_TUI_CONFIG`, missing plugin support, noninteractive launch, `C11_OPENCODE_NATIVE_MAIL_DISABLED=1`, unknown version, or malformed v2 config keeps native delivery disabled; unknown versions still get baseline c11 foreground lifecycle and idle reporting for typed fallback. The v1 server plugin uses a private c11 tempfile in `/tmp` when its CONTENT slot is occupied.
 
-OpenCode v2 also propagates `session.environment` to tool subprocesses. Those processes can inherit the last client's C11 variables, but c11 does not accept them as displayed-route proof: capture and native OpenCode mailbox ownership require the exact TUI socket peer PID. Generic c11 commands invoked by OpenCode tool subprocesses still use their ordinary caller-panel environment and remain an upstream attribution residual; this adapter never uses those commands for capture or mailbox ownership. Mailbox delivery and `recv` resolve an authenticated duplicate view to the current root owner's inbox. The duplicate's client-local notice names that owner without closing either TUI or changing its route. Existing unread files in the live views' earlier inboxes remain included in `recv --ack`; `inbox-dir` returns the canonical inbox. The binding is in memory, revoked on a claim or route change, and never accepted from metadata. A tool's `OPENCODE_SESSION_ID`, when present, must match the current displayed root before recv follows shared inboxes. A child tool, a mismatched session, or a pending/unbound route still reads its own panel's inbox; it receives no shared-inbox expansion or canonical redirect.
+OpenCode v2 also propagates `session.environment` to tool subprocesses. Those processes can inherit the last client's C11 variables, but c11 does not accept them as displayed-route proof: capture and native OpenCode mailbox ownership require the exact TUI socket peer PID. Generic c11 commands invoked by OpenCode tool subprocesses still use their ordinary caller-panel environment and remain an upstream attribution residual; this adapter never uses those commands for capture or mailbox ownership. Mailbox delivery and `recv` resolve an authenticated duplicate view to the current root owner's inbox. The duplicate's client-local notice names that owner without closing either TUI or changing its route. Existing unread files in the live views' earlier inboxes remain included in `recv --ack`; `inbox-dir` returns the canonical inbox. The binding is in memory, revoked on a claim or route change, and never accepted from metadata. A tool's `OPENCODE_SESSION_ID`, when present, must match the current displayed root before recv follows shared inboxes. A child tool, a mismatched session, or a pending/unbound route still reads its own panel's inbox; it receives no shared-inbox expansion or canonical redirect. A drain from an authenticated shared member records each claimed inbox owner as `by_panel`, so receipt status shows read from either view. An unrelated caller using `--panel` keeps its actual caller identity and remains a takeover.
 
 For the credential-free acceptance check, start an Atlas sandbox with the tagged
 app, then run `scripts/check-opencode-native-mail.py <run-id>`. It stages the
@@ -740,8 +740,8 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | Event       | Fields                                                              |
 |-------------|---------------------------------------------------------------------|
 | `received`  | `id`, `from`, `to?`, `topic?`                                       |
-| `resolved`  | `id`, `recipients[]` (panel names; can be empty)                  |
-| `copied`    | `id`, `recipient`, `recipient_panel?`, `recipient_usage_limit?`     |
+| `resolved`  | `id`, `recipients[]` (panel names; can be empty), `requested_recipient?`, `recipient_panel_ids[]?`                  |
+| `copied`    | `id`, `recipient`, `recipient_panel?`, `recipient_workspace?`, `recipient_usage_limit?`     |
 | `handler`   | `id`, `recipient`, `recipient_panel?`, `handler`, `outcome`, `bytes?`, `elapsed_ms?`, `reason?` |
 | `claimed`   | `id`, `recipient_panel?`, `by_panel?`, `via` (`recv` or `hook`). Written by the drain, not the dispatcher |
 | `rejected`  | `id?`, `reason`                                                     |
@@ -770,7 +770,7 @@ c11 mailbox trace 01K3A2B7X8PQRTVWYZ0123456J  # filter for one envelope id
 c11 mailbox status 01K3A2B7X8PQRTVWYZ0123456J # sent, delivered and read per recipient
 ```
 
-The log is opened `O_APPEND`, so the dispatcher's rows and a drain's `claimed` row never overwrite each other. `recipient_panel` is the recipient's panel UUID; rows written before it existed carry only the title.
+The log is opened `O_APPEND`, so the dispatcher's rows and a drain's `claimed` row never overwrite each other. `recipient_panel` is the recipient's panel UUID; rows written before it existed carry only the title. A `copied` row also records `recipient_workspace`, so status finds a canonical owner inbox even when the duplicate dispatches from another workspace.
 
 ### Receipts: `c11 mailbox status`
 
@@ -781,7 +781,7 @@ The log is opened `O_APPEND`, so the dispatcher's rows and a drain's `claimed` r
 | **sent** | the `copied` row. `rejected` means no inbox got it; an envelope still in an outbox is `queued` |
 | **delivered** | a stdin `doorbell` row for this id with reason `submitted`, `stranded_return`, `native_late_accept` or `native_already_admitted` (a ring logs one row for each envelope it covers), or the recipient's own claim when no ring ran. A later hold row never undoes it |
 | **held** | the latest stdin row is a hold: a draft, a question, an unreadable prompt, a stranded line, the rate cap, or an unconfirmed native invitation (Claude's chooser). Held is never delivered |
-| **read** | the copy is in the recipient's `_read/` and the drain's `claimed` row has `by_panel` equal to the recipient panel. A claim by any other panel (`recv --drain --panel <other>`) shows `taken by panel <uuid>`; a claim with no row (an older CLI) shows `claimed, by a panel c11 did not record` |
+| **read** | the copy is in the recipient's `_read/` and the drain's `claimed` row has `by_panel` equal to the recipient panel. An authenticated shared OpenCode view claims on behalf of each inbox owner. A claim by an unrelated panel (`recv --drain --panel <other>`) shows `taken by panel <uuid>`; a claim with no row (an older CLI) shows `claimed, by a panel c11 did not record` |
 
 Human output prints one block per recipient with local times; `--json` carries the same fields (see `skills/c11/references/api.md`) and never the body. It reads files only, so it works with c11 down.
 

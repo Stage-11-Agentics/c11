@@ -544,7 +544,8 @@ final class MailboxDispatcher {
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
             log.append(.copied(id: envelope.id, recipient: recipient.displayName,
                                recipientUsageLimit: recipientUsageLimit(recipient.surfaceId)?.rawValue,
-                               recipientPanel: recipient.surfaceId))
+                               recipientPanel: recipient.surfaceId,
+                               recipientWorkspace: recipient.inboxWorkspaceId ?? workspaceId))
             // C11-163: mailbox envelope delivered to a recipient inbox.
             EventEmitter.shared.emitMailboxDelivered(
                 workspace: recipient.inboxWorkspaceId ?? workspaceId,

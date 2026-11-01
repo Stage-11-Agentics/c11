@@ -98,6 +98,10 @@ class Server(drain.FakeC11):
                             "features": [{"id": "vocabulary.workspace_area_panel", "version": 1}],
                         }
                     elif method == "mailbox.resolve":
+                        if request.get("params", {}).get("opencode_session_id") == "wrong-session":
+                            conn.sendall(json.dumps({"id": request.get("id"), "ok": False,
+                                "error": {"code": "session_mismatch", "message": "wrong displayed root"}}).encode() + b"\n")
+                            continue
                         target = request.get("params", {}).get("to")
                         panel = drain.TAB if target in (None, "", "watcher", "builder") else drain.SIBLING
                         result = {
@@ -105,6 +109,16 @@ class Server(drain.FakeC11):
                             "target_workspace_id": drain.WORKSPACE,
                             "panel_ids": [panel],
                         }
+                        if getattr(self, "shared", False):
+                            result["recipients"] = [{
+                                "requested_panel_id": drain.TAB, "panel_id": drain.SIBLING,
+                                "workspace_id": drain.MOVED_TO, "name": "owner",
+                                "can_ring": False, "doorbell_unavailable_reason": "no_reader_or_native_route",
+                                "shared_inboxes": [
+                                    {"panel_id": drain.TAB, "workspace_id": drain.WORKSPACE, "name": "duplicate"},
+                                    {"panel_id": drain.SIBLING, "workspace_id": drain.MOVED_TO, "name": "owner"},
+                                ],
+                            }]
                     elif method == "panel.get_metadata":
                         result = {"metadata": {"title": "watcher"}}
                     conn.sendall(
@@ -197,6 +211,43 @@ def main() -> int:
                 )
             finally:
                 fixture.cleanup()
+
+        # Shared identity: recv from either view drains the owner and the
+        # older alias backlog, but never an unrelated panel's inbox.
+        server.shared = True
+        for caller in (drain.TAB, drain.SIBLING):
+            fixture = drain.Fixture()
+            try:
+                backlog = fixture.deliver(drain.TAB.lower(), "alias backlog")
+                current = fixture.deliver(drain.SIBLING.lower(), "owner mail", workspace=drain.MOVED_TO)
+                unrelated = fixture.deliver("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "unrelated")
+                env = fixture.env(server.path)
+                env["C11_PANEL_ID"] = caller
+                stale_env = dict(env, OPENCODE_SESSION_ID="wrong-session")
+                refused, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], stale_env)
+                check(refused.returncode != 0 and not refused.stdout
+                      and fixture.listing(drain.TAB.lower())[0] == [backlog + ".msg"],
+                      "stale tool session cannot fall back to wrong inbox", repr(refused.stderr))
+                proc, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
+                check(proc.returncode == 0 and backlog.encode() in proc.stdout and current.encode() in proc.stdout
+                      and unrelated.encode() not in proc.stdout, "shared recv from " + caller,
+                      repr(proc.stdout) + repr(proc.stderr))
+                empty, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
+                check(empty.returncode == 0 and not empty.stdout, "shared recv claims once")
+                inbox, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir"], env)
+                check(drain.SIBLING.lower().encode() in inbox.stdout and drain.MOVED_TO.encode() in inbox.stdout,
+                      "shared inbox-dir names owner", repr(inbox.stdout))
+                sent, _ = drain.run(cli, ["--socket", server.path, "mailbox", "send", "--to", "duplicate", "--body", "hello"], env)
+                check(sent.returncode == 0 and b"shared OpenCode inbox" in sent.stderr and b"cannot ring" in sent.stderr,
+                      "send names owner and unavailable doorbell", repr(sent.stderr))
+                report, _ = drain.run(cli, ["--socket", server.path, "--json", "mailbox", "send", "--to", "duplicate", "--body", "hello"], env)
+                value = json.loads(report.stdout)
+                check(value.get("requested_recipient") == "duplicate"
+                      and value.get("recipients", [{}])[0].get("panel_id") == drain.SIBLING
+                      and value.get("recipients", [{}])[0].get("can_ring") is False, "send JSON reports route")
+            finally:
+                fixture.cleanup()
+        server.shared = False
 
         # The default socket and the command's --socket name different
         # inboxes. The retry is the emitted text alone: no socket is added

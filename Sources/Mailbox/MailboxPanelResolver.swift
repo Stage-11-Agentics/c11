@@ -20,15 +20,18 @@ struct MailboxPanelResolver {
     let workspaceId: UUID
     let metadataStore: PanelMetadataStore
     let livePanels: () -> [UUID]
+    let canonicalOwner: (UUID) -> (panelID: UUID, workspaceID: UUID)?
 
     init(
         workspaceId: UUID,
         metadataStore: PanelMetadataStore = .shared,
+        canonicalOwner: @escaping (UUID) -> (panelID: UUID, workspaceID: UUID)? = { _ in nil },
         livePanels: @escaping () -> [UUID]
     ) {
         self.workspaceId = workspaceId
         self.metadataStore = metadataStore
         self.livePanels = livePanels
+        self.canonicalOwner = canonicalOwner
     }
 
     // MARK: - Name → surface
@@ -87,12 +90,29 @@ struct MailboxPanelResolver {
         }
     }
 
+    func canonicalRecipient(_ requested: PanelMetadata) -> PanelMetadata {
+        guard let owner = canonicalOwner(requested.surfaceId), owner.panelID != requested.surfaceId else {
+            return requested
+        }
+        let (metadata, _) = metadataStore.getMetadata(workspaceId: owner.workspaceID, surfaceId: owner.panelID)
+        let keys = metadata.reduce(into: [String: String]()) { result, entry in
+            if entry.key.hasPrefix(Self.metadataPrefix), let value = entry.value as? String {
+                result[entry.key] = value
+            }
+        }
+        var result = PanelMetadata(surfaceId: owner.panelID, name: metadata[MetadataKey.title] as? String ?? "",
+                                   mailboxKeys: keys)
+        result.inboxWorkspaceId = owner.workspaceID
+        return result
+    }
+
     struct PanelMetadata: Equatable {
         let surfaceId: UUID
         let name: String
         /// Parsed from mailbox.* metadata keys. Comma-split helpers live on
         /// the type so callers don't re-implement the alignment-doc contract.
         let mailboxKeys: [String: String]
+        var inboxWorkspaceId: UUID? = nil
 
         var delivery: [String] {
             splitCommaSeparated(mailboxKeys["mailbox.delivery"])

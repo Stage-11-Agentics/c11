@@ -49,7 +49,7 @@ final class MailboxDispatchLog {
     enum Event {
         case nativeUnconfirmed(MailboxNativeDoorbell.FailureDiagnostic)
         case received(id: String, from: String, to: String?, topic: String?)
-        case resolved(id: String, recipients: [String])
+        case resolved(id: String, recipients: [String], requestedRecipient: String? = nil, recipientPanelIds: [String] = [])
         case copied(id: String, recipient: String, recipientUsageLimit: String? = nil, recipientPanel: UUID? = nil)
         case handler(
             id: String,
@@ -178,10 +178,12 @@ final class MailboxDispatchLog {
             payload["from"] = from
             if let to { payload["to"] = to }
             if let topic { payload["topic"] = topic }
-        case .resolved(let id, let recipients):
+        case .resolved(let id, let recipients, let requestedRecipient, let recipientPanelIds):
             payload["event"] = "resolved"
             payload["id"] = id
             payload["recipients"] = recipients
+            if let requestedRecipient { payload["requested_recipient"] = requestedRecipient }
+            if !recipientPanelIds.isEmpty { payload["recipient_panel_ids"] = recipientPanelIds }
         case .copied(let id, let recipient, let recipientUsageLimit, let recipientPanel):
             payload["event"] = "copied"
             payload["id"] = id

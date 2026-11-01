@@ -83618,6 +83618,197 @@
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "無代理"}},
         "ru": {"stringUnit": {"state": "translated", "value": "Нет агентов"}}
       }
+    },
+    "mailbox.opencode.shared-owner": {
+      "comment": "C11-520 shared OpenCode mailbox owner or unavailable doorbell. Preserve literal product and command names.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared OpenCode session. Mail and recv use %@ (%@)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有 OpenCode セッションです。メールと recv は %@ (%@) を使用します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Спільний сеанс OpenCode. Пошта та recv використовують %@ (%@)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공유 OpenCode 세션입니다. 메일과 recv는 %@ (%@)을(를) 사용합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享的 OpenCode 会话。邮件和 recv 使用 %@（%@）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共用的 OpenCode 工作階段。郵件和 recv 使用 %@（%@）。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Общий сеанс OpenCode. Почта и recv используют %@ (%@)."
+          }
+        }
+      }
+    },
+    "mailbox.cli.shared-owner": {
+      "comment": "C11-520 shared OpenCode mailbox owner or unavailable doorbell. Preserve literal product and command names.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail to %@ uses the shared OpenCode inbox of %@ (%@)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 宛てのメールは、%@ (%@) の共有 OpenCode 受信箱を使用します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пошта для %@ використовує спільну вхідну скриньку OpenCode %@ (%@)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 앞으로 온 메일은 %@ (%@)의 공유 OpenCode 받은편지함을 사용합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发给 %@ 的邮件使用 %@（%@）的共享 OpenCode 收件箱。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "寄給 %@ 的郵件使用 %@（%@）的共用 OpenCode 收件匣。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Почта для %@ использует общий входящий ящик OpenCode %@ (%@)."
+          }
+        }
+      }
+    },
+    "mailbox.cli.cannot-ring": {
+      "comment": "C11-520 shared OpenCode mailbox owner or unavailable doorbell. Preserve literal product and command names.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail is queued for %@, but c11 cannot ring its harness (%@). Use c11 mailbox recv --ack to read it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 宛てのメールはキューに入っていますが、c11 はそのエージェントプログラム (%@) に通知できません。読むには c11 mailbox recv --ack を使用してください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пошту для %@ поставлено в чергу, але c11 не може сповістити її програму-агента (%@). Щоб прочитати, скористайтеся c11 mailbox recv --ack."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 앞으로 온 메일이 대기열에 있지만 c11이 해당 에이전트 프로그램(%@)에 알릴 수 없습니다. 읽으려면 c11 mailbox recv --ack를 사용하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发给 %@ 的邮件已排入队列，但 c11 无法通知其智能体程序（%@）。请使用 c11 mailbox recv --ack 读取。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "寄給 %@ 的郵件已加入佇列，但 c11 無法通知其代理程式（%@）。請使用 c11 mailbox recv --ack 讀取。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Почта для %@ поставлена в очередь, но c11 не может уведомить его программу-агент (%@). Чтобы прочитать, используйте c11 mailbox recv --ack."
+          }
+        }
+      }
+    },
+    "mailbox.opencode.session-mismatch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode tool session no longer matches its panel's displayed session."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode ツールのセッションが、そのパネルに表示されているセッションと一致しなくなりました。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеанс інструмента OpenCode більше не збігається із сеансом, показаним на його панелі."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode 도구 세션이 더 이상 해당 패널에 표시된 세션과 일치하지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode 工具会话与其面板显示的会话不再匹配。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode 工具工作階段與其面板顯示的工作階段不再相符。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеанс инструмента OpenCode больше не совпадает с сеансом, отображаемым в его панели."
+          }
+        }
+      }
     }
   }
 }

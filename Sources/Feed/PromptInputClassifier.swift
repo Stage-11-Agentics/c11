@@ -161,6 +161,10 @@ enum PromptInputClassifier {
         composerReader(for: harness) == .grok || (forSupervisor && composerReader(for: harness) == .pi)
     }
 
+    static func supportsComposer(harness: String?) -> Bool {
+        composerReader(for: harness) != nil
+    }
+
     private static func composerReader(for harness: String?) -> ComposerReader? {
         switch harness?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "claude-code", "codex":
@@ -211,7 +215,7 @@ enum PromptInputClassifier {
         let unknown = Analysis(classification: .unknown, composerText: nil)
         switch composerReader(for: harness) {
         case .openCode:
-            return openCodeComposer(lines, cursorIndex: cursorIndex) ?? unknown
+            return openCodeComposer(lines, cursorIndex: cursorIndex, cursorX: region.cursorX) ?? unknown
         case .pi:
             return piComposer(lines, cursorIndex: cursorIndex) ?? unknown
         case .grok:
@@ -794,7 +798,7 @@ enum PromptInputClassifier {
     /// sit on a blank row of a multi-line draft, so every composer row counts.
     /// One non-blank row that is not the idle hint is a draft. The rows are
     /// joined so a wrapped invitation matches the doorbell line.
-    private static func openCodeComposer(_ lines: [Line], cursorIndex: Int) -> Analysis? {
+    private static func openCodeComposer(_ lines: [Line], cursorIndex: Int, cursorX: Int) -> Analysis? {
         guard contentAfterMarker(lines[cursorIndex], marker: 0x2503) != nil else { return nil }
         var start = cursorIndex
         while start > 0,
@@ -808,12 +812,9 @@ enum PromptInputClassifier {
               contentAfterMarker(lines[end + 1], marker: 0x2503) != nil {
             end += 1
         }
-        if isOpenCodeModelLine(lines[end]),
-           end + 1 < lines.count,
-           lines[end].y + 1 == lines[end + 1].y,
-           isOpenCodeFooter(lines[end + 1]) {
-            end -= 1
-        }
+        let hasModelFooter = isOpenCodeModelLine(lines[end]) && end + 1 < lines.count
+            && lines[end].y + 1 == lines[end + 1].y && isOpenCodeFooter(lines[end + 1])
+        if hasModelFooter { end -= 1 }
         guard end >= start else { return nil }
         var rows: [Analysis] = []
         for index in start...end {
@@ -827,7 +828,8 @@ enum PromptInputClassifier {
         // when that hint wraps. Anything else is text the operator typed.
         guard joined.classification.state == .draft,
               let composer = joined.composerText,
-              openCodePlaceholder(collapsedComposer(composer)) else {
+              openCodePlaceholder(collapsedComposer(composer), allowClipped: hasModelFooter
+                && lines[cursorIndex].scalars.firstIndex(where: { $0.value == "A" }) == cursorX) else {
             return joined
         }
         return Analysis(
@@ -853,7 +855,7 @@ enum PromptInputClassifier {
     }
 
     /// OpenCode's idle hint. The ellipsis is the one it draws (U+2026) or three dots.
-    private static func openCodePlaceholder(_ text: String) -> Bool {
+    private static func openCodePlaceholder(_ text: String, allowClipped: Bool) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = "Ask anything"
         guard trimmed.hasPrefix(prefix) else { return false }
@@ -868,7 +870,15 @@ enum PromptInputClassifier {
         }
         let body = hint.trimmingCharacters(in: .whitespacesAndNewlines)
         if body.isEmpty { return true }
-        return body.first == "\"" && body.last == "\""
+        guard body.first == "\"" else { return false }
+        if body.last == "\"" { return true }
+        // OpenCode 2.0.25 clips these home hints before drawing, including
+        // the closing quote. Require its complete composer and the cursor at
+        // the start of the hint; arbitrary unfinished quoted drafts stay drafts.
+        let clipped = String(body.dropFirst())
+        return allowClipped && clipped.count >= 8 && [
+            "Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"
+        ].contains { $0.hasPrefix(clipped) }
     }
 
     /// Pi's composer is every row between the two rules around the cursor, not

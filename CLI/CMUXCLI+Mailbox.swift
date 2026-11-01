@@ -472,10 +472,27 @@ extension CMUXCLI {
                 "outbox_path": targetURL.path,
                 "workspace_id": targetWorkspaceId.uuidString,
                 "sender_workspace_id": workspaceId.uuidString,
-                "from": envelope.from
+                "from": envelope.from,
+                "requested_recipient": to ?? "",
+                "recipients": resolution.recipients
             ]))
         } else {
             print(envelope.id)
+            for recipient in resolution.recipients {
+                let owner = recipient["name"] as? String ?? recipient["panel_id"] as? String ?? ""
+                if let requestedID = recipient["requested_panel_id"] as? String,
+                   let actualID = recipient["panel_id"] as? String, requestedID != actualID {
+                    let notice = String(format: String(localized: "mailbox.cli.shared-owner",
+                        defaultValue: "Mail to %@ uses the shared OpenCode inbox of %@ (%@)."), to ?? "", owner, actualID)
+                    FileHandle.standardError.write(Data((notice + "\n").utf8))
+                }
+                if recipient["can_ring"] as? Bool == false {
+                    let reason = recipient["doorbell_unavailable_reason"] as? String ?? "unavailable"
+                    let notice = String(format: String(localized: "mailbox.cli.cannot-ring",
+                        defaultValue: "Mail is queued for %@, but c11 cannot ring its harness (%@). Use c11 mailbox recv --ack to read it."), owner, reason)
+                    FileHandle.standardError.write(Data((notice + "\n").utf8))
+                }
+            }
         }
     }
 
@@ -522,7 +539,7 @@ extension CMUXCLI {
         senderWorkspaceId: UUID,
         qualifier: String?,
         requireVerified: Bool = false
-    ) throws -> (workspaceId: UUID, verified: Bool) {
+    ) throws -> (workspaceId: UUID, verified: Bool, recipients: [[String: Any]]) {
         var params: [String: Any] = [
             "to": to,
             "sender_workspace_id": senderWorkspaceId.uuidString
@@ -546,7 +563,7 @@ extension CMUXCLI {
             // workspace so a same-workspace recipient still gets the message,
             // but flag it `verified: false` so the caller warns loudly and
             // exits non-zero — an unverified send must not look like success.
-            return (senderWorkspaceId, false)
+            return (senderWorkspaceId, false, [])
         }
 
         switch payload["resolution"] as? String {
@@ -557,7 +574,7 @@ extension CMUXCLI {
             else {
                 throw CLIError(message: "mailbox.resolve returned an invalid target workspace")
             }
-            return (id, true)
+            return (id, true, payload["recipients"] as? [[String: Any]] ?? [])
         case "ambiguous":
             let candidates = (payload["candidates"] as? [[String: Any]]) ?? []
             throw CLIError(message: mailboxAmbiguityMessage(to: to, candidates: candidates))
@@ -645,6 +662,29 @@ extension CMUXCLI {
             panelId: panelId,
             panelName: panelName
         )
+        // Authenticated duplicate views share the owner's inbox. Include
+        // the live views' prior inboxes as well, so mail received before the
+        // conflict was captured remains readable from either agent environment.
+        if let panelId {
+            var params: [String: Any] = ["to": "id:\(panelId.uuidString)", "sender_workspace_id": workspaceId.uuidString]
+            if surfaceOverride == nil, let session = ProcessInfo.processInfo.environment["OPENCODE_SESSION_ID"] {
+                params["opencode_session_id"] = session
+            }
+            let resolution: [String: Any]?
+            do { resolution = try client.sendV2(method: "mailbox.resolve", params: params) }
+            catch let error as CLIError where error.message.contains("session_mismatch") { throw error }
+            catch { resolution = nil } // Older/offline apps retain ordinary local recv.
+            let recipients = resolution?["recipients"] as? [[String: Any]] ?? []
+            for recipient in recipients {
+                for inbox in recipient["shared_inboxes"] as? [[String: String]] ?? [] {
+                    guard let id = inbox["panel_id"].flatMap(UUID.init(uuidString:)),
+                          let ws = inbox["workspace_id"].flatMap(UUID.init(uuidString:)) else { continue }
+                    let sharedURLs = MailboxLayout.recvInboxURLs(state: stateURL, workspaceId: ws,
+                                                                panelId: id, panelName: inbox["name"] ?? "")
+                    for url in sharedURLs where !inboxURLs.contains(url) { inboxURLs.append(url) }
+                }
+            }
+        }
         // C11-491: mail delivered before a move stays in the inbox of each
         // workspace the panel passed through, so a moved panel reads them all.
         // The caller's own panel moved when its start workspace is not its
@@ -1334,11 +1374,13 @@ extension CMUXCLI {
             )
         }
         let stateURL = try MailboxLayout.defaultStateURL()
-        let url = MailboxLayout.inboxURL(
-            state: stateURL,
-            workspaceId: workspaceId,
-            panelId: panelId
-        )
+        let resolution = try? client.sendV2(method: "mailbox.resolve", params: [
+            "to": "id:\(panelId.uuidString)", "sender_workspace_id": workspaceId.uuidString
+        ])
+        let owner = (resolution?["recipients"] as? [[String: Any]])?.first
+        let actualPanel = (owner?["panel_id"] as? String).flatMap(UUID.init(uuidString:)) ?? panelId
+        let actualWorkspace = (owner?["workspace_id"] as? String).flatMap(UUID.init(uuidString:)) ?? workspaceId
+        let url = MailboxLayout.inboxURL(state: stateURL, workspaceId: actualWorkspace, panelId: actualPanel)
         print(url.path)
     }
 

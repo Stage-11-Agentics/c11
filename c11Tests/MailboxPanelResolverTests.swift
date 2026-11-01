@@ -19,6 +19,45 @@ final class MailboxPanelResolverTests: XCTestCase {
         store = PanelMetadataStore.shared
     }
 
+    func testOpenCodeDuplicateSharesOnlyAuthenticatedCurrentOwnerInbox() async {
+        let cwd = "/tmp/c11-shared-mailbox-test"
+        let store = ConversationStore.shared
+        let owner = UUID(), duplicate = UUID(), unrelated = UUID()
+        let root = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+        let otherRoot = "ses_0fd8a6fffffe6JzzcloHmtDV0R"
+        let pid = Int32(ProcessInfo.processInfo.processIdentifier)
+        for panel in [owner, duplicate, unrelated] {
+            _ = await store.claim(surfaceId: panel.uuidString, kind: "opencode", cwd: cwd,
+                                  placeholderId: "wrapper-claim:\(panel.uuidString)", interactivePID: pid)
+        }
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: owner.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: unrelated.uuidString, id: otherRoot, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid + 1, routeGeneration: 1)
+        let cache = ConversationStorePanelRefCache.shared
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "an environment-inheriting subprocess cannot mint a shared inbox")
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: duplicate)?.panelID, owner)
+        XCTAssertEqual(Set(cache.mailboxOwner(surfaceId: owner)?.members ?? []), Set([owner, duplicate]))
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: unrelated)?.panelID, unrelated)
+        XCTAssertTrue(cache.beginOpenCodeRouteChange(surfaceId: duplicate, tuiPID: pid, routeGeneration: 2,
+                                                    capturesRoot: true, targetID: otherRoot))
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "route transition revokes alias before the actor runs")
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 1)
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "delayed capture must not restore the old alias")
+        _ = await store.captureDisplayedOpenCodeRoot(surfaceId: duplicate.uuidString, id: root, cwd: cwd,
+                                                    callerPID: pid, routeGeneration: 2)
+        XCTAssertEqual(cache.mailboxOwner(surfaceId: duplicate)?.panelID, owner)
+        XCTAssertTrue(cache.beginOpenCodeRouteChange(surfaceId: owner, tuiPID: pid, routeGeneration: 2,
+                                                    capturesRoot: false, targetID: otherRoot))
+        XCTAssertNil(cache.mailboxOwner(surfaceId: duplicate), "an owner's route transition revokes dependent aliases")
+        for panel in [owner, duplicate, unrelated] { await store.clear(surfaceId: panel.uuidString) }
+    }
+
     // MARK: - Helpers
 
     private func seedSurface(name: String?, extraMailbox: [String: String] = [:]) -> UUID {

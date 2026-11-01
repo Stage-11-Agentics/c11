@@ -535,8 +535,22 @@ extension TerminalController {
             )
             switch resolution {
             case .unique(let workspaceId, let surfaceIds):
+                let recipients = surfaceIds.map { self.mailboxRecipientPayload(panelID: $0, surfaces: surfaces) }
+                if let expectedSession = v2String(params, "opencode_session_id"),
+                   zip(surfaceIds, recipients).contains(where: { panelID, recipient in
+                       let snapshot = ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelID)
+                       // Legacy OpenCode tools also export OPENCODE_SESSION_ID,
+                       // but have no authenticated per-TUI displayed-root seam.
+                       let isV2 = snapshot?.authenticatedOpenCodeTuiPID != nil
+                           || snapshot?.active?.payload?[ConversationLifecyclePayloadKey.openCodeTuiPID] != nil
+                       return isV2 && (recipient["session_id"] as? String) != expectedSession
+                   }) {
+                    return .err(code: "session_mismatch", message: String(localized: "mailbox.opencode.session-mismatch", defaultValue: "OpenCode tool session no longer matches its panel's displayed session."), data: nil)
+                }
                 return .ok([
                     "resolution": "unique",
+                    "requested_recipient": to,
+                    "recipients": recipients,
                     "target_workspace_id": workspaceId.uuidString,
                     "target_workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
                     "surface_ids": surfaceIds.map(\.uuidString),
@@ -554,6 +568,31 @@ extension TerminalController {
                 ])
             }
         }
+    }
+
+    /// Called on main: capability checks inspect the current native route and
+    /// panel kind; the identity itself comes only from authenticated capture.
+    private func mailboxRecipientPayload(panelID: UUID, surfaces: [MailboxGlobalResolver.PanelRecord]) -> [String: Any] {
+        let shared = ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: panelID)
+        let ownerID = shared?.panelID ?? panelID
+        guard let owner = surfaces.first(where: { $0.surfaceId == ownerID }) else { return [:] }
+        let workspace = AppDelegate.shared?.workspaceContainingPanel(panelId: ownerID)?.workspace
+        let unavailable = workspace?.mailboxDoorbellUnavailableReason(surfaceId: ownerID) ?? (workspace == nil ? "target_gone" : nil)
+        var result: [String: Any] = [
+            "requested_panel_id": panelID.uuidString,
+            "panel_id": ownerID.uuidString,
+            "workspace_id": owner.workspaceId.uuidString,
+            "name": owner.name.isEmpty ? "id:\(ownerID.uuidString)" : owner.name,
+            "can_ring": unavailable == nil
+        ]
+        if let unavailable { result["doorbell_unavailable_reason"] = unavailable }
+        if let shared {
+            result["session_id"] = shared.sessionID
+            result["shared_inboxes"] = surfaces.filter { shared.members.contains($0.surfaceId) }.map {
+                ["panel_id": $0.surfaceId.uuidString, "workspace_id": $0.workspaceId.uuidString, "name": $0.name]
+            }
+        }
+        return result
     }
 
     private func v2SettingsOpen(params: [String: Any]) -> V2CallResult {

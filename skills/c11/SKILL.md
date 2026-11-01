@@ -98,6 +98,30 @@ structure reads, or other capabilities.
 
 ## Boot fast, orient lazily
 
+**Read the workspace mission at launch.** When `C11_MISSION_FILE` is nonempty,
+read that C11.md before starting the task. It contains the mission and project
+notes and supplements the project's instructions. c11 sets this path and adds
+a reference to the launch prompt for CLI, saved-config and UI agent launches;
+it never edits C11.md or tenant configuration. The operator and authorized
+agents maintain the file with ordinary tools.
+
+Discovery is exactly `C11.md` at the workspace's stable root, independent of
+terminal `cd` or a launch's `--cwd` override. Workspaces sharing a root share
+one displayed mission: the first `## Mission` or `**Mission.**` paragraph,
+falling back to the first prose paragraph. Per-workspace headings are notes,
+not selectors; distinct missions need distinct roots in this version. A C11
+block inside AGENTS.md/CLAUDE.md remains ordinary agent-readable context and
+does not supply the native card or launch reference.
+
+Full cards show one truncated sentence; hover shows the mission paragraph and
+path. Tiles keep their geometry and show the mission in their full-card hover
+preview. File edits normally appear within a few seconds. Missing, empty,
+invalid UTF-8/binary, oversized (over 64 KiB), symlink and nonregular files
+produce no mission line. Rootless and remote workspaces do not discover local
+missions. Those launches clear `C11_MISSION_FILE` to an empty value; an already
+running agent retains its launch context. c11 does not search parent folders
+or other agents' files.
+
 **Codex: capture your exact thread before other orientation work.** From one of your own tool subprocesses, run `c11 conversation capture-runtime` with no arguments. It reads `CODEX_THREAD_ID`, the agreeing `C11_PANEL_ID` value, and the subprocess's actual cwd itself. Never expand, copy, relay, or add those values as flags; an orchestrator cannot truthfully capture a child agent's runtime identity on its behalf.
 
 The bundled Codex wrapper separately marks each interactive process boundary. Its internal `--expected-resume-id` claim intent preserves an existing exact ref only for the same explicit `codex resume <uuid>`; plain launches and mismatches invalidate the prior lifecycle until this target performs runtime capture. Agents and orchestrators must not call that internal option or treat argv as causal identity.

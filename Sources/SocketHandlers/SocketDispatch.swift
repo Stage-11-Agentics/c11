@@ -10,6 +10,8 @@ private enum AgentLaunchContextSnapshot {
         workspaceManager: WorkspaceManager,
         paneId: UUID?,
         workspaceRoot: String?,
+        missionRoot: String?,
+        workspaceId: UUID?,
         launchingSurfaceCwd: String?
     )
     case failure(TerminalController.V2CallResult)
@@ -1386,6 +1388,8 @@ extension TerminalController {
                     workspaceManager: workspaceManager,
                     paneId: paneParam,
                     workspaceRoot: workspaceRoot,
+                    missionRoot: fallbackWorkspace?.missionRoot,
+                    workspaceId: fallbackWorkspace?.id,
                     launchingSurfaceCwd: launchingSurfaceCwd
                 )
             }
@@ -1397,12 +1401,16 @@ extension TerminalController {
         let workspaceManager: WorkspaceManager
         let paneParam: UUID?
         let workspaceRoot: String?
+        let existingMissionRoot: String?
+        let contextWorkspaceId: UUID?
         let launchingSurfaceCwd: String?
         switch contextSnapshot {
-        case .success(let manager, let paneId, let root, let surfaceCwd):
+        case .success(let manager, let paneId, let root, let missionRoot, let workspaceId, let surfaceCwd):
             workspaceManager = manager
             paneParam = paneId
             workspaceRoot = root
+            existingMissionRoot = missionRoot
+            contextWorkspaceId = workspaceId
             launchingSurfaceCwd = surfaceCwd
         case .failure(let error):
             return error
@@ -1447,14 +1455,18 @@ extension TerminalController {
             systemPromptSetting = SystemPromptSetting(mode: mode, text: v2RawString(params, "system_prompt") ?? "")
         }
 
+        let missionRoot = newWorkspace
+            ? (cwdResolution.source != .launchingSurface ? cwdResolution.path : nil)
+            : existingMissionRoot
+        let missionContext = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionRoot))
         let request = AgentLaunchRequest(
             kind: kindRaw,
             model: v2RawString(params, "model"),
             effort: v2RawString(params, "effort"),
             task: v2RawString(params, "task"),
-            prompt: v2RawString(params, "prompt"),
+            prompt: missionContext.prompt(v2RawString(params, "prompt")),
             systemPrompt: systemPromptSetting,
-            extraEnv: v2StringMap(params, "env") ?? [:],
+            extraEnv: missionContext.environment(v2StringMap(params, "env") ?? [:]),
             // C11-180: `config launch` rides its saved config's full-command
             // recipe field through here so this stays the one launch composer.
             commandOverride: v2RawString(params, "command_override")
@@ -1558,6 +1570,10 @@ extension TerminalController {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return result
                 }
+                guard target.id == contextWorkspaceId, target.missionRoot == missionRoot else {
+                    result = .err(code: "launch_context_changed", message: String(localized: "agentLaunch.missionRootChanged", defaultValue: "Workspace root changed while preparing the launch; retry."), data: nil)
+                    return result
+                }
                 if focus {
                     self.v2MaybeFocusWindow(for: workspaceManager)
                     self.v2MaybeSelectWorkspace(workspaceManager, workspace: target)
@@ -1637,7 +1653,7 @@ extension TerminalController {
                         // run, so even a fast completion cannot escape
                         // dispatch-time suppression.
                         panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
-                            launchLine: plan.launchLine, delayedPrompt: plan.delayedPrompt
+                            launchLine: missionContext.command(plan.launchLine), delayedPrompt: plan.delayedPrompt
                         )) { [weak workspaceManager, weak panel] in
                             guard let workspaceManager, let panel,
                                   let live = workspaceManager.workspaces.first(where: { $0.id == ws.id }) else { return false }

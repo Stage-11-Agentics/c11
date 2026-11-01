@@ -7484,9 +7484,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
            let panelId = UUID(uuidString: ref.replacingOccurrences(of: "panel:", with: "")),
            let workspace = context.workspaceManager.workspaces.first(where: { $0.terminalPanel(for: panelId) != nil }),
            let panel = workspace.terminalPanel(for: panelId) {
-            panel.submitConfiguredAgentLaunch(agent: configuredLaunch.agent, launch: configuredLaunch.launch) { [weak workspace, weak panel] in
+            let missionRoot = workspace.missionRoot
+            panel.submitConfiguredAgentLaunch(agent: configuredLaunch.agent, launch: configuredLaunch.launch, missionRoot: missionRoot) { [weak workspace, weak panel] in
                 guard let workspace, let panel else { return false }
-                return workspace.terminalPanel(for: panel.id) === panel
+                return workspace.terminalPanel(for: panel.id) === panel && workspace.missionRoot == missionRoot
             }
         }
         #if DEBUG

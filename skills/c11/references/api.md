@@ -99,6 +99,7 @@ Auto-exported into every c11 panel child process.
 | Var | Purpose |
 |-----|---------|
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
+| `C11_MISSION_FILE` | Agent launch's absolute workspace-root C11.md path; empty when no valid local mission file was found. Read before starting the task. Shared roots share one mission; `--cwd` does not change an existing workspace's mission. |
 | `C11_PANEL_ID` | Auto-set; default for `--panel` |
 | `C11_PANEL_NUM` | Integer N of this panel's `panel:N` ref — the number shown in the panel bar when panel-number display is on. Address yourself as `panel:$C11_PANEL_NUM` in this process; store `C11_PANEL_ID` across a restart |
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |

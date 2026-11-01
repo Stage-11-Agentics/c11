@@ -10867,6 +10867,14 @@ class TerminalController {
                 : "ERROR: TabManager not available"
         }
 
+        let missionTarget: (id: UUID, root: String?)? = legacyAgentLaunchMainSync {
+            workspaceManager.workspaces.first {
+                (workspaceId == nil || $0.id == workspaceId) && $0.terminalPanel(for: surfaceId) != nil
+            }.map { ($0.id, $0.missionRoot) }
+        }
+        guard let missionTarget else { return "ERROR: surface not found: \(surfaceId.uuidString)" }
+        let missionContext = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionTarget.root))
+        let prompt = missionContext.prompt(prompt)
         let stagedPrompt: LaunchPromptStore.StagedPrompt?
         do {
             if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -10893,6 +10901,10 @@ class TerminalController {
             var targetPanel: TerminalPanel?
             for workspace in workspaceManager.workspaces where workspaceId == nil || workspace.id == workspaceId {
                 if let panel = workspace.terminalPanel(for: surfaceId) {
+                    guard workspace.id == missionTarget.id, workspace.missionRoot == missionTarget.root else {
+                        result = "ERROR: " + String(localized: "agentLaunch.missionRootChanged", defaultValue: "Workspace root changed while preparing the launch; retry.")
+                        return
+                    }
                     targetPanel = panel
                     break
                 }
@@ -10921,7 +10933,9 @@ class TerminalController {
             // sequence — required for shell line discipline and TUI raw-mode
             // handlers to execute. Falls back to a flush-time submit if the
             // surface is not yet attached to a window.
-            panel.submitLaunchPlan(composed) { [weak workspaceManager, weak panel] in
+            panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
+                launchLine: missionContext.command(composed.launchLine), delayedPrompt: composed.delayedPrompt
+            )) { [weak workspaceManager, weak panel] in
                 guard let workspaceManager, let panel else { return false }
                 return workspaceManager.workspaces.contains {
                     (workspaceId == nil || $0.id == workspaceId) && $0.terminalPanel(for: panel.id) === panel

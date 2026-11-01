@@ -126,19 +126,22 @@ final class TerminalPanel: Panel, ObservableObject {
         sequence.start()
     }
 
-    /// The Settings and New Workspace rails share asynchronous staging and
-    /// revalidate their actual target before binding ownership and submitting.
+    /// Mission reads and prompt staging share the worker path. The callback
+    /// revalidates the captured workspace root as well as the actual panel.
     func submitConfiguredAgentLaunch(agent: AgentType, launch: ResolvedAgentLaunch,
+                                     missionRoot: String? = nil,
                                      isLive: @escaping @MainActor () -> Bool) {
-        guard agent == .claudeCode,
-              !launch.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            if isLive() { surface.sendSubmitFormText(launch.command) }
-            return
-        }
+        let delivery = AgentRegistry.shared.manifest(for: agent)?.launch.promptDelivery ?? .postBoot
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let staged: LaunchPromptStore.StagedPrompt
+            let context = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionRoot))
+            let prompt = context.prompt(launch.initialPrompt)
+            let staged: LaunchPromptStore.StagedPrompt?
             do {
-                staged = try LaunchPromptStore.shared.stage(prompt: launch.initialPrompt)
+                if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    staged = try LaunchPromptStore.shared.stage(prompt: prompt)
+                } else {
+                    staged = nil
+                }
             } catch {
                 DispatchQueue.main.async {
                     guard let self, isLive() else { return }
@@ -150,19 +153,19 @@ final class TerminalPanel: Panel, ObservableObject {
                 }
                 return
             }
+            let plan = LaunchPromptDelivery.compose(
+                command: context.command(launch.command), delivery: delivery, promptFilePath: staged?.url.path
+            )
             DispatchQueue.main.async {
                 guard let self, isLive() else {
-                    DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) }
+                    if let staged { DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) } }
                     return
                 }
                 do {
-                    try LaunchPromptStore.shared.retain(staged, owner: self.launchPromptOwner)
-                    let delivery = LaunchPromptDelivery.compose(
-                        command: launch.command, delivery: .positional, promptFilePath: staged.url.path
-                    )
-                    self.surface.sendSubmitFormText(delivery.launchLine)
+                    if let staged { try LaunchPromptStore.shared.retain(staged, owner: self.launchPromptOwner) }
+                    self.submitLaunchPlan(plan, isLive: isLive)
                 } catch {
-                    DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) }
+                    if let staged { DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) } }
                 }
             }
         }

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11493000000000000000001 /* WorkspaceMission.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11493000000000000000011 /* WorkspaceMission.swift */; };
+		C11493000000000000000002 /* WorkspaceMissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11493000000000000000012 /* WorkspaceMissionTests.swift */; };
 		C11549000000000000000004 /* FleetSnapshotHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11549000000000000000003 /* FleetSnapshotHostTests.swift */; };
 		C11549000000000000000002 /* FleetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11549000000000000000001 /* FleetSnapshot.swift */; };
 		C11515C001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */; };
@@ -780,6 +782,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11493000000000000000011 /* WorkspaceMission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMission.swift; sourceTree = "<group>"; };
+		C11493000000000000000012 /* WorkspaceMissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMissionTests.swift; sourceTree = "<group>"; };
 		C11549000000000000000003 /* FleetSnapshotHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSnapshotHostTests.swift; sourceTree = "<group>"; };
 		C11549000000000000000001 /* FleetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSnapshot.swift; sourceTree = "<group>"; };
 		C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkPolicyTests.swift; sourceTree = "<group>"; };
@@ -1636,6 +1640,7 @@
 				C11545000000000000000001 /* DeferredTerminationReply.swift */,
 				C11282000000000000000001 /* SelectionRead.swift */,
 				C1125800A1B2C3D4E5F60013 /* LaunchPromptDelivery.swift */,
+				C11493000000000000000011 /* WorkspaceMission.swift */,
 				C1125800A1B2C3D4E5F60012 /* AgentStartupProbe.swift */,
 				C1125800A1B2C3D4E5F60011 /* LaunchPromptStore.swift */,
 				23C5F6323E15D8560F53C2F2 /* PrivateFileWriter.swift */,
@@ -2121,6 +2126,7 @@
 				C11286000000000000000101 /* WindowResizePlanTests.swift */,
 				C11545000000000000000101 /* DeferredTerminationReplyTests.swift */,
 				C1125800A1B2C3D4E5F60016 /* LaunchPromptDeliveryTests.swift */,
+				C11493000000000000000012 /* WorkspaceMissionTests.swift */,
 				C1125800A1B2C3D4E5F60015 /* AgentStartupProbeTests.swift */,
 				C1125800A1B2C3D4E5F60014 /* LaunchPromptStoreTests.swift */,
 				15127FB1ECE0C6D1F403C3F4 /* PrivateFileWriterTests.swift */,
@@ -2476,6 +2482,7 @@
 				3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */,
 				C1130600A1B2C3D4E5F60703 /* ClaudeStopTranscriptTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60006 /* LaunchPromptDeliveryTests.swift in Sources */,
+				C11493000000000000000002 /* WorkspaceMissionTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60005 /* AgentStartupProbeTests.swift in Sources */,
 				C1125800A1B2C3D4E5F60004 /* LaunchPromptStoreTests.swift in Sources */,
 				53A3535E6025F8D6F0741FCC /* PrivateFileWriterTests.swift in Sources */,
@@ -2711,6 +2718,7 @@
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
 				C1130600A1B2C3D4E5F60701 /* ClaudeStopTranscript.swift in Sources */,
 				C1125800A1B2C3D4E5F60003 /* LaunchPromptDelivery.swift in Sources */,
+				C11493000000000000000001 /* WorkspaceMission.swift in Sources */,
 				C1125800A1B2C3D4E5F60002 /* AgentStartupProbe.swift in Sources */,
 				C1125800A1B2C3D4E5F60001 /* LaunchPromptStore.swift in Sources */,
 				2FD1F7F6DC68CA5CCF91C2E2 /* PrivateFileWriter.swift in Sources */,

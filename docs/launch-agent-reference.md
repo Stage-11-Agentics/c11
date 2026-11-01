@@ -1,5 +1,30 @@
 # `c11 launch-agent` — launching typed agents
 
+## Workspace mission
+
+Agent launches read `C11.md` only at the target workspace's stable root. A valid
+file supplies `C11_MISSION_FILE` and a short reference before the caller's task
+in the staged launch prompt; the original task text is retained verbatim. A
+promptless launch receives the reference alone. This applies to CLI, saved
+config, existing-panel and UI launches using their existing positional, flag
+or post-boot delivery. Post-boot delivery retains its documented best-effort
+bound. No tenant configuration is changed and c11 never writes C11.md.
+
+An existing workspace's mission does not follow `--cwd`. A new workspace uses
+its newly established root; rootless and remote workspaces do not look up local
+files. A missing, empty, invalid UTF-8/binary, symlink, nonregular or over-64-KiB
+file leaves the launch usable without a reference and clears the variable to
+an empty value, including inherited or caller-supplied values. A root change
+during preparation rejects the stale launch with `launch_context_changed`;
+retry against the current root. Running agents keep their launch context.
+
+Workspaces sharing a root share the first marked mission paragraph in C11.md
+(`## Mission` or `**Mission.**`), or its first prose paragraph if unmarked.
+Per-workspace headings are notes, not selectors. Embedded C11 blocks in
+AGENTS.md/CLAUDE.md are not native discovery sources in this version. The full
+file remains context for agents; the native card shows a single sentence and
+a bounded paragraph tooltip, refreshed in the background on file changes.
+
 The canonical reference for launching a typed coding agent into a c11 panel with
 one command: correct invocation for the agent's CLI, model/effort pinned, identity
 stamped at birth, machine-readable refs back to the caller.

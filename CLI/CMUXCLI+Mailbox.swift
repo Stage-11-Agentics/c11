@@ -966,6 +966,11 @@ extension CMUXCLI {
                 localized: "mailbox.status.error.invalidId",
                 defaultValue: "'\(raw)' is not an envelope id (a 26-character ULID)"
             ))
+        } catch MailboxReceiptStatus.Failure.scanLimit(let missing) {
+            throw CLIError(message: String(
+                localized: "mailbox.status.error.scanLimit",
+                defaultValue: "the scan limit was reached before envelope \(missing) was found; it may still exist"
+            ))
         } catch MailboxReceiptStatus.Failure.notFound(let missing) {
             throw CLIError(message: String(
                 localized: "mailbox.status.error.notFound",

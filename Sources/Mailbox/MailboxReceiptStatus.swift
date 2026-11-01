@@ -27,6 +27,8 @@ enum MailboxReceiptStatus {
     enum Failure: Error, Equatable {
         case invalidId(String)
         case notFound(String)
+        /// The byte budget ran out before every log since the send was read.
+        case scanLimit(String)
     }
 
     enum Delivery: String {
@@ -98,9 +100,6 @@ enum MailboxReceiptStatus {
     /// Scan limits. `maxScanBytes` bounds one call across every log.
     struct Limits {
         var maxScanBytes = 64 * 1024 * 1024
-        /// A log with no row for the id within this window after the ULID
-        /// time is not the dispatching log, unless no log matches in it.
-        var locateWindow: TimeInterval = 120
         /// Rows can be stamped slightly before the ULID time is read back.
         var lookBack: TimeInterval = 5
         var chunkBytes = 1024 * 1024
@@ -161,28 +160,39 @@ enum MailboxReceiptStatus {
             if modified >= since.timeIntervalSince1970 { candidates.append((workspaceId, log)) }
         }
 
+        // Every log written since the send: a panel that moved workspaces
+        // keeps its inbox (and `copied`/`claimed` rows) in the old workspace
+        // while its doorbell rows land in the new one. Each log is read only
+        // from just before the send, under one shared byte budget.
         var budget = limits.maxScanBytes
         var scanned = 0
         var truncated = false
-        // Pass one: the dispatcher normally takes an envelope within moments.
-        // Pass two: a send that waited for c11 to start was dispatched later.
-        for windowed in [true, false] {
-            for (workspaceId, log) in candidates {
-                guard budget > 0 else { truncated = true; break }
-                let scan = LogScan(url: log, id: id, since: since,
-                                   giveUpAfter: windowed ? sentAt.addingTimeInterval(limits.locateWindow) : nil,
-                                   chunkBytes: limits.chunkBytes, budget: budget)
-                let rows = scan.run()
-                scanned += scan.scannedBytes
-                budget -= scan.scannedBytes
-                if scan.hitBudget { truncated = true }
-                guard !rows.isEmpty else { continue }
-                var report = build(id: id, workspaceId: workspaceId, rows: rows,
-                                   mailboxesRoot: log.deletingLastPathComponent(), fileManager: fileManager)
-                report.scannedBytes = scanned
-                report.scanTruncated = truncated
-                return report
-            }
+        var found: [(workspace: UUID, root: URL, rows: [[String: Any]])] = []
+        for (workspaceId, log) in candidates {
+            guard budget > 0 else { truncated = true; break }
+            let scan = LogScan(url: log, id: id, since: since,
+                               chunkBytes: limits.chunkBytes, budget: budget)
+            let rows = scan.run()
+            scanned += scan.scannedBytes
+            budget -= scan.scannedBytes
+            if scan.hitBudget { truncated = true }
+            if !rows.isEmpty { found.append((workspaceId, log.deletingLastPathComponent(), rows)) }
+        }
+        if !found.isEmpty {
+            // The dispatching log is the one that copied it into an inbox.
+            func has(_ event: String, _ rows: [[String: Any]]) -> Bool { rows.contains { $0["event"] as? String == event } }
+            let home = found.first { has("copied", $0.rows) } ?? found.first { has("received", $0.rows) } ?? found[0]
+            let merged = found.flatMap(\.rows).enumerated().sorted { lhs, rhs in
+                let l = (lhs.element["ts"] as? String).flatMap(parseTimestamp)
+                let r = (rhs.element["ts"] as? String).flatMap(parseTimestamp)
+                if let l, let r, l != r { return l < r }
+                return lhs.offset < rhs.offset
+            }.map(\.element)
+            var report = build(id: id, workspaceId: home.workspace, rows: merged,
+                               mailboxesRoot: home.root, fileManager: fileManager)
+            report.scannedBytes = scanned
+            report.scanTruncated = truncated
+            return report
         }
 
         // Not dispatched yet: is it still waiting in an outbox?
@@ -199,6 +209,8 @@ enum MailboxReceiptStatus {
                               recipients: [], scannedBytes: scanned, scanTruncated: truncated)
             }
         }
+        // Not every log was read: say so rather than claim it does not exist.
+        if truncated { throw Failure.scanLimit(id) }
         throw Failure.notFound(id)
     }
 
@@ -314,7 +326,7 @@ enum MailboxReceiptStatus {
         switch outcome {
         case "doorbell":
             switch reason {
-            case "submitted", "stranded_return", "native_late_accept":
+            case "submitted", "stranded_return", "native_late_accept", "native_already_admitted":
                 set(.delivered)
                 recipient.deliveredAt = at
                 recipient.deliveryRoute = row["route"] as? String
@@ -334,9 +346,12 @@ enum MailboxReceiptStatus {
             switch reason {
             case "draft", "dialog", "unknown_prompt", "stranded":
                 set(.held)
+            case "unavailable":
+                // An unreadable or busy prompt read; retried like a hold.
+                set(.held, "unknown_prompt")
             case "once_per_idle", "already_covered", "in_flight", "native_attempt_unconfirmed",
-                 "operator_active", "input_transaction", "gate_closed":
-                if recipient.delivery == .notPushed || recipient.delivery == .pending {
+                 "operator_active", "input_transaction", "gate_closed", "input_unavailable", "agent_not_foreground":
+                if [.notPushed, .pending, .notRung].contains(recipient.delivery) {
                     set(.pending)
                 }
             default:
@@ -384,17 +399,15 @@ enum MailboxReceiptStatus {
         let url: URL
         let needle: Data
         let since: Date
-        let giveUpAfter: Date?
         let chunkBytes: Int
         let budget: Int
         private(set) var scannedBytes = 0
         private(set) var hitBudget = false
 
-        init(url: URL, id: String, since: Date, giveUpAfter: Date?, chunkBytes: Int, budget: Int) {
+        init(url: URL, id: String, since: Date, chunkBytes: Int, budget: Int) {
             self.url = url
             self.needle = Data("\"id\":\"\(id)\"".utf8)
             self.since = since
-            self.giveUpAfter = giveUpAfter
             self.chunkBytes = max(4096, chunkBytes)
             self.budget = budget
         }
@@ -427,9 +440,6 @@ enum MailboxReceiptStatus {
                     carry = Data()
                 }
                 rows.append(contentsOf: matches(in: data))
-                if rows.isEmpty, let giveUpAfter, let last = lastTimestamp(in: data), last > giveUpAfter {
-                    break
-                }
             }
             return rows
         }
@@ -447,12 +457,6 @@ enum MailboxReceiptStatus {
                 searchStart = lineEnd
             }
             return rows
-        }
-
-        private func lastTimestamp(in data: Data) -> Date? {
-            guard let end = data.lastIndex(of: 0x0A) else { return nil }
-            let start = data[data.startIndex..<end].lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
-            return Self.timestamp(ofLine: data.subdata(in: start..<end))
         }
 
         /// The byte offset of a line at or before the first line stamped at or
@@ -508,8 +512,10 @@ enum MailboxClaimLog {
 
     /// The panel the calling process runs in, from its environment.
     static func callerPanelId(_ env: [String: String] = ProcessInfo.processInfo.environment) -> UUID? {
-        for key in ["C11_PANEL_ID", "CMUX_PANEL_ID", "CMUX_SURFACE_ID"] {
-            if let value = env[key], let uuid = UUID(uuidString: value) { return uuid }
+        // Same keys and order as the CLI's `callerPanelEnv`.
+        for key in ["C11_PANEL_ID", "C11_TAB_ID", "C11_SURFACE_ID", "CMUX_PANEL_ID", "CMUX_TAB_ID", "CMUX_SURFACE_ID"] {
+            let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !value.isEmpty { return UUID(uuidString: value) }
         }
         return nil
     }

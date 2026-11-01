@@ -366,8 +366,6 @@ final class MailboxReceiptStatusTests: XCTestCase {
         let summary = "C11-550 bound: log \(logBytes) B, newest \(newest.scannedBytes) B in \(Int(newestSeconds * 1000)) ms, "
             + "oldest \(oldest.scannedBytes) B in \(Int(oldestSeconds * 1000)) ms\n"
         print(summary, terminator: "")
-        // Parallel test output is not in the build log; leave the numbers where the run can read them.
-        try? summary.write(toFile: "/tmp/c11-550-bound.txt", atomically: true, encoding: .utf8)
     }
 
     func testScanStopsAtItsByteBudget() throws {
@@ -386,6 +384,73 @@ final class MailboxReceiptStatusTests: XCTestCase {
         let report = try MailboxReceiptStatus.status(id: id, workspacesRoot: workspacesRoot, limits: limits)
         XCTAssertTrue(report.scanTruncated)
         XCTAssertLessThanOrEqual(report.scannedBytes, 64 * 1024 + 16 * 1024)
+    }
+
+    /// A panel that moved keeps its inbox and `copied` row in the old
+    /// workspace; its doorbell rows are written by the new one.
+    func testMovedPanelMergesRowsFromBothWorkspaces() throws {
+        let t = Date().addingTimeInterval(-900)
+        let id = newId(t)
+        try writeLog(dispatched(id, at: t) + [line(stdin(id, .buffered, nil), t)])
+        let moved = UUID()
+        try FileManager.default.createDirectory(at: mailboxes(moved), withIntermediateDirectories: true)
+        try line(stdin(id, .doorbell, "submitted", route: "typed"), t.addingTimeInterval(600))
+            .write(to: mailboxes(moved).appendingPathComponent(MailboxLayout.dispatchLogFileName), atomically: true, encoding: .utf8)
+        try deliverFile(id, to: recipient, read: false)
+        let report = try status(id)
+        XCTAssertEqual(report.workspaceId, workspace)
+        XCTAssertEqual(report.from, "owner")
+        let row = try XCTUnwrap(report.recipients.first)
+        XCTAssertEqual(row.delivery, .delivered)
+        XCTAssertEqual(row.read, .unread)
+    }
+
+    func testOpenCodeReplayAlreadyAdmittedIsDelivered() throws {
+        let t = Date().addingTimeInterval(-30)
+        let id = newId(t)
+        try writeLog(dispatched(id, at: t) + [
+            line(stdin(id, .doorbell, "started", route: "opencode_plugin"), t.addingTimeInterval(1)),
+            line(stdin(id, .doorbell, "native_already_admitted", route: "opencode_plugin"), t.addingTimeInterval(3)),
+        ])
+        try deliverFile(id, to: recipient, read: false)
+        XCTAssertEqual(try status(id).recipients.first?.delivery, .delivered)
+    }
+
+    func testRetriedSkipsAreHeldOrPendingNotNeverRung() throws {
+        let t = Date().addingTimeInterval(-30)
+        let id = newId(t)
+        try writeLog(dispatched(id, at: t) + [line(stdin(id, .doorbellSkipped, "unavailable"), t.addingTimeInterval(1))])
+        try deliverFile(id, to: recipient, read: false)
+        var row = try XCTUnwrap(try status(id).recipients.first)
+        XCTAssertEqual(row.delivery, .held)
+        XCTAssertEqual(row.deliveryReason, "unknown_prompt")
+
+        try writeLog(dispatched(id, at: t) + [
+            line(stdin(id, .doorbellSkipped, "flagged"), t.addingTimeInterval(1)),
+            line(stdin(id, .doorbellSkipped, "agent_not_foreground"), t.addingTimeInterval(2)),
+        ])
+        row = try XCTUnwrap(try status(id).recipients.first)
+        XCTAssertEqual(row.delivery, .pending)
+    }
+
+    /// An id whose rows lie past the byte budget is a scan-limit error, never
+    /// "not found".
+    func testBudgetExhaustedBeforeTheIdIsAScanLimitError() throws {
+        let t = Date().addingTimeInterval(-900)
+        let id = newId(t)
+        var lines: [String] = []
+        let filler = newId(t)
+        for index in 0..<2_000 {
+            lines.append(line(stdin(filler, .buffered, nil), t.addingTimeInterval(Double(index) * 0.1)))
+        }
+        lines += dispatched(id, at: t.addingTimeInterval(400))
+        try writeLog(lines)
+        var limits = MailboxReceiptStatus.Limits()
+        limits.maxScanBytes = 64 * 1024
+        limits.chunkBytes = 16 * 1024
+        XCTAssertThrowsError(try MailboxReceiptStatus.status(id: id, workspacesRoot: workspacesRoot, limits: limits)) {
+            XCTAssertEqual($0 as? MailboxReceiptStatus.Failure, .scanLimit(id))
+        }
     }
 
     // MARK: - Writers
@@ -460,6 +525,9 @@ final class MailboxReceiptStatusTests: XCTestCase {
     func testClaimerComesFromThePanelEnvironment() {
         XCTAssertEqual(MailboxClaimLog.callerPanelId(["C11_PANEL_ID": recipient.uuidString]), recipient)
         XCTAssertEqual(MailboxClaimLog.callerPanelId(["CMUX_SURFACE_ID": other.uuidString]), other)
+        XCTAssertEqual(MailboxClaimLog.callerPanelId(["C11_TAB_ID": other.uuidString]), other)
+        XCTAssertEqual(MailboxClaimLog.callerPanelId(["C11_SURFACE_ID": other.uuidString]), other)
+        XCTAssertEqual(MailboxClaimLog.callerPanelId(["CMUX_TAB_ID": other.uuidString]), other)
         XCTAssertNil(MailboxClaimLog.callerPanelId([:]))
     }
 

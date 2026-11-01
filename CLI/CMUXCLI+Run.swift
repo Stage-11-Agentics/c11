@@ -401,6 +401,13 @@ extension CMUXCLI {
         // Agent-maintained model token-cost catalog feeding the launch
         // picker's cost column: file-first like `config`, never needs the
         // socket.
+        // C11-550: receipts read the dispatch log and inbox files directly,
+        // so a stuck send can be diagnosed with c11 down.
+        if command == "mailbox", (commandArgs.first?.lowercased() ?? "") == "status" {
+            try runMailboxStatusCommand(subArgs: Array(commandArgs.dropFirst()), jsonOutput: jsonOutput)
+            return
+        }
+
         if command == "model-costs" {
             try runModelCostsCommand(commandArgs: commandArgs)
             return

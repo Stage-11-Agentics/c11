@@ -109,6 +109,8 @@ extension CMUXCLI {
             )
         case "trace":
             try runMailboxTraceCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
+        case "status":
+            try runMailboxStatusCommand(subArgs: rest, jsonOutput: jsonOutput)
         case "tail":
             try runMailboxTailCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "outbox-dir":
@@ -139,6 +141,7 @@ extension CMUXCLI {
           recv       drain or peek the caller's inbox
           view       open or refresh the live messages page
           trace      pretty-print _dispatch.log lines for an envelope id
+          status     sent, delivered and read per recipient for an envelope id
           tail       follow _dispatch.log
           outbox-dir print the caller's outbox directory (for raw-bash writers)
           inbox-dir  print the caller's inbox directory (for raw-bash readers)
@@ -697,7 +700,7 @@ extension CMUXCLI {
         // override's resolved UUID with it, nil when a `--tab` name matched no
         // single live tab (the event then carries no surface rather than the
         // caller's).
-        writeDeliveryReceipts(claimed, recipientPanelId: panelId, recipient: { _ in panelName })
+        writeDeliveryReceipts(claimed, recipientPanelId: panelId, via: "recv", recipient: { _ in panelName })
     }
 
     /// Checked stdout write: false when the bytes could not be written.
@@ -898,7 +901,7 @@ extension CMUXCLI {
         }
         // No socket I/O after the claim: the delivery is recorded through the
         // filesystem, and the hook is done.
-        writeDeliveryReceipts(drain.claimed, recipientPanelId: drain.panelId) {
+        writeDeliveryReceipts(drain.claimed, recipientPanelId: drain.panelId, via: "hook") {
             $0.recipient ?? drain.panelId.uuidString.lowercased()
         }
         return true
@@ -914,14 +917,66 @@ extension CMUXCLI {
     func writeDeliveryReceipts(
         _ claimed: [MailboxDrain.ClaimedMessage],
         recipientPanelId: UUID?,
+        via: String,
         recipient: (MailboxDrain.ClaimedMessage) -> String
     ) {
         let byMailboxesRoot = Dictionary(grouping: claimed) { $0.inbox.deletingLastPathComponent().path }
+        // C11-550: who claimed it, so a receipt can tell the recipient's own
+        // read from another panel draining its inbox.
+        let claimer = MailboxClaimLog.callerPanelId()
         for (root, messages) in byMailboxesRoot {
+            let mailboxesRoot = URL(fileURLWithPath: root, isDirectory: true)
             MailboxDeliveryReceipt(
                 panelId: recipientPanelId,
                 deliveries: messages.map { .init(id: $0.id, recipient: recipient($0)) }
-            ).writeAll(mailboxesRoot: URL(fileURLWithPath: root, isDirectory: true))
+            ).writeAll(mailboxesRoot: mailboxesRoot)
+            // The inbox directory names its panel; a legacy title inbox does not.
+            for (inbox, group) in Dictionary(grouping: messages, by: { $0.inbox.lastPathComponent }) {
+                MailboxClaimLog.append(
+                    ids: group.map(\.id),
+                    recipientPanel: UUID(uuidString: inbox) ?? recipientPanelId,
+                    byPanel: claimer,
+                    via: via,
+                    mailboxesRoot: mailboxesRoot
+                )
+            }
+        }
+    }
+
+    // MARK: - status (C11-550)
+
+    /// `c11 mailbox status <id> [--json]`: sent, delivered and read per
+    /// recipient, from the dispatch log and the recipient's inbox files. File
+    /// first like `trace`: no socket, so it works with c11 down.
+    func runMailboxStatusCommand(subArgs: [String], jsonOutput: Bool) throws {
+        let words = subArgs.filter { !$0.hasPrefix("--") }
+        guard words.count == 1, let id = words.first else {
+            throw CLIError(message: String(
+                localized: "mailbox.status.usage",
+                defaultValue: "c11 mailbox status <envelope-id> [--json]"
+            ))
+        }
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let workspacesRoot = stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        let report: MailboxReceiptStatus.Report
+        do {
+            report = try MailboxReceiptStatus.status(id: id, workspacesRoot: workspacesRoot)
+        } catch MailboxReceiptStatus.Failure.invalidId(let raw) {
+            throw CLIError(message: String(
+                localized: "mailbox.status.error.invalidId",
+                defaultValue: "'\(raw)' is not an envelope id (a 26-character ULID)"
+            ))
+        } catch MailboxReceiptStatus.Failure.notFound(let missing) {
+            throw CLIError(message: String(
+                localized: "mailbox.status.error.notFound",
+                defaultValue: "no envelope \(missing) in any workspace's dispatch log or outbox"
+            ))
+        }
+        if jsonOutput {
+            let data = try JSONSerialization.data(withJSONObject: report.jsonObject(), options: [.sortedKeys])
+            print(String(decoding: data, as: UTF8.self))
+        } else {
+            print(report.humanText(), terminator: "")
         }
     }
 

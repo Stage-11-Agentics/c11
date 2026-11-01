@@ -183,7 +183,8 @@ final class MailboxDispatcher {
         reason: String? = nil,
         route: String? = nil,
         nativeRoute: String? = nil,
-        nativeFailure: String? = nil
+        nativeFailure: String? = nil,
+        recipientPanel: UUID? = nil
     ) {
         // A held/skipped envelope has not selected a delivery route yet.
         let attempted = outcome == .doorbell || outcome == .doorbellFailed
@@ -198,14 +199,16 @@ final class MailboxDispatcher {
                 reason: reason,
                 route: attempted ? route : nil,
                 nativeRoute: attempted ? nativeRoute : nil,
-                nativeFailure: attempted ? nativeFailure : nil
+                nativeFailure: attempted ? nativeFailure : nil,
+                recipientPanel: recipientPanel
             )
         )
     }
 
     /// One line per held-composer look, so the watch is visible in the log.
-    func logStdinRecheck(id: String, recipient: String, reason: String, nextMs: Int) {
-        log.append(.doorbellRecheck(id: id, recipient: recipient, reason: reason, nextMs: nextMs))
+    func logStdinRecheck(id: String, recipient: String, reason: String, nextMs: Int, recipientPanel: UUID? = nil) {
+        log.append(.doorbellRecheck(id: id, recipient: recipient, reason: reason, nextMs: nextMs,
+                                    recipientPanel: recipientPanel))
     }
 
     /// The stdin push could not claim an envelope; it stays in the inbox.
@@ -541,7 +544,8 @@ final class MailboxDispatcher {
             )
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
             log.append(.copied(id: envelope.id, recipient: recipient.displayName,
-                               recipientUsageLimit: recipientUsageLimit(recipient.surfaceId)?.rawValue))
+                               recipientUsageLimit: recipientUsageLimit(recipient.surfaceId)?.rawValue,
+                               recipientPanel: recipient.surfaceId))
             // C11-163: mailbox envelope delivered to a recipient inbox.
             EventEmitter.shared.emitMailboxDelivered(
                 workspace: workspaceId,
@@ -563,7 +567,8 @@ final class MailboxDispatcher {
                     outcome: .eio,
                     bytes: nil,
                     elapsedMs: nil,
-                    reason: nil
+                    reason: nil,
+                    recipientPanel: recipient.surfaceId
                 )
             )
             return false
@@ -642,7 +647,8 @@ final class MailboxDispatcher {
                 outcome: result.outcome,
                 bytes: result.bytes,
                 elapsedMs: result.elapsedMs ?? elapsedMs,
-                reason: nil
+                reason: nil,
+                recipientPanel: recipient.surfaceId
             )
         )
     }

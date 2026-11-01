@@ -1990,7 +1990,7 @@ private struct MailboxInsightsView: View {
             ForEach(0..<max(0, layoutRows - pickup.senders.count), id: \.self) { _ in
                 pickupSenderRow(name: " ", median: "", claims: 0, fraction: nil).hidden()
             }
-            pickupNotes(pickup)
+            pickupNotes
         }
         .accessibilityElement(children: .contain)
     }
@@ -2072,10 +2072,11 @@ private struct MailboxInsightsView: View {
         .help(String(localized: "mailbox.insights.pickup.sender.help", defaultValue: "Median wait of mail from \(name)"))
     }
 
-    /// Says what the figures cannot see. Each note's presence follows the
-    /// whole mailbox, not the filter, so a click never adds or drops a line.
+    /// Says what the figures cannot see. Each note, its presence and its
+    /// numbers alike, describes the whole mailbox, not the filter, so a
+    /// click never adds or drops a line and no count changes meaning.
     @ViewBuilder
-    private func pickupNotes(_ pickup: MailboxPanelMail.Pickup) -> some View {
+    private var pickupNotes: some View {
         let coverage = insights.claimLog
         let windowStart = insights.scannedAt.addingTimeInterval(-MailboxPanelMail.pickupWindow)
         if coverage.unreadable {
@@ -2097,7 +2098,7 @@ private struct MailboxInsightsView: View {
         if insights.pickup.unclaimed > 0 {
             wrappingNote(String(
                 localized: "mailbox.insights.pickup.note.unclaimed",
-                defaultValue: "Taken in the last \(MailboxPanelMail.insightsDays) days without a claim record: \(pickup.unclaimed). c11 records claims from version 1.7.5, so mail taken before that has no pickup time."
+                defaultValue: "Taken in the last \(MailboxPanelMail.insightsDays) days without a claim record: \(insights.pickup.unclaimed). c11 records claims from version 1.7.5, so mail taken before that has no pickup time."
             ))
         }
         if insights.scanIsPartial {

@@ -2629,6 +2629,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            let elapsed = (ProcessInfo.processInfo.systemUptime - receivedAt) * 1_000_000
+            PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch_end",
+                result: "elapsed_us=\(Int(elapsed))")
+        }
         // Record event boundaries without logging untrusted URL text. Launch
         // Services may split one sender's URL list into distinct Apple Events.
         let event = NSAppleEventManager.shared().currentAppleEvent

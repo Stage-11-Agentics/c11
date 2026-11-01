@@ -78,6 +78,10 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     private let popupUIDelegate: PopupUIDelegate
     private let popupNavigationDelegate: PopupNavigationDelegate
     private let downloadDelegate: BrowserDownloadDelegate
+    /// The opener panel's gate, held strongly so a popup that outlives its
+    /// opener still asks and still cannot stack prompts.
+    private let externalOpenGate: BrowserExternalOpenGate
+    private let externalOpenNoticePresenter = PanelLinkNoticePresenter()
 
     private static var associatedObjectKey: UInt8 = 0
 
@@ -91,6 +95,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         self.openerPanel = openerPanel
         self.parentPopupController = parentPopupController
         self.nestingDepth = nestingDepth
+        self.externalOpenGate = parentPopupController?.externalOpenGate
+            ?? openerPanel?.externalOpenGate
+            ?? BrowserExternalOpenGate()
 
         // Create popup web view with WebKit's supplied configuration (preserves
         // internal browsing-context state for opener linkage / postMessage).
@@ -320,6 +327,21 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// A page in this popup asked to open another app (C11-510).
+    @discardableResult
+    func requestExternalOpen(
+        _ url: URL,
+        origin: BrowserExternalOpenOrigin,
+        userClick: Bool
+    ) -> BrowserExternalOpenGate.Outcome {
+        externalOpenGate.request(
+            url,
+            origin: origin,
+            userClick: userClick,
+            host: .webView(webView, noticePresenter: externalOpenNoticePresenter)
+        )
+    }
+
     // MARK: - Insecure HTTP prompt (parity with main browser)
 
     /// Shows the same 3-button insecure HTTP alert as the main browser.
@@ -401,10 +423,14 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
                                     activation: "refused", result: "popup_cancelled")
             return nil
         }
-        // External URL check
+        // External URL check: the page asked, so the operator decides.
         if let url = navigationAction.request.url,
            browserShouldOpenURLExternally(url) {
-            NSWorkspace.shared.open(url)
+            controller?.requestExternalOpen(
+                url,
+                origin: BrowserExternalOpenOrigin(navigationAction: navigationAction, in: webView),
+                userClick: navigationAction.navigationType == .linkActivated
+            )
             return nil
         }
 
@@ -553,6 +579,8 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
             for: navigationAction.request.url,
             isMainFrame: navigationAction.targetFrame?.isMainFrame != false,
             in: webView,
+            origin: BrowserExternalOpenOrigin(navigationAction: navigationAction, in: webView),
+            userClick: navigationAction.navigationType == .linkActivated,
             decisionHandler: decisionHandler
         )
     }
@@ -562,6 +590,8 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
         for url: URL?,
         isMainFrame: Bool,
         in webView: WKWebView,
+        origin: BrowserExternalOpenOrigin? = nil,
+        userClick: Bool = false,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         if let url, PanelLinkTarget.usesScheme(url) {
@@ -581,12 +611,14 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
             return
         }
 
-        // External URL schemes → hand off to macOS
+        // External URL schemes → ask the operator (C11-510). With no
+        // controller there is nobody to ask, so nothing opens.
         if browserShouldOpenURLExternally(url) {
-            NSWorkspace.shared.open(url)
-            #if DEBUG
-            dlog("popup.nav.external url=\(url.absoluteString)")
-            #endif
+            controller?.requestExternalOpen(
+                url,
+                origin: origin ?? BrowserExternalOpenOrigin(pageURL: webView.url),
+                userClick: userClick
+            )
             decisionHandler(.cancel)
             return
         }

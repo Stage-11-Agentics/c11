@@ -87,6 +87,19 @@ The consent covers **one navigation to one host, including that navigation's HTT
 
 Both `open` and `goto` report the outcome rather than failing silently. `browser open` always keeps its promise that a panel exists, so it returns success with `insecure_http: {"status": "blocked"|"prompted", ...}` in the payload (and says so on the text line) — you keep the panel ref to retry or close. `browser goto`/`navigate` promises the navigation itself, so an unpromptable one fails with the `insecure_http_blocked` error.
 
+## Links That Open Another App
+
+A URL whose scheme is not a web scheme (`vnc:`, `smb:`, `ssh:`, `zoommtg:`, `x-apple.systempreferences:`, any custom app scheme) is handed to macOS, which opens the app that owns it.
+
+- **You name the URL: it opens as before.** `browser open`, `goto`/`navigate` and the omnibar open an app link directly, with no prompt.
+- **The page asks: the operator decides.** A page that navigates, opens a window or a popup to an app link gets a sheet on its panel's window: `Open "<App>"?`, naming the page's site, the app, and the URL, with **Open**, **Cancel** and an **Always allow <site> to open <scheme>: links** checkbox. Return does not press Open; Escape cancels. This covers your own `browser click` on a page's link too, because the page chose where the link goes. Nothing opens until a human answers, so don't wait on it: if the app must open, navigate to the URL yourself.
+- **Only one prompt per panel.** While one is showing, more requests from that page and its popups are dropped, as is any request in the 2 seconds after it closes. After Cancel, the page's scripts cannot ask again for that scheme until it loads a new page; a click on the link can.
+- **A panel the operator can't see never prompts.** A page in a hidden workspace or background panel is refused without a sheet.
+- **`mailto:` opens without asking**, as in Safari and Chrome: it only drafts a message.
+- **No app for the scheme:** a short notice appears in the panel instead of a prompt.
+- **Always allow** stores the site and scheme (`https://zoom.us zoommtg`) in Settings → Browser → Sites Allowed to Open Apps. Delete the line to make that site ask again. Local `file:` pages always ask.
+- `c11://` links keep their own rules (Links to panels and workspaces, in the c11 skill).
+
 ## Wait Support
 
 c11 supports wait patterns similar to agent-browser:

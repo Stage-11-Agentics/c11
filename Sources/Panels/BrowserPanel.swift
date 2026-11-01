@@ -2814,6 +2814,10 @@ final class BrowserPanel: Panel, ObservableObject {
     private let maxPageZoom: CGFloat = 5.0
     private let pageZoomStep: CGFloat = 0.1
     private var insecureHTTPBypassHostOnce: String?
+    /// The only path from page content to another app (C11-510). Shared with
+    /// this panel's popups so they cannot stack prompts either.
+    let externalOpenGate = BrowserExternalOpenGate()
+    private let externalOpenNoticePresenter = PanelLinkNoticePresenter()
     /// The outcome of the most recent navigation decision on this panel.
     /// Socket callers whose navigation happens inside `init` (a browser surface
     /// created with a URL) read this back after construction; the navigation
@@ -3152,6 +3156,7 @@ final class BrowserPanel: Panel, ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.isCurrentWebView(webView, instanceID: boundWebViewInstanceID) else { return }
                 self.noteLoadFinished()
+                self.externalOpenGate.pageDidNavigate()
                 boundHistoryStore.recordVisit(url: webView.url, title: webView.title)
                 self.refreshFavicon(from: webView)
                 self.applyBrowserThemeModeIfNeeded()
@@ -3267,6 +3272,9 @@ final class BrowserPanel: Panel, ObservableObject {
         navDelegate.handleBlockedInsecureHTTPNavigation = { [weak self] request, intent in
             self?.presentInsecureHTTPAlert(for: request, intent: intent, recordTypedNavigation: false)
         }
+        navDelegate.requestExternalOpen = { [weak self] url, origin, userClick, requestingWebView in
+            self?.requestExternalOpen(url, origin: origin, userClick: userClick, from: requestingWebView)
+        }
         navDelegate.didSettleNavigation = { [weak self] settledURL in
             MainActor.assumeIsolated {
                 self?.releaseInsecureHTTPConsentIfSettled(settledURL: settledURL)
@@ -3344,6 +3352,9 @@ final class BrowserPanel: Panel, ObservableObject {
         }
         browserUIDelegate.openPopup = { [weak self] configuration, windowFeatures in
             self?.createFloatingPopup(configuration: configuration, windowFeatures: windowFeatures)
+        }
+        browserUIDelegate.requestExternalOpen = { [weak self] url, origin, userClick, requestingWebView in
+            self?.requestExternalOpen(url, origin: origin, userClick: userClick, from: requestingWebView)
         }
         self.uiDelegate = browserUIDelegate
 
@@ -4428,6 +4439,15 @@ final class BrowserPanel: Panel, ObservableObject {
             (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.activation)
             return record(disposition: .internalLinkRefused)
         }
+        // Agent, omnibar and panel-creation loads are not page content: an
+        // app link they name opens as before, without the page-side gate.
+        if browserShouldOpenURLExternally(url) {
+            let opened = BrowserExternalOpenGate.systemOpen(url)
+            if !opened {
+                NSLog("BrowserPanel external navigation failed to open URL: %@", url.absoluteString)
+            }
+            return record(disposition: .proceeded)
+        }
         updateMessagesPageReloadObserver(for: url)
         supersedeInsecureHTTPConsentIfNeeded(for: url)
         let request = URLRequest(url: url)
@@ -5071,6 +5091,23 @@ extension BrowserPanel {
     /// WebKit never lets a web page load a `file:` URL, and opening one in a
     /// new panel grants it read access to its folder (C11-505). The callers
     /// check the initiating frame first; this is the second gate.
+    /// A page in this panel (or one of its popups) asked to open `url` in
+    /// another app. Asks the operator unless they allowed the pair before.
+    @discardableResult
+    func requestExternalOpen(
+        _ url: URL,
+        origin: BrowserExternalOpenOrigin,
+        userClick: Bool,
+        from requestingWebView: WKWebView
+    ) -> BrowserExternalOpenGate.Outcome {
+        externalOpenGate.request(
+            url,
+            origin: origin,
+            userClick: userClick,
+            host: .webView(requestingWebView, noticePresenter: externalOpenNoticePresenter)
+        )
+    }
+
     func shouldOpenLinkInNewPanel(_ url: URL) -> Bool {
         guard !PanelLinkTarget.usesScheme(url) else { return false }
         guard url.isFileURL else { return true }
@@ -5090,6 +5127,11 @@ extension BrowserPanel {
 #if DEBUG
             dlog("browser.newTab.open.abort panel=\(id.uuidString.prefix(5)) reason=fileFromNonLocalPage")
 #endif
+            return
+        }
+        // A page's app link never becomes a new panel's trusted initial load.
+        if browserShouldOpenURLExternally(url) {
+            requestExternalOpen(url, origin: BrowserExternalOpenOrigin(pageURL: webView.url), userClick: true, from: webView)
             return
         }
         guard let app = AppDelegate.shared else {
@@ -6979,6 +7021,8 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     var openInNewPanel: ((URL) -> Void)?
     var shouldBlockInsecureHTTPNavigation: ((URL) -> Bool)?
     var handleBlockedInsecureHTTPNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
+    /// Page-initiated opens of non-web schemes; never NSWorkspace directly.
+    var requestExternalOpen: ((URL, BrowserExternalOpenOrigin, Bool, WKWebView) -> Void)?
     /// Fired synchronously when a main-frame navigation settles (finished or
     /// genuinely failed), so a one-time insecure-HTTP consent is released only
     /// after the redirect chain it covered is over.
@@ -7216,17 +7260,16 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         }
 
         // WebKit cannot open app-specific deeplinks (discord://, slack://, zoommtg://, etc.).
-        // Hand these off to macOS so the owning app can handle them.
+        // The page asked, so the operator decides (C11-510).
         if let url = navigationAction.request.url,
            navigationAction.targetFrame?.isMainFrame != false,
            browserShouldOpenURLExternally(url) {
-            let opened = NSWorkspace.shared.open(url)
-            if !opened {
-                NSLog("BrowserPanel external navigation failed to open URL: %@", url.absoluteString)
-            }
-            #if DEBUG
-            dlog("browser.navigation.external source=navDelegate opened=\(opened ? 1 : 0) url=\(url.absoluteString)")
-            #endif
+            requestExternalOpen?(
+                url,
+                BrowserExternalOpenOrigin(navigationAction: navigationAction, in: webView),
+                navigationAction.navigationType == .linkActivated,
+                webView
+            )
             decisionHandler(.cancel)
             return
         }
@@ -7344,6 +7387,7 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
     var openInNewPanel: ((URL) -> Void)?
     var requestNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
     var openPopup: ((WKWebViewConfiguration, WKWindowFeatures) -> WKWebView?)?
+    var requestExternalOpen: ((URL, BrowserExternalOpenOrigin, Bool, WKWebView) -> Void)?
 
     private func javaScriptDialogTitle(for webView: WKWebView) -> String {
         if let absolute = webView.url?.absoluteString, !absolute.isEmpty {
@@ -7396,16 +7440,15 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
                                     activation: "refused", result: "popup_cancelled")
             return nil
         }
-        // External URL schemes → hand off to macOS, don't create a popup
+        // External URL schemes → ask the operator, don't create a popup
         if let url = navigationAction.request.url,
            browserShouldOpenURLExternally(url) {
-            let opened = NSWorkspace.shared.open(url)
-            if !opened {
-                NSLog("BrowserPanel external navigation failed to open URL: %@", url.absoluteString)
-            }
-            #if DEBUG
-            dlog("browser.navigation.external source=uiDelegate opened=\(opened ? 1 : 0) url=\(url.absoluteString)")
-            #endif
+            requestExternalOpen?(
+                url,
+                BrowserExternalOpenOrigin(navigationAction: navigationAction, in: webView),
+                navigationAction.navigationType == .linkActivated,
+                webView
+            )
             return nil
         }
 

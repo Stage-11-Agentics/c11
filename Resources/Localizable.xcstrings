@@ -2,6 +2,382 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "browser.externalOpen.noHandler": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app on this Mac opens %@: links."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Mac には %@: リンクを開けるアプリがありません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На цьому Mac немає програми, яка відкриває посилання %@:."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에는 %@: 링크를 열 수 있는 앱이 없습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Mac 上没有可打开 %@: 链接的 App。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Mac 上沒有可開啟 %@: 連結的 App。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На этом Mac нет приложения, которое открывает ссылки %@:."
+          }
+        }
+      }
+    },
+    "browser.externalOpen.thisPage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページ"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ця сторінка"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 페이지"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此页面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此頁面"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта страница"
+          }
+        }
+      }
+    },
+    "browser.externalOpen.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open “%@”?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を開きますか？"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити «%@»?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”을(를) 열까요?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要打开“%@”吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要開啟「%@」嗎？"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть «%@»?"
+          }
+        }
+      }
+    },
+    "browser.externalOpen.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ wants to open a %2$@: link in %3$@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ が %3$@ で %2$@: リンクを開こうとしています。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ хоче відкрити посилання %2$@: у програмі %3$@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 %3$@ 앱으로 %2$@: 링크를 열려고 합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 想要在 %3$@ 中打开 %2$@: 链接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 想要在 %3$@ 中開啟 %2$@: 連結。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ хочет открыть ссылку %2$@: в приложении %3$@."
+          }
+        }
+      }
+    },
+    "browser.externalOpen.open": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть"
+          }
+        }
+      }
+    },
+    "browser.externalOpen.alwaysAllow": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow %1$@ to open %2$@: links"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ による %2$@: リンクを常に許可"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завжди дозволяти %1$@ відкривати посилання %2$@:"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 %2$@: 링크 열기를 항상 허용"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终允许 %1$@ 打开 %2$@: 链接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一律允許 %1$@ 開啟 %2$@: 連結"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всегда разрешать %1$@ открывать ссылки %2$@:"
+          }
+        }
+      }
+    },
+    "settings.browser.externalSchemeAllowlist": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sites Allowed to Open Apps"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリの起動を許可するサイト"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сайти, яким дозволено відкривати програми"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 열기가 허용된 사이트"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许打开 App 的网站"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許開啟 App 的網站"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сайты, которым разрешено открывать приложения"
+          }
+        }
+      }
+    },
+    "settings.browser.externalSchemeAllowlist.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A page that links to another app (vnc:, smb:, zoommtg: and the like) asks before it opens. “Always allow” adds a line here: the site, then the link type (for example: https://zoom.us zoommtg). Delete a line to make that site ask again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のアプリへのリンク（vnc:, smb:, zoommtg: など）があるページは、開く前に確認を求めます。「常に許可」を選ぶと、ここに 1 行追加されます。サイト、リンクの種類の順です（例: https://zoom.us zoommtg）。行を削除すると、そのサイトは再び確認を求めるようになります。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сторінка з посиланням на іншу програму (vnc:, smb:, zoommtg: тощо) запитує дозвіл перед відкриттям. «Завжди дозволяти» додає сюди рядок: сайт, потім тип посилання (наприклад: https://zoom.us zoommtg). Видаліть рядок, щоб цей сайт знову запитував дозвіл."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 앱으로 연결되는 링크(vnc:, smb:, zoommtg: 등)가 있는 페이지는 열기 전에 먼저 묻습니다. “항상 허용”을 선택하면 여기에 한 줄이 추가됩니다. 사이트, 링크 유형 순서입니다(예: https://zoom.us zoommtg). 줄을 삭제하면 해당 사이트는 다시 묻습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向其他 App 的链接（vnc:, smb:, zoommtg: 等）在打开前会先询问。“始终允许”会在此处添加一行：先是网站，再是链接类型（例如：https://zoom.us zoommtg）。删除某一行，该网站将再次询问。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連結到其他 App 的頁面（vnc:, smb:, zoommtg: 等）在開啟前會先詢問。「一律允許」會在此新增一行：先是網站，再是連結類型（例如：https://zoom.us zoommtg）。刪除某一行，該網站就會再次詢問。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Страница со ссылкой на другое приложение (vnc:, smb:, zoommtg: и т. п.) спрашивает разрешения перед открытием. «Всегда разрешать» добавляет сюда строку: сайт, затем тип ссылки (например: https://zoom.us zoommtg). Удалите строку, чтобы этот сайт снова спрашивал."
+          }
+        }
+      }
+    },
     "sidebar.mission.label": {
       "extractionState": "manual",
       "localizations": {

@@ -162,6 +162,83 @@ final class SessionFinderTests: XCTestCase {
         }
     }
 
+    func testExitedAgentIsIdleAndResumes() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let hit = SessionFinder.LiveHit(
+            kind: "claude-code", sessionID: claudeID, conversationState: "unknown",
+            placeholder: false, panelID: "PANEL-EXITED", panelRef: "panel:8",
+            workspaceID: "WS", workspaceRef: "workspace:1", cwd: "/Users/test/proj"
+        )
+        let result = SessionFinder.search(
+            query: SessionFinder.Query(text: "zephyr-needle", deep: false),
+            roots: fixture.roots,
+            liveHits: [hit]
+        )
+        let row = try XCTUnwrap(result.rows.first { $0.sessionID == claudeID })
+        XCTAssertEqual(row.state, .idle)
+        XCTAssertNil(row.panelID)
+        guard case .resume = SessionFinder.action(for: row) else {
+            return XCTFail("an exited agent resumes instead of focusing the empty shell")
+        }
+    }
+
+    func testStoreTimeoutIsNotAnEmptyConversationList() {
+        let missing = TerminalController.conversationListPayload(
+            snapshot: nil, isDisabled: false, surfaceFilter: nil
+        )
+        guard case .err(let code, let message, _) = missing else {
+            return XCTFail("a nil snapshot must be a store timeout")
+        }
+        XCTAssertEqual(code, "internal_error")
+        XCTAssertEqual(message, "store timeout")
+        let ref = ConversationRef(
+            kind: "claude-code", id: claudeID, cwd: "/Users/test/proj",
+            capturedVia: .hook, state: .alive
+        )
+        let listed = TerminalController.conversationListPayload(
+            snapshot: ["PANEL": PanelConversations(active: ref)],
+            isDisabled: true,
+            surfaceFilter: nil
+        )
+        guard case .ok(let payload) = listed, let object = payload as? [String: Any] else {
+            return XCTFail("a snapshot must still list")
+        }
+        XCTAssertEqual(object["is_disabled"] as? Bool, true)
+        XCTAssertEqual((object["conversations"] as? [[String: Any]])?.count, 1)
+    }
+
+    func testDisabledStoreRefusesOpen() {
+        XCTAssertTrue(SessionFinder.refusesOpen(liveList: ["is_disabled": true, "conversations": []]))
+        XCTAssertTrue(SessionFinder.refusesOpen(liveList: ["is_disabled": NSNumber(value: true)]))
+        XCTAssertFalse(SessionFinder.refusesOpen(liveList: ["is_disabled": false, "conversations": []]))
+        XCTAssertFalse(SessionFinder.refusesOpen(liveList: ["conversations": []]))
+    }
+
+    func testPhraseAcrossChunkBoundaryIsFound() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let phrase = "boundary-pearl"
+        let id = "44444444-4444-4444-8444-444444444448"
+        let split = phrase.utf8.count / 2
+        _ = try fixture.addClaude(
+            id: id,
+            bytes: SessionFinder.headByteCap + phrase.utf8.count,
+            phrase: phrase,
+            phraseAt: SessionFinder.headByteCap - split
+        )
+        let shallow = SessionFinder.search(
+            query: SessionFinder.Query(text: phrase, deep: false),
+            roots: fixture.roots
+        )
+        XCTAssertFalse(shallow.rows.contains { $0.sessionID == id })
+        let deep = SessionFinder.search(
+            query: SessionFinder.Query(text: phrase, deep: true),
+            roots: fixture.roots
+        )
+        XCTAssertTrue(deep.rows.contains { $0.sessionID == id })
+    }
+
     func testIdleResumeMatchesStrategy() throws {
         let cwd = "/Users/test/it's"
         let claude = SessionFinder.resumeCommand(kind: "claude-code", sessionID: claudeID, cwd: cwd)

@@ -4939,9 +4939,8 @@ class TerminalController {
         // `@MainActor` isolation from `TerminalController` (declared
         // `@MainActor` at line 18). Without this, the task body cannot
         // run while main is blocked on `sema.wait`, the actor call
-        // never completes, and every `v2ConversationList`,
-        // `v2ConversationGet`, etc. silently returns the `?? [:]`
-        // fallback even when the actor has data. Verified by
+        // never completes, and every store read times out even when the
+        // actor has data. Verified by
         // reproducer at `notes/c11-24-snapshot-capture-bug.md`.
         let store = ConversationStore.shared
         nonisolated(unsafe) var result: T?

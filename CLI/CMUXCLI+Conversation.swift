@@ -749,6 +749,12 @@ extension CMUXCLI {
             }
         }
         let listed = try client.sendV2(method: "conversation.list", params: [:])
+        if SessionFinder.refusesOpen(liveList: listed) {
+            throw CLIError(message: String(
+                localized: "cli.conversation.find.needsApp",
+                defaultValue: "find --open needs a running c11. Listing works without it."
+            ))
+        }
         let entries = listed["conversations"] as? [[String: Any]] ?? []
         var hits: [SessionFinder.LiveHit] = []
         for entry in entries {

@@ -776,6 +776,8 @@ enum SessionFinder {
 
     /// Reads at most `deepReadCap` bytes, in `headByteCap` chunks, and stops when the
     /// phrase matches. A huge file contributes only its head. Returns bytes read.
+    /// A deep scan searches each new chunk plus the previous `query.utf8.count - 1`
+    /// bytes, and does not JSON-parse the body.
     @discardableResult
     private static func readFile(_ file: FileRec, query: Query, draft: inout Draft, skipped: inout Skipped) -> Int {
         let huge = file.bytes > hugeFileBytes
@@ -791,34 +793,48 @@ enum SessionFinder {
             return 0
         }
         defer { try? handle.close() }
-        var data = Data()
+        var head = Data()
+        var overlap = Data()
+        var total = 0
         var matchedInStream = false
-        while data.count < cap {
-            let room = min(headByteCap, cap - data.count)
+        let overlapKeep = max(0, query.text.utf8.count - 1)
+        while total < cap {
+            let room = min(headByteCap, cap - total)
             let piece: Data
             do {
                 guard let read = try handle.read(upToCount: room) else { break }
                 piece = read
             } catch {
-                if data.isEmpty { skipped.unreadableFiles += 1 }
+                if total == 0 { skipped.unreadableFiles += 1 }
                 break
             }
             if piece.isEmpty { break }
-            data.append(piece)
-            if wantBody, let partial = decodeUTF8(data),
-               partial.range(of: query.text, options: .caseInsensitive) != nil {
-                matchedInStream = true
-                break
+            total += piece.count
+            if head.count < headByteCap {
+                let need = headByteCap - head.count
+                head.append(piece.prefix(need))
+            }
+            if wantBody {
+                // GUARD chunk-overlap: the phrase may start in the previous chunk.
+                var window = overlap
+                window.append(piece)
+                if searchWindow(window, query: query.text) {
+                    matchedInStream = true
+                    break
+                }
+                if overlapKeep == 0 || window.count <= overlapKeep {
+                    overlap = window
+                } else {
+                    overlap = Data(window.suffix(overlapKeep))
+                }
             }
             if !wantBody { break }
         }
-        guard let text = decodeUTF8(data) else {
-            skipped.unreadableFiles += 1
-            return data.count
+        guard !head.isEmpty, let headText = decodeUTF8(head) else {
+            if total > 0 { skipped.unreadableFiles += 1 }
+            return total
         }
-        let headData = data.prefix(headByteCap)
-        let headText = decodeUTF8(Data(headData)) ?? ""
-        let headWasCut = file.bytes > headData.count
+        let headWasCut = file.bytes > head.count
         skipped.corruptLines += applyHead(
             headText,
             kind: file.kind,
@@ -826,15 +842,17 @@ enum SessionFinder {
             dropPartial: headWasCut,
             draft: &draft
         )
-        if matchedInStream || (wantBody && text.range(of: query.text, options: .caseInsensitive) != nil) {
+        if matchedInStream {
             draft.matched = true
         }
-        if wantBody, data.count > headByteCap {
-            let body = text.dropFirst(headText.count)
-            let bodyCut = file.bytes > data.count
-            skipped.corruptLines += countCorruptLines(String(body), dropPartial: bodyCut)
-        }
-        return data.count
+        return total
+    }
+
+    /// True when `conversation.list` says the store is off, so `--open` must refuse.
+    static func refusesOpen(liveList payload: [String: Any]) -> Bool {
+        if let flag = payload["is_disabled"] as? Bool { return flag }
+        if let number = payload["is_disabled"] as? NSNumber { return number.boolValue }
+        return false
     }
 
     private static func applyHead(
@@ -968,7 +986,9 @@ enum SessionFinder {
     private static func indexLive(_ hits: [LiveHit]) -> [String: LiveHit] {
         var grouped: [String: [LiveHit]] = [:]
         for hit in hits {
-            guard hit.panelExists, !hit.placeholder, hit.conversationState != "tombstoned" else { continue }
+            // GUARD exited-agent: a session is live only while c11 reports it running or pending resume.
+            guard hit.panelExists, !hit.placeholder,
+                  hit.conversationState == "alive" || hit.conversationState == "suspended" else { continue }
             guard hit.kind == "claude-code" || hit.kind == "codex" else { continue }
             guard isSessionUUID(hit.sessionID), !hit.panelID.isEmpty, !hit.workspaceID.isEmpty else { continue }
             let key = liveKey(kind: hit.kind, sessionID: hit.sessionID)
@@ -1063,22 +1083,28 @@ enum SessionFinder {
         return object
     }
 
-    private static func countCorruptLines(_ text: String, dropPartial: Bool) -> Int {
-        var corrupt = 0
-        for line in linesFrom(text, dropPartial: dropPartial) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { continue }
-            if jsonObject(line) == nil { corrupt += 1 }
-        }
-        return corrupt
-    }
-
     private static func linesFrom(_ text: String, dropPartial: Bool) -> [String] {
         var lines = text.components(separatedBy: "\n")
         if dropPartial, !text.hasSuffix("\n"), !lines.isEmpty {
             lines.removeLast()
         }
         return lines
+    }
+
+    /// Case-insensitive search of one chunk window. Drops a partial codepoint
+    /// left at the start by the overlap, then a partial codepoint at the end.
+    private static func searchWindow(_ data: Data, query: String) -> Bool {
+        guard !query.isEmpty, !data.isEmpty else { return false }
+        let limit = min(3, data.count)
+        var start = 0
+        while start <= limit {
+            let slice = start == 0 ? data : Data(data.dropFirst(start))
+            if let text = decodeUTF8(slice) {
+                return text.range(of: query, options: .caseInsensitive) != nil
+            }
+            start += 1
+        }
+        return false
     }
 
     private static func decodeUTF8(_ data: Data) -> String? {

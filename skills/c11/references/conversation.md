@@ -93,7 +93,7 @@ c11 conversation find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--
 
 It looks at one directory level of `~/.claude/projects/<slug>/<uuid>.jsonl` plus `~/.claude/history.jsonl`, and at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` plus `~/.codex/history.jsonl`. Nested Claude subagent transcripts are out of scope.
 
-The default match is the title, the working directory, and the user's prompts. A case-insensitive substring is enough. The query is one word, so quote a phrase. `-a` also searches transcript text. A file larger than 8 MiB is counted and its body is not scanned. Every other file is read in 64 KiB chunks, at most 1 MiB, and that file's read stops when the phrase matches. Assistant text matches only with `-a`. While `-a` runs, progress goes to stderr and stdout stays clean for `--json`: `find: files=%lld matches=%lld bytes=%lld`. The numbers are counts only. With `-a`, a listing stops once it has `--limit` matches, newest first, and `--json` sets `"truncated": true` when files remain unread. With `-a`, `--open` stops at two matches, so a second match still refuses and the scan does not continue. With `-a`, `--session` stops when that one id is resolved. Without `-a`, `--open` still counts every match.
+The default match is the title, the working directory, and the user's prompts. A case-insensitive substring is enough. The query is one word, so quote a phrase. `-a` also searches transcript text. A file larger than 8 MiB is counted and its body is not scanned. Every other file is read in 64 KiB chunks, at most 1 MiB, and that file's read stops when the phrase matches. A phrase that crosses a chunk boundary still matches. Assistant text matches only with `-a`. While `-a` runs, progress goes to stderr and stdout stays clean for `--json`: `find: files=%lld matches=%lld bytes=%lld`. The numbers are counts only. With `-a`, a listing stops once it has `--limit` matches, newest first, and `--json` sets `"truncated": true` when files remain unread. With `-a`, `--open` stops at two matches, so a second match still refuses and the scan does not continue. With `-a`, `--session` stops when that one id is resolved. Without `-a`, `--open` still counts every match.
 
 An empty query lists transcript files, newest first, 30 rows. It does not list history-only ids. `--limit` is a whole number from 1 to 200. When more matches exist than the limit, `--json` sets `"truncated": true`. `--session <uuid>` keeps that id. A query and `--session` both have to match.
 
@@ -101,8 +101,8 @@ Each row is harness (`claude` or `codex`), the full session id, state, cwd, last
 
 | State | Meaning |
 |-------|---------|
-| `live in panel:N` | The session is on a panel that still exists. A placeholder or a tombstoned ref is not live. |
-| `idle` | The transcript is on disk and the session is not live. |
+| `live in panel:N` | A ref c11 reports as `alive` or `suspended` on a panel that still exists. A placeholder, a tombstoned ref, or a session whose agent has exited is not live. |
+| `idle` | Not live in any c11 panel. The transcript is on disk. A session still running outside c11 also reads idle; do not `--open` it. |
 | `gone` | History names the id and the transcript file is gone. A gone row appears only when a query matches. |
 
 `--json` is the stable shape. Key names are the contract. Key order is not. `last_active` is ISO-8601 with the local offset. Human rows use `yyyy-MM-dd HH:mm zzz`. `cwd` is omitted when it is unknown. A live row also has `panel_id`, `panel_ref`, `workspace_id`, `workspace_ref`, and `link`. `link` is `c11://panel/<uuid>`, the same URL `c11 link --panel <uuid>` prints. Human rows print it too, so the operator can Cmd-click that panel. `panel.focus` does not change the selected workspace. The link is how a person opens the workspace that holds the session.
@@ -127,7 +127,7 @@ Each row is harness (`claude` or `codex`), the full session id, state, cwd, last
 }
 ```
 
-When a skip count is nonzero, human output prints one stderr line, `skipped: corrupt_lines=%lld huge_files=%lld unreadable_files=%lld`. JSON puts those counts in `skipped`. An empty list prints `(no sessions)` and exits 0. A missing history directory is an empty result, not an error. A corrupt line, an unreadable file, or a file over 8 MiB is counted and skipped. The skip object is counts only.
+When a skip count is nonzero, human output prints one stderr line, `skipped: corrupt_lines=%lld huge_files=%lld unreadable_files=%lld`. JSON puts those counts in `skipped`. An empty list prints `(no sessions)` and exits 0. A missing history directory is an empty result, not an error. A corrupt line in a history file or in the 64 KiB head is counted. The rest of a deep read is searched as text and is not parsed. An unreadable file, or a file over 8 MiB, is counted and skipped. The skip object is counts only.
 
 ### Open one session
 
@@ -142,7 +142,7 @@ When a skip count is nonzero, human output prints one stderr line, `skipped: cor
 
 Human output: `Resumed <session id> in panel:N.` JSON includes `"action": "resume"` and `"command"`.
 
-`--open` needs a running c11. If the socket is down, or the live-session read fails, it refuses. Listing works with c11 down. Those rows are `idle` or `gone`, because liveness could not be checked.
+`--open` needs a running c11. If the socket is down, the live-session read fails, the store read times out, or `conversation.list` reports the store disabled, it refuses. Listing works with c11 down. Those rows are `idle` or `gone`, because liveness could not be checked.
 
 Listing reads ids from `window.list`, `workspace.list`, `panel.list`, and `conversation.list`. `--open` sends the panel id and workspace id to `panel.focus`, or the cwd and the resume command to `panel.create`. It never sends the query, the title, or prompt text, and it never calls `workspace.select`.
 

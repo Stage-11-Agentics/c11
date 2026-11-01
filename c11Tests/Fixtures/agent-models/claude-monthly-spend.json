@@ -1,0 +1,18 @@
+{
+  "type": "assistant",
+  "isSidechain": false,
+  "error": "rate_limit",
+  "isApiErrorMessage": true,
+  "apiErrorStatus": 429,
+  "message": {
+    "model": "<synthetic>",
+    "role": "assistant",
+    "stop_reason": "stop_sequence",
+    "content": [
+      {
+        "type": "text",
+        "text": "You've hit your monthly spend limit."
+      }
+    ]
+  }
+}

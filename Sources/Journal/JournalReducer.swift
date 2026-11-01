@@ -178,11 +178,20 @@ enum JournalReducer {
             let resolvesClaudeApproval = d.kind == .turnCompleted && d.adapter == .claudeHook
                 && d.source == .hook && d.source.rank >= s.rank && s.reason == .approval
                 && d.turnID != nil && d.turnID == s.turnID
+            if let limit = s.usageLimit {
+                // Idle/duplicate Stop for the failed turn is not recovery.
+                guard d.kind == .turnCompleted, s.phase == .working || resolvesClaudeApproval,
+                      let turnID = s.turnID, turnID != limit.turnID else {
+                    return unchanged(.advisory, "limit_without_successful_retry")
+                }
+            }
             guard s.phase != .blocked || resolvesClaudeApproval else { return unchanged(.advisory, "unresolved_request") }
             if resolvesClaudeApproval { s.requestID = nil; s.reason = nil }
             guard s.phase != .error || d.source.rank >= s.rank else { return unchanged(.advisory, "lower_confidence") }
             if s.terminalBarrier && s.phase == .idle { return duplicate("turn_already_terminal") }
             s.phase = .idle
+            s.usageLimit = nil
+            s.reason = nil
             s.turnOutcome = d.kind == .turnCompleted ? "completed" : nil
             s.turnID = d.turnID ?? s.turnID
             s.terminalBarrier = true
@@ -209,11 +218,24 @@ enum JournalReducer {
                 s.terminalRank = d.source.rank
             }
         case .errorReported:
-            guard caps.contains("error"), d.reasonCode == .sessionFailure else { return unchanged(.observation, "tool_or_unsupported_error") }
-            if s.phase == .error { return duplicate("error_already_observed") }
+            guard caps.contains("error"), [.sessionFailure, .usageLimit].contains(d.reasonCode) else { return unchanged(.observation, "tool_or_unsupported_error") }
+            if d.reasonCode == .usageLimit {
+                guard let kind = d.usageLimit, let turnID = d.turnID, turnID == s.turnID,
+                      d.adapter == .claudeTranscript, context.verifiedNativeClock,
+                      [.working, .error].contains(s.phase) else {
+                    return unchanged(.stale, "limit_not_correlated")
+                }
+                if s.usageLimit?.turnID == turnID, s.usageLimit?.kind == kind {
+                    return duplicate("limit_already_observed")
+                }
+                s.usageLimit = JournalUsageLimit(kind: kind, turnID: turnID, sinceMs: now)
+            } else if s.phase == .error {
+                return duplicate("error_already_observed")
+            }
             if s.phase == .blocked && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             s.phase = .error
-            s.reason = .sessionFailure
+            s.reason = d.reasonCode
+            if d.reasonCode == .usageLimit { s.turnOutcome = "interrupted" }
             s.terminalBarrier = true
             s.terminalRank = d.source.rank
         case .stateChanged:

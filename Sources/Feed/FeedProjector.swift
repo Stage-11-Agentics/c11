@@ -13,6 +13,7 @@ enum FeedKind: String, Equatable {
     case question
     case plan
     case permission
+    case error
     case turnEnd = "turn_end"
 }
 
@@ -186,6 +187,7 @@ struct FeedRow: Equatable {
     var confirmation: String?
     var blocking: Bool?
     var flag: FeedFlagFact?
+    var usageLimit: JournalUsageLimitKind? = nil
 
     func jsonObject() -> [String: Any] {
         var object: [String: Any] = [
@@ -202,6 +204,7 @@ struct FeedRow: Equatable {
             "request_id": requestID ?? NSNull(),
             "confirmation": confirmation ?? NSNull(),
             "blocking": blocking ?? NSNull(),
+            "usage_limit": usageLimit?.rawValue ?? NSNull(),
         ]
         if let flag {
             object["flag"] = [
@@ -277,7 +280,8 @@ enum FeedProjector {
 
         let showBlocking = blocking != nil && (!suppressed || flagged)
         let showTurn = turn && !suppressed && scope == .all
-        if !showBlocking && !showTurn && !flagged { return nil }
+        let limit = journal?.usageLimit
+        if !showBlocking && !showTurn && !flagged && limit == nil { return nil }
 
         let flag = flagged ? FeedFlagFact(
             reason: attention?.flagReason ?? "",
@@ -303,8 +307,17 @@ enum FeedProjector {
                 requestID: request,
                 confirmation: journal.confirmation.rawValue,
                 blocking: true,
-                flag: flag
+                flag: flag,
+                usageLimit: limit?.kind
             )
+        }
+        if let limit, let journal {
+            return FeedRow(workspaceID: workspaceID, panelID: panelID, kind: .error,
+                prompt: nil, options: nil, promptAvailable: false,
+                source: journal.source.rawValue, sourceRank: journal.rank,
+                openedAtMs: limit.sinceMs, state: "open", requestID: nil,
+                confirmation: journal.confirmation.rawValue, blocking: false, flag: flag,
+                usageLimit: limit.kind)
         }
         if showTurn, let journal {
             return FeedRow(

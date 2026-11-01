@@ -39,6 +39,22 @@ final class FeedQuickViewTests: XCTestCase {
         XCTAssertTrue(view.accessibleHelp.contains("Hook · rank 4 · Unconfirmed"))
     }
 
+    func testLimitKeepsCurrentAskAndUserFlagVisibleDuringRetry() {
+        let kind = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil)
+        for original in [row(1, flag: true, prompt: "Allow this retry?", flagKind: kind),
+                         row(2, flag: true, flagKind: kind),
+                         row(3, kind: .permission, prompt: "Allow this retry?")] {
+            var limited = original
+            limited.usageLimit = .monthlySpend
+            let view = FeedQuickViewRow(row: limited, title: "Agent", now: Date(), selected: false, onOpen: {})
+            XCTAssertEqual(view.prompt, original.prompt ?? "Chief of Staff: Synthetic flag")
+            XCTAssertTrue(view.accessibleHelp.contains(JournalUsageLimitKind.monthlySpend.label))
+            if original.flag != nil {
+                XCTAssertTrue(view.accessibleHelp.contains("Chief of Staff: Synthetic flag"))
+            }
+        }
+    }
+
     func testFiltersUseProjectionCountsAndNeverReplaceJumpSequence() {
         let projection = FeedProjectionSnapshot(rows: AttentionOrder.ordered([
             row(1, flag: true), row(2, kind: .permission), row(3, kind: .turnEnd), row(4, kind: .turnEnd, flag: true)]))

@@ -1,0 +1,22 @@
+{
+  "type": "assistant",
+  "isSidechain": false,
+  "error": "rate_limit",
+  "isApiErrorMessage": true,
+  "apiErrorStatus": 429,
+  "quotaLimits": {
+    "status": "rejected",
+    "rateLimitType": "five_hour"
+  },
+  "message": {
+    "model": "<synthetic>",
+    "role": "assistant",
+    "stop_reason": "stop_sequence",
+    "content": [
+      {
+        "type": "text",
+        "text": "You've hit your session limit"
+      }
+    ]
+  }
+}

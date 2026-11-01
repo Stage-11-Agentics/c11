@@ -65,7 +65,7 @@ struct SupervisorProjection {
               let from = result.fromPhase, [.working, .blocked].contains(from),
               draft.source != .transcript || (draft.occurredAtMs ?? 0) >= observedSince else { return nil }
         switch draft.kind {
-        case .errorReported: return "provider_error"
+        case .errorReported: return draft.reasonCode == .usageLimit ? "usage_limit" : "provider_error"
         case .turnInterrupted: return draft.reasonCode == .observation ? "unknown" : "cancelled"
         default: return nil
         }

@@ -361,6 +361,9 @@ enum ParsedTranscriptLifecycle: Equatable, Sendable {
     /// a user line `[Request interrupted by user]` (or `… for tool use]`),
     /// whose `promptId` names the interrupted prompt.
     case claudeInterrupt(at: Date?, promptID: String?)
+    case claudePrompt(sessionID: String?, promptID: String?, messageID: String?)
+    case claudeContext(sessionID: String?, promptID: String?, messageID: String?, requiresPrompt: Bool)
+    case claudeLimit(at: Date?, sessionID: String?, parentID: String?, limit: JournalUsageLimitKind)
 }
 
 struct TranscriptLifecycleObservation: Equatable, Sendable {
@@ -370,6 +373,7 @@ struct TranscriptLifecycleObservation: Equatable, Sendable {
     let turnID: String?
     let isChild: Bool
     var reasonCode: JournalReason? = nil
+    var usageLimit: JournalUsageLimitKind? = nil
 }
 
 enum TranscriptCoverage: Equatable, Sendable {
@@ -409,6 +413,9 @@ struct ModelTailState: Equatable {
     var codexChildTurnIDs: [String] = []
     /// Grok's end record has no identity; pair it only with this verified start.
     var grokPendingStart: GrokPendingTurn?
+    var claudePromptID: String?
+    var claudePromptMessageID: String?
+    var claudeContextMessageIDs: [String] = []
     /// A rollout whose session_meta disagrees with the exact ref is unusable.
     var transcriptIdentityInvalid = false
     /// Codex lifecycle edges require an exact session_meta match before they
@@ -802,6 +809,29 @@ struct AgentModelProbe: Sendable {
     ) -> Bool {
         guard let lifecycle else { return false }
         switch lifecycle {
+        case .claudePrompt(let sessionID, let promptID, let messageID):
+            state.claudePromptID = sessionID == expectedSessionID ? promptID : nil
+            state.claudePromptMessageID = sessionID == expectedSessionID ? messageID : nil
+            state.claudeContextMessageIDs.removeAll(keepingCapacity: true)
+            return true
+        case .claudeContext(let sessionID, let promptID, let messageID, let requiresPrompt):
+            // Harness attachments/meta and tool results may parent an API
+            // error. They belong only to this root and never start a turn.
+            guard sessionID == expectedSessionID, let current = state.claudePromptID,
+                  let messageID, promptID == current || (!requiresPrompt && promptID == nil),
+                  !state.claudeContextMessageIDs.contains(messageID) else { return true }
+            if state.claudeContextMessageIDs.count >= 128 { state.claudeContextMessageIDs.removeFirst() }
+            state.claudeContextMessageIDs.append(messageID)
+            // Keep existing tool-result activity even when no root binding
+            // was available; only the parent allowlist needs that binding.
+            return true
+        case .claudeLimit(let at, let sessionID, let parentID, let limit):
+            guard sessionID == expectedSessionID, let promptID = state.claudePromptID,
+                  let parentID, parentID == state.claudePromptMessageID || state.claudeContextMessageIDs.contains(parentID),
+                  at != nil else { return false }
+            observations.append(.init(kind: .errorReported, occurredAt: at, nativeEvent: "turn.failed",
+                                      turnID: promptID, isChild: false, usageLimit: limit))
+            return true
         case .codex(let kind, let at, let turnID, let rootTurnID):
             guard state.transcriptIdentityVerified else { return false }
             guard let turnID, !turnID.isEmpty else { return false }
@@ -898,6 +928,9 @@ struct AgentModelProbe: Sendable {
         state.codexRootTurnID = nil
         state.codexChildTurnIDs.removeAll(keepingCapacity: true)
         state.grokPendingStart = nil
+        state.claudePromptID = nil
+        state.claudePromptMessageID = nil
+        state.claudeContextMessageIDs.removeAll(keepingCapacity: true)
         if !preserveCoverage { state.coverageDegraded = false }
     }
 
@@ -1016,21 +1049,38 @@ struct AgentModelProbe: Sendable {
                 reason: .compaction, at: at, promptTokens: post > 0 ? post : nil
             ))
         }
-        guard hasType(line, "assistant") || hasType(line, "user") else { return ParsedTranscriptLine() }
-        guard line.count <= maxParseBytes, let object = parseObject(line) else { return parseClaudeOversize(line) }
+        guard hasType(line, "assistant") || hasType(line, "user") || hasType(line, "attachment") else { return ParsedTranscriptLine() }
+        guard line.count <= maxParseBytes, let object = parseObject(line) else {
+            // Attachments supply bounded parent IDs only. Keep the existing
+            // activity fallback restricted to assistant/user candidates.
+            guard hasType(line, "assistant") || hasType(line, "user") else { return ParsedTranscriptLine() }
+            return parseClaudeOversize(line)
+        }
         if (object["isSidechain"] as? Bool) == true { return ParsedTranscriptLine() }
         let at = (object["timestamp"] as? String).flatMap(parseISO)
         let message = object["message"] as? [String: Any]
+        func context(requiresPrompt: Bool = false) -> ParsedTranscriptLifecycle? {
+            let promptID = validOpaque(object["promptId"] as? String)
+            // An invalid supplied id is not an absent id.
+            if object["promptId"] != nil && promptID == nil { return nil }
+            return .claudeContext(sessionID: validOpaque(object["sessionId"] as? String),
+                promptID: promptID,
+                messageID: validOpaque(object["uuid"] as? String), requiresPrompt: requiresPrompt)
+        }
         switch object["type"] as? String {
+        case "attachment":
+            return ParsedTranscriptLine(lifecycle: context())
         case "user":
-            if (object["isMeta"] as? Bool) == true { return ParsedTranscriptLine() }
+            if (object["isMeta"] as? Bool) == true {
+                return ParsedTranscriptLine(lifecycle: context())
+            }
             // The summary a compaction writes, and other transcript-only lines,
             // are not prompts the model received.
             let transcriptOnly = (object["isCompactSummary"] as? Bool) == true
                 || (object["isVisibleInTranscriptOnly"] as? Bool) == true
             let blocks = message?["content"] as? [[String: Any]]
             if blocks?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true {
-                return ParsedTranscriptLine(event: .toolResult(at: at))
+                return ParsedTranscriptLine(event: .toolResult(at: at), lifecycle: context(requiresPrompt: true))
             }
             let text = (message?["content"] as? String)
                 ?? blocks?.first(where: { ($0["type"] as? String) == "text" })?["text"] as? String
@@ -1053,9 +1103,18 @@ struct AgentModelProbe: Sendable {
                 }
                 return ParsedTranscriptLine(event: .prompt(at: at), promptCacheReset: reset, sendsNoRequest: true)
             }
-            return ParsedTranscriptLine(event: .prompt(at: at), sendsNoRequest: transcriptOnly)
+            return ParsedTranscriptLine(event: .prompt(at: at),
+                lifecycle: transcriptOnly ? nil : .claudePrompt(
+                    sessionID: validOpaque(object["sessionId"] as? String),
+                    promptID: validOpaque(object["promptId"] as? String),
+                    messageID: validOpaque(object["uuid"] as? String)), sendsNoRequest: transcriptOnly)
         case "assistant":
             guard let message else { return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil)) }
+            if let limit = claudeUsageLimit(object) {
+                return ParsedTranscriptLine(lifecycle: .claudeLimit(at: at,
+                    sessionID: validOpaque(object["sessionId"] as? String),
+                    parentID: validOpaque(object["parentUuid"] as? String), limit: limit))
+            }
             // Claude's placeholder assistant lines ("No response requested") are not the agent adding anything.
             if (message["model"] as? String) == "<synthetic>" { return ParsedTranscriptLine() }
             var tools = 0
@@ -1076,6 +1135,31 @@ struct AgentModelProbe: Sendable {
         default:
             return ParsedTranscriptLine()
         }
+    }
+
+    /// Claude 2.1.312 monthly-spend and 2.1.291 five-hour samples. The API
+    /// error marker and synthetic message are required before reading text;
+    /// a model or tool quoting the very same sentence is ordinary output.
+    static func claudeUsageLimit(_ object: [String: Any]) -> JournalUsageLimitKind? {
+        guard object["type"] as? String == "assistant",
+              object["isSidechain"] as? Bool == false,
+              object["isApiErrorMessage"] as? Bool == true,
+              object["error"] as? String == "rate_limit",
+              object["apiErrorStatus"] as? Int == 429,
+              let message = object["message"] as? [String: Any],
+              message["model"] as? String == "<synthetic>",
+              message["role"] as? String == "assistant",
+              message["stop_reason"] as? String == "stop_sequence",
+              let blocks = message["content"] as? [[String: Any]], blocks.count == 1,
+              blocks[0]["type"] as? String == "text",
+              let text = blocks[0]["text"] as? String else { return nil }
+        if text.hasPrefix("You've hit your monthly spend limit.")
+            || text.hasPrefix("You've hit your monthly spend limit ·") { return .monthlySpend }
+        if text.hasPrefix("You've hit your session limit"),
+           let quota = object["quotaLimits"] as? [String: Any],
+           quota["status"] as? String == "rejected",
+           quota["rateLimitType"] as? String == "five_hour" { return .sessionUsage }
+        return nil
     }
 
     /// The exact text Claude Code writes when Esc interrupts a turn, as the

@@ -40,7 +40,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         guard Self.transcriptKinds.contains(target.kind), !ref.placeholder else { return }
         let key = OwnerKey(panelID: target.surfaceId, workspaceID: target.workspaceId,
                            agentKind: target.kind, sessionID: ref.id)
-        // Claude's hooks own its turn; its transcript adds only the interrupt,
+        // Claude's hooks own successful turns; its transcript adds failures,
         // so a gap there says nothing about the journal's coverage.
         if case .gap = coverage, target.kind != "claude-code" { requireGap(for: key) }
 
@@ -60,8 +60,8 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         }
     }
 
-    /// Harnesses whose transcript feeds the journal. Claude's adds only its
-    /// Esc interrupt.
+    /// Harnesses whose transcript feeds the journal. Claude's supplies Esc
+    /// interrupts and recorded usage-limit failures.
     static let transcriptKinds: Set<String> = ["codex", "grok", "claude-code"]
 
     static func makeDraft(
@@ -71,8 +71,9 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         emittedAt: Date
     ) -> JournalDraft? {
         guard transcriptKinds.contains(target.kind), !ref.placeholder, !ref.id.isEmpty,
-              [.turnStarted, .turnCompleted, .turnInterrupted].contains(observation.kind),
-              target.kind != "claude-code" || observation.kind == .turnInterrupted,
+              [.turnStarted, .turnCompleted, .turnInterrupted, .errorReported].contains(observation.kind),
+              observation.kind != .errorReported || (target.kind == "claude-code" && observation.usageLimit != nil),
+              target.kind != "claude-code" || [.turnInterrupted, .errorReported].contains(observation.kind),
               !observation.isChild,
               let occurredAt = observation.occurredAt,
               let adapter = adapter(for: target.kind) else { return nil }
@@ -90,6 +91,8 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         draft.turnID = observation.turnID
         draft.isChild = observation.isChild
         draft.reasonCode = observation.reasonCode
+        draft.usageLimit = observation.usageLimit
+        if observation.usageLimit != nil { draft.reasonCode = .usageLimit }
         draft.adapterVersion = JournalNativeClockEvidence.adapterVersion(for: adapter) ?? "1"
         draft.occurredAtMs = epochMilliseconds(occurredAt)
         draft.timeQuality = .nativeLocal

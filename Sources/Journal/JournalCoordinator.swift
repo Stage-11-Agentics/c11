@@ -164,6 +164,7 @@ final class JournalCoordinator: @unchecked Sendable {
         return [
             "phase": state.phase.rawValue, "reason": state.reason?.rawValue as Any? ?? NSNull(),
             "turn_outcome": state.turnOutcome as Any? ?? NSNull(),
+            "usage_limit": state.usageLimit?.kind.rawValue as Any? ?? NSNull(),
             "source": state.source.rawValue, "confidence_rank": state.rank,
             "since_ms": state.sinceMs, "observed_at_ms": state.observedAtMs, "sequence": state.lastSequence,
             "confirmation": state.confirmation.rawValue, "connection": state.connection.rawValue,

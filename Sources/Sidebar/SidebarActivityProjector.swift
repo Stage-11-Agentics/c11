@@ -41,6 +41,7 @@ struct AgentActivityHelpProjection: Equatable {
     /// Cold because the agent's prompt cache expired, not because it sat
     /// past the dormancy threshold. The mark carries it as a color.
     var promptCacheExpired = false
+    var usageLimited = false
 
     static func project(
         state: WorkspacePulseState,
@@ -106,6 +107,11 @@ struct AgentActivityHelpProjection: Equatable {
             }
             if journal.health != .ok { detailLines.append(String(localized: "journal.state.degraded", defaultValue: "Degraded")) }
             if journal.phase == .error { label = String(localized: "journal.state.error", defaultValue: "Error") }
+            if let limit = journal.usageLimit {
+                label = String(localized: "journal.state.error", defaultValue: "Error")
+                stateStartedAt = journal.isHistorical ? nil : Date(timeIntervalSince1970: Double(limit.sinceMs) / 1000)
+                detailLines.append(limit.kind.label)
+            }
             if journal.phase == .unknown || (journal.isHistorical && !journal.paintsAttention) {
                 label = String(localized: "journal.state.unknown", defaultValue: "Unknown")
             }
@@ -148,7 +154,8 @@ struct AgentActivityHelpProjection: Equatable {
             flagKind: flagKind,
             flagRaisedAt: flagRaisedAt,
             suppressed: suppressed,
-            promptCacheExpired: promptCacheExpired
+            promptCacheExpired: promptCacheExpired,
+            usageLimited: journal?.usageLimit != nil
         )
     }
 
@@ -232,14 +239,16 @@ struct PanelActivityDetailsSnapshot: Equatable {
 /// lineage baseline (`BonsplitActivityMarkLineage`).
 enum ActivityMarkTint: Equatable {
     case flag
+    case usageLimit
     case promptCacheCold
     case lifecycle
 
     /// `promptCacheExpired` is set only for a cold mark
     /// (`AgentActivityHelpProjection.promptCacheExpired`); a waiting agent
     /// keeps its gold.
-    static func resolve(flagged: Bool, promptCacheExpired: Bool) -> ActivityMarkTint {
+    static func resolve(flagged: Bool, promptCacheExpired: Bool, usageLimited: Bool = false) -> ActivityMarkTint {
         if flagged { return .flag }
+        if usageLimited { return .usageLimit }
         if promptCacheExpired { return .promptCacheCold }
         return .lifecycle
     }
@@ -266,7 +275,8 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     var markTint: ActivityMarkTint {
         ActivityMarkTint.resolve(
             flagged: flagged,
-            promptCacheExpired: presentedState == .cold && activityHelp?.promptCacheExpired == true
+            promptCacheExpired: presentedState == .cold && activityHelp?.promptCacheExpired == true,
+            usageLimited: activityHelp?.usageLimited == true
         )
     }
 

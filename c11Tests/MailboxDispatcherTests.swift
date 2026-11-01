@@ -1217,3 +1217,32 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(try handlerOutcomes().filter { $0 == "flushed" }.count, 0)
     }
 }
+
+extension MailboxDispatcherTests {
+    func testLimitedRecipientTraceKeepsOneEnvelopeUnreadUntilExplicitClaim() throws {
+        let recipient = seedSurface(name: "limited-recipient")
+        let resolver = MailboxPanelResolver(workspaceId: workspaceId, livePanels: { [recipient] })
+        let dispatcher = MailboxDispatcher(workspaceId: workspaceId, stateURL: tempState,
+            resolver: resolver, recipientUsageLimit: { panel in panel == recipient ? .monthlySpend : nil })
+        self.dispatcher = dispatcher
+        let envelope = try MailboxEnvelope.build(from: "sender", to: "limited-recipient",
+            body: "synthetic mail", id: "01K3A2B7X8PQRTVWYZ0123456J")
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        dispatcher.log.flush()
+        let copied = try XCTUnwrap(readLog().first { $0["event"] as? String == "copied" })
+        XCTAssertEqual(copied["recipient_usage_limit"] as? String, "monthly_spend")
+        let inbox = MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: recipient)
+        let pending = MailboxDrain.pendingEntries(inbox: inbox)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(try MailboxEnvelope.validate(data: readInboxFile(panel: recipient, id: envelope.id)).body,
+                       envelope.body)
+        XCTAssertTrue(MailboxDrain.pendingEntries(inbox: MailboxDrain.readURL(inbox: inbox)).isEmpty)
+        let entry = try XCTUnwrap(pending.first)
+        XCTAssertNotNil(MailboxDrain.claim(entry))
+        XCTAssertNil(MailboxDrain.claim(entry), "the same envelope is claimed exactly once")
+        XCTAssertTrue(MailboxDrain.pendingEntries(inbox: inbox).isEmpty)
+        XCTAssertEqual(MailboxDrain.pendingEntries(inbox: MailboxDrain.readURL(inbox: inbox)).count, 1)
+    }
+}

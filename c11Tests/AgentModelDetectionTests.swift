@@ -1407,9 +1407,9 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(result.lifecycle, [])
     }
 
-    /// The Claude transcript draft is an interrupt only, on its own versioned
+    /// The Claude transcript interrupt remains on its own versioned
     /// clock, with the prompt id as its turn.
-    func testClaudeTranscriptDraftIsAnInterruptOnly() throws {
+    func testClaudeTranscriptDoesNotTakeOverHookStartsAndSuccessfulEnds() throws {
         let target = AgentModelDetector.Target(
             workspaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
             surfaceId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
@@ -1426,7 +1426,7 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(interrupt.adapterVersion, JournalNativeClockEvidence.claudeTranscriptVersion)
         XCTAssertEqual(interrupt.turnID, "prompt-1")
         XCTAssertTrue(JournalNativeClockEvidence.verifies(interrupt))
-        XCTAssertEqual(JournalAdapter.claudeTranscript.capabilities, ["interrupt"])
+        XCTAssertEqual(JournalAdapter.claudeTranscript.capabilities, ["interrupt", "error"])
         for kind in [JournalKind.turnStarted, .turnCompleted] {
             XCTAssertNil(JournalTranscriptProducer.makeDraft(
                 observation: .init(kind: kind, occurredAt: t("09:00:05"),
@@ -1444,4 +1444,283 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertLessThanOrEqual(facts.startedAt, Date())
         XCTAssertNil(AgentProcessFacts.cwdAndStart(pid: -1))
     }
+}
+
+extension AgentModelDetectionTests {
+    private func usageLimitRecord(_ fixtureName: String = "claude-monthly-spend.json") throws -> [String: Any] {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(fixtureName)) as? [String: Any])
+        object["sessionId"] = claudeId
+        object["timestamp"] = "2026-01-01T09:00:02.000Z"
+        object["parentUuid"] = "user-A"
+        return object
+    }
+
+    private func limitLines(_ object: [String: Any], session: String? = nil, prompt: String = "prompt-A", user: String = "user-A") throws -> Data {
+        let start: [String: Any] = ["type": "user", "isSidechain": false,
+            "sessionId": session ?? claudeId, "promptId": prompt, "uuid": user,
+            "timestamp": "2026-01-01T09:00:01.000Z", "message": ["role": "user", "content": "synthetic test prompt"]]
+        var records = [start]
+        if object["quotaLimits"] != nil {
+            // Recorded five_hour shape: a harness companion is the error's parent.
+            records.append(["type": "user", "isSidechain": false, "isMeta": true,
+                "turnCompanion": true, "usageLimitNote": "release", "sessionId": session ?? claudeId,
+                "promptId": prompt, "uuid": "companion-A"])
+            var error = object; error["parentUuid"] = "companion-A"; records.append(error)
+        } else { records.append(object) }
+        return try records.reduce(into: Data()) { data, line in
+            data.append(try JSONSerialization.data(withJSONObject: line)); data.append(0x0A)
+        }
+    }
+
+    func testRecordedClaudeLimitsReachJournalMarkAndFeedAndClearOnlyAfterSuccessfulRetry() throws {
+        for (fixtureName, kind) in [("claude-monthly-spend.json", JournalUsageLimitKind.monthlySpend),
+                                    ("claude-monthly-spend-middle-dot.json", .monthlySpend),
+                                    ("claude-session-limit.json", .sessionUsage)] {
+            let url = try place(limitLines(usageLimitRecord(fixtureName)), at: claudePath())
+            var state = ModelTailState()
+            let conversation = ref("claude-code", id: claudeId)
+            let observed = probe.detectWithObservations(kind: "claude-code", ref: conversation, state: &state)
+            XCTAssertEqual(observed.lifecycle.count, 1)
+            XCTAssertEqual(observed.lifecycle.first?.usageLimit, kind)
+            XCTAssertTrue(probe.detectWithObservations(kind: "claude-code", ref: conversation, state: &state).lifecycle.isEmpty)
+            let target = AgentModelDetector.Target(workspaceId: JournalTestData.workspace,
+                surfaceId: JournalTestData.panel, kind: "claude-code")
+            let directory = home.appendingPathComponent("journal-\(fixtureName)")
+            let store = try JournalStore(layout: JournalStorageLayout(directory: directory), clock: { 1_800_000_000_000 })
+            let coordinator = JournalCoordinator(store: store)
+            coordinator.register(panelID: target.surfaceId, workspaceID: target.workspaceId)
+            coordinator.setOwner(panelID: target.surfaceId, owner: JournalOwner(panelID: target.surfaceId,
+                agentKind: "claude-code", sessionID: claudeId))
+            defer { coordinator.remove(panelID: target.surfaceId) }
+            func hook(_ event: JournalKind, turn: String) throws {
+                var draft = JournalTestData.draft(event, at: 1_800_000_000_000)
+                draft.sessionID = claudeId; draft.turnID = turn
+                _ = try coordinator.append(draft)
+            }
+            try hook(.turnStarted, turn: "prompt-A")
+            let draft = try XCTUnwrap(JournalTranscriptProducer.makeDraft(
+                observation: XCTUnwrap(observed.lifecycle.first), target: target,
+                ref: conversation, emittedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+            XCTAssertTrue(JournalNativeClockEvidence.verifies(draft))
+            let applied = try coordinator.appendTranscript(draft)
+            XCTAssertEqual(applied.receipt.projectionEffect, .applied)
+            let reason = try XCTUnwrap(SupervisorProjection.interruptionReason(draft, result: applied, observedSince: 0))
+            XCTAssertEqual(reason, "usage_limit")
+            XCTAssertNil(SupervisorProjection.interruptionReason(draft, result: applied,
+                observedSince: try XCTUnwrap(draft.occurredAtMs) + 1), "historical errors are not new interruptions")
+            let duplicate = try coordinator.appendTranscript(draft)
+            XCTAssertNil(SupervisorProjection.interruptionReason(draft, result: duplicate, observedSince: 0))
+            var snapshot = try XCTUnwrap(coordinator.snapshot(panelID: target.surfaceId))
+            var supervisor = SupervisorProjection(snapshot: snapshot)
+            var edges = supervisor.observe(snapshot, progress: nil, now: 1_800_000_000_000, thresholdMs: 60_000)
+            edges.append(supervisor.interrupt(reason: reason, source: draft.source.rawValue,
+                now: 1_800_000_000_000, nativeEvent: draft.nativeEvent))
+            XCTAssertEqual(edges.map(\.type), [.supervisorTurnInterrupted])
+            XCTAssertEqual(edges.first?.payload["reason"] as? String, "usage_limit")
+            XCTAssertEqual(edges.first?.payload["native_event"] as? String, "turn.failed")
+            XCTAssertEqual(supervisor.metadata["interruption_reason"] as? String, "usage_limit")
+            XCTAssertEqual(snapshot.phase, .error)
+            XCTAssertEqual(snapshot.reason, .usageLimit)
+            XCTAssertEqual(snapshot.usageLimit?.kind, kind)
+            let row = try XCTUnwrap(FeedProjector.project(journalRows: [snapshot], attention: [], notes: [:], scope: .attention).first)
+            XCTAssertEqual(row.kind, .error)
+            XCTAssertEqual(row.jsonObject()["usage_limit"] as? String, kind.rawValue)
+            XCTAssertEqual(FeedProjectionSnapshot(rows: [row]).attentionRows.count, 1)
+            XCTAssertNil(FeedProjector.blockingKind(snapshot), "a limit is not an answerable ask")
+            let help = AgentActivityHelpProjection.project(state: .waiting, lastActivityAt: nil,
+                waitingStartedAt: nil, coldAfterSeconds: 60, flagReason: nil, flagRaisedAt: nil,
+                suppressed: false, journal: snapshot)
+            XCTAssertTrue(help.usageLimited)
+            XCTAssertTrue(help.text(at: Date()).contains(kind.label))
+            XCTAssertEqual(Workspace.activityColorOverrideHex(isFlagged: false, promptCacheExpired: false,
+                lightBackground: false, usageLimited: help.usageLimited), "#FF6B6B")
+            XCTAssertEqual(coordinator.readback(panelID: target.surfaceId)["usage_limit"] as? String, kind.rawValue)
+            try hook(.turnCompleted, turn: "prompt-A")
+            XCTAssertNotNil(coordinator.snapshot(panelID: target.surfaceId)?.usageLimit, "same failed turn is not recovery")
+            try hook(.turnStarted, turn: "prompt-B")
+            XCTAssertEqual(coordinator.snapshot(panelID: target.surfaceId)?.phase, .working)
+            XCTAssertNotNil(coordinator.snapshot(panelID: target.surfaceId)?.usageLimit, "retry alone is not success")
+            var retryError = try usageLimitRecord(fixtureName)
+            retryError["parentUuid"] = "user-B"
+            retryError["timestamp"] = "2026-01-01T09:00:03.000Z"
+            try append(String(decoding: limitLines(retryError, prompt: "prompt-B", user: "user-B"), as: UTF8.self), to: url)
+            let retry = probe.detectWithObservations(kind: "claude-code", ref: conversation, state: &state)
+            let retryDraft = try XCTUnwrap(JournalTranscriptProducer.makeDraft(
+                observation: XCTUnwrap(retry.lifecycle.first), target: target,
+                ref: conversation, emittedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+            XCTAssertEqual(try coordinator.appendTranscript(retryDraft).receipt.projectionEffect, .applied)
+            XCTAssertEqual(coordinator.snapshot(panelID: target.surfaceId)?.phase, .error)
+            XCTAssertEqual(coordinator.snapshot(panelID: target.surfaceId)?.usageLimit?.turnID, "prompt-B")
+            try hook(.turnStarted, turn: "prompt-C")
+            var permission = try XCTUnwrap(ClaudeHookMapping.map(subcommand: "permission-request", object: [
+                "session_id": claudeId, "prompt_id": "prompt-C", "tool_name": "Bash", "tool_use_id": "test-tool"]))
+            permission.panelID = target.surfaceId; permission.workspaceID = target.workspaceId
+            permission.emittedAtMs = 1_800_000_000_000
+            _ = try coordinator.append(permission)
+            XCTAssertEqual(coordinator.snapshot(panelID: target.surfaceId)?.phase, .blocked)
+            try hook(.turnCompleted, turn: "prompt-C")
+            snapshot = try XCTUnwrap(coordinator.snapshot(panelID: target.surfaceId))
+            XCTAssertEqual(snapshot.phase, .idle)
+            XCTAssertNil(snapshot.usageLimit)
+            XCTAssertTrue(FeedProjector.project(journalRows: [snapshot], attention: [], notes: [:], scope: .attention).isEmpty)
+            var late = draft; late.eventID = UUID()
+            XCTAssertEqual(try coordinator.appendTranscript(late).receipt.projectionEffect, .stale)
+            XCTAssertNil(coordinator.snapshot(panelID: target.surfaceId)?.usageLimit)
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
+    func testClaudeUsageLimitStructuralGuardsRejectQuotedOutputAndUnrecordedErrors() throws {
+        let original = try usageLimitRecord()
+        var variants: [[String: Any]] = []
+        for key in ["isApiErrorMessage", "error", "apiErrorStatus", "isSidechain"] {
+            var object = original; object.removeValue(forKey: key); variants.append(object)
+        }
+        var sidechain = original; sidechain["isSidechain"] = true; variants.append(sidechain)
+        var ordinary = original
+        var message = try XCTUnwrap(original["message"] as? [String: Any])
+        message["model"] = "test-model"; ordinary["message"] = message; variants.append(ordinary)
+        var user = original; user["type"] = "user"; variants.append(user)
+        var generic = original; message = try XCTUnwrap(original["message"] as? [String: Any])
+        message["content"] = [["type": "text", "text": "429 Too many requests"]]
+        generic["message"] = message; variants.append(generic)
+        var tool = original; tool["type"] = "tool_result"; variants.append(tool)
+        var session = try usageLimitRecord("claude-session-limit.json")
+        session.removeValue(forKey: "quotaLimits"); variants.append(session)
+        for object in variants {
+            XCTAssertNil(AgentModelProbe.claudeUsageLimit(object))
+            try place(limitLines(object), at: claudePath())
+            var state = ModelTailState()
+            XCTAssertTrue(probe.detectWithObservations(kind: "claude-code",
+                ref: ref("claude-code", id: claudeId), state: &state).lifecycle.isEmpty)
+        }
+    }
+
+    func testOversizedClaudeAttachmentDoesNotBecomeAgentActivity() throws {
+        let padding = String(repeating: "x", count: 1_048_577)
+        for type in ["attachment", "assistant", "user"] {
+            let line = try JSONSerialization.data(withJSONObject: [
+                "type": type, "isSidechain": false, "timestamp": "2026-01-01T09:00:02.000Z",
+                "message": ["content": padding]
+            ])
+            XCTAssertGreaterThan(line.count, 1_048_576)
+            let parsed = AgentModelProbe.parseLine(kind: "claude-code", line: line)
+            XCTAssertNil(parsed.lifecycle)
+            if type == "attachment" {
+                XCTAssertNil(parsed.event)
+            } else {
+                XCTAssertNotNil(parsed.event, "existing oversized assistant/user activity is preserved")
+            }
+        }
+    }
+
+    func testClaudeUsageLimitRequiresCurrentRootPromptAndExactSession() throws {
+        let original = try usageLimitRecord()
+        var wrongSession = original; wrongSession["sessionId"] = "other-session"
+        var wrongParent = original; wrongParent["parentUuid"] = "older-user"
+        for object in [wrongSession, wrongParent] {
+            try place(limitLines(object), at: claudePath())
+            var state = ModelTailState()
+            XCTAssertTrue(probe.detectWithObservations(kind: "claude-code",
+                ref: ref("claude-code", id: claudeId), state: &state).lifecycle.isEmpty)
+        }
+        try place(try JSONSerialization.data(withJSONObject: original) + Data([0x0A]), at: claudePath())
+        var state = ModelTailState()
+        XCTAssertTrue(probe.detectWithObservations(kind: "claude-code",
+            ref: ref("claude-code", id: claudeId), state: &state).lifecycle.isEmpty)
+    }
+    func testClaudeCompanionCannotRetargetAnUnrelatedPrompt() throws {
+        var error = try usageLimitRecord()
+        error["parentUuid"] = "unrelated-companion"
+        let wrongCompanion: [String: Any] = ["type": "user", "isMeta": true, "turnCompanion": true,
+            "isSidechain": false, "sessionId": claudeId, "promptId": "other-prompt", "uuid": "unrelated-companion"]
+        let start = try limitLines(["type": "ignored"])
+        let tail = try [wrongCompanion, error].reduce(into: Data()) { data, record in
+            data.append(try JSONSerialization.data(withJSONObject: record)); data.append(0x0A)
+        }
+        try place(start + tail, at: claudePath())
+        var state = ModelTailState()
+        XCTAssertTrue(probe.detectWithObservations(kind: "claude-code",
+            ref: ref("claude-code", id: claudeId), state: &state).lifecycle.isEmpty)
+    }
+
+    private func recordedLimitSequence(_ name: String) throws -> [[String: Any]] {
+        let records = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(name)) as? [[String: Any]])
+        return records.map { record in
+            var record = record
+            record["sessionId"] = claudeId
+            record["timestamp"] = "2026-01-01T09:00:02.000Z"
+            return record
+        }
+    }
+
+    private func observeLimitSequence(_ records: [[String: Any]]) throws -> [TranscriptLifecycleObservation] {
+        let bytes = try records.reduce(into: Data()) { data, record in
+            data.append(try JSONSerialization.data(withJSONObject: record)); data.append(0x0A)
+        }
+        try place(bytes, at: claudePath())
+        var state = ModelTailState()
+        return probe.detectWithObservations(kind: "claude-code",
+            ref: ref("claude-code", id: claudeId), state: &state).lifecycle
+    }
+
+    func testClaudeLimitsFollowRecordedAttachmentMetaAndToolResultParents() throws {
+        for name in ["claude-limit-attachment-parent.json", "claude-limit-meta-parent.json",
+                     "claude-limit-tool-result-parent.json"] {
+            var records = try recordedLimitSequence(name)
+            XCTAssertEqual(try observeLimitSequence(records).first?.usageLimit, .monthlySpend, name)
+            if name.contains("meta") {
+                records[1].removeValue(forKey: "promptId")
+                XCTAssertEqual(try observeLimitSequence(records).first?.usageLimit, .monthlySpend)
+            }
+        }
+        let attachment = try recordedLimitSequence("claude-limit-attachment-parent.json")
+        var tool = try recordedLimitSequence("claude-limit-tool-result-parent.json")[1]
+        tool["uuid"] = "fixture-tool"
+        var later = attachment[1]; later["uuid"] = "later-context"
+        // Real mid-turn shape, plus an error naming an earlier same-root context.
+        XCTAssertEqual(try observeLimitSequence([attachment[0], tool, attachment[1], later, attachment[2]])
+            .first?.usageLimit, .monthlySpend)
+    }
+
+    func testClaudeLimitContextCannotCrossNewRootSessionOrPrompt() throws {
+        for name in ["claude-limit-attachment-parent.json", "claude-limit-meta-parent.json",
+                     "claude-limit-tool-result-parent.json"] {
+            let records = try recordedLimitSequence(name)
+            var newerRoot = records[0]
+            newerRoot["promptId"] = "newer-prompt"; newerRoot["uuid"] = "newer-root"
+            XCTAssertTrue(try observeLimitSequence(Array(records.prefix(2)) + [newerRoot, records[2]]).isEmpty, "\(name) crosses root")
+            for changes in [["sessionId": "other-session"], ["promptId": "other-prompt"],
+                            ["promptId": ""], ["promptId": NSNull()], ["isSidechain": true]] as [[String: Any]] {
+                var changed = records
+                changed[1].merge(changes) { _, new in new }
+                XCTAssertTrue(try observeLimitSequence(changed).isEmpty, "\(name): \(changes)")
+            }
+        }
+        var tool = try recordedLimitSequence("claude-limit-tool-result-parent.json")
+        tool[1].removeValue(forKey: "promptId")
+        XCTAssertTrue(try observeLimitSequence(tool).isEmpty)
+    }
+
+    func testClaudeMonthlyLimitRequiresRecordedPrefixDelimiter() throws {
+        for text in ["You've hit your monthly spend limitless test", "You've hit your monthly spend limit?", "You've hit your monthly spend limit"] {
+            var object = try usageLimitRecord()
+            var message = try XCTUnwrap(object["message"] as? [String: Any])
+            message["content"] = [["type": "text", "text": text]]
+            object["message"] = message
+            XCTAssertNil(AgentModelProbe.claudeUsageLimit(object))
+        }
+    }
+
+    func testClaudeLimitParentHistoryIsBoundedButRetainsRootAndNewestContext() throws {
+        let fixture = try recordedLimitSequence("claude-limit-attachment-parent.json")
+        let contexts = (0..<130).map { index -> [String: Any] in
+            var context = fixture[1]; context["uuid"] = "context-\(index)"; return context
+        }
+        for (parent, expected) in [("context-0", false), ("context-129", true), ("fixture-root", true)] {
+            var error = fixture[2]; error["parentUuid"] = parent
+            XCTAssertEqual(try observeLimitSequence([fixture[0]] + contexts + [error]).count, expected ? 1 : 0, parent)
+        }
+    }
+
 }

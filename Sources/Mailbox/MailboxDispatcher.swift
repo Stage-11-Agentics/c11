@@ -45,6 +45,7 @@ final class MailboxDispatcher {
     let log: MailboxDispatchLog
     let queue: DispatchQueue
     private let replaceProcessingEnvelope: (Data, URL) throws -> Void
+    private let recipientUsageLimit: (UUID) -> JournalUsageLimitKind?
 
     private var watcher: MailboxOutboxWatcher?
     private var gcTimer: DispatchSourceTimer?
@@ -68,6 +69,9 @@ final class MailboxDispatcher {
             qos: .utility
         ),
         log: MailboxDispatchLog? = nil,
+        recipientUsageLimit: @escaping (UUID) -> JournalUsageLimitKind? = {
+            JournalCoordinator.shared.snapshot(panelID: $0)?.usageLimit?.kind
+        },
         replaceProcessingEnvelope: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         }
@@ -77,6 +81,7 @@ final class MailboxDispatcher {
         self.resolver = resolver
         self.queue = queue
         self.replaceProcessingEnvelope = replaceProcessingEnvelope
+        self.recipientUsageLimit = recipientUsageLimit
         self.log = log ?? MailboxDispatchLog(
             url: MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
         )
@@ -535,7 +540,8 @@ final class MailboxDispatcher {
                 MailboxLayout.envelopeFilename(id: envelope.id)
             )
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
-            log.append(.copied(id: envelope.id, recipient: recipient.displayName))
+            log.append(.copied(id: envelope.id, recipient: recipient.displayName,
+                               recipientUsageLimit: recipientUsageLimit(recipient.surfaceId)?.rawValue))
             // C11-163: mailbox envelope delivered to a recipient inbox.
             EventEmitter.shared.emitMailboxDelivered(
                 workspace: workspaceId,

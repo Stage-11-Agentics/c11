@@ -887,7 +887,7 @@ enum JournalQuery {
             case .turnInterrupted where event.effect == .applied: interrupted += 1
             case .turnStarted where event.effect == .duplicateEvidence && event.effectReason.contains("ambiguous"):
                 ambiguous += 1
-            case .errorReported where event.effect == .applied && event.draft.reasonCode == .sessionFailure:
+            case .errorReported where event.effect == .applied && (event.draft.reasonCode == .sessionFailure || event.draft.reasonCode == .usageLimit):
                 rootErrors += 1
             case .errorReported, .turnInterrupted:
                 diagnostics += 1

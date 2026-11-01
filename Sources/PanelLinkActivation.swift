@@ -641,9 +641,19 @@ private final class ExternalPanelLinkButton: NSButton {
 
     override func mouseDown(with event: NSEvent) {
         if gesture != nil {
-            guard window?.isVisible == true, SocketCommandContext.current == nil,
-                  gesture?.begin(at: event.timestamp, plain: plain(event), clickCount: event.clickCount,
-                                 inside: inside(event)) == true else { return }
+            let visible = window?.isVisible == true
+            let socket = SocketCommandContext.current != nil
+            let armed = gesture?.isArmed(at: event.timestamp) == true
+            let unmodified = plain(event)
+            let inBounds = inside(event)
+            let accepted = visible && !socket &&
+                gesture?.begin(at: event.timestamp, plain: unmodified,
+                               clickCount: event.clickCount, inside: inBounds) == true
+            let result = accepted ? "accepted" : !visible ? "hidden" : socket ? "socket_command" :
+                !armed ? "not_armed_at_event" : !unmodified ? "modified" :
+                event.clickCount != 1 ? "multiple_click" : !inBounds ? "outside_window_or_bounds" : "refused"
+            PanelLinkActivation.log(target: "", origin: "external", activation: "native_down", result: result)
+            guard accepted else { return }
         }
         super.mouseDown(with: event)
         gesture?.cancelPress()
@@ -651,13 +661,18 @@ private final class ExternalPanelLinkButton: NSButton {
 
     override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
         if gesture != nil {
+            let eventType = NSApp.currentEvent?.type.rawValue
             guard let event = NSApp.currentEvent, event.type == .leftMouseUp,
                   window?.isVisible == true, SocketCommandContext.current == nil,
                   gesture?.end(at: event.timestamp, plain: plain(event), clickCount: event.clickCount,
                                inside: inside(event)) == true else {
+                let result = eventType == nil ? "missing_event" : eventType != NSEvent.EventType.leftMouseUp.rawValue ?
+                    "unexpected_event_\(eventType!)" : "release_refused"
+                PanelLinkActivation.log(target: "", origin: "external", activation: "native_action", result: result)
                 gesture?.cancelPress()
                 return false
             }
+            PanelLinkActivation.log(target: "", origin: "external", activation: "native_action", result: "accepted")
         }
         return super.sendAction(action, to: target)
     }

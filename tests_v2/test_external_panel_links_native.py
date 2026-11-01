@@ -38,7 +38,7 @@ function run(args) {
         if (++visited > 80 || depth > 8) throw Error('Confirmation AX tree exceeded bound');
         var id = attr(e, 'AXIdentifier');
         if (!wanted || id === wanted) hits.push({id: id, role: attr(e, 'AXRole'),
-            value: attr(e, 'AXValue'), title: attr(e, 'AXTitle'),
+            value: attr(e, 'AXValue'), title: attr(e, 'AXTitle'), enabled: attr(e, 'AXEnabled'),
             position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')});
         var children = [];
         try { children = e.uiElements(); } catch (_) {}
@@ -51,6 +51,14 @@ function run(args) {
 
 
 class Proof(native.Proof):
+    def __init__(self):
+        super().__init__()
+        self.native_log_file = (OUT / 'native-events.log').open('w')
+        self.native_log_stream = subprocess.Popen([
+            '/usr/bin/log', 'stream', '--level', 'info', '--style', 'compact',
+            '--predicate', 'subsystem == "com.stage11.c11" AND category == "panel_link"'],
+            stdout=self.native_log_file, stderr=subprocess.STDOUT)
+
     def accepts_bundle(self, identity):
         # Only the production Release product registers the scheme. The exact
         # PID/path/socket are still constrained to this disposable guest.
@@ -97,6 +105,8 @@ class Proof(native.Proof):
         assert len(hits) == 1, (identifier, hits)
         x, y = hits[0]['position']
         w, h = hits[0]['size']
+        self.report.setdefault('native_clicks', []).append(
+            dict(identifier=identifier, control=hits[0], elapsed=round(time.monotonic()-self.started, 2)))
         # Native mouse click, even if the source browser is still foreground.
         # The intentional Confirm path approaches afresh after the arming delay.
         if identifier == 'c11.external-link.confirm':
@@ -340,6 +350,13 @@ end tell'''
         except Exception as error:
             self.report['cleanup_error'] = str(error)
         self.report['elapsed_seconds'] = round(time.monotonic()-self.started, 2)
+        self.native_log_stream.terminate()
+        try:
+            self.native_log_stream.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.native_log_stream.kill()
+            self.native_log_stream.wait(timeout=2)
+        self.native_log_file.close()
         (OUT/'report.json').write_text(json.dumps(self.report, indent=2))
         self.sock.close()
         self.watchdog.cancel()

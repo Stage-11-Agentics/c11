@@ -9189,8 +9189,6 @@ struct WorkspaceSidebar: View {
             notificationStore: notificationStore,
             workspace: ws,
             index: index,
-            moveUpTarget: item.moveUpTarget,
-            moveDownTarget: item.moveDownTarget,
             visibleWorkspaceIds: groupCoordinator.projection.visibleWorkspaceIds,
             availableGroups: workspaceManager.workspaceGroups,
             isActive: isActive,
@@ -12227,8 +12225,6 @@ private struct WorkspaceRowView: View, Equatable {
     nonisolated static func == (lhs: WorkspaceRowView, rhs: WorkspaceRowView) -> Bool {
         lhs.workspace === rhs.workspace &&
         lhs.index == rhs.index &&
-        lhs.moveUpTarget == rhs.moveUpTarget &&
-        lhs.moveDownTarget == rhs.moveDownTarget &&
         lhs.visibleWorkspaceIds == rhs.visibleWorkspaceIds &&
         lhs.availableGroups == rhs.availableGroups &&
         lhs.isActive == rhs.isActive &&
@@ -12258,8 +12254,6 @@ private struct WorkspaceRowView: View, Equatable {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var workspace: Workspace
     let index: Int
-    let moveUpTarget: UUID?
-    let moveDownTarget: UUID?
     let visibleWorkspaceIds: [UUID]
     let availableGroups: [WorkspaceGroup]
     let isActive: Bool
@@ -13407,6 +13401,10 @@ private struct WorkspaceRowView: View, Equatable {
             isMulti: isMulti)
         let renameWorkspaceShortcut = KeyboardShortcutSettings.shortcut(for: .renameWorkspace)
         let closeWorkspaceShortcut = KeyboardShortcutSettings.shortcut(for: .closeWorkspace)
+        // C11-563 layout (Atin, 2026-11-01): identity and lifetime, then
+        // appearance and grouping, then placement, then state. Reordering
+        // stays with drag, the palette, shortcuts and the CLI; an empty
+        // rename restores the automatic name.
         Button(pinLabel) {
             for id in targetIds {
                 if let workspace = workspaceManager.workspaces.first(where: { $0.id == id }) {
@@ -13427,48 +13425,41 @@ private struct WorkspaceRowView: View, Equatable {
             }
         }
 
-        if workspace.hasCustomTitle {
-            Button(String(localized: "contextMenu.removeCustomWorkspaceName", defaultValue: "Remove Custom Workspace Name")) {
-                workspaceManager.clearCustomTitle(workspaceId: workspace.id)
+        // C11-238: root view/edit for minimal mode, where the title-bar info
+        // button is hidden. Reads only the already-observed `tab`.
+        if !isMulti {
+            Menu(String(localized: "contextMenu.workspaceRoot", defaultValue: "Workspace Root")) {
+                Button(workspace.rootDirectory.map { WorkspaceRootActions.menuDisplayPath($0) }
+                    ?? String(localized: "contextMenu.workspaceRoot.none", defaultValue: "No Root Set")) {}
+                    .disabled(true)
+                Divider()
+                Button(String(localized: "contextMenu.workspaceRoot.change", defaultValue: "Change Root…")) {
+                    WorkspaceRootActions.chooseRoot(for: workspace)
+                }
+                Button(String(localized: "workspaceRoot.useFocused", defaultValue: "Use Focused Directory")) {
+                    WorkspaceRootActions.useFocusedDirectory(for: workspace)
+                }
+                .disabled(!WorkspaceRootActions.mayUseFocusedDirectory(for: workspace))
+                Button(String(localized: "contextMenu.workspaceRoot.clear", defaultValue: "Clear Root")) {
+                    WorkspaceRootActions.clearRoot(for: workspace)
+                }
+                .disabled(workspace.rootDirectory == nil)
             }
         }
 
-        Button(String(localized: "contextMenu.copyLink", defaultValue: "Copy Link")) {
-            copyWorkspaceLink()
+        if let key = closeWorkspaceShortcut.keyEquivalent {
+            Button(closeLabel) {
+                closeTabs(targetIds, allowPinned: true)
+            }
+            .keyboardShortcut(key, modifiers: closeWorkspaceShortcut.eventModifiers)
+            .disabled(targetIds.isEmpty)
+        } else {
+            Button(closeLabel) {
+                closeTabs(targetIds, allowPinned: true)
+            }
+            .disabled(targetIds.isEmpty)
         }
 
-        if !remoteContextMenuWorkspaceIds.isEmpty {
-            Divider()
-
-            Button(reconnectLabel) {
-                for workspace in remoteContextMenuWorkspaces() {
-                    workspace.reconnectRemoteConnection()
-                }
-            }
-            .disabled(allRemoteContextMenuTargetsConnecting)
-
-            Button(disconnectLabel) {
-                for workspace in remoteContextMenuWorkspaces() {
-                    workspace.disconnectRemoteConnection(clearConfiguration: false)
-                }
-            }
-            .disabled(allRemoteContextMenuTargetsDisconnected)
-        }
-
-        Menu(String(localized: "workspaceGroup.moveToGroup", defaultValue: "Move to Group")) {
-            Button(String(localized: "workspaceGroup.ungrouped", defaultValue: "Ungrouped")) {
-                for id in contextTargetIds() {
-                    try? workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: nil)
-                }
-            }
-            ForEach(availableGroups) { group in
-                Button(group.name) {
-                    for id in contextTargetIds() {
-                        try? workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: group.id)
-                    }
-                }
-            }
-        }
         Divider()
 
         Menu(String(localized: "contextMenu.workspaceColor", defaultValue: "Workspace Color")) {
@@ -13507,51 +13498,22 @@ private struct WorkspaceRowView: View, Equatable {
             defaultValue: "Per-workspace accent. Chrome theme (Light/Dark) lives in Settings → Theme."
         ))
 
-        // C11-238: root view/edit for minimal mode, where the title-bar info
-        // button is hidden. Reads only the already-observed `tab`.
-        if !isMulti {
-            Menu(String(localized: "contextMenu.workspaceRoot", defaultValue: "Workspace Root")) {
-                Button(workspace.rootDirectory.map { WorkspaceRootActions.menuDisplayPath($0) }
-                    ?? String(localized: "contextMenu.workspaceRoot.none", defaultValue: "No Root Set")) {}
-                    .disabled(true)
-                Divider()
-                Button(String(localized: "contextMenu.workspaceRoot.change", defaultValue: "Change Root…")) {
-                    WorkspaceRootActions.chooseRoot(for: workspace)
+        Menu(String(localized: "workspaceGroup.moveToGroup", defaultValue: "Move to Group")) {
+            Button(String(localized: "workspaceGroup.ungrouped", defaultValue: "Ungrouped")) {
+                for id in contextTargetIds() {
+                    try? workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: nil)
                 }
-                Button(String(localized: "workspaceRoot.useFocused", defaultValue: "Use Focused Directory")) {
-                    WorkspaceRootActions.useFocusedDirectory(for: workspace)
-                }
-                .disabled(!WorkspaceRootActions.mayUseFocusedDirectory(for: workspace))
-                Button(String(localized: "contextMenu.workspaceRoot.clear", defaultValue: "Clear Root")) {
-                    WorkspaceRootActions.clearRoot(for: workspace)
-                }
-                .disabled(workspace.rootDirectory == nil)
             }
-        }
-
-        if let copyableSidebarSSHError {
-            Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {
-                copyTextToPasteboard(copyableSidebarSSHError)
+            ForEach(availableGroups) { group in
+                Button(group.name) {
+                    for id in contextTargetIds() {
+                        try? workspaceManager.moveWorkspaceToGroup(workspaceId: id, groupId: group.id)
+                    }
+                }
             }
         }
 
         Divider()
-
-        Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
-            moveBy(-1)
-        }
-        .disabled(moveUpTarget == nil)
-
-        Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
-            moveBy(1)
-        }
-        .disabled(moveDownTarget == nil)
-
-        Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
-            workspaceManager.moveWorkspacesToTop(Set(targetIds))
-            syncSelectionAfterMutation()
-        }
-        .disabled(targetIds.isEmpty)
 
         let referenceWindowId = AppDelegate.shared?.windowId(for: workspaceManager)
         let windowMoveTargets = AppDelegate.shared?.windowMoveTargets(referenceWindowId: referenceWindowId) ?? []
@@ -13577,19 +13539,26 @@ private struct WorkspaceRowView: View, Equatable {
         }
         .disabled(targetIds.isEmpty)
 
-        Divider()
+        if !remoteContextMenuWorkspaceIds.isEmpty {
+            Button(reconnectLabel) {
+                for workspace in remoteContextMenuWorkspaces() {
+                    workspace.reconnectRemoteConnection()
+                }
+            }
+            .disabled(allRemoteContextMenuTargetsConnecting)
 
-        if let key = closeWorkspaceShortcut.keyEquivalent {
-            Button(closeLabel) {
-                closeTabs(targetIds, allowPinned: true)
+            Button(disconnectLabel) {
+                for workspace in remoteContextMenuWorkspaces() {
+                    workspace.disconnectRemoteConnection(clearConfiguration: false)
+                }
             }
-            .keyboardShortcut(key, modifiers: closeWorkspaceShortcut.eventModifiers)
-            .disabled(targetIds.isEmpty)
-        } else {
-            Button(closeLabel) {
-                closeTabs(targetIds, allowPinned: true)
+            .disabled(allRemoteContextMenuTargetsDisconnected)
+        }
+
+        if let copyableSidebarSSHError {
+            Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {
+                copyTextToPasteboard(copyableSidebarSSHError)
             }
-            .disabled(targetIds.isEmpty)
         }
 
         Divider()
@@ -13614,8 +13583,6 @@ private struct WorkspaceRowView: View, Equatable {
             ))
         }
 
-        Divider()
-
         Button(markReadLabel) {
             markTabsRead(targetIds)
         }
@@ -13625,6 +13592,10 @@ private struct WorkspaceRowView: View, Equatable {
             markTabsUnread(targetIds)
         }
         .disabled(!hasReadNotifications(in: targetIds))
+
+        Button(String(localized: "contextMenu.copyLink", defaultValue: "Copy Link")) {
+            copyWorkspaceLink()
+        }
     }
 
     private var resolvedCustomWorkspaceColor: Color? {
@@ -14175,7 +14146,10 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func promptRename() {
-        let currentTitle = workspace.customTitle ?? workspace.title
+        // C11-563: the field holds the custom name (empty when none) and its
+        // placeholder is the automatic name; saving it empty clears the
+        // custom name, which replaces "Remove Custom Workspace Name".
+        let form = WorkspaceRenameForm(workspace: workspace)
 
         // Anchor the overlay on the workspace's focused panel so the card visually
         // sits over the pane the user is renaming "from". If the workspace has
@@ -14203,12 +14177,9 @@ private struct WorkspaceRowView: View, Equatable {
                     message: String(
                         localized: "alert.renameWorkspace.message",
                         defaultValue: "Enter a custom name for this workspace."
-                    ),
-                    defaultValue: currentTitle,
-                    placeholder: String(
-                        localized: "alert.renameWorkspace.placeholder",
-                        defaultValue: "Workspace name"
-                    ),
+                    ) + " " + WorkspaceRenameForm.message,
+                    defaultValue: form.initialText,
+                    placeholder: form.placeholder,
                     confirmLabel: String(
                         localized: "alert.renameWorkspace.rename",
                         defaultValue: "Rename"
@@ -14231,8 +14202,9 @@ private struct WorkspaceRowView: View, Equatable {
         let alert = NSAlert()
         alert.messageText = String(localized: "alert.renameWorkspace.title", defaultValue: "Rename Workspace")
         alert.informativeText = String(localized: "alert.renameWorkspace.message", defaultValue: "Any text works. Workspace names show in the sidebar.")
-        let input = NSTextField(string: currentTitle)
-        input.placeholderString = String(localized: "alert.renameWorkspace.placeholder", defaultValue: "Workspace name")
+            + " " + WorkspaceRenameForm.message
+        let input = NSTextField(string: form.initialText)
+        input.placeholderString = form.placeholder
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
         alert.accessoryView = input
         alert.addButton(withTitle: String(localized: "alert.renameWorkspace.rename", defaultValue: "Rename"))

@@ -1,7 +1,10 @@
 // C11-510 guest helper: a compiled accessibility walk of one exact PID, for
 // guests where System Events has no Accessibility grant.
 // Build: xcrun swiftc -O -target arm64-apple-macos14 tests_v2/ax_walk.swift -o tests_v2/.ax-walk
-// Usage: .ax-walk <pid> tree|activate|foreground
+// Usage: .ax-walk <pid> tree|activate|foreground|menus|fields
+//   menus: every open AXMenu's items in order (title "" is a separator)
+//   fields: text fields (value, placeholder) and buttons, plus elements
+//           whose AX identifier starts with "sidebar.workspace."
 import AppKit
 import ApplicationServices
 
@@ -13,7 +16,7 @@ func emit(_ object: Any) {
 
 let args = CommandLine.arguments
 guard args.count == 3, let pid = pid_t(args[1]) else {
-    FileHandle.standardError.write("usage: ax-walk <pid> tree|activate|foreground\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: ax-walk <pid> tree|activate|foreground|menus|fields\n".data(using: .utf8)!)
     exit(2)
 }
 
@@ -25,7 +28,7 @@ case "activate":
     guard let app = NSRunningApplication(processIdentifier: pid) else { emit(false); exit(1) }
     emit(app.activate(options: [.activateAllWindows]))
     exit(0)
-case "tree":
+case "tree", "menus", "fields":
     break
 default:
     exit(2)
@@ -93,6 +96,60 @@ func walk(_ element: AXUIElement, depth: Int, sheetIndex: Int?) {
 }
 
 let application = AXUIElementCreateApplication(pid)
+
+// C11-563: menus and fields, read-only, for menu-layout and rename proofs.
+var menus: [[[String: Any]]] = []
+var fields: [[String: Any]] = []
+var buttons: [[String: Any]] = []
+var rows: [[String: Any]] = []
+
+func collect(_ element: AXUIElement, depth: Int) {
+    guard depth <= 24 else { return }
+    let item = info(element)
+    let role = item["role"] as? String ?? ""
+    if role == "AXMenuBar" { return }  // its menus exist while closed
+    if role == "AXMenu" {
+        var entries: [[String: Any]] = []
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+            var entry = info(child)
+            entry["enabled"] = (attribute(child, kAXEnabledAttribute) as? Bool) ?? NSNull()
+            entry["has_submenu"] = ((attribute(child, kAXChildrenAttribute) as? [AXUIElement]) ?? []).isEmpty == false
+            entries.append(entry)
+        }
+        menus.append(entries)
+        return
+    }
+    if role == "AXTextField" {
+        var entry = item
+        entry["placeholder"] = string(element, kAXPlaceholderValueAttribute) ?? NSNull()
+        fields.append(entry)
+    } else if role == "AXButton" {
+        buttons.append(item)
+    }
+    if let id = item["id"] as? String, id.hasPrefix("sidebar.workspace.") {
+        var entry = item
+        entry["label"] = string(element, kAXDescriptionAttribute) ?? NSNull()
+        rows.append(entry)
+    }
+    if role == "AXWebArea" || role == "AXTextArea" { return }
+    for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+        collect(child, depth: depth + 1)
+    }
+}
+
+switch args[2] {
+case "menus", "fields":
+    collect(application, depth: 0)
+    if args[2] == "menus" {
+        emit(["menus": menus])
+    } else {
+        emit(["fields": fields, "buttons": buttons, "rows": rows])
+    }
+    exit(0)
+default:
+    break
+}
+
 for window in (attribute(application, kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
     walk(window, depth: 0, sheetIndex: nil)
 }

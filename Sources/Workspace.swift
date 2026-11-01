@@ -8875,6 +8875,12 @@ final class Workspace: Identifiable, ObservableObject {
         return !trimmed.isEmpty
     }
 
+    /// The name this workspace shows without a custom name: the same value
+    /// `setCustomTitle` falls back to when it clears one.
+    var automaticTitle: String {
+        stableDefaultTitle ?? processTitle
+    }
+
     func applyProcessTitle(_ title: String) {
         processTitle = title
         guard customTitle == nil, stableDefaultTitle == nil else { return }
@@ -15732,4 +15738,29 @@ extension Workspace: BonsplitDelegate {
     }
 
     // No post-close polling refresh loop: we rely on view invariants and Ghostty's wakeups.
+}
+
+/// C11-563: what the sidebar's Rename Workspace field shows. The field holds
+/// the custom name (empty when there is none) and its placeholder is the
+/// automatic name, so an empty field reads as what saving it does: the
+/// workspace goes back to its automatic name (`Workspace.setCustomTitle`
+/// treats empty input as a clear).
+struct WorkspaceRenameForm: Equatable {
+    let initialText: String
+    let placeholder: String
+
+    @MainActor
+    init(workspace: Workspace) {
+        initialText = workspace.hasCustomTitle
+            ? (workspace.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+            : ""
+        placeholder = workspace.automaticTitle
+    }
+
+    static var message: String {
+        String(
+            localized: "alert.renameWorkspace.emptyResets",
+            defaultValue: "Leave the name empty to use the automatic name."
+        )
+    }
 }

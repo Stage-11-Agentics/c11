@@ -307,8 +307,15 @@ end tell'''
             self.cancel()
             assert self.selection()[0] == added.lower(), 'Cancel must not undo separate folder intent'
             self.report.setdefault('separate_event_batches', []).append(dict(order=index, batches=batches))
-            self.call('workspace.close', workspace_id=added)
+            # Closing the selected workspace through the socket would switch
+            # the operator's workspace and is correctly forbidden. Return via
+            # a real native shortcut before closing the background fixture.
             self.ui('activate')
+            ordered = self.call('workspace.list', window_id=self.window)['workspaces']
+            assert ordered[0]['id'].lower() == self.source_workspace.lower(), ordered
+            self.key(18, 'command down')
+            self.wait(lambda: self.selection()[0] == self.source_workspace.lower(), 'native return before cleanup')
+            self.call('workspace.close', workspace_id=added)
             self.back()
         self.passed('one open command yields separate GURL/odoc events; only file event opens its folder')
         self.report['limitations'].append('Single delivered mixed-array exclusivity, including pending/cooldown, is covered by executable route tests; Launch Services split this native command into two events.')

@@ -7,6 +7,10 @@ env and a temp HOME whose default socket is the canary. The red phase runs
 the incident test with the guard switched off and requires at least one accept.
 
 The canary is the live-socket stand-in. Nothing here dials the operator's app.
+
+``--smoke`` runs only ``test_claude_hook_session_mapping.py``, once with the
+guard and once without it. PR CI uses that. The full sweep is the default,
+and the hourly backstop runs it.
 """
 
 from __future__ import annotations
@@ -74,7 +78,7 @@ class Canary:
             while not self._stop.is_set():
                 try:
                     conn, _ = self._server.accept()
-                except TimeoutError:
+                except (TimeoutError, socket.timeout):
                     continue
                 self.accepted += 1
                 try:
@@ -226,6 +230,83 @@ def write_audit(rows: list[tuple[str, str, int]], bare_rows: list[tuple[str, str
     print(f"\nAudit: {out}")
 
 
+def _stop_group(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    proc.wait(timeout=5)
+
+
+def _spawn_incident(env: dict[str, str]) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        [sys.executable, str(TESTS_DIR / "test_claude_hook_session_mapping.py")],
+        cwd=str(REPO),
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def smoke() -> int:
+    """Incident file against one canary, with the guard and without it."""
+    pid = os.getpid()
+    home = f"/tmp/c11-509-home-{pid}"
+    os.makedirs(home, exist_ok=True)
+    canary = Canary(f"{home}/canary.sock")
+    canary.start()
+    failures: list[str] = []
+    try:
+        before = canary.accepted
+        guarded = _spawn_incident(scenario_env(canary.path, home))
+        try:
+            code = guarded.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            _stop_group(guarded)
+            failures.append("guarded incident test timed out")
+            code = -1
+        time.sleep(0.2)
+        green = canary.accepted - before
+        print(f"green incident exit={code} accepts={green}", flush=True)
+        if green != 0:
+            failures.append(f"guarded incident test accepted {green}")
+
+        before = canary.accepted
+        env = scenario_env(canary.path, home)
+        env["C11_SOCKET_GUARD_RED_PROOF"] = "1"
+        env["C11_SOCKET_GUARD_DISABLED"] = "1"
+        naked = _spawn_incident(env)
+        deadline = time.monotonic() + 10
+        while (
+            time.monotonic() < deadline
+            and canary.accepted == before
+            and naked.poll() is None
+        ):
+            time.sleep(0.05)
+        time.sleep(0.2)
+        _stop_group(naked)
+        red = canary.accepted - before
+        print(f"red incident accepts={red}", flush=True)
+        if red < 1:
+            failures.append("removing the guard did not make the incident test connect")
+    finally:
+        canary.stop()
+
+    if failures:
+        print("FAIL smoke")
+        for item in failures:
+            print(f"  {item}")
+        return 1
+    print(
+        "PASS smoke: guarded incident accepted nothing; unguarded incident connected"
+    )
+    return 0
+
+
 def main() -> int:
     pid = os.getpid()
     home = f"/tmp/c11-509-home-{pid}"
@@ -313,4 +394,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    args = sys.argv[1:]
+    if args == ["--smoke"]:
+        raise SystemExit(smoke())
+    if args:
+        print("usage: test_socket_guard_canary.py [--smoke]", file=sys.stderr)
+        raise SystemExit(2)
     raise SystemExit(main())

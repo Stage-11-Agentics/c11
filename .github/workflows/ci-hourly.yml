@@ -425,6 +425,10 @@ jobs:
       - name: Shell helper lifetime and git reporting
         run: bash tests/test_shell_git_watchers.sh
 
+      # PR CI runs --smoke. The sweep is too slow for the 2-minute PR budget.
+      - name: Socket guard canary
+        run: python3 tests/test_socket_guard_canary.py
+
   record-green:
     needs: [target, build, logic, host-a, host-b, python, poller-tests]
     if: ${{ inputs.force || needs.target.outputs.tested != 'true' }}

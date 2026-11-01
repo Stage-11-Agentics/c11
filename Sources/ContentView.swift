@@ -350,6 +350,8 @@ struct TitlebarLayerBackground: NSViewRepresentable {
 final class SidebarState: ObservableObject {
     @Published var isVisible: Bool
     @Published var persistedWidth: CGFloat
+    // Shared with this window's native accessory, whose controls may overhang the sidebar.
+    @Published var customTitlebarForeground = Color.white.opacity(0.82)
     @Published var isDoubleWide: Bool
     var singleWideWidth: CGFloat
 
@@ -2379,7 +2381,8 @@ struct ContentView: View {
     }
 
     private var customTitlebar: some View {
-        ZStack {
+        let titleForeground = fakeTitlebarTextColor
+        return ZStack {
             // Enable window dragging from the titlebar strip without making the entire content
             // view draggable (which breaks drag gestures like tab reordering).
             WindowDragHandleView()
@@ -2397,7 +2400,7 @@ struct ContentView: View {
 
                 Text(titlebarText)
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(fakeTitlebarTextColor)
+                    .foregroundColor(titleForeground)
                     .lineLimit(1)
                     .accessibilityIdentifier("workspace.titlebarTitle")
                     .allowsHitTesting(false)
@@ -2422,6 +2425,11 @@ struct ContentView: View {
             // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
             .padding(.leading, customTitlebarLeadingPadding)
             .padding(.trailing, 8)
+        }
+        .onChange(of: titleForeground, initial: true) { _, color in
+            if sidebarState.customTitlebarForeground != color {
+                sidebarState.customTitlebarForeground = color
+            }
         }
         .frame(height: titlebarPadding)
         .frame(maxWidth: .infinity)

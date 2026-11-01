@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -61,5 +62,42 @@ final class TitlebarTitleReserveTests: XCTestCase {
             XCTAssertEqual(style.config.titleLeadingPadding(sidebarWidth: 180,
                 sidebarVisible: false, isFullScreen: true), 8)
         }
+    }
+}
+
+final class TitlebarControlContrastTests: XCTestCase {
+    func testHistoryUsesTheCustomTitlebarForegroundBeyondNarrowSidebars() {
+        for style in [TitlebarControlsStyle.classic, .roomy] {
+            for width: CGFloat in [180, 200] {
+                for index in [4, 5] {
+                    for foreground in [Color.white.opacity(0.82), Color.black.opacity(0.78)] {
+                        XCTAssertEqual(style.config.controlForeground(index: index,
+                            sidebarWidth: width, sidebarVisible: true, nativeAccessory: true,
+                            customTitlebarForeground: foreground), foreground)
+                    }
+                }
+            }
+        }
+    }
+
+    func testHiddenSidebarUsesTheCustomTitlebarForEveryControl() {
+        for index in 0..<6 {
+            XCTAssertEqual(TitlebarControlsStyle.classic.config.controlForeground(index: index,
+                sidebarWidth: 200, sidebarVisible: false, nativeAccessory: true,
+                customTitlebarForeground: .red), .red)
+        }
+    }
+
+    func testControlsOverSidebarAndOtherSurfacesKeepPrimary() {
+        let classic = TitlebarControlsStyle.classic.config
+        XCTAssertEqual(classic.controlForeground(index: 0, sidebarWidth: 180,
+            sidebarVisible: true, nativeAccessory: true, customTitlebarForeground: .red), .primary)
+        XCTAssertEqual(classic.controlForeground(index: 5, sidebarWidth: 400,
+            sidebarVisible: true, nativeAccessory: true, customTitlebarForeground: .red), .primary)
+        XCTAssertEqual(classic.controlForeground(index: 5, sidebarWidth: 180,
+            sidebarVisible: true, nativeAccessory: false, customTitlebarForeground: .red), .primary)
+        XCTAssertEqual(TitlebarControlsStyle.softButtons.config.controlForeground(index: 5,
+            sidebarWidth: 180, sidebarVisible: false, nativeAccessory: true,
+            customTitlebarForeground: .red), .primary)
     }
 }

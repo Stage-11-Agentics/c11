@@ -483,20 +483,27 @@ end tell'''
                                        url=self.fixture.as_uri(), focus=False)['panel_id']
         self.report['targets']['layout_target'] = self.layout_target
         self.landed(self.a, self.source, 'background layout target creation preserves source', self.window)
-        # focusedDirectory falls back to workspace.currentDirectory for browsers;
-        # require the actual folder AX element after closing the terminal fixture.
-        self.control(FOLDER)
         self.javascript('document.querySelector("#jump").href=' + json.dumps('c11://panel/' + self.layout_target))
         self.ui('style', 'Classic')
+        # Seed a forward destination so hidden-sidebar screenshots include an
+        # enabled arrow as well as a disabled one in both appearances.
+        self.mouse(self.link_point())
+        self.landed(self.a, self.layout_target, 'hidden-sidebar fixture native link')
+        self.history()
+        self.landed(self.a, self.source, 'hidden-sidebar fixture Back')
         self.ui('press', 'titlebarControl.toggleSidebar')
         self.wait(lambda: not self.call('debug.sidebar.visible', window_id=self.window)['visible'],
                   'native sidebar hide')
-        hidden_sidebar = self.ui('layout')
-        folder = self.control(FOLDER)
-        self.report['hidden_sidebar_folder'] = dict(snapshot=hidden_sidebar,
-            click_log=self.folder_click(folder), click_x=folder['position'][0] + 2)
-        self.save()
-        self.shot('07-hidden-sidebar-folder-edge')
+        self.report['hidden_sidebar_folder'] = {}
+        for appearance in ('Dark', 'Light'):
+            self.ui('appearance', appearance)
+            hidden_sidebar = self.ui('layout')
+            title_row = next(row for row in hidden_sidebar['rows'] if row['id'] == TITLE)
+            folder = self.folder_target(title_row)
+            self.report['hidden_sidebar_folder'][appearance] = dict(snapshot=hidden_sidebar,
+                click_log=self.folder_click(folder), click_x=folder['position'][0] + 2)
+            self.save()
+            self.shot('07-hidden-sidebar-folder-edge-' + appearance.lower())
         self.ui('press', 'titlebarControl.toggleSidebar')
         self.wait(lambda: self.call('debug.sidebar.visible', window_id=self.window)['visible'],
                   'native sidebar restore')

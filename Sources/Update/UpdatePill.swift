@@ -27,23 +27,17 @@ struct UpdatePill: View {
     @ViewBuilder
     private var pillButton: some View {
         Button(action: {
-            if model.showsDetectedBackgroundUpdate {
+            switch model.performPillAction() {
+            case .checkDetectedUpdate:
                 // Open the popover immediately so the user sees the install prompt
                 // as soon as Sparkle's user-driver check completes — instead of having
                 // to click the pill again after the background-detected version flips
                 // to a checked-and-available state.
-                if case .idle = model.state {
-                    model.state = .checking(.init(cancel: {}))
-                }
                 showPopover = true
-                AppDelegate.shared?.checkForUpdates(nil)
-                return
-            }
-            if case .notFound(let notFound) = model.state {
-                model.state = .idle
-                notFound.acknowledgement()
-            } else {
+            case .togglePopover:
                 showPopover.toggle()
+            case .restart, .acknowledgeNotFound:
+                break
             }
         }) {
             HStack(spacing: 6) {
@@ -85,7 +79,9 @@ struct InstallUpdateMenuItem: View {
     var body: some View {
         if model.state.isInstallable {
             Button(String(localized: "update.installAndRelaunch", defaultValue: "Install Update and Relaunch")) {
-                model.state.confirm()
+                if !model.performRestartIfWaiting(source: "menu") {
+                    model.state.confirm()
+                }
             }
         }
     }

@@ -291,6 +291,7 @@ fileprivate struct InstallingView: View {
                 Spacer()
 
                 Button(String(localized: "common.restartNow", defaultValue: "Restart Now")) {
+                    UpdateLogStore.shared.append("retry terminating application (source=popover)")
                     installing.retryTerminatingApplication()
                     dismiss()
                 }

@@ -114,8 +114,11 @@ This is a checklist trigger, not a CI gate.
   `reloads.sh` there and returns the STAGING app (about 3 min on a fresh tag for
   v1.4.0). A fresh release worktree needs `git submodule update --init ghostty
   vendor/bonsplit` first, or remote-build refuses with "ghostty must be provisioned".
-  Launch it with `open --env C11_QA_LAUNCH=fresh <app>` so the startup dialogs
-  stay closed; prune both Atlas caches for the tag afterwards (c11-hotload, Tag hygiene).
+  Launch it on the operator's Mac yourself as soon as it is built or replaced,
+  without waiting to be asked: `open --env C11_QA_LAUNCH=fresh <app>` keeps the
+  startup dialogs closed. If a staging copy is already running, ask the operator
+  before quitting it. Prune both Atlas caches for the tag afterwards (c11-hotload,
+  Tag hygiene).
 - Before handing off, screenshot the staging window and inspect every surface
   the changelog touches (sheets, titlebar, sidebar, new or redesigned modals).
   Release-only layout regressions have shipped past Debug builds before.

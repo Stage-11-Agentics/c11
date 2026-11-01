@@ -66,7 +66,10 @@ bounded 60 "$helper" request-unlock 120 $$ >/dev/null
 if [[ "$mode" == "check" ]]; then
   bounded 30 security find-generic-password -s "$service" -a "$account" "$kc" >/dev/null 2>&1 || { echo missing; exit 0; }
 else
-  printf "add-generic-password -U -s %s -a %s -T /usr/bin/security -w %s %s\n" \
+  # Replace, not update: changing an existing item access list needs a prompt
+  # that a non-GUI session cannot answer (a rerun after rotating the key).
+  bounded 30 security delete-generic-password -s "$service" -a "$account" "$kc" >/dev/null 2>&1 || true
+  printf "add-generic-password -s %s -a %s -T /usr/bin/security -w %s %s\n" \
     "$service" "$account" "$key" "$kc" | bounded 30 security -i >/dev/null
   unset key
 fi
@@ -104,11 +107,15 @@ mkdir -p "$(dirname "$LOG")"
 record() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$*" >>"$LOG"; echo "$*"; }
 
 if [[ "$SELF_TEST" -eq 1 ]]; then
-  # A throwaway Ed25519 seed under a throwaway account; the real key is untouched.
+  # Throwaway Ed25519 seeds under a throwaway account; the real key is untouched.
+  # The second store replaces the first, as a rerun after rotating would.
   openssl rand -base64 32 >"$TMP/key"
   pub="$(swift "$ROOT/scripts/derive_sparkle_public_key.swift" "$(cat "$TMP/key")")"
-  result="$(remote "$TMP/key" "c11mux-selftest" "$pub" delete)" || die "self-test failed on $HOST: ${result:-no output}"
-  echo "self-test on $HOST: store, read back in a non-GUI session, $result, deleted"
+  result="$(remote "$TMP/key" "c11mux-selftest" "$pub" keep)" || die "self-test store failed on $HOST: ${result:-no output}"
+  openssl rand -base64 32 >"$TMP/key"
+  pub="$(swift "$ROOT/scripts/derive_sparkle_public_key.swift" "$(cat "$TMP/key")")"
+  result2="$(remote "$TMP/key" "c11mux-selftest" "$pub" delete)" || die "self-test replace failed on $HOST: ${result2:-no output}"
+  echo "self-test on $HOST: store ($result), replace with a new key ($result2), read back in a non-GUI session, deleted"
   exit 0
 fi
 

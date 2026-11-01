@@ -257,6 +257,18 @@ if [[ -n "$SIGNING_KEYCHAIN" ]]; then
   perl -e 'alarm 90; exec @ARGV' "$SIGNING_KEYCHAIN_HELPER" request-unlock 3600 $$ >/dev/null \
     || die "could not unlock the signing keychain $SIGNING_KEYCHAIN through $SIGNING_KEYCHAIN_HELPER"
   note "signing keychain unlocked for this run (lease $$): $SIGNING_KEYCHAIN"
+  # The Sentry org token for the dSYM upload lives in the same keychain
+  # (scripts/move-sentry-token-to-atlas.sh); the environment wins when set.
+  if [[ -z "${SENTRY_AUTH_TOKEN:-}" && "$SKIP_SENTRY" -eq 0 ]]; then
+    if SENTRY_AUTH_TOKEN="$(perl -e 'alarm 30; exec @ARGV' security find-generic-password \
+        -s c11-sentry-auth-token -a "$SENTRY_ORG" -w "$SIGNING_KEYCHAIN" 2>/dev/null)" && [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
+      export SENTRY_AUTH_TOKEN
+      note "Sentry token read from the signing keychain ($SENTRY_ORG)"
+    else
+      unset SENTRY_AUTH_TOKEN
+      note "no Sentry token in the signing keychain; the dSYM upload will be skipped"
+    fi
+  fi
 fi
 IDENTITIES="$(security find-identity -v -p codesigning ${KC_ARGS[@]+"${SIGNING_KEYCHAIN}"})" || die "security find-identity failed"
 grep -qF "\"$SIGNING_IDENTITY\"" <<<"$IDENTITIES" || die "signing identity not in the keychain: $SIGNING_IDENTITY"

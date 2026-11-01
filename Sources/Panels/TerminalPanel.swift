@@ -137,7 +137,7 @@ final class TerminalPanel: Panel, ObservableObject {
             let prompt = launch.initialPrompt
             let staged: LaunchPromptStore.StagedPrompt?
             do {
-                if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     staged = try LaunchPromptStore.shared.stage(prompt: prompt)
                 } else {
                     staged = nil

@@ -79,4 +79,57 @@ final class NewWorkspaceTitleTests: XCTestCase {
         XCTAssertNil(workspace.customTitle)
         XCTAssertEqual(workspace.title, defaultTitle)
     }
+
+    // MARK: - C11-563: rename to empty restores the automatic name
+
+    /// A renamed workspace's rename field shows its custom name, with the
+    /// automatic name as the placeholder, so an empty field says what saving
+    /// it does.
+    func testRenameFormShowsCustomNameOverAutomaticPlaceholder() {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let automatic = workspace.title
+        manager.setCustomTitle(workspaceId: workspace.id, title: "Auth refactor")
+
+        let form = WorkspaceRenameForm(workspace: workspace)
+
+        XCTAssertEqual(form.initialText, "Auth refactor")
+        XCTAssertEqual(form.placeholder, automatic)
+        XCTAssertNotEqual(form.placeholder, "Auth refactor")
+    }
+
+    /// Saving the rename field empty (what "Remove Custom Workspace Name"
+    /// used to do) clears the custom name and the workspace shows the name
+    /// the field's placeholder promised.
+    func testSavingEmptyRenameRestoresAutomaticName() {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        let automatic = workspace.title
+        manager.setCustomTitle(workspaceId: workspace.id, title: "Auth refactor")
+        XCTAssertTrue(workspace.hasCustomTitle)
+
+        let promised = WorkspaceRenameForm(workspace: workspace).placeholder
+        manager.setCustomTitle(workspaceId: workspace.id, title: "")
+
+        XCTAssertFalse(workspace.hasCustomTitle)
+        XCTAssertNil(workspace.customTitle)
+        XCTAssertEqual(workspace.title, automatic)
+        XCTAssertEqual(workspace.title, promised)
+    }
+
+    /// With no custom name the field starts empty, so pressing Save on the
+    /// untouched field keeps the automatic name instead of freezing it as a
+    /// custom one.
+    func testUntouchedRenameOfUnnamedWorkspaceKeepsAutomaticName() {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+
+        let form = WorkspaceRenameForm(workspace: workspace)
+        XCTAssertEqual(form.initialText, "")
+        XCTAssertEqual(form.placeholder, workspace.title)
+
+        manager.setCustomTitle(workspaceId: workspace.id, title: form.initialText)
+        XCTAssertFalse(workspace.hasCustomTitle)
+        XCTAssertEqual(workspace.title, form.placeholder)
+    }
 }

@@ -271,6 +271,32 @@ selected workspace, so it is gated on native operator input:
   The markdown sanitizer allows `c11:` in `href` so these links survive
   rendering; activation still goes through the gate above.
 
+Mailbox drawer links (1.7.7, C11-524). Mail bodies are written by agents
+and are untrusted text. The drawer makes links only of `[Title](url)` and bare
+URLs whose scheme is `c11`, `http` or `https`; every other scheme and all other
+markup stay verbatim text. A `c11:` link goes through the same parser and
+`AppDelegate.openPanelLink` as a markdown-panel link, on a native SwiftUI click
+in the operator's drawer (no page script, no socket path); `http(s)` opens in
+the default browser through `NSWorkspace`. The title is untrusted like an OSC 8
+label: the click lands on the parsed UUID, never on what the title says.
+
+Page-initiated app opens (1.7.7, C11-510). A page in a browser panel or one of
+its popups cannot hand a non-web URL (`smb:`, `vnc:`, `ssh:`, custom app
+schemes) to macOS on its own. Main-frame and subframe navigations, popups,
+`window.open` and Open Link in New Panel all go through one per-panel
+`BrowserExternalOpenGate`, which asks the operator in a sheet presented through
+`browserPresentModalAlert` (never `runModal`). The sheet names the requesting
+origin, the scheme and the app; Open has no key equivalent, so a page cannot time
+a keystroke into consent, and Return or Escape cancels. One prompt per panel,
+no queue, a 2-second cooldown, scripted re-asks after Cancel dropped until the
+page navigates, and a hidden panel is never prompted (the drop is logged to the
+workspace log). "Always allow" stores `origin scheme` pairs in
+`browserExternalSchemeAllowlist`, editable in Settings > Browser; a page with
+no host gets no always-allow choice. Only `mailto:` opens without a prompt.
+Socket and omnibar navigation (`browser open|goto`, typed URLs) still open app
+links directly: that is the socket caller's or operator's own choice, within the
+existing socket trust boundary.
+
 Local-file and profile isolation (1.6):
 
 - Download Image and Download Linked File save a `file:` link only when the
@@ -369,6 +395,9 @@ Sources/Messages/MessagesPage.swift                    (messages page renderer, 
 Sources/Panels/BrowserPanelView.swift                  (panel host)
 Sources/BrowserWindowPortal.swift                      (popout / portal layer)
 Sources/BrowserSnapshotStore.swift                     (snapshot capture)
+Sources/Panels/BrowserExternalOpenGate.swift          (page-initiated app opens: consent sheet, allowlist, coalescing)
+Sources/Mailbox/MailboxBodyLinks.swift                 (mail body link scan: c11, http, https only)
+Sources/MailboxDrawerView.swift                        (drawer OpenURLAction: openPanelLink or NSWorkspace for http(s))
 ```
 
 ---

@@ -6,7 +6,8 @@ import Foundation
 /// - **Sent**: the `copied` row in the dispatching workspace's `_dispatch.log`
 ///   (`rejected` means it never reached an inbox).
 /// - **Delivered**: a stdin `doorbell` row for the envelope whose reason is
-///   `submitted`, `stranded_return` or `native_late_accept`. A ring logs one row
+///   `submitted`, `stranded_return`, `native_late_accept` or
+///   `native_already_admitted`. A ring logs one row
 ///   for every envelope it covers, so each id carries its own. A later hold
 ///   row never undoes it. A recipient claim with no ring row counts as
 ///   delivered by that claim.
@@ -100,8 +101,11 @@ enum MailboxReceiptStatus {
     /// Scan limits. `maxScanBytes` bounds one call across every log.
     struct Limits {
         var maxScanBytes = 64 * 1024 * 1024
-        /// Rows can be stamped slightly before the ULID time is read back.
-        var lookBack: TimeInterval = 5
+        /// How far before the ULID time each log is read. Covers rows stamped
+        /// out of order (a `claimed` row written while the dispatcher queue
+        /// was stalled) and small clock steps; the binary search assumes `ts`
+        /// otherwise only increases.
+        var lookBack: TimeInterval = 120
         var chunkBytes = 1024 * 1024
 
         static let standard = Limits()

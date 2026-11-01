@@ -349,23 +349,16 @@ final class MailboxReceiptStatusTests: XCTestCase {
         }
         let logBytes = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? Int)
 
-        let newestClock = Date()
         let newest = try status(ids[count - 1])
-        let newestSeconds = Date().timeIntervalSince(newestClock)
-        let oldestClock = Date()
         let oldest = try status(ids[0])
-        let oldestSeconds = Date().timeIntervalSince(oldestClock)
 
         XCTAssertEqual(newest.recipients.first?.delivery, .delivered)
         XCTAssertEqual(oldest.recipients.first?.delivery, .delivered)
         // The binary search skips almost the whole log for a recent message.
         XCTAssertLessThan(newest.scannedBytes, logBytes / 20, "newest scanned \(newest.scannedBytes) of \(logBytes)")
         XCTAssertLessThanOrEqual(oldest.scannedBytes, logBytes + 64 * 1024)
-        XCTAssertLessThan(newestSeconds, 1.0)
-        XCTAssertLessThan(oldestSeconds, 2.0)
-        let summary = "C11-550 bound: log \(logBytes) B, newest \(newest.scannedBytes) B in \(Int(newestSeconds * 1000)) ms, "
-            + "oldest \(oldest.scannedBytes) B in \(Int(oldestSeconds * 1000)) ms\n"
-        print(summary, terminator: "")
+        // Bytes, not wall time: a loaded Atlas must not flake this.
+        print("C11-550 bound: log \(logBytes) B, newest \(newest.scannedBytes) B, oldest \(oldest.scannedBytes) B")
     }
 
     func testScanStopsAtItsByteBudget() throws {

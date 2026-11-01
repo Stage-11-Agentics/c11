@@ -779,7 +779,7 @@ The log is opened `O_APPEND`, so the dispatcher's rows and a drain's `claimed` r
 | State | What proves it |
 |---|---|
 | **sent** | the `copied` row. `rejected` means no inbox got it; an envelope still in an outbox is `queued` |
-| **delivered** | a stdin `doorbell` row for this id with reason `submitted`, `stranded_return` or `native_late_accept` (a ring logs one row for each envelope it covers), or the recipient's own claim when no ring ran. A later hold row never undoes it |
+| **delivered** | a stdin `doorbell` row for this id with reason `submitted`, `stranded_return`, `native_late_accept` or `native_already_admitted` (a ring logs one row for each envelope it covers), or the recipient's own claim when no ring ran. A later hold row never undoes it |
 | **held** | the latest stdin row is a hold: a draft, a question, an unreadable prompt, a stranded line, the rate cap, or an unconfirmed native invitation (Claude's chooser). Held is never delivered |
 | **read** | the copy is in the recipient's `_read/` and the drain's `claimed` row has `by_panel` equal to the recipient panel. A claim by any other panel (`recv --drain --panel <other>`) shows `taken by panel <uuid>`; a claim with no row (an older CLI) shows `claimed, by a panel c11 did not record` |
 

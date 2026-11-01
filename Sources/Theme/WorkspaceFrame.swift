@@ -138,9 +138,12 @@ enum WindowCornerRadius {
     static func resolve(for window: NSWindow?) -> CGFloat {
         if let window {
             if window.styleMask.contains(.fullScreen) { return 0 }
+            // Zero outside full screen means AppKit has not laid the window
+            // out yet, not that it has square corners.
             if window.responds(to: selector),
-               let value = window.value(forKey: "_cornerRadius") as? NSNumber {
-                return max(0, CGFloat(truncating: value))
+               let value = window.value(forKey: "_cornerRadius") as? NSNumber,
+               CGFloat(truncating: value) > 0 {
+                return CGFloat(truncating: value)
             }
         }
         if #available(macOS 26.0, *) { return 16 }

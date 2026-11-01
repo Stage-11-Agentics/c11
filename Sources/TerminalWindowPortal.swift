@@ -646,7 +646,16 @@ enum PortalWorkspaceFrameOverlay {
             return
         }
 
-        let thickness = max(1, style.thicknessPt)
+        // The overlay fills strips pixel-aligned (whole points). Align here
+        // too, so corner arcs, which are filled as paths, meet the strips
+        // with the same thickness and no seam.
+        let thickness = max(1, style.thicknessPt.rounded())
+        let edgeFrame = NSRect(
+            x: frame.minX.rounded(),
+            y: frame.minY.rounded(),
+            width: frame.maxX.rounded() - frame.minX.rounded(),
+            height: frame.maxY.rounded() - frame.minY.rounded()
+        )
 
         func appendClipped(_ rect: NSRect) {
             let clipped = rect.intersection(hostBounds)
@@ -666,10 +675,10 @@ enum PortalWorkspaceFrameOverlay {
         // Where the frame meets a rounded window corner, straight strips run
         // into the window's corner mask and get shaved away at the diagonal.
         // Draw that corner as an arc concentric with the window instead.
-        let radius = windowCorners.map { min($0.radius, frame.width / 2, frame.height / 2) } ?? 0
+        let radius = windowCorners.map { min($0.radius, edgeFrame.width / 2, edgeFrame.height / 2) } ?? 0
         func roundsCorner(_ corner: Corner, _ firstEdge: Bool, _ secondEdge: Bool) -> Bool {
             guard let windowCorners, radius > thickness, firstEdge, secondEdge else { return false }
-            return cornerMatchesWindow(corner, frame: frame, windowBounds: windowCorners.bounds)
+            return cornerMatchesWindow(corner, frame: edgeFrame, windowBounds: windowCorners.bounds)
         }
         let roundsMinXMinY = roundsCorner(.minXMinY, drawsLeading, drawsBottom)
         let roundsMaxXMinY = roundsCorner(.maxXMinY, drawsTrailing, drawsBottom)
@@ -677,24 +686,24 @@ enum PortalWorkspaceFrameOverlay {
         let roundsMaxXMaxY = roundsCorner(.maxXMaxY, drawsTrailing, drawsTop)
 
         if drawsLeading {
-            let minY = frame.minY + (roundsMinXMinY ? radius : 0)
-            let maxY = frame.maxY - (roundsMinXMaxY ? radius : 0)
-            appendClipped(NSRect(x: frame.minX, y: minY, width: thickness, height: maxY - minY))
+            let minY = edgeFrame.minY + (roundsMinXMinY ? radius : 0)
+            let maxY = edgeFrame.maxY - (roundsMinXMaxY ? radius : 0)
+            appendClipped(NSRect(x: edgeFrame.minX, y: minY, width: thickness, height: maxY - minY))
         }
         if drawsTrailing {
-            let minY = frame.minY + (roundsMaxXMinY ? radius : 0)
-            let maxY = frame.maxY - (roundsMaxXMaxY ? radius : 0)
-            appendClipped(NSRect(x: frame.maxX - thickness, y: minY, width: thickness, height: maxY - minY))
+            let minY = edgeFrame.minY + (roundsMaxXMinY ? radius : 0)
+            let maxY = edgeFrame.maxY - (roundsMaxXMaxY ? radius : 0)
+            appendClipped(NSRect(x: edgeFrame.maxX - thickness, y: minY, width: thickness, height: maxY - minY))
         }
         if drawsBottom {
-            let minX = frame.minX + (roundsMinXMinY ? radius : 0)
-            let maxX = frame.maxX - (roundsMaxXMinY ? radius : 0)
-            appendClipped(NSRect(x: minX, y: frame.minY, width: maxX - minX, height: thickness))
+            let minX = edgeFrame.minX + (roundsMinXMinY ? radius : 0)
+            let maxX = edgeFrame.maxX - (roundsMaxXMinY ? radius : 0)
+            appendClipped(NSRect(x: minX, y: edgeFrame.minY, width: maxX - minX, height: thickness))
         }
         if drawsTop {
-            let minX = frame.minX + (roundsMinXMaxY ? radius : 0)
-            let maxX = frame.maxX - (roundsMaxXMaxY ? radius : 0)
-            appendClipped(NSRect(x: minX, y: frame.maxY - thickness, width: maxX - minX, height: thickness))
+            let minX = edgeFrame.minX + (roundsMinXMaxY ? radius : 0)
+            let maxX = edgeFrame.maxX - (roundsMaxXMaxY ? radius : 0)
+            appendClipped(NSRect(x: minX, y: edgeFrame.maxY - thickness, width: maxX - minX, height: thickness))
         }
 
         for (corner, rounds) in [
@@ -703,7 +712,7 @@ enum PortalWorkspaceFrameOverlay {
             (.minXMaxY, roundsMinXMaxY),
             (.maxXMaxY, roundsMaxXMaxY),
         ] where rounds {
-            let segment = cornerArcSegment(corner, frame: frame, radius: radius, thickness: thickness, color: color)
+            let segment = cornerArcSegment(corner, frame: edgeFrame, radius: radius, thickness: thickness, color: color)
             if segment.rect.intersects(hostBounds) {
                 segments.append(segment)
             }

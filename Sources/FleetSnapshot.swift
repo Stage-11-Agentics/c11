@@ -147,7 +147,7 @@ extension TerminalController {
         return response
     }
 
-    func captureFleetSnapshot() -> FleetSnapshot {
+    func captureFleetSnapshot(mailboxBadges: MailboxBadgeStore = .shared) -> FleetSnapshot {
         let start = DispatchTime.now().uptimeNanoseconds
         let now = Date()
         let metadata = PanelMetadataStore.shared.readSnapshot()
@@ -171,7 +171,7 @@ extension TerminalController {
                     lastTurnEndedMs: JournalCoordinator.shared.cachedLastTurnEndedMs(panelID: id),
                     promptCache: PromptCacheSources.observation(forPanel: id, now: now),
                     promptCacheUnknown: PromptCacheSources.reportsUnknown(forPanel: id),
-                    unreadMail: MailboxBadgeStore.shared.knownSummary(panelId: id)?.unread,
+                    unreadMail: mailboxBadges.knownSummary(panelId: id)?.unread,
                     lastSeenAt: PanelSeenTracker.shared.lastSeenAt(panelId: id),
                     beingSeen: PanelSeenTracker.shared.isBeingSeen(panelId: id)
                 ))

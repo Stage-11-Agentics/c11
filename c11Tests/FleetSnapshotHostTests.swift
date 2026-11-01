@@ -175,6 +175,41 @@ final class FleetSnapshotHostTests: XCTestCase {
         XCTAssertEqual((after["panels"] as? [[String: Any]])?.compactMap { $0["panel_id"] as? String }, [newId.uuidString])
     }
 
+    func testUnreadCountMatchesRealMailboxAndUnknownDoesNotStartTracking() async throws {
+        let (_, manager) = addWindow()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let known = try agent(workspace)
+        let other = try XCTUnwrap(workspace.newTerminalSurface(inPane: workspace.bonsplitController.focusedPaneId!, focus: false))
+        let unknown = try agent(workspace, panel: other.id)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let badges = MailboxBadgeStore(mailboxesRoot: { _ in root })
+        defer { badges.forget(panelId: known); try? FileManager.default.removeItem(at: root) }
+        let inbox = try XCTUnwrap(badges.inboxURL(workspaceId: workspace.id, panelId: known))
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let id = MailboxULID.encode(timestampMs: 1_700_000_000_000,
+                                    random: [UInt8](repeating: 7, count: MailboxULID.randomByteCount))
+        let message: [String: Any] = ["version": 1, "id": id, "from": "fixture", "body": "unread"]
+        try JSONSerialization.data(withJSONObject: message).write(to: inbox.appendingPathComponent("\(id).msg"))
+        badges.track(panelId: known, workspaceId: workspace.id)
+        let deadline = Date().addingTimeInterval(5)
+        while badges.knownSummary(panelId: known) == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(badges.knownSummary(panelId: known)?.unread, 1)
+        let existing = MailboxPanelMail.summary(inbox: inbox)
+        for _ in 0..<20 {
+            let copy = TerminalController.shared.captureFleetSnapshot(mailboxBadges: badges)
+            let document = await Task.detached { copy.document() }.value
+            let rows = try XCTUnwrap(document["panels"] as? [[String: Any]])
+            XCTAssertEqual(rows.first { $0["panel_id"] as? String == known.uuidString }?["mailbox_unread_count"] as? Int,
+                           existing.unread)
+            XCTAssertTrue(rows.first { $0["panel_id"] as? String == unknown.uuidString }?["mailbox_unread_count"] is NSNull)
+        }
+        XCTAssertEqual(MailboxPanelMail.summary(inbox: inbox), existing)
+        XCTAssertEqual(badges.knownSummary(panelId: known), existing)
+        XCTAssertFalse(badges.isTracking(panelId: unknown))
+    }
+
     func testUnknownCacheHasExplicitNullsAndDetectedShellIsExcluded() async throws {
         let (_, manager) = addWindow()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)

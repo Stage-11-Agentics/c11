@@ -369,13 +369,18 @@ end tell'''
             assert self.selection() == before
             if i == 0: self.capture('05-refused-parameter')
             self.cancel()
+        self.passed('invalid decorated oversized short and unknown targets never navigate')
+        # The runtime correctly refuses closing a workspace's final panel.
+        # Keep an independent fixture panel so the pending target can close.
+        spare = self.call('panel.create', workspace_id=self.destination, type='terminal')['panel_id']
+        assert spare.lower() != self.target.lower() and self.selection() == before
         self.outside()
         self.call('panel.close', workspace_id=self.destination, panel_id=self.target)
         self.click('c11.external-link.confirm')
         self.wait(lambda: self.ax('c11.external-link.notice'), 'closed pending target shows notice')
         assert self.selection() == before
         self.cancel()
-        self.passed('invalid decorated oversized short unknown and closed targets never navigate')
+        self.passed('closed pending target shows notice and never navigates')
 
     def execute(self):
         self.precondition()

@@ -279,6 +279,10 @@ final class PanelLinkNoticePresenter {
     private var noticeView: NSView?
 
     func show(_ notice: PanelLinkNotice, in host: NSView) {
+        show(text: notice.text, in: host)
+    }
+
+    func show(text: String, in host: NSView) {
         noticeView?.removeFromSuperview()
         let card = NSVisualEffectView()
         card.material = .popover
@@ -287,7 +291,7 @@ final class PanelLinkNoticePresenter {
         card.wantsLayer = true
         card.layer?.borderWidth = 1
         card.layer?.borderColor = NSColor.separatorColor.cgColor
-        let label = NSTextField(wrappingLabelWithString: notice.text)
+        let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: 13)
         label.textColor = .labelColor
         label.setAccessibilityIdentifier("c11.panel-link.notice")

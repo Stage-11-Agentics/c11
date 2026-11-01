@@ -10261,7 +10261,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
-    private func appendSidebarLog(message: String, level: SidebarLogLevel, source: String?) {
+    func appendSidebarLog(message: String, level: SidebarLogLevel, source: String?) {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         logEntries.append(SidebarLogEntry(message: trimmed, level: level, source: source, timestamp: Date()))

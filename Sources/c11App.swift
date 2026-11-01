@@ -4505,6 +4505,8 @@ struct SettingsView: View {
     @AppStorage(BrowserLinkOpenSettings.browserHostWhitelistKey) private var browserHostWhitelist = BrowserLinkOpenSettings.defaultBrowserHostWhitelist
     @AppStorage(BrowserLinkOpenSettings.browserExternalOpenPatternsKey)
     private var browserExternalOpenPatterns = BrowserLinkOpenSettings.defaultBrowserExternalOpenPatterns
+    @AppStorage(BrowserExternalSchemeSettings.allowlistKey)
+    private var browserExternalSchemeAllowlist = ""
     @AppStorage(BrowserInsecureHTTPSettings.allowlistKey) private var browserInsecureHTTPAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
     @AppStorage(NotificationSoundSettings.key) private var notificationSound = NotificationSoundSettings.defaultValue
     @AppStorage(NotificationSoundSettings.customFilePathKey)
@@ -5942,6 +5944,32 @@ struct SettingsView: View {
                 SettingsCardDivider()
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                SettingsCardRow(
+                    String(localized: "settings.browser.externalSchemeAllowlist", defaultValue: "Sites Allowed to Open Apps"),
+                    subtitle: String(localized: "settings.browser.externalSchemeAllowlist.subtitle", defaultValue: "A page that links to another app (vnc:, smb:, zoommtg: and the like) asks before it opens. \u{201C}Always allow\u{201D} adds a line here: the site, then the link type (for example: https://zoom.us zoommtg). Delete a line to make that site ask again.")
+                ) {
+                    EmptyView()
+                }
+
+                TextEditor(text: $browserExternalSchemeAllowlist)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 120)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .accessibilityIdentifier("SettingsBrowserExternalSchemeAllowlistField")
+            }
+
+            SettingsCardDivider()
+
             VStack(alignment: .leading, spacing: 8) {
                 Text(String(localized: "settings.browser.httpAllowlist", defaultValue: "HTTP Hosts Allowed in Embedded Browser"))
                     .font(.system(size: 13, weight: .semibold))
@@ -6746,6 +6774,7 @@ struct SettingsView: View {
         interceptTerminalOpenCommandInCmuxBrowser = BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInCmuxBrowser
         browserHostWhitelist = BrowserLinkOpenSettings.defaultBrowserHostWhitelist
         browserExternalOpenPatterns = BrowserLinkOpenSettings.defaultBrowserExternalOpenPatterns
+        browserExternalSchemeAllowlist = ""
         browserInsecureHTTPAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
         browserInsecureHTTPAllowlistDraft = BrowserInsecureHTTPSettings.defaultAllowlistText
         notificationSound = NotificationSoundSettings.defaultValue

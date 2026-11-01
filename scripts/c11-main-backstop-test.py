@@ -32,6 +32,13 @@ class Acceptance(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / "state").mkdir()
+        if not Path(m.poller.DEVELOPER_DIR).is_dir():
+            # Off Atlas, /usr/bin/python3 and xcrun need a DEVELOPER_DIR that exists.
+            selected = subprocess.run(["/usr/bin/xcode-select", "-p"], text=True, capture_output=True).stdout.strip()
+            if selected:
+                developer = patch.object(m.poller, "DEVELOPER_DIR", selected)
+                developer.start()
+                self.addCleanup(developer.stop)
 
     def test_main_history_coalesces_and_refuses_rewrites(self):
         def g(repo, *args):
@@ -223,6 +230,12 @@ if os.environ.get('C11_TEST_SCHEME') == 'c11-logic':
             self.assertEqual(len(calls), 2 if failures == 2 else 3, label)
             if expected == "error":
                 self.assertIn("timed out after 120s", stages[-1]["unreadable"])
+                with patch.object(m, "api") as api:
+                    m.post({"sha": SHA, "state": state, "stages": stages, "seconds": 104})
+                description = [arg for arg in api.call_args[0] if arg.startswith("description=")][0]
+                self.assertTrue(description.startswith("description=result unreadable: xcresulttool timed out after 120s"),
+                                description)
+                self.assertLessEqual(len(description) - len("description="), 140)
 
     def cycle_fixture(self):
         slots = self.root / "slots"

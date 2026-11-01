@@ -1186,12 +1186,12 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
         world.alive[99999999] = True
         self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
         self.assertEqual(world.kill_log, [])
-        # A gap with no guest restarts the wait.
+        # A later guest does not yield the build once the budget is spent.
         world.guest_names = []
         self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
         world.guest_names = ["c11-sb-next"]
-        self.assertEqual(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}), "guest")
-        self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
+        self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
+        self.assertEqual(world.kill_log, [])
 
     def test_guest_wait_clock_does_not_carry_over_an_idle_gap(self):
         world = World(body=[pr()])
@@ -1212,6 +1212,33 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
         world.tip = SHA_B  # the new head is its branch tip, so only the guest can hold it
         self.assertEqual(supervisor.poll_once(), "no-start")
         self.assertEqual(supervisor.spawns, [])
+
+    def test_guests_that_come_and_go_share_one_ten_minute_budget(self):
+        world = World(body=[pr()])
+        world.alive[99999999] = True
+        record = {"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}
+        supervisor = poller.Supervisor(self.root, world)
+        # Round 1: a guest holds the head for six minutes, then leaves.
+        world.guest_names = ["c11-sb-one"]
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        world.sleep(360)
+        world.guest_names = []
+        # The build starts; a second guest arrives four minutes into the budget and yields it.
+        self.assertIsNone(supervisor.watch(record))
+        world.sleep(60)
+        world.guest_names = ["c11-sb-two"]
+        self.assertEqual(supervisor.watch(record), "guest")
+        world.alive[99999999] = True
+        # Ten minutes after the first hold, the head builds and a third guest cannot yield it.
+        world.sleep(poller.GUEST_WAIT_S - 420)
+        world.guest_names = []
+        world.sleep(5)
+        world.guest_names = ["c11-sb-three"]
+        world.body = [pr()]
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertIsNone(supervisor.watch(record))
+        self.assertEqual([body["description"] for body in world.posts if body["state"] == "pending"],
+                         ["yielded to Atlas work"])
 
     def test_guest_wait_clock_starts_only_for_a_waiting_feature_head(self):
         world = World(body=[pr(number=8, ref="release/1.8.0")])

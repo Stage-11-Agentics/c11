@@ -1954,15 +1954,19 @@ class Supervisor:
     def _guest_blocks_features(self, guests, feature_waiting=True):
         """True while a running guest should hold feature heads, at most GUEST_WAIT_S.
 
-        One clock starts when a guest first holds a feature head and clears on any
-        check that sees no guest or no feature head waiting; every cycle checks.
-        Once it is GUEST_WAIT_S old, feature heads start and run as if no guest
-        were present until the guests are gone. An unreadable tart list counts as
-        a guest, so it expires the same way.
+        One budget for all feature work: the clock starts on the first check where
+        a feature head is waiting (queued, or its build running) and a guest is
+        present. A guest-free check does not reset it, so guests that come and go
+        cannot hold feature work off past GUEST_WAIT_S. It clears only on a cycle
+        with no feature head queued and no feature build running. Once expired,
+        feature heads start and a running feature build is not yielded to a later
+        guest. An unreadable tart list counts as a guest and expires the same way.
         """
-        if not guests or not feature_waiting:
+        if not feature_waiting:
             self.guest_wait_since = None
             self.guest_wait_logged = False
+            return False
+        if not guests:
             return False
         now = self.world.monotonic()
         if self.guest_wait_since is None:

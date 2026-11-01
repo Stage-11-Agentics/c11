@@ -224,12 +224,14 @@ def run_stages(root, repo, sha, attempt, stages, env, run):
         if code == 75:
             raise Deferred("build lock unavailable")
         state = "failure" if code else "success"
+        description = None
         if result is not None and code == 0:
-            state, _ = poller.classify_result(elapsed, summary, unreadable)
+            state, description = poller.classify_result(elapsed, summary, unreadable)
         row = {"stage": name, "exit": code, "seconds": round(elapsed, 3), "state": state, "summary": summary,
                "run": run}
         if unreadable:
             row["unreadable"] = unreadable
+            row["description"] = description
         outcomes.append(row)
         record(root, "stage", sha=sha, **row)
         if state != "success":
@@ -268,11 +270,19 @@ def child(root, attempt):
         return 0
 
 
+def status_description(result):
+    """An unreadable result bundle says why; classify_result already fits the 140-character limit."""
+    if result["state"] == "error":
+        for stage in result.get("stages") or []:
+            if stage.get("unreadable") and stage.get("description"):
+                return stage["description"][:140]
+    return f"Atlas app, logic, host, CLI gate: {result['state']} ({int(result['seconds'])}s)"
+
+
 def post(result):
     if result.get("sha") and result["state"] in ("success", "failure", "error"):
         api("statuses/" + result["sha"], "-X", "POST", "-f", "context=" + CONTEXT,
-            "-f", "state=" + result["state"], "-f",
-            f"description=Atlas app, logic, host, CLI gate: {result['state']} ({int(result['seconds'])}s)")
+            "-f", "state=" + result["state"], "-f", "description=" + status_description(result))
 
 
 def cycle(root, publish=False, force=False):

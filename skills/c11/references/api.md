@@ -883,7 +883,7 @@ plain `ERROR:` lines. Legacy V1 multiline replies retain their idle framing.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal panel. Find the browser panel ref with `c11 tree` and pass `--panel <ref>`.
 - **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged panel.
 - **Panel does not respond after creation** — background terminals initialize without workspace selection. Retry the explicitly targeted send after attachment; inspect its `queued`/`delivered` result. Never select a workspace to initialize it.
-- **Caller cannot reach `c11`** (`Failed to configure socket timeout`) — the process is not a descendant of c11. That is the default socket mode. A launchd job and a `nohup` whose parent has exited are refused, even with `--socket` set. Headless `claude -p` is reparented the same way. Run the command from a panel. Interactive `claude --dangerously-skip-permissions` launched via `c11 send` stays a descendant.
+- **Caller cannot reach `c11`** — the default socket mode admits only a descendant of c11. A launchd job, a `nohup` whose parent has exited, and headless `claude -p` are refused, even with `--socket` set. A rejected connection may surface as `Failed to configure socket timeout`. Check the caller's ancestry and the active socket mode rather than inferring them from that string. Run the command from a panel. Interactive `claude --dangerously-skip-permissions` launched via `c11 send` stays a descendant.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
 ## Notes

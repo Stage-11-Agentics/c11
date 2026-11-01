@@ -32,8 +32,9 @@ class Acceptance(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / "state").mkdir()
-        if not Path(m.poller.DEVELOPER_DIR).is_dir():
-            # Off Atlas, /usr/bin/python3 and xcrun need a DEVELOPER_DIR that exists.
+        if not Path(m.poller.DEVELOPER_DIR).is_dir() and Path("/usr/bin/xcode-select").exists():
+            # On a Mac without the pinned Xcode, /usr/bin/python3 needs a DEVELOPER_DIR
+            # that exists. Linux has no xcode-select and ignores DEVELOPER_DIR.
             selected = subprocess.run(["/usr/bin/xcode-select", "-p"], text=True, capture_output=True).stdout.strip()
             if selected:
                 developer = patch.object(m.poller, "DEVELOPER_DIR", selected)

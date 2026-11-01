@@ -160,14 +160,16 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
   SHA=<full tested head sha from the release PR body>
   test -n "$SHA" || { echo "STOP: no tested head"; exit 1; }
   test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
-  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | grep -m1 MARKETING_VERSION   # must read X.Y.Z
-  git show "$SHA:CHANGELOG.md" | grep -m1 '^## \[X.Y.Z\]'                             # the release needs it
-  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -qx success || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
+  # Readers consume their whole input (no grep -q or -m1): under pipefail an early exit
+  # kills the writer with SIGPIPE (141) and a valid head reads as a STOP.
+  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | awk '/MARKETING_VERSION/ && !p {print; p=1}'   # must read X.Y.Z
+  git show "$SHA:CHANGELOG.md" | awk '/^## \[X.Y.Z\]/ && !p {print; p=1}'                               # the release needs it
+  gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -x success >/dev/null || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
   gh pr checks <release PR> || { echo "STOP: a PR check is failing or pending"; exit 1; }
   # The tested commit must carry the release path (an old-base hotfix may not; see Hotfix):
-  git show "$SHA:.github/workflows/release.yml" | awk '/^on:/{f=1;next} /^[^ #]/{f=0} f' | grep -qE '^[[:space:]]+push:' \
+  git show "$SHA:.github/workflows/release.yml" | awk '/^on:/{f=1;next} /^[^ #]/{f=0} f' | grep -E '^[[:space:]]+push:' >/dev/null \
     && { echo "STOP: release.yml at $SHA still starts on a tag push"; exit 1; }
-  git show "$SHA:scripts/release-local.sh" | grep -q 'C11_SIGNING_KEYCHAIN' \
+  git show "$SHA:scripts/release-local.sh" | grep 'C11_SIGNING_KEYCHAIN' >/dev/null \
     || { echo "STOP: release-local.sh at $SHA has no signing-keychain mode"; exit 1; }
   ```
   Run the gate as a script or in an agent's shell: `exit` closes an interactive terminal.

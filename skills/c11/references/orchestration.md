@@ -170,11 +170,11 @@ or a workflow artifact. Do not make the child guess where acknowledgement belong
 The manual pattern below remains for launches into an *existing* panel, or
 when you need custom composition.
 
-Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, breaks the auth chain):
+Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, reparented away from c11):
 
-- **`claude -p` (headless)** breaks the c11 auth chain. The subprocess is reparented to `launchd` and cannot call any `c11` command. Sub-agents lose the ability to self-report.
+- **`claude -p` (headless)** is reparented to `launchd`. The default socket mode admits only a descendant of c11, so that process cannot call `c11`. Sub-agents then cannot self-report.
 - **Plain `claude`** stalls on every tool call waiting for permission approvals nobody answers.
-- **`claude --dangerously-skip-permissions` in an interactive area** inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can self-report via `c11 set-status`, `c11 log`, `c11 set-progress`, `c11 set-metadata`.
+- **`claude --dangerously-skip-permissions` in an interactive area** inherits c11 env vars, stays a descendant of c11, and skips approvals. Sub-agents can self-report via `c11 set-status`, `c11 log`, `c11 set-progress`, `c11 set-metadata`.
 
 > **`claude` on PATH is the c11 wrapper.** Inside a c11 panel, `claude` resolves to `Resources/bin/claude` — a PATH-scoped wrapper that injects session-id and hook settings so the sidebar gets `claude_code` status. Always invoke `claude --dangerously-skip-permissions` explicitly in anything you send to an area.
 
@@ -207,6 +207,8 @@ c11 send --workspace $WS --panel $PANEL "Your panel is named 'Lint Fixes'; your 
 ```
 
 **One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls). `send` refuses a recognized operator draft or question/plan dialog and types nothing; A refused send exits nonzero and types nothing: do not press Enter afterwards, and if the operator is mid-draft raise a flag (`c11 raise-flag`) instead of retrying. `send` submits its own Return, so it rarely needs a `send-key enter` after it; when you chain one, write `c11 send --panel <t> "…" && c11 send-key --panel <t> enter` so a refusal stops the chain.
+
+**Bind the directory in the launch.** `launch-agent --cwd <path>` starts the agent there. `new-panel`, `new-split`, and `new-area` take the same `--cwd` (`inherit` is the default). A `cd` in one `send` and the program in the next can run somewhere else. When the shell already exists, use one send: `cd <absolute-path> && <program>`.
 
 ### Spawning multiple panels at once
 
@@ -290,7 +292,7 @@ OpenCode has a plugin API with lifecycle events (`session.idle`, `permission.ask
 ### claude-code
 
 - **Wrapper on PATH.** Inside a c11 panel, `claude` resolves to `Resources/bin/claude`, a PATH-scoped wrapper that injects the session id and hook settings so the sidebar gets `claude_code` status. The launch command stored in `$C11_DEFAULT_AGENT_LAUNCH` always invokes this wrapper.
-- **Never `claude -p`.** Headless mode breaks the auth chain; sub-agents cannot self-report. The default-agent resolver uses `claude --dangerously-skip-permissions`, which is the interactive form.
+- **Never `claude -p`.** Headless mode is reparented to `launchd`, and the default socket mode refuses any caller that is not a descendant of c11. The default-agent resolver uses `claude --dangerously-skip-permissions`, which stays in the panel.
 - **Multi-claude polling deadlock.** `c11 list-status` aggregates per workspace; a second claude in the same workspace makes the `claude_code` row never settle on `Idle`, deadlocking any `until ... grep Idle` poll. Use the one-shot argv pattern (Ready-state handoff above) when any sibling claude is in flight.
 
 ### codex

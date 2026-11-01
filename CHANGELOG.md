@@ -6,6 +6,11 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Added
+
+- **Pickup wait in mailbox Insights.** Insights shows how long received mail waited before the agent took it: the median, p90 and slowest wait, a five-step distribution, and the median per sender, over the claims of the last 14 days. It follows every Insights filter. Claims come from the workspace's own claim records, read off the main thread from a bounded tail with an offset cache. Mail taken before c11 1.7.5 began recording claims has no pickup time, and a note says how many such messages there are.
+- **Jump from a sender to its conversation.** In the mailbox drawer, a sender's name on a Received card or an Insights message, and a recipient on a Sent card, open that peer's thread in Conversations. With a sender or recipient filter on, Insights offers Open conversation. Unstamped mail opens its name-only row; a name is never matched to a panel.
+
 ## [1.7.7] - 2026-11-01
 
 Headline: **c11 1.7.7. c11 brings back your previous session at launch without asking, the mailbox drawer gains a Conversations tab and clickable links, and a web page must ask before it opens another app.**

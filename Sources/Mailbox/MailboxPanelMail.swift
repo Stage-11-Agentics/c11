@@ -782,6 +782,10 @@ extension MailboxPanelMail {
         /// off the main thread so a click never touches the calendar.
         var hour: Int? = nil
         var day: Int? = nil
+        /// Taken mail with a claim row in the pickup window: when the agent
+        /// took it, and how long it had waited since it landed here.
+        var claimedAt: Date? = nil
+        var wait: TimeInterval? = nil
     }
 
     /// One message this panel sent, with where each recipient's copy stands.
@@ -861,6 +865,11 @@ extension MailboxPanelMail {
         /// Every sent entry the ledger holds, newest first.
         var sentRecords: [SentRecord] = []
 
+        /// How long received mail waited before the agent took it, from
+        /// the workspace's claim rows; what the claim log could cover.
+        var pickup = Pickup()
+        var claimLog = ClaimLog.Coverage()
+
         /// Messages this panel sent that the ledger still records.
         var sent = 0
         var recipients = Ranking()
@@ -909,10 +918,24 @@ extension MailboxPanelMail {
         scanLimit: Int = insightsScanLimit,
         calendar: Calendar = .current,
         cache: HeaderCache? = .shared,
+        claimLog: ClaimLog? = .shared,
         fileManager: FileManager = .default
     ) -> Insights {
         var result = Insights()
         result.scannedAt = now
+        // The claim rows live in the log of the mailboxes this inbox is in,
+        // keyed by the inbox's own panel id.
+        var claims: [String: Date] = [:]
+        if let claimLog, let panel = UUID(uuidString: inbox.lastPathComponent) {
+            let snapshot = claimLog.snapshot(
+                log: inbox.deletingLastPathComponent().appendingPathComponent(MailboxLayout.dispatchLogFileName),
+                panel: panel,
+                now: now
+            )
+            claims = snapshot.claims
+            result.claimLog = snapshot.coverage
+        }
+        let pickupStart = now.addingTimeInterval(-pickupWindow)
         let unreadFiles = envelopeFiles(in: inbox, fileManager: fileManager)
         let readFiles = envelopeFiles(in: MailboxDrain.readURL(inbox: inbox), fileManager: fileManager)
         result.unread = unreadFiles.count
@@ -976,14 +999,26 @@ extension MailboxPanelMail {
                 cache?.store(header, for: cachePrefix + name)
             }
             result.scanned += 1
+            let fileId = entry.url.deletingPathExtension().lastPathComponent
+            var claimedAt: Date?
+            var wait: TimeInterval?
+            // A claim renames the file into `_read/` and keeps its time, so
+            // its landing is the same moment the unread file showed.
+            if !entry.unread, let claim = claims[fileId], claim >= pickupStart {
+                claimedAt = claim
+                wait = landingDate(of: entry.url, fileManager: fileManager)
+                    .map { max(0, claim.timeIntervalSince($0)) }
+            }
             result.records.append(Record(
-                fileId: entry.url.deletingPathExtension().lastPathComponent,
+                fileId: fileId,
                 unread: entry.unread,
                 date: entry.date,
                 landed: entry.landed,
                 header: header,
                 hour: entry.date.flatMap { hourIndex($0, now: now) },
-                day: entry.date.flatMap { dayIndex($0, dayStarts: result.dayStarts, calendar: calendar) }
+                day: entry.date.flatMap { dayIndex($0, dayStarts: result.dayStarts, calendar: calendar) },
+                claimedAt: claimedAt,
+                wait: wait
             ))
             senders[header.from, default: (0, 0)].count += 1
             if entry.unread { senders[header.from, default: (0, 0)].unread += 1 }
@@ -998,6 +1033,7 @@ extension MailboxPanelMail {
         }
         result.senders = ranking(senders.map { Tally(name: $0.key, count: $0.value.count, unread: $0.value.unread) })
         result.topics = ranking(topics.map { Tally(name: $0.key, count: $0.value) })
+        result.pickup = pickup(result.records, now: now)
 
         let (entries, total) = MailboxSentLedger.entries(senderInbox: inbox, limit: Int.max, fileManager: fileManager)
         result.sent = total
@@ -1170,6 +1206,17 @@ extension MailboxPanelMail {
         var untitled = 0
         /// The newest `sliceMessageLimit` matching messages.
         var messages: [Record] = []
+        /// Pickup waits of the matching messages, so the section follows
+        /// every received filter.
+        var pickup = Pickup()
+        /// With a sender filter on, the conversations mail under that name
+        /// belongs to, newest first: one per stamped panel, plus its
+        /// name-only row for unstamped mail. A name is never mapped to a
+        /// panel, so a name several panels used has several.
+        var fromPeers: [PeerKey] = []
+        /// The sender filter this slice was computed for, so a view showing
+        /// the previous slice while the next computes never offers its peers.
+        var fromFilter: String?
     }
 
     static func hourIndex(_ date: Date, now: Date) -> Int? {
@@ -1209,9 +1256,17 @@ extension MailboxPanelMail {
         var result = Slice()
         var senders: [String: (count: Int, unread: Int)] = [:]
         var topics: [String: Int] = [:]
+        var matched: [Record] = []
+        var peers = Set<PeerKey>()
+        result.fromFilter = filter.from
         for record in insights.records {
+            if let from = filter.from, record.header.from == from {
+                let key = peerKey(of: record.header)
+                if peers.insert(key).inserted { result.fromPeers.append(key) }
+            }
             let all = matches(record, filter, now: now, dayStarts: starts, calendar: calendar)
             if all {
+                matched.append(record)
                 result.count += 1
                 if record.unread {
                     result.unread += 1
@@ -1251,6 +1306,7 @@ extension MailboxPanelMail {
         }
         result.senders = ranking(senders.map { Tally(name: $0.key, count: $0.value.count, unread: $0.value.unread) }, pinned: filter.from)
         result.topics = ranking(topics.map { Tally(name: $0.key, count: $0.value) }, pinned: filter.topic)
+        result.pickup = pickup(matched, now: now)
         return result
     }
 
@@ -1433,7 +1489,7 @@ extension MailboxPanelMail {
                 continue
             }
             index.scanned += 1
-            let key = header.senderPanel.map(PeerKey.panel) ?? .name(header.from)
+            let key = peerKey(of: header)
             var conversation = conversations[key] ?? Conversation(key: key)
             if newestHeaders[key] == nil {
                 newestHeaders[key] = header
@@ -1657,6 +1713,19 @@ extension MailboxPanelMail {
         return thread
     }
 
+    /// The conversation a received message is in, keyed as the index keys
+    /// it: its sender stamp's panel, else its `from` as a name. Nil for a
+    /// file that is not a readable envelope, which no conversation holds.
+    static func peerKey(of message: Message) -> PeerKey? {
+        guard message.problem == nil else { return nil }
+        if let panel = message.senderPanelId { return .panel(panel) }
+        return .name(message.from.isEmpty ? "?" : String(message.from.prefix(Header.fieldLimit)))
+    }
+
+    static func peerKey(of header: Header) -> PeerKey {
+        header.senderPanel.map(PeerKey.panel) ?? .name(header.from)
+    }
+
     /// A received envelope, read in full, is in `key`'s conversation: its
     /// stamp names that panel, or it is unstamped and its `from` is that name
     /// as the header keyed it.
@@ -1872,5 +1941,274 @@ extension MailboxPanelMail {
         // to this panel itself. A fixed order keeps the thread still.
         if lhs.direction != rhs.direction { return lhs.direction == .sent }
         return lhs.unread && !rhs.unread
+    }
+}
+
+// MARK: - Pickup wait
+
+extension MailboxPanelMail {
+
+    /// Claims older than this are not counted, and the claim cache drops them.
+    static let pickupWindow: TimeInterval = TimeInterval(insightsDays) * 86400
+    /// Upper bounds of the distribution's steps; the last step is everything over 2 h.
+    static let pickupBucketLimits: [TimeInterval] = [60, 300, 1800, 7200]
+    /// The per-sender medians show at most this many senders.
+    static let pickupSenderCount = 4
+
+    /// One sender's median wait, over the claims of its mail.
+    struct SenderWait: Equatable, Identifiable {
+        var id: String { name }
+        let name: String
+        let claims: Int
+        let median: TimeInterval
+    }
+
+    /// How long taken mail waited in this inbox before the agent took it:
+    /// from landing (the later of its ULID time and the file's time) to the
+    /// claim row's time.
+    struct Pickup: Equatable {
+        var claims = 0
+        var median: TimeInterval?
+        var p90: TimeInterval?
+        var slowest: TimeInterval?
+        /// Claims per step of `pickupBucketLimits`, then the rest.
+        var buckets: [Int] = Array(repeating: 0, count: MailboxPanelMail.pickupBucketLimits.count + 1)
+        /// The senders with the most claims, most first.
+        var senders: [SenderWait] = []
+        /// Taken messages sent within the window that have no claim row:
+        /// taken before claims were recorded, or before the claim log's
+        /// readable part starts.
+        var unclaimed = 0
+    }
+
+    /// The figures for `records` (any received slice). Pure.
+    static func pickup(_ records: [Record], now: Date) -> Pickup {
+        let start = now.addingTimeInterval(-pickupWindow)
+        var result = Pickup()
+        var waits: [TimeInterval] = []
+        var bySender: [String: [TimeInterval]] = [:]
+        for record in records where !record.unread {
+            if let wait = record.wait {
+                waits.append(wait)
+                bySender[record.header.from, default: []].append(wait)
+                result.buckets[pickupBucket(wait)] += 1
+            } else if record.claimedAt == nil, let date = record.date, date >= start {
+                result.unclaimed += 1
+            }
+        }
+        guard !waits.isEmpty else { return result }
+        waits.sort()
+        result.claims = waits.count
+        result.median = rank(waits, 0.5)
+        result.p90 = rank(waits, 0.9)
+        result.slowest = waits.last
+        result.senders = bySender
+            .map { name, values in SenderWait(name: name, claims: values.count, median: rank(values.sorted(), 0.5)) }
+            .sorted { $0.claims != $1.claims ? $0.claims > $1.claims : $0.name < $1.name }
+            .prefix(pickupSenderCount)
+            .map { $0 }
+        return result
+    }
+
+    static func pickupBucket(_ wait: TimeInterval) -> Int {
+        pickupBucketLimits.firstIndex { wait < $0 } ?? pickupBucketLimits.count
+    }
+
+    /// Nearest rank: the smallest value at least `quantile` of `sorted` do not exceed.
+    static func rank(_ sorted: [TimeInterval], _ quantile: Double) -> TimeInterval {
+        let index = Int((quantile * Double(sorted.count)).rounded(.up)) - 1
+        return sorted[min(max(0, index), sorted.count - 1)]
+    }
+
+    /// The C11-550 `claimed` rows of one workspace's `_dispatch.log`: a drain
+    /// (`recv --ack` or a hook) appends one per envelope it took, with the
+    /// claim time and the inbox's panel. The log only grows, so each look
+    /// reads only the bytes appended since the last, from the offset this
+    /// cache keeps per file. The first look reads at most the last
+    /// `tailBytes`; so does a look after more than that was appended, which
+    /// starts over from there. A replaced or shortened file starts over too.
+    /// Rows older than `pickupWindow` are dropped. Off the main thread only.
+    final class ClaimLog {
+        static let shared = ClaimLog()
+        /// One log keeps at most this many claims; past it the oldest go.
+        static let capacity = 50_000
+        /// At most this many logs are cached; past it the cache starts over.
+        static let logCapacity = 64
+
+        /// What the reader could see of the log.
+        struct Coverage: Equatable {
+            /// The workspace's dispatch log exists.
+            var exists = false
+            /// It exists but could not be read.
+            var unreadable = false
+            /// Set when the log was read from a tail, not its start: the
+            /// time of the oldest row read. Claims before it are unknown.
+            var readFrom: Date?
+        }
+
+        struct Snapshot: Equatable {
+            /// One panel's claims in the window: envelope id to its earliest claim.
+            var claims: [String: Date] = [:]
+            var coverage = Coverage()
+        }
+
+        private struct State {
+            var device: UInt64
+            var inode: UInt64
+            var offset: Int64
+            var readFrom: Date?
+            var claims: [UUID: [String: Date]] = [:]
+            var count = 0
+        }
+
+        private let lock = NSLock()
+        private var states: [String: State] = [:]
+        private let tailBytes: Int
+
+        init(tailBytes: Int = 8 * 1024 * 1024) {
+            self.tailBytes = max(1, tailBytes)
+        }
+
+        func snapshot(log: URL, panel: UUID, now: Date) -> Snapshot {
+            lock.lock(); defer { lock.unlock() }
+            let path = log.standardizedFileURL.path
+            let fd = open(path, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC | O_NOFOLLOW)
+            guard fd >= 0 else {
+                let missing = errno == ENOENT || errno == ENOTDIR
+                states.removeValue(forKey: path)
+                return Snapshot(coverage: Coverage(exists: !missing, unreadable: !missing))
+            }
+            defer { close(fd) }
+            var info = stat()
+            guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+                states.removeValue(forKey: path)
+                return Snapshot(coverage: Coverage(exists: true, unreadable: true))
+            }
+            let size = Int64(info.st_size)
+            let device = UInt64(bitPattern: Int64(info.st_dev)), inode = UInt64(info.st_ino)
+            let limit = Int64(tailBytes)
+            var state: State
+            var fresh = false
+            if let known = states[path], known.device == device, known.inode == inode,
+               known.offset <= size, size - known.offset <= limit {
+                state = known
+            } else {
+                fresh = true
+                let start = max(0, size - limit)
+                state = State(device: device, inode: inode, offset: start)
+            }
+            if size > state.offset {
+                // A fresh tail reads one byte early to tell whether its first
+                // line starts exactly at the cut.
+                let readStart = fresh && state.offset > 0 ? state.offset - 1 : state.offset
+                guard let data = Self.read(fd: fd, from: readStart, count: Int(size - readStart)) else {
+                    states.removeValue(forKey: path)
+                    return Snapshot(coverage: Coverage(exists: true, unreadable: true))
+                }
+                consume(data, readStart: readStart, fresh: fresh, into: &state)
+            }
+            prune(&state, now: now)
+            if states[path] == nil, states.count >= Self.logCapacity { states.removeAll(keepingCapacity: true) }
+            states[path] = state
+            let start = now.addingTimeInterval(-MailboxPanelMail.pickupWindow)
+            return Snapshot(
+                claims: (state.claims[panel] ?? [:]).filter { $0.value >= start },
+                coverage: Coverage(exists: true, readFrom: state.readFrom)
+            )
+        }
+
+        /// Records every complete line's claim and advances the offset past
+        /// the last newline, so a row still being written is read next time.
+        private func consume(_ data: Data, readStart: Int64, fresh: Bool, into state: inout State) {
+            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+                let count = raw.count
+                var begin = 0
+                if fresh && readStart > 0 {
+                    guard let newline = memchr(base, 0x0A, count) else {
+                        // Not one whole line in the tail: nothing to read.
+                        state.offset = readStart + Int64(count)
+                        return
+                    }
+                    begin = UnsafeRawPointer(base).distance(to: UnsafeRawPointer(newline)) + 1
+                }
+                var end = count
+                while end > begin, base[end - 1] != 0x0A { end -= 1 }
+                guard end > begin else { return }
+                if fresh && readStart > 0 {
+                    // The oldest row read: claims before it were cut off.
+                    var lineEnd = begin
+                    while lineEnd < end, base[lineEnd] != 0x0A { lineEnd += 1 }
+                    state.readFrom = Self.row(base + begin, lineEnd - begin)
+                        .flatMap { ($0["ts"] as? String).flatMap(MailboxPanelMail.parseTimestamp) }
+                        ?? state.readFrom
+                }
+                let needle = Array("\"claimed\"".utf8)
+                var cursor = begin
+                while cursor < end,
+                      let hit = memmem(base + cursor, end - cursor, needle, needle.count) {
+                    let at = UnsafeRawPointer(base).distance(to: UnsafeRawPointer(hit))
+                    var lineStart = at
+                    while lineStart > begin, base[lineStart - 1] != 0x0A { lineStart -= 1 }
+                    var lineEnd = at
+                    while lineEnd < end, base[lineEnd] != 0x0A { lineEnd += 1 }
+                    if let object = Self.row(base + lineStart, lineEnd - lineStart),
+                       object["event"] as? String == "claimed",
+                       let id = object["id"] as? String, !id.isEmpty, id.utf8.count <= 64,
+                       let ts = (object["ts"] as? String).flatMap(MailboxPanelMail.parseTimestamp),
+                       let panel = (object["recipient_panel"] as? String).flatMap(UUID.init(uuidString:)) {
+                        if let earlier = state.claims[panel]?[id] {
+                            if ts < earlier { state.claims[panel]?[id] = ts }
+                        } else {
+                            state.claims[panel, default: [:]][id] = ts
+                            state.count += 1
+                        }
+                    }
+                    cursor = lineEnd + 1
+                }
+                state.offset = readStart + Int64(end)
+            }
+        }
+
+        private func prune(_ state: inout State, now: Date) {
+            var cutoff = now.addingTimeInterval(-MailboxPanelMail.pickupWindow)
+            if state.count > Self.capacity {
+                // Keep the newest `capacity`: the claim time that many back.
+                let times = state.claims.values.flatMap(\.values).sorted(by: >)
+                cutoff = max(cutoff, times[min(Self.capacity, times.count) - 1])
+            }
+            var count = 0
+            for (panel, claims) in state.claims {
+                let kept = claims.filter { $0.value >= cutoff }
+                state.claims[panel] = kept.isEmpty ? nil : kept
+                count += kept.count
+            }
+            state.count = count
+        }
+
+        private static func row(_ start: UnsafePointer<UInt8>, _ length: Int) -> [String: Any]? {
+            guard length > 0 else { return nil }
+            let data = Data(bytes: start, count: length)
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        }
+
+        private static func read(fd: Int32, from offset: Int64, count: Int) -> Data? {
+            guard count > 0 else { return Data() }
+            var buffer = Data(count: count)
+            var filled = 0
+            while filled < count {
+                let got = buffer.withUnsafeMutableBytes { raw in
+                    pread(fd, raw.baseAddress!.advanced(by: filled), count - filled, off_t(offset) + off_t(filled))
+                }
+                if got < 0 {
+                    if errno == EINTR { continue }
+                    return nil
+                }
+                if got == 0 { break }
+                filled += got
+            }
+            if filled < buffer.count { buffer.removeSubrange(filled..<buffer.count) }
+            return buffer
+        }
     }
 }

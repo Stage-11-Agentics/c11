@@ -1115,6 +1115,272 @@ final class MailboxPanelMailTests: XCTestCase {
         )
         XCTAssertNotEqual(signature(), first)
     }
+
+    // MARK: - Pickup wait (claim rows)
+
+    private var dispatchLog: URL { root.appendingPathComponent(MailboxLayout.dispatchLogFileName) }
+
+    private func claim(_ ids: [String], panel: UUID? = nil, at date: Date) {
+        MailboxClaimLog.append(
+            ids: ids, recipientPanel: panel ?? thisPanel, byPanel: panel ?? thisPanel,
+            via: "recv", mailboxesRoot: root, now: date
+        )
+    }
+
+    private func appendToLog(_ text: String) throws {
+        let handle = try FileHandle(forWritingTo: dispatchLog)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(text.utf8))
+        try handle.close()
+    }
+
+    func testClaimLogKeepsOnlyThisPanelsClaimsAndReadsOnlyWhatWasAppended() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let other = UUID()
+        let first = ulid(now - 600), second = ulid(now - 300), later = ulid(now - 100)
+        claim([first], at: now - 590)
+        claim([first], at: now - 500)   // a second claim of one id keeps the earliest
+        claim([second], panel: other, at: now - 290)   // another inbox's copy
+        try appendToLog(#"{"event":"copied","id":"\#(second)","recipient":"x","ts":"2026-01-01T00:00:00Z"}"# + "\n")
+        // A row still being written: not read until its newline lands.
+        let partial = MailboxClaimLog.line(id: later, recipientPanel: thisPanel, byPanel: thisPanel, via: "hook", at: now - 90)
+        try appendToLog(String(partial.dropLast(20)))
+
+        let log = MailboxPanelMail.ClaimLog()
+        var snapshot = log.snapshot(log: dispatchLog, panel: thisPanel, now: now)
+        XCTAssertEqual(Set(snapshot.claims.keys), [first])
+        XCTAssertEqual(snapshot.claims[first]!.timeIntervalSince1970, (now - 590).timeIntervalSince1970, accuracy: 0.01)
+        XCTAssertEqual(snapshot.coverage, MailboxPanelMail.ClaimLog.Coverage(exists: true, readFrom: nil))
+        XCTAssertEqual(log.snapshot(log: dispatchLog, panel: other, now: now).claims.keys.sorted(), [second])
+
+        // Overwrite the bytes already read, in place: the next look must not
+        // read them again, only the rest of the partial row and what follows.
+        let handle = try FileHandle(forWritingTo: dispatchLog)
+        try handle.seek(toOffset: 0)
+        try handle.write(contentsOf: Data(repeating: UInt8(ascii: "x"), count: 40))
+        try handle.close()
+        try appendToLog(String(partial.suffix(20)))
+        snapshot = log.snapshot(log: dispatchLog, panel: thisPanel, now: now)
+        XCTAssertEqual(Set(snapshot.claims.keys), [first, later], "kept from the first look, plus the finished row")
+        XCTAssertEqual(snapshot.claims[first]!.timeIntervalSince1970, (now - 590).timeIntervalSince1970, accuracy: 0.01)
+
+        // A fresh reader finds the first row garbled and keeps the second claim.
+        let fresh = MailboxPanelMail.ClaimLog().snapshot(log: dispatchLog, panel: thisPanel, now: now)
+        XCTAssertEqual(Set(fresh.claims.keys), [first, later])
+        XCTAssertEqual(fresh.claims[first]!.timeIntervalSince1970, (now - 500).timeIntervalSince1970, accuracy: 0.01)
+    }
+
+    func testClaimLogReadsABoundedTailAndSaysWhereItStarts() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let ids = (0..<20).map { ulid(now - TimeInterval(2000 - $0 * 60)) }
+        for (offset, id) in ids.enumerated() { claim([id], at: now - TimeInterval(1900 - offset * 60)) }
+        let lineBytes = MailboxClaimLog.line(id: ids[0], recipientPanel: thisPanel, byPanel: thisPanel, via: "recv", at: now).utf8.count
+
+        let log = MailboxPanelMail.ClaimLog(tailBytes: lineBytes * 5 + 10)
+        let snapshot = log.snapshot(log: dispatchLog, panel: thisPanel, now: now)
+        XCTAssertEqual(snapshot.claims.keys.sorted(), Array(ids.suffix(5)), "only whole rows of the last tail")
+        let readFrom = try XCTUnwrap(snapshot.coverage.readFrom)
+        XCTAssertEqual(readFrom.timeIntervalSince1970, (now - TimeInterval(1900 - 15 * 60)).timeIntervalSince1970, accuracy: 0.01)
+
+        // More than a tail appended since the last look: start over from the new tail.
+        let more = (0..<8).map { ulid(now - TimeInterval(500 - $0 * 10)) }
+        for (offset, id) in more.enumerated() { claim([id], at: now - TimeInterval(400 - offset * 10)) }
+        let after = log.snapshot(log: dispatchLog, panel: thisPanel, now: now)
+        XCTAssertEqual(after.claims.keys.sorted(), Array(more.suffix(5)))
+        XCTAssertGreaterThan(try XCTUnwrap(after.coverage.readFrom), readFrom)
+    }
+
+    func testClaimLogStartsOverOnAReplacedFileAndDropsOldClaims() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let old = ulid(now - 20 * 86400), recent = ulid(now - 3600), replacement = ulid(now - 60)
+        claim([old], at: now - 20 * 86400 + 30)
+        claim([recent], at: now - 3500)
+        let log = MailboxPanelMail.ClaimLog()
+        XCTAssertEqual(log.snapshot(log: dispatchLog, panel: thisPanel, now: now).claims.keys.sorted(), [recent], "past the 14-day window")
+
+        try FileManager.default.removeItem(at: dispatchLog)
+        XCTAssertEqual(log.snapshot(log: dispatchLog, panel: thisPanel, now: now), MailboxPanelMail.ClaimLog.Snapshot())
+        claim([replacement], at: now - 30)
+        XCTAssertEqual(log.snapshot(log: dispatchLog, panel: thisPanel, now: now).claims.keys.sorted(), [replacement])
+
+        try FileManager.default.removeItem(at: dispatchLog)
+        try FileManager.default.createDirectory(at: dispatchLog, withIntermediateDirectories: true)
+        XCTAssertEqual(
+            log.snapshot(log: dispatchLog, panel: thisPanel, now: now).coverage,
+            MailboxPanelMail.ClaimLog.Coverage(exists: true, unreadable: true)
+        )
+    }
+
+    func testInsightsMeasurePickupFromLandingToTheClaim() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let fast = ulid(now - 7200), slow = ulid(now - 6 * 3600), late = ulid(now - 3600)
+        let unclaimed = ulid(now - 2 * 86400), ancient = ulid(now - 30 * 86400), waiting = ulid(now - 60)
+        let broadcast = ulid(now - 1800)
+        try receive(fast, from: "captain", stamp: UUID(), read: true)
+        try receive(slow, from: "reviewer", stamp: nil, read: true)
+        // Landed 10 minutes after it was sent: waits count from landing.
+        let lateURL = try receive(late, from: "captain", stamp: nil, read: true)
+        try FileManager.default.setAttributes([.modificationDate: now - 3000], ofItemAtPath: lateURL.path)
+        try receive(unclaimed, from: "captain", stamp: nil, read: true)
+        try receive(ancient, from: "captain", stamp: nil, read: true)
+        try receive(waiting, from: "captain", stamp: nil)
+        try receive(broadcast, from: "board", stamp: nil, read: true)
+        claim([fast], at: now - 7200 + 30)
+        claim([slow], at: now - 6 * 3600 + 3 * 3600)
+        claim([late], at: now - 3000 + 240)
+        // Another panel's copy of the same broadcast id is not this panel's claim.
+        claim([broadcast], panel: UUID(), at: now - 1700)
+
+        let insights = MailboxPanelMail.insights(
+            inbox: inbox, mailboxesRoot: root, now: now,
+            cache: MailboxPanelMail.HeaderCache(), claimLog: MailboxPanelMail.ClaimLog()
+        )
+        let pickup = insights.pickup
+        XCTAssertEqual(pickup.claims, 3)
+        XCTAssertEqual(pickup.median!, 240, accuracy: 0.01)
+        XCTAssertEqual(pickup.p90!, 3 * 3600, accuracy: 0.01)
+        XCTAssertEqual(pickup.slowest!, 3 * 3600, accuracy: 0.01)
+        XCTAssertEqual(pickup.buckets, [1, 1, 0, 0, 1])
+        XCTAssertEqual(pickup.unclaimed, 2, "taken in the window with no row of its own: the older one and the broadcast")
+        XCTAssertEqual(pickup.senders.map(\.name), ["captain", "reviewer"])
+        XCTAssertEqual(pickup.senders.first?.claims, 2)
+        XCTAssertEqual(pickup.senders.first!.median, 30, accuracy: 0.01)
+        XCTAssertTrue(insights.claimLog.exists)
+        XCTAssertNil(insights.claimLog.readFrom)
+
+        // The section follows the filters: one sender, then one topic it never used.
+        var filter = MailboxPanelMail.InsightsFilter()
+        filter.toggleFrom("reviewer")
+        let slice = MailboxPanelMail.slice(insights, filter: filter)
+        XCTAssertEqual(slice.pickup.claims, 1)
+        XCTAssertEqual(slice.pickup.median!, 3 * 3600, accuracy: 0.01)
+        filter.toggleTopic("none")
+        XCTAssertEqual(MailboxPanelMail.slice(insights, filter: filter).pickup, MailboxPanelMail.Pickup())
+    }
+
+    func testPickupWithoutALogSaysSo() throws {
+        try receive(ulid(Date() - 60), from: "captain", stamp: nil, read: true)
+        let insights = MailboxPanelMail.insights(
+            inbox: inbox, mailboxesRoot: root,
+            cache: MailboxPanelMail.HeaderCache(), claimLog: MailboxPanelMail.ClaimLog()
+        )
+        XCTAssertFalse(insights.claimLog.exists)
+        XCTAssertEqual(insights.pickup.claims, 0)
+        XCTAssertNil(insights.pickup.median)
+        XCTAssertEqual(insights.pickup.unclaimed, 1)
+    }
+
+    func testWaitTextStaysShortAtEveryScale() {
+        XCTAssertEqual(MailboxDrawerText.wait(-5), "0s")
+        XCTAssertEqual(MailboxDrawerText.wait(45), "45s")
+        XCTAssertEqual(MailboxDrawerText.wait(245), "4m 05s")
+        XCTAssertEqual(MailboxDrawerText.wait(12 * 60 + 9), "12m")
+        XCTAssertEqual(MailboxDrawerText.wait(3 * 3600 + 5 * 60), "3h 05m")
+        XCTAssertEqual(MailboxDrawerText.wait(2 * 86400 + 4 * 3600), "2d 4h")
+    }
+
+    // MARK: - Jumps to a conversation
+
+    func testEveryReceivedMessageOpensAConversationTheIndexHolds() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let captain = UUID()
+        try receive(ulid(now - 400), from: "merge-captain", stamp: captain)
+        try receive(ulid(now - 300), from: "merge-captain", stamp: nil, read: true)
+        try write(["from": ""], id: ulid(now - 200))
+        try Data("not json".utf8).write(to: inbox.appendingPathComponent("\(ulid(now - 100)).msg"))
+
+        let messages = MailboxPanelMail.listing(inbox: inbox).messages
+        let keys = messages.map(MailboxPanelMail.peerKey(of:))
+        XCTAssertEqual(keys, [nil, .name("?"), .name("merge-captain"), .panel(captain)], "newest first; never a name mapped to its panel")
+        let index = conversationIndex()
+        for key in keys.compactMap({ $0 }) {
+            XCTAssertNotNil(index.conversation(key), "\(key)")
+        }
+    }
+
+    func testASenderFilterOffersEachConversationUnderThatName() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = UUID(), b = UUID()
+        try receive(ulid(now - 400), from: "merge-captain", stamp: a, read: true)
+        try receive(ulid(now - 300), from: "merge-captain", stamp: nil)
+        try receive(ulid(now - 200), from: "merge-captain", stamp: b)
+        try receive(ulid(now - 100), from: "reviewer", stamp: a)
+        let insights = MailboxPanelMail.insights(
+            inbox: inbox, mailboxesRoot: root, now: now,
+            cache: MailboxPanelMail.HeaderCache(), claimLog: nil
+        )
+        var filter = MailboxPanelMail.InsightsFilter()
+        filter.toggleFrom("merge-captain")
+        filter.toggleTopic("unrelated")   // other filters never narrow the peers
+        let slice = MailboxPanelMail.slice(insights, filter: filter)
+        XCTAssertEqual(slice.fromPeers, [.panel(b), .name("merge-captain"), .panel(a)])
+        XCTAssertEqual(slice.fromFilter, "merge-captain")
+
+        var one = MailboxPanelMail.InsightsFilter()
+        one.toggleFrom("reviewer")
+        XCTAssertEqual(MailboxPanelMail.slice(insights, filter: one).fromPeers, [.panel(a)])
+        XCTAssertEqual(MailboxPanelMail.slice(insights, filter: MailboxPanelMail.InsightsFilter()).fromPeers, [])
+    }
+
+    private func runMain(until condition: () -> Bool, timeout: TimeInterval) -> Bool {
+        let deadline = Date() + timeout
+        while !condition() {
+            if Date() > deadline { return false }
+            RunLoop.main.run(until: Date() + 0.02)
+        }
+        return true
+    }
+
+    func testOpeningAConversationBeforeTheTabLoadsOpensThatThread() throws {
+        let now = Date()
+        let older = UUID(), newer = UUID()
+        try receive(ulid(now - 300), from: "older", stamp: older)
+        try receive(ulid(now - 100), from: "newer", stamp: newer)
+        let model = MailboxConversationsModel()
+        defer { model.disappeared() }
+        model.open(.panel(older))
+        XCTAssertTrue(model.showsThread)
+        model.appeared(inbox: inbox, resolvePanels: { _ in [:] })
+        XCTAssertTrue(runMain(until: { model.thread?.key == .panel(older) }, timeout: 10))
+        XCTAssertEqual(model.selected, .panel(older), "not the newest, which a plain visit opens")
+        XCTAssertTrue(model.showsThread)
+        XCTAssertEqual(model.placement?.key, .panel(older), "placed like a click on its row")
+        XCTAssertNil(model.pendingOpen)
+    }
+
+    func testOpeningAConversationTheListDoesNotHoldYetRescansAtOnce() throws {
+        let now = Date()
+        let known = UUID(), arrived = UUID()
+        try receive(ulid(now - 300), from: "known", stamp: known)
+        let model = MailboxConversationsModel()
+        defer { model.disappeared() }
+        model.appeared(inbox: inbox, resolvePanels: { _ in [:] })
+        XCTAssertTrue(runMain(until: { model.thread?.key == .panel(known) }, timeout: 10))
+        // Mail from a new peer lands, and its sender is clicked before the
+        // list's next scan (scans are otherwise spaced five seconds apart).
+        try receive(ulid(now - 1), from: "arrived", stamp: arrived)
+        model.open(.panel(arrived))
+        XCTAssertTrue(
+            runMain(until: { model.thread?.key == .panel(arrived) }, timeout: MailboxConversationsModel.refreshInterval - 1),
+            "the jump rescans without waiting for the spacing"
+        )
+        XCTAssertEqual(model.selected, .panel(arrived))
+        XCTAssertEqual(model.placement?.key, .panel(arrived))
+    }
+
+    func testOpeningAConversationTheListLacksShowsTheList() throws {
+        let now = Date()
+        let peer = UUID()
+        try receive(ulid(now - 100), from: "peer", stamp: peer)
+        let model = MailboxConversationsModel()
+        defer { model.disappeared() }
+        model.open(.name("nobody"))
+        model.appeared(inbox: inbox, resolvePanels: { _ in [:] })
+        XCTAssertTrue(runMain(until: { model.index != nil && model.pendingOpen == nil && model.thread != nil }, timeout: 10))
+        XCTAssertEqual(model.selected, .panel(peer), "the default selection, behind the list")
+        XCTAssertFalse(model.showsThread, "a narrow drawer shows the list, not an empty thread")
+    }
+
 }
 
 /// C11-400: which panels the subtitle bar's badge store keeps recounting.

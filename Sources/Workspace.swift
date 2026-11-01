@@ -6446,6 +6446,10 @@ final class Workspace: Identifiable, ObservableObject {
                 ),
                 suppressed: attention.suppressed,
                 rungThisEpoch: ledger.rung(in: epoch),
+                turnlessReringDue: MailboxDoorbellSequence.turnlessReringDue(
+                    at: mailboxTurnlessReringAt(surfaceId: surfaceId, epoch: epoch),
+                    now: now
+                ),
                 recentAttempts: ledger.rings(at: now),
                 focused: focusedPanelId == surfaceId,
                 operatorKeyAge: MailboxDoorbellSequence.operatorKeyAge(
@@ -6761,7 +6765,11 @@ final class Workspace: Identifiable, ObservableObject {
     ) {
         guard let reason = plan.relook,
               case .after(let next) = plan.rearm,
-              let entry = entries.first,
+              let entry = MailboxDoorbellSequence.relookEntry(
+                  entries,
+                  relook: reason,
+                  coveredIds: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+              ),
               let dispatcher = mailboxDispatcher else { return }
         dispatcher.logStdinRecheck(
             id: entry.id,
@@ -6874,12 +6882,24 @@ final class Workspace: Identifiable, ObservableObject {
             strandedDoorbell: strandedDoorbell,
             draftWatch: ledger.draftWatch,
             epoch: epoch,
-            unreadIds: unreadIds
+            unreadIds: unreadIds,
+            coveredIds: ledger.coveredIds,
+            turnlessReringAt: mailboxTurnlessReringAt(surfaceId: surfaceId, epoch: epoch)
         )
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
             ledger.draftWatch = plan.draftWatch
         }
         return plan
+    }
+
+    /// When once-per-idle stops holding a panel that has reported no turn
+    /// edge since it attached (C11-555). Nil for a panel with turn edges.
+    private func mailboxTurnlessReringAt(surfaceId: UUID, epoch: String) -> Date? {
+        MailboxDoorbellSequence.turnlessReringAt(
+            ledger: mailboxStdinState.doorbell.ledger(for: surfaceId),
+            epoch: epoch,
+            hasTurnEdge: mailboxStdinState.buffer.agentTurn(surfaceId: surfaceId) != nil
+        )
     }
 
     private func scheduleMailboxDoorbellRearm(

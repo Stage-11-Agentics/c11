@@ -350,8 +350,16 @@ enum MailboxReceiptStatus {
                 recipient.deliveryRoute = row["route"] as? String
             }
         case "doorbell_recheck":
-            // `working_decay` waits on a turn edge, not on a composer.
-            if reason == "working_decay" { set(.pending, "working") } else { set(.held) }
+            // `working_decay` waits on a turn edge, and `turnless_idle` on the
+            // re-ring interval of a panel with no turn edges; neither is a
+            // composer hold.
+            if reason == "working_decay" {
+                set(.pending, "working")
+            } else if reason == "turnless_idle" {
+                set(.pending, "turnless_idle")
+            } else {
+                set(.held)
+            }
         case "doorbell_capped":
             set(.held, reason ?? "rate_capped")
         case "doorbell_failed":

@@ -16,6 +16,11 @@ enum MailboxDoorbell {
     /// Runaway guard. Once-per-idle already stops a second ring in one turn,
     /// so this only catches a panel that keeps submitting the line.
     static let rateCap = 20
+    /// A panel that has reported no turn edge since it attached keeps one
+    /// idle period for its whole session, so once-per-idle would hold every
+    /// later envelope. There it holds only this long after the last ring;
+    /// then mail no ring has covered may ring again (C11-555).
+    static let turnlessReringInterval: TimeInterval = 300
     /// Typed into the agent. Not chrome, so it is not localized.
     static let text = "c11 mail waiting: run c11 mailbox recv --ack"
 
@@ -45,6 +50,9 @@ enum MailboxDoorbell {
         /// Read by callers. Suppression is never a skip: a parent is waiting.
         var suppressed: Bool = false
         var rungThisEpoch: Bool = false
+        /// The panel has no turn edge and its last ring is at least
+        /// `turnlessReringInterval` old. Lifts only the once-per-idle hold.
+        var turnlessReringDue: Bool = false
         var recentAttempts: Int = 0
         var focused: Bool = false
         var operatorKeyAge: TimeInterval? = nil
@@ -73,6 +81,8 @@ enum MailboxDoorbell {
     struct Ledger: Equatable {
         var epoch: String?
         var rungEpoch: String?
+        /// When `rungEpoch` was last marked.
+        var rungAt: Date?
         var inFlight = false
         var attempts: [Date] = []
         /// Envelopes a submitted ring covered. Later idle edges do not ring
@@ -103,6 +113,7 @@ enum MailboxDoorbell {
             inFlight = true
             self.epoch = epoch
             rungEpoch = epoch
+            rungAt = now
             attempts.append(now)
             attempts.removeAll { now.timeIntervalSince($0) >= MailboxDoorbell.rateWindow }
         }
@@ -116,6 +127,7 @@ enum MailboxDoorbell {
         mutating func recordStrandedReturn(at now: Date, epoch: String) {
             self.epoch = epoch
             rungEpoch = epoch
+            rungAt = now
             attempts.append(now)
             attempts.removeAll { now.timeIntervalSince($0) >= MailboxDoorbell.rateWindow }
         }
@@ -167,7 +179,7 @@ enum MailboxDoorbell {
         if input.optedOut { return .skip(reason: "opted_out") }
         if input.inFlight { return .skip(reason: "in_flight") }
         if input.flagged { return .skip(reason: "flagged") }
-        if input.rungThisEpoch { return .skip(reason: "once_per_idle") }
+        if input.rungThisEpoch && !input.turnlessReringDue { return .skip(reason: "once_per_idle") }
         if input.recentAttempts >= rateCap { return .skip(reason: "rate_capped") }
         // Before the screen read. A covered set must not look like an
         // unreadable prompt, and it must not start a draft backoff.
@@ -273,6 +285,36 @@ enum MailboxDoorbellSequence {
     /// ring there, so without the series the mail waits for the next envelope.
     static let heldComposerReasons: Set<String> = ["draft", "dialog", "unknown_prompt"]
 
+    /// When once-per-idle stops holding a panel with no turn edge since it
+    /// attached. Nil when the panel reports turn edges (its next idle edge
+    /// opens a new period) or was not rung in this one.
+    static func turnlessReringAt(
+        ledger: MailboxDoorbell.Ledger,
+        epoch: String,
+        hasTurnEdge: Bool
+    ) -> Date? {
+        guard !hasTurnEdge, ledger.rung(in: epoch), let rungAt = ledger.rungAt else { return nil }
+        return rungAt.addingTimeInterval(MailboxDoorbell.turnlessReringInterval)
+    }
+
+    /// The envelope a re-look row names. A held composer names the oldest
+    /// unread envelope. A turn-less wait names the oldest one no ring has
+    /// covered: that is the mail it is waiting to ring for, and a trace of it
+    /// should show why.
+    static func relookEntry(
+        _ entries: [MailboxStdinBuffer.Entry],
+        relook: String,
+        coveredIds: Set<String>
+    ) -> MailboxStdinBuffer.Entry? {
+        guard relook == "turnless_idle" else { return entries.first }
+        return entries.first { !coveredIds.contains($0.id) }
+    }
+
+    static func turnlessReringDue(at reringAt: Date?, now: Date) -> Bool {
+        guard let reringAt else { return false }
+        return now >= reringAt
+    }
+
     static func shouldRetryBusy(tryIndex: Int) -> Bool {
         tryIndex >= 0 && tryIndex + 1 < busyAttempts
     }
@@ -365,8 +407,10 @@ enum MailboxDoorbellSequence {
     /// A busy read that has used its captures looks again after `shortRecheck`.
     /// A draft, an unreadable prompt, and a composer that still holds the
     /// doorbell line look again on the held-composer series; this plan never
-    /// retypes the line. A covered ring waits for a new envelope. Any other
-    /// keep waits for a later edge.
+    /// retypes the line. A covered ring waits for a new envelope.
+    /// `once_per_idle` on a panel with no turn edge looks again at
+    /// `turnlessReringAt` while uncovered mail waits. Any other keep waits
+    /// for a later edge.
     static func plan(
         decision: MailboxDoorbell.Decision,
         attempts: [Date],
@@ -375,7 +419,9 @@ enum MailboxDoorbellSequence {
         strandedDoorbell: Bool,
         draftWatch: DraftWatch? = nil,
         epoch: String = "",
-        unreadIds: Set<String> = []
+        unreadIds: Set<String> = [],
+        coveredIds: Set<String> = [],
+        turnlessReringAt: Date? = nil
     ) -> Plan {
         let arrival = MailboxDoorbell.arrival(for: decision)
         let rearm: Rearm
@@ -391,6 +437,18 @@ enum MailboxDoorbellSequence {
                 rearm = .at(oldest.addingTimeInterval(MailboxDoorbell.rateWindow))
             } else {
                 rearm = .after(0)
+            }
+            watch = nil
+        case .skip(let reason) where reason == "once_per_idle":
+            // A panel with turn edges waits for its next idle edge. One with
+            // none has no such edge coming: look again when the hold lifts,
+            // while mail no ring covered is waiting.
+            if let reringAt = turnlessReringAt, !unreadIds.isEmpty,
+               !unreadIsCovered(unreadIds: unreadIds, coveredIds: coveredIds) {
+                rearm = .after(max(0, reringAt.timeIntervalSince(now)))
+                relook = "turnless_idle"
+            } else {
+                rearm = .none
             }
             watch = nil
         case .skip(let reason) where reason == "unavailable" && busyExhausted:

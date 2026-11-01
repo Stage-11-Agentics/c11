@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mailbox Conversations Prototype</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root, [data-theme="dark"] {
+  --bg: #16171a; --chrome: #1d1f23; --bar: #202226; --line: #2c2f35; --term: #0f1012; --drawer: #1a1c20;
+  --well: rgba(0,0,0,.18); --track: rgba(44,47,53,.6); --mark: rgba(230,230,230,.55); --hover: #2a2d33;
+  --fg: #e6e6e6; --dim: #8d929b; --faint: #5b6068; --gold: #e3b341; --amber: #f0883e; --onamber: #16171a;
+  --in: rgba(0,0,0,.22); --out: #24272c; --link: #6cb0f5; --linkline: rgba(108,176,245,.45); --amberline: rgba(240,136,62,.5);
+}
+[data-theme="light"] {
+  --bg: #f3f3f1; --chrome: #e7e7e4; --bar: #ededea; --line: #d2d2cd; --term: #fbfbfa; --drawer: #f7f7f5;
+  --well: rgba(0,0,0,.04); --track: rgba(0,0,0,.08); --mark: rgba(30,30,30,.5); --hover: #dededa;
+  --fg: #1d1e20; --dim: #63666c; --faint: #9a9da2; --gold: #a77a12; --amber: #c8620f; --onamber: #fff;
+  --in: #efefec; --out: #ffffff; --link: #0b62c4; --linkline: rgba(11,98,196,.4); --amberline: rgba(200,98,15,.5);
+}
+:root { --mono: ui-monospace, "SF Mono", Menlo, monospace; --sans: -apple-system, "SF Pro Text", system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 12.5px/1.45 var(--sans); }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font: 600 20px var(--mono); margin: 0 0 4px; }
+h2 { font: 600 13px var(--mono); margin: 32px 0 8px; color: var(--gold); letter-spacing: .06em; }
+p, li { color: var(--fg); opacity: .88; }
+.sub { color: var(--dim); margin: 0 0 16px; }
+code { font: 12px var(--mono); color: var(--gold); }
+ol li { margin-bottom: 10px; }
+.why { color: var(--dim); }
+
+/* controls */
+.controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin: 12px 0; font-size: 12px; color: var(--dim); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { all: unset; cursor: pointer; padding: 2px 10px; font-size: 11.5px; color: var(--dim); }
+.seg button.on { background: var(--hover); color: var(--fg); }
+.seg button:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+
+/* chrome */
+.stage { height: 720px; }
+.area { border: 1px solid var(--line); border-radius: 6px; overflow: visible; background: var(--term); position: relative; transition: width .15s; }
+.panelbar { display: flex; align-items: center; height: 30px; background: var(--chrome); border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+.count { display: flex; gap: 5px; align-items: center; padding: 0 10px; height: 100%; border-right: 1px solid var(--line); color: var(--dim); font: 12px var(--mono); }
+.count .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
+.ptab { padding: 0 12px; height: 100%; display: flex; align-items: center; color: var(--fg); background: var(--bar); border-right: 1px solid var(--line); white-space: nowrap; }
+.ptab .n { font-family: var(--mono); margin-right: 6px; color: var(--gold); }
+.sbar { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px 0 12px; background: var(--bar); border-bottom: 1px solid var(--line); }
+.sbar .desc { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chev { width: 14px; color: var(--dim); font-size: 10px; text-align: center; flex: none; }
+.chev.off { visibility: hidden; } /* the slot stays: shown only when the line is cut off */
+.dclose { all: unset; cursor: pointer; width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 4px; color: var(--dim); font-size: 12px; align-self: center; margin-right: -6px; }
+.dclose:hover, .dclose:focus-visible { background: var(--hover); color: var(--fg); }
+.mail { flex: none; height: 20px; display: grid; grid-template-columns: 5.4ch 14px 5.4ch; align-items: center; gap: 4px; padding: 0 4px; border-radius: 4px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--dim); cursor: pointer; user-select: none; }
+.mail:hover, .mail.open { background: var(--hover); }
+.mail svg { width: 14px; height: 14px; }
+.mail .u { justify-self: end; color: var(--amber); padding: 0 3px; border-radius: 3px; }
+.mail .r { justify-self: start; }
+.term { padding: 10px 12px; font: 12px/1.6 var(--mono); color: var(--dim); height: 60px; }
+
+/* drawer */
+.drawer { position: absolute; left: -1px; right: -1px; top: 56px; z-index: 2; background: var(--drawer); border: 1px solid var(--line); box-shadow: 0 10px 24px rgba(0,0,0,.35); }
+.dhead { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; }
+.dhead b { font-weight: 600; white-space: nowrap; }
+.dhead .id { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dhead .sp { flex: 1; }
+.dhead .tot { font: 10.5px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tabs { padding: 0 12px 8px; border-bottom: 1px solid var(--line); }
+.placeholder { padding: 12px; color: var(--dim); height: 560px; }
+
+.st { font-size: 9px; font-weight: 600; padding: 0 4px; border-radius: 3px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; font-family: var(--sans); }
+.st.u { background: var(--amber); color: var(--onamber); border-color: transparent; }
+.st.urg { color: var(--amber); border-color: var(--amber); }
+.st.wait { color: var(--amber); }
+.st.gone { border-style: dashed; }
+
+/* conversations: a fixed-height grid, so switching threads never resizes the drawer */
+.conv { display: grid; grid-template-columns: var(--listw) minmax(0, 1fr); grid-template-rows: 534px 26px; }
+.conv.narrow { grid-template-columns: minmax(0, 1fr); }
+.clist { overflow-y: auto; border-right: 1px solid var(--line); min-width: 0; }
+.conv.narrow .clist { border-right: 0; }
+.lhead { height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; font: 10.5px var(--mono); color: var(--dim); border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--drawer); z-index: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.crow { height: 62px; padding: 6px 10px; border-bottom: 1px solid var(--line); display: grid; grid-template-rows: 17px 16px 16px; gap: 1px; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px; }
+.crow:hover { background: var(--hover); }
+.crow:focus-visible { outline-color: var(--dim); }
+.crow.sel { outline-color: var(--gold); background: var(--well); }
+.crow .l1, .crow .l2, .crow .l3 { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.crow .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.crow .pnum { flex: none; width: 18px; font: 11px var(--mono); color: var(--gold); font-variant-numeric: tabular-nums; }
+.crow .pnum.none { color: var(--faint); }
+.crow .l2 .dir { width: 18px; }
+.crow .l3 { padding-left: 24px; }
+.crow.away .nm { color: var(--dim); }
+.crow .ls .q { color: var(--dim); }
+.crow .ls .wait { color: var(--amber); }
+.crow .tm { margin-left: auto; font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; padding-left: 6px; }
+.crow .l2 { font: 11px var(--mono); }
+.crow .dir { color: var(--faint); flex: none; }
+.crow .pv { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); min-width: 0; }
+.crow.has-unread .pv { color: var(--fg); }
+.crow .l3 { justify-content: space-between; font: 10.5px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.crow .ls { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.crow .uc { flex: none; min-width: 7.5ch; text-align: right; }
+.crow .uc b { color: var(--onamber); background: var(--amber); border-radius: 3px; padding: 0 4px; font-weight: 600; }
+
+.thread { display: grid; grid-template-rows: 46px minmax(0, 1fr); min-width: 0; min-height: 0; }
+.thead { padding: 5px 12px; border-bottom: 1px solid var(--line); display: grid; grid-template-rows: 19px 16px; gap: 1px; min-width: 0; }
+.thead .t1, .thead .t2 { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.thead .pname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.thead .pn { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; }
+.thead .t2 { font: 10.5px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.thead .t2 .how { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.thead .t2 .n { margin-left: auto; white-space: nowrap; padding-left: 8px; }
+.back { all: unset; cursor: pointer; font: 11px var(--mono); color: var(--link); white-space: nowrap; flex: none; }
+.jump { all: unset; cursor: pointer; margin-left: auto; font: 10.5px var(--mono); color: var(--amber); white-space: nowrap; padding-left: 8px; }
+.jump.none { visibility: hidden; }
+.back:hover, .jump:hover { text-decoration: underline; }
+.back:focus-visible, .jump:focus-visible, .acts button:focus-visible, .chip.link:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; border-radius: 2px; }
+.tbody { overflow-y: auto; padding: 4px 12px 14px; min-height: 0; position: relative; }
+
+.daysep, .newsep { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; font: 600 10px var(--mono); color: var(--dim); letter-spacing: .05em; white-space: nowrap; }
+.daysep::before, .daysep::after, .newsep::before, .newsep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.newsep { color: var(--amber); font-weight: 400; letter-spacing: 0; }
+.newsep::before, .newsep::after { background: var(--amberline); }
+.marker { margin: 8px 0 2px; font: 10.5px var(--mono); color: var(--dim); text-align: center; }
+.marker.edge { text-align: left; border: 1px dashed var(--line); border-radius: 4px; padding: 5px 8px; margin: 10px 0 4px; line-height: 1.45; }
+
+.msg { display: flex; flex-direction: column; align-items: flex-start; margin: 7px 0; }
+.msg.out { align-items: flex-end; }
+.bub { width: fit-content; max-width: 86%; min-width: min(250px, 86%); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px 5px; background: var(--in); display: grid; gap: 4px; outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .25s; }
+.msg.out .bub { background: var(--out); }
+.bub.unread { border-color: var(--amber); }
+.bub.flash { outline-color: var(--gold); }
+.bub .hd { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.bub .tp { font: 600 10.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bub .tp.none { color: var(--dim); font-weight: 400; }
+.bub .tm { margin-left: auto; padding-left: 10px; font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rcp { font: 10.5px var(--mono); color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.rcp .who { display: inline-flex; gap: 4px; align-items: baseline; }
+.rcp .who.me b { color: var(--fg); }
+.rcp b { font-weight: 600; color: var(--dim); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font: 10.5px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.chip.warn { color: var(--amber); border-color: var(--amberline); }
+button.chip.link { all: unset; cursor: pointer; font: 10.5px var(--mono); color: var(--link); border: 1px solid var(--linkline); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+button.chip.link:hover { background: var(--hover); }
+.bd { font: 11px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.fold { max-height: 18em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 72%, transparent); mask-image: linear-gradient(#000 72%, transparent); }
+.ref { display: grid; gap: 3px; }
+.ref .cap { display: flex; gap: 5px; font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; min-width: 0; }
+.ref .cap span { flex: none; }
+.ref .cap b { font-weight: 400; color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gonebody { font: 11px/1.45 var(--mono); color: var(--dim); border: 1px dashed var(--line); border-radius: 4px; padding: 5px 7px; }
+.acts { display: flex; gap: 14px; min-height: 15px; }
+.acts button { all: unset; cursor: pointer; font: 10.5px var(--mono); color: var(--link); }
+.acts button:hover { text-decoration: underline; }
+.acts .copy { min-width: 9ch; }
+.cfoot { grid-column: 1 / -1; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 12px; font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; min-width: 0; }
+.cfoot span { overflow: hidden; text-overflow: ellipsis; }
+.cfoot b { color: var(--fg); font-weight: 600; }
+
+table.facts { border-collapse: collapse; width: 100%; font-size: 12px; margin: 4px 0 8px; }
+table.facts td { border-top: 1px solid var(--line); padding: 6px 8px 6px 0; vertical-align: top; }
+table.facts td:first-child { font: 11.5px var(--mono); color: var(--dim); white-space: nowrap; width: 150px; }
+.verdict { border: 1px solid var(--gold); border-radius: 4px; padding: 8px 12px; margin: 12px 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Mailbox Conversations</h1>
+<p class="sub">Prototype of a Conversations tab for the mailbox drawer: this panel's mail with one peer, both directions, in time order. Mock data, read-only like the real drawer. Click a conversation, a reply chip, Show all or Copy text; switch the width to see the narrow layout.</p>
+
+<div class="controls">
+  <span>Area width <span class="seg" id="widths"><button data-w="360">360</button><button data-w="620" class="on">620</button><button data-w="900">900</button></span></span>
+  <span>Theme <span class="seg" id="themes"><button data-t="dark" class="on">Dark</button><button data-t="light">Light</button></span></span>
+</div>
+
+<div class="stage">
+  <div class="area" id="area" style="width:620px">
+    <div class="panelbar">
+      <div class="count"><span class="dot"></span>⌄ 2</div>
+      <div class="ptab"><span class="n">1</span>Board Move</div>
+    </div>
+    <div class="sbar">
+      <span class="desc">Coordinating the merge queue for the mailbox analytics branch.</span>
+      <div class="mail open" id="cell" role="button" tabindex="0" aria-label="">
+        <span class="u" id="cellU"></span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M2 4.5l6 4.5 6-4.5"/></svg>
+        <span class="r" id="cellR"></span>
+      </div>
+      <span class="chev" id="chev" aria-hidden="true">›</span>
+    </div>
+    <div class="term">$ c11 mailbox recv --ack<br>no new mail</div>
+    <div class="drawer" id="drawer">
+      <div class="dhead">
+        <b>Mail for Board Move</b><span class="id">board-move · panel 1</span><span class="sp"></span><span class="tot" id="tot"></span><button class="dclose" id="dclose" title="Close (or click the envelope again)" aria-label="Close mailbox">✕</button>
+      </div>
+      <div class="tabs"><span class="seg" id="tabs"><button data-tab="received">Received</button><button data-tab="sent">Sent</button><button data-tab="conversations" class="on">Conversations</button><button data-tab="insights">Insights</button></span></div>
+      <div id="pane"></div>
+    </div>
+  </div>
+</div>
+
+<h2>WHERE IT LIVES</h2>
+<p>A fourth drawer tab, <b>Conversations</b>, between Sent and Insights. A conversation holds both directions, so it belongs beside Received and Sent rather than inside either. Its list is an overview of its own: who this panel talks to, who is sitting on whose mail. A tab also leaves Received, the default, exactly as it is. A click on a sender name elsewhere can open the same thread later (question 2).</p>
+
+<h2>THE LIST</h2>
+<p>One row per peer, newest activity first. Each row is three fixed lines: the peer's panel number (gold, as on the panel bar) and name, with <b>?</b> for mail that carries no sender stamp; the time of the last message; its first line, with an arrow for direction; whether this panel's last send was taken, is waiting, or its copy is gone; and the peer's unread count. A peer whose panel is closed, or that is known by name only, is dimmed. Rows never change height, so counts can move without the list jumping.</p>
+
+<h2>THE THREAD</h2>
+<p>Oldest at the top, so a reply reads under its parent; a thread opens at its first unread message, otherwise at the bottom. The peer is on the left, this panel on the right. A received message carries <b>UNREAD</b> (this panel's agent has not taken it) or <b>TAKEN</b>. A sent message carries the state of the peer's copy: <b>WAITING</b>, <b>TAKEN</b> or <b>GONE</b>. An unread run is outlined in orange behind a divider. A reply chip jumps to its parent and outlines it. Bodies longer than 12 lines fold behind Show all; a file body shows its path and size; a sent message whose copy is gone keeps its topic, time and recipients. Day separators use local time. When the peer's side goes back further than this panel's sent record, a dashed marker says where the record starts.</p>
+
+<h2>WIDTHS</h2>
+<p>At 900 and 620 the drawer shows the list and the open thread side by side (list 280 or 220 wide). At 360 it shows the list, then the thread with a back control; Esc also goes back. Both panes are a fixed height, the drawer's maximum, so opening a different thread never resizes the drawer.</p>
+
+<h2>READ-ONLY</h2>
+<p>There is no compose box. The drawer never sends, claims or deletes mail, and opening a thread marks nothing taken, because the states describe the agents, not the operator. The strip at the foot, where a compose box would sit, says so. Agents reply with <code>c11 mailbox send</code>.</p>
+
+<h2>HOW IT WORKS WITH REAL DATA</h2>
+<table class="facts">
+  <tr><td>Received side</td><td>This panel's inbox root (unread) and <code>_read/</code> (taken). Mail sent with <code>c11 mailbox send</code> from a live panel in this workspace carries <code>ext.c11_sender_panel_id</code>, so it belongs to that peer panel.</td></tr>
+  <tr><td>Name-only mail</td><td>Older mail, raw writers, <code>--from</code> overrides and other workspaces carry only <code>from</code>, a name. It gets its own conversation keyed by that name and is never merged into a panel's, because a name is not proof of a sender.</td></tr>
+  <tr><td>Sent side</td><td>This panel's <code>_sent/</code> ledger: one entry per send with id, time, <code>to</code>, topic and recipient panels, never the body. It keeps the newest 300 entries. The body is read from the recipient's copy (inbox root = waiting, <code>_read/</code> = taken). c11 never deletes a copy, so a copy is gone only if something else removed it; the bubble then says "copy gone".</td></tr>
+  <tr><td>Gaps</td><td>Sends from before the ledger existed, without the CLI's sender claim, to another workspace, or older than the newest 300 have no entry. Those threads show only the peer's side for that stretch; the dashed marker shows where the sent record starts.</td></tr>
+  <tr><td>Broadcasts</td><td>One send to several panels (<code>role:reviewer</code>, or a shared name) is one ledger entry with several recipients. It appears in each recipient's thread with every recipient's state, and its body survives while any copy remains. A broadcast this panel received looks like any single message: only the sender's ledger knows the other recipients.</td></tr>
+  <tr><td>Replies</td><td><code>in_reply_to</code> holds the parent's envelope id. Received files and ledger entries are both named by that id, so a reply links to its parent in either direction when the parent is in the thread; otherwise the chip shows the id and is not a link.</td></tr>
+  <tr><td>Cost</td><td>The list reuses the Insights scan: the newest 5,000 received headers, cached by file name, plus the ledger. That cached header needs one more field, the sender stamp. Full envelopes are read only for the open thread.</td></tr>
+</table>
+<div class="verdict"><b>Verdict: the data supports it.</b> No new files and no new writes. The caveats are the gaps above: a stretch of a thread can show one side only, name-only mail stays apart from its panel, and a received broadcast cannot show its other recipients.</div>
+
+<h2>QUESTIONS</h2>
+<ol>
+  <li><b>Placement.</b> Ship Conversations as a fourth tab, with Received still the default? <b>Recommended: yes.</b> <span class="why">A conversation spans both directions, so it sits beside Received and Sent rather than inside either.</span></li>
+  <li><b>Click-through.</b> Should a sender in Received, and a sender or recipient in Insights, also open its conversation? <b>Recommended: yes, as a second step.</b> <span class="why">Once the thread exists, one click from "who sent this" to "what have we said" is cheap.</span></li>
+  <li><b>Name-only mail.</b> Keep unstamped mail in its own "name only" row instead of merging it into the panel that has that name now? <b>Recommended: keep it separate.</b> <span class="why"><code>from</code> is unverified, and the drawer already refuses to guess a sender from it.</span></li>
+  <li><b>Broadcasts.</b> Show a broadcast in every recipient's thread, with all recipients' states? <b>Recommended: yes.</b> <span class="why">Replies come back one to one and point at the broadcast, so each thread needs it as the parent.</span></li>
+  <li><b>Sent vocabulary.</b> Rename the Sent tab's UNREAD and READ to WAITING and TAKEN, as here and on the Insights drill-down tiles? <b>Recommended: yes.</b> <span class="why">UNREAD on a sent message reads as if this panel had not read it.</span></li>
+  <li><b>Unread marker in Received.</b> The Received card marks unread mail with a 3 px orange strip on its left edge. Switch it to the full orange outline used here? <b>Recommended: yes.</b> <span class="why">The rules of taste rule out left-edge strips; the outline carries the same signal.</span></li>
+  <li><b>Sent record size.</b> Keep the ledger at the newest 300 sends? <b>Recommended: keep 300 and watch real threads.</b> <span class="why">The marker already shows where the record starts; raise the limit only if busy panels read one-sided.</span></li>
+</ol>
+</main>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // The mock clock: Sunday Nov 1 2026, 11:40 local.
+  const NOW = new Date(2026, 10, 1, 11, 40);
+  const D = (month, day, h, m) => new Date(2026, month - 1, day, h, m);
+  const clock = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  const yesterday = new Date(NOW); yesterday.setDate(NOW.getDate() - 1);
+  const dayText = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).replace(",", "");
+  const dayLabel = (d) => sameDay(d, NOW) ? "Today · " + dayText(d) : sameDay(d, yesterday) ? "Yesterday · " + dayText(d) : dayText(d);
+  const span = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return s < 60 ? s + "s" : s < 3600 ? Math.floor(s / 60) + "m" : s < 172800 ? Math.floor(s / 3600) + "h" : Math.floor(s / 86400) + "d"; };
+  const listTime = (d) => sameDay(d, NOW) ? clock(d) : (NOW - d) < 6 * 86400000 ? d.toLocaleDateString("en-US", { weekday: "short" }) : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const stamp = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " + clock(d) + " · " + span(NOW - d) + " ago";
+
+  const THIS = { name: "board-move", title: "Board Move", panel: 1 };
+  // Peers, keyed as c11 would key them: a stamped panel UUID, or a bare name.
+  const PEERS = {
+    mc: { name: "merge-captain", panel: 7, uuid: "7c3e9a14-52d1-4f0b-9e6a-0d81b2c4f713", open: true },
+    cr: { name: "c11-reviewer", panel: 12, uuid: "b2d04f6e-1a9c-4c37-8e25-6f10d9a3c288", open: true },
+    xr: { name: "codex-reviewer", panel: 13, uuid: "e91f3b07-6c2a-4d58-a1f4-27c8b05e9d4a", open: true },
+    gr: { name: "grok-reviewer", panel: 14, uuid: "4a6c81d2-9e3f-47b0-b5d1-83e2f60a7c19", open: false },
+    ow: { name: "overwatch", panel: 3, uuid: "0f8d2c61-3b7e-4a95-8c04-5e19a7d3b260", open: true },
+    lp: { name: "lattice-poller", nameOnly: true }
+  };
+
+  const HANDOFF = `# Handoff: C11-415
+
+Branch c11/mailbox-conversation-index, PR #866.
+
+## State
+- Index and thread view built; Atlas gate green in 102 s.
+- Reviews: c11-reviewer and codex-reviewer are back. grok-reviewer never took the request.
+- One blocker fixed in 51c07de: name-only mail stays its own row.
+
+## For you
+1. Land #866 after codex-reviewer's re-run on 51c07de.
+2. If the backstop goes red, fix forward; do not revert.
+3. Tell overwatch when it is in.`;
+
+  const REVIEW = `# Review: PR #866, head 3f9a1c2
+
+## Blocker
+1. MailboxConversations.index keys unstamped mail by \`from\`, then merges it into a stamped peer with the same title. That is the guess the guide forbids: a lookalike in another workspace would land in the wrong thread.
+
+## Nits
+2. threadMessages(peer:) re-reads envelopes that are already in the header cache. Read only the open thread's bodies.
+3. Day separators use UTC midnight. Use the local calendar.
+4. The list sorts by ledger ts for sends and ULID time for received. Both are the sender's clock; fine, but say so.
+
+## Checked, no finding
+- Broadcast entries appear once per recipient thread.
+- A copy without this panel's stamp is never shown.
+- Reply chips link only when the parent is in the thread.`;
+
+  const PLAN = `Read the handoff. Where #866 stands:
+
+1. codex-reviewer's re-run on 51c07de came back clean.
+2. Rebased #866 onto main dc46132 at 10:31. No conflicts.
+3. Atlas gate: 104 s, 3,418 logic tests, 0 failures.
+4. c11/pr-swift posted success on 8e2d4b0.
+
+Two things I could not settle:
+
+- lattice-poller's nightly went red at 6:00 AM on MailboxSentLedgerTests/testTrimKeepsNewest. It passes on Atlas for me. I suspect the hourly runner's clock; I have not proven it.
+- grok-reviewer's panel is closed, so its copy of the review request will sit unread. Send to role:reviewer again when Grok is back, or call two reviews enough?
+
+I will merge at 11:30 unless you say otherwise. If the backstop goes red after merge, I will fix forward on a new branch and tell you here.
+
+11:30  merge
+11:45  backstop starts
+12:30  backstop result`;
+
+  const CODEX = `Findings on #866 (3f9a1c2):
+
+1. Agree with c11-reviewer's blocker on name-only merging.
+2. ConversationRow.lastSendState reads the first recipient only. For a broadcast, use this peer's own copy.
+3. The narrow layout keeps the list scroll position when you go back. Good; keep it.
+
+No other findings. Tests: 41 new, all pass on Atlas.`;
+
+  // Every message this panel has with each peer. "in" = received, "out" = sent.
+  // Sent entries carry the state of each recipient's copy.
+  const MSGS = [
+    { id: "01JBXA7Q2KMC", peers: ["mc"], dir: "out", at: D(10, 30, 16, 12), topic: "merge.ready", st: { mc: "taken" },
+      body: "C11-412 is ready to land: PR #861, head 7c41e09. Atlas gate green in 98 s, review clean." },
+    { id: "01JBXAQ0VMC2", peers: ["mc"], dir: "in", at: D(10, 30, 16, 20), topic: "merge.ready", reply: "01JBXA7Q2KMC",
+      body: "Queued #861 behind #858. About 20 minutes unless #858's poller run goes red." },
+    { id: "01JBXD03RMC3", peers: ["mc"], dir: "in", at: D(10, 30, 17, 2), topic: "build.status", urgent: true, reply: "01JBXA7Q2KMC",
+      body: "Poller red on #858: c11LogicTests/MailboxInsightsTests timed out at 60 s. Holding #861 until you call it." },
+    { id: "01JBXDCZ1MC4", peers: ["mc"], dir: "out", at: D(10, 30, 17, 9), topic: "build.status", reply: "01JBXD03RMC3", st: { mc: "taken" },
+      body: "That timeout is the cold-DerivedData flake. Rerun once. If it goes red again, land #861 first; it does not touch Insights." },
+    { id: "01JBZ3HV8MC5", peers: ["mc"], dir: "in", at: D(10, 31, 9, 14), topic: "merge.ready", reply: "01JBXDCZ1MC4",
+      body: "Rerun green. Landed #858 at 9:11 and #861 at 9:13. main is 4be0c2a." },
+    { id: "01JBZ7WS0RV1", peers: ["cr", "xr", "gr"], to: "role:reviewer", dir: "out", at: D(10, 31, 14, 5), topic: "review.request", st: { cr: "taken", xr: "taken", gr: "waiting" },
+      body: "Review PR #866 (C11-415, the conversation index for the mailbox drawer). Head 3f9a1c2. Focus: the sent-ledger join and the name-only fallback. Findings by 6 PM, as a reply to this message." },
+    { id: "01JBZDN4ACR1", peers: ["cr"], dir: "in", at: D(10, 31, 15, 47), topic: "review.findings", reply: "01JBZ7WS0RV1",
+      body: "", ref: { path: "/tmp/review-866-claude.md", size: "9.4 KB", text: REVIEW } },
+    { id: "01JBZEJ2FCR2", peers: ["cr"], dir: "out", at: D(10, 31, 16, 2), topic: "review.findings", reply: "01JBZDN4ACR1", st: { cr: "taken" },
+      body: "Agreed on 1: name-only mail stays its own row. Fixed in 51c07de along with 3. Re-review just that commit?" },
+    { id: "01JBZG5T3CR3", peers: ["cr"], dir: "in", at: D(10, 31, 16, 30), topic: "review.findings", reply: "01JBZEJ2FCR2",
+      body: "51c07de is right. No further findings." },
+    { id: "01JBZMX10XR1", peers: ["xr"], dir: "in", at: D(10, 31, 17, 58), topic: "review.findings", reply: "01JBZ7WS0RV1", body: CODEX },
+    { id: "01JBZTB6MMC6", peers: ["mc"], dir: "out", at: D(10, 31, 18, 40), topic: "handoff", st: { mc: "taken" },
+      body: "", ref: { path: "/Users/atin/Projects/Stage11/code/c11/notes/handoff-c11-415.md", size: "1.1 KB", text: HANDOFF } },
+    { id: "01JC0F2K7XR2", peers: ["xr"], dir: "in", at: D(11, 1, 9, 5), topic: "review.findings", unread: true,
+      body: "Re-ran my sweep on 51c07de: clean. I copied merge-captain so it can land #866." },
+    { id: "01JC0MPA1MC7", peers: ["mc"], dir: "in", at: D(11, 1, 10, 52), topic: "handoff", unread: true, reply: "01JBZTB6MMC6", body: PLAN },
+    { id: "01JC0Q8E4MC8", peers: ["mc"], dir: "in", at: D(11, 1, 11, 31), topic: "merge.ready", unread: true,
+      body: "Merged #866 as 2f71c3a. Nothing left in my queue for you." },
+
+    { id: "01JBTZ8C2OW1", peers: ["ow"], dir: "in", at: D(10, 28, 22, 10), topic: "lattice.freeze", urgent: true, ttl: 7200, replyAddr: "merge-captain",
+      body: "Freeze on main from 10:15 PM for the v1.7.6 release gate. Hold merges. Ack to merge-captain, not me." },
+    { id: "01JBVQ4M9OW2", peers: ["ow"], dir: "in", at: D(10, 29, 9, 30), topic: "lattice.freeze", reply: "01JBTZ8C2OW1",
+      body: "Freeze lifted at 9:28. v1.7.6 is tagged. Resume the queue." },
+    { id: "01JBVQRT6OW3", peers: ["ow"], dir: "out", at: D(10, 29, 9, 41), topic: "lattice.freeze", reply: "01JBVQ4M9OW2", st: { ow: "gone" }, gone: true },
+    { id: "01JC006F2OW4", peers: ["ow"], dir: "in", at: D(10, 31, 20, 15), topic: "handoff",
+      body: "Taking board-move off the overnight rota. Next pickup is 8:00 AM." },
+    { id: "01JC0BX93OW5", peers: ["ow"], dir: "out", at: D(11, 1, 8, 2), topic: "handoff", reply: "01JC006F2OW4", st: { ow: "waiting" },
+      body: "Back on. The queue is empty except #866, which is with merge-captain. Two of three reviews are in." },
+
+    { id: "01JBWM60PLP1", peers: ["lp"], dir: "in", at: D(10, 30, 6, 0), topic: "build.status",
+      body: "nightly: c11 main 4be0c2a green · logic 3,402 tests · 6m 41s" },
+    { id: "01JBZ0P41LP2", peers: ["lp"], dir: "in", at: D(10, 31, 6, 0), topic: "build.status",
+      body: "nightly: c11 main 9163a87 green · logic 3,409 tests · 6m 38s" },
+    { id: "01JC05KX7LP3", peers: ["lp"], dir: "in", at: D(11, 1, 6, 0), topic: "build.status", urgent: true, unread: true,
+      body: "nightly: c11 main dc46132 RED · MailboxSentLedgerTests/testTrimKeepsNewest failed (1 of 3,418) · 6m 52s" }
+  ].sort((a, b) => a.at - b.at);
+  const BY_ID = Object.fromEntries(MSGS.map((m) => [m.id, m]));
+  // The ledger's oldest entry: before it, this panel's sends are not recorded.
+  const LEDGER_FLOOR = MSGS.filter((m) => m.dir === "out")[0].at;
+
+  const fullText = (m) => [m.body, m.ref ? m.ref.text : ""].filter(Boolean).join("\n\n").replace(/\s+$/, "");
+  const isLong = (m) => { const t = fullText(m); return t.split("\n").length > 12 || t.length > 1400; };
+  const thread = (key) => MSGS.filter((m) => m.peers.includes(key));
+  const preview = (m) => m.gone ? "(copy gone)" : m.body ? m.body.split("\n")[0] : m.ref ? "file " + m.ref.path.split("/").pop() : "(no body)";
+
+  function conversations() {
+    return Object.keys(PEERS).map((key) => {
+      const list = thread(key), last = list[list.length - 1];
+      const sends = list.filter((m) => m.dir === "out"), lastSend = sends[sends.length - 1];
+      return { key, peer: PEERS[key], last, lastSend, unread: list.filter((m) => m.dir === "in" && m.unread).length, count: list.length };
+    }).sort((a, b) => b.last.at - a.last.at);
+  }
+
+  let state = { w: 620, tab: "conversations", open: true, peer: "mc", view: "thread", expanded: new Set(), place: "auto" };
+
+  // Line 3 of a row: where the peer stands, then the state of this panel's last send.
+  // Line 3 of a row: the state of this panel's last send, then where the peer stands.
+  function statusLine(c) {
+    const p = c.peer, tail = p.open || p.nameOnly ? "" : '<span class="q"> · not open</span>';
+    if (p.nameOnly) return ['<span class="q">name only</span>', "Matched by name only, so there is no panel to send to"];
+    if (!c.lastSend) return ["nothing sent" + tail, "board-move has sent nothing to " + p.name];
+    const s = c.lastSend.st[c.key], ago = span(NOW - c.lastSend.at);
+    const help = `board-move's last send to ${p.name}, ${ago} ago: `;
+    if (s === "taken") return ["sent · taken" + tail, help + "taken"];
+    if (s === "waiting") return [`sent · <span class="wait">waiting ${ago}</span>` + tail, help + "not taken yet" + (p.open ? "" : "; the panel is not open")];
+    return ["sent · copy gone" + tail, help + "the copy is no longer on disk"];
+  }
+
+  function listPane(convs) {
+    const unread = convs.reduce((a, c) => a + c.unread, 0);
+    const rows = convs.map((c) => {
+      const p = c.peer;
+      const num = p.nameOnly ? '<span class="pnum none" title="No panel: matched by name only">?</span>' : `<span class="pnum" title="Panel ${p.panel}">${p.panel}</span>`;
+      return `<div class="crow${c.key === state.peer ? " sel" : ""}${c.unread ? " has-unread" : ""}${p.nameOnly || !p.open ? " away" : ""}" role="button" tabindex="0" data-peer="${c.key}" aria-current="${c.key === state.peer}" aria-label="Conversation with ${esc(p.name)}, ${c.unread} unread">
+        <div class="l1">${num}<span class="nm">${esc(p.name)}</span><span class="tm">${listTime(c.last.at)}</span></div>
+        <div class="l2"><span class="dir">${c.last.dir === "in" ? "←" : "→"}</span><span class="pv">${esc(preview(c.last))}</span></div>
+        <div class="l3"><span class="ls" title="${esc(statusLine(c)[1])}">${statusLine(c)[0]}</span><span class="uc">${c.unread ? `<b>${c.unread} unread</b>` : ""}</span></div>
+      </div>`;
+    }).join("");
+    return `<div class="clist" id="clist"><div class="lhead"><span>${convs.length} conversations</span><span>${unread} unread</span></div>${rows}</div>`;
+  }
+
+  function stateChip(m, key) {
+    if (m.dir === "in") return m.unread ? '<span class="st u" title="board-move has not taken this message yet.">UNREAD</span>' : '<span class="st" title="board-move has taken this message.">TAKEN</span>';
+    const s = m.st[key], who = PEERS[key].name;
+    if (s === "waiting") return `<span class="st wait" title="${esc(who)} has not taken this message yet.">WAITING</span>`;
+    if (s === "taken") return `<span class="st" title="${esc(who)} has taken this message.">TAKEN</span>`;
+    return `<span class="st gone" title="${esc(who)}'s copy is no longer on disk.">GONE</span>`;
+  }
+
+  function chips(m, list) {
+    const out = [];
+    if (m.urgent) out.push('<span class="chip warn">urgent</span>');
+    if (m.reply) {
+      const parent = BY_ID[m.reply];
+      if (parent && list.includes(parent)) {
+        out.push(`<button class="chip link" data-parent="${parent.id}" title="Show the message this replies to">↳ reply to ${esc(parent.topic || "(no topic)")} · ${dayText(parent.at).split(" ")[0]} ${clock(parent.at)}</button>`);
+      } else {
+        out.push(`<span class="chip" title="The parent is not in this conversation">↳ reply to ${m.reply.slice(0, 10)}…</span>`);
+      }
+    }
+    if (m.ttl) {
+      const exp = new Date(m.at.getTime() + m.ttl * 1000);
+      out.push(exp < NOW ? `<span class="chip warn">ttl ${span(m.ttl * 1000)} · expired ${span(NOW - exp)} ago</span>` : `<span class="chip">ttl ${span(m.ttl * 1000)} · expires in ${span(exp - NOW)}</span>`);
+    }
+    if (m.replyAddr) out.push(`<span class="chip">replies to ${esc(m.replyAddr)}</span>`);
+    return out.length ? `<div class="chips">${out.join("")}</div>` : "";
+  }
+
+  function bubble(m, key, list) {
+    const out = m.dir === "out", long = isLong(m), open = state.expanded.has(m.id);
+    const fold = long && !open ? " fold" : "";
+    let recipients = "";
+    if (out && m.peers.length > 1) {
+      recipients = `<div class="rcp"><span>to <b>${esc(m.to)}</b> · ${m.peers.length} panels</span>${m.peers.map((k) =>
+        `<span class="who${k === key ? " me" : ""}"><b>${esc(PEERS[k].name)}</b>${stateChip(m, k)}</span>`).join("")}</div>`;
+    }
+    let body;
+    if (m.gone) {
+      body = `<div class="gonebody">Copy gone. ${esc(PEERS[key].name)}'s copy is no longer on disk, so the text cannot be shown. The sent record keeps the topic, time and recipients.</div>`;
+    } else if (m.ref) {
+      body = `<div class="ref"><div class="cap" title="${esc(m.ref.path)}"><span>from file</span><b>${esc(m.ref.path)}</b><span>· ${m.ref.size}</span></div><pre class="bd${fold}">${esc(m.ref.text)}</pre></div>`;
+    } else {
+      body = `<pre class="bd${fold}">${esc(m.body)}</pre>`;
+    }
+    const acts = m.gone ? "" : `<div class="acts">${long ? `<button data-expand="${m.id}">${open ? "Show less" : "Show all"}</button>` : ""}<button class="copy" data-copy="${m.id}">Copy text</button></div>`;
+    const who = out ? `board-move to ${PEERS[key].name}` : `${PEERS[key].name} to board-move`;
+    return `<div class="msg ${m.dir}" id="m-${m.id}" aria-label="${esc(who)}">
+      <div class="bub${!out && m.unread ? " unread" : ""}">
+        <div class="hd">${stateChip(m, key)}<span class="tp${m.topic ? "" : " none"}">${esc(m.topic || "(no topic)")}</span><span class="tm" title="${stamp(m.at)}">${clock(m.at)}</span></div>
+        ${recipients}${chips(m, list)}${body}${acts}
+      </div></div>`;
+  }
+
+  function threadPane(convs, narrow) {
+    const c = convs.find((x) => x.key === state.peer), p = c.peer, list = thread(c.key);
+    const where = p.nameOnly ? '<span class="st">NAME ONLY</span>' : `<span class="pn">panel ${p.panel} · ${p.open ? "open" : "not open"}</span>`;
+    const how = p.nameOnly ? "no sender stamp: keyed by the name in from" : `keyed by sender stamp ${p.uuid.slice(0, 8)}`;
+    const ins = list.filter((m) => m.dir === "in").length;
+    let html = "", day = null, newShown = false, edgeShown = false;
+    html += p.nameOnly
+      ? `<div class="marker edge">These messages carry no sender stamp, so c11 keys them by the name <b>${esc(p.name)}</b>. It cannot tell which panel, if any, sent them, and never merges them into a panel's conversation. A script that writes envelopes directly looks like this.</div>`
+      : `<div class="marker">Start of the record · ${esc(p.name)} left, board-move right</div>`;
+    const firstUnread = list.find((m) => m.dir === "in" && m.unread);
+    const hasEarlierIn = list.some((m) => m.dir === "in" && m.at < LEDGER_FLOOR);
+    for (const m of list) {
+      if (!p.nameOnly && hasEarlierIn && !edgeShown && m.at >= LEDGER_FLOOR) {
+        edgeShown = true;
+        html += `<div class="marker edge">This panel's sent record starts ${dayText(LEDGER_FLOOR)}, ${clock(LEDGER_FLOOR)}. Anything board-move sent ${esc(p.name)} before then is not recorded, so only ${esc(p.name)}'s side shows above.</div>`;
+      }
+      if (!day || !sameDay(day, m.at)) { day = m.at; html += `<div class="daysep">${dayLabel(m.at)}</div>`; }
+      if (m === firstUnread && !newShown) {
+        newShown = true;
+        const n = list.filter((x) => x.dir === "in" && x.unread).length;
+        html += `<div class="newsep" id="newsep">${n} unread: board-move has not taken ${n === 1 ? "it" : "these"} yet</div>`;
+      }
+      html += bubble(m, c.key, list);
+    }
+    return `<div class="thread">
+      <div class="thead">
+        <div class="t1">${narrow ? '<button class="back" id="back" aria-label="Back to all conversations">‹ All</button>' : ""}<span class="pname">${esc(p.name)}</span>${where}
+          <button class="jump${c.unread ? "" : " none"}" id="jump" ${c.unread ? "" : 'tabindex="-1" aria-hidden="true"'}>${c.unread} unread ↓</button></div>
+        <div class="t2"><span class="how">${how}</span><span class="n">${list.length} messages · ${ins} in · ${list.length - ins} out</span></div>
+      </div>
+      <div class="tbody" id="tbody">${html}</div>
+    </div>`;
+  }
+
+  function conversationsPane() {
+    const convs = conversations(), narrow = state.w < 500;
+    if (!convs.some((c) => c.key === state.peer)) state.peer = convs[0].key;
+    const body = narrow ? (state.view === "list" ? listPane(convs) : threadPane(convs, true)) : listPane(convs) + threadPane(convs, false);
+    return `<div class="conv${narrow ? " narrow" : ""}">${body}
+      <div class="cfoot"><span><b>Read-only.</b> ${narrow ? "Never sends, claims or deletes mail." : state.w < 700 ? "The drawer never sends, claims or deletes mail." : "The drawer never sends, claims or deletes mail. Agents reply with c11 mailbox send."}</span></div></div>`;
+  }
+
+  const totals = () => {
+    const received = MSGS.filter((m) => m.dir === "in").length, unread = MSGS.filter((m) => m.dir === "in" && m.unread).length;
+    return { received, unread, sent: MSGS.filter((m) => m.dir === "out").length };
+  };
+
+  function render() {
+    const t = totals(), narrow = state.w < 500;
+    $("area").style.width = state.w + "px";
+    // The chevron shows only when the one-line subtitle is cut off.
+    const desc = document.querySelector(".sbar .desc");
+    if (desc) requestAnimationFrame(() => $("chev").classList.toggle("off", desc.scrollWidth <= desc.clientWidth));
+    $("area").style.setProperty("--listw", (state.w >= 900 ? 280 : 220) + "px");
+    $("cellU").textContent = t.unread || "";
+    $("cellR").textContent = t.received;
+    $("cell").setAttribute("aria-label", `Mailbox, ${t.unread} unread, ${t.received} received`);
+    $("cell").classList.toggle("open", state.open);
+    $("drawer").style.display = state.open ? "" : "none";
+    $("tot").textContent = state.tab === "sent" ? `${t.sent} sent` : state.tab === "conversations" ? `${conversations().length} conversations · ${t.unread} unread` : `${t.unread} unread · ${t.received} received`;
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === state.tab));
+    document.querySelectorAll("#widths button").forEach((b) => b.classList.toggle("on", Number(b.dataset.w) === state.w));
+
+    const oldList = $("clist"), oldBody = $("tbody");
+    const keepList = oldList ? oldList.scrollTop : 0, keepBody = oldBody ? oldBody.scrollTop : 0;
+    if (state.tab === "conversations") {
+      $("pane").innerHTML = conversationsPane();
+    } else {
+      const names = { received: "The Received list, unchanged.", sent: "The Sent list, unchanged.", insights: "The Insights tab, unchanged (see the Insights prototype)." };
+      $("pane").innerHTML = `<div class="placeholder">${names[state.tab]}</div>`;
+    }
+    if ($("clist")) $("clist").scrollTop = keepList;
+    const body = $("tbody");
+    if (body) {
+      if (state.place === "keep") body.scrollTop = keepBody;
+      else if (state.place === "top") body.scrollTop = 0;
+      else if (state.place === "bottom") body.scrollTop = body.scrollHeight;
+      else { const sep = $("newsep"); body.scrollTop = sep ? Math.max(0, sep.offsetTop - 8) : body.scrollHeight; }
+    }
+    state.place = "keep";
+    if (!narrow || state.view === "list") {
+      const sel = document.querySelector(".crow.sel"), list = $("clist");
+      if (sel && list && (sel.offsetTop < list.scrollTop + 26 || sel.offsetTop + sel.offsetHeight > list.scrollTop + list.clientHeight)) list.scrollTop = sel.offsetTop - 26;
+    }
+    wire();
+  }
+
+  function openPeer(key, focus) {
+    if (key !== state.peer) state.place = "auto";
+    state.peer = key; state.view = "thread";
+    render();
+    if (focus) { const el = document.querySelector(`.crow[data-peer="${key}"]`) || $("back"); if (el) el.focus({ preventScroll: true }); }
+  }
+
+  function flash(id) {
+    const el = document.querySelector(`#m-${id} .bub`), body = $("tbody");
+    if (!el || !body) return;
+    body.scrollTop = Math.max(0, el.parentElement.offsetTop - body.clientHeight / 3);
+    el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 1600);
+  }
+
+  function wire() {
+    const act = (el, fn) => { el.addEventListener("click", fn); el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(e); } }); };
+    document.querySelectorAll(".crow").forEach((r) => {
+      act(r, () => openPeer(r.dataset.peer, true));
+      r.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        e.preventDefault();
+        const next = e.key === "ArrowDown" ? r.nextElementSibling : r.previousElementSibling;
+        if (!next || !next.classList.contains("crow")) return;
+        if (state.w < 500) next.focus(); else openPeer(next.dataset.peer, true);
+      });
+    });
+    if ($("back")) $("back").addEventListener("click", () => { state.view = "list"; render(); const s = document.querySelector(".crow.sel"); if (s) s.focus({ preventScroll: true }); });
+    if ($("jump")) $("jump").addEventListener("click", () => { const sep = $("newsep"), body = $("tbody"); if (sep && body) body.scrollTop = Math.max(0, sep.offsetTop - 8); });
+    document.querySelectorAll("[data-parent]").forEach((b) => b.addEventListener("click", () => flash(b.dataset.parent)));
+    document.querySelectorAll("[data-expand]").forEach((b) => b.addEventListener("click", () => {
+      const id = b.dataset.expand;
+      state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id);
+      render();
+    }));
+    document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => {
+      const text = fullText(BY_ID[b.dataset.copy]);
+      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) { /* the copy is best effort in a file:// page */ }
+      b.textContent = "Copied";
+      setTimeout(() => { b.textContent = "Copy text"; }, 1200);
+    }));
+  }
+
+  function seg(id, fn) {
+    $(id).addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) fn(b); });
+  }
+  seg("widths", (b) => { state.w = Number(b.dataset.w); render(); });
+  seg("tabs", (b) => { state.tab = b.dataset.tab; state.place = "auto"; render(); });
+  const setTheme = (t) => {
+    document.documentElement.dataset.theme = t;
+    $("themes").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.t === t));
+  };
+  seg("themes", (b) => setTheme(b.dataset.t));
+  const toggle = () => { state.open = !state.open; state.place = "auto"; render(); };
+  $("cell").addEventListener("click", toggle);
+  $("dclose").addEventListener("click", () => { state.open = false; render(); });
+  $("cell").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.tab === "conversations" && state.w < 500 && state.view === "thread") { state.view = "list"; render(); }
+  });
+
+  // Hash hooks for screenshots: #w=900&theme=light&peer=ow&view=list&expand=all&place=top&tab=sent
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("w")) state.w = Number(h.get("w"));
+  if (h.get("theme")) setTheme(h.get("theme"));
+  if (h.get("tab")) state.tab = h.get("tab");
+  if (h.get("peer") && PEERS[h.get("peer")]) state.peer = h.get("peer");
+  if (h.get("view")) state.view = h.get("view");
+  if (h.get("place")) state.place = h.get("place");
+  if (h.get("expand") === "all") MSGS.forEach((m) => { if (isLong(m)) state.expanded.add(m.id); });
+  render();
+  if (h.get("flash")) { const f = MSGS.find((m) => m.id.endsWith(h.get("flash"))); if (f) flash(f.id); }
+})();
+</script>
+</body>
+</html>

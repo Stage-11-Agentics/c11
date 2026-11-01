@@ -89,6 +89,7 @@ Releases through `release-local.sh` on Atlas, from `build-release-local/timings.
 | v1.7.5 | 469 (439) | 112 | 105 | 69 (32 + 37) | 9 | 2 |
 | v1.7.6 | 460 (425) | 114 | 106 | 69 (32 + 37) | 9 | 2 |
 | v1.7.7 | 563 (513) | 105 | 96 | 61 (32 + 29) | 9 | 2 |
+| v1.7.8 | 475 (440) | 137 | 130 | 85 (47 + 38) | 9 | 2 |
 
 End-to-end rehearsal (#815 proof, 2026-10-31, nothing published): scratch release branch to would-publish in 8 min 52 s. Cheap CI was green at 1:57, `c11/pr-swift` at 3:45 (166 s), the Atlas dry run finished at 7:10, and notarization at 8:52. With the build done during the staging smoke, tag to published is about 2.5 min. Each run appends its step seconds to `build-release-local/timings.jsonl`; add a row to the release table above.
 

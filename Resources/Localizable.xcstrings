@@ -11859,6 +11859,53 @@
         }
       }
     },
+    "alert.renameWorkspace.emptyResets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave the name empty to use the automatic name."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を空のままにすると、自動の名前が使われます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称留空则使用自动名称。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名稱留空則使用自動名稱。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름을 비워 두면 자동 이름을 사용해요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оставьте имя пустым, чтобы использовать автоматическое имя."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Залиште назву порожньою, щоб використати автоматичну назву."
+          }
+        }
+      }
+    },
     "alert.renameWorkspace.message": {
       "extractionState": "manual",
       "localizations": {

@@ -444,7 +444,6 @@ class UpdateViewModel: ObservableObject {
             if case .idle = state {
                 state = .checking(.init(cancel: {}))
             }
-            AppDelegate.shared?.checkForUpdates(nil)
             return .checkDetectedUpdate
         }
         if case .notFound(let notFound) = state {

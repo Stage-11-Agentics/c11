@@ -34,6 +34,7 @@ struct UpdatePill: View {
                 // to click the pill again after the background-detected version flips
                 // to a checked-and-available state.
                 showPopover = true
+                AppDelegate.shared?.checkForUpdates(nil)
             case .togglePopover:
                 showPopover.toggle()
             case .restart, .acknowledgeNotFound:

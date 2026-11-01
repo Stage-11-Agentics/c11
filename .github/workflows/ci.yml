@@ -1,19 +1,43 @@
 name: CI
 
+# Every PR runs this workflow, so the required check always reports. A
+# docs-only PR skips the cheap checks through the scope job instead of a
+# paths filter (a skipped workflow would leave the required check pending).
 on:
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'notes/**'
-      - 'Resources/Localizable.xcstrings'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # code=false only when every file the PR touches is documentation
+  # (**/*.md, docs/**, notes/**, Resources/Localizable.xcstrings).
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - name: Checkout scope script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci-pr-scope.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Classify the PR's files
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: ./scripts/ci-pr-scope.sh scope
+
   workflow-guards:
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
@@ -31,6 +55,9 @@ jobs:
 
       - name: Validate the native backstop's target and skip selection
         run: ./tests/test_ci_backstop_target.sh
+
+      - name: Validate PR scope and the required-check verdict
+        run: ./tests/test_ci_pr_scope.sh
 
       - name: Validate the backstop CLI test step
         run: ruby tests/test_ci_python_cli_step.rb
@@ -82,6 +109,8 @@ jobs:
         run: ./scripts/telemetry/sentry-position.py --self-test
 
   agent-runtime-tests:
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -117,23 +146,28 @@ jobs:
           bun tests/test_omp_native_mail.mjs
           bash tests/test_statusline_prompt_cache_snippet.sh
 
-  # Keep the required check name stable and fail when either group fails or skips.
+  # The required check on main. It always runs, so docs-only PRs report it too.
+  # Every job in needs is judged: success on code PRs, skipped on docs-only.
   workflow-guard-tests:
-    needs: [workflow-guards, agent-runtime-tests]
+    needs: [scope, workflow-guards, agent-runtime-tests, remote-daemon-tests, web-typecheck]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
-      - name: Require both guard groups
+      - name: Checkout verdict script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci-pr-scope.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Require every cheap check
         env:
-          GUARDS_RESULT: ${{ needs.workflow-guards.result }}
-          RUNTIME_RESULT: ${{ needs.agent-runtime-tests.result }}
-        run: |
-          set -euo pipefail
-          test "$GUARDS_RESULT" = success
-          test "$RUNTIME_RESULT" = success
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: ./scripts/ci-pr-scope.sh verdict
 
   remote-daemon-tests:
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -153,6 +187,8 @@ jobs:
         run: ./tests/test_remote_daemon_release_assets.sh
 
   web-typecheck:
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     defaults:

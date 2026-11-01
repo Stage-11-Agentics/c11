@@ -285,7 +285,7 @@ final class JournalReducerTests: XCTestCase {
         XCTAssertEqual(JournalTestData.fold(stopped, start, seq: 4).snapshot?.phase, .working)
     }
 
-    func testTranscriptRankNeverSetsOrClearsBlockedAndGrokCannotClaimInterrupt() {
+    func testTranscriptRankNeverSetsOrClearsBlockedIncludingGrok() {
         let blocked = JournalTestData.fold(nil, JournalTestData.draft(.questionRequested), seq: 1).snapshot
 
         var transcriptStart = JournalTestData.draft(.turnStarted)
@@ -318,7 +318,7 @@ final class JournalReducerTests: XCTestCase {
 
         var grokInterrupt = transcriptStop
         grokInterrupt.adapter = .grokTranscript
-        XCTAssertEqual(JournalAdapter.grokTranscript.capabilities, ["turn"])
+        XCTAssertEqual(JournalAdapter.grokTranscript.capabilities, ["turn", "interrupt"])
         XCTAssertEqual(JournalTestData.fold(afterStart.snapshot, grokInterrupt, seq: 5).effect, .advisory)
     }
 
@@ -599,5 +599,276 @@ final class JournalMovedPanelAppendTests: XCTestCase {
 
         XCTAssertEqual(result.receipt.projectionEffect, .applied)
         XCTAssertEqual(try XCTUnwrap(store.current(owner: owner)).workspaceID, live)
+    }
+}
+
+final class SupervisorProjectionTests: XCTestCase {
+    private func snapshot(_ phase: JournalPhase = .working, kind: String = "codex") -> JournalSnapshot {
+        var value = JournalSnapshot(owner: .init(panelID: UUID(), agentKind: kind, sessionID: "test-session"),
+                                    workspaceID: UUID(), appInstanceID: UUID())
+        value.phase = phase
+        value.turnID = "turn-1"
+        value.confirmation = .confirmed
+        value.connection = .live
+        return value
+    }
+
+    private func progress(_ tokens: Int = 1) -> SupervisorProjection.Progress {
+        var signals = TranscriptSignals()
+        signals.turnStartedAt = Date(timeIntervalSince1970: 1)
+        signals.turnTokens = tokens
+        return .init(signals)
+    }
+
+    func testNativeWaitEmitsOnceAndClearsOnContinuation() {
+        var snap = snapshot(kind: "claude-code")
+        var value = SupervisorProjection(snapshot: snap)
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 0, thresholdMs: 600_000).isEmpty)
+        snap.phase = .blocked; snap.reason = .approval
+        let entry = value.observe(snap, progress: progress(), now: 1, thresholdMs: 600_000)
+        XCTAssertEqual(entry.map(\.type), [.supervisorWaitingOnPermission])
+        XCTAssertEqual(entry.first?.payload["kind"] as? String, "permission")
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 2, thresholdMs: 600_000).isEmpty)
+        snap.phase = .working; snap.reason = nil
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 3, thresholdMs: 600_000).map(\.type), [.supervisorPermissionCleared])
+        XCTAssertEqual(value.metadata["waiting_on_permission"] as? Bool, false)
+    }
+
+    func testOpenCodeNativeReplyCorrelationDrivesOneWaitAndClear() throws {
+        var ask = JournalTestData.draft(.approvalRequested)
+        ask.agentKind = "opencode"; ask.source = .plugin; ask.adapter = .opencodePlugin
+        ask.nativeEvent = "permission.asked"; ask.requestID = "request-1"
+        try ask.validate()
+        var snap = try XCTUnwrap(JournalTestData.fold(nil, ask, seq: 1).snapshot)
+        var value = SupervisorProjection(snapshot: snap)
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 1, thresholdMs: 600_000).map(\.type), [.supervisorWaitingOnPermission])
+        var reply = ask
+        reply.kind = .attentionResolved; reply.nativeEvent = "permission.replied"; reply.resolution = .resumed
+        reply.requestID = "other-request"
+        try reply.validate()
+        snap = try XCTUnwrap(JournalTestData.fold(snap, reply, seq: 2).snapshot)
+        XCTAssertEqual(snap.phase, .blocked)
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 2, thresholdMs: 600_000).isEmpty)
+        reply.requestID = "request-1"
+        snap = try XCTUnwrap(JournalTestData.fold(snap, reply, seq: 3).snapshot)
+        XCTAssertEqual(snap.phase, .working)
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 3, thresholdMs: 600_000).map(\.type), [.supervisorPermissionCleared])
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 4, thresholdMs: 600_000).isEmpty)
+    }
+
+    func testWaitClearReasonDoesNotInventAnAnswerAtTurnOrCoverageEnd() {
+        for phase in [JournalPhase.working, .idle, .error, .unknown] {
+            var snap = snapshot(.blocked, kind: "claude-code")
+            snap.reason = .approval
+            var value = SupervisorProjection(snapshot: snap)
+            _ = value.observe(snap, progress: progress(), now: 1, thresholdMs: 600_000)
+            snap.phase = phase; snap.reason = nil
+            let clear = value.observe(snap, progress: progress(), now: 2, thresholdMs: 600_000)
+            XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+            XCTAssertEqual(clear.first?.payload["reason"] as? String,
+                           phase == .working ? "answered" : "turn_ended")
+        }
+        var snap = snapshot(.blocked, kind: "claude-code")
+        snap.reason = .approval
+        var value = SupervisorProjection(snapshot: snap)
+        _ = value.observe(snap, progress: progress(), now: 1, thresholdMs: 600_000)
+        snap.confirmation = .unconfirmed
+        let clear = value.observe(snap, progress: progress(), now: 2, thresholdMs: 600_000)
+        XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+        XCTAssertEqual(clear.first?.payload["reason"] as? String, "coverage_changed")
+    }
+
+    func testScreenDialogUnknownDoesNotClearAndIdleNeverOpens() {
+        var snap = snapshot()
+        var value = SupervisorProjection(snapshot: snap)
+        let dialog = PromptInputClassification(state: .dialog, draftLength: nil, dialogKind: "permission")
+        XCTAssertEqual(value.observe(snap, progress: progress(), prompt: dialog, now: 1, thresholdMs: 600_000).map(\.type), [.supervisorWaitingOnPermission])
+        XCTAssertTrue(value.observe(snap, progress: progress(), prompt: .unknown, now: 2, thresholdMs: 600_000).isEmpty)
+        XCTAssertEqual(value.metadata["waiting_on_permission"] as? Bool, true)
+        XCTAssertEqual(value.observe(snap, progress: progress(), prompt: .init(state: .empty, draftLength: nil), now: 3, thresholdMs: 600_000).map(\.type), [.supervisorPermissionCleared])
+        snap.phase = .idle
+        XCTAssertTrue(value.observe(snap, progress: progress(), prompt: dialog, now: 4, thresholdMs: 600_000).isEmpty)
+    }
+
+    func testIdlessClaudeApprovalScreenContinuationDoesNotReopenAndCanStall() {
+        var snap = snapshot(.blocked, kind: "claude-code")
+        snap.reason = .approval
+        XCTAssertTrue(SupervisorProjection.needsScreen(snap))
+        var value = SupervisorProjection(snapshot: snap)
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 0, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission])
+        XCTAssertTrue(value.observe(snap, progress: progress(), prompt: .unknown, now: 1, thresholdMs: 100).isEmpty)
+        let clear = value.observe(snap, progress: progress(), prompt: .init(state: .draft, draftLength: 4), now: 2, thresholdMs: 100)
+        XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+        XCTAssertEqual(clear.first?.payload["reason"] as? String, "answered")
+        for now: Int64 in [3, 20, 50] {
+            XCTAssertTrue(value.observe(snap, progress: progress(), prompt: .unknown, now: now, thresholdMs: 100).isEmpty)
+            XCTAssertEqual(value.metadata["waiting_on_permission"] as? Bool, false)
+        }
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 102, thresholdMs: 100).map(\.type), [.supervisorStalled])
+        let dialog = PromptInputClassification(state: .dialog, draftLength: nil, dialogKind: "permission")
+        XCTAssertEqual(value.observe(snap, progress: progress(), prompt: dialog, now: 103, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission, .supervisorStallCleared])
+        XCTAssertTrue(value.observe(snap, progress: progress(), prompt: dialog, now: 104, thresholdMs: 100).isEmpty)
+        XCTAssertEqual(value.metadata["waiting_on_permission"] as? Bool, true)
+        snap.phase = .idle
+        _ = value.observe(snap, progress: progress(), now: 105, thresholdMs: 100)
+        snap.phase = .blocked
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 106, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission])
+    }
+
+    func testClaudeScreenSamplingExcludesIdentifiedAsksAndOtherPhases() {
+        for phase in [JournalPhase.working, .idle, .error, .unknown] {
+            var snap = snapshot(phase, kind: "claude-code"); snap.reason = .approval
+            XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+        }
+        var snap = snapshot(.blocked, kind: "claude-code"); snap.reason = .approval
+        snap.requestID = "identified-request"
+        XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+        snap.requestID = nil
+        for reason in [JournalReason.question, .planReview] {
+            snap.reason = reason
+            XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+        }
+        snap.reason = .approval; snap.confirmation = .unconfirmed
+        XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+    }
+
+    func testScreenConfirmedClaudeContinuationReceivesSleepAndResetsOnOwnerChange() {
+        var snap = snapshot(.blocked, kind: "claude-code"); snap.reason = .approval
+        var current = snap
+        var events: [SupervisorProjection.Edge] = []
+        let monitor = SupervisorMonitor(latestSnapshot: { _ in current }) { edge, _ in events.append(edge) }
+        monitor.observe(snap)
+        monitor.observe(snap, prompt: .init(state: .empty, draftLength: 0))
+        monitor.setSleeping(true)
+        monitor.drainForTesting()
+        XCTAssertEqual(events.map(\.type), [.supervisorWaitingOnPermission, .supervisorPermissionCleared, .supervisorTurnInterrupted])
+        XCTAssertEqual(events.last?.payload["reason"] as? String, "host_sleep")
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["phase"] as? String, "blocked")
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["screen_confirmed_continuation"] as? Bool, true)
+        current.owner = .init(panelID: snap.owner.panelID, agentKind: "claude-code", sessionID: "new-session")
+        monitor.setSleeping(false)
+        monitor.observe(current)
+        monitor.drainForTesting()
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["screen_confirmed_continuation"] as? Bool, false)
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["waiting_on_permission"] as? Bool, true)
+    }
+
+    func testStallBoundaryOnceAndTokensClearThenCanStallAgain() {
+        let snap = snapshot()
+        var value = SupervisorProjection(snapshot: snap)
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 100, thresholdMs: 600_000).isEmpty)
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 600_099, thresholdMs: 600_000).isEmpty)
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 600_100, thresholdMs: 600_000).map(\.type), [.supervisorStalled])
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 700_000, thresholdMs: 600_000).isEmpty)
+        XCTAssertEqual(value.observe(snap, progress: progress(2), now: 700_001, thresholdMs: 600_000).map(\.type), [.supervisorStallCleared])
+        XCTAssertEqual(value.observe(snap, progress: progress(2), now: 1_300_001, thresholdMs: 600_000).map(\.type), [.supervisorStalled])
+    }
+
+    func testOutputProgressAndDialogPauseStallClock() {
+        let snap = snapshot()
+        var value = SupervisorProjection(snapshot: snap)
+        _ = value.observe(snap, progress: progress(), now: 0, thresholdMs: 100)
+        var output = progress()
+        output.outputAt = Date(timeIntervalSince1970: 10)
+        XCTAssertTrue(value.observe(snap, progress: output, now: 90, thresholdMs: 100).isEmpty)
+        XCTAssertTrue(value.observe(snap, progress: output, now: 110, thresholdMs: 100).isEmpty)
+        let dialog = PromptInputClassification(state: .dialog, draftLength: nil)
+        XCTAssertEqual(value.observe(snap, progress: output, prompt: dialog, now: 180, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission])
+        XCTAssertTrue(value.observe(snap, progress: output, prompt: dialog, now: 10_000, thresholdMs: 100).isEmpty)
+        XCTAssertEqual(value.observe(snap, progress: output, prompt: .init(state: .empty, draftLength: nil), now: 10_001, thresholdMs: 100).map(\.type), [.supervisorPermissionCleared])
+        XCTAssertTrue(value.observe(snap, progress: output, now: 10_100, thresholdMs: 100).isEmpty)
+    }
+
+    func testMissingAndHistoricalCoverageDoesNotInventStalls() {
+        var snap = snapshot()
+        var value = SupervisorProjection(snapshot: snap)
+        XCTAssertTrue(value.observe(snap, progress: nil, now: 0, thresholdMs: 100).isEmpty)
+        XCTAssertTrue(value.observe(snap, progress: nil, now: 10_000, thresholdMs: 100).isEmpty)
+        XCTAssertEqual(value.metadata["progress_coverage"] as? String, "unavailable")
+        snap.confirmation = .unconfirmed
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 20_000, thresholdMs: 100).isEmpty)
+    }
+
+    func testSleepClockResetAndProgressClearsInterruption() {
+        let snap = snapshot()
+        var value = SupervisorProjection(snapshot: snap)
+        _ = value.observe(snap, progress: progress(), now: 0, thresholdMs: 100)
+        let sleep = value.interrupt(reason: "host_sleep", source: "c11", now: 80, nativeEvent: "system.sleep")
+        XCTAssertEqual(sleep.type, .supervisorTurnInterrupted)
+        XCTAssertEqual(value.metadata["interruption_reason"] as? String, "host_sleep")
+        value.resetProgressClock(now: 1000)
+        XCTAssertTrue(value.observe(snap, progress: progress(), now: 1001, thresholdMs: 100).isEmpty)
+        _ = value.observe(snap, progress: progress(2), now: 1002, thresholdMs: 100)
+        XCTAssertTrue(value.metadata["interruption_reason"] is NSNull)
+    }
+
+    func testClosedSupervisorFilterAndExactTypeCompatibility() {
+        for type in EventEnvelope.EventType.allCases {
+            let expected = type == .lifecycleChanged || [EventEnvelope.EventType.supervisorWaitingOnPermission, .supervisorPermissionCleared, .supervisorTurnInterrupted, .supervisorStalled, .supervisorStallCleared].contains(type)
+            XCTAssertEqual(EventEnvelope.matchesFilter("supervisor", type: type.rawValue), expected)
+        }
+        XCTAssertFalse(EventEnvelope.matchesFilter("supervisor", type: "supervisor.future_unknown"))
+        XCTAssertFalse(EventEnvelope.matchesFilter("supervisor", type: nil))
+        XCTAssertTrue(EventEnvelope.matchesFilter("surface.closed", type: "panel.closed"))
+        XCTAssertFalse(EventEnvelope.matchesFilter("panel.closed", type: "panel.created"))
+        XCTAssertTrue(EventEnvelope.matchesFilter(nil, type: "mailbox.delivered"))
+    }
+
+    func testAppliedProviderFailureAndCancellationEmitButNormalOrToolEndDoNot() {
+        let start = JournalTestData.draft(.turnStarted)
+        let working = JournalTestData.fold(nil, start, seq: 1).snapshot
+        for (kind, reason) in [(JournalKind.errorReported, "provider_error"), (.turnInterrupted, "cancelled"), (.turnCompleted, nil)] as [(JournalKind, String?)] {
+            var end = JournalTestData.draft(kind)
+            if kind == .errorReported { end.nativeEvent = "StopFailure"; end.reasonCode = .sessionFailure }
+            if kind == .turnInterrupted { end.source = .transcript; end.adapter = .codexTranscript; end.nativeEvent = "turn.interrupted"; end.occurredAtMs = 2_000; end.timeQuality = .nativeLocal }
+            let folded = JournalTestData.fold(working, end, seq: 2)
+            let result = JournalAppendResult(receipt: .init(eventID: end.eventID, sequence: 2, committedAtMs: 10_002, replayed: false, projectionEffect: folded.effect), changedSnapshot: folded.snapshot, fromPhase: folded.fromPhase, toPhase: folded.snapshot?.phase)
+            XCTAssertEqual(SupervisorProjection.interruptionReason(end, result: result, observedSince: 1_000), reason)
+            if kind == .turnInterrupted { XCTAssertNil(SupervisorProjection.interruptionReason(end, result: result, observedSince: 3_000)) }
+            var duplicate = result
+            duplicate = .init(receipt: .init(eventID: end.eventID, sequence: 3, committedAtMs: 10_003, replayed: false, projectionEffect: .duplicateEvidence), changedSnapshot: folded.snapshot, fromPhase: folded.fromPhase, toPhase: folded.snapshot?.phase)
+            XCTAssertNil(SupervisorProjection.interruptionReason(end, result: duplicate, observedSince: 1_000))
+        }
+        var toolError = JournalTestData.draft(.errorReported)
+        toolError.nativeEvent = "StopFailure"; toolError.reasonCode = .toolFailure
+        let folded = JournalTestData.fold(working, toolError, seq: 2)
+        let result = JournalAppendResult(receipt: .init(eventID: toolError.eventID, sequence: 2, committedAtMs: 10_002, replayed: false, projectionEffect: folded.effect), changedSnapshot: folded.snapshot, fromPhase: folded.fromPhase, toPhase: folded.snapshot?.phase)
+        XCTAssertNil(SupervisorProjection.interruptionReason(toolError, result: result, observedSince: 0))
+    }
+
+    func testRuntimeSleepEmitsOnceForWorkingPanelOnlyAndRemovalClearsReadback() {
+        var events: [(SupervisorProjection.Edge, UUID)] = []
+        let working = snapshot(), idle = snapshot(.idle, kind: "claude-code")
+        let live = [working.owner.panelID: working, idle.owner.panelID: idle]
+        let monitor = SupervisorMonitor(latestSnapshot: { live[$0] }) { edge, snap in events.append((edge, snap.owner.panelID)) }
+        monitor.observe(working); monitor.observe(idle)
+        monitor.setSleeping(true); monitor.setSleeping(true)
+        monitor.drainForTesting()
+        XCTAssertEqual(events.map { $0.0.type }, [.supervisorTurnInterrupted])
+        XCTAssertEqual(events.first?.1, working.owner.panelID)
+        XCTAssertEqual(events.first?.0.payload["reason"] as? String, "host_sleep")
+        XCTAssertEqual(monitor.readback(panel: idle.owner.panelID)["phase"] as? String, "idle")
+        monitor.setSleeping(false); monitor.setSleeping(false)
+        monitor.drainForTesting()
+        XCTAssertEqual(events.count, 1)
+        monitor.remove(panel: working.owner.panelID); monitor.drainForTesting()
+        XCTAssertEqual(monitor.readback(panel: working.owner.panelID)["phase"] as? String, "unknown")
+    }
+
+    func testDelayedOwnerCallbackCannotResurrectClosedPanel() {
+        let old = snapshot()
+        var live: [UUID: JournalSnapshot] = [old.owner.panelID: old]
+        let monitor = SupervisorMonitor(latestSnapshot: { live[$0] }, emitter: { _, _ in })
+        monitor.observe(old); monitor.drainForTesting()
+        XCTAssertEqual(monitor.readback(panel: old.owner.panelID)["phase"] as? String, "working")
+        live.removeAll()
+        monitor.remove(panel: old.owner.panelID)
+        monitor.observe(old); monitor.drainForTesting()
+        XCTAssertEqual(monitor.readback(panel: old.owner.panelID)["coverage"] as? String, "unavailable")
+    }
+
+    func testThresholdConfigurationRejectsNonfiniteAndNonpositiveValues() {
+        for invalid in [Double.nan, .infinity, 0, -1, 1441] { XCTAssertEqual(SupervisorProjection.thresholdMinutes(invalid), 10) }
+        XCTAssertEqual(SupervisorProjection.thresholdMinutes(0.1), 0.1)
     }
 }

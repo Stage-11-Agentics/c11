@@ -97,6 +97,11 @@ struct EventEnvelope {
         case waitingEntered = "waiting.entered"
         case waitingLeft = "waiting.left"
         case lifecycleChanged = "lifecycle.changed"
+        case supervisorWaitingOnPermission = "supervisor.waiting_on_permission"
+        case supervisorPermissionCleared = "supervisor.permission_cleared"
+        case supervisorTurnInterrupted = "supervisor.turn_interrupted"
+        case supervisorStalled = "supervisor.stalled"
+        case supervisorStallCleared = "supervisor.stall_cleared"
         case flagRaised = "flag.raised"
         case flagLowered = "flag.lowered"
         case flagSuppressed = "flag.suppressed"
@@ -120,6 +125,22 @@ struct EventEnvelope {
     }
 
     // MARK: - Stored fields
+
+    /// Closed membership for the CLI's supervisor subscription.
+    static let supervisorTypes: Set<String> = [
+        EventType.lifecycleChanged.rawValue,
+        EventType.supervisorWaitingOnPermission.rawValue,
+        EventType.supervisorPermissionCleared.rawValue,
+        EventType.supervisorTurnInterrupted.rawValue,
+        EventType.supervisorStalled.rawValue,
+        EventType.supervisorStallCleared.rawValue,
+    ]
+
+    static func matchesFilter(_ filter: String?, type: String?) -> Bool {
+        guard let filter else { return true }
+        guard let type else { return false }
+        return filter == "supervisor" ? supervisorTypes.contains(type) : canonicalType(filter) == canonicalType(type)
+    }
 
     /// Captured on the emitting thread; formatted at serialize time.
     let ts: Date

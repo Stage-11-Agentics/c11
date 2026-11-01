@@ -72,7 +72,6 @@ final class JournalTranscriptProducer: @unchecked Sendable {
     ) -> JournalDraft? {
         guard transcriptKinds.contains(target.kind), !ref.placeholder, !ref.id.isEmpty,
               [.turnStarted, .turnCompleted, .turnInterrupted].contains(observation.kind),
-              target.kind != "grok" || observation.kind != .turnInterrupted,
               target.kind != "claude-code" || observation.kind == .turnInterrupted,
               !observation.isChild,
               let occurredAt = observation.occurredAt,
@@ -90,6 +89,7 @@ final class JournalTranscriptProducer: @unchecked Sendable {
         draft.sessionID = ref.id
         draft.turnID = observation.turnID
         draft.isChild = observation.isChild
+        draft.reasonCode = observation.reasonCode
         draft.adapterVersion = JournalNativeClockEvidence.adapterVersion(for: adapter) ?? "1"
         draft.occurredAtMs = epochMilliseconds(occurredAt)
         draft.timeQuality = .nativeLocal

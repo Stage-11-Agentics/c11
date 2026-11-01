@@ -96,6 +96,7 @@ Five additional `type` values are **not taxonomy members** — they are structur
 c11 events tail                       # one-shot: print all events in the current instance log, then exit
 c11 events tail --follow              # keep streaming new events (rotation-aware); -f for short
 c11 events tail --filter type=panel.closed
+c11 events tail --follow --filter supervisor  # lifecycle, permission, interruption and stall edges
 c11 events tail --since 1200          # start from seq 1200
 c11 events tail --since 10m           # start from ~10 minutes ago (resolved against ts)
 c11 events tail --instance com.stage11.c11-12345   # a specific instance, not newest-by-mtime
@@ -104,13 +105,96 @@ c11 events tail --instance com.stage11.c11-12345   # a specific instance, not ne
 | Flag | Argument | Behavior |
 |------|----------|----------|
 | `--follow` / `-f` | — | Stay attached and stream new lines as they land. Rotation-aware: on a roll it drains the `.1` tail then continues on the fresh file (first line is `log.rotated`). Omit for one-shot drain-and-exit. |
-| `--filter` | `type=<t>` | Emit only lines whose `type` equals `<t>`. |
+| `--filter` | `type=<t>` or `supervisor` | Exact type match, or the closed supervisor event set below. |
 | `--since` | `<seq>` \| `<duration>` | A bare integer is a `seq` floor (emit `seq ≥ N`); a duration (`10m`, `2h`) is resolved against `ts`. |
 | `--instance` | `<id>` | Read a specific instance log instead of the newest-by-mtime one. |
 
 Defaults: no `--filter` emits every type (taxonomy + control markers); no `--since` starts at the top of the current file; no `--instance` picks newest-by-mtime.
 
 ## Consumer patterns
+
+### Supervising agents
+
+`c11 events tail --follow --filter supervisor` selects exactly `lifecycle.changed`
+and these five event types. It does not select mailbox, notification-waiting,
+rendering, or stream-control events. Use an unfiltered follower too when detecting
+`log.dropped` or recording-policy boundaries matters. As with other events, the
+log is best effort; recover current state with `c11 get-metadata --panel <ref>`.
+
+| Event | Payload | Meaning |
+|-------|---------|---------|
+| `supervisor.waiting_on_permission` | `agent, kind, source, since_ms` | One permission or choice wait began. `kind` is `permission`, `question`, `plan_review`, or `choice`. `source` is `journal` or `active_screen`. |
+| `supervisor.permission_cleared` | `agent, kind, source, since_ms, reason` | The wait ended. `reason` is `answered` on continuation, `turn_ended` on a terminal phase, or `coverage_changed` when live confirmation is lost. Retirement uses `closed`, `owner_changed`, or `journal_cleared`. Unreadable screen capture never counts as an answer. |
+| `supervisor.turn_interrupted` | `agent, session_id, turn_id, reason, source, native_event, observed_at_ms` | A supported applied interruption/session failure, or suspension of a working turn by host sleep. `turn_id` may be null. |
+| `supervisor.stalled` | `agent, last_progress_at_ms, threshold_seconds, source` | A working agent (journal or confirmed Claude screen continuation) with known progress coverage passed the no-progress threshold. Emitted once until cleared. |
+| `supervisor.stall_cleared` | `agent, since_ms, reason` | Progress, a turn end, waiting, or removal ended the stall. |
+
+Each event has the envelope's workspace and panel UUIDs. Payloads contain no
+prompt, command, options, transcript text, or provider error message.
+Interruption reasons are `cancelled`, `provider_error`, `host_sleep`, and
+`unknown`. A host-sleep event reports suspension, not proof that the remote
+provider stopped permanently; it does not force the journal idle. Normal turn
+completion and individual tool failures are not interrupted turns. Old transcript
+interruptions predating this monitor are not announced as new interruptions.
+
+Claude PermissionRequest/Notification and question/plan hooks, and OpenCode
+`permission.asked` and `question.asked`, supply native waits. Claude StopFailure and OpenCode
+`session.error` supply session failures. The existing Codex `turn_aborted`, Claude
+correlated Esc marker and Grok primary `turn_ended` cancellation/interruption
+records supply transcript interruptions. Unknown provider outcomes remain unknown;
+usage/spend-limit detection is separate.
+
+| Harness | Permission / choice detection | Resolution / limitations |
+|---------|-------------------------------|--------------------------|
+| Claude Code | Native `PermissionRequest`, Notification, question and plan hooks; recorded permission chooser also guards `send`. | An ID-less approval is sampled only while the journal remains blocked on approval. A positive composer clears the wait before the tool or turn ends; unknown capture does not. Identified question/plan asks retain their native matching resolution. |
+| Codex | Active-screen command approval menu (`Yes, proceed`, numbered options, live confirm/cancel footer). | Positive composer or turn end clears. Requires exact conversation capture and journal working eligibility. Other chooser layouts remain unknown. |
+| OpenCode | Native `permission.asked` and `question.asked`. | Matching `permission.replied`, `question.replied` or `question.rejected`; reject closes the wait with unknown turn outcome. No answers are stored. |
+| Pi | Supervisor-only active-screen extension selector, selected arrow plus navigation/select/cancel footer and bottom status rails. | Positive composer or turn end clears. Requires an exact persisted session and working journal. Bottom-row chooser capture/classification is opt-in for the supervisor; ordinary input-state, send-guard and doorbell composer readers keep their existing path. Other custom extension widgets remain unknown. |
+| Grok | Unknown: no recorded permission/choice layout is available. | No guessed reader. Transcript lifecycle and explicit primary-turn interruptions remain available. |
+
+Screen fallback runs only while a Codex/Pi journal is working or blocked, or a
+Claude journal is blocked on an ID-less approval, at most once per five seconds. Idle/cold panels
+are never scanned. Grok has no supported dialog reader and is not sampled. The target is detection within five seconds of journal
+eligibility. Codex turn discovery uses the existing ten-second transcript
+sweep, so a first dialog after an idle turn starts can take approximately fifteen
+seconds. Claude/OpenCode native wait entry retains the five-second bound; Claude
+ID-less approval clearing uses the bounded screen sweep. Captures use
+the existing bounded input-state readers; classification and events run off-main.
+Main copies target a two-millisecond per-sweep budget, checked between panels.
+A new capture starts only during the first millisecond, reserving the second
+for that capture and bookkeeping;
+one capture can overrun it. Metadata reports actual elapsed time and whether the
+budget deferred panels, so an overloaded sweep does not pretend it met the bound.
+Deferred panels rotate fairly. At 50 working sampled panels, detection can take
+longer than five seconds.
+
+For an ID-less Claude approval, one process-local screen observation remembers
+that the composer returned. Repeated native snapshots do not reopen that wait. A
+new positive chooser reopens it; a turn, owner/session or eligibility change resets
+the observation. The journal is never rewritten. `screen_confirmed_continuation`
+reports this state while `phase` retains the raw journal phase. This confirmed
+continuation counts as working for stall and host-sleep projection.
+
+Stalls use the transcript's last assistant/tool-result output time and increasing
+turn/session token counts, never a spinner repaint or operator keystroke. No
+progress coverage means unavailable, not a stall. OpenCode uses increasing session
+token totals; its session timestamp is not output. Grok currently exposes no
+reliable output/token progress signal, so its stall coverage is unavailable.
+Repeated Codex usage records and generic session heartbeats do not reset the clock. Waiting pauses the clock;
+sleep time is excluded. A restored historical working row does not start a live
+stall clock. The default threshold is ten minutes; set the c11-owned defaults key
+`c11.supervisor.stallMinutes` to a finite number above zero and at most 1440.
+Invalid values use ten. The monitor rereads this setting on its next observation.
+
+The `supervisor` object in panel metadata exposes `phase`, `source`, `coverage`,
+`screen_confirmed_continuation`, `waiting_on_permission`, `wait_kind`, `wait_source`, `wait_since_ms`, `stalled`,
+`stall_since_ms`, `last_progress_at_ms`, `progress_coverage`, `interruption_reason`,
+`interrupted_at_ms`, and `interruption_source`. Missing details are null. Screen
+candidates also report `capture_sweep_ms` and `capture_budget_exhausted`.
+These are current process-local observations, reset on owner change/close, not a
+crash-durable attention mechanism. `phase` is the journal agent phase; the separate
+legacy `lifecycle_state` key is the panel's rendering state. A hidden panel can be
+render-throttled while its agent is working, blocked, idle, or in error.
 
 **React to a specific event.** Follow, filter to one type, act per line:
 

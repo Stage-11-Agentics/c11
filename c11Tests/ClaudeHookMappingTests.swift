@@ -170,6 +170,41 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertNil(own.snapshot)
     }
 
+    func testRecordedIdlessPermissionShapeDoesNotInventAToolResolution() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/lifecycle/captures/claude-bypass-ask.json")
+        let capture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
+        let events = try XCTUnwrap(capture["events"] as? [[String: Any]])
+        let permission = try XCTUnwrap(events.first { $0["name"] as? String == "PermissionRequest" })
+        var attrs = try XCTUnwrap(permission["attrs"] as? [String: Any])
+        XCTAssertNil(attrs["tool_use_id"])
+        XCTAssertNil(ClaudeHookMapping.map(subcommand: "permission-request", object: attrs),
+                     "The captured AskUserQuestion is owned by its later PreToolUse, not PermissionRequest")
+        // Derived ordinary-tool variant of the recorded id-less hook shape.
+        // Change only tool type; do not invent a request id Claude did not send.
+        attrs["tool_name"] = "Bash"
+        let approval = try owned("permission-request", attrs, panel: panelA)
+        XCTAssertNil(approval.requestID)
+        var blocked = try XCTUnwrap(JournalTestData.fold(nil, approval, seq: 1).snapshot)
+        XCTAssertTrue(SupervisorProjection.needsScreen(blocked))
+        let pre = try XCTUnwrap(events.first { $0["name"] as? String == "PreToolUse" })
+        var tool = try XCTUnwrap(pre["attrs"] as? [String: Any])
+        tool["tool_name"] = "Bash"
+        let post = try owned("post-tool-use", tool, panel: panelA)
+        XCTAssertEqual(post.kind, .stateChanged)
+        XCTAssertEqual(post.signal, .toolActivity)
+        XCTAssertEqual(post.requestID, "tool-1")
+        blocked = try XCTUnwrap(JournalTestData.fold(blocked, post, seq: 2).snapshot)
+        XCTAssertEqual(blocked.phase, .blocked)
+        XCTAssertNil(blocked.requestID)
+        var projection = SupervisorProjection(snapshot: blocked)
+        XCTAssertEqual(projection.observe(blocked, progress: nil, now: 1, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission])
+        let clear = projection.observe(blocked, progress: nil, prompt: .init(state: .empty, draftLength: 0), now: 2, thresholdMs: 100)
+        XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+        XCTAssertEqual(clear.first?.payload["reason"] as? String, "answered")
+        XCTAssertEqual(projection.metadata["phase"] as? String, "blocked", "Screen evidence must not rewrite the journal phase")
+    }
+
     func testPermissionRequestObservesWithoutADecisionAndDropsBodies() throws {
         let approval = try owned("permission-request", [
             "session_id": "sess-1", "tool_name": "Bash", "tool_use_id": "tool-1",

@@ -4255,11 +4255,11 @@ class TerminalController {
     // panel's terminal type: a Grok panel also reads the screen's bottom rows,
     // where its composer stays while the cursor is parked elsewhere.
     @MainActor
-    func capturePromptInputRegion(surface: ghostty_surface_t, harness: String?) -> PromptRegionSnapshot? {
+    func capturePromptInputRegion(surface: ghostty_surface_t, harness: String?, forSupervisor: Bool = false) -> PromptRegionSnapshot? {
         guard var snapshot = readPromptRegion(surface: surface, anchor: "cursor", read: ghostty_surface_try_read_prompt_region) else {
             return nil
         }
-        if PromptInputClassifier.readsScreenBottom(harness: harness),
+        if PromptInputClassifier.readsScreenBottom(harness: harness, forSupervisor: forSupervisor),
            let bottom = readPromptRegion(surface: surface, anchor: "bottom", read: ghostty_surface_try_read_prompt_region_bottom) {
             snapshot.screenBottom = PromptRegionRows(
                 complete: bottom.complete,

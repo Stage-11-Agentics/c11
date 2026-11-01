@@ -272,6 +272,33 @@ export const C11NotifyPlugin = async ({ $, client }) => {
           await c11(["set-metadata", "--key", "status", "--value", "Needs input"]);
           break;
         }
+        case "permission.replied": {
+          const requestID = properties.requestID;
+          if (typeof requestID !== "string" || !requestID || !sessionID
+              || !["once", "always", "reject"].includes(properties.reply)) break;
+          // Reject may feed a correction back to the model. It closes this
+          // request, but does not by itself prove that the turn was cancelled.
+          await append("agent.attention.resolved", event.type, sessionID, {
+            request_id: requestID,
+            resolution: properties.reply === "reject" ? "unknown" : "resumed",
+          });
+          break;
+        }
+        case "question.asked":
+          if (typeof properties.id === "string" && properties.id && sessionID) {
+            await append("agent.question.requested", event.type, sessionID, { request_id: properties.id });
+          }
+          break;
+        case "question.replied":
+        case "question.rejected":
+          if (typeof properties.requestID === "string" && properties.requestID && sessionID) {
+            // Answers and question text never enter the lifecycle journal.
+            await append("agent.attention.resolved", event.type, sessionID, {
+              request_id: properties.requestID,
+              resolution: event.type === "question.replied" ? "resumed" : "unknown",
+            });
+          }
+          break;
         case "session.error":
           await append("agent.error.reported", event.type, sessionID, { reason_code: "session_failure" });
           await notify("OpenCode", "Session error", "Error");

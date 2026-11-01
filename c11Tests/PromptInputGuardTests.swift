@@ -460,6 +460,70 @@ final class PromptInputClassifierTests: XCTestCase {
         XCTAssertEqual(PromptInputClassifier.classify(oversized, harness: "claude-code").state, .unknown)
     }
 
+    func testCapturedSupervisorPermissionMenusRequireLiveMenuAndMatchingHarness() {
+        let menus: [(String, [String])] = [
+            ("codex", ["Would you like to run the following command?", "$ touch /tmp/proof",
+                       "› 1. Yes, proceed (y)", "  2. Yes, and don't ask again for commands that start with touch",
+                       "  3. No, and tell Codex what to do differently (esc)",
+                       "Press enter to confirm or esc to cancel"]),
+            ("claude-code", ["Do you want to proceed?", "❯ 1. Yes", "  2. Yes, and always allow access",
+                             "  3. Yes, and switch to auto mode", "  4. No", "Esc to cancel · Tab to amend"]),
+            ("opencode", ["┃ △ Permission required", "┃ $ touch /tmp/proof", "┃ Allow once   Allow always   Reject",
+                          "┃ ctrl+f fullscreen  ⇆ select  enter confirm"]),
+        ]
+        for (harness, menu) in menus {
+            func capture(_ values: [String], cursor: Int) -> PromptRegionSnapshot {
+                region(values.enumerated().map { Row(y: $0.offset, spans: [Span(text: $0.element)]) }, cursorY: cursor)
+            }
+            let input = capture(menu, cursor: menu.count - 1)
+            let result = PromptInputClassifier.classify(input, harness: harness)
+            XCTAssertEqual(result.state, .dialog, harness)
+            XCTAssertEqual(result.dialogKind, "permission", harness)
+            XCTAssertNil(PromptInputClassifier.composerText(input, harness: harness))
+            XCTAssertNotEqual(PromptInputClassifier.classify(input, harness: "unsupported").state, .dialog)
+            XCTAssertNotEqual(PromptInputClassifier.classify(capture(Array(menu.dropLast()), cursor: 1), harness: harness).state, .dialog)
+            let stale = menu + ["", "❯ operator draft"]
+            XCTAssertNotEqual(PromptInputClassifier.classify(capture(stale, cursor: stale.count - 1), harness: harness).state, .dialog)
+        }
+    }
+
+    func testCapturedPiChooserWithHiddenCursorAndStaleOrPartialNegatives() {
+        let menu = [rule, "C11-519 choice capture", "→ Allow proof", "  Cancel proof",
+                    "↑↓ navigate  enter select  escape/ctrl+c cancel", rule, "~/c11-sandbox/work", "0.0%/200k (auto) fixture"]
+        let input = region(menu.enumerated().map { Row(y: $0.offset, spans: [Span(text: $0.element)]) }, cursorY: 0)
+        XCTAssertEqual(PromptInputClassifier.classify(input, harness: "pi", forSupervisor: true).dialogKind, "choice")
+        var hidden = region([Row(y: 30, spans: [Span(text: "hidden cursor")])], cursorY: 30)
+        hidden.screenBottom = .init(complete: true, rows: input.rows, cells: input.cells, text: input.text)
+        XCTAssertEqual(PromptInputClassifier.classify(hidden, harness: "pi", forSupervisor: true).state, .dialog)
+        hidden.screenBottom = .init(complete: false, rows: input.rows, cells: input.cells, text: input.text)
+        XCTAssertNotEqual(PromptInputClassifier.classify(hidden, harness: "pi", forSupervisor: true).state, .dialog)
+        let stale = menu + ["❯ operator draft"]
+        let old = region(stale.enumerated().map { Row(y: $0.offset, spans: [Span(text: $0.element)]) }, cursorY: stale.count - 1)
+        XCTAssertNotEqual(PromptInputClassifier.classify(old, harness: "pi", forSupervisor: true).state, .dialog)
+        XCTAssertNotEqual(PromptInputClassifier.classify(input, harness: "codex").state, .dialog)
+    }
+
+    func testPiSupervisorChooserDoesNotChangeNormalComposerOrDoorbellObservation() {
+        let menu = [rule, "C11-519 choice capture", "→ Allow proof", "  Cancel proof",
+                    "↑↓ navigate  enter select  escape/ctrl+c cancel", rule, "~/c11-sandbox/work", "0.0%/200k (auto) fixture"]
+        let chooser = region(menu.enumerated().map { Row(y: $0.offset, spans: [Span(text: $0.element)]) }, cursorY: 0)
+        for (text, expected) in [("", PromptInputState.empty), ("operator draft", .draft)] {
+            var composer = region([Row(y: 0, spans: [Span(text: rule)]),
+                                   Row(y: 1, spans: [Span(text: text)]),
+                                   Row(y: 2, spans: [Span(text: rule)])], cursorY: 1)
+            composer.screenBottom = .init(complete: true, rows: chooser.rows, cells: chooser.cells, text: chooser.text)
+            XCTAssertEqual(PromptInputObservation.activeScreen(composer, harness: "pi").classification.state, expected)
+            XCTAssertEqual(PromptInputClassifier.composerText(composer, harness: "pi"), text.isEmpty ? nil : text)
+            XCTAssertEqual(PromptInputClassifier.classify(composer, harness: "pi", forSupervisor: true).state, .dialog)
+        }
+        XCTAssertFalse(PromptInputClassifier.readsScreenBottom(harness: "pi"))
+        XCTAssertTrue(PromptInputClassifier.readsScreenBottom(harness: " Pi ", forSupervisor: true))
+        XCTAssertTrue(PromptInputClassifier.readsScreenBottom(harness: "grok"))
+        for harness in ["claude-code", "codex", "opencode", "omp", nil] as [String?] {
+            XCTAssertFalse(PromptInputClassifier.readsScreenBottom(harness: harness, forSupervisor: true))
+        }
+    }
+
     private func region(_ rows: [Row], cursorY: Int, complete: Bool = true) -> PromptRegionSnapshot {
         var bytes = Data()
         var cells: [PromptRegionCell] = []

@@ -57,6 +57,8 @@ enum AgentModelDetection: Equatable, Sendable {
 struct TranscriptSignals: Equatable, Sendable {
     /// Last assistant message or tool result: "an agent added to this tab".
     var lastEventAt: Date?
+    /// Verified assistant/tool output, excluding repeated usage and session heartbeat timestamps.
+    var lastOutputAt: Date?
     /// When the current (or last) turn began: the last human prompt (Codex:
     /// `task_started`). nil when the scanned window never reached one.
     var turnStartedAt: Date?
@@ -90,8 +92,11 @@ struct TranscriptSignals: Equatable, Sendable {
             turnTokens = 0
             messageTokens = [:]
             noteLine(at)
-        case .agent(let at, let tools, let tokens, let messageKey):
-            if let at { lastEventAt = max(lastEventAt ?? at, at) }
+        case .agent(let at, let tools, let tokens, let messageKey, let output):
+            if let at {
+                lastEventAt = max(lastEventAt ?? at, at)
+                if output { lastOutputAt = max(lastOutputAt ?? at, at) }
+            }
             turnToolCalls += tools
             // Each count is clamped, but a turn can add many: saturate.
             if let messageKey {
@@ -102,7 +107,10 @@ struct TranscriptSignals: Equatable, Sendable {
             }
             noteLine(at)
         case .toolResult(let at):
-            if let at { lastEventAt = max(lastEventAt ?? at, at) }
+            if let at {
+                lastEventAt = max(lastEventAt ?? at, at)
+                lastOutputAt = max(lastOutputAt ?? at, at)
+            }
             noteLine(at)
         }
     }
@@ -321,7 +329,7 @@ enum PromptCachePolicy {
 
 enum TranscriptEvent: Equatable, Sendable {
     case prompt(at: Date?)
-    case agent(at: Date?, tools: Int, tokens: Int, messageKey: String?)
+    case agent(at: Date?, tools: Int, tokens: Int, messageKey: String?, output: Bool = true)
     case toolResult(at: Date?)
 }
 
@@ -361,6 +369,7 @@ struct TranscriptLifecycleObservation: Equatable, Sendable {
     let nativeEvent: String
     let turnID: String?
     let isChild: Bool
+    var reasonCode: JournalReason? = nil
 }
 
 enum TranscriptCoverage: Equatable, Sendable {
@@ -837,7 +846,8 @@ struct AgentModelProbe: Sendable {
                pending.occurredAt.map({ at >= $0 }) ?? true {
                 state.signals.notePromptCache(Self.grokPromptCache(at: at, key: "end:\(pending.turnID)"))
             }
-            guard outcome == "completed", let pending = state.grokPendingStart,
+            guard let outcome, ["completed", "cancelled", "interrupted"].contains(outcome),
+                  let pending = state.grokPendingStart,
                   let at else {
                 state.grokPendingStart = nil
                 return false
@@ -846,8 +856,11 @@ struct AgentModelProbe: Sendable {
                 state.grokPendingStart = nil
                 return false
             }
-            observations.append(.init(kind: .turnCompleted, occurredAt: at,
-                                       nativeEvent: "turn.completed", turnID: pending.turnID, isChild: false))
+            observations.append(.init(kind: outcome == "completed" ? .turnCompleted : .turnInterrupted,
+                                       occurredAt: at,
+                                       nativeEvent: outcome == "completed" ? "turn.completed" : "turn.interrupted",
+                                       turnID: pending.turnID, isChild: false,
+                                       reasonCode: outcome == "interrupted" ? .observation : nil))
             state.grokPendingStart = nil
             return false
         case .grokMalformed:
@@ -1197,7 +1210,7 @@ struct AgentModelProbe: Sendable {
                     )
                 }
             }
-            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: key), promptCache: cache)
+            return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: tokens, messageKey: key, output: false), promptCache: cache)
         }
         guard hasType(line, "response_item") else { return ParsedTranscriptLine() }
         if hasType(line, "custom_tool_call") || hasType(line, "function_call") || hasType(line, "local_shell_call") {

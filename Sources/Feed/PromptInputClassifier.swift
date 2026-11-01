@@ -12,6 +12,7 @@ enum PromptInputState: String, Equatable, Sendable {
 struct PromptInputClassification: Equatable, Sendable {
     let state: PromptInputState
     let draftLength: Int?
+    var dialogKind: String? = nil
 
     static let unknown = Self(state: .unknown, draftLength: nil)
 
@@ -80,7 +81,7 @@ struct PromptRegionSnapshot: Equatable, Sendable {
     let cells: [PromptRegionCell]
     let text: Data
     /// The last rows of the screen, read only for a harness whose composer is
-    /// pinned to the bottom (Grok). Nil when not read or the read was busy.
+    /// pinned to the bottom (Grok and Pi choosers). Nil when not read or the read was busy.
     var screenBottom: PromptRegionRows? = nil
 }
 
@@ -132,8 +133,8 @@ enum PromptInputClassifier {
     /// `opencode`, `pi`). Anything else, including omp and GitHub Copilot,
     /// runs the unboxed prefix reader only to refuse a draft or a dialog.
     /// Empty and suggestion on those panels stay unknown, so they are not rung.
-    static func classify(_ region: PromptRegionSnapshot, harness: String?) -> PromptInputClassification {
-        analyze(region, harness: harness).classification
+    static func classify(_ region: PromptRegionSnapshot, harness: String?, forSupervisor: Bool = false) -> PromptInputClassification {
+        analyze(region, harness: harness, forSupervisor: forSupervisor).classification
     }
 
     /// Transiently returns the typed text for an exact composer comparison.
@@ -145,7 +146,7 @@ enum PromptInputClassifier {
         return analysis.composerText
     }
 
-    private enum ComposerReader {
+    private enum ComposerReader: Equatable {
         case prefix
         case grok
         case openCode
@@ -154,8 +155,10 @@ enum PromptInputClassifier {
 
     /// Grok keeps its composer at the bottom of the screen and, unfocused,
     /// parks its hidden cursor anywhere. Its panels also read the bottom rows.
-    static func readsScreenBottom(harness: String?) -> Bool {
-        composerReader(for: harness) == .grok
+    /// Pi's extra chooser context is supervisor-only; send and doorbell reads
+    /// retain their cursor-based composer path.
+    static func readsScreenBottom(harness: String?, forSupervisor: Bool = false) -> Bool {
+        composerReader(for: harness) == .grok || (forSupervisor && composerReader(for: harness) == .pi)
     }
 
     private static func composerReader(for harness: String?) -> ComposerReader? {
@@ -173,7 +176,7 @@ enum PromptInputClassifier {
         }
     }
 
-    private static func analyze(_ region: PromptRegionSnapshot, harness: String?) -> Analysis {
+    private static func analyze(_ region: PromptRegionSnapshot, harness: String?, forSupervisor: Bool = false) -> Analysis {
         guard region.complete,
               !region.rows.isEmpty,
               region.rows.count <= maxRows,
@@ -190,6 +193,19 @@ enum PromptInputClassifier {
         guard region.cursorX >= 0,
               region.cursorX <= region.rows[cursorIndex].cellRange.count else {
             return Analysis(classification: .unknown, composerText: nil)
+        }
+
+        if let kind = supervisorDialog(lines, harness: harness, cursorY: region.cursorY, forSupervisor: forSupervisor) {
+            return Analysis(classification: .init(state: .dialog, draftLength: nil, dialogKind: kind), composerText: nil)
+        }
+        // Pi's extension chooser hides the cursor. Read its bounded bottom
+        // rows as well, but require the chooser footer and bottom status rails.
+        if forSupervisor, composerReader(for: harness) == .pi, let bottom = region.screenBottom,
+           bottom.complete, bottom.rows.count <= maxRows, bottom.cells.count <= maxCells,
+           bottom.text.count <= maxTextBytes,
+           let bottomLines = makeLines(rows: bottom.rows, cells: bottom.cells, bytes: Array(bottom.text)),
+           piChoice(bottomLines) {
+            return Analysis(classification: .init(state: .dialog, draftLength: nil, dialogKind: "choice"), composerText: nil)
         }
 
         let unknown = Analysis(classification: .unknown, composerText: nil)
@@ -640,6 +656,62 @@ enum PromptInputClassifier {
         return zip(line.scalars.dropFirst(2), placeholder).allSatisfy {
             $0.value.value == $1.value && $0.faint
         }
+    }
+
+    /// Native permission menus captured from Claude 2.1.316, Codex 0.166.0,
+    /// OpenCode 1.15.13 and Pi 0.81.1. A heading alone never guards a prompt.
+    private static func supervisorDialog(_ lines: [Line], harness: String?, cursorY: Int, forSupervisor: Bool) -> String? {
+        let type = harness?.lowercased()
+        if forSupervisor, type == "pi", piChoice(lines) { return "choice" }
+        let normalized = lines.map { collapsedLowercased($0.text) }
+        for index in lines.indices {
+            let text = normalized[index]
+            if type == "codex", text.contains("press enter to confirm or esc to cancel") {
+                let menu = normalized[max(0, index - 10)..<index]
+                let selected = menu.contains { $0.hasPrefix("› ") && $0.dropFirst(2).first?.isNumber == true }
+                if selected && menu.contains(where: { $0.contains("yes, proceed") })
+                    && menu.contains(where: { $0.contains("no, and tell codex") })
+                    && cursorY >= lines[max(0, index - 10)].y && cursorY <= lines[index].y {
+                    return "permission"
+                }
+            }
+            if type == "claude-code", text.contains("esc to cancel"), text.contains("tab to amend") {
+                let menu = normalized[max(0, index - 8)..<index]
+                if menu.contains(where: { $0.hasPrefix("❯ ") && $0.dropFirst(2).first?.isNumber == true })
+                    && menu.contains(where: { $0.contains("yes") })
+                    && menu.contains(where: { $0.contains(". no") })
+                    && cursorY >= lines[max(0, index - 8)].y && cursorY <= lines[index].y {
+                    return "permission"
+                }
+            }
+            if type == "opencode", text.contains("⇆ select"), text.contains("enter confirm") {
+                let menu = normalized[max(0, index - 12)..<index]
+                if menu.contains(where: { $0.contains("┃") && $0.contains("permission required") })
+                    && menu.contains(where: { $0.contains("allow once") && $0.contains("allow always") && $0.contains("reject") })
+                    && cursorY >= lines[max(0, index - 12)].y && cursorY <= lines[index].y {
+                    return "permission"
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func piChoice(_ lines: [Line]) -> Bool {
+        for footer in lines.indices {
+            let text = collapsedLowercased(lines[footer].text)
+            guard text == "↑↓ navigate enter select escape/ctrl+c cancel",
+                  lines[..<footer].suffix(10).contains(where: { $0.text.trimmingCharacters(in: .whitespaces).hasPrefix("→ ") }) else { continue }
+            // A rendered old example above a live composer is not a dialog.
+            // Pi puts only a horizontal rule and its two status rows below it.
+            let after = lines.dropFirst(footer + 1).filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            guard !after.isEmpty, after.count <= 3,
+                  after.first!.text.trimmingCharacters(in: .whitespaces).allSatisfy({ $0 == "─" }) else { continue }
+            if after.dropFirst().allSatisfy({ line in
+                let value = line.text.trimmingCharacters(in: .whitespaces)
+                return value.hasPrefix("~/") || value.hasPrefix("/") || value.contains("%/")
+            }) { return true }
+        }
+        return false
     }
 
     private static let chooserOptionPairs: [(String, String)] = [

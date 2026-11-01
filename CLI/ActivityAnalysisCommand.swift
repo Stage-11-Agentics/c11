@@ -737,7 +737,9 @@ enum ActivityAnalysisCommand {
                  "metadata.changed", "liveness.derived", "waiting.entered", "waiting.left", "lifecycle.changed",
                  "flag.raised", "flag.lowered", "flag.suppressed", "flag.unsuppressed",
                  "mailbox.accepted", "mailbox.delivered", "panel.input_sent",
-                 "conversation.resume.mode", "conversation.resume.decision", "ask.opened", "ask.closed": return true
+                 "conversation.resume.mode", "conversation.resume.decision", "ask.opened", "ask.closed",
+                 "supervisor.waiting_on_permission", "supervisor.permission_cleared", "supervisor.turn_interrupted",
+                 "supervisor.stalled", "supervisor.stall_cleared": return true
             default: return false
             }
         }

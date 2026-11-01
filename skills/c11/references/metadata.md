@@ -49,6 +49,16 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `branch` | string | ≤ 64 chars (branch name, `(detached @ <short-sha>)`, or `(no branch)`) | sidebar chip. Renders for main checkouts and linked worktrees. Dimmed for branch ∈ {`main`, `master`, `trunk`}. **Derived** — written by c11 runtime, not by agents. |
 | `activity` | string | `working` \| `idle`, ≤ 16 chars | Per-panel **derived liveness** (C11-162). Sidebar shows it as a visually-distinct *derived* pill when an explicit `status` has aged past expiry (or was never set). **Derived** — written by the c11 runtime from shell-integration prompt state, not by agents. Its workspace-snapshot value is retained to seed the live projection after restore, then recomputed on state change. See [Liveness, age & decay](#liveness-age--decay). |
 
+**Agent state and rendering state are separate.** `get-metadata` adds read-only
+`journal` and `supervisor` objects. `journal.phase` is the authoritative agent
+phase; `supervisor` retains that raw phase and adds current permission/choice waits, interruptions and
+stalls with source/coverage fields. `screen_confirmed_continuation` records a positive
+composer after an ID-less Claude approval, allowing stall/sleep projection without
+rewriting the journal. See [Supervising agents](events.md#supervising-agents).
+The legacy `lifecycle_state` key is terminal rendering (`active`, `throttled`,
+`hibernated`). Hidden workspaces are throttled even when their agents are working;
+it is not the agent lifecycle.
+
 **The prompt cache is not metadata.** An agent's cache state rides `prompt_cache` on each panel node of `c11 tree --json` / `panel.list`, not a metadata key; plugins and custom kinds report it with `agent.prompt_cache.report`, never `set-metadata`. See [api.md](api.md#prompt-cache-reports).
 
 **Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` renders as the panel label and the sidebar label (truncated). `description` renders in the bar under the strip, the panel sheet's subtitle row, **and** as the sidebar agent line's subtitle — whitespace-collapsed to a single truncated line after the title (`Title · description…`, setting-gated under Settings → Sidebar). That line is the operator's live read on the panel: put the current state in the opening words and keep it fresh (see the skill card's subtitle contract). The `status` and `progress` pills [decay by age](#liveness-age--decay); when `status` is past expiry the derived `activity` pill takes its place. The description never decays.

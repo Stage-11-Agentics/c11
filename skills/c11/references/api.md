@@ -671,7 +671,7 @@ These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies th
 
 The workspace metadata commands follow the same rule: `set-workspace-metadata`, `get-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` need `--workspace` or `$C11_WORKSPACE_ID` and fail otherwise. Raw `workspace.set_metadata`, `workspace.get_metadata` and `workspace.clear_metadata` require `workspace_id` (`missing_ref` without it), and v1 `reset_sidebar` requires `--tab`.
 
-**Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `claude --dangerously-skip-permissions` keeps it intact.
+**Constraint:** in the default socket mode, these commands are admitted only from a descendant of c11. A command in a panel is admitted, including a `nohup` that is still a child of that panel's shell. A launchd job, or a `nohup` whose parent has exited, is not a descendant and is refused. Passing `--socket` does not bypass that check. Interactive `claude --dangerously-skip-permissions` stays a descendant.
 
 ## Resize areas
 
@@ -883,7 +883,7 @@ plain `ERROR:` lines. Legacy V1 multiline replies retain their idle framing.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal panel. Find the browser panel ref with `c11 tree` and pass `--panel <ref>`.
 - **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged panel.
 - **Panel does not respond after creation** — background terminals initialize without workspace selection. Retry the explicitly targeted send after attachment; inspect its `queued`/`delivered` result. Never select a workspace to initialize it.
-- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions"` maintains the auth chain.
+- **Caller cannot reach `c11`** — the default socket mode admits only a descendant of c11. A launchd job, a `nohup` whose parent has exited, and headless `claude -p` are refused, even with `--socket` set. A rejected connection may surface as `Failed to configure socket timeout`. Check the caller's ancestry and the active socket mode rather than inferring them from that string. Run the command from a panel. Interactive `claude --dangerously-skip-permissions` launched via `c11 send` stays a descendant.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
 ## Notes

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""C11-523/C11-554 native acceptance: width alone picks Tiles. Only run through sandbox-tests-v2.sh."""
+"""C11-523/C11-554/C11-560 native acceptance: width alone picks Tiles, and every tile is the
+full workspace card in rows of equal height. Only run through sandbox-tests-v2.sh."""
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ PIDS = [int(line.strip().split(None, 1)[0]) for line in subprocess.check_output(
         if APP_ROOT in line and line.endswith('/Contents/MacOS/c11')]
 assert len(PIDS) == 1, ('exact guest app missing', PIDS)
 PID = PIDS[0]
+CLI = next(Path(APP_ROOT).glob('*.app/Contents/Resources/bin/c11'))
 OUT = Path('/Volumes/My Shared Files/out/sidebar-tiles')
 assert OUT.parent.is_dir()
 OUT.mkdir(exist_ok=True)
@@ -90,6 +92,15 @@ def mouse(command):
     subprocess.run(['/opt/homebrew/bin/cliclick', *command], check=True, timeout=10)
 
 
+def cli(*args):
+    subprocess.run([str(CLI), '--socket', SOCKET, *args], check=True, timeout=10,
+                   capture_output=True, env={k: v for k, v in os.environ.items() if not k.startswith('C11_')})
+
+
+def card_frames():
+    return {ws: rect('sidebar.workspace.'+ws) for ws in FLEET}
+
+
 def layout(ws=None):
     return call('sidebar.state', workspace_id=ws or WS)['layout']
 
@@ -132,9 +143,18 @@ def measure(expected_width, expected_columns):
     assert state['double_wide']
     assert abs(state['effective_width']-expected_width) <= 1, state
     assert state['columns'] == expected_columns, state
-    frames = {ws: rect('sidebar.workspace.'+ws) for ws in FLEET}
+    frames = card_frames()
+    # Full cards, not fixed 75 pt tiles: rows share one height, and the taller
+    # fixture cards (progress, log) make that height differ between rows.
+    rows = {}
     for frame in frames.values():
-        assert abs(frame[3]-75) <= 1, frame
+        rows.setdefault(round(frame[1]), []).append(frame)
+    for row in rows.values():
+        assert len(row) <= expected_columns, (row, expected_columns)
+        assert max(r[3] for r in row)-min(r[3] for r in row) <= 1, ('row heights differ', row)
+        assert len({round(r[0]) for r in row}) == len(row), ('cards overlap', row)
+    heights = sorted({round(row[0][3]) for row in rows.values()})
+    assert heights[-1] > 80 and len(heights) > 1, ('expected full cards of varied height', heights)
     win = [float(v) for v in osa('get {position, size} of window 1').split(', ')]
     assert state['effective_width'] <= min(600, win[2]/3)+1
     if expected_width == 400:
@@ -183,6 +203,10 @@ for index, ws in enumerate(FLEET[:4]):
         if index == 2 and n == 0:
             call('notification.create_for_panel', workspace_id=ws, panel_id=panel,
                  title='Tiles unread fixture', body='Check the existing attention treatment')
+# Detail rows that only a full card shows, so card heights differ by row.
+cli('set-progress', '0.4', '--label', 'Building fixture', '--workspace', FLEET[4])
+cli('log', '--workspace', FLEET[4], '--', 'Fixture log line for the full card')
+cli('log', '--workspace', FLEET[7], '--level', 'success', '--', 'A second card with a log line')
 time.sleep(11)
 (OUT/'fixture.json').write_text(json.dumps(dict(workspace=WS, window=WINDOW, terminal=TERMINAL,
                                               fleet=FLEET, group=group), indent=2))
@@ -233,12 +257,15 @@ drag_width(200)
 assert not layout()['double_wide']
 drag_width(400)
 assert layout()['double_wide']
-# A real pointer hover while the terminal is focused must not take typing focus.
+# A real pointer hover opens no preview, moves no card and keeps typing focus.
 call('panel.focus', workspace_id=WS, panel_id=TERMINAL)
 time.sleep(.5)
-frame = rect('sidebar.workspace.'+FLEET[-3])
-mouse(['m:800,500', 'w:150', f'm:{round(frame[0]+45)},{round(frame[1]+40)}', 'w:700'])
-wait_for(lambda: preview_count() == 1, 'full hover card is actually visible')
+before = card_frames()
+frame = before[FLEET[4]]
+mouse(['m:800,500', 'w:150', f'm:{round(frame[0]+45)},{round(frame[1]+40)}', 'w:900'])
+assert preview_count() == 0, 'Tiles must not open a hover preview'
+after = card_frames()
+assert before == after, ('hover moved a card', before, after)
 assert call('system.identify')['focused']['panel_id'] == TERMINAL
 shot('hover')
 osa('keystroke "tiles-hover-input"')
@@ -246,9 +273,7 @@ time.sleep(.1)
 screen = call('panel.read_text', workspace_id=WS, panel_id=TERMINAL)
 assert 'tiles-hover-input' in json.dumps(screen), screen
 assert call('system.identify')['focused']['panel_id'] == TERMINAL
-osa('key code 53')
-wait_for(lambda: preview_count() == 0, 'Escape dismisses hover')
-note('hover-keeps-terminal-input', focused=call('system.identify')['focused'])
+note('hover-no-preview-no-jump', focused=call('system.identify')['focused'])
 # The oracle resolves the requested window even when a second window exists.
 second = call('window.create')
 second_id = second['window_id']

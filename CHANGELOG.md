@@ -6,18 +6,42 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.5] - 2026-11-01
+
+Headline: **c11 1.7.5. Back and Forward arrows in the titlebar retrace your jumps between panels, `c11 conversation find` brings back any past Claude or Codex session, and every message gets a receipt that says whether it arrived and was read. This is the first release for Apple silicon only.**
+
+### Added
+
+- **Back and Forward in the titlebar.** Two arrows beside the titlebar step back and forward through the panels you visited, the same history as the History menu. A jump by link, Feed or notification records where you left from, so Back returns there even after a quick glance. History Back and Forward now default to Option-Command-[ and Option-Command-]; shortcuts you already set are kept. ([#836](https://github.com/Stage-11-Agentics/c11/pull/836))
+- **Find past Claude and Codex sessions.** `c11 conversation find [query]` searches this Mac's Claude Code and Codex sessions by title, folder and your prompts, including sessions started outside c11. A session still running in a panel is listed with its `c11://` link, so one Cmd-click takes you there; `--open` resumes an idle one in a new panel in its folder. `-a` also searches the full transcript text. The search runs in the CLI, so your queries and prompt text never reach the app or its event log. ([#837](https://github.com/Stage-11-Agentics/c11/pull/837))
+- **Mail receipts.** `c11 mailbox status <id>` shows, for each recipient, when a message was sent, whether it was delivered, held behind a draft or question, or still pending, and whether the recipient read it, all in local time. It reads files only, so it works while c11 is closed. `c11 fleet --json` also reports each agent's unread mail and how long the oldest has waited. ([#840](https://github.com/Stage-11-Agentics/c11/pull/840))
+- **Mailbox Insights.** The mailbox drawer gains an Insights tab beside Received and Sent: totals, mail per hour and per day, top senders and topics, and who this panel wrote to. Click any sender, topic, bar or recipient to narrow everything to that slice and list its newest 50 messages; filters stack and clear with one click. The mailbox cell shows exact counts up to 99999 instead of stopping at 99+. ([#831](https://github.com/Stage-11-Agentics/c11/pull/831), [#839](https://github.com/Stage-11-Agentics/c11/pull/839))
+- **Workspace missions from `C11.md`.** A `C11.md` at a workspace's root supplies its mission: the first sentence shows on the sidebar card, the full paragraph on hover, and edits appear within a few seconds. Agents launched in that workspace receive the file through `C11_MISSION_FILE` and a pointer in their launch prompt. c11 only reads the file. ([#835](https://github.com/Stage-11-Agentics/c11/pull/835))
+- **Claude usage limits are visible.** When a Claude Code turn stops on a monthly spend limit or the five-hour session limit, its panel mark turns red with a tooltip naming the limit, Feed lists it as an error, and mail traces say the recipient is at its limit. The mark clears after the next successful turn. ([#834](https://github.com/Stage-11-Agentics/c11/pull/834))
+- **Supervisor events.** An agent watching other agents can follow `c11 events tail --follow --filter supervisor` and read each panel's `supervisor` metadata to see when an agent is waiting on a permission or a choice, was interrupted, or has stalled. ([#832](https://github.com/Stage-11-Agentics/c11/pull/832))
+- **One read for the whole fleet.** `c11 fleet --json` returns every live agent across all windows and workspaces in one request, with identity, attention, lifecycle, cache, lineage and mailbox state. Plain `c11 fleet` prints a short table. It never changes what you are looking at. ([#830](https://github.com/Stage-11-Agentics/c11/pull/830))
+
 ### Changed
 
-- The sidebar switches to Tiles by width alone: two columns as soon as it is wide enough for them (324 pt at the standard scale), cards when narrower, live while you drag its edge. The Double Wide button and View > Sidebar > Double Wide are gone, and older saved windows open at their saved width.
-- The sidebar, notifications, new workspace, Back and Forward controls at the top left sit on one solid backdrop, so they read as a group apart from the titlebar.
-
-### Removed
-
-- Intel Macs: c11 now requires a Mac with Apple silicon. 1.7.0 is the last release for Intel Macs. Intel Macs on 1.x stay on 1.7.0: the updater does not offer them newer releases, and Homebrew installs 1.7.0 there. To run a newer c11 on an Intel Mac, build it from source. Any Mac still on a 0.x version is shown this release as an information-only update with a download link, not an install; on Apple silicon, download it from the release page.
+- **The sidebar picks Tiles by width alone.** It shows two columns of tiles as soon as it is wide enough for them (324 pt at the standard scale) and cards when narrower, live while you drag its edge. The Double Wide button and View > Sidebar > Double Wide are gone, and older saved windows open at their saved width. ([#846](https://github.com/Stage-11-Agentics/c11/pull/846))
+- **The titlebar controls sit on one solid backdrop.** The sidebar, notifications, new workspace, Back and Forward buttons at the top left read as one group, apart from the titlebar, in light and dark themes. ([#846](https://github.com/Stage-11-Agentics/c11/pull/846))
+- **A held message says why.** When a draft holds the mail doorbell, `c11 mailbox trace` and `c11 mailbox tail` print a plain line such as `held: recipient has a draft`, and the mailbox cell and drawer say how many messages are waiting behind it. A question or an unreadable prompt is named as such. ([#833](https://github.com/Stage-11-Agentics/c11/pull/833))
+- **The update button says Restart to Update** when an update is downloaded and waiting for c11 to quit, and clicking it restarts. It used to read "Installing…" with nothing to click. ([#825](https://github.com/Stage-11-Agentics/c11/pull/825))
+- **A missed Claude mail invitation is recorded.** When Claude does not confirm a mail invitation in time, c11 logs one `mailbox.native_unconfirmed` event naming the panel and session, without message text. ([#819](https://github.com/Stage-11-Agentics/c11/pull/819))
 
 ### Fixed
 
-- `system.identify` returns a caller panel that can be located even when no window is the active workspace manager. The focused workspace stays empty in that case.
+- **Updating no longer hangs when a quit confirmation is open.** A restart for an update answers a pending Quit dialog itself, and c11's CLI keeps working until the app actually quits. ([#827](https://github.com/Stage-11-Agentics/c11/pull/827))
+- **Mail reaches an OpenCode session shown in two panels.** Both panels deliver to the panel that owns the session, which says so, and `mailbox recv --ack` from either view reads it. `mailbox send` names the actual recipient. ([#838](https://github.com/Stage-11-Agentics/c11/pull/838))
+- **`c11 identify` finds the calling panel when no window is active.** It used to return no caller in that case. ([#829](https://github.com/Stage-11-Agentics/c11/pull/829))
+
+### Removed
+
+- **Intel Macs.** c11 now requires a Mac with Apple silicon; 1.7.0 is the last release for Intel Macs. Intel Macs on 1.x stay on 1.7.0: the updater does not offer them newer releases, and Homebrew installs 1.7.0 there. To run a newer c11 on an Intel Mac, build it from source. Any Mac still on a 0.x version sees this release as an information-only update with a download link, not an install; on Apple silicon, download it from the release page. ([#814](https://github.com/Stage-11-Agentics/c11/pull/814))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.7.0] - 2026-10-31
 

@@ -415,7 +415,13 @@
     "cli.panel.handle.invalid": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Invalid panel handle: %@ (expected UUID, ref like panel:1, or index)"}}
+        "en": {"stringUnit": {"state": "translated", "value": "Invalid panel handle: %@ (expected UUID, ref like panel:1, or index)"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "無効なパネルハンドル: %@ (UUID、panel:1 のような ref、またはインデックスを指定してください)"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Недійсний дескриптор панелі: %@ (очікується UUID, ref на кшталт panel:1 або індекс)"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "잘못된 패널 핸들: %@ (UUID, panel:1 같은 ref 또는 인덱스가 필요합니다)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无效的面板句柄：%@（应为 UUID、类似 panel:1 的 ref 或索引）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無效的面板控制代碼：%@（應為 UUID、類似 panel:1 的 ref 或索引）"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Недопустимый дескриптор панели: %@ (ожидается UUID, ref вида panel:1 или индекс)"}}
       }
     },
     "mailbox.drawer.sent.counts": {

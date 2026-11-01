@@ -86,7 +86,7 @@ const ICONS = {
 };
 const R=md.renderer.rules;
 const isMermaidInfo=info=>String(info||'').trim().split(/\s+/,1)[0].toLowerCase()==='mermaid';
-R.blockquote_open=(T,i,o,e,self) => self.renderToken(T,i,o)+(T[i].meta?.callout ? `<div class="callout-title">${ICONS[T[i].meta.callout]}${esc(T[i].meta.title||T[i].meta.callout)}</div>`:'');
+R.blockquote_open=(T,i,o,e,self) => self.renderToken(T,i,o)+(T[i].meta?.callout ? `<div class="callout-title"${Number.isInteger(T[i].meta.titleLine)?` data-c11-ln="${T[i].meta.titleLine},${T[i].meta.titleLine+1}"`:''}>${ICONS[T[i].meta.callout]}${esc(T[i].meta.title||T[i].meta.callout)}</div>`:'');
 R.fence=(T,i) => {
   const t=T[i], lang=t.info.trim().split(/\s+/)[0].toLowerCase();
   if(isMermaidInfo(t.info)) return `<figure class="diagram"><div class="diagram-stage"></div><figcaption><span class="cap"></span><button class="expand">${esc(S.strings.expand)}</button></figcaption></figure>`;
@@ -150,8 +150,42 @@ function renderFrontmatter(content) {
   });
   return dl;
 }
+// Maps are compared relative to the block, so a block that only moved keeps its node,
+// while a block whose internal line layout changed (an extra blank line) gets new line points.
 function signature(tokens) {
-  return JSON.stringify(tokens, (k,v)=>['map','level','block'].includes(k)?undefined:v);
+  const start=groupSpan(tokens)[0];
+  return JSON.stringify(tokens, (k,v)=>k==='map'?(v&&[v[0]-start,v[1]-start]):['level','block'].includes(k)?undefined:v);
+}
+// Footnote definitions are gathered at the end, so the group's first map is not its range.
+function groupSpan(tokens) {
+  let start=Infinity,end=-Infinity;
+  for(const t of tokens)if(t.map){start=Math.min(start,t.map[0]);end=Math.max(end,t.map[1]);}
+  return start<=end?[start,end]:[0,0];
+}
+// Each element that renders inline text carries the source lines it owns, relative to the
+// block: data-c11-ln="start,end[;start,end]". Table cells have no map, so the row owns them;
+// a hidden tight-list paragraph is owned by its list item; a callout's first line is its title.
+function tagLineOwners(tokens) {
+  const start=groupSpan(tokens)[0];
+  const own=(t,a,b)=>{if(b>a)t.attrSet('data-c11-ln',(t.attrGet('data-c11-ln')?t.attrGet('data-c11-ln')+';':'')+`${a-start},${b-start}`);};
+  for(let i=0;i<tokens.length;i++) {
+    const t=tokens[i];
+    if(t.type==='tr_open'&&t.map){own(t,t.map[0],t.map[1]);continue;}
+    if(t.type!=='inline'||!t.map)continue;
+    let first=t.map[0];
+    const quote=tokens[i-2];
+    if(quote?.type==='blockquote_open'&&quote.meta?.callout) {
+      quote.meta.titleLine=first-start;first++;
+      if(tokens[i-1].hidden)continue;
+    }
+    let depth=0,owner=null;
+    for(let j=i-1;j>=0&&!owner;j--) {
+      const o=tokens[j];
+      if(o.nesting<0)depth++;
+      else if(o.nesting>0) {if(depth)depth--;else if(!o.hidden)owner=o;}
+    }
+    if(owner&&owner.type!=='tr_open'&&owner.type!=='blockquote_open')own(owner,first,t.map[1]);
+  }
 }
 function groups(tokens) {
   const out=[];
@@ -168,7 +202,7 @@ function sanitize(html) {
     FORBID_TAGS:['script','style','iframe','object','embed','form','video','audio','source'],
     ALLOWED_URI_REGEXP:/^(?:(?:https?|mailto|file|c11|c11md-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i});
 }
-const lineMapSkip='svg,button,.code-head,figcaption,.katex-mathml,.callout-title,.fn-back';
+const lineMapSkip='svg,button,.code-head,figcaption,.katex-mathml,.fn-back';
 let lineMetricEpoch=0;
 // Layout or a text-node replacement. Cached marks point at those nodes; a detached
 // mark makes every later scroll frame walk the fence from the block root.
@@ -177,7 +211,8 @@ function lineTree(root) {
   return document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:n=>{
     if(n.nodeType===Node.ELEMENT_NODE) {
       if(n.matches(lineMapSkip))return NodeFilter.FILTER_REJECT;
-      return n.tagName==='BR'?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP;
+      // An image is one unit of line content, so an image-only line has a point and a top.
+      return n.tagName==='BR'||n.tagName==='IMG'?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_SKIP;
     }
     return NodeFilter.FILTER_ACCEPT;
   }});
@@ -207,6 +242,77 @@ function textLinePoints(root,skipLeadingWhitespace=false) {
   }
   return points;
 }
+// One point per source line of the block (lines counted from base), in root text offsets. Each element tagged
+// by tagLineOwners contributes its own rendered lines: a line starts at the first content
+// after a soft or hard break or a nested block, so renderer whitespace between list items or
+// table cells starts nothing. Fence lines come from the fence's own points. A source line with
+// no rendered content (a blank line in a loose list, a setext underline, a fence delimiter, a
+// table separator) borrows the next content line's point, else the previous one, and
+// points.content marks the real lines so lookups resolve ties to them.
+function blockLinePoints(root,span,base=0) {
+  if(!root||span<=0)return [];
+  const owners=new Map(),order=[],points=new Array(span).fill(null),content=new Array(span).fill(false);
+  const ownerOf=n=>{
+    for(let x=n.parentNode;x;x=x.parentNode) {
+      if(x.nodeType!==Node.ELEMENT_NODE)continue;
+      if(x.tagName==='CODE'&&x.parentElement?.tagName==='PRE'&&Number.isFinite(x.parentElement.parentElement?._lineOffset))return x;
+      if(x.hasAttribute('data-c11-ln'))return x;
+      if(x===root||x.matches('.code,figure.diagram,.math-block'))return null;
+    }
+    return null;
+  };
+  const walker=lineTree(root);let n,offset=0,last=null;
+  while((n=walker.nextNode())) {
+    const el=ownerOf(n),width=n.nodeType===Node.ELEMENT_NODE?1:n.data.length;
+    if(!el){offset+=width;last=null;continue;}
+    let o=owners.get(el);
+    if(!o){o={start:offset,lines:[],started:false,brk:false};owners.set(el,o);order.push(el);}
+    if(last!==el&&o.started)o.brk=true;
+    last=el;
+    if(el.tagName==='CODE'){offset+=width;continue;}
+    if(n.nodeType===Node.ELEMENT_NODE) {
+      if(n.tagName==='BR'){if(o.started)o.brk=true;}
+      else if(!o.started||o.brk){o.lines.push(offset);o.started=true;o.brk=false;}
+      offset++;continue;
+    }
+    const data=n.data;
+    for(let i=0;i<data.length;i++) {
+      const ch=data[i];
+      if(ch==='\n'){if(o.started)o.brk=true;}
+      else if(!/\s/.test(ch)&&(!o.started||o.brk)){o.lines.push(offset+i);o.started=true;o.brk=false;}
+    }
+    offset+=data.length;
+  }
+  for(const el of order) {
+    const o=owners.get(el),lines=[];
+    if(el.tagName==='CODE') {
+      const code=el.parentElement.parentElement,first=code._lineOffset-base;
+      (code._linePoints||[]).forEach((p,k)=>lines.push([first+k,o.start+p]));
+    } else {
+      const source=[];
+      for(const range of el.getAttribute('data-c11-ln').split(';')) {
+        const [a,b]=range.split(',').map(Number);for(let line=a;line<b;line++)source.push(line);
+      }
+      for(let k=0;k<Math.min(source.length,o.lines.length);k++)lines.push([source[k]-base,o.lines[k]]);
+    }
+    for(const [line,point] of lines)if(line>=0&&line<span&&!content[line]){points[line]=point;content[line]=true;}
+  }
+  // Footnote definitions render in reference order. A line out of order with the rendered
+  // text would break the binary searches, so it borrows a neighbour instead.
+  let max=-Infinity;
+  for(let i=0;i<span;i++)if(content[i]){if(points[i]<=max){content[i]=false;points[i]=null;}else max=points[i];}
+  if(!content.includes(true))return [];
+  let next=null;for(let i=span-1;i>=0;i--){if(content[i])next=points[i];else points[i]=next;}
+  let prev=null;for(let i=0;i<span;i++){if(content[i])prev=points[i];else if(points[i]===null)points[i]=prev;}
+  points.content=content;
+  return points;
+}
+// Lines that borrowed a point share it with one real line; report the real one.
+function contentIndex(points,index) {
+  const content=points.content;if(!content)return index;
+  let j=index;while(j>0&&!content[j]&&points[j-1]===points[j])j--;
+  return content[j]?j:index;
+}
 function textOffsetAt(root,target,localOffset) {
   if(!root||!target)return null;
   const walker=lineTree(root);let n,offset=0;
@@ -220,7 +326,7 @@ function lineIndexAt(points,offset) {
   if(!points?.length||offset===null)return null;
   let low=0,high=points.length;
   while(low<high) {const mid=(low+high)>>1;if(points[mid]<=offset)low=mid+1;else high=mid;}
-  return Math.max(0,low-1);
+  return contentIndex(points,Math.max(0,low-1));
 }
 function pointAtTextOffset(root,targetOffset) {
   const walker=lineTree(root);let n,offset=0;
@@ -242,14 +348,20 @@ function pointTop(root,targetOffset,sc) {
   const rect=range.getBoundingClientRect();if(!rect.height)return null;
   const box=sc.getBoundingClientRect();return rect.top-box.top+sc.scrollTop;
 }
+// Parts of a block that carry their own line points: fences, and each footnote definition
+// paragraph, because the footnote section renders definitions in reference order, which
+// need not be source order. A part's points are searched before the block's.
+const linePartSelector='.code,.footnotes p[data-c11-ln]';
+function lineParts(block){return [...(block.matches('.code')?[block]:[]),...$$(linePartSelector,block)];}
+function partRoot(part){return part.matches('.code')?$('pre code',part):part;}
 function lineForText(block,text) {
   if(!text?.node)return null;
   if(block.matches('.frontmatter')) {
     const cell=text.node.parentElement?.closest('[data-source-line]');return cell?+cell.dataset.sourceLine:null;
   }
-  const code=text.node.parentElement?.closest('.code');
+  const code=text.node.parentElement?.closest(linePartSelector);
   if(code&&block.contains(code)) {
-    const root=$('pre code',code),offset=textOffsetAt(root,text.node,text.offset),index=lineIndexAt(code._linePoints,offset);
+    const root=partRoot(code),offset=textOffsetAt(root,text.node,text.offset),index=lineIndexAt(code._linePoints,offset);
     return index===null?null:(code._sourceLineStart||+block.dataset.ls+1)+index;
   }
   const offset=textOffsetAt(block,text.node,text.offset),index=lineIndexAt(block._linePoints,offset);
@@ -284,32 +396,35 @@ function lineTop(root,points,index,sc,retried=false) {
   }
   if(metrics.tops[index]!==undefined)return metrics.tops[index];
   const {node,offset}=mark,range=document.createRange();
-  if(node.nodeType===Node.ELEMENT_NODE)range.setStart(node.parentNode,[...node.parentNode.childNodes].indexOf(node)),range.collapse(true);
+  if(node.tagName==='IMG')range.selectNode(node);
+  else if(node.nodeType===Node.ELEMENT_NODE)range.setStart(node.parentNode,[...node.parentNode.childNodes].indexOf(node)),range.collapse(true);
   else if(offset<node.length)range.setStart(node,offset),range.setEnd(node,offset+1);
   else range.setStart(node,offset),range.collapse(true);
   const rect=range.getBoundingClientRect(),box=sc.getBoundingClientRect();
   return metrics.tops[index]=rect.height?rect.top-box.top+sc.scrollTop:null;
 }
+// scrollTop snaps to device pixels, so a line placed at a fractional top can sit just under
+// the viewport edge after scrollToLine. Anything within one device pixel is at the edge.
+const edgeSlop=()=>1/Math.max(1,window.devicePixelRatio||1);
 function lineAtOrBefore(root,points,base,scrollY,sc) {
   if(!points?.length)return null;
   let low=0,high=points.length;
   while(low<high) {
     const mid=(low+high)>>1,top=lineTop(root,points,mid,sc);
-    if(top!==null&&top<=scrollY+.25)low=mid+1;else high=mid;
+    if(top!==null&&top<=scrollY+edgeSlop())low=mid+1;else high=mid;
   }
-  return low?base+low-1:null;
+  return low?base+contentIndex(points,low-1):null;
 }
 function lineAtY(block,scrollY,sc) {
   if(block.matches('.frontmatter')) {
-    let found=null;for(const row of block._frontmatterRows||[])if(topIn(row,sc)<=scrollY+.25)found=+row.dataset.sourceLine;else break;
+    let found=null;for(const row of block._frontmatterRows||[])if(topIn(row,sc)<=scrollY+edgeSlop())found=+row.dataset.sourceLine;else break;
     return found??+block.dataset.ls;
   }
-  const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
-  const code=codes.find(x=>topIn(x,sc)<=scrollY+.25&&topIn(x,sc)+(x.offsetHeight||1)>scrollY);
+  const code=lineParts(block).find(x=>topIn(x,sc)<=scrollY+edgeSlop()&&topIn(x,sc)+(x.offsetHeight||1)>scrollY);
   if(code) {
-    const line=lineAtOrBefore($('pre code',code),code._linePoints,code._sourceLineStart,scrollY,sc);
+    const line=lineAtOrBefore(partRoot(code),code._linePoints,code._sourceLineStart,scrollY,sc);
     if(line!==null)return line;
-    return +block.dataset.ls;
+    if(code.matches('.code'))return +block.dataset.ls;
   }
   return lineAtOrBefore(block,block._linePoints,block._lineBase||+block.dataset.ls,scrollY,sc)??+block.dataset.ls;
 }
@@ -324,9 +439,8 @@ function liveMark(root,points,index,sc) {
 }
 function lineMark(block,line,sc) {
   if(line===null||line===undefined)return null;
-  const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
-  const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
-  if(code)return liveMark($('pre code',code),code._linePoints,line-code._sourceLineStart,sc);
+  const code=lineParts(block).find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
+  if(code)return liveMark(partRoot(code),code._linePoints,line-code._sourceLineStart,sc);
   return liveMark(block,block._linePoints,line-(block._lineBase||+block.dataset.ls),sc);
 }
 function prepareBlock(node,tokens) {
@@ -349,12 +463,17 @@ function prepareBlock(node,tokens) {
   const diagrams=$$('figure.diagram',node);if(node.matches('figure.diagram'))diagrams.unshift(node);
   fences.filter(t=>isMermaidInfo(t.info)).forEach((t,i)=>{if(diagrams[i])diagrams[i]._mermaid=t.content;});
   const codes=$$('.code',node);if(node.matches('.code'))codes.unshift(node);
-  const blockStart=tokens.find(t=>t.map)?.map[0]??0;
+  const [blockStart,blockEnd]=groupSpan(tokens);
   fences.filter(t=>!isMermaidInfo(t.info)).forEach((t,i)=>{if(codes[i]) {
     codes[i]._code=t.content;codes[i]._linePoints=textLinePoints($('pre code',codes[i]));
-    codes[i]._lineOffset=(t.map?.[0]??blockStart)-blockStart+1;
+    // A fence's first content line follows its opening delimiter; an indented block has none.
+    codes[i]._lineOffset=(t.map?.[0]??blockStart)-blockStart+(t.type==='fence'?1:0);
   }});
-  node._linePoints=textLinePoints(node.matches('.code')?$('pre code',node):node,!node.matches('.code'));
+  for(const p of $$('.footnotes p[data-c11-ln]',node)) {
+    const [a,b]=p.getAttribute('data-c11-ln').split(',').map(Number);
+    p._lineOffset=a;p._linePoints=blockLinePoints(p,b-a,a);
+  }
+  node._linePoints=node.matches('.code')?textLinePoints($('pre code',node)):blockLinePoints(node,blockEnd-blockStart);
   return node;
 }
 
@@ -369,15 +488,16 @@ function reconcile(tokens, fm) {
   }
   for(const group of groups(tokens)) {
     const sig=signature(group);let b=previous.get(sig)?.shift();
-    const map=group.find(t=>t.map)?.map;
+    const map=group.some(t=>t.map)?groupSpan(group):null;
     if(!b) {
+      tagLineOwners(group);
       const template=document.createElement('template');template.innerHTML=sanitize(md.renderer.render(group,md.options,{}));
       if(template.content.children.length===1) b=template.content.firstElementChild;
       else {b=document.createElement('div');b.append(template.content);}
       b=prepareBlock(b,group);b._signature=sig;changed++;
     }
     b.dataset.ls=map?map[0]+1:S.lines;b.dataset.le=map?map[1]:S.lines;b._lineBase=+b.dataset.ls;
-    for(const code of [...(b.matches('.code')?[b]:[]),...$$('.code',b)])if(Number.isFinite(code._lineOffset))code._sourceLineStart=b._lineBase+code._lineOffset;
+    for(const code of lineParts(b))if(Number.isFinite(code._lineOffset))code._sourceLineStart=b._lineBase+code._lineOffset;
     blocks.push(b);
   }
   // Insert only displaced/new nodes. Unchanged nodes never detach, preserving selection.
@@ -771,10 +891,9 @@ function lineOrigin(line,block=null,sc=activeScroller()) {
     const row=block._frontmatterRows?.find(x=>+x.dataset.sourceLine===line);if(row)return topIn(row,sc);
     if(line>+block.dataset.le)return topIn(block,sc)+block.offsetHeight;
   }
-  const codes=[...(block.matches('.code')?[block]:[]),...$$('.code',block)];
-  const code=codes.find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
+  const code=lineParts(block).find(x=>line>=x._sourceLineStart&&line<x._sourceLineStart+(x._linePoints?.length||0));
   if(code) {
-    const top=lineTop($('pre code',code),code._linePoints,line-code._sourceLineStart,sc);
+    const top=lineTop(partRoot(code),code._linePoints,line-code._sourceLineStart,sc);
     if(top!==null&&top!==undefined)return top;
   } else if(block.matches('.code')) {
     if(line<block._sourceLineStart)return topIn(block,sc);
@@ -904,7 +1023,7 @@ function placeNotes() {
     const ref=$(`.fn-ref a[data-fn="${li.dataset.fn}"]`,article);if(!ref)continue;
     const note=document.createElement('div');note.className='sidenote';note.dataset.fn=li.dataset.fn;
     const body=li.cloneNode(true);$$('.fn-back',body).forEach(x=>x.remove());
-    note.innerHTML=`<span class="sn">${esc(li.dataset.fn)}</span>`+body.innerHTML.replace(/^\s*<p>|<\/p>\s*$/g,'');
+    note.innerHTML=`<span class="sn">${esc(li.dataset.fn)}</span>`+body.innerHTML.replace(/^\s*<p(?:\s[^>]*)?>|<\/p>\s*$/g,'');
     aside.append(note);const y=Math.max(bottom,ref.getBoundingClientRect().top-col.getBoundingClientRect().top);note.style.top=y+'px';bottom=y+note.offsetHeight+18;
   }
 }

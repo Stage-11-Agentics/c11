@@ -23,6 +23,32 @@ native.DESTINATION_TITLE = 'C11-552 Destination'
 native.TARGET_TITLE = 'C11-552 Target'
 OUT = native.OUT
 
+PROMPT_AX = r'''
+function run(args) {
+    var pid = Number(args[0]), wanted = args[1];
+    var p = Application('System Events').processes.whose({unixId: pid})[0];
+    if (!p.exists()) throw Error('Exact guest PID disappeared');
+    function attr(e, key) { try { return e.attributes.byName(key).value(); } catch (_) { return null; } }
+    var windows = p.windows().filter(function(w) {
+        return attr(w, 'AXIdentifier') === 'c11.external-link.confirmation';
+    });
+    if (windows.length > 1) throw Error('Multiple confirmation windows');
+    var hits = [], visited = 0;
+    function walk(e, depth) {
+        if (++visited > 80 || depth > 8) throw Error('Confirmation AX tree exceeded bound');
+        var id = attr(e, 'AXIdentifier');
+        if (!wanted || id === wanted) hits.push({id: id, role: attr(e, 'AXRole'),
+            value: attr(e, 'AXValue'), title: attr(e, 'AXTitle'),
+            position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')});
+        var children = [];
+        try { children = e.uiElements(); } catch (_) {}
+        children.forEach(function(c) { walk(c, depth + 1); });
+    }
+    windows.forEach(function(w) { walk(w, 0); });
+    return JSON.stringify(hits);
+}
+'''
+
 
 class Proof(native.Proof):
     def accepts_bundle(self, identity):
@@ -60,6 +86,11 @@ class Proof(native.Proof):
 
     def prompt(self):
         return self.ax('c11.external-link.confirmation')
+
+    def ax(self, identifier=None):
+        # Inspect only the small confirmation, never every workspace/terminal.
+        return json.loads(self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e',
+                                    PROMPT_AX, str(self.pid), identifier or ''], text=True).stdout)
 
     def click(self, identifier):
         hits = [x for x in self.ax() if x['id'] == identifier]

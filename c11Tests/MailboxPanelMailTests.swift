@@ -671,6 +671,305 @@ final class MailboxPanelMailTests: XCTestCase {
         let message = try XCTUnwrap(MailboxPanelMail.listing(inbox: inbox).messages.first)
         XCTAssertEqual(message.fullText, "See the file.\n\nfirst line\n\nsecond line")
     }
+
+    // MARK: - Conversations
+
+    /// This test's panel: `inbox` is named by its id.
+    private var thisPanel: UUID { UUID(uuidString: inbox.lastPathComponent)! }
+
+    private func peerInbox(_ panel: UUID) -> URL { MailboxPanelMail.inboxURL(mailboxesRoot: root, panelId: panel) }
+
+    /// Mail this panel received, stamped with the sending panel when `stamp` is given.
+    @discardableResult
+    private func receive(
+        _ id: String,
+        from name: String,
+        stamp: UUID?,
+        read: Bool = false,
+        body: String = "hi",
+        fields: [String: Any] = [:]
+    ) throws -> URL {
+        var object = fields
+        object["from"] = name
+        object["body"] = body
+        if let stamp { object["ext"] = [MailboxEnvelope.senderPanelKey: stamp.uuidString.lowercased()] }
+        return try write(object, id: id, read: read)
+    }
+
+    /// Where a recipient's copy of a send is: in its inbox root, in its
+    /// `_read/`, nowhere, or in its inbox root under another sender's stamp.
+    private enum Copy { case waiting, taken, gone, foreign }
+
+    /// A send from this panel as the dispatcher records it: a `_sent/` entry
+    /// and a stamped copy in each recipient's inbox.
+    private func send(
+        _ id: String,
+        to recipients: [(UUID, Copy)],
+        address: String? = nil,
+        topic: String? = "t",
+        body: String = "sent",
+        fields: [String: Any] = [:]
+    ) throws {
+        for (panel, copy) in recipients where copy != .gone {
+            var object: [String: Any] = ["version": 1, "id": id, "from": "board-move", "ts": "2026-10-10T08:33:37Z", "body": body, "to": address ?? "x"]
+            object.merge(fields) { _, new in new }
+            let stamp = copy == .foreign ? UUID() : thisPanel
+            object["ext"] = [MailboxEnvelope.senderPanelKey: stamp.uuidString.lowercased()]
+            let dir = copy == .taken ? MailboxDrain.readURL(inbox: peerInbox(panel)) : peerInbox(panel)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: object).write(to: dir.appendingPathComponent("\(id).msg"))
+        }
+        XCTAssertTrue(MailboxSentLedger.record(
+            MailboxSentLedger.Entry(
+                id: id, ts: nil, to: address, topic: topic,
+                recipients: recipients.map {
+                    MailboxSentLedger.Recipient(panel: $0.0.uuidString.lowercased(), name: "label-" + String($0.0.uuidString.prefix(4)))
+                }
+            ),
+            senderInbox: inbox
+        ))
+    }
+
+    private func conversationIndex(scanLimit: Int = MailboxPanelMail.insightsScanLimit) -> MailboxPanelMail.ConversationIndex {
+        MailboxPanelMail.conversationIndex(inbox: inbox, mailboxesRoot: root, scanLimit: scanLimit, cache: MailboxPanelMail.HeaderCache())
+    }
+
+    private func openThread(
+        _ key: MailboxPanelMail.PeerKey,
+        in index: MailboxPanelMail.ConversationIndex,
+        limit: Int = MailboxPanelMail.threadLimit
+    ) throws -> MailboxPanelMail.ConversationThread {
+        let conversation = try XCTUnwrap(index.conversation(key))
+        return MailboxPanelMail.thread(
+            conversation, inbox: inbox, mailboxesRoot: root, ledgerFloor: index.ledgerFloor,
+            limit: limit, cache: MailboxPanelMail.HeaderCache()
+        )
+    }
+
+    func testHeaderCarriesTheSenderStampAndTheFileName() {
+        let panel = UUID()
+        let header = MailboxPanelMail.Header(raw: [
+            "from": "x", "body_ref": "/tmp/review/findings.md",
+            "ext": [MailboxEnvelope.senderPanelKey: panel.uuidString.lowercased()],
+        ])
+        XCTAssertEqual(header.senderPanel, panel)
+        XCTAssertEqual(header.fileName, "findings.md")
+        XCTAssertNil(MailboxPanelMail.Header(raw: ["from": "x", "ext": ["other": "y"]]).senderPanel)
+    }
+
+    func testConversationsGroupReceivedMailByTheSenderStamp() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let captain = UUID(), reviewer = UUID()
+        try receive(ulid(now - 300), from: "merge-captain", stamp: captain, read: true, body: "queued")
+        try receive(ulid(now - 200), from: "merge-captain", stamp: captain, body: "landed\nand more")
+        try receive(ulid(now - 100), from: "c11-reviewer", stamp: reviewer, read: true, body: "clean")
+
+        let index = conversationIndex()
+        // Newest activity first.
+        XCTAssertEqual(index.conversations.map(\.key), [.panel(reviewer), .panel(captain)])
+        let row = try XCTUnwrap(index.conversation(.panel(captain)))
+        XCTAssertEqual(row.received, 2)
+        XCTAssertEqual(row.sent, 0)
+        XCTAssertEqual(row.unread, 1)
+        XCTAssertEqual(row.label, "merge-captain")
+        XCTAssertEqual(row.lastDirection, .received)
+        XCTAssertEqual(row.lastPreview, .text("landed"))
+        XCTAssertNil(row.lastSendState, "nothing sent")
+        XCTAssertEqual(index.unread, 1)
+        XCTAssertEqual(index.scanned, 3)
+        XCTAssertFalse(index.scanIsPartial)
+    }
+
+    func testUnstampedMailStaysInItsOwnNameOnlyRow() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let captain = UUID()
+        try receive(ulid(now - 300), from: "merge-captain", stamp: captain, read: true)
+        // The same name with no stamp (a raw writer, a --from override, another
+        // workspace) is not proof of the sender, so it is not merged.
+        try receive(ulid(now - 200), from: "merge-captain", stamp: nil)
+        try receive(ulid(now - 100), from: "lattice-poller", stamp: nil, read: true, body: "", fields: ["body_ref": "/tmp/nightly-report.txt"])
+
+        let index = conversationIndex()
+        XCTAssertEqual(Set(index.conversations.map(\.key)), [.panel(captain), .name("merge-captain"), .name("lattice-poller")])
+        XCTAssertEqual(index.conversation(.panel(captain))?.received, 1)
+        XCTAssertEqual(index.conversation(.panel(captain))?.unread, 0)
+        XCTAssertEqual(index.conversation(.name("merge-captain"))?.received, 1)
+        XCTAssertEqual(index.conversation(.name("merge-captain"))?.unread, 1)
+        XCTAssertEqual(index.conversation(.name("lattice-poller"))?.lastPreview, .file("nightly-report.txt"))
+        let nameOnly = try openThread(.name("merge-captain"), in: index)
+        XCTAssertEqual(nameOnly.items.map(\.direction), [.received])
+        XCTAssertEqual(nameOnly.items.first?.state, .unread)
+        XCTAssertFalse(nameOnly.showsLedgerFloor)
+    }
+
+    func testABroadcastAppearsInEachRecipientsThreadWithEveryState() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let codex = UUID(), claude = UUID(), grok = UUID()
+        let id = ulid(now - 600)
+        try send(id, to: [(codex, .taken), (claude, .taken), (grok, .waiting)], address: "role:reviewer", topic: "review.request", body: "Review PR #866.")
+
+        let index = conversationIndex()
+        XCTAssertEqual(Set(index.conversations.map(\.key)), [.panel(codex), .panel(claude), .panel(grok)])
+        for panel in [codex, claude, grok] {
+            let conversation = try XCTUnwrap(index.conversation(.panel(panel)))
+            XCTAssertEqual(conversation.sent, 1)
+            XCTAssertEqual(conversation.lastDirection, .sent)
+            XCTAssertEqual(conversation.lastPreview, .text("Review PR #866."))
+            // A broadcast has no direct address, so its peers keep their labels.
+            XCTAssertEqual(conversation.label, "label-" + String(panel.uuidString.prefix(4)))
+        }
+        XCTAssertEqual(index.conversation(.panel(grok))?.lastSendState, .unread)
+        XCTAssertEqual(index.conversation(.panel(codex))?.lastSendState, .read)
+
+        let item = try XCTUnwrap(openThread(.panel(grok), in: index).items.first)
+        XCTAssertEqual(item.direction, .sent)
+        XCTAssertEqual(item.state, .unread)
+        XCTAssertEqual(item.to, "role:reviewer")
+        XCTAssertEqual(item.topic, "review.request")
+        XCTAssertEqual(item.recipients.map(\.panelId), [codex, claude, grok])
+        XCTAssertEqual(item.recipients.map(\.state), [.read, .read, .unread])
+        XCTAssertEqual(item.message?.body, "Review PR #866.")
+        XCTAssertEqual(try openThread(.panel(codex), in: index).items.map(\.state), [.read])
+        XCTAssertEqual(try openThread(.panel(codex), in: index).items.first?.id, item.id)
+    }
+
+    func testSentCopiesAreTakenWaitingOrGone() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID(), other = UUID()
+        let taken = ulid(now - 400), waiting = ulid(now - 300), gone = ulid(now - 200), foreign = ulid(now - 100)
+        try send(taken, to: [(peer, .taken)], address: "peer-address", body: "taken body")
+        try send(waiting, to: [(peer, .waiting)], body: "waiting body")
+        try send(gone, to: [(peer, .gone)], body: "gone body")
+        try send(foreign, to: [(peer, .foreign)], body: "SECRET-FROM-SOMEONE-ELSE")
+
+        let index = conversationIndex()
+        let conversation = try XCTUnwrap(index.conversation(.panel(peer)))
+        XCTAssertEqual(conversation.sent, 4)
+        XCTAssertEqual(conversation.label, "peer-address", "a sent-only peer is named by the address of a direct send")
+        // A copy without this panel's stamp is not this panel's mail.
+        XCTAssertEqual(conversation.lastSendState, .gone)
+        XCTAssertEqual(conversation.lastPreview, .copyGone)
+
+        let items = try openThread(.panel(peer), in: index).items
+        XCTAssertEqual(items.map(\.envelopeId), [taken, waiting, gone, foreign])
+        XCTAssertEqual(items.map(\.state), [.read, .unread, .gone, .gone])
+        XCTAssertEqual(items.map { $0.message?.body }, ["taken body", "waiting body", nil, nil])
+        // The ledger keeps the topic when the text is gone.
+        XCTAssertEqual(items.map(\.topic), ["t", "t", "t", "t"])
+
+        // A broadcast's text survives while any recipient's copy remains.
+        let shared = ulid(now - 50)
+        try send(shared, to: [(peer, .gone), (other, .taken)], body: "still on disk")
+        let later = conversationIndex()
+        XCTAssertEqual(later.conversation(.panel(peer))?.lastPreview, .text("still on disk"))
+        let last = try XCTUnwrap(openThread(.panel(peer), in: later).items.last)
+        XCTAssertEqual(last.envelopeId, shared)
+        XCTAssertEqual(last.state, .gone)
+        XCTAssertEqual(last.message?.body, "still on disk")
+        XCTAssertEqual(last.recipients.map(\.state), [.gone, .read])
+    }
+
+    func testThreadIsInTimeOrderAndLinksRepliesBothWays() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let captain = UUID()
+        let ask = ulid(now - 500), answer = ulid(now - 400), followUp = ulid(now - 300), stray = ulid(now - 200)
+        try send(ask, to: [(captain, .taken)], address: "merge-captain", topic: "merge.ready", body: "ready")
+        try receive(answer, from: "merge-captain", stamp: captain, read: true, body: "queued", fields: ["in_reply_to": ask, "topic": "merge.ready"])
+        try send(followUp, to: [(captain, .waiting)], topic: "build.status", body: "thanks", fields: ["in_reply_to": answer])
+        try receive(stray, from: "merge-captain", stamp: captain, body: "elsewhere", fields: ["in_reply_to": "01JBXNOTINTHISTHREAD"])
+
+        let index = conversationIndex()
+        let opened = try openThread(.panel(captain), in: index)
+        XCTAssertEqual(opened.items.map(\.envelopeId), [ask, answer, followUp, stray])
+        XCTAssertEqual(opened.items.map(\.direction), [.sent, .received, .sent, .received])
+        XCTAssertNil(opened.items[0].parent)
+        // A received reply links to the send it answers, and the reverse.
+        XCTAssertEqual(opened.items[1].parent?.id, opened.items[0].id)
+        XCTAssertEqual(opened.items[1].parent?.topic, "merge.ready")
+        XCTAssertEqual(opened.items[1].parent?.date, MailboxPanelMail.ulidDate(ask))
+        XCTAssertEqual(opened.items[2].parent?.id, opened.items[1].id)
+        // A parent outside the thread is named, not linked.
+        XCTAssertNil(opened.items[3].parent)
+        XCTAssertEqual(opened.items[3].message?.inReplyTo, "01JBXNOTINTHISTHREAD")
+        XCTAssertEqual(opened.total, 4)
+        XCTAssertEqual(opened.received, 2)
+        XCTAssertEqual(opened.sent, 2)
+    }
+
+    func testUnreadCountsFollowTheAgentAndOpeningTakesNothing() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID()
+        try receive(ulid(now - 400), from: "p", stamp: peer, read: true)
+        try receive(ulid(now - 300), from: "p", stamp: peer)
+        try send(ulid(now - 200), to: [(peer, .waiting)])
+        try receive(ulid(now - 100), from: "p", stamp: peer)
+        let before = try inboxFiles()
+
+        let index = conversationIndex()
+        XCTAssertEqual(index.conversation(.panel(peer))?.unread, 2)
+        XCTAssertEqual(index.unread, 2)
+        let opened = try openThread(.panel(peer), in: index)
+        XCTAssertEqual(opened.unread, 2)
+        XCTAssertEqual(opened.items.map(\.state), [.read, .unread, .unread, .unread])
+        XCTAssertEqual(opened.firstUnreadId, opened.items[1].id)
+        XCTAssertEqual(try inboxFiles(), before, "reading a conversation claims nothing")
+
+        // The agent takes one after the index was read: the thread finds it in _read/.
+        let claimed = opened.items[1].envelopeId
+        try FileManager.default.moveItem(
+            at: inbox.appendingPathComponent("\(claimed).msg"),
+            to: MailboxDrain.readURL(inbox: inbox).appendingPathComponent("\(claimed).msg")
+        )
+        let after = try openThread(.panel(peer), in: index)
+        XCTAssertEqual(after.items[1].state, .read)
+        XCTAssertNil(after.items[1].message?.problem)
+        XCTAssertEqual(after.items[1].id, opened.items[1].id, "taking a message keeps its place in the thread")
+        XCTAssertEqual(after.unread, 1)
+        XCTAssertEqual(after.firstUnreadId, after.items[3].id)
+        XCTAssertEqual(conversationIndex().conversation(.panel(peer))?.unread, 1)
+    }
+
+    func testThreadReadsOnlyItsNewestMessagesAndCountsTheRest() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID()
+        var ids: [String] = []
+        for step in 0..<5 {
+            let id = ulid(now - TimeInterval(500 - step * 10))
+            ids.append(id)
+            // The oldest is still unread.
+            try receive(id, from: "p", stamp: peer, read: step != 0)
+        }
+        let index = conversationIndex()
+        let opened = try openThread(.panel(peer), in: index, limit: 3)
+        XCTAssertEqual(opened.items.map(\.envelopeId), Array(ids.suffix(3)))
+        XCTAssertEqual(opened.total, 5)
+        XCTAssertEqual(opened.hiddenCount, 2)
+        XCTAssertEqual(opened.unread, 1, "an unread message past the cap still counts")
+        XCTAssertNil(opened.firstUnreadId)
+
+        // The list reads at most the scan limit of headers, and says so.
+        let partial = conversationIndex(scanLimit: 2)
+        XCTAssertTrue(partial.scanIsPartial)
+        XCTAssertEqual(partial.received, 5)
+        XCTAssertEqual(partial.conversation(.panel(peer))?.received, 2)
+    }
+
+    func testLedgerFloorMarksWhereThisPanelsSentRecordStarts() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peer = UUID(), fresh = UUID()
+        try receive(ulid(now - 900), from: "p", stamp: peer, read: true)
+        let firstSend = ulid(now - 500)
+        try send(firstSend, to: [(peer, .taken)])
+        try receive(ulid(now - 100), from: "p", stamp: peer, read: true)
+        try send(ulid(now - 50), to: [(fresh, .taken)])
+
+        let index = conversationIndex()
+        XCTAssertEqual(index.ledgerFloor, MailboxPanelMail.ulidDate(firstSend))
+        let opened = try openThread(.panel(peer), in: index)
+        XCTAssertTrue(opened.showsLedgerFloor, "the peer's side reaches back past the sent record")
+        XCTAssertEqual(opened.ledgerFloorItemId, opened.items[1].id)
+        XCTAssertFalse(try openThread(.panel(fresh), in: index).showsLedgerFloor)
+    }
 }
 
 /// C11-400: which panels the subtitle bar's badge store keeps recounting.

@@ -238,7 +238,8 @@ struct PanelTitleBarView: View {
                 open.wrappedValue = false
                 presenter?.onDismiss = nil
                 presenter?.dismissAnimated()
-            }
+            },
+            resolvePanels: { ids in Self.resolvePanels(ids) }
         )
         // Capture the binding, not the view: the view holds the presenter and
         // the workspace, and the presenter holds this closure.
@@ -268,6 +269,35 @@ struct PanelTitleBarView: View {
                 address: match.address,
                 isOpen: true
             )
+        }
+        return result
+    }
+
+    /// Names the panels a conversation is with by id, as the dispatcher's
+    /// stamp and the sent ledger record them: an open panel by its number,
+    /// address and title; a closed one by the number it had this session, if
+    /// any. A panel that is gone is never given a new number.
+    static func resolvePanels(_ ids: [UUID]) -> [UUID: MailboxDrawerSender] {
+        guard !ids.isEmpty else { return [:] }
+        let live = Dictionary(
+            (AppDelegate.shared?.mailboxAddressableSurfaces() ?? []).map { ($0.surfaceId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let controller = TerminalController.shared
+        let prefix = "\(TerminalController.V2HandleKind.surface.rawValue):"
+        var result: [UUID: MailboxDrawerSender] = [:]
+        for id in ids {
+            if let record = live[id] {
+                result[id] = MailboxDrawerSender(
+                    panelNumber: controller.surfaceOrdinal(forSurfaceUUID: id),
+                    address: record.address,
+                    isOpen: true,
+                    title: record.name.isEmpty ? nil : record.name
+                )
+            } else {
+                let number = controller.v2RefByUUID[.surface]?[id].flatMap { Int($0.dropFirst(prefix.count)) }
+                result[id] = MailboxDrawerSender(panelNumber: number, address: nil, isOpen: false)
+            }
         }
         return result
     }

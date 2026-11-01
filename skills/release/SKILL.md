@@ -161,14 +161,19 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
   test -n "$SHA" || { echo "STOP: no tested head"; exit 1; }
   test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
   # Readers consume their whole input (no grep -q or -m1): under pipefail an early exit
-  # kills the writer with SIGPIPE (141) and a valid head reads as a STOP.
-  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | awk '/MARKETING_VERSION/ && !p {print; p=1}'   # must read X.Y.Z
-  git show "$SHA:CHANGELOG.md" | awk '/^## \[X.Y.Z\]/ && !p {print; p=1}'                               # the release needs it
+  # kills the writer with SIGPIPE (141) and a valid head reads as a STOP. Each awk
+  # reader exits nonzero when nothing matched.
+  git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | awk '/MARKETING_VERSION = X\.Y\.Z;/ {p=1} END {exit !p}' \
+    || { echo "STOP: MARKETING_VERSION at $SHA is not X.Y.Z"; exit 1; }
+  git show "$SHA:CHANGELOG.md" | awk '/^## \[X\.Y\.Z\] - / {p=1} END {exit !p}' \
+    || { echo "STOP: CHANGELOG.md at $SHA has no ## [X.Y.Z] section"; exit 1; }
   gh api "repos/Stage-11-Agentics/c11/commits/$SHA/status" --jq '[.statuses[]|select(.context=="c11/pr-swift")|.state]|first' | grep -x success >/dev/null || { echo "STOP: c11/pr-swift is not success at $SHA"; exit 1; }
   gh pr checks <release PR> || { echo "STOP: a PR check is failing or pending"; exit 1; }
   # The tested commit must carry the release path (an old-base hotfix may not; see Hotfix):
-  git show "$SHA:.github/workflows/release.yml" | awk '/^on:/{f=1;next} /^[^ #]/{f=0} f' | grep -E '^[[:space:]]+push:' >/dev/null \
-    && { echo "STOP: release.yml at $SHA still starts on a tag push"; exit 1; }
+  ON="$(git show "$SHA:.github/workflows/release.yml" | awk '/^on:/{f=1;next} /^[^ #]/{f=0} f')" \
+    || { echo "STOP: cannot read release.yml at $SHA"; exit 1; }
+  grep -E '^[[:space:]]+push:' <<<"$ON" >/dev/null && { echo "STOP: release.yml at $SHA still starts on a tag push"; exit 1; }
+  grep -E '^[[:space:]]+workflow_dispatch:' <<<"$ON" >/dev/null || { echo "STOP: release.yml at $SHA has no workflow_dispatch trigger"; exit 1; }
   git show "$SHA:scripts/release-local.sh" | grep 'C11_SIGNING_KEYCHAIN' >/dev/null \
     || { echo "STOP: release-local.sh at $SHA has no signing-keychain mode"; exit 1; }
   ```

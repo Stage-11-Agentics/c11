@@ -89,7 +89,9 @@ struct WorkspaceFrame: View {
         let opacity = resolveOpacity(context: context)
         let cornerRadius = hostingWindowCornerRadius()
 
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        // Circular, like the window's own corner mask: a continuous curve of
+        // the same radius bulges past the mask at the diagonal.
+        RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
             .strokeBorder(Color(nsColor: strokeColor), lineWidth: thickness)
             .opacity(opacity)
             // v1 ships the decorative baseline with no motion on `state`; M5
@@ -119,13 +121,32 @@ struct WorkspaceFrame: View {
     }
 
     /// Matches the hosting window's rounded-corner radius so the stroke sits
-    /// flush with the `NSWindow` content layer. Falls back to 10pt — macOS
-    /// 14+'s default — when the window radius is unreadable (pre-mount, no
-    /// content layer yet).
+    /// flush inside the window's corner mask instead of being shaved by it.
     private func hostingWindowCornerRadius() -> CGFloat {
-        if let layer = NSApp.mainWindow?.contentView?.layer, layer.cornerRadius > 0 {
-            return layer.cornerRadius
+        WindowCornerRadius.resolve(for: NSApp.mainWindow ?? NSApp.keyWindow)
+    }
+}
+
+/// The radius AppKit rounds a window's corners with. It varies by OS release
+/// and window style (16pt for a titled window on macOS 26, 26pt with a
+/// unified toolbar, 10pt before macOS 26) and is not on any public API or
+/// layer, so it is read from the window when AppKit answers and estimated
+/// otherwise. Full-screen windows have square corners.
+enum WindowCornerRadius {
+    private static let selector = NSSelectorFromString("_cornerRadius")
+
+    static func resolve(for window: NSWindow?) -> CGFloat {
+        if let window {
+            if window.styleMask.contains(.fullScreen) { return 0 }
+            // Zero outside full screen means AppKit has not laid the window
+            // out yet, not that it has square corners.
+            if window.responds(to: selector),
+               let value = window.value(forKey: "_cornerRadius") as? NSNumber,
+               CGFloat(truncating: value) > 0 {
+                return CGFloat(truncating: value)
+            }
         }
+        if #available(macOS 26.0, *) { return 16 }
         return 10
     }
 }

@@ -2991,6 +2991,7 @@ final class WindowBrowserPortal: NSObject {
         let hostBounds = hostView.bounds
         guard hostBounds.width > 1, hostBounds.height > 1 else { return [] }
 
+        let windowCorners = PortalWindowCorners(window: window, hostView: hostView)
         var segments: [PortalChromeOverlaySegment] = []
         for entry in entriesByWebViewId.values {
             guard entry.visibleInUI,
@@ -3012,6 +3013,7 @@ final class WindowBrowserPortal: NSObject {
                 style: style,
                 color: color,
                 dividerSegments: dividerSegments,
+                windowCorners: windowCorners,
                 into: &segments
             )
         }

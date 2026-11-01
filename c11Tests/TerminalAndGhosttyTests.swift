@@ -2118,6 +2118,61 @@ final class PortalWorkspaceFrameOverlayTests: XCTestCase {
         )
     }
 
+    func testWorkspaceFrameRoundsCornersThatMeetTheWindowCorner() throws {
+        let style = PortalWorkspaceFrameStyle(colorHex: "#00ff00", thicknessPt: 2, opacity: 1)
+        let window = NSRect(x: 0, y: 0, width: 800, height: 600)
+        var segments: [PortalChromeOverlaySegment] = []
+
+        // A panel in the window's bottom-right corner, beside a sidebar.
+        PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+            for: NSRect(x: 200, y: 0, width: 600, height: 560),
+            hostBounds: window,
+            style: style,
+            color: .green,
+            dividerSegments: [],
+            windowCorners: PortalWindowCorners(bounds: window, radius: 16),
+            into: &segments
+        )
+
+        let arcs = segments.filter { $0.path != nil }
+        XCTAssertEqual(arcs.count, 1, "Only the corner shared with the window should be rounded.")
+        let arc = try XCTUnwrap(arcs.first)
+        XCTAssertEqual(arc.rect, NSRect(x: 784, y: 0, width: 16, height: 16))
+        let path = try XCTUnwrap(arc.path)
+        XCTAssertTrue(path.contains(NSPoint(x: 799, y: 15)), "Arc should meet the trailing strip.")
+        XCTAssertTrue(path.contains(NSPoint(x: 785, y: 1)), "Arc should meet the bottom strip.")
+        XCTAssertFalse(path.contains(NSPoint(x: 799, y: 1)), "Arc must stay inside the window's corner mask.")
+
+        let trailing = try XCTUnwrap(segments.first { $0.path == nil && $0.rect.minX == 798 && $0.rect.width == 2 })
+        XCTAssertEqual(trailing.rect.minY, 16, "Trailing strip should stop where the arc begins.")
+        let bottom = try XCTUnwrap(segments.first { $0.path == nil && $0.rect.minY == 0 && $0.rect.height == 2 })
+        XCTAssertEqual(bottom.rect.maxX, 784, "Bottom strip should stop where the arc begins.")
+        XCTAssertEqual(bottom.rect.minX, 200, "The corner beside the sidebar stays square.")
+    }
+
+    func testWorkspaceFrameLeavesCornerSquareWhenAnAdjacentEdgeIsHidden() {
+        let style = PortalWorkspaceFrameStyle(
+            colorHex: "#00ff00",
+            thicknessPt: 2,
+            opacity: 1,
+            edges: PortalWorkspaceFrameEdges(bottom: false)
+        )
+        let window = NSRect(x: 0, y: 0, width: 800, height: 600)
+        var segments: [PortalChromeOverlaySegment] = []
+
+        PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+            for: NSRect(x: 200, y: 0, width: 600, height: 560),
+            hostBounds: window,
+            style: style,
+            color: .green,
+            dividerSegments: [],
+            windowCorners: PortalWindowCorners(bounds: window, radius: 16),
+            into: &segments
+        )
+
+        XCTAssertFalse(segments.contains { $0.path != nil })
+    }
+
     func testWorkspaceFrameColorPreservesThemeAlpha() throws {
         let style = PortalWorkspaceFrameStyle(colorHex: "#33669980", thicknessPt: 2, opacity: 0.5)
 

@@ -134,10 +134,10 @@ final class TerminalPanel: Panel, ObservableObject {
         let delivery = AgentRegistry.shared.manifest(for: agent)?.launch.promptDelivery ?? .postBoot
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let context = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionRoot))
-            let prompt = context.prompt(launch.initialPrompt)
+            let prompt = launch.initialPrompt
             let staged: LaunchPromptStore.StagedPrompt?
             do {
-                if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     staged = try LaunchPromptStore.shared.stage(prompt: prompt)
                 } else {
                     staged = nil

@@ -15031,8 +15031,9 @@ extension Workspace: BonsplitDelegate {
         // the identity the sidebar needs itself — no agent round-trip: the
         // type comes from `AgentDetector`, and we stamp the overlay-resolved
         // model plus a placeholder title here. An operator who configured a
-        // launch prompt and workspace mission are staged off-main below and
-        // delivered using the harness's declared prompt-delivery mode.
+        // launch prompt is staged off-main below and delivered using the
+        // harness's declared prompt-delivery mode; the workspace mission is
+        // read off-main there too, and reaches the agent only as C11_MISSION_FILE.
         stampLaunchIdentity(surfaceId: panel.id, resolvedModel: resolvedModel)
         let missionRoot = self.missionRoot
         panel.submitConfiguredAgentLaunch(agent: agent, launch: launch, missionRoot: missionRoot) { [weak self, weak panel] in

@@ -111,12 +111,15 @@ structure reads, or other capabilities.
 
 ## Boot fast, orient lazily
 
-**Read the workspace mission at launch.** When `C11_MISSION_FILE` is nonempty,
-read that C11.md before starting the task. It contains the mission and project
-notes and supplements the project's instructions. c11 sets this path and adds
-a reference to the launch prompt for CLI, saved-config and UI agent launches;
-it never edits C11.md or tenant configuration. The operator and authorized
-agents maintain the file with ordinary tools.
+**The workspace mission is there when the task needs it.** When
+`C11_MISSION_FILE` is nonempty, it names the C11.md at the workspace root: the
+project's mission and working notes, which supplement the project's
+instructions. Read it when your task concerns the project's direction, next
+steps or who is working on it. A session launched with no task is a plain
+session; don't open the file just because the variable is set. c11 sets the
+variable for CLI, saved-config and UI agent launches and never adds anything to
+the launch prompt; it never edits C11.md or tenant configuration. The operator
+and authorized agents maintain the file with ordinary tools.
 
 Discovery is exactly `C11.md` at the workspace's stable root, independent of
 terminal `cd` or a launch's `--cwd` override. Workspaces sharing a root share
@@ -124,13 +127,13 @@ one displayed mission: the first `## Mission` or `**Mission.**` paragraph,
 falling back to the first prose paragraph. Per-workspace headings are notes,
 not selectors; distinct missions need distinct roots in this version. A C11
 block inside AGENTS.md/CLAUDE.md remains ordinary agent-readable context and
-does not supply the native card or launch reference.
+does not supply the native card or `C11_MISSION_FILE`.
 
 Full cards show one truncated sentence; hover shows the mission paragraph and
 path. Tiles keep their geometry and show the mission in their full-card hover
 preview. File edits normally appear within a few seconds. Missing, empty,
 invalid UTF-8/binary, oversized (over 64 KiB), symlink and nonregular files
-produce no mission line. Rootless and remote workspaces do not discover local
+produce no mission card. Rootless and remote workspaces do not discover local
 missions. Those launches clear `C11_MISSION_FILE` to an empty value; an already
 running agent retains its launch context. c11 does not search parent folders
 or other agents' files.

@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent launches no longer carry a mission prompt.** A workspace with a `C11.md` still shows its mission on the sidebar card and still passes the file to agents through `C11_MISSION_FILE`, but c11 no longer adds "read the mission" to the launch prompt. A launch with no task opens a plain session again, and a task arrives exactly as written. The c11 skill now tells agents to read the mission when their task concerns the project, not at every launch.
+
 ## [1.7.6] - 2026-11-01
 
 Headline: **c11 1.7.6. A `c11://` link clicked in another app now opens in c11, after a confirmation that names the panel or workspace it leads to, and restored OpenCode panels ring for mail right after a restart.**

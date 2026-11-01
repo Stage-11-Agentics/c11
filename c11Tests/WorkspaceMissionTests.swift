@@ -201,19 +201,14 @@ final class WorkspaceMissionTests: XCTestCase {
         XCTAssertNil(last)
     }
 
-    func testMissionLaunchPreservesTaskAndOverridesInheritedContextInARealShell() throws {
+    func testMissionLaunchOverridesInheritedContextInARealShell() throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
         let oddRoot = root.appendingPathComponent("space ' $ shell")
         try FileManager.default.createDirectory(at: oddRoot, withIntermediateDirectories: true)
         try "Mission.".write(to: oddRoot.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
         let context = WorkspaceMissionLaunchContext(mission: try XCTUnwrap(read(oddRoot)))
-        let task = "\n  Keep ' \" $ ` all literal.\nlast line  "
-        XCTAssertTrue(try XCTUnwrap(context.prompt(task)).hasSuffix("\n\n" + task))
-        XCTAssertNotNil(context.prompt(nil))
         let empty = WorkspaceMissionLaunchContext(mission: nil)
-        XCTAssertEqual(empty.prompt(task), task)
-        XCTAssertNil(empty.prompt(nil))
         XCTAssertEqual(context.environment(["C11_MISSION_FILE": "/wrong", "UNCHANGED": "yes"])["UNCHANGED"], "yes")
         for (launch, expected) in [(context, context.mission!.path), (empty, "")] {
             let process = Process()
@@ -232,13 +227,12 @@ final class WorkspaceMissionTests: XCTestCase {
         }
     }
 
-    func testStagedMissionAndTaskReachEveryDeliveryShape() throws {
+    func testMissionEnvironmentAndUnchangedTaskReachEveryDeliveryShape() throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
         try "Shared mission.".write(to: root.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
         let context = WorkspaceMissionLaunchContext(mission: try XCTUnwrap(read(root)))
-        let original = "\nExact task ' \" $ text.\n  "
-        let body = try XCTUnwrap(context.prompt(original))
+        let body = "\nExact task ' \" $ text.\n  "
         let store = LaunchPromptStore(rootDirectory: root.appendingPathComponent("runtime"))
         let staged = try store.stage(prompt: body)
         defer { store.discard(staged) }
@@ -272,7 +266,6 @@ final class WorkspaceMissionTests: XCTestCase {
             let receipt = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: String])
             XCTAssertEqual(receipt["path"], context.mission?.path)
             XCTAssertEqual(receipt["body"], body)
-            XCTAssertTrue(try XCTUnwrap(receipt["body"]).hasSuffix("\n\n" + original))
         }
     }
 }

@@ -3,17 +3,16 @@
 ## Workspace mission
 
 Agent launches read `C11.md` only at the target workspace's stable root. A valid
-file supplies `C11_MISSION_FILE` and a short reference before the caller's task
-in the staged launch prompt; the original task text is retained verbatim. A
-promptless launch receives the reference alone. This applies to CLI, saved
-config, existing-panel and UI launches using their existing positional, flag
-or post-boot delivery. Post-boot delivery retains its documented best-effort
-bound. No tenant configuration is changed and c11 never writes C11.md.
+file supplies `C11_MISSION_FILE` in the launched agent's environment. The launch
+prompt is never changed: the caller's task is delivered verbatim, and a
+promptless launch stays promptless. This applies to CLI, saved config,
+existing-panel and UI launches. No tenant configuration is changed and c11
+never writes C11.md.
 
 An existing workspace's mission does not follow `--cwd`. A new workspace uses
 its newly established root; rootless and remote workspaces do not look up local
 files. A missing, empty, invalid UTF-8/binary, symlink, nonregular or over-64-KiB
-file leaves the launch usable without a reference and clears the variable to
+file leaves the launch usable and clears the variable to
 an empty value, including inherited or caller-supplied values. A root change
 during preparation rejects the stale launch with `launch_context_changed`;
 retry against the current root. Running agents keep their launch context.

@@ -213,7 +213,8 @@ assert not layout()['double_wide'], layout()
 note('drag-threshold', below=323, at=324)
 for theme in ['Light', 'Dark']:
     osa(f'click menu item "{theme}" of menu 1 of menu item "Appearance" of menu 1 of menu bar item "View" of menu bar 1')
-    for width, cols in [(400, 2), (486, 3), (200, 1)]:
+    # 470, not 486: the guest display is 1440 wide, so the sidebar caps at 480.
+    for width, cols in [(400, 2), (470, 2), (200, 1)]:
         drag_width(width)
         if width != 200:
             measure(width, cols)

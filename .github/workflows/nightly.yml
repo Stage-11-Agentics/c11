@@ -288,6 +288,8 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :CFBundleName c11 NIGHTLY" "$app_plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName c11 NIGHTLY" "$app_plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${bundle_id}" "$app_plist"
+            # Nightly retains web schemes but never claims the production c11 scheme.
+            /usr/bin/python3 scripts/prepare-info-plist.py "$app_plist" "$app_plist"
             /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string ${SPARKLE_PUBLIC_KEY}" "$app_plist"

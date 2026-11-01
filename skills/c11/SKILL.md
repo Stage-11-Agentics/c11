@@ -91,7 +91,16 @@ even when the outer page is local. A committed page can use links while resource
 Scripts, redirects, forms, subframes, popups and browser automation cannot navigate
 these links. In web content, Cmd/middle/modified clicks and `target="_blank"` are refused. Opening a
 `c11://` URL through the CLI is also refused; socket focus still cannot switch the
-operator's workspace. Links from other apps and OS scheme registration are not included.
+operator's workspace. Only the production Release app registers the macOS `c11://` scheme. Outside links show a
+floating, nonactivating confirmation naming the live panel/workspace and UUID
+URL; only a fresh click on Confirm after its short arming delay navigates.
+Cancel is the safe default. Closed or malformed
+targets show a notice. There is one pending prompt, no queue, a two-second
+cooldown after dismissal and a 60-second expiry; bursts are dropped. Cold
+startup holds one link until the session is ready, within its original expiry. In-app
+clicks keep the rules above. Debug, nightly and staging copies do not register the scheme.
+`open c11://…` from a panel asks the operator; it is not a way to switch their
+workspace.
 Browser navigation and creation commands return `operator_activation_required` for these URLs.
 Local-origin eligibility grants navigation only; it grants no page-to-agent messages,
 structure reads, or other capabilities.

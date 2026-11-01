@@ -250,6 +250,54 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Панель: %@"}}
       }
     },
+    "panelLink.external.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Outside c11 link"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "c11 外部からのリンク"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Посилання ззовні c11"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "c11 외부 링크"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "来自 c11 外部的链接"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "來自 c11 外部的連結"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Ссылка из-за пределов c11"}}
+      }
+    },
+    "panelLink.external.explanation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "An outside link wants to select this destination. Confirm only if you intended to open it."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "外部のリンクがこの移動先を選択しようとしています。開くつもりだった場合にのみ確認してください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Зовнішнє посилання намагається вибрати це місце призначення. Підтверджуйте, лише якщо ви справді хотіли його відкрити."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "외부 링크가 이 대상을 선택하려고 합니다. 직접 열려던 경우에만 확인하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "外部链接想要选中此目标。仅当你确实想打开时才点击确认。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "外部連結想要選取此目的地。僅在你確實想開啟時才按確認。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Внешняя ссылка хочет выбрать это место назначения. Подтверждайте, только если вы действительно хотели его открыть."}}
+      }
+    },
+    "panelLink.external.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Confirm"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "確認"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Підтвердити"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "확인"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "确认"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "確認"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Подтвердить"}}
+      }
+    },
+    "panelLink.notice.destinationChanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "That destination moved to another workspace. Click the link again to confirm it."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "その移動先は別のワークスペースに移動しました。確認するには、もう一度リンクをクリックしてください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Це місце призначення перемістилося до іншого робочого простору. Клацніть посилання ще раз, щоб підтвердити."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "해당 대상이 다른 작업 공간으로 이동했습니다. 확인하려면 링크를 다시 클릭하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "该目标已移至另一个工作区。请再次点击链接以确认。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "該目的地已移至另一個工作區。請再次點按連結以確認。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Это место назначения переместилось в другое рабочее пространство. Щёлкните ссылку ещё раз, чтобы подтвердить."}}
+      }
+    },
     "cli.link.optionRepeated": {
       "extractionState": "manual",
       "localizations": {

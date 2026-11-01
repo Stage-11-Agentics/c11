@@ -190,7 +190,7 @@ class Proof:
         assert self.cli.is_file()
         with (self.app / 'Contents/Info.plist').open('rb') as stream:
             self.bundle = plistlib.load(stream)
-        assert self.bundle['CFBundleIdentifier'].startswith('com.stage11.c11.debug.'), 'tagged dev bundle required'
+        assert self.accepts_bundle(self.bundle['CFBundleIdentifier']), 'unexpected guest bundle identity'
         # No inherited live connection or panel context may affect a subprocess.
         for key in list(os.environ):
             if key.startswith(('C11_SOCKET', 'CMUX_SOCKET')) or key in (
@@ -219,6 +219,9 @@ class Proof:
         self.watchdog.start()
         signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('420-second active deadline')))
         signal.setitimer(signal.ITIMER_REAL, max(.1, ACTIVE_SECONDS - (time.monotonic() - self.started)))
+
+    def accepts_bundle(self, identity):
+        return identity.startswith('com.stage11.c11.debug.')
 
     def hard_stop(self):
         try:

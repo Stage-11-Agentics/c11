@@ -293,6 +293,13 @@ rm -rf "$STAGING_APP_PATH"
 cp -R "$APP_PATH" "$STAGING_APP_PATH"
 INFO_PLIST="$STAGING_APP_PATH/Contents/Info.plist"
 if [[ -f "$INFO_PLIST" ]]; then
+  # C11-536 isolation is mandatory: staging must never claim production URL
+  # schemes. The pristine Release product keeps its declarations for shipping.
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$INFO_PLIST" 2>/dev/null || true
+  if /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$INFO_PLIST" >/dev/null 2>&1; then
+    echo "error: staging still registers URL schemes" >&2
+    exit 1
+  fi
   /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$INFO_PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$INFO_PLIST"
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$INFO_PLIST" 2>/dev/null \

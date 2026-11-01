@@ -2599,17 +2599,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         PanelLineage.shared.installConversationStoreCloseObserver()
     }
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        let directories = externalOpenDirectories(from: urls)
-        guard !directories.isEmpty else { return }
+    private lazy var externalPanelLinks = ExternalPanelLinkPresenter(
+        resolve: { [weak self] in self?.externalPanelLinkDestination($0) },
+        open: { [weak self] in self?.openPanelLink($0, cause: "external_link") == true }
+    )
 
-        prepareForExplicitOpenIntentAtStartup()
-        for directory in directories {
-            openWorkspaceForExternalDirectory(
-                workingDirectory: directory,
-                debugSource: "application.openURLs"
-            )
+    private var externalPanelLinkStartupHold = ExternalPanelLinkStartupHold()
+
+    private func receiveExternalPanelLink(_ url: URL) {
+        if !didCompleteInitialSessionRestore {
+            if let held = externalPanelLinkStartupHold.capture(url.absoluteString, now: ProcessInfo.processInfo.systemUptime) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+                    self?.externalPanelLinkStartupHold.expire(id: held.id, now: ProcessInfo.processInfo.systemUptime)
+                }
+            }
+            return
         }
+        externalPanelLinks.receive(url.absoluteString)
+    }
+
+    /// Event classification is exclusive even when a c11 request is malformed,
+    /// pending, or rate-limited. A mixed event never reaches folder opening.
+    static func routeExternalOpenURLs(_ urls: [URL], panelLink: (URL) -> Void, directories: ([URL]) -> Void) {
+        if let link = urls.first(where: PanelLinkTarget.usesScheme) {
+            panelLink(link)
+            return
+        }
+        directories(urls)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Self.routeExternalOpenURLs(urls, panelLink: { receiveExternalPanelLink($0) }, directories: { urls in
+            let directories = externalOpenDirectories(from: urls)
+            guard !directories.isEmpty else { return }
+            prepareForExplicitOpenIntentAtStartup()
+            for directory in directories {
+                openWorkspaceForExternalDirectory(
+                    workingDirectory: directory,
+                    debugSource: "application.openURLs"
+                )
+            }
+        })
     }
 
     private func migrateLegacyPreferencesIfNeeded() {
@@ -3935,6 +3965,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         TerminalController.shared.setInitialSessionRestoreReady(true)
         TerminalController.shared.v2RefreshKnownRefs()
         NSLog("session.restore.ready")
+        if let held = externalPanelLinkStartupHold.take(now: ProcessInfo.processInfo.systemUptime) {
+            externalPanelLinks.receive(held.href, expiresAt: held.expiresAt)
+        }
     }
 
     private func completeStartupSessionRestore() {
@@ -13934,14 +13967,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         contextContainingWorkspaceId(workspaceId)?.workspaceManager
     }
 
-    /// Reached only from the isolated native link activation adapter. Socket
-    /// commands keep their existing workspace-switch prohibition.
-    @discardableResult
-    func openPanelLink(_ target: PanelLinkTarget) -> Bool {
-        FocusHistoryStore.shared.withExplicitJump { performOpenPanelLink(target) }
+    func externalPanelLinkDestination(_ target: PanelLinkTarget) -> ExternalPanelLinkDestination? {
+        let workspace: Workspace
+        let panelID: UUID?
+        switch target {
+        case .panel(let id):
+            guard let located = workspaceContainingPanel(panelId: id) else { return nil }
+            workspace = located.workspace
+            panelID = id
+        case .workspace(let id):
+            guard let manager = workspaceManagerFor(workspaceId: id),
+                  let found = manager.workspaces.first(where: { $0.id == id }) else { return nil }
+            workspace = found
+            panelID = nil
+        }
+        guard let context = contextContainingWorkspaceId(workspace.id),
+              (context.window ?? mainWindow(for: context.windowId)) != nil else { return nil }
+        return ExternalPanelLinkDestination(target: target, workspaceID: workspace.id,
+            workspaceTitle: PanelLinkFormat.sanitizedTitle(workspace.customTitle ?? workspace.title),
+            panelTitle: panelID.map { PanelLinkFormat(kind: .panel, id: $0,
+                title: workspace.panelTitle(panelId: $0) ?? "").title })
     }
 
-    private func performOpenPanelLink(_ target: PanelLinkTarget) -> Bool {
+    /// Reached from native in-app link activation or explicit outside-link
+    /// confirmation. This is the only outside-originated workspace-switch path:
+    /// the URL alone has no authority, and confirmation grants no agent power.
+    /// Socket commands keep their existing workspace-switch prohibition.
+    @discardableResult
+    func openPanelLink(_ target: PanelLinkTarget, cause: String = "panel_link") -> Bool {
+        FocusHistoryStore.shared.withExplicitJump { performOpenPanelLink(target, cause: cause) }
+    }
+
+    private func performOpenPanelLink(_ target: PanelLinkTarget, cause: String) -> Bool {
         let requestedAt = FlashRequestTime()
         guard SocketCommandContext.current == nil else { return false }
         let workspaceID: UUID
@@ -13971,7 +14028,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // its previous browser can enqueue an omnibar request on reveal.
             if let panelID { workspace.focusPanel(panelID) }
             bringToFront(window)
-            manager.focusWorkspace(workspaceID, surfaceId: panelID, suppressFlash: true, cause: "panel_link")
+            manager.focusWorkspace(workspaceID, surfaceId: panelID, suppressFlash: true, cause: cause)
             guard manager.selectedWorkspaceId == workspaceID else { return false }
             manager.requestSidebarReveal(workspaceId: workspaceID)
             // focusPanel can briefly focus the area's previous selected panel
@@ -13994,7 +14051,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
             workspace.triggerFocusFlash(
                 panelId: panelID, appearance: FlashAppearance.current(envelope: .paneRing),
-                source: "panel_link", requestedAt: requestedAt
+                source: cause, requestedAt: requestedAt
             )
         }
         return true

@@ -2419,6 +2419,36 @@ final class OpenCodeHeldAttemptTests: XCTestCase {
         XCTAssertTrue(MailboxDoorbellSequence.unreadIsCovered(unreadIds: ["mail-a"], coveredIds: ["mail-a"]))
     }
 
+    /// The half that fixes the symptom: a held look asks for a look at the
+    /// bound, so the hold lifts with no other event re-entering the ring.
+    func testHeldLookSchedulesALookWhenTheHoldLifts() {
+        let fallback = held(openCode2(), "native_disconnected")
+        var skips = 0
+        var rechecks: [TimeInterval] = []
+        func look(at offset: TimeInterval, unread: Set<String> = ["mail-a"]) -> Bool {
+            fallback.holdTypedLook(unreadIDs: unread, coveredIDs: [], now: failedAt.addingTimeInterval(offset),
+                                   skip: { skips += 1 }, recheck: { rechecks.append($0) })
+        }
+        XCTAssertTrue(look(at: 10))
+        XCTAssertEqual(rechecks, [hold - 10], "a held look re-looks when the hold lifts, measured from the failure")
+        XCTAssertTrue(look(at: 40, unread: ["mail-a", "mail-b"]))
+        XCTAssertEqual(rechecks, [hold - 10, hold - 40], "every held look asks again, so a replaced token is restored")
+        XCTAssertTrue(look(at: hold - 0.01))
+        XCTAssertEqual(rechecks.last, 0.05, "a look just before the bound takes one short hop, not a busy loop")
+        XCTAssertEqual(skips, 3)
+        XCTAssertFalse(look(at: hold), "at the bound the look goes to the typed route")
+        XCTAssertEqual(skips, 3)
+        XCTAssertEqual(rechecks.count, 3)
+
+        // A definite refusal is held with no timed look, as before.
+        let notReady = held(openCode2(), "native_not_ready")
+        var notReadyRechecks = 0
+        XCTAssertTrue(notReady.holdTypedLook(unreadIDs: ["mail-a"], coveredIDs: [],
+                                             now: failedAt.addingTimeInterval(3_600),
+                                             skip: {}, recheck: { _ in notReadyRechecks += 1 }))
+        XCTAssertEqual(notReadyRechecks, 0)
+    }
+
     /// A refusal before any prompt keeps waiting for the plugin's own
     /// readiness or route recovery, as before.
     func testDefiniteRefusalsKeepTheirHold() {

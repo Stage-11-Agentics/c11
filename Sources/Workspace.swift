@@ -7021,25 +7021,23 @@ final class Workspace: Identifiable, ObservableObject {
         if let nativeRoute {
             deliverNativeMailbox(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live, registration: nativeRoute)
         } else {
-            if let failed = mailboxNativeFallback[surfaceId] {
-                let unread = Set(live.map(\.id))
-                let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
-                if failed.blocksTyped(unreadIDs: unread, coveredIDs: covered) {
-                    mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                    logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
-                    // Nothing else re-looks while the plugin stays away: look
-                    // again when the hold lifts, on every held look so a newer
-                    // recheck token cannot drop it.
-                    if let until = failed.typedHoldUntil {
-                        let delay = max(0.05, until.timeIntervalSinceNow)
-                        if let entry = live.first(where: { failed.ids.contains($0.id) }) {
-                            mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
-                                reason: "native_hold", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId)
-                        }
-                        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
-                    }
-                    return
-                }
+            if let failed = mailboxNativeFallback[surfaceId],
+               failed.holdTypedLook(
+                   unreadIDs: Set(live.map(\.id)),
+                   coveredIDs: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds,
+                   skip: {
+                       mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                       logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live,
+                                                     outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
+                   },
+                   recheck: { delay in
+                       if let entry = live.first(where: { failed.ids.contains($0.id) }) {
+                           mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
+                               reason: "native_hold", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId)
+                       }
+                       scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
+                   }) {
+                return
             }
             typeMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live)
         }

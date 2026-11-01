@@ -151,6 +151,26 @@ final class MailboxNativeDoorbell {
         }
 
         static let definiteRefusals: Set<String> = ["native_not_ready", "native_session_conflict"]
+
+        /// One typed look at a held panel. Returns true when the hold keeps
+        /// the snapshot off typed delivery: `skip` records the hold, and
+        /// `recheck` asks for a look when it lifts. Nothing else re-looks
+        /// while the plugin stays away, so every held look asks again. A
+        /// panel has one recheck token: a shorter recheck that replaces it
+        /// leads to another held look, which asks again.
+        /// A longer recheck scheduled after it (a closed-gate decay of up to
+        /// 2 minutes, a 300 s turnless re-arm) can replace the token, so the
+        /// typed look may come at that later recheck or the next idle edge:
+        /// still bounded, not always at 60 s.
+        func holdTypedLook(unreadIDs: Set<String>, coveredIDs: Set<String>, now: Date = Date(),
+                           skip: () -> Void, recheck: (TimeInterval) -> Void) -> Bool {
+            guard blocksTyped(unreadIDs: unreadIDs, coveredIDs: coveredIDs, now: now) else { return false }
+            skip()
+            if let until = typedHoldUntil {
+                recheck(max(0.05, until.timeIntervalSince(now)))
+            }
+            return true
+        }
     }
 
     /// Whether a failed native attempt hands its envelopes to the typed gate

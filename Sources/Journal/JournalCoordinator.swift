@@ -396,8 +396,10 @@ final class JournalCoordinator: @unchecked Sendable {
         guard result.receipt.projectionEffect == .applied, let panel = draft.panelID, let snap = result.changedSnapshot else { return }
         lock.lock()
         defer { lock.unlock() }
-        guard owners[panel] == snap.owner, targets[panel] == snap.workspaceID else { return }
-        if [.turnCompleted, .turnInterrupted].contains(draft.kind), result.toPhase == .idle,
+        // Fleet's clock eligibility must not suppress the existing turn/ask
+        // caches when a panel moves during the journal write.
+        if owners[panel] == snap.owner, targets[panel] == snap.workspaceID,
+           [.turnCompleted, .turnInterrupted].contains(draft.kind), result.toPhase == .idle,
            result.receipt.sequence > (lastTurnEnds[panel]?.sequence ?? -1) {
             let ms = draft.timeQuality == .nativeLocal
                 ? (draft.occurredAtMs ?? result.receipt.committedAtMs) : result.receipt.committedAtMs

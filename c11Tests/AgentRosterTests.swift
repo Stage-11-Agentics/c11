@@ -382,6 +382,67 @@ final class AgentRosterTests: XCTestCase {
         XCTAssertNil(coordinator.cachedLastTurnEndedMs(panelID: JournalTestData.panel))
     }
 
+    func testWorkspaceMoveDuringJournalWriteKeepsTurnStartAndOperatorResponses() throws {
+        for textBoxSubmit in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            var duringWrite: (() -> Void)?
+            defer { duringWrite = nil }
+            let store = try JournalStore(layout: .init(directory: directory), clock: { now }, tickClock: {
+                // This existing clock seam runs inside the SQLite transaction,
+                // after coordinator eligibility and before rememberApplied.
+                duringWrite?()
+                return 1
+            })
+            let coordinator = JournalCoordinator(store: store)
+            let panel = JournalTestData.panel
+            let secondWorkspace = UUID(), thirdWorkspace = UUID()
+            var start = JournalTestData.draft(.turnStarted, at: now)
+            start.turnID = "moving-turn"
+            coordinator.register(panelID: panel, workspaceID: JournalTestData.workspace)
+            coordinator.setOwner(panelID: panel, owner: start.owner)
+            duringWrite = { coordinator.register(panelID: panel, workspaceID: secondWorkspace) }
+            let started = try coordinator.append(start)
+            duringWrite = nil
+            XCTAssertEqual(started.receipt.projectionEffect, .applied)
+            XCTAssertEqual(started.changedSnapshot?.workspaceID, JournalTestData.workspace)
+            XCTAssertEqual(coordinator.target(panelID: panel), secondWorkspace)
+            XCTAssertEqual(coordinator.cachedTurnStartedMs(panelID: panel), now)
+
+            var ask = JournalTestData.draft(.approvalRequested, at: now)
+            ask.workspaceID = secondWorkspace
+            ask.turnID = start.turnID
+            ask.requestID = "moving-approval"
+            duringWrite = { coordinator.register(panelID: panel, workspaceID: thirdWorkspace) }
+            let asked = try coordinator.append(ask)
+            duringWrite = nil
+            XCTAssertEqual(asked.receipt.projectionEffect, .applied)
+            XCTAssertEqual(asked.changedSnapshot?.workspaceID, secondWorkspace)
+            XCTAssertEqual(coordinator.target(panelID: panel), thirdWorkspace)
+            XCTAssertEqual(coordinator.snapshot(panelID: panel)?.phase, .blocked)
+            if textBoxSubmit {
+                coordinator.noteTextBoxSubmit(panelID: panel)
+            } else {
+                coordinator.noteOperatorSubmit(panelID: panel, keyCode: 36, modifierRaw: 0,
+                    isRepeat: false, synthesizing: false, hasMarkedText: false)
+            }
+            let owner = try XCTUnwrap(start.owner)
+            let deadline = Date().addingTimeInterval(2)
+            var response: AgentRoster.RetainedEvent?
+            repeat {
+                response = try store.retainedOwnerEvents(owner: owner).events.first { $0.draft.signal == .operatorResponse }
+                if response == nil { Thread.sleep(forTimeInterval: 0.01) }
+            } while response == nil && Date() < deadline
+            XCTAssertNotNil(response, "Moved ask lost its \(textBoxSubmit ? "text-box" : "keyboard") response")
+            XCTAssertEqual(response?.draft.requestID, ask.requestID)
+            XCTAssertEqual(response?.draft.workspaceID, thirdWorkspace)
+            XCTAssertEqual(response?.attribution, "exact")
+            XCTAssertEqual(response?.effect, .observation)
+            XCTAssertEqual(response?.event.effectReason, "operator_response")
+        }
+    }
+
     private func retained(
         _ draft: JournalDraft,
         sequence: Int64,

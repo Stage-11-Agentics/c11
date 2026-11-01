@@ -2147,3 +2147,188 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         XCTAssertEqual(event["native_failure"] as? String, "native_timeout")
     }
 }
+
+/// C11-555: a harness that never reports a turn edge keeps one idle period
+/// for its whole session. Once-per-idle holds there only for
+/// `turnlessReringInterval` after the last ring; then mail no ring covered
+/// may ring again, and every other hold still wins.
+final class TurnlessReringTests: XCTestCase {
+
+    private let interval = MailboxDoorbell.turnlessReringInterval
+
+    private func at(_ seconds: TimeInterval) -> Date { Date(timeIntervalSince1970: seconds) }
+
+    /// The live case: one ring at attach, the ring's Return, then new mail.
+    /// The epoch never moves, so the new mail would hold forever.
+    private func turnlessPanelRungOnce() -> (MailboxStdinBufferStore, UUID, String) {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        state.buffer.noteAgentProcess(surfaceId: surface, process: .init(pid: 4242, startTime: 7))
+        state.buffer.noteAgentAttached(surfaceId: surface, at: at(10))
+        let epoch = state.buffer.ringEpoch(surfaceId: surface)
+        state.doorbell.update(surfaceId: surface) { ledger in
+            ledger.beginAttempt(at: self.at(20), epoch: epoch)
+            ledger.endAttempt()
+            MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: ["a"])
+        }
+        state.buffer.noteSubmit(surfaceId: surface, at: at(21))
+        return (state, surface, epoch)
+    }
+
+    private func input(
+        state: MailboxStdinBufferStore,
+        surface: UUID,
+        now: Date,
+        unread: Set<String> = ["a", "b"]
+    ) -> MailboxDoorbell.Input {
+        let epoch = state.buffer.ringEpoch(surfaceId: surface)
+        let ledger = state.doorbell.ledger(for: surface)
+        let reringAt = MailboxDoorbellSequence.turnlessReringAt(
+            ledger: ledger,
+            epoch: epoch,
+            hasTurnEdge: state.buffer.agentTurn(surfaceId: surface) != nil
+        )
+        var input = MailboxDoorbell.Input()
+        input.rungThisEpoch = ledger.rung(in: epoch)
+        input.turnlessReringDue = MailboxDoorbellSequence.turnlessReringDue(at: reringAt, now: now)
+        input.recentAttempts = ledger.rings(at: now)
+        input.unreadIds = unread
+        input.coveredIds = ledger.coveredIds
+        input.epoch = epoch
+        input.now = now
+        input.prompt = .empty
+        return input
+    }
+
+    private func plan(
+        _ input: MailboxDoorbell.Input,
+        state: MailboxStdinBufferStore,
+        surface: UUID
+    ) -> MailboxDoorbellSequence.Plan {
+        let ledger = state.doorbell.ledger(for: surface)
+        return MailboxDoorbellSequence.plan(
+            decision: MailboxDoorbell.decide(input),
+            attempts: ledger.attempts,
+            now: input.now,
+            busyExhausted: false,
+            strandedDoorbell: false,
+            epoch: input.epoch,
+            unreadIds: input.unreadIds,
+            coveredIds: ledger.coveredIds,
+            turnlessReringAt: MailboxDoorbellSequence.turnlessReringAt(
+                ledger: ledger,
+                epoch: input.epoch,
+                hasTurnEdge: state.buffer.agentTurn(surfaceId: surface) != nil
+            )
+        )
+    }
+
+    func testRingReturnLeavesATurnlessPanelInTheSameEpoch() {
+        let (state, surface, epoch) = turnlessPanelRungOnce()
+        XCTAssertNil(state.buffer.agentTurn(surfaceId: surface))
+        XCTAssertEqual(state.buffer.ringEpoch(surfaceId: surface), epoch)
+        XCTAssertEqual(state.doorbell.ledger(for: surface).rungAt, at(20))
+    }
+
+    func testNewMailOnATurnlessPanelLooksAgainAndRingsAfterTheInterval() {
+        let (state, surface, _) = turnlessPanelRungOnce()
+
+        let early = input(state: state, surface: surface, now: at(100))
+        XCTAssertEqual(MailboxDoorbell.decide(early), .skip(reason: "once_per_idle"))
+        let held = plan(early, state: state, surface: surface)
+        XCTAssertEqual(held.arrival, .keep(reason: "once_per_idle"))
+        XCTAssertEqual(held.rearm, .after(20 + interval - 100), "looks again when the hold lifts")
+        XCTAssertEqual(held.relook, "turnless_idle")
+
+        let due = input(state: state, surface: surface, now: at(20 + interval))
+        XCTAssertEqual(MailboxDoorbell.decide(due), .ring)
+        var unreadPrompt = due
+        unreadPrompt.prompt = nil
+        XCTAssertTrue(MailboxDoorbell.needsPrompt(unreadPrompt), "a due re-ring still reads the screen")
+    }
+
+    func testDueReringStillYieldsToEveryOtherHold() {
+        let (state, surface, _) = turnlessPanelRungOnce()
+        let due = input(state: state, surface: surface, now: at(20 + interval))
+
+        var draft = due
+        draft.prompt = .draft
+        XCTAssertEqual(MailboxDoorbell.decide(draft), .skip(reason: "draft"))
+        var dialog = due
+        dialog.prompt = .dialog
+        XCTAssertEqual(MailboxDoorbell.decide(dialog), .skip(reason: "dialog"))
+        var unreadable = due
+        unreadable.prompt = nil
+        XCTAssertEqual(MailboxDoorbell.decide(unreadable), .skip(reason: "unavailable"))
+        var textBox = due
+        textBox.textBoxUnsent = true
+        XCTAssertEqual(MailboxDoorbell.decide(textBox), .skip(reason: "draft"))
+        var flagged = due
+        flagged.flagged = true
+        XCTAssertEqual(MailboxDoorbell.decide(flagged), .skip(reason: "flagged"))
+        var typing = due
+        typing.focused = true
+        typing.operatorKeyAge = 1
+        XCTAssertEqual(MailboxDoorbell.decide(typing), .deferRing(after: MailboxDoorbell.quietWindow - 1))
+        var capped = due
+        capped.recentAttempts = MailboxDoorbell.rateCap
+        XCTAssertEqual(MailboxDoorbell.decide(capped), .skip(reason: "rate_capped"))
+    }
+
+    func testCoveredMailNeverReRings() {
+        let (state, surface, _) = turnlessPanelRungOnce()
+
+        let early = input(state: state, surface: surface, now: at(100), unread: ["a"])
+        XCTAssertEqual(MailboxDoorbell.decide(early), .skip(reason: "once_per_idle"))
+        XCTAssertEqual(plan(early, state: state, surface: surface).rearm, .none)
+
+        let due = input(state: state, surface: surface, now: at(20 + interval * 4), unread: ["a"])
+        XCTAssertEqual(MailboxDoorbell.decide(due), .skip(reason: "already_covered"))
+        XCTAssertEqual(plan(due, state: state, surface: surface).rearm, .none)
+    }
+
+    func testAReRingStartsTheIntervalAgain() {
+        let (state, surface, epoch) = turnlessPanelRungOnce()
+        let second = at(20 + interval)
+        state.doorbell.update(surfaceId: surface) { ledger in
+            ledger.beginAttempt(at: second, epoch: epoch)
+            ledger.endAttempt()
+            MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: ["a", "b"])
+        }
+        let next = input(state: state, surface: surface, now: second.addingTimeInterval(60), unread: ["a", "b", "c"])
+        XCTAssertEqual(MailboxDoorbell.decide(next), .skip(reason: "once_per_idle"))
+        XCTAssertEqual(plan(next, state: state, surface: surface).rearm, .after(interval - 60))
+    }
+
+    func testPanelWithTurnEdgesKeepsOncePerIdle() {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        state.buffer.noteAgentProcess(surfaceId: surface, process: .init(pid: 4242, startTime: 7))
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: true, at: at(10))
+        let epoch = state.buffer.ringEpoch(surfaceId: surface)
+        state.doorbell.update(surfaceId: surface) { ledger in
+            ledger.beginAttempt(at: self.at(20), epoch: epoch)
+            ledger.endAttempt()
+            MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: ["a"])
+        }
+        XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(
+            ledger: state.doorbell.ledger(for: surface),
+            epoch: epoch,
+            hasTurnEdge: true
+        ))
+        let muchLater = input(state: state, surface: surface, now: at(20 + interval * 10))
+        XCTAssertFalse(muchLater.turnlessReringDue)
+        XCTAssertEqual(MailboxDoorbell.decide(muchLater), .skip(reason: "once_per_idle"))
+        XCTAssertEqual(plan(muchLater, state: state, surface: surface).rearm, .none)
+    }
+
+    func testStrandedReturnStartsTheIntervalToo() {
+        var ledger = MailboxDoorbell.Ledger()
+        ledger.recordStrandedReturn(at: at(50), epoch: "10000|attach")
+        XCTAssertEqual(
+            MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "10000|attach", hasTurnEdge: false),
+            at(50 + interval)
+        )
+        XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "other|attach", hasTurnEdge: false))
+    }
+}

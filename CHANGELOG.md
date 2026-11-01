@@ -10,6 +10,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 - **Agent launches no longer carry a mission prompt.** A workspace with a `C11.md` still shows its mission on the sidebar card and still passes the file to agents through `C11_MISSION_FILE`, but c11 no longer adds "read the mission" to the launch prompt. A launch with no task opens a plain session again, and a task arrives exactly as written. The c11 skill now tells agents to read the mission when their task concerns the project, not at every launch.
 - **c11 resumes your previous session by default.** Launch no longer asks "Resume previous session?"; every workspace from your last session comes back. Settings > General > On Launch chooses between resuming the previous session, asking which workspaces to resume, or starting fresh. Hold Option while c11 starts to pick workspaces for that launch only.
+- **Tiles show the full workspace card.** A sidebar wide enough for two or more columns now draws every workspace as the same full card a one-column sidebar shows, with its mission line, agent census and marks, the details your sidebar settings turn on, and the agent rail. The compact tile and its hover preview are gone. Cards in one row stretch to the tallest card, so their edges line up.
 
 ## [1.7.6] - 2026-11-01
 

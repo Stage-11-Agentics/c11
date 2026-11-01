@@ -38,7 +38,7 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `area:2`, `panel:3`. *
 
 **Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
 
-The sidebar shows **Tiles** (two or more columns) whenever its width fits two 162 pt columns at the chrome scale (324 pt at the standard scale), and cards below that. Width alone decides, live while the operator drags the sidebar edge; there is no button, menu item or stored mode. A narrow window caps the shown width without changing the requested width, so widening it restores the columns. Tiles pack left to right and show the full card on hover. Agents can read `sidebar-state --json --workspace <ref>` (`layout.double_wide`, derived from the shown width, plus requested and effective width and columns); only the operator resizes the sidebar.
+The sidebar shows **Tiles** (two or more columns) whenever its width fits two 162 pt columns at the chrome scale (324 pt at the standard scale), and cards below that. Width alone decides, live while the operator drags the sidebar edge; there is no button, menu item or stored mode. A narrow window caps the shown width without changing the requested width, so widening it restores the columns. Tiles pack left to right, and every tile is the full workspace card, the same card one column shows; the cards in a row share its tallest card's height. Agents can read `sidebar-state --json --workspace <ref>` (`layout.double_wide`, derived from the shown width, plus requested and effective width and columns); only the operator resizes the sidebar.
 
 ## Links to panels and workspaces
 
@@ -129,9 +129,8 @@ not selectors; distinct missions need distinct roots in this version. A C11
 block inside AGENTS.md/CLAUDE.md remains ordinary agent-readable context and
 does not supply the native card or `C11_MISSION_FILE`.
 
-Full cards show one truncated sentence; hover shows the mission paragraph and
-path. Tiles keep their geometry and show the mission in their full-card hover
-preview. File edits normally appear within a few seconds. Missing, empty,
+Cards show one truncated sentence, in one column or in Tiles; hover shows the
+mission paragraph and path. File edits normally appear within a few seconds. Missing, empty,
 invalid UTF-8/binary, oversized (over 64 KiB), symlink and nonregular files
 produce no mission card. Rootless and remote workspaces do not discover local
 missions. Those launches clear `C11_MISSION_FILE` to an empty value; an already

@@ -3171,11 +3171,13 @@ private struct MailboxConversationBubble: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(alignment: .leading, spacing: 6 * scale) {
+                    // Links found by MailboxBodyLinks (C11-524) open through the
+                    // drawer's openURL handler, as they do in Received.
                     if !message.body.isEmpty {
-                        bodyText(message.body, isLong: message.isLong)
+                        bodyText(message.bodyRich, isLong: message.isLong)
                     }
                     if let reference = message.reference {
-                        referenceBlock(reference, isLong: message.isLong)
+                        referenceBlock(reference, rich: message.referenceRich, isLong: message.isLong)
                     }
                     if message.body.isEmpty && message.reference == nil {
                         Text(String(localized: "mailbox.drawer.emptyBody", defaultValue: "This message has no body."))
@@ -3200,9 +3202,11 @@ private struct MailboxConversationBubble: View {
     }
 
     /// Long text folds to its first lines and fades out, until "Show all".
-    private func bodyText(_ text: String, isLong: Bool) -> some View {
+    /// The text carries only the links MailboxBodyLinks found; it is never
+    /// parsed as Markdown.
+    private func bodyText(_ text: AttributedString, isLong: Bool) -> some View {
         let folded = isLong && !isExpanded
-        return Text(verbatim: text)
+        return Text(text)
             .font(bodyFont)
             .foregroundColor(style.foreground)
             .lineLimit(folded ? MailboxPanelMail.foldedLineLimit : nil)
@@ -3219,7 +3223,7 @@ private struct MailboxConversationBubble: View {
     }
 
     @ViewBuilder
-    private func referenceBlock(_ reference: MailboxPanelMail.Reference, isLong: Bool) -> some View {
+    private func referenceBlock(_ reference: MailboxPanelMail.Reference, rich: AttributedString?, isLong: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3 * scale) {
             Text(verbatim: referenceCaption(reference))
                 .font(metaFont)
@@ -3234,7 +3238,7 @@ private struct MailboxConversationBubble: View {
                         .font(bodyFont)
                         .foregroundColor(style.secondary)
                 } else {
-                    bodyText(text, isLong: isLong)
+                    bodyText(rich ?? AttributedString(text), isLong: isLong)
                 }
                 if truncated {
                     Text(String(

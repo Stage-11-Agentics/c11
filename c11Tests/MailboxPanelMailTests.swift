@@ -781,6 +781,21 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertFalse(index.scanIsPartial)
     }
 
+    func testThreadBodiesCarryTheirLinksBothWays() throws {
+        // C11-524: links in a Conversations bubble open like links in Received,
+        // so the thread's messages carry the same found links, in and out.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let captain = UUID()
+        try receive(ulid(now - 200), from: "merge-captain", stamp: captain, body: "Landed: https://github.com/Stage-11-Agentics/c11/pull/861 ok")
+        try send(ulid(now - 100), to: [(captain, .waiting)], body: "Review https://example.com/r/2 please")
+        let thread = try openThread(.panel(captain), in: conversationIndex())
+        XCTAssertEqual(thread.items.map(\.direction), [.received, .sent])
+        let links = thread.items.map { item in
+            (item.message?.bodyRich.runs.compactMap(\.link).map(\.absoluteString)) ?? []
+        }
+        XCTAssertEqual(links, [["https://github.com/Stage-11-Agentics/c11/pull/861"], ["https://example.com/r/2"]])
+    }
+
     func testUnstampedMailStaysInItsOwnNameOnlyRow() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let captain = UUID()

@@ -977,6 +977,9 @@ extension CMUXCLI {
         matches.sort { $0.ts < $1.ts }
         for match in matches {
             print(match.line)
+            if let sentence = MailboxHoldNotice.sentence(forLogLine: match.line) {
+                print(sentence)
+            }
         }
     }
 
@@ -994,13 +997,20 @@ extension CMUXCLI {
         let stateURL = try MailboxLayout.defaultStateURL()
         let logURL = MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
 
-        // Print existing contents, then poll for growth.
+        // Print existing contents, then poll for growth. A hold's plain
+        // sentence is added here; the log file stays JSON. `pending` keeps a
+        // line that arrived split across two reads.
         var lastSize: UInt64 = 0
+        var pending = ""
         func flushHandle(_ handle: FileHandle) {
             let data = (try? handle.readToEnd()) ?? nil ?? Data()
             if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
-                print(text, terminator: "")
-                fflush(stdout)
+                let annotated = MailboxHoldNotice.annotateChunk(text, pending: pending)
+                pending = annotated.pending
+                if !annotated.shown.isEmpty {
+                    print(annotated.shown, terminator: "")
+                    fflush(stdout)
+                }
             }
             lastSize = (try? handle.offset()) ?? lastSize
         }

@@ -184,3 +184,102 @@ final class MailboxDispatchLogTests: XCTestCase {
         XCTAssertEqual(obj?["errno"] as? Int, Int(EACCES))
     }
 }
+
+/// C11-517: a draft hold is named in plain words. Naming it does not type,
+/// submit, or clear the composer. `MailboxDoorbell.decide` still skips a draft.
+final class MailboxHoldNoticeTests: XCTestCase {
+
+    private func recheck(_ reason: String) -> String {
+        MailboxDispatchLog.serialize(
+            event: .doorbellRecheck(id: "A", recipient: "watcher", reason: reason, nextMs: 5_000),
+            at: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    func testDraftRecheckNamesTheHold() {
+        let shown = MailboxHoldNotice.annotated(recheck("draft"))
+        XCTAssertTrue(shown.contains("\"reason\":\"draft\""))
+        XCTAssertTrue(shown.contains("held: recipient has a draft"))
+        XCTAssertFalse(shown.contains("answering a question"))
+        XCTAssertFalse(shown.contains("unreadable"))
+    }
+
+    func testDialogAndUnreadablePromptAreNotCalledADraft() {
+        let dialog = MailboxHoldNotice.annotated(recheck("dialog"))
+        XCTAssertTrue(dialog.contains("held: recipient is answering a question"))
+        XCTAssertFalse(dialog.contains("has a draft"))
+
+        let unknown = MailboxHoldNotice.annotated(recheck("unknown_prompt"))
+        XCTAssertTrue(unknown.contains("held: recipient prompt is unreadable"))
+        XCTAssertFalse(unknown.contains("has a draft"))
+
+        let stranded = MailboxHoldNotice.annotated(recheck("stranded"))
+        XCTAssertTrue(stranded.contains("held: doorbell line still in the composer"))
+        XCTAssertFalse(stranded.contains("has a draft"))
+    }
+
+    func testSkippedDraftIsNamedAndASubmittedRingIsNot() {
+        let skipped = MailboxDispatchLog.serialize(
+            event: .handler(
+                id: "A",
+                recipient: "watcher",
+                handler: "stdin",
+                outcome: .doorbellSkipped,
+                bytes: nil,
+                elapsedMs: nil,
+                reason: "draft"
+            ),
+            at: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertTrue(MailboxHoldNotice.annotated(skipped).contains("held: recipient has a draft"))
+
+        let rung = MailboxDispatchLog.serialize(
+            event: .handler(
+                id: "A",
+                recipient: "watcher",
+                handler: "stdin",
+                outcome: .doorbell,
+                bytes: 40,
+                elapsedMs: nil,
+                reason: "submitted"
+            ),
+            at: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertFalse(MailboxHoldNotice.annotated(rung).contains("held:"))
+    }
+
+    func testPanelLineIsOnlyTheDraftCount() {
+        XCTAssertNil(MailboxHoldNotice.panelLine(count: 0))
+        XCTAssertEqual(MailboxHoldNotice.panelLine(count: 1), "1 message held behind your draft")
+        XCTAssertEqual(MailboxHoldNotice.panelLine(count: 3), "3 messages held behind your draft")
+        XCTAssertNil(MailboxHoldNotice.draftHoldCount(relook: nil, queued: 3))
+        XCTAssertEqual(MailboxHoldNotice.draftHoldCount(relook: "draft", queued: 3), 3)
+        XCTAssertEqual(MailboxHoldNotice.draftHoldCount(relook: "dialog", queued: 3), 0)
+        XCTAssertEqual(MailboxHoldNotice.draftHoldCount(relook: "unknown_prompt", queued: 3), 0)
+        XCTAssertEqual(MailboxHoldNotice.draftHoldCount(relook: "stranded", queued: 2), 0)
+    }
+
+    /// A tail read can split a line. The sentence appears once the line completes,
+    /// and not before. This does not touch a composer.
+    func testTailChunkNamesTheHoldWhenTheLineCompletes() {
+        let line = recheck("draft")
+        let split = line.index(line.startIndex, offsetBy: 12)
+        var pending = ""
+        let first = MailboxHoldNotice.annotateChunk(String(line[..<split]), pending: pending)
+        XCTAssertEqual(first.shown, "")
+        pending = first.pending
+        let rest = MailboxHoldNotice.annotateChunk(String(line[split...]), pending: pending)
+        XCTAssertTrue(rest.shown.contains("held: recipient has a draft"))
+        XCTAssertTrue(rest.pending.isEmpty)
+    }
+
+    /// The existing draft guard: a recognized draft is a skip, so nothing is typed.
+    func testNamingADraftDoesNotAdmitARing() {
+        var draft = MailboxDoorbell.Input()
+        draft.prompt = .draft
+        XCTAssertEqual(MailboxDoorbell.decide(draft), .skip(reason: "draft"))
+        let shown = MailboxHoldNotice.annotated(recheck("draft"))
+        XCTAssertFalse(shown.contains("send-key"))
+        XCTAssertTrue(shown.contains("held: recipient has a draft"))
+    }
+}

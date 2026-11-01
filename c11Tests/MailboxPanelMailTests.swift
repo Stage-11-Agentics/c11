@@ -430,6 +430,44 @@ final class MailboxBadgeStoreTests: XCTestCase {
         XCTAssertTrue(store.isTracking(panelId: panel))
     }
 
+    /// C11-517: a draft hold is not a file count. A recount leaves it, and
+    /// clearing it or closing the panel removes it. Nothing here types.
+    func testDraftHoldSurvivesARecountAndClears() throws {
+        let workspace = UUID(), panel = UUID()
+        store.track(panelId: panel, workspaceId: workspace)
+        store.setDraftHold(panelId: panel, count: 2)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 2)
+        let model = store.modelForPanel(panel)
+        XCTAssertEqual(model.heldBehindDraft, 2)
+
+        let later = store.modelForPanel(panel)
+        XCTAssertTrue(later === model)
+
+        store.setDraftHold(panelId: panel, count: 2)
+        XCTAssertEqual(model.heldBehindDraft, 2)
+
+        try deliver(to: panel, in: workspace)
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        waitForUnread(1, panelId: panel)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 2)
+        XCTAssertEqual(model.heldBehindDraft, 2)
+        XCTAssertEqual(store.cachedSummary(panelId: panel).unread, 1)
+
+        store.setDraftHold(panelId: panel, count: 0)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 0)
+        XCTAssertEqual(model.heldBehindDraft, 0)
+
+        store.setDraftHold(panelId: panel, count: 4)
+        store.forget(panelId: panel)
+        XCTAssertEqual(store.draftHoldCount(panelId: panel), 0)
+    }
+
+    func testDraftHoldRecordedBeforeTheCellIsCopiedOntoTheModel() {
+        let panel = UUID()
+        store.setDraftHold(panelId: panel, count: 3)
+        XCTAssertEqual(store.modelForPanel(panel).heldBehindDraft, 3)
+    }
+
     func testDeliveryToAPanelMovedToAnotherWorkspaceRecountsItThere() throws {
         let before = UUID(), after = UUID(), panel = UUID()
         store.track(panelId: panel, workspaceId: before)

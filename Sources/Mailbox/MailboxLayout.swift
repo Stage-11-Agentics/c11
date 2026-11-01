@@ -216,6 +216,103 @@ enum MailboxLayout {
     }
 }
 
+/// Plain words for a doorbell hold. `c11 mailbox trace` and `mailbox tail`
+/// print the JSON line, then this sentence. The log file stays JSON.
+/// A question, an unreadable prompt, and a stranded doorbell line are named
+/// as themselves. Only `draft` is called a draft.
+enum MailboxHoldNotice {
+
+    /// Queued messages to show as held behind a draft. Nil when this look is
+    /// not a held-composer look, so a quiet-window defer leaves the indicator.
+    /// Any other named look clears it.
+    static func draftHoldCount(relook: String?, queued: Int) -> Int? {
+        guard let relook else { return nil }
+        guard relook == "draft" else { return 0 }
+        return max(0, queued)
+    }
+
+    static func sentence(outcome: String, reason: String) -> String? {
+        let held = outcome == "doorbell_recheck" || outcome == "doorbell_skipped"
+        guard held else { return nil }
+        switch reason {
+        case "draft":
+            return String(
+                localized: "mailbox.hold.trace.draft",
+                defaultValue: "held: recipient has a draft"
+            )
+        case "dialog":
+            return String(
+                localized: "mailbox.hold.trace.dialog",
+                defaultValue: "held: recipient is answering a question"
+            )
+        case "unknown_prompt":
+            return String(
+                localized: "mailbox.hold.trace.unknown",
+                defaultValue: "held: recipient prompt is unreadable"
+            )
+        case "stranded":
+            return String(
+                localized: "mailbox.hold.trace.stranded",
+                defaultValue: "held: doorbell line still in the composer"
+            )
+        default:
+            return nil
+        }
+    }
+
+    /// The plain sentence for one dispatch-log line, or nil when it is not a hold.
+    static func sentence(forLogLine line: String) -> String? {
+        guard line.contains("doorbell_") else { return nil }
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outcome = obj["outcome"] as? String,
+              let reason = obj["reason"] as? String else { return nil }
+        return sentence(outcome: outcome, reason: reason)
+    }
+
+    /// The JSON line plus the plain sentence, each ending in a newline.
+    static func annotated(_ line: String) -> String {
+        let body = line.hasSuffix("\n") ? String(line.dropLast()) : line
+        guard let sentence = sentence(forLogLine: body) else {
+            return line.hasSuffix("\n") ? line : line + "\n"
+        }
+        return body + "\n" + sentence + "\n"
+    }
+
+    /// Tail reads arrive in chunks that may split a line. Completed lines are
+    /// annotated. The returned pending is the trailing partial, so a caller
+    /// can keep it without passing a captured variable as `inout`.
+    static func annotateChunk(_ chunk: String, pending: String) -> (shown: String, pending: String) {
+        var rest = pending + chunk
+        var out = ""
+        while let newline = rest.firstIndex(of: "\n") {
+            let line = String(rest[..<newline])
+            rest = String(rest[rest.index(after: newline)...])
+            out += annotated(line)
+        }
+        return (out, rest)
+    }
+
+    /// What the mailbox cell and drawer say while a draft holds delivery.
+    /// Nil when nothing is held, including a question or an unreadable prompt.
+    static func panelLine(count: Int) -> String? {
+        switch count {
+        case ..<1:
+            return nil
+        case 1:
+            return String(
+                localized: "mailbox.hold.panel.one",
+                defaultValue: "1 message held behind your draft"
+            )
+        default:
+            return String(
+                localized: "mailbox.hold.panel.many",
+                defaultValue: "\(count) messages held behind your draft"
+            )
+        }
+    }
+}
+
 /// One-time-per-process migration of the c11 state directory from the legacy
 /// `c11mux` name to the canonical `c11` name. Every state-root resolver
 /// (`MailboxLayout.defaultStateURL`, `SocketControlSettings.stableSocketDirectoryURL`,

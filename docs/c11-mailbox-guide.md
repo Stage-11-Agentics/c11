@@ -100,7 +100,7 @@ If `mailbox.delivery` is not set on the recipient, the envelope still lands in t
 
 ## A panel's mailbox on its subtitle bar
 
-Every panel that has received any mail shows a mailbox cell at the right end of its subtitle bar: `[unread] ✉ [received]`. Unread (orange) counts envelopes still in the panel's inbox root. A doorbell ring leaves the envelope there, so a rung message stays unread until `recv --ack` or a drain claims it into `_read/`. It sits on an orange backdrop for three minutes after the newest one lands, then stays plain orange. An orange number that does not go away means the agent is not taking its mail. Received (gray) counts the inbox root plus `_read/`. A panel that has never received mail has no cell, whether or not it declared an address; the cell appears when the first message lands and stays after the mail is read. A panel with mail and no description reads a dim "No subtitle set" in the bar until it sets one.
+Every panel that has received any mail shows a mailbox cell at the right end of its subtitle bar: `[unread] ✉ [received]`. Unread (orange) counts envelopes still in the panel's inbox root. A doorbell ring leaves the envelope there, so a rung message stays unread until `recv --ack` or a drain claims it into `_read/`. It sits on an orange backdrop for three minutes after the newest one lands, then stays plain orange. An orange number that does not go away means the agent is not taking its mail. Received (gray) counts the inbox root plus `_read/`. A panel that has never received mail has no cell, whether or not it declared an address; the cell appears when the first message lands and stays after the mail is read. A panel with mail and no description reads a dim "No subtitle set" in the bar until it sets one. While a draft holds delivery, the cell's tooltip and the drawer say how many messages are held behind that draft (`1 message held behind your draft`, or `3 messages held behind your draft`). A question or an unreadable prompt does not show that line.
 
 Clicking the cell opens a read-only drawer under the bar, with the panel sheet's motion and dismissal (Esc, a click outside, or the cell again). It lists the newest 200 messages, newest first: state, topic, sent time and age, the sender with its panel number and address when that panel is open, `in_reply_to` (a link when the parent is in the list), TTL and whether it expired, and the whole body. A `body_ref` file is read when it is an absolute path to a regular file, up to 64 KB, and a missing, unreadable or non-text file is named as such. Bodies render as plain text. Opening the drawer never claims, deletes or sends mail. Counts update when a copy lands (`mailbox.delivered` via `inbox`) and when a drain receipt is recorded (`via: drain`); both call `inboxChanged`. A doorbell ring does not. Cells on screen also recount every 60 seconds.
 
@@ -765,6 +765,8 @@ Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the stdin queue lifecyc
 c11 mailbox tail                              # follow log as it grows
 c11 mailbox trace 01K3A2B7X8PQRTVWYZ0123456J  # filter for one envelope id
 ```
+
+A draft hold prints a plain line under the JSON: `held: recipient has a draft`. A question prints `held: recipient is answering a question`. An unreadable prompt prints `held: recipient prompt is unreadable`. A doorbell line still sitting in the composer prints `held: doorbell line still in the composer`. Those last three are not a draft. The log file itself stays JSON. `trace` and `tail` add the sentence when they print.
 
 ---
 

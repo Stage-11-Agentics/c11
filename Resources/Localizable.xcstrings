@@ -338,6 +338,78 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Непрочитанных: %lld — агент ещё не забрал их"}}
       }
     },
+    "mailbox.hold.panel.many": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "%lld messages held behind your draft"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "あなたの下書きの後ろにメッセージ %lld 件を保留中"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "%lld повідомлень утримано позаду вашої чернетки"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "사용자의 초안 뒤에 메시지 %lld개가 보류됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 条消息暂缓在你的草稿后面"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 則訊息暫緩在你的草稿後面"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "%lld сообщений удержано позади вашего черновика"}}
+      }
+    },
+    "mailbox.hold.panel.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "1 message held behind your draft"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "あなたの下書きの後ろにメッセージ 1 件を保留中"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "1 повідомлення утримано позаду вашої чернетки"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "사용자의 초안 뒤에 메시지 1개가 보류됨"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "1 条消息暂缓在你的草稿后面"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "1 則訊息暫緩在你的草稿後面"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "1 сообщение удержано позади вашего черновика"}}
+      }
+    },
+    "mailbox.hold.trace.dialog": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "held: recipient is answering a question"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "保留: 受信者が質問に回答している"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "утримано: одержувач відповідає на запитання"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보류: 수신자가 질문에 답하는 중"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "暂缓: 收件人正在回答问题"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫緩: 收件人正在回答問題"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "удержано: получатель отвечает на вопрос"}}
+      }
+    },
+    "mailbox.hold.trace.draft": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "held: recipient has a draft"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "保留: 受信者に下書きがある"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "утримано: одержувач має чернетку"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보류: 수신자에게 초안이 있음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "暂缓: 收件人有草稿"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫緩: 收件人有草稿"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "удержано: у получателя есть черновик"}}
+      }
+    },
+    "mailbox.hold.trace.stranded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "held: doorbell line still in the composer"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "保留: ドアベルの行がまだ入力欄にある"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "утримано: рядок дверного дзвінка ще в полі введення"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보류: 초인종 줄이 아직 입력창에 있음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "暂缓: 门铃行仍在输入框中"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫緩: 門鈴行仍在輸入框中"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "удержано: строка дверного звонка ещё в поле ввода"}}
+      }
+    },
+    "mailbox.hold.trace.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "held: recipient prompt is unreadable"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "保留: 受信者のプロンプトが読み取れない"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "утримано: промпт одержувача не читається"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보류: 수신자의 프롬프트를 읽을 수 없음"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "暂缓: 收件人的提示词无法读取"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫緩: 收件人的提示詞無法讀取"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "удержано: промпт получателя не читается"}}
+      }
+    },
     "mailbox.cli.error.unknown-flag": {
       "extractionState": "manual",
       "localizations": {

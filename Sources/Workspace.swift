@@ -7118,9 +7118,13 @@ final class Workspace: Identifiable, ObservableObject {
         var attemptID: UUID?
         if registration.route == .opencodePlugin && registration.supportsAttemptReplay {
             let process = MailboxStdinBuffer.AgentProcess(pid: registration.agentPID, startTime: registration.processStart)
-            let attempt = MailboxNativeDoorbell.reusableAttempt(
-                mailboxNativeAttempts[surfaceId], process: process, unreadIDs: unreadIDs
-            ) ?? MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: unreadIDs)
+            guard let attempt = MailboxNativeDoorbell.attemptSnapshot(
+                previous: mailboxNativeAttempts[surfaceId], process: process, unreadIDs: unreadIDs,
+                coveredIDs: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+            ) else {
+                mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                return
+            }
             mailboxNativeAttempts[surfaceId] = attempt
             attemptID = attempt.id
             ids = attempt.ids

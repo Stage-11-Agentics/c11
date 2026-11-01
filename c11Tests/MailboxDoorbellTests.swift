@@ -2449,6 +2449,30 @@ final class OpenCodeHeldAttemptTests: XCTestCase {
         XCTAssertEqual(notReadyRechecks, 0)
     }
 
+    /// Grok's case: the typed ring at the bound covered A, B arrived after
+    /// it, and the plugin reconnects on the same TUI. The stale attempt X for
+    /// A must not be replayed; the new attempt names only B.
+    func testCoveredAttemptIsNotRevivedByLaterMail() throws {
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        let stale = MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: ["mail-a"])
+        let fresh = UUID()
+        let attempt = try XCTUnwrap(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: process, unreadIDs: ["mail-a", "mail-b"], coveredIDs: ["mail-a"], newID: fresh))
+        XCTAssertEqual(attempt.id, fresh, "a covered attempt is not replayed")
+        XCTAssertEqual(attempt.ids, ["mail-b"], "the new attempt names only uncovered mail")
+
+        // Uncovered A, before any typed ring: the same attempt replays, as today.
+        XCTAssertEqual(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: process, unreadIDs: ["mail-a", "mail-b"], coveredIDs: []), stale)
+        // Nothing uncovered: nothing is delivered.
+        XCTAssertNil(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: process, unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+        // A different TUI process never inherits the attempt.
+        XCTAssertEqual(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: .init(pid: 124, startTime: 9), unreadIDs: ["mail-a"], coveredIDs: [],
+            newID: fresh)?.id, fresh)
+    }
+
     /// A refusal before any prompt keeps waiting for the plugin's own
     /// readiness or route recovery, as before.
     func testDefiniteRefusalsKeepTheirHold() {

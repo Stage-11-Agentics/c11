@@ -91,6 +91,20 @@ final class MailboxNativeDoorbell {
         return attempt
     }
 
+    /// The attempt a replay-capable OpenCode ring sends. Only mail no ring
+    /// has covered counts: after a typed ring covered an ambiguous attempt's
+    /// snapshot, later mail must not revive that attempt, or a plugin that
+    /// never admitted it would prompt again. Nil when nothing is uncovered,
+    /// so nothing is delivered.
+    static func attemptSnapshot(previous: Attempt?, process: MailboxStdinBuffer.AgentProcess,
+                                unreadIDs: Set<String>, coveredIDs: Set<String>,
+                                newID: UUID = UUID()) -> Attempt? {
+        let uncovered = unreadIDs.subtracting(coveredIDs)
+        guard !uncovered.isEmpty else { return nil }
+        return reusableAttempt(previous, process: process, unreadIDs: uncovered)
+            ?? Attempt(id: newID, process: process, ids: uncovered)
+    }
+
     /// Keep accepted coverage across OpenCode /new route registrations from
     /// the same TUI process. A different process must be allowed to retry the
     /// still-unread invitation after a crash or restart.

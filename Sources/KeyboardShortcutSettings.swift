@@ -169,8 +169,10 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "]", command: true, shift: false, option: false, control: true)
             case .prevSidebarWorkspace:
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
-            case .focusHistoryBack, .focusHistoryForward:
-                return .unbound
+            case .focusHistoryBack:
+                return StoredShortcut(key: "[", command: true, shift: false, option: true, control: false)
+            case .focusHistoryForward:
+                return StoredShortcut(key: "]", command: true, shift: false, option: true, control: false)
             case .renamePanel:
                 // C11-41: rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
                 return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)

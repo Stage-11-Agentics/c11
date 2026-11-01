@@ -1022,8 +1022,10 @@ class WorkspaceManager: ObservableObject {
     func focusPaletteSwitcherTarget(windowId: UUID, workspaceId: UUID, surfaceId: UUID? = nil) {
         if refuseSocketWorkspaceSelection(target: workspaceId) { return }
         DispatchQueue.main.async { [weak self] in
-            _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
-            self?.focusWorkspace(workspaceId, surfaceId: surfaceId, suppressFlash: true, cause: "palette")
+            FocusHistoryStore.shared.withExplicitJump {
+                _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
+                self?.focusWorkspace(workspaceId, surfaceId: surfaceId, suppressFlash: true, cause: "palette")
+            }
         }
     }
 
@@ -1034,7 +1036,10 @@ class WorkspaceManager: ObservableObject {
         let prior = workspaceSelectionCause
         workspaceSelectionCause = cause ?? prior
         defer { workspaceSelectionCause = prior }
-        return try body()
+        if ["create", "close_fallback", "restore"].contains(workspaceSelectionCause) {
+            return try body()
+        }
+        return try FocusHistoryStore.shared.withExplicitJump { try body() }
     }
 
     @Published private(set) var storedSelectedWorkspaceId: UUID? {
@@ -3873,6 +3878,12 @@ class WorkspaceManager: ObservableObject {
     }
 
     func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false, cause: String? = nil) {
+        FocusHistoryStore.shared.withExplicitJump {
+            focusWorkspaceWithoutHistory(workspaceId, surfaceId: surfaceId, suppressFlash: suppressFlash, cause: cause)
+        }
+    }
+
+    private func focusWorkspaceWithoutHistory(_ workspaceId: UUID, surfaceId: UUID?, suppressFlash: Bool, cause: String?) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         if let surfaceId, workspace.panels[surfaceId] != nil {
             // Keep selected-surface intent stable across selectedTabId didSet async restore.

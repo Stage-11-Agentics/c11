@@ -14,6 +14,16 @@ struct FocusHistorySnapshot: Codable, Equatable, Sendable {
     var index: Int?
 }
 
+struct FocusHistoryLocation: Equatable, Sendable {
+    let workspaceId: UUID
+    let panelId: UUID
+}
+
+struct FocusHistoryNavigationState: Equatable {
+    var back: FocusHistoryEntry?
+    var forward: FocusHistoryEntry?
+}
+
 /// Event-driven seen history; the caller supplies time and live target locations.
 struct FocusHistoryModel {
     static let defaultThreshold: TimeInterval = 1
@@ -39,14 +49,18 @@ struct FocusHistoryModel {
         }
     }
 
-    private mutating func finishVisit(at now: Date) {
+    private mutating func finishVisit(at now: Date, checkpoint: Bool = false) {
         guard let visit = open else { return }
         open = nil
         let dwell = now.timeIntervalSince(visit.startedAt)
-        guard dwell.isFinite, dwell >= threshold else { return }
+        guard dwell.isFinite, dwell >= 0, checkpoint || dwell >= threshold else { return }
         let entry = FocusHistoryEntry(workspaceId: visit.workspaceId, panelId: visit.panelId,
                                       seenAt: visit.startedAt, dwell: dwell)
-        if let index, entries[index].panelId == visit.panelId {
+        append(entry)
+    }
+
+    private mutating func append(_ entry: FocusHistoryEntry) {
+        if let index, entries[index].panelId == entry.panelId {
             // Repeated traversal landings preserve both the row and the forward branch.
             if !suppressLanding { entries[index] = entry }
             return
@@ -58,10 +72,27 @@ struct FocusHistoryModel {
         index = entries.count - 1
     }
 
+    /// Explicit user jumps retain both endpoints, even with no dwell. The caller
+    /// brackets the whole jump so intermediate focus callbacks cannot add rows.
+    mutating func recordExplicitJump(from source: FocusHistoryLocation?, to destination: FocusHistoryLocation,
+                                     departedAt: Date, arrivedAt: Date) {
+        guard source?.panelId != destination.panelId else { return }
+        if let source {
+            let startedAt = open?.panelId == source.panelId ? open!.startedAt : departedAt
+            let dwell = departedAt.timeIntervalSince(startedAt)
+            guard dwell.isFinite, dwell >= 0 else { return }
+            append(FocusHistoryEntry(workspaceId: source.workspaceId, panelId: source.panelId,
+                                     seenAt: startedAt, dwell: dwell))
+        }
+        append(FocusHistoryEntry(workspaceId: destination.workspaceId, panelId: destination.panelId,
+                                 seenAt: arrivedAt, dwell: 0))
+        open = (destination.workspaceId, destination.panelId, arrivedAt)
+    }
+
     /// Finalize the source before moving the cursor. Restart it for a boundary no-op.
-    mutating func prepareForNavigation(at now: Date) {
+    mutating func prepareForNavigation(at now: Date, checkpoint: Bool = true) {
         let previous = open
-        finishVisit(at: now)
+        finishVisit(at: now, checkpoint: checkpoint)
         if let previous { open = (previous.workspaceId, previous.panelId, now) }
     }
 
@@ -73,10 +104,25 @@ struct FocusHistoryModel {
         step(back: false, isLive: isLive)
     }
 
+    /// Button/menu availability uses the same preparation and traversal as a
+    /// click, including the current open visit, without consuming a history step.
+    func navigationState(at now: Date, workspaceFor: (FocusHistoryEntry) -> UUID?) -> FocusHistoryNavigationState {
+        var prepared = self
+        prepared.reconcile(workspaceFor: workspaceFor)
+        prepared.prepareForNavigation(at: now)
+        var back = prepared
+        var forward = prepared
+        return FocusHistoryNavigationState(back: back.back(isLive: { _ in true }),
+                                           forward: forward.forward(isLive: { _ in true }))
+    }
+
     private mutating func step(back: Bool, isLive: (UUID) -> Bool) -> FocusHistoryEntry? {
         reconcile { entry in isLive(entry.panelId) ? entry.workspaceId : nil }
         guard let index else { return nil }
-        let destination = index + (back ? -1 : 1)
+        var destination = index + (back ? -1 : 1)
+        while entries.indices.contains(destination), entries[destination].panelId == entries[index].panelId {
+            destination += back ? -1 : 1
+        }
         guard entries.indices.contains(destination) else { return nil }
         self.index = destination
         suppressLanding = true
@@ -119,7 +165,7 @@ struct FocusHistoryModel {
     mutating func restore(_ snapshot: FocusHistorySnapshot) {
         // Decode/restore stays bounded, including older or malformed oversized payloads.
         let valid = snapshot.entries.enumerated().filter {
-            $0.element.dwell.isFinite && $0.element.dwell > 0 &&
+            $0.element.dwell.isFinite && $0.element.dwell >= 0 &&
             $0.element.seenAt.timeIntervalSince1970.isFinite
         }
         let retained = Array(valid.suffix(Self.cap))

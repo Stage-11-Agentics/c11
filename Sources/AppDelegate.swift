@@ -13938,6 +13938,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// commands keep their existing workspace-switch prohibition.
     @discardableResult
     func openPanelLink(_ target: PanelLinkTarget) -> Bool {
+        FocusHistoryStore.shared.withExplicitJump { performOpenPanelLink(target) }
+    }
+
+    private func performOpenPanelLink(_ target: PanelLinkTarget) -> Bool {
         let requestedAt = FlashRequestTime()
         guard SocketCommandContext.current == nil else { return false }
         let workspaceID: UUID
@@ -14014,6 +14018,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func openAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?, cause: String = "jump") -> Bool {
+        FocusHistoryStore.shared.withExplicitJump { performOpenAttentionTarget(target, notificationID: notificationID, cause: cause) }
+    }
+
+    private func performOpenAttentionTarget(_ target: AttentionOrder.Target, notificationID: UUID?, cause: String) -> Bool {
         guard let context = contextContainingWorkspaceId(target.workspaceID),
               let window = context.window ?? NSApp.windows.first(where: {
                   $0.identifier?.rawValue == "cmux.main.\(context.windowId.uuidString)"
@@ -14056,6 +14064,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @discardableResult
     func openNotification(workspaceId: UUID, surfaceId: UUID?, notificationId: UUID?) -> Bool {
+        FocusHistoryStore.shared.withExplicitJump { performOpenNotification(workspaceId: workspaceId, surfaceId: surfaceId, notificationId: notificationId) }
+    }
+
+    private func performOpenNotification(workspaceId: UUID, surfaceId: UUID?, notificationId: UUID?) -> Bool {
 #if DEBUG
         let isJumpUnreadUITest = ProcessInfo.processInfo.environment["CMUX_UI_TEST_JUMP_UNREAD_SETUP"] == "1"
         if isJumpUnreadUITest {

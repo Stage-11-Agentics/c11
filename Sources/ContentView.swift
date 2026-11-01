@@ -350,6 +350,8 @@ struct TitlebarLayerBackground: NSViewRepresentable {
 final class SidebarState: ObservableObject {
     @Published var isVisible: Bool
     @Published var persistedWidth: CGFloat
+    // Shared with this window's native accessory, whose controls may overhang the sidebar.
+    @Published var customTitlebarForeground = Color.white.opacity(0.82)
     @Published var isDoubleWide: Bool
     var singleWideWidth: CGFloat
 
@@ -2303,7 +2305,8 @@ struct ContentView: View {
     @AppStorage(ThemeAppStorage.Keys.m1bCustomTitlebarMigrated, store: ThemeAppStorage.defaults)
     private var m1bCustomTitlebarMigrated = false
 
-    @State private var titlebarLeadingInset: CGFloat = 12
+    @AppStorage("titlebarControlsStyle") private var titlebarControlsStyleRaw = TitlebarControlsStyle.classic.rawValue
+    @AppStorage(ShortcutHintDebugSettings.titlebarHintXKey) private var titlebarHintXOffset = ShortcutHintDebugSettings.defaultTitlebarHintX
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
     private var fakeTitlebarTextColor: Color {
         _ = titlebarThemeGeneration
@@ -2378,13 +2381,11 @@ struct ContentView: View {
     }
 
     private var customTitlebar: some View {
-        ZStack {
+        let titleForeground = fakeTitlebarTextColor
+        return ZStack {
             // Enable window dragging from the titlebar strip without making the entire content
             // view draggable (which breaks drag gestures like tab reordering).
             WindowDragHandleView()
-
-            TitlebarLeadingInsetReader(inset: $titlebarLeadingInset)
-                .allowsHitTesting(false)
 
             HStack(spacing: 8) {
                 if isFullScreen && !sidebarState.isVisible {
@@ -2394,12 +2395,14 @@ struct ContentView: View {
                 // Draggable folder icon + focused command name
                 if let directory = focusedDirectory {
                     DraggableFolderIcon(directory: directory)
+                        .accessibilityIdentifier("workspace.titlebarFolder")
                 }
 
                 Text(titlebarText)
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(fakeTitlebarTextColor)
+                    .foregroundColor(titleForeground)
                     .lineLimit(1)
+                    .accessibilityIdentifier("workspace.titlebarTitle")
                     .allowsHitTesting(false)
 
                 Spacer(minLength: 8)
@@ -2420,8 +2423,13 @@ struct ContentView: View {
             // sat the content 30pt tall in a 32pt outer, with the implicit
             // bottom space stacking against the 1pt bottom border so the text
             // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
-            .padding(.leading, (isFullScreen && !sidebarState.isVisible) ? 8 : (sidebarState.isVisible ? 12 : titlebarLeadingInset + CGFloat(debugTitlebarLeadingExtra)))
+            .padding(.leading, customTitlebarLeadingPadding)
             .padding(.trailing, 8)
+        }
+        .onChange(of: titleForeground, initial: true) { _, color in
+            if sidebarState.customTitlebarForeground != color {
+                sidebarState.customTitlebarForeground = color
+            }
         }
         .frame(height: titlebarPadding)
         .frame(maxWidth: .infinity)
@@ -2437,6 +2445,13 @@ struct ContentView: View {
                 .fill(resolvedCustomTitlebarBottomBorder)
                 .frame(height: 1)
         }
+    }
+
+    private var customTitlebarLeadingPadding: CGFloat {
+        let config = (TitlebarControlsStyle(rawValue: titlebarControlsStyleRaw) ?? .classic).config
+        return config.titleLeadingPadding(sidebarWidth: sidebarWidth,
+            sidebarVisible: sidebarState.isVisible, isFullScreen: isFullScreen,
+            extra: CGFloat(debugTitlebarLeadingExtra), hintXOffset: titlebarHintXOffset)
     }
 
     private func updateTitlebarText() {
@@ -8541,7 +8556,12 @@ struct WorkspaceSidebar: View {
     /// to begin at least ~12pt past the scrim's center to keep the
     /// rounded top corners legible.
     private let firstRowTopInset: CGFloat = 12
-    private let hiddenTitlebarControlsLeadingInset: CGFloat = 72
+    @AppStorage("titlebarControlsStyle") private var minimalControlsStyleRaw = TitlebarControlsStyle.classic.rawValue
+
+    private var sidebarTopReservedHeight: CGFloat {
+        let controls = (TitlebarControlsStyle(rawValue: minimalControlsStyleRaw) ?? .classic).config
+        return trafficLightPadding + (isMinimalMode ? controls.sidebarRowsHeight + 2 : 0)
+    }
 
     private var isMinimalMode: Bool {
         WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
@@ -8655,7 +8675,7 @@ struct WorkspaceSidebar: View {
                             // ~40% opaque where the top corner lands and the
                             // highlight reads as if the corner is cut off.
                             Spacer()
-                                .frame(height: trafficLightPadding + firstRowTopInset)
+                                .frame(height: sidebarTopReservedHeight + firstRowTopInset)
 
                             groupControls
 
@@ -8768,7 +8788,7 @@ struct WorkspaceSidebar: View {
                         .frame(width: 0, height: 0)
                     )
                     .overlay(alignment: .top) {
-                        SidebarTopScrim(height: trafficLightPadding + 20)
+                        SidebarTopScrim(height: sidebarTopReservedHeight + 20)
                             .allowsHitTesting(false)
                     }
                     .overlay(alignment: .top) {
@@ -8780,8 +8800,8 @@ struct WorkspaceSidebar: View {
                     .overlay(alignment: .topLeading) {
                         if isMinimalMode {
                             HiddenTitlebarSidebarControlsView(notificationStore: notificationStore, sidebarState: sidebarState)
-                                .padding(.leading, hiddenTitlebarControlsLeadingInset)
-                                .padding(.top, 2)
+                                .padding(.leading, 8)
+                                .padding(.top, trafficLightPadding + 2)
                         }
                     }
                     .background(Color.clear)
@@ -16040,39 +16060,6 @@ private struct SidebarVisualEffectBackground: NSViewRepresentable {
     }
 }
 
-
-/// Reads the leading inset required to clear traffic lights + left titlebar accessories.
-final class TitlebarLeadingInsetPassthroughView: NSView {
-    override var mouseDownCanMoveWindow: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private struct TitlebarLeadingInsetReader: NSViewRepresentable {
-    @Binding var inset: CGFloat
-
-    func makeNSView(context: Context) -> NSView {
-        let view = TitlebarLeadingInsetPassthroughView()
-        view.setFrameSize(.zero)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
-            // Start past the traffic lights
-            var leading: CGFloat = 78
-            // Add width of all left-aligned titlebar accessories
-            for accessory in window.titlebarAccessoryViewControllers
-                where accessory.layoutAttribute == .leading || accessory.layoutAttribute == .left {
-                leading += accessory.view.frame.width
-            }
-            leading += 0
-            if leading != inset {
-                inset = leading
-            }
-        }
-    }
-}
 
 private struct SidebarBackdrop: View {
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity

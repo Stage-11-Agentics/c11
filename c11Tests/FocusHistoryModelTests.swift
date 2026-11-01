@@ -381,4 +381,159 @@ final class FocusHistoryModelTests: XCTestCase {
             XCTAssertNil(FocusHistoryLimit.parse(value), "Unexpected accepted limit: \(value)")
         }
     }
+
+    func testImmediateBackFinalizesSubsecondCurrentVisitAndMatchesPreview() {
+        var model = FocusHistoryModel()
+        see(&model, a, at: 0)
+        see(&model, b, at: 2)
+        let before = model.snapshot()
+        let preview = model.navigationState(at: date(2.01)) { $0.workspaceId }
+        XCTAssertEqual(preview.back?.panelId, a)
+        XCTAssertNil(preview.forward)
+        XCTAssertEqual(model.snapshot(), before, "Reading availability must not consume or persist a visit")
+        model.prepareForNavigation(at: date(2.01))
+        XCTAssertEqual(model.back(isLive: { _ in true }), preview.back)
+        see(&model, a, at: 2.01)
+        model.prepareForNavigation(at: date(2.02))
+        XCTAssertEqual(model.forward(isLive: { _ in true })?.panelId, b)
+    }
+
+    func testExplicitJumpRetainsBothShortVisitsAcrossWorkspacesAndRestores() throws {
+        var model = FocusHistoryModel()
+        see(&model, a, at: 0)
+        model.recordExplicitJump(from: .init(workspaceId: workspace, panelId: a),
+                                 to: .init(workspaceId: otherWorkspace, panelId: b),
+                                 departedAt: date(0.1), arrivedAt: date(0.2))
+        XCTAssertEqual(model.entries.map(\.panelId), [a, b])
+        XCTAssertEqual(model.entries.map(\.workspaceId), [workspace, otherWorkspace])
+        XCTAssertEqual(model.entries[0].dwell, 0.1, accuracy: 0.000001)
+        XCTAssertEqual(model.entries[1].dwell, 0)
+        let saved = try JSONDecoder().decode(FocusHistorySnapshot.self, from: JSONEncoder().encode(model.snapshot()))
+        var restored = FocusHistoryModel()
+        restored.restore(saved)
+        XCTAssertEqual(restored.snapshot(), saved, "Zero-dwell arrival checkpoints survive restore")
+        restored.prepareForNavigation(at: date(0.2))
+        XCTAssertEqual(restored.back(isLive: { _ in true })?.panelId, a)
+        XCTAssertEqual(restored.forward(isLive: { _ in true })?.panelId, b)
+    }
+
+    func testExplicitNoOpKeepsForwardBranchAndNewJumpReplacesIt() {
+        var model = recorded([a, b, c])
+        _ = model.back(isLive: { _ in true })
+        see(&model, b, at: 6)
+        let before = model.snapshot()
+        model.recordExplicitJump(from: .init(workspaceId: workspace, panelId: b),
+                                 to: .init(workspaceId: workspace, panelId: b),
+                                 departedAt: date(6.01), arrivedAt: date(6.01))
+        XCTAssertEqual(model.snapshot(), before)
+        model.recordExplicitJump(from: .init(workspaceId: workspace, panelId: b),
+                                 to: .init(workspaceId: workspace, panelId: d),
+                                 departedAt: date(6.02), arrivedAt: date(6.03))
+        XCTAssertEqual(model.entries.map(\.panelId), [a, b, d])
+        XCTAssertNil(model.forward(isLive: { _ in true }))
+    }
+
+    func testClosedInterveningDestinationDoesNotReturnToSamePanel() {
+        var model = recorded([a, b, a])
+        model.prune(panelId: b)
+        XCTAssertNil(model.navigationState(at: date(10)) { $0.workspaceId }.back)
+        XCTAssertNil(model.back(isLive: { _ in true }))
+    }
+
+    func testExplicitCheckpointsStayBoundedAtTwoHundred() {
+        var model = FocusHistoryModel()
+        let panels = (0...200).map { _ in UUID() }
+        for i in 1..<panels.count {
+            model.recordExplicitJump(from: .init(workspaceId: workspace, panelId: panels[i - 1]),
+                                     to: .init(workspaceId: workspace, panelId: panels[i]),
+                                     departedAt: date(Double(i)), arrivedAt: date(Double(i)))
+        }
+        XCTAssertEqual(model.entries.map(\.panelId), Array(panels.suffix(200)))
+        XCTAssertEqual(model.index, 199)
+    }
+
+    @MainActor
+    func testStoreCoalescesNestedJumpAndIntermediateSeenTransitions() {
+        var location = FocusHistoryLocation(workspaceId: workspace, panelId: a)
+        var time = date(0)
+        let store = FocusHistoryStore(now: { time }, currentLocation: { location },
+                                      workspaceForPanel: { _ in self.workspace })
+        store.noteTransition(panelId: a, at: time)
+        time = date(0.1)
+        store.withExplicitJump {
+            location = .init(workspaceId: workspace, panelId: c)
+            time = date(2)
+            store.noteTransition(panelId: c, at: time)
+            store.withExplicitJump {
+                location = .init(workspaceId: workspace, panelId: b)
+                time = date(3)
+                store.noteTransition(panelId: b, at: time)
+            }
+        }
+        XCTAssertEqual(store.snapshot().entries.map(\.panelId), [a, b])
+        XCTAssertEqual(store.navigationState.back?.panelId, a)
+        XCTAssertNil(store.navigationState.forward)
+        store.prune(panelId: a)
+        XCTAssertNil(store.navigationState.back)
+    }
+
+    @MainActor
+    func testStoreNoOpAndFailedJumpDoNotRecordEndpoints() {
+        enum Failure: Error { case refused }
+        let location = FocusHistoryLocation(workspaceId: workspace, panelId: a)
+        let store = FocusHistoryStore(now: { self.date(0.1) }, currentLocation: { location },
+                                      workspaceForPanel: { _ in self.workspace })
+        store.noteTransition(panelId: a, at: date(0))
+        store.withExplicitJump { }
+        XCTAssertThrowsError(try store.withExplicitJump { throw Failure.refused })
+        XCTAssertTrue(store.snapshot().entries.isEmpty)
+        XCTAssertNil(store.navigationState.back)
+    }
+
+    @MainActor
+    func testSocketFocusDoesNotGainExplicitJumpCheckpointsOrNativeNavigation() {
+        var location = FocusHistoryLocation(workspaceId: workspace, panelId: a)
+        let store = FocusHistoryStore(now: { self.date(0.1) }, currentLocation: { location },
+                                      workspaceForPanel: { _ in self.workspace })
+        store.noteTransition(panelId: a, at: date(0))
+        let request = SocketCommandContext(method: "feed.open", allowsFocus: true, callerPanelId: UUID())
+        SocketCommandContext.withContext(request) {
+            store.withExplicitJump {
+                location = .init(workspaceId: workspace, panelId: b)
+                store.noteTransition(panelId: b, at: date(0.1))
+            }
+            XCTAssertFalse(store.navigate(back: true), "Socket-triggered native actions have no operator authority")
+        }
+        XCTAssertTrue(store.snapshot().entries.isEmpty)
+    }
+
+    func testHistoryDefaultChordsKeepBrowserAndWorkspaceModifiersDistinct() {
+        let back = KeyboardShortcutSettings.Action.focusHistoryBack.defaultShortcut
+        let forward = KeyboardShortcutSettings.Action.focusHistoryForward.defaultShortcut
+        XCTAssertEqual(back, StoredShortcut(key: "[", command: true, shift: false, option: true, control: false))
+        XCTAssertEqual(forward, StoredShortcut(key: "]", command: true, shift: false, option: true, control: false))
+        XCTAssertNotEqual(back, KeyboardShortcutSettings.Action.prevSidebarWorkspace.defaultShortcut)
+        XCTAssertNotEqual(forward, KeyboardShortcutSettings.Action.nextSidebarWorkspace.defaultShortcut)
+    }
+
+    @MainActor
+    func testSocketHistoryDoesNotCheckpointASubsecondCurrentVisit() {
+        var location = FocusHistoryLocation(workspaceId: workspace, panelId: a)
+        var time = date(0)
+        let store = FocusHistoryStore(now: { time }, currentLocation: { location },
+                                      workspaceForPanel: { _ in self.workspace })
+        store.noteTransition(panelId: a, at: time)
+        time = date(2)
+        location = .init(workspaceId: workspace, panelId: b)
+        store.noteTransition(panelId: b, at: time)
+        time = date(2.1)
+        let request = SocketCommandContext(method: "history.back", allowsFocus: true, callerPanelId: UUID())
+        SocketCommandContext.withContext(request) {
+            XCTAssertFalse(store.navigate(back: true, focus: { _, _, _ in
+                XCTFail("No completed earlier destination is available")
+            }))
+        }
+        XCTAssertEqual(store.snapshot().entries.map(\.panelId), [a])
+    }
+
 }

@@ -1,0 +1,10 @@
+[
+  "dark: return/reopen, shortcut back/forward, disabled geometry, hover passed",
+  "light: return/reopen, shortcut back/forward, disabled geometry, hover passed",
+  "390: no page overflow",
+  "760: no page overflow",
+  "1100: no page overflow",
+  "HTTP(S) attempts: 0",
+  "Console/page errors: 0",
+  "All context and browser processes closed after checks."
+]

@@ -157,8 +157,9 @@ def measure(expected_width, expected_columns):
     assert heights[-1] > 80 and len(heights) > 1, ('expected full cards of varied height', heights)
     win = [float(v) for v in osa('get {position, size} of window 1').split(', ')]
     assert state['effective_width'] <= min(600, win[2]/3)+1
-    if expected_width == 400:
-        assert all(win[1]+30 <= r[1] and r[1]+r[3] <= win[1]+win[3]-40 for r in frames.values()), (win, frames)
+    # Full cards scroll like the one-column sidebar; the first row starts on screen.
+    top = min(r[1] for r in frames.values())
+    assert win[1]+30 <= top < win[1]+win[3]-40, (win, top)
     note(f'geometry-{expected_width}', layout=state, frames=frames)
 
 

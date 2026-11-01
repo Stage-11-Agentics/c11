@@ -40,8 +40,7 @@ enum TitlebarControlsStyle: Int, CaseIterable, Identifiable {
                 buttonSize: 24,
                 badgeSize: 14,
                 badgeOffset: CGSize(width: 2, height: -2),
-                groupBackground: false,
-                groupPadding: EdgeInsets(),
+                groupPadding: TitlebarControlsStyleConfig.backdropInsets,
                 buttonBackground: false,
                 buttonCornerRadius: 8,
                 hoverBackground: false
@@ -53,8 +52,7 @@ enum TitlebarControlsStyle: Int, CaseIterable, Identifiable {
                 buttonSize: 20,
                 badgeSize: 12,
                 badgeOffset: CGSize(width: 1, height: -1),
-                groupBackground: false,
-                groupPadding: EdgeInsets(),
+                groupPadding: TitlebarControlsStyleConfig.backdropInsets,
                 buttonBackground: false,
                 buttonCornerRadius: 6,
                 hoverBackground: false
@@ -66,8 +64,7 @@ enum TitlebarControlsStyle: Int, CaseIterable, Identifiable {
                 buttonSize: 28,
                 badgeSize: 16,
                 badgeOffset: CGSize(width: 3, height: -3),
-                groupBackground: false,
-                groupPadding: EdgeInsets(),
+                groupPadding: TitlebarControlsStyleConfig.backdropInsets,
                 buttonBackground: false,
                 buttonCornerRadius: 10,
                 hoverBackground: false
@@ -79,8 +76,7 @@ enum TitlebarControlsStyle: Int, CaseIterable, Identifiable {
                 buttonSize: 24,
                 badgeSize: 14,
                 badgeOffset: CGSize(width: 2, height: -2),
-                groupBackground: false,
-                groupPadding: EdgeInsets(top: 1, leading: 4, bottom: 1, trailing: 4),
+                groupPadding: TitlebarControlsStyleConfig.backdropInsets,
                 buttonBackground: false,
                 buttonCornerRadius: 8,
                 hoverBackground: true
@@ -92,8 +88,7 @@ enum TitlebarControlsStyle: Int, CaseIterable, Identifiable {
                 buttonSize: 26,
                 badgeSize: 14,
                 badgeOffset: CGSize(width: 2, height: -2),
-                groupBackground: false,
-                groupPadding: EdgeInsets(),
+                groupPadding: TitlebarControlsStyleConfig.backdropInsets,
                 buttonBackground: true,
                 buttonCornerRadius: 8,
                 hoverBackground: false
@@ -108,7 +103,7 @@ struct TitlebarControlsStyleConfig {
     let buttonSize: CGFloat
     let badgeSize: CGFloat
     let badgeOffset: CGSize
-    let groupBackground: Bool
+    /// Includes the backdrop inset, so every reserve derived from it covers the backdrop.
     let groupPadding: EdgeInsets
     let buttonBackground: Bool
     let buttonCornerRadius: CGFloat
@@ -116,7 +111,9 @@ struct TitlebarControlsStyleConfig {
 
     static let trafficLightInset: CGFloat = 78
     static let leadingPadding: CGFloat = 4
-    static let controlCount = 6
+    static let controlCount = 5
+    /// Space between the controls and the edge of their solid backdrop.
+    static let backdropInsets = EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6)
     static let hintRightSafetyShift: CGFloat = 10
 
     var titlebarRowWidth: CGFloat {
@@ -138,14 +135,15 @@ struct TitlebarControlsStyleConfig {
                    + trailingInset - contentOrigin + extra)
     }
 
-    func controlForeground(index: Int, sidebarWidth: CGFloat, sidebarVisible: Bool,
-                           nativeAccessory: Bool, customTitlebarForeground: Color) -> Color {
-        // Minimal/fullscreen controls stay on their existing surface. Filled
-        // button styles have their own control-background color.
-        guard nativeAccessory, !buttonBackground else { return .primary }
-        let center = Self.trafficLightInset + Self.leadingPadding + groupPadding.leading
-            + CGFloat(index) * (buttonSize + spacing) + buttonSize / 2
-        return !sidebarVisible || center >= sidebarWidth ? customTitlebarForeground : .primary
+    /// Every control sits on the opaque backdrop, whose fill is derived from the
+    /// titlebar background, so the titlebar foreground contrasts with it.
+    /// Filled button styles keep their own control-background color.
+    func controlForeground(customTitlebarForeground: Color) -> Color {
+        buttonBackground ? .primary : customTitlebarForeground
+    }
+
+    var backdropCornerRadius: CGFloat {
+        buttonCornerRadius + Self.backdropInsets.top
     }
 
     static func hintTrailingInset(xOffset: Double) -> CGFloat {
@@ -159,6 +157,30 @@ struct TitlebarControlsStyleConfig {
 
     var sidebarRowSpacing: CGFloat {
         (136 - groupPadding.leading - groupPadding.trailing - 3 * buttonSize) / 2
+    }
+}
+
+/// Title text and control-group colors, both derived from the titlebar
+/// background (the `chrome.titleBar.background` token when themes drive it).
+/// The backdrop is opaque and moved toward the foreground, so it reads as a
+/// distinct solid group in light and dark titlebars and the icons keep contrast.
+struct TitlebarControlsColors: Equatable {
+    static let backdropFraction: CGFloat = 0.14
+
+    let foreground: Color
+    let backdrop: Color
+    let backdropNSColor: NSColor
+
+    init(titlebarBackground: NSColor) {
+        let base = (titlebarBackground.usingColorSpace(.sRGB) ?? titlebarBackground).withAlphaComponent(1)
+        let light = base.isLightColor
+        foreground = light ? Color.black.opacity(0.78) : Color.white.opacity(0.82)
+        backdropNSColor = base.blended(withFraction: Self.backdropFraction, of: light ? .black : .white) ?? base
+        backdrop = Color(nsColor: backdropNSColor)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.foreground == rhs.foreground && lhs.backdropNSColor == rhs.backdropNSColor
     }
 }
 
@@ -422,19 +444,9 @@ struct TitlebarControlsView: View {
             }) {
                 iconLabel(systemName: "sidebar.left", config: config)
             }
-            .foregroundStyle(controlForeground(index: 0, config: config))
+            .foregroundStyle(controlForeground(config: config))
             .accessibilityIdentifier("titlebarControl.toggleSidebar")
             .accessibilityLabel(String(localized: "titlebar.sidebar.accessibilityLabel", defaultValue: "Toggle Sidebar"))
-
-            TitlebarControlButton(config: config, action: { sidebarState.toggleDoubleWide() }) {
-                iconLabel(systemName: "rectangle.split.2x1", config: config)
-                    .foregroundStyle(sidebarState.isDoubleWide ? BrandColors.goldSwiftUI : controlForeground(index: 1, config: config))
-            }
-            .foregroundStyle(controlForeground(index: 1, config: config))
-            .accessibilityIdentifier("titlebarControl.doubleWideSidebar")
-            .accessibilityLabel(String(localized: "sidebar.tiles.toggle.tooltip", defaultValue: "Double-wide sidebar"))
-            .accessibilityValue(sidebarState.isDoubleWide ? "1" : "0")
-            .safeHelp(String(localized: "sidebar.tiles.toggle.tooltip", defaultValue: "Double-wide sidebar"))
 
             TitlebarControlButton(config: config, action: {
                 #if DEBUG
@@ -458,7 +470,7 @@ struct TitlebarControlsView: View {
                 }
                 .frame(width: config.buttonSize, height: config.buttonSize)
             }
-            .foregroundStyle(controlForeground(index: 2, config: config))
+            .foregroundStyle(controlForeground(config: config))
             .accessibilityIdentifier("titlebarControl.showNotifications")
             .background(NotificationsAnchorView { viewModel.notificationsAnchorView = $0 })
             .accessibilityLabel(String(localized: "titlebar.notifications.accessibilityLabel", defaultValue: "Notifications"))
@@ -471,7 +483,7 @@ struct TitlebarControlsView: View {
             }) {
                 iconLabel(systemName: "plus", config: config)
             }
-            .foregroundStyle(controlForeground(index: 3, config: config))
+            .foregroundStyle(controlForeground(config: config))
             .accessibilityIdentifier("titlebarControl.newTab")
             .accessibilityLabel(String(localized: "titlebar.newWorkspace.accessibilityLabel", defaultValue: "New Workspace"))
 
@@ -494,25 +506,14 @@ struct TitlebarControlsView: View {
 
         let paddedContent = content.padding(config.groupPadding)
 
-        if config.groupBackground {
-            paddedContent
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    titlebarShortcutHintOverlay(items: hintLayoutItems, config: config)
-                }
-        } else {
-            paddedContent
-                .overlay(alignment: .topLeading) {
-                    titlebarShortcutHintOverlay(items: hintLayoutItems, config: config)
-                }
-        }
+        paddedContent
+            .background(
+                RoundedRectangle(cornerRadius: config.backdropCornerRadius, style: .continuous)
+                    .fill(sidebarState.titlebarControlsBackdrop)
+            )
+            .overlay(alignment: .topLeading) {
+                titlebarShortcutHintOverlay(items: hintLayoutItems, config: config)
+            }
     }
 
     private func historyControl(back: Bool, config: TitlebarControlsStyleConfig) -> some View {
@@ -524,17 +525,15 @@ struct TitlebarControlsView: View {
             iconLabel(systemName: back ? "arrow.left" : "arrow.right", config: config)
                 .opacity(destination == nil ? 0.35 : 1)
         }
-        .foregroundStyle(controlForeground(index: back ? 4 : 5, config: config))
+        .foregroundStyle(controlForeground(config: config))
         .disabled(destination == nil)
         .accessibilityIdentifier(back ? "titlebarControl.historyBack" : "titlebarControl.historyForward")
         .accessibilityLabel(label)
         .safeHelp(action.tooltip(historyHelp(back: back, destination: destination)))
     }
 
-    private func controlForeground(index: Int, config: TitlebarControlsStyleConfig) -> Color {
-        config.controlForeground(index: index, sidebarWidth: sidebarState.persistedWidth,
-            sidebarVisible: sidebarState.isVisible, nativeAccessory: nativeAccessory,
-            customTitlebarForeground: sidebarState.customTitlebarForeground)
+    private func controlForeground(config: TitlebarControlsStyleConfig) -> Color {
+        config.controlForeground(customTitlebarForeground: sidebarState.customTitlebarForeground)
     }
 
     private func historyHelp(back: Bool, destination: FocusHistoryEntry?) -> String {
@@ -594,7 +593,7 @@ struct TitlebarControlsView: View {
                 + xOffset
                 + TitlebarControlsStyleConfig.hintRightSafetyShift
                 + titlebarHintBaseXShift
-            let index = slot.rawValue + (slot == .toggleSidebar ? 0 : 1)
+            let index = slot.rawValue
             return (slot.action, shortcut, width, (rightEdge - width)...rightEdge, wrapsRows ? index / 3 : 0)
         }
     }
@@ -606,7 +605,7 @@ struct TitlebarControlsView: View {
     }
 
     private func titlebarButtonRightEdge(for slot: HintSlot, config: TitlebarControlsStyleConfig) -> CGFloat {
-        let buttonIndex = slot.rawValue + (slot == .toggleSidebar ? 0 : 1)
+        let buttonIndex = slot.rawValue
         let index = CGFloat(wrapsRows ? buttonIndex % 3 : buttonIndex)
         return (index + 1) * config.buttonSize + index * (wrapsRows ? config.sidebarRowSpacing : config.spacing)
     }

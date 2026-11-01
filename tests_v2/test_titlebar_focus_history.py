@@ -32,7 +32,7 @@ FORWARD = 'titlebarControl.historyForward'
 TITLE = 'workspace.titlebarTitle'
 FOLDER = 'workspace.titlebarFolder'
 CONTROL_IDS = {BACK, FORWARD, 'titlebarControl.toggleSidebar',
-               'titlebarControl.doubleWideSidebar', 'titlebarControl.showNotifications', 'titlebarControl.newTab'}
+               'titlebarControl.showNotifications', 'titlebarControl.newTab'}
 
 # AX operations are scoped to the verified app PID and its front window. Do not
 # traverse terminal/page content to locate native chrome controls.
@@ -85,7 +85,7 @@ function run(args) {
         var subrole = role === 'AXButton' ? attr(e, 'AXSubrole') : null;
         var trafficLight = ['AXCloseButton', 'AXMinimizeButton', 'AXZoomButton'].indexOf(subrole) >= 0;
         if (op === 'layout' && trafficLight) id = 'native.' + subrole;
-        var layoutTarget = op === 'layout' && (['titlebarControl.toggleSidebar', 'titlebarControl.doubleWideSidebar', 'titlebarControl.showNotifications',
+        var layoutTarget = op === 'layout' && (['titlebarControl.toggleSidebar', 'titlebarControl.showNotifications',
             'titlebarControl.newTab', 'titlebarControl.historyBack', 'titlebarControl.historyForward'].indexOf(id) >= 0 ||
             String(id).indexOf('workspace.titlebar') === 0 || String(id).indexOf('sidebar.workspace.') === 0 ||
             trafficLight);
@@ -410,7 +410,7 @@ end tell'''
             snapshot['rows'].append(self.folder_target(title_row))
         rows = {row['id']: row for row in snapshot['rows']}
         assert len(rows) == len(snapshot['rows']), ('duplicate visible AX ids', snapshot)
-        assert CONTROL_IDS <= rows.keys(), ('six controls required', snapshot)
+        assert CONTROL_IDS <= rows.keys(), ('five controls required', snapshot)
         frame = snapshot['frame']
         x, y = frame['position']
         assert abs(frame['size'][0] - 900) <= 1, ('900px window required', frame)
@@ -436,12 +436,13 @@ end tell'''
             for control in controls:
                 top = round(control['position'][1])
                 row_counts[top] = row_counts.get(top, 0) + 1
-            assert sorted(row_counts.values()) == [3, 3], ('minimal controls must form two rows of three', snapshot)
+            assert sorted(row_counts.values()) == [2, 3], ('minimal controls must form rows of three and two', snapshot)
         else:
             text, folder = rows[TITLE], rows[FOLDER]
             assert text['value'] == title, ('long title not applied', text)
             controls_right = max(self.bounds(r)[2] for r in controls)
-            assert folder['position'][0] >= controls_right + 4, ('controls overlap folder', snapshot)
+            # The backdrop extends 6 pt past the last control; the folder must clear it.
+            assert folder['position'][0] >= controls_right + 8, ('control backdrop overlaps folder', snapshot)
             assert text['position'][0] >= self.bounds(folder)[2] + 4, ('folder overlaps title', snapshot)
             assert text['size'][0] >= measured['width'] - 1, ('long title is truncated', text, measured)
             assert self.bounds(text)[2] <= x + frame['size'][0] - 8, ('title outside narrow window', snapshot)

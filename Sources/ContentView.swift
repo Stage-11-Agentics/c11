@@ -352,36 +352,17 @@ final class SidebarState: ObservableObject {
     @Published var persistedWidth: CGFloat
     // Shared with this window's native accessory, whose controls may overhang the sidebar.
     @Published var customTitlebarForeground = Color.white.opacity(0.82)
-    @Published var isDoubleWide: Bool
-    var singleWideWidth: CGFloat
+    // Opaque fill behind the titlebar control group, derived from the titlebar background.
+    @Published var titlebarControlsBackdrop = Color(white: 0.2)
 
-    init(isVisible: Bool = true, persistedWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth),
-         isDoubleWide: Bool = false, singleWideWidth: CGFloat? = nil) {
+    init(isVisible: Bool = true, persistedWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)) {
         self.isVisible = isVisible
         let sanitized = SessionPersistencePolicy.sanitizedSidebarWidth(Double(persistedWidth))
         self.persistedWidth = CGFloat(sanitized)
-        self.isDoubleWide = isDoubleWide
-        self.singleWideWidth = CGFloat(SessionPersistencePolicy.sanitizedSidebarWidth(singleWideWidth.map { Double($0) }))
     }
 
     func toggle() {
         isVisible.toggle()
-    }
-
-    private var layoutState: SidebarLayoutPolicy.State {
-        .init(doubleWide: isDoubleWide, width: Double(persistedWidth), singleWideWidth: Double(singleWideWidth))
-    }
-
-    private func apply(_ state: SidebarLayoutPolicy.State) {
-        if singleWideWidth != CGFloat(state.singleWideWidth) { singleWideWidth = CGFloat(state.singleWideWidth) }
-        if isDoubleWide != state.doubleWide { isDoubleWide = state.doubleWide }
-        if persistedWidth != CGFloat(state.width) { persistedWidth = CGFloat(state.width) }
-    }
-
-    func toggleDoubleWide() { apply(SidebarLayoutPolicy.toggled(layoutState)) }
-
-    func resize(to width: CGFloat, initialWidth: CGFloat) {
-        apply(SidebarLayoutPolicy.dragged(layoutState, width: Double(width), initialWidth: Double(initialWidth)))
     }
 }
 
@@ -1934,7 +1915,7 @@ struct ContentView: View {
 
     private func clampSidebarWidthIfNeeded(availableWidth: CGFloat? = nil) {
         let nextWidth = Self.clampedSidebarWidth(
-            sidebarState.isDoubleWide ? sidebarState.persistedWidth : sidebarWidth,
+            sidebarState.persistedWidth,
             maximumWidth: maxSidebarWidth(availableWidth: availableWidth)
         )
         guard abs(nextWidth - sidebarWidth) > 0.5 else { return }
@@ -2141,7 +2122,7 @@ struct ContentView: View {
                             maximumWidth: maxSidebarWidth(availableWidth: availableWidth)
                         )
                         withTransaction(Transaction(animation: nil)) {
-                            sidebarState.resize(to: nextWidth, initialWidth: startWidth)
+                            sidebarState.persistedWidth = nextWidth
                             sidebarWidth = nextWidth
                         }
                     }
@@ -2194,7 +2175,7 @@ struct ContentView: View {
         WorkspaceSidebar(
             updateViewModel: updateViewModel,
             onSendFeedback: presentFeedbackComposer,
-            compact: sidebarState.isDoubleWide,
+            width: sidebarWidth,
             selection: $sidebarSelectionState.selection,
             selectedWorkspaceIds: $selectedWorkspaceIds,
             lastSidebarSelectionIndex: $lastSidebarSelectionIndex
@@ -2286,6 +2267,16 @@ struct ContentView: View {
                 customTitlebar
             }
         }
+        // Published from here, not the custom titlebar, so the minimal-mode and
+        // fullscreen control groups get their colors too.
+        .onChange(of: titlebarControlsColors, initial: true) { _, colors in
+            if sidebarState.customTitlebarForeground != colors.foreground {
+                sidebarState.customTitlebarForeground = colors.foreground
+            }
+            if sidebarState.titlebarControlsBackdrop != colors.backdrop {
+                sidebarState.titlebarControlsBackdrop = colors.backdrop
+            }
+        }
     }
 
     private var terminalContentWithSidebarDropOverlay: some View {
@@ -2309,13 +2300,15 @@ struct ContentView: View {
     @AppStorage(ShortcutHintDebugSettings.titlebarHintXKey) private var titlebarHintXOffset = ShortcutHintDebugSettings.defaultTitlebarHintX
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
     private var fakeTitlebarTextColor: Color {
+        titlebarControlsColors.foreground
+    }
+
+    private var titlebarControlsColors: TitlebarControlsColors {
         _ = titlebarThemeGeneration
-        let referenceBackground = useThemeM1bCustomTitlebarPath
+        let background = useThemeM1bCustomTitlebarPath
             ? resolvedCustomTitlebarBackgroundColor
             : GhosttyApp.shared.defaultBackgroundColor
-        return referenceBackground.isLightColor
-            ? Color.black.opacity(0.78)
-            : Color.white.opacity(0.82)
+        return TitlebarControlsColors(titlebarBackground: background)
     }
 
     private var useThemeM1bCustomTitlebarPath: Bool {
@@ -2425,11 +2418,6 @@ struct ContentView: View {
             // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
             .padding(.leading, customTitlebarLeadingPadding)
             .padding(.trailing, 8)
-        }
-        .onChange(of: titleForeground, initial: true) { _, color in
-            if sidebarState.customTitlebarForeground != color {
-                sidebarState.customTitlebarForeground = color
-            }
         }
         .frame(height: titlebarPadding)
         .frame(maxWidth: .infinity)
@@ -2597,9 +2585,6 @@ struct ContentView: View {
             let restoredWidth = normalizedSidebarWidth(sidebarState.persistedWidth)
             if abs(sidebarWidth - restoredWidth) > 0.5 {
                 sidebarWidth = restoredWidth
-            }
-            if !sidebarState.isDoubleWide, abs(sidebarState.persistedWidth - restoredWidth) > 0.5 {
-                sidebarState.persistedWidth = restoredWidth
             }
             if selectedWorkspaceIds.isEmpty, let selectedId = workspaceManager.selectedWorkspaceId {
                 selectedWorkspaceIds = [selectedId]
@@ -3014,9 +2999,6 @@ struct ContentView: View {
                 sidebarWidth = sanitized
                 return
             }
-            if !sidebarState.isDoubleWide, abs(sidebarState.persistedWidth - sanitized) > 0.5 {
-                sidebarState.persistedWidth = sanitized
-            }
             // Sidebar width changes are pure SwiftUI layout updates, so portal-hosted
             // terminals need an explicit post-layout geometry resync.
             if let observedWindow {
@@ -3038,17 +3020,12 @@ struct ContentView: View {
 
         view = AnyView(view.onChange(of: sidebarState.persistedWidth) { newValue in
             let sanitized = normalizedSidebarWidth(newValue)
-            if !sidebarState.isDoubleWide, abs(newValue - sanitized) > 0.5 {
-                sidebarState.persistedWidth = sanitized
-                return
-            }
             guard !isResizerDragging else { return }
             if abs(sidebarWidth - sanitized) > 0.5 {
                 sidebarWidth = sanitized
             }
         })
 
-        view = AnyView(view.focusedSceneObject(sidebarState))
         view = AnyView(view.ignoresSafeArea())
         view = AnyView(view.sheet(isPresented: $isFeedbackComposerPresented) {
             SidebarFeedbackComposerSheet()
@@ -8506,7 +8483,7 @@ struct WorkspaceSidebar: View {
     // the whole sidebar (workspace pulse projection, worktree chips, per-row
     // Equatable compares) twice a second.
     let onSendFeedback: () -> Void
-    var compact: Bool = false
+    var width: CGFloat = 0
     @EnvironmentObject var sidebarState: SidebarState
     @EnvironmentObject var workspaceManager: WorkspaceManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
@@ -8540,6 +8517,11 @@ struct WorkspaceSidebar: View {
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
     @AppStorage(ChromeScaleSettings.customMultiplierKey)
     private var chromeScaleCustomMultiplier = Double(ChromeScaleSettings.defaultCustomMultiplier)
+    /// Width alone picks Tiles: two columns whenever they fit at the tile scale.
+    private var compact: Bool {
+        SidebarLayoutPolicy.showsTiles(width: Double(width), scale: Double(ChromeScaleSettings.multiplier(
+            presetRaw: chromeScalePresetRaw, customMultiplier: chromeScaleCustomMultiplier)))
+    }
     /// C11-104 v2 — chip row is gated by the preserved
     /// `sidebarShowBranchDirectory` key (existing user prefs survive
     /// the legacy-row → chip-row migration).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C11-523 native acceptance. Only run through sandbox-tests-v2.sh."""
+"""C11-523/C11-554 native acceptance: width alone picks Tiles. Only run through sandbox-tests-v2.sh."""
 import json
 import os
 from pathlib import Path
@@ -105,10 +105,6 @@ def stop_recording():
         RECORDING.wait(timeout=8)
 
 
-def menu_toggle():
-    osa('click menu item "Double Wide" of menu 1 of menu item "Sidebar" of menu 1 of menu bar item "View" of menu bar 1')
-
-
 def preview_count():
     return int(osa('count of (windows whose subrole is "AXSystemDialog")'))
 
@@ -196,20 +192,35 @@ shot('off-baseline')
 recording_path = OUT/f'tiles-toggle-drag-{PID}.mov'
 RECORDING = subprocess.Popen(['screencapture', '-x', '-v', '-V60', '-D1', '-k', str(recording_path)])
 atexit.register(stop_recording)
-press('titlebarControl.doubleWideSidebar')
-wait_for(lambda: layout()['double_wide'], 'glyph enables Tiles')
-assert layout()['effective_width'] == 400
-note('glyph-toggle', layout=layout())
+# No mode control remains: no titlebar button and no View > Sidebar menu.
+assert 'missing AX target' in subprocess.run(['osascript', '-e',
+    f'tell application "System Events" to tell (first process whose unix id is {PID})\n'
+    'set es to entire contents of window 1\nrepeat with e in es\ntry\n'
+    'if (value of attribute "AXIdentifier" of e) is "titlebarControl.doubleWideSidebar" then return "present"\n'
+    'end try\nend repeat\nerror "missing AX target"\nend tell'], capture_output=True, text=True).stderr
+view_items = osa('get name of menu items of menu 1 of menu bar item "View" of menu bar 1')
+assert 'Sidebar' not in [item.strip() for item in view_items.split(',')] and 'Double Wide' not in view_items, view_items
+note('no-mode-control', view_menu=view_items)
+# One drag across the two-column edge flips the layout live, both ways.
+drag_width(323)
+assert not layout()['double_wide'] and layout()['columns'] == 1, layout()
+shot('drag-323-cards')
+drag_width(324)
+assert layout()['double_wide'] and layout()['columns'] == 2, layout()
+shot('drag-324-tiles')
+drag_width(323)
+assert not layout()['double_wide'], layout()
+note('drag-threshold', below=323, at=324)
 for theme in ['Light', 'Dark']:
     osa(f'click menu item "{theme}" of menu 1 of menu item "Appearance" of menu 1 of menu bar item "View" of menu bar 1')
-    for width, cols in [(400, 2), (486, 3), (200, 1)]:
+    # 470, not 486: the guest display is 1440 wide, so the sidebar caps at 480.
+    for width, cols in [(400, 2), (470, 2), (200, 1)]:
         drag_width(width)
-        # At 200 the fixture scrolls: geometry remains 75 pt even if below viewport.
         if width != 200:
             measure(width, cols)
         else:
-            assert layout()['double_wide'] and layout()['columns'] == 1
-            note('geometry-200', layout=layout(), first_frame=rect('sidebar.workspace.'+FLEET[-3]))
+            assert not layout()['double_wide'] and layout()['columns'] == 1
+            note('geometry-200-cards', layout=layout())
         shot(f'{theme.lower()}-{width}')
 drag_width(400)
 for width, cols in [(971, 1), (972, 2), (1050, 2), (1200, 2), (1600, 2)]:
@@ -218,11 +229,10 @@ for width, cols in [(971, 1), (972, 2), (1050, 2), (1200, 2), (1600, 2)]:
     state = layout()
     assert state['effective_width'] <= min(600, width/3)+1
     note(f'window-{width}', layout=state)
-menu_toggle()
-wait_for(lambda: not layout()['double_wide'], 'menu disables Tiles')
-assert layout()['effective_width'] == 200
-menu_toggle()
-wait_for(lambda: layout()['double_wide'], 'menu enables Tiles')
+drag_width(200)
+assert not layout()['double_wide']
+drag_width(400)
+assert layout()['double_wide']
 # A real pointer hover while the terminal is focused must not take typing focus.
 call('panel.focus', workspace_id=WS, panel_id=TERMINAL)
 time.sleep(.5)

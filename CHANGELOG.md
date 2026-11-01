@@ -6,6 +6,11 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Changed
+
+- The sidebar switches to Tiles by width alone: two columns as soon as it is wide enough for them (324 pt at the standard scale), cards when narrower, live while you drag its edge. The Double Wide button and View > Sidebar > Double Wide are gone, and older saved windows open at their saved width.
+- The sidebar, notifications, new workspace, Back and Forward controls at the top left sit on one solid backdrop, so they read as a group apart from the titlebar.
+
 ### Removed
 
 - Intel Macs: c11 now requires a Mac with Apple silicon. 1.7.0 is the last release for Intel Macs. Intel Macs on 1.x stay on 1.7.0: the updater does not offer them newer releases, and Homebrew installs 1.7.0 there. To run a newer c11 on an Intel Mac, build it from source. Any Mac still on a 0.x version is shown this release as an information-only update with a download link, not an install; on Apple silicon, download it from the release page.

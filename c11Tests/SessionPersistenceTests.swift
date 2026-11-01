@@ -123,73 +123,44 @@ final class SidebarTilesPolicyTests: XCTestCase {
         XCTAssertEqual(SidebarLayoutPolicy.columns(width: SidebarLayoutPolicy.effectiveWidth(400, windowWidth: 972)), 2)
         XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(900, windowWidth: 3000), 600)
         XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(.nan, windowWidth: 1200), 200)
-        let desired = SidebarLayoutPolicy.State(doubleWide: true, width: 486)
-        _ = SidebarLayoutPolicy.effectiveWidth(desired.width, windowWidth: 900)
-        XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(desired.width, windowWidth: 1800), 486)
+        XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: SidebarLayoutPolicy.effectiveWidth(486, windowWidth: 900)))
+        XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: SidebarLayoutPolicy.effectiveWidth(486, windowWidth: 1800)))
     }
 
-    func testToggleRestoresPriorCardWidth() {
-        let cards = SidebarLayoutPolicy.State(width: 238)
-        let tiles = SidebarLayoutPolicy.toggled(cards)
-        XCTAssertTrue(tiles.doubleWide)
-        XCTAssertEqual(tiles.width, 400)
-        XCTAssertEqual(tiles.singleWideWidth, 238)
-        let narrow = SidebarLayoutPolicy.dragged(tiles, width: 200, initialWidth: 400)
-        XCTAssertTrue(narrow.doubleWide)
-        XCTAssertEqual(SidebarLayoutPolicy.toggled(narrow).width, 238)
-        XCTAssertFalse(SidebarLayoutPolicy.toggled(narrow).doubleWide)
-    }
-
-    func testDragEnablesAt300WithoutSnapAndStaysOnWhileNarrowing() {
-        let start = SidebarLayoutPolicy.State(width: 220)
-        let before = SidebarLayoutPolicy.dragged(start, width: 299, initialWidth: 220)
-        XCTAssertFalse(before.doubleWide)
-        let threshold = SidebarLayoutPolicy.dragged(before, width: 300, initialWidth: 220)
-        XCTAssertTrue(threshold.doubleWide)
-        XCTAssertEqual(threshold.width, 300)
-        XCTAssertEqual(threshold.singleWideWidth, 220)
-        let wider = SidebarLayoutPolicy.dragged(threshold, width: 486, initialWidth: 300)
-        XCTAssertEqual(wider.width, 486)
-        let narrow = SidebarLayoutPolicy.dragged(wider, width: 200, initialWidth: 486)
-        XCTAssertTrue(narrow.doubleWide)
-        XCTAssertEqual(narrow.width, 200)
-        XCTAssertEqual(SidebarLayoutPolicy.toggled(narrow).width, 220)
+    func testWidthAloneSwitchesToTilesAtTheTwoColumnEdge() {
+        // Below, at and above the edge where two 162 pt columns fit.
+        for (width, tiles) in [(180.0, false), (299, false), (300, false), (323.9, false),
+                               (324, true), (324.1, true), (400, true), (600, true)] {
+            XCTAssertEqual(SidebarLayoutPolicy.showsTiles(width: width), tiles, "width \(width)")
+        }
+        XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: 404.9, scale: 1.25))
+        XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: 405, scale: 1.25))
+        // Every chrome scale can reach Tiles inside the 600 pt maximum, with room to spare.
+        for scale in [0.5, 0.85, 1, 1.25, 1.55, 1.6, 2, 3] {
+            XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: 520, scale: scale), "scale \(scale)")
+        }
+        XCTAssertLessThanOrEqual(2 * SidebarLayoutPolicy.tileColumnWidth * SidebarLayoutPolicy.maximumTileScale,
+                                 SessionPersistencePolicy.maximumSidebarWidth - 80)
+        XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: .nan))
     }
 
     func testOldSidebarSnapshotDefaultsToCards() throws {
         let old = Data(#"{"isVisible":true,"selection":"tabs","width":238}"#.utf8)
         let decoded = try JSONDecoder().decode(SessionSidebarSnapshot.self, from: old)
-        XCTAssertFalse(decoded.doubleWide ?? false)
         XCTAssertEqual(decoded.width, 238)
-        XCTAssertNil(decoded.singleWideWidth)
+        XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: try XCTUnwrap(decoded.width)))
     }
 
-    func testDragStartingAtOrAboveThresholdKeepsCards() {
-        for initialWidth in [300.0, 400, 486] {
-            let start = SidebarLayoutPolicy.State(width: initialWidth)
-            let wider = SidebarLayoutPolicy.dragged(start, width: 500, initialWidth: initialWidth)
-            XCTAssertFalse(wider.doubleWide)
-            XCTAssertEqual(wider.width, 500)
-            let below = SidebarLayoutPolicy.dragged(wider, width: 220, initialWidth: initialWidth)
-            XCTAssertFalse(below.doubleWide)
-            let backAbove = SidebarLayoutPolicy.dragged(below, width: 400, initialWidth: initialWidth)
-            XCTAssertFalse(backAbove.doubleWide)
-            XCTAssertEqual(backAbove.width, 400)
-            let nextDrag = SidebarLayoutPolicy.dragged(below, width: 300, initialWidth: 220)
-            XCTAssertTrue(nextDrag.doubleWide)
-            XCTAssertEqual(nextDrag.singleWideWidth, 220)
-        }
-    }
-
-    func testIndependentWindowModesSurviveCodecRoundTrip() throws {
-        let windows = [SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 486,
-                                             doubleWide: true, singleWideWidth: 238),
-                       SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 210,
-                                             doubleWide: false, singleWideWidth: 210)]
-        let decoded = try JSONDecoder().decode([SessionSidebarSnapshot].self, from: JSONEncoder().encode(windows))
-        XCTAssertEqual(decoded.map(\.doubleWide), [true, false])
-        XCTAssertEqual(decoded.map(\.width), [486, 210])
-        XCTAssertEqual(decoded.map(\.singleWideWidth), [238, 210])
+    func testOldDoubleWideSnapshotLoadsByWidthAndDropsTheMode() throws {
+        // 1.7.0 sessions stored a per-window mode; width now decides, and the old keys are not written back.
+        let tiles = Data(#"{"isVisible":true,"selection":"tabs","width":486,"doubleWide":true,"singleWideWidth":238}"#.utf8)
+        let narrowedTiles = Data(#"{"isVisible":true,"selection":"tabs","width":220,"doubleWide":true,"singleWideWidth":238}"#.utf8)
+        let decoded = try [tiles, narrowedTiles].map { try JSONDecoder().decode(SessionSidebarSnapshot.self, from: $0) }
+        XCTAssertEqual(decoded.map(\.width), [486, 220])
+        XCTAssertEqual(decoded.map { SidebarLayoutPolicy.showsTiles(width: $0.width ?? 0) }, [true, false])
+        let reencoded = try XCTUnwrap(String(data: JSONEncoder().encode(decoded[0]), encoding: .utf8))
+        XCTAssertFalse(reencoded.contains("doubleWide"), reencoded)
+        XCTAssertFalse(reencoded.contains("singleWideWidth"), reencoded)
     }
 }
 

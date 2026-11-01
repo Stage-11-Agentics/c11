@@ -149,7 +149,12 @@ final class WorkspaceMissionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: sentinelRoot) }
         try "Sentinel.".write(to: sentinelRoot.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
         let sentinelReady = expectation(description: "unsubscribe queue drained")
+        // Only the first delivery proves the queue drained. Later polls can land
+        // after this test tears down sentinelRoot, so they must not assert.
+        let sentinelDeliveries = MissionReadCounter()
         var sentinel: WorkspaceMissionMonitor.Subscription? = monitor.observe(root: sentinelRoot.path) { value in
+            sentinelDeliveries.increment()
+            guard sentinelDeliveries.value == 1 else { return }
             XCTAssertEqual(value?.summary, "Sentinel.")
             sentinelReady.fulfill()
         }

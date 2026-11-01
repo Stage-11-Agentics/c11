@@ -82,6 +82,8 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     /// opener still asks and still cannot stack prompts.
     private let externalOpenGate: BrowserExternalOpenGate
     private let externalOpenNoticePresenter = PanelLinkNoticePresenter()
+    /// Real operator input to this popup, for the same click test the panel uses.
+    private var lastOperatorInputAt: Date?
 
     private static var associatedObjectKey: UInt8 = 0
 
@@ -167,6 +169,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         self.downloadDelegate = dlDel
 
         super.init()
+        webView.onOperatorInput = { [weak self] in
+            MainActor.assumeIsolated { self?.lastOperatorInputAt = Date() }
+        }
 
         // --- URL label for phishing protection ---
         urlLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -268,6 +273,14 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
 
         closeAllChildPopups()
 
+        // AppKit drops an attached sheet with its window without calling the
+        // sheet's completion. Cancel this popup's app-link prompt (shared gate)
+        // and end any other sheet with a non-proceeding answer.
+        externalOpenGate.cancelPending(owner: ObjectIdentifier(webView))
+        if let sheet = panel.attachedSheet {
+            panel.endSheet(sheet, returnCode: .abort)
+        }
+
         webView.cmuxCloseInspectorBeforeHostTeardown()
 
         // Invalidate observations
@@ -338,7 +351,11 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
             url,
             origin: origin,
             userClick: userClick,
-            host: .webView(webView, noticePresenter: externalOpenNoticePresenter) { [weak openerPanel] line in
+            host: .webView(
+                webView,
+                noticePresenter: externalOpenNoticePresenter,
+                lastOperatorInputAt: { [weak self] in self?.lastOperatorInputAt }
+            ) { [weak openerPanel] line in
                 openerPanel?.appendExternalOpenLog(line)
             }
         )
@@ -602,6 +619,19 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
             decisionHandler(.cancel)
             return
         }
+        // External URL schemes → ask the operator (C11-510), from any frame,
+        // so a subframe app link is never allowed through to WebKit. With no
+        // controller there is nobody to ask, so nothing opens.
+        if let url, browserShouldOpenURLExternally(url) {
+            controller?.requestExternalOpen(
+                url,
+                origin: origin ?? BrowserExternalOpenOrigin(pageURL: webView.url),
+                userClick: userClick
+            )
+            decisionHandler(.cancel)
+            return
+        }
+
         // Only guard main-frame navigations
         guard isMainFrame else {
             decisionHandler(.allow)
@@ -610,18 +640,6 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
 
         guard let url else {
             decisionHandler(.allow)
-            return
-        }
-
-        // External URL schemes → ask the operator (C11-510). With no
-        // controller there is nobody to ask, so nothing opens.
-        if browserShouldOpenURLExternally(url) {
-            controller?.requestExternalOpen(
-                url,
-                origin: origin ?? BrowserExternalOpenOrigin(pageURL: webView.url),
-                userClick: userClick
-            )
-            decisionHandler(.cancel)
             return
         }
 

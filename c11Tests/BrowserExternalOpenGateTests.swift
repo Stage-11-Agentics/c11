@@ -20,6 +20,8 @@ final class BrowserExternalOpenGateTests: XCTestCase {
     private var answers: [(BrowserExternalOpenGate.Answer) -> Void] = []
     private var notices: [String] = []
     private var logs: [String] = []
+    private var operatorInput = true
+    private var dismissed = 0
     private var visible = true
     private var handler: String? = "Screen Sharing"
 
@@ -33,6 +35,8 @@ final class BrowserExternalOpenGateTests: XCTestCase {
         answers = []
         notices = []
         logs = []
+        operatorInput = true
+        dismissed = 0
         visible = true
         handler = "Screen Sharing"
     }
@@ -57,12 +61,17 @@ final class BrowserExternalOpenGateTests: XCTestCase {
             present: { [unowned self] prompt, answer in
                 self.presented.append(prompt)
                 self.answers.append(answer)
+                return { [unowned self] in self.dismissed += 1 }
             },
             notice: { [unowned self] in self.notices.append($0) },
-            log: { [unowned self] in self.logs.append($0) }
+            log: { [unowned self] in self.logs.append($0) },
+            owner: ownerID,
+            recentOperatorInput: { [unowned self] in self.operatorInput }
         )
     }
 
+    private let ownerObject = NSObject()
+    private var ownerID: ObjectIdentifier { ObjectIdentifier(ownerObject) }
     private let page = BrowserExternalOpenOrigin(scheme: "https", host: "example.com", port: 443)
     private let vnc = URL(string: "vnc://c11-fixture.invalid")!
     private let smb = URL(string: "smb://c11-fixture.invalid/share")!
@@ -159,6 +168,39 @@ final class BrowserExternalOpenGateTests: XCTestCase {
         XCTAssertEqual(opened, [])
     }
 
+    /// Fable B2: WebKit reports a scripted `element.click()` as a link
+    /// activation. Without real operator input it is a script, not a click.
+    func testScriptedClickWithoutOperatorInputCannotReaskAfterCancel() {
+        let gate = makeGate()
+        gate.request(vnc, origin: page, userClick: true, host: host)
+        answers[0](.cancel)
+        clock += BrowserExternalOpenGate.cooldown + 0.1
+        operatorInput = false
+        for _ in 0..<5 {
+            XCTAssertEqual(gate.request(vnc, origin: page, userClick: true, host: host), .droppedDeclined)
+            clock += BrowserExternalOpenGate.cooldown + 0.1
+        }
+        XCTAssertEqual(presented.count, 1)
+        operatorInput = true
+        XCTAssertEqual(gate.request(vnc, origin: page, userClick: true, host: host), .prompted,
+                       "a real click may ask again")
+    }
+
+    /// Fable B1: the asker going away must clear the gate, not wedge it.
+    func testCancelPendingClearsOnlyTheOwnersPromptAndDismissesIt() {
+        let gate = makeGate()
+        gate.request(vnc, origin: page, userClick: true, host: host)
+        XCTAssertFalse(gate.cancelPending(owner: ObjectIdentifier(NSObject())), "another web view's close")
+        XCTAssertNotNil(gate.pending)
+        XCTAssertTrue(gate.cancelPending(owner: ownerID))
+        XCTAssertNil(gate.pending)
+        XCTAssertEqual(dismissed, 1)
+        answers[0](.open(alwaysAllow: false))
+        XCTAssertEqual(opened, [], "a late answer after cancel opens nothing")
+        clock += BrowserExternalOpenGate.cooldown + 0.1
+        XCTAssertEqual(gate.request(vnc, origin: page, userClick: false, host: host), .prompted)
+    }
+
     func testMailtoOpensWithoutAsking() {
         let gate = makeGate()
         let mail = URL(string: "mailto:ops@example.com")!
@@ -223,7 +265,7 @@ final class BrowserExternalOpenGateTests: XCTestCase {
         XCTAssertTrue(alert.informativeText.contains("vnc://c11-fixture.invalid"))
         XCTAssertEqual(alert.buttons.map(\.title), ["Open", "Cancel"])
         XCTAssertEqual(alert.buttons[0].keyEquivalent, "")
-        XCTAssertEqual(alert.buttons[1].keyEquivalent, "\u{1b}")
+        XCTAssertEqual(alert.buttons[1].keyEquivalent, "\r")
         XCTAssertTrue(alert.showsSuppressionButton)
     }
 
@@ -296,5 +338,151 @@ final class BrowserExternalOpenGateTests: XCTestCase {
         delegate.decidePolicy(for: smb, isMainFrame: true, in: webView) { decisions.append($0) }
         XCTAssertEqual(decisions, [.cancel])
         XCTAssertEqual(systemOpened, [])
+    }
+
+    // MARK: - Close and keyboard (Fable B1, notes 2 and 3)
+
+    private func visibleWindow() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.orderFront(nil)
+        return window
+    }
+
+    /// A popup closed while its prompt is up leaves the opener's gate usable.
+    func testClosingPopupWithPromptUpClearsOpenerGate() async {
+        var systemOpened: [URL] = []
+        let saved = BrowserExternalOpenGate.systemOpen
+        BrowserExternalOpenGate.systemOpen = { systemOpened.append($0); return true }
+        defer { BrowserExternalOpenGate.systemOpen = saved }
+
+        let opener = BrowserPanel(workspaceId: UUID())
+        defer { opener.close() }
+        let popup = BrowserPopupWindowController(
+            configuration: WKWebViewConfiguration(), windowFeatures: WKWindowFeatures(), openerPanel: opener)
+        let popupWindow = popup.webView.window
+        _ = await waitForC11HostCondition(timeout: 5) { popup.webView.window?.isVisible == true }
+        XCTAssertEqual(popup.requestExternalOpen(vnc, origin: page, userClick: false), .prompted)
+        XCTAssertNotNil(opener.externalOpenGate.pending)
+        XCTAssertNotNil(popupWindow?.attachedSheet, "the prompt is a sheet on the popup")
+
+        popup.closePopup()
+        _ = await waitForC11HostCondition(timeout: 3) { opener.externalOpenGate.pending == nil }
+        XCTAssertNil(opener.externalOpenGate.pending, "closing the popup wedged the opener's gate")
+        XCTAssertEqual(systemOpened, [])
+
+        // After the cooldown, the opener can ask again.
+        try? await Task.sleep(nanoseconds: UInt64((BrowserExternalOpenGate.cooldown + 0.2) * 1_000_000_000))
+        XCTAssertEqual(opener.externalOpenGate.request(vnc, origin: page, userClick: false, host: host), .prompted)
+    }
+
+    /// Closing a panel takes its prompt off the main window.
+    func testClosingPanelWithPromptUpRemovesTheSheet() async {
+        let panel = BrowserPanel(workspaceId: UUID())
+        let window = visibleWindow()
+        panel.webView.frame = window.contentView?.bounds ?? .zero
+        window.contentView?.addSubview(panel.webView)
+        defer { window.orderOut(nil); window.close() }
+
+        XCTAssertEqual(panel.requestExternalOpen(vnc, origin: page, userClick: false, from: panel.webView), .prompted)
+        _ = await waitForC11HostCondition(timeout: 3) { window.attachedSheet != nil }
+        XCTAssertNotNil(window.attachedSheet)
+        panel.close()
+        _ = await waitForC11HostCondition(timeout: 3) { window.attachedSheet == nil }
+        XCTAssertNil(window.attachedSheet, "the prompt outlived its panel")
+        XCTAssertNil(panel.externalOpenGate.pending)
+    }
+
+    /// Return and Escape both cancel; neither can consent.
+    func testReturnAndEscapeBothCancelThePrompt() async {
+        for (characters, keyCode) in [("\r", UInt16(36)), ("\u{1b}", UInt16(53))] {
+            let window = visibleWindow()
+            let prompt = BrowserExternalOpenGate.Prompt(url: vnc, scheme: "vnc", origin: page, appName: "Screen Sharing")
+            let alert = browserExternalOpenAlert(for: prompt)
+            var response: NSApplication.ModalResponse?
+            alert.beginSheetModal(for: window) { response = $0 }
+            _ = await waitForC11HostCondition(timeout: 3) { window.attachedSheet != nil }
+            let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: alert.window.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode)!
+            // The same order NSApplication uses: key equivalents, then the key event.
+            if !alert.window.performKeyEquivalent(with: event) {
+                alert.window.sendEvent(event)
+            }
+            _ = await waitForC11HostCondition(timeout: 2) { response != nil }
+            XCTAssertEqual(response, .alertSecondButtonReturn, "key code \(keyCode) must cancel")
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            window.orderOut(nil)
+            window.close()
+        }
+    }
+
+    // MARK: - Subframes and parked panels (Grok G1, G2)
+
+    /// A modifier click on an app link inside an iframe is attributed to the
+    /// iframe, never to the top page that embeds it.
+    func testIframeModifierClickNamesTheIframeNotTheTopPage() async {
+        var systemOpened: [URL] = []
+        let saved = BrowserExternalOpenGate.systemOpen
+        BrowserExternalOpenGate.systemOpen = { systemOpened.append($0); return true }
+        defer { BrowserExternalOpenGate.systemOpen = saved }
+
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let window = visibleWindow()
+        panel.webView.frame = window.contentView?.bounds ?? .zero
+        window.contentView?.addSubview(panel.webView)
+        defer {
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            window.orderOut(nil)
+            window.close()
+        }
+        let frameHTML = "<a id=l href='vnc://c11-fixture.invalid'>x</a><script>"
+            + "document.getElementById('l').dispatchEvent(new MouseEvent('click',"
+            + "{metaKey:true,bubbles:true,cancelable:true}));</script>"
+        let encoded = frameHTML.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        panel.webView.loadHTMLString(
+            "<html><body><iframe src=\"data:text/html,\(encoded)\"></iframe></body></html>",
+            baseURL: URL(string: "https://bank.example/")
+        )
+        let asked = await waitForC11HostCondition(timeout: 10) { panel.externalOpenGate.pending != nil }
+        XCTAssertTrue(asked, "the iframe's app link never reached the gate")
+        XCTAssertNotEqual(panel.externalOpenGate.pending?.origin.allowKey, "https://bank.example",
+                          "the prompt named the top page for an iframe's request")
+        XCTAssertEqual(systemOpened, [])
+    }
+
+    func testPopupSubframeAppLinkIsCancelledNotAllowed() {
+        var systemOpened: [URL] = []
+        let saved = BrowserExternalOpenGate.systemOpen
+        BrowserExternalOpenGate.systemOpen = { systemOpened.append($0); return true }
+        defer { BrowserExternalOpenGate.systemOpen = saved }
+        let delegate = PopupNavigationDelegate()
+        let webView = CmuxWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        var decisions: [WKNavigationActionPolicy] = []
+        delegate.decidePolicy(for: smb, isMainFrame: false, in: webView) { decisions.append($0) }
+        XCTAssertEqual(decisions, [.cancel])
+        XCTAssertEqual(systemOpened, [])
+    }
+
+    /// A keep-live panel parked off its host for a hidden workspace is not
+    /// hidden, but it is not on screen either: no sheet.
+    func testWebViewParkedOutsideItsWindowIsNotPrompted() {
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.close() }
+        let window = visibleWindow()
+        defer { window.orderOut(nil); window.close() }
+        let bounds = window.contentView?.bounds ?? .zero
+        panel.webView.frame = bounds.offsetBy(dx: -(bounds.width + 64), dy: 0)
+        window.contentView?.addSubview(panel.webView)
+        XCTAssertFalse(panel.webView.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(panel.requestExternalOpen(vnc, origin: page, userClick: false, from: panel.webView), .droppedHidden)
+        XCTAssertNil(window.attachedSheet)
+
+        panel.webView.frame = bounds
+        XCTAssertEqual(panel.requestExternalOpen(vnc, origin: page, userClick: false, from: panel.webView), .prompted)
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
     }
 }

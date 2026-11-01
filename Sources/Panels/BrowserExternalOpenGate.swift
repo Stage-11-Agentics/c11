@@ -96,12 +96,19 @@ enum BrowserExternalSchemeSettings {
 struct BrowserExternalOpenHost {
     /// The page is on screen, so the operator can see who is asking.
     var isVisible: () -> Bool
-    /// Shows the prompt and calls back exactly once with the operator's answer.
-    var present: (BrowserExternalOpenGate.Prompt, @escaping (BrowserExternalOpenGate.Answer) -> Void) -> Void
+    /// Shows the prompt and calls back with the operator's answer. Returns a
+    /// way to take the prompt down unanswered (its owner closed), if any.
+    var present: (BrowserExternalOpenGate.Prompt, @escaping (BrowserExternalOpenGate.Answer) -> Void) -> (() -> Void)?
     /// Shows a short, non-blocking notice in the panel.
     var notice: (String) -> Void
     /// Records a dropped request where the operator can find it later.
     var log: (String) -> Void = { _ in }
+    /// The web view that asked; closing it cancels only its own prompt.
+    var owner: ObjectIdentifier? = nil
+    /// A real operator key or mouse event reached this web view within the
+    /// last second. WebKit reports a scripted `element.click()` as a link
+    /// activation, so a click counts only with this.
+    var recentOperatorInput: () -> Bool = { false }
 }
 
 /// The one door between page content and `NSWorkspace` for non-web schemes.
@@ -142,6 +149,8 @@ final class BrowserExternalOpenGate {
     private static let logger = Logger(subsystem: "com.stage11.c11", category: "browser_external_open")
 
     private(set) var pending: Prompt?
+    private var pendingOwner: ObjectIdentifier?
+    private var dismissPending: (() -> Void)?
     private var nextAdmission: TimeInterval = 0
     private var declined = Set<String>()
     private var lastDropLog: [String: TimeInterval] = [:]
@@ -178,8 +187,9 @@ final class BrowserExternalOpenGate {
         userClick: Bool,
         host: BrowserExternalOpenHost
     ) -> Outcome {
-        let outcome = admit(url, origin: origin, userClick: userClick, host: host)
-        Self.log(url: url, origin: origin, userClick: userClick, outcome: outcome.rawValue)
+        let click = userClick && host.recentOperatorInput()
+        let outcome = admit(url, origin: origin, userClick: click, host: host)
+        Self.log(url: url, origin: origin, userClick: click, outcome: outcome.rawValue)
         recordDrop(outcome, scheme: url.scheme?.lowercased() ?? "", origin: origin, host: host)
         return outcome
     }
@@ -221,9 +231,12 @@ final class BrowserExternalOpenGate {
         guard host.isVisible() else { return .droppedHidden }
         let prompt = Prompt(url: url, scheme: scheme, origin: origin, appName: appName)
         pending = prompt
-        host.present(prompt) { [weak self] answer in
+        pendingOwner = host.owner
+        let dismiss = host.present(prompt) { [weak self] answer in
             self?.finish(id: prompt.id, answer: answer)
         }
+        // The answer may already have arrived (no window: safe default).
+        if pending?.id == prompt.id { dismissPending = dismiss }
         return .prompted
     }
 
@@ -232,6 +245,8 @@ final class BrowserExternalOpenGate {
     func finish(id: UUID, answer: Answer) -> String {
         guard let prompt = pending, prompt.id == id else { return "stale" }
         pending = nil
+        pendingOwner = nil
+        dismissPending = nil
         nextAdmission = now() + Self.cooldown
         let result: String
         switch answer {
@@ -281,6 +296,22 @@ final class BrowserExternalOpenGate {
         host.log(line)
     }
 
+    /// The web view that asked is going away: drop its prompt unanswered and
+    /// take the sheet down, so the gate never waits on a completion AppKit
+    /// will not deliver. `owner == nil` cancels whatever is pending.
+    @discardableResult
+    func cancelPending(owner: ObjectIdentifier? = nil) -> Bool {
+        guard let prompt = pending, owner == nil || owner == pendingOwner else { return false }
+        let dismiss = dismissPending
+        pending = nil
+        pendingOwner = nil
+        dismissPending = nil
+        nextAdmission = now() + Self.cooldown
+        Self.log(url: prompt.url, origin: prompt.origin, userClick: nil, outcome: "cancelled_closed")
+        dismiss?()
+        return true
+    }
+
     /// A new main-frame document: scripted requests may ask again.
     func pageDidNavigate() {
         declined.removeAll()
@@ -304,20 +335,29 @@ final class BrowserExternalOpenGate {
 }
 
 extension BrowserExternalOpenHost {
+    static let minimumVisibleSide: CGFloat = 40
+
     /// Binds prompts and notices to `webView`: a sheet on its own window,
     /// never `runModal`, and only while the page is on screen.
     static func webView(
         _ webView: WKWebView,
         noticePresenter: PanelLinkNoticePresenter,
+        lastOperatorInputAt: @escaping () -> Date?,
         log: @escaping (String) -> Void
     ) -> BrowserExternalOpenHost {
         BrowserExternalOpenHost(
             isVisible: { [weak webView] in
-                guard let webView, let window = webView.window else { return false }
-                return window.isVisible && !webView.isHiddenOrHasHiddenAncestor
+                guard let webView, let window = webView.window, let content = window.contentView,
+                      window.isVisible, !webView.isHiddenOrHasHiddenAncestor else { return false }
+                // A keep-live panel parked for a hidden workspace is unhidden
+                // but moved off its host; only a page actually in the window counts.
+                let shown = webView.convert(webView.bounds, to: nil).intersection(content.convert(content.bounds, to: nil))
+                return shown.width >= BrowserExternalOpenHost.minimumVisibleSide
+                    && shown.height >= BrowserExternalOpenHost.minimumVisibleSide
             },
             present: { [weak webView] prompt, completion in
                 let alert = browserExternalOpenAlert(for: prompt)
+                let host = webView?.window
                 browserPresentModalAlert(
                     alert,
                     preferredWindow: webView?.window,
@@ -331,12 +371,21 @@ extension BrowserExternalOpenHost {
                         }
                     }
                 )
+                return { [weak alert, weak host] in
+                    guard let sheet = alert?.window, let host, host.attachedSheet === sheet else { return }
+                    host.endSheet(sheet, returnCode: .abort)
+                }
             },
             notice: { [weak webView] text in
                 guard let webView else { return }
                 noticePresenter.show(text: text, in: webView)
             },
-            log: log
+            log: log,
+            owner: ObjectIdentifier(webView),
+            recentOperatorInput: {
+                guard let at = lastOperatorInputAt() else { return false }
+                return Date().timeIntervalSince(at) < 1.0
+            }
         )
     }
 }
@@ -362,9 +411,22 @@ func browserExternalOpenAlert(for prompt: BrowserExternalOpenGate.Prompt) -> NSA
     alert.informativeText = message + "\n\n" + shownURL
     let openButton = alert.addButton(withTitle: String(localized: "browser.externalOpen.open", defaultValue: "Open"))
     // Return never consents: a page could time the prompt under a keystroke.
+    // Cancel is the default (Return) and Escape cancels too.
     openButton.keyEquivalent = ""
     let cancelButton = alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
-    cancelButton.keyEquivalent = "\u{1b}"
+    cancelButton.keyEquivalent = "\r"
+    // A button holds one key equivalent, so Escape gets a zero-size twin that
+    // presses Cancel. It is invisible and hidden from accessibility.
+    let escape = NSButton(frame: .zero)
+    escape.isBordered = false
+    escape.title = ""
+    escape.keyEquivalent = "\u{1b}"
+    escape.target = cancelButton
+    escape.action = #selector(NSButton.performClick(_:))
+    escape.setAccessibilityElement(false)
+    let accessory = NSView(frame: .zero)
+    accessory.addSubview(escape)
+    alert.accessoryView = accessory
     if let host = prompt.origin.host {
         alert.showsSuppressionButton = true
         alert.suppressionButton?.title = String(

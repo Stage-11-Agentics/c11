@@ -4076,6 +4076,8 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     func close() {
+        // A prompt on the main window must not outlive the panel that asked.
+        externalOpenGate.cancelPending()
         prepareForHostTeardown()
         if keepLive {
             // C11-324: a parked keep-live slot must not outlive its panel.
@@ -5104,7 +5106,11 @@ extension BrowserPanel {
             url,
             origin: origin,
             userClick: userClick,
-            host: .webView(requestingWebView, noticePresenter: externalOpenNoticePresenter) { [weak self] line in
+            host: .webView(
+                requestingWebView,
+                noticePresenter: externalOpenNoticePresenter,
+                lastOperatorInputAt: { [weak self] in self?.lastOperatorInputAt }
+            ) { [weak self] line in
                 self?.appendExternalOpenLog(line)
             }
         )
@@ -7269,9 +7275,10 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         }
 
         // WebKit cannot open app-specific deeplinks (discord://, slack://, zoommtg://, etc.).
-        // The page asked, so the operator decides (C11-510).
+        // The page asked, so the operator decides (C11-510). Every frame goes
+        // through the gate before the new-panel branch, so a modifier click in
+        // an iframe is attributed to the iframe, never the top page.
         if let url = navigationAction.request.url,
-           navigationAction.targetFrame?.isMainFrame != false,
            browserShouldOpenURLExternally(url) {
             requestExternalOpen?(
                 url,

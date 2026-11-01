@@ -376,7 +376,12 @@ extension TerminalController {
     }
 
     private func v2Identify(params: [String: Any]) -> [String: Any] {
-        guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+        let workspaceManager = v2ResolveWorkspaceManager(params: params)
+        // C11-537: the caller block below resolves through
+        // workspaceContainingPanel and does not need the active manager.
+        // Keep the historical both-null response only when that panel
+        // cannot be located either. Focused stays empty without a manager.
+        if workspaceManager == nil, !v2IdentifyCallerPanelLocated(params: params) {
             return [
                 "socket_path": socketPath,
                 "focused": NSNull(),
@@ -385,30 +390,32 @@ extension TerminalController {
         }
 
         var focused: [String: Any] = [:]
-        v2MainSync {
-            let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
-            if let wsId = workspaceManager.selectedWorkspaceId,
-               let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
-                let paneUUID = ws.bonsplitController.focusedPaneId?.id
-                let surfaceUUID = ws.focusedPanelId
-                focused = [
-                    "window_id": v2OrNull(windowId?.uuidString),
-                    "window_ref": v2Ref(kind: .window, uuid: windowId),
-                    "workspace_id": wsId.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
-                    "root_directory": v2OrNull(ws.rootDirectory),
-                    "pane_id": v2OrNull(paneUUID?.uuidString),
-                    "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
-                    "surface_id": v2OrNull(surfaceUUID?.uuidString),
-                    "surface_ref": v2Ref(kind: .surface, uuid: surfaceUUID),
-                    "surface_type": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType.rawValue }),
-                    "is_browser_surface": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType == .browser })
-                ]
-            } else {
-                focused = [
-                    "window_id": v2OrNull(windowId?.uuidString),
-                    "window_ref": v2Ref(kind: .window, uuid: windowId)
-                ]
+        if let workspaceManager {
+            v2MainSync {
+                let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
+                if let wsId = workspaceManager.selectedWorkspaceId,
+                   let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
+                    let paneUUID = ws.bonsplitController.focusedPaneId?.id
+                    let surfaceUUID = ws.focusedPanelId
+                    focused = [
+                        "window_id": v2OrNull(windowId?.uuidString),
+                        "window_ref": v2Ref(kind: .window, uuid: windowId),
+                        "workspace_id": wsId.uuidString,
+                        "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
+                        "root_directory": v2OrNull(ws.rootDirectory),
+                        "pane_id": v2OrNull(paneUUID?.uuidString),
+                        "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
+                        "surface_id": v2OrNull(surfaceUUID?.uuidString),
+                        "surface_ref": v2Ref(kind: .surface, uuid: surfaceUUID),
+                        "surface_type": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType.rawValue }),
+                        "is_browser_surface": v2OrNull(surfaceUUID.flatMap { ws.panels[$0]?.panelType == .browser })
+                    ]
+                } else {
+                    focused = [
+                        "window_id": v2OrNull(windowId?.uuidString),
+                        "window_ref": v2Ref(kind: .window, uuid: windowId)
+                    ]
+                }
             }
         }
 
@@ -428,7 +435,8 @@ extension TerminalController {
                 guard let wsId = located?.workspace.id ?? hintedWorkspaceId else { return }
                 let callerWorkspaceManager = located?.workspaceManager
                     ?? AppDelegate.shared?.workspaceManagerFor(workspaceId: wsId) ?? workspaceManager
-                if let ws = callerWorkspaceManager.workspaces.first(where: { $0.id == wsId }) {
+                if let callerWorkspaceManager,
+                   let ws = callerWorkspaceManager.workspaces.first(where: { $0.id == wsId }) {
                     let callerWindowId = v2ResolveWindowId(workspaceManager: callerWorkspaceManager)
                     var payload: [String: Any] = [
                         "window_id": v2OrNull(callerWindowId?.uuidString),
@@ -464,6 +472,23 @@ extension TerminalController {
             "focused": focused.isEmpty ? NSNull() : focused,
             "caller": v2OrNull(resolvedCaller)
         ]
+    }
+
+    /// True when the nested caller names a panel `workspaceContainingPanel`
+    /// can find. A workspace hint alone does not count: without an active
+    /// manager, identify still returns a null caller for that case.
+    private func v2IdentifyCallerPanelLocated(params: [String: Any]) -> Bool {
+        guard let callerObj = params["caller"] as? [String: Any] else { return false }
+        let hintedWorkspaceId = v2UUIDAny(callerObj["workspace_id"])
+        let surfaceId = v2UUIDAny(callerObj["panel_id"]) ?? v2UUIDAny(callerObj["surface_id"])
+            ?? v2UUIDAny(callerObj["tab_id"])
+        guard let surfaceId else { return false }
+        return v2MainSync {
+            AppDelegate.shared?.workspaceContainingPanel(
+                panelId: surfaceId,
+                preferredWorkspaceId: hintedWorkspaceId
+            ) != nil
+        }
     }
 
     private func v2SystemBrand() -> [String: Any] {

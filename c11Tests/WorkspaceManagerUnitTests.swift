@@ -1933,7 +1933,20 @@ final class MovedPanelIdentifyTests: XCTestCase {
         let detached = try XCTUnwrap(source.detachPanel(panelId: panelId))
         XCTAssertEqual(destination.attachDetachedPanel(detached, inPane: pane, focus: false), panelId)
 
+        // C11-537: this class used to pass only while some other test had
+        // left an active manager on the shared controller. Clear it and pin
+        // the nil so window activation cannot put one back before identify.
+        let controller = TerminalController.shared
+        let savedManager = controller.workspaceManager
+        controller.workspaceManager = nil
+        controller.workspaceManagerPinnedForTesting = true
+        defer {
+            controller.workspaceManagerPinnedForTesting = false
+            controller.workspaceManager = savedManager
+        }
+
         for hint in [source.id, nil] {
+            XCTAssertNil(controller.workspaceManager)
             let caller = try identifyCaller(workspaceId: hint, panelId: panelId)
             XCTAssertEqual(caller["workspace_id"] as? String, destination.id.uuidString, "hint \(String(describing: hint))")
             XCTAssertEqual((caller["panel_id"] ?? caller["surface_id"]) as? String, panelId.uuidString)

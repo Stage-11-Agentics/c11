@@ -642,6 +642,7 @@
 		F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */; };
 		F20ECEC509D7B45E2B460C54 /* MiscHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D75E741661CC233082558D /* MiscHandlers.swift */; };
 		F26F83DDD9A2554D8FC6E8CE /* SocketPanelRefValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5E15A4988E33E201CBAE37 /* SocketPanelRefValidatorTests.swift */; };
+		C11537000000000000000002 /* IdentifyWithoutActiveManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11537000000000000000001 /* IdentifyWithoutActiveManagerTests.swift */; };
 		F2DFDC31F79D62CC65B97C66 /* TerminalControllerSocketSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 491751CE2321474474F27DCF /* TerminalControllerSocketSecurityTests.swift */; };
 		F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */; };
 		F3561BE21E032B0AB6FC9DFE /* AgentManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */; };
@@ -1349,6 +1350,7 @@
 		EB26BFF19A91FD51B78AF28E /* MainThreadHangMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainThreadHangMonitor.swift; sourceTree = "<group>"; };
 		EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWidthPolicyTests.swift; sourceTree = "<group>"; };
 		EE5E15A4988E33E201CBAE37 /* SocketPanelRefValidatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SocketPanelRefValidatorTests.swift; sourceTree = "<group>"; };
+		C11537000000000000000001 /* IdentifyWithoutActiveManagerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IdentifyWithoutActiveManagerTests.swift; sourceTree = "<group>"; };
 		EEBF5DCE48200F013EE7B8F7 /* JournalReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JournalReducer.swift; path = Journal/JournalReducer.swift; sourceTree = "<group>"; };
 		EFAF4E88F20968661D2D0886 /* MarkdownFeedbackHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MarkdownFeedbackHandlers.swift; sourceTree = "<group>"; };
 		F1000002A1B2C3D4E5F60718 /* c11Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = c11Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2188,6 +2190,7 @@
 				C397000000000000000000A4 /* MailboxPanelMailTests.swift */,
 				C1124400000000000000B013 /* PanelActivitySignalsTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketPanelRefValidatorTests.swift */,
+				C11537000000000000000001 /* IdentifyWithoutActiveManagerTests.swift */,
 				C11279000000000000000001 /* LegacyWireRoutingKeyTests.swift */,
 				36732611CC1BEFB8D99BB606 /* SocketPanelRefRejectionWiringTests.swift */,
 				91488CE83CF7CEC3B741B1E5 /* EventLogTests.swift */,
@@ -2601,6 +2604,7 @@
 				C397000000000000000000B4 /* MailboxPanelMailTests.swift in Sources */,
 				C1124400000000000000B014 /* PanelActivitySignalsTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketPanelRefValidatorTests.swift in Sources */,
+				C11537000000000000000002 /* IdentifyWithoutActiveManagerTests.swift in Sources */,
 				C11279000000000000000002 /* LegacyWireRoutingKeyTests.swift in Sources */,
 				0D76F685D48115A43B14C5D5 /* EventLogTests.swift in Sources */,
 				D25700000000000000000003 /* MessagesPageTests.swift in Sources */,

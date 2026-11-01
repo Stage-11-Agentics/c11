@@ -86335,6 +86335,18 @@
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "取走等待時間僅統計最新 %lld 則（共 %lld 則）訊息。"}},
         "ru": {"stringUnit": {"state": "translated", "value": "Время ожидания учитывает только новейшие %lld из %lld сообщений."}}
       }
+    },
+    "mailbox.conversations.missed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "That conversation is not in the list. Conversations reads only this panel's newest %lld received messages and its sends since then."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "その会話は一覧にありません。会話は、このパネルが受信した最新の %lld 件と、それ以降の送信分のみを読み取ります。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Цієї розмови немає в списку. Розмови враховують лише найновіші %lld отриманих цією панеллю повідомлень і надіслані відтоді."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "해당 대화가 목록에 없습니다. 대화는 이 패널이 받은 최신 메시지 %lld개와 그 이후 보낸 메시지만 읽습니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "该对话不在列表中。对话仅读取此面板收到的最新 %lld 条消息及此后发出的消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "該對話不在清單中。對話僅讀取此面板收到的最新 %lld 則訊息及此後傳送的訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Этого диалога нет в списке. Диалоги учитывают только новейшие %lld полученных этой панелью сообщений и отправленные с тех пор."}}
+      }
     }
   }
 }

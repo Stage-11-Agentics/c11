@@ -1003,10 +1003,12 @@ extension MailboxPanelMail {
             var claimedAt: Date?
             var wait: TimeInterval?
             // A claim renames the file into `_read/` and keeps its time, so
-            // its landing is the same moment the unread file showed.
+            // that time is when it landed. Its name is no guide: a file
+            // dropped in by hand is renamed to a ULID minted at the claim.
             if !entry.unread, let claim = claims[fileId], claim >= pickupStart {
                 claimedAt = claim
-                wait = landingDate(of: entry.url, fileManager: fileManager)
+                wait = (modificationDate(of: entry.url, fileManager: fileManager)
+                    ?? landingDate(of: entry.url, fileManager: fileManager))
                     .map { max(0, claim.timeIntervalSince($0)) }
             }
             result.records.append(Record(
@@ -1964,8 +1966,8 @@ extension MailboxPanelMail {
     }
 
     /// How long taken mail waited in this inbox before the agent took it:
-    /// from landing (the later of its ULID time and the file's time) to the
-    /// claim row's time.
+    /// from landing (the `_read/` file's time, which the claim's rename
+    /// keeps) to the claim row's time.
     struct Pickup: Equatable {
         var claims = 0
         var median: TimeInterval?
@@ -2030,10 +2032,11 @@ extension MailboxPanelMail {
     /// Rows older than `pickupWindow` are dropped. Off the main thread only.
     final class ClaimLog {
         static let shared = ClaimLog()
-        /// One log keeps at most this many claims; past it the oldest go.
-        static let capacity = 50_000
         /// At most this many logs are cached; past it the cache starts over.
         static let logCapacity = 64
+        /// Rows dated further ahead than this are not claims (any local
+        /// process can append to the log), so they are dropped.
+        static let futureSkew: TimeInterval = 300
 
         /// What the reader could see of the log.
         struct Coverage: Equatable {
@@ -2057,6 +2060,10 @@ extension MailboxPanelMail {
             var inode: UInt64
             var offset: Int64
             var readFrom: Date?
+            /// Rows before some point were not read: a tail, or a capacity prune.
+            var cut = false
+            /// The offset is inside a line, so the next read skips to its end.
+            var midLine = false
             var claims: [UUID: [String: Date]] = [:]
             var count = 0
         }
@@ -2064,9 +2071,12 @@ extension MailboxPanelMail {
         private let lock = NSLock()
         private var states: [String: State] = [:]
         private let tailBytes: Int
+        /// One log keeps at most this many claims; past it the oldest go.
+        private let capacity: Int
 
-        init(tailBytes: Int = 8 * 1024 * 1024) {
+        init(tailBytes: Int = 8 * 1024 * 1024, capacity: Int = 50_000) {
             self.tailBytes = max(1, tailBytes)
+            self.capacity = max(1, capacity)
         }
 
         func snapshot(log: URL, panel: UUID, now: Date) -> Snapshot {
@@ -2095,53 +2105,61 @@ extension MailboxPanelMail {
             } else {
                 fresh = true
                 let start = max(0, size - limit)
-                state = State(device: device, inode: inode, offset: start)
+                state = State(device: device, inode: inode, offset: start, cut: start > 0)
             }
             if size > state.offset {
                 // A fresh tail reads one byte early to tell whether its first
                 // line starts exactly at the cut.
-                let readStart = fresh && state.offset > 0 ? state.offset - 1 : state.offset
+                let cutStart = fresh && state.offset > 0
+                let readStart = cutStart ? state.offset - 1 : state.offset
                 guard let data = Self.read(fd: fd, from: readStart, count: Int(size - readStart)) else {
                     states.removeValue(forKey: path)
                     return Snapshot(coverage: Coverage(exists: true, unreadable: true))
                 }
-                consume(data, readStart: readStart, fresh: fresh, into: &state)
+                consume(data, readStart: readStart, skipFirst: cutStart || state.midLine, now: now, into: &state)
             }
             prune(&state, now: now)
             if states[path] == nil, states.count >= Self.logCapacity { states.removeAll(keepingCapacity: true) }
             states[path] = state
             let start = now.addingTimeInterval(-MailboxPanelMail.pickupWindow)
+            // Cut before any whole row was read: nothing before now is known.
             return Snapshot(
                 claims: (state.claims[panel] ?? [:]).filter { $0.value >= start },
-                coverage: Coverage(exists: true, readFrom: state.readFrom)
+                coverage: Coverage(exists: true, readFrom: state.readFrom ?? (state.cut ? now : nil))
             )
         }
 
         /// Records every complete line's claim and advances the offset past
         /// the last newline, so a row still being written is read next time.
-        private func consume(_ data: Data, readStart: Int64, fresh: Bool, into state: inout State) {
+        /// `skipFirst` drops the bytes up to the first newline: the end of a
+        /// line the read started inside.
+        private func consume(_ data: Data, readStart: Int64, skipFirst: Bool, now: Date, into state: inout State) {
+            let latest = now.addingTimeInterval(Self.futureSkew)
             data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
                 guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
                 let count = raw.count
                 var begin = 0
-                if fresh && readStart > 0 {
+                if skipFirst {
                     guard let newline = memchr(base, 0x0A, count) else {
-                        // Not one whole line in the tail: nothing to read.
+                        // Still inside one line: skip it all, and the rest of
+                        // it next time.
                         state.offset = readStart + Int64(count)
+                        state.midLine = true
                         return
                     }
                     begin = UnsafeRawPointer(base).distance(to: UnsafeRawPointer(newline)) + 1
+                    state.midLine = false
+                    state.offset = readStart + Int64(begin)
                 }
                 var end = count
                 while end > begin, base[end - 1] != 0x0A { end -= 1 }
                 guard end > begin else { return }
-                if fresh && readStart > 0 {
+                if state.cut, state.readFrom == nil {
                     // The oldest row read: claims before it were cut off.
                     var lineEnd = begin
                     while lineEnd < end, base[lineEnd] != 0x0A { lineEnd += 1 }
                     state.readFrom = Self.row(base + begin, lineEnd - begin)
                         .flatMap { ($0["ts"] as? String).flatMap(MailboxPanelMail.parseTimestamp) }
-                        ?? state.readFrom
                 }
                 let needle = Array("\"claimed\"".utf8)
                 var cursor = begin
@@ -2156,6 +2174,7 @@ extension MailboxPanelMail {
                        object["event"] as? String == "claimed",
                        let id = object["id"] as? String, !id.isEmpty, id.utf8.count <= 64,
                        let ts = (object["ts"] as? String).flatMap(MailboxPanelMail.parseTimestamp),
+                       ts <= latest,
                        let panel = (object["recipient_panel"] as? String).flatMap(UUID.init(uuidString:)) {
                         if let earlier = state.claims[panel]?[id] {
                             if ts < earlier { state.claims[panel]?[id] = ts }
@@ -2172,10 +2191,13 @@ extension MailboxPanelMail {
 
         private func prune(_ state: inout State, now: Date) {
             var cutoff = now.addingTimeInterval(-MailboxPanelMail.pickupWindow)
-            if state.count > Self.capacity {
+            if state.count > capacity {
                 // Keep the newest `capacity`: the claim time that many back.
+                // Claims before it are no longer known, as after a tail.
                 let times = state.claims.values.flatMap(\.values).sorted(by: >)
-                cutoff = max(cutoff, times[min(Self.capacity, times.count) - 1])
+                cutoff = max(cutoff, times[min(capacity, times.count) - 1])
+                state.cut = true
+                state.readFrom = max(state.readFrom ?? cutoff, cutoff)
             }
             var count = 0
             for (panel, claims) in state.claims {

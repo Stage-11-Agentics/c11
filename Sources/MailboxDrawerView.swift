@@ -1285,26 +1285,33 @@ private struct MailboxInsightsView: View {
     /// very name. One opens directly; a name several panels used (or
     /// stamped and unstamped mail alike) is never resolved to one of them:
     /// each message below opens its own.
-    @ViewBuilder
     private func senderConversationLink(_ from: String) -> some View {
-        if let slice, slice.fromFilter == from {
-            if slice.fromPeers.count == 1, let key = slice.fromPeers.first {
-                openConversationLink { onOpenConversation(key) }
-            } else if slice.fromPeers.count > 1 {
-                Text(String(
-                    localized: "mailbox.insights.openConversation.several",
-                    defaultValue: "\(slice.fromPeers.count) conversations"
-                ))
-                .font(metaFont)
-                .foregroundColor(style.secondary)
-                .lineLimit(1)
-                .fixedSize()
-                .help(String(
-                    localized: "mailbox.insights.openConversation.several.help",
-                    defaultValue: "Mail under this name came from more than one sender. Click a sender name in Messages below to open its conversation."
-                ))
+        ZStack(alignment: .leading) {
+            // Both forms' width is held from the click on, so the chips after
+            // this one never move when the slice lands.
+            Text(String(localized: "mailbox.insights.openConversation", defaultValue: "Open conversation"))
+                .hidden()
+            Text(String(localized: "mailbox.insights.openConversation.several", defaultValue: "\(99) conversations"))
+                .hidden()
+            if let slice, slice.fromFilter == from {
+                if slice.fromPeers.count == 1, let key = slice.fromPeers.first {
+                    openConversationLink { onOpenConversation(key) }
+                } else if slice.fromPeers.count > 1 {
+                    Text(String(
+                        localized: "mailbox.insights.openConversation.several",
+                        defaultValue: "\(slice.fromPeers.count) conversations"
+                    ))
+                    .foregroundColor(style.secondary)
+                    .help(String(
+                        localized: "mailbox.insights.openConversation.several.help",
+                        defaultValue: "Mail under this name came from more than one sender. Click a sender name in Messages below to open its conversation."
+                    ))
+                }
             }
         }
+        .font(metaFont)
+        .lineLimit(1)
+        .fixedSize()
     }
 
     private func openConversationLink(action: @escaping () -> Void) -> some View {
@@ -1919,13 +1926,14 @@ private struct MailboxInsightsView: View {
 
     /// How long mail waited here before the agent took it, for the current
     /// received slice. Fixed shape: four tiles, one line, a five-step
-    /// distribution, the overview's number of sender rows (padded), and
-    /// notes whose presence does not change with the filter.
+    /// distribution, `pickupSenderCount` sender rows (padded), and notes
+    /// whose presence does not change with the filter.
     private func pickupSection(_ pickup: MailboxPanelMail.Pickup) -> some View {
         let none = pickup.claims == 0
         let dash = "—"
         let days = MailboxPanelMail.insightsDays
-        let layoutRows = insights.pickup.senders.count
+        // Every row is reserved, so the first claims landing grow nothing.
+        let layoutRows = MailboxPanelMail.pickupSenderCount
         let topMedian = max(pickup.senders.map(\.median).max() ?? 0, 1)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -2258,9 +2266,17 @@ final class MailboxConversationsModel: ObservableObject {
     private var placementToken = 0
     private var resolvedIds: Set<UUID> = []
     private var resolvedAt = Date.distantPast
-    /// A conversation another tab asked to open that the list did not hold
-    /// yet: the next scan opens it, or shows the list if it is not there.
+    /// A conversation another tab asked to open. Only a scan that started
+    /// after the jump resolves it, so the thread holds the very message that
+    /// was clicked; until then no scan moves the selection off it.
     private(set) var pendingOpen: MailboxPanelMail.PeerKey?
+    private var pendingAfter = 0
+    /// A forced scan asked for while another ran: the follow-up is forced too.
+    private var forceDirty = false
+    /// A jump the newest scan does not hold (past the scan or gone). The
+    /// thread pane says so instead of showing another peer; a click on a
+    /// row clears it.
+    @Published private(set) var missed: MailboxPanelMail.PeerKey?
 
     func appeared(inbox: URL?, resolvePanels: @escaping ([UUID]) -> [UUID: MailboxDrawerSender]) {
         self.inbox = inbox
@@ -2279,21 +2295,19 @@ final class MailboxConversationsModel: ObservableObject {
     /// appearance scans when the list does not hold the key yet.
     func open(_ key: MailboxPanelMail.PeerKey) {
         showsThread = true
-        guard key != selected || thread?.key != key else {
-            pendingOpen = nil
-            return
+        missed = nil
+        if key != selected || thread?.key != key {
+            selected = key
+            thread = nil
+            flashed = nil
+            updateSelectedPosition()
+            // The list on hand shows the thread at once; the scan below
+            // reads it again with whatever arrived since.
+            if index?.conversation(key) != nil { reloadThread(place: true) }
         }
-        selected = key
-        thread = nil
-        flashed = nil
-        updateSelectedPosition()
-        if index?.conversation(key) != nil {
-            pendingOpen = nil
-            reloadThread(place: true)
-        } else {
-            pendingOpen = key
-            if isShowing { refresh(force: true) }
-        }
+        pendingOpen = key
+        pendingAfter = indexGeneration
+        if isShowing { refresh(force: true) }
     }
 
     func disappeared() {
@@ -2320,6 +2334,7 @@ final class MailboxConversationsModel: ObservableObject {
         }
         guard !indexInFlight else {
             indexDirty = true
+            if force { forceDirty = true }
             return
         }
         let wait = Self.refreshInterval - Date().timeIntervalSince(lastScanAt)
@@ -2338,8 +2353,9 @@ final class MailboxConversationsModel: ObservableObject {
         indexGeneration += 1
         let generation = indexGeneration
         let root = inbox.deletingLastPathComponent()
-        // The first load is what the reader waits for; refreshes are background.
-        let qos: DispatchQoS.QoSClass = index == nil ? .userInitiated : .utility
+        // The first load and a jump are what the reader waits for;
+        // refreshes are background.
+        let qos: DispatchQoS.QoSClass = index == nil || force ? .userInitiated : .utility
         DispatchQueue.global(qos: qos).async { [weak self] in
             let loaded = autoreleasepool {
                 MailboxPanelMail.conversationIndex(inbox: inbox, mailboxesRoot: root)
@@ -2347,30 +2363,40 @@ final class MailboxConversationsModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.indexInFlight = false
-                if generation == self.indexGeneration { self.apply(loaded) }
+                if generation == self.indexGeneration { self.apply(loaded, generation: generation) }
                 if self.indexDirty {
+                    let force = self.forceDirty
                     self.indexDirty = false
-                    self.refresh()
+                    self.forceDirty = false
+                    self.refresh(force: force)
                 }
             }
         }
     }
 
-    private func apply(_ loaded: MailboxPanelMail.ConversationIndex) {
+    private func apply(_ loaded: MailboxPanelMail.ConversationIndex, generation: Int) {
         if loaded != index { index = loaded }
         resolve()
         defer { updateSelectedPosition() }
         if let pending = pendingOpen {
+            // A scan from before the jump neither resolves it nor moves the
+            // selection; the forced scan after it does.
+            guard generation > pendingAfter else { return }
             pendingOpen = nil
-            if loaded.conversation(pending) == nil {
-                // Not in the list (past the scan, or gone): show the list.
+            if loaded.conversation(pending) != nil {
+                selected = pending
+                reloadThread(place: true)
+            } else {
                 selected = nil
                 thread = nil
-                showsThread = false
+                missed = pending
             }
+            return
         }
         if let selected, loaded.conversation(selected) != nil {
             reloadThread(place: false)
+        } else if missed != nil {
+            // Nothing is selected after a missed jump until a row is clicked.
         } else if let first = loaded.conversations.first {
             // A wide drawer opens on the newest conversation; a narrow one
             // on the list, with that thread ready behind it.
@@ -2387,6 +2413,7 @@ final class MailboxConversationsModel: ObservableObject {
 
     func select(_ key: MailboxPanelMail.PeerKey) {
         showsThread = true
+        missed = nil
         guard key != selected else { return }
         selected = key
         thread = nil
@@ -2606,14 +2633,19 @@ private struct MailboxConversationsView: View {
         if isNarrow {
             // A jump whose thread is not in the list yet keeps the list showing.
             let showingThread = model.showsThread && conversation != nil
+            let showingMissed = model.showsThread && conversation == nil && model.missed != nil
+            let covered = showingThread || showingMissed
             ZStack(alignment: .topLeading) {
                 // Kept underneath, so going back finds the list where it was.
                 listPane(index, now: now)
-                    .opacity(showingThread ? 0 : 1)
-                    .allowsHitTesting(!showingThread)
-                    .accessibilityHidden(showingThread)
+                    .opacity(covered ? 0 : 1)
+                    .allowsHitTesting(!covered)
+                    .accessibilityHidden(covered)
                 if showingThread, let conversation {
                     threadPane(conversation, index: index, now: now)
+                        .background(Color(nsColor: style.background))
+                } else if showingMissed {
+                    missedPane
                         .background(Color(nsColor: style.background))
                 }
             }
@@ -2625,11 +2657,41 @@ private struct MailboxConversationsView: View {
                 if let conversation {
                     threadPane(conversation, index: index, now: now)
                         .frame(width: threadWidth)
+                } else if model.missed != nil {
+                    missedPane.frame(width: threadWidth)
                 } else {
                     Color.clear.frame(width: threadWidth)
                 }
             }
         }
+    }
+
+    /// Where a jump lands when the list does not hold its conversation: the
+    /// pane says so, and no other peer's thread stands in for it.
+    private var missedPane: some View {
+        VStack(alignment: .leading, spacing: 8 * scale) {
+            if isNarrow {
+                Button { model.showsThread = false } label: {
+                    Text(String(localized: "mailbox.conversations.back", defaultValue: "‹ All"))
+                        .font(metaFont)
+                        .foregroundColor(link)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .accessibilityLabel(Text(String(localized: "mailbox.conversations.back.accessibility", defaultValue: "Back to all conversations")))
+            }
+            Text(String(
+                localized: "mailbox.conversations.missed",
+                defaultValue: "That conversation is not in the list. Conversations reads only this panel's newest \(MailboxPanelMail.insightsScanLimit) received messages and its sends since then."
+            ))
+            .font(metaFont)
+            .foregroundColor(style.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("mailbox-conversation-missed")
+        }
+        .padding(12 * scale)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var footer: some View {

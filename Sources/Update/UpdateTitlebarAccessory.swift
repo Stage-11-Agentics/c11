@@ -116,6 +116,7 @@ struct TitlebarControlsStyleConfig {
 
     static let leadingPadding: CGFloat = 4
     static let controlCount = 6
+    static let hintRightSafetyShift: CGFloat = 10
 
     var titlebarRowWidth: CGFloat {
         CGFloat(Self.controlCount) * buttonSize
@@ -124,16 +125,22 @@ struct TitlebarControlsStyleConfig {
     }
 
     func titleLeadingPadding(sidebarWidth: CGFloat, sidebarVisible: Bool,
-                             isFullScreen: Bool, extra: CGFloat = 0) -> CGFloat {
+                             isFullScreen: Bool, extra: CGFloat = 0,
+                             hintXOffset: Double = ShortcutHintDebugSettings.defaultTitlebarHintX) -> CGFloat {
         if isFullScreen { return sidebarVisible ? 12 : 8 }
         // AppKit places the left accessory after the traffic lights. Use the
         // same fixed button geometry as the accessory on the very first frame;
         // measuring an unattached NSView can otherwise report a zero width.
         let trafficLightInset: CGFloat = 78
-        let titleGap: CGFloat = 8
+        let trailingInset = Self.hintTrailingInset(xOffset: hintXOffset)
         let contentOrigin = sidebarVisible ? sidebarWidth : 0
         return max(12, trafficLightInset + Self.leadingPadding + titlebarRowWidth
-                   + titleGap - contentOrigin + extra)
+                   + trailingInset - contentOrigin + extra)
+    }
+
+    static func hintTrailingInset(xOffset: Double) -> CGFloat {
+        // The entire padded accessory is hit-testable, including hint shadow space.
+        CGFloat(max(0, ShortcutHintDebugSettings.clamped(xOffset))) + hintRightSafetyShift + 8
     }
 
     var sidebarRowsHeight: CGFloat {
@@ -298,7 +305,6 @@ struct TitlebarControlsView: View {
     @State private var isHoveringControls = false
     @State private var isNotificationsPopoverShown = false
     @StateObject private var modifierKeyMonitor = TitlebarShortcutHintModifierMonitor()
-    private let titlebarHintRightSafetyShift: CGFloat = 10
     private let titlebarHintBaseXShift: CGFloat = -10
 
     private enum HintSlot: Int, CaseIterable {
@@ -386,7 +392,7 @@ struct TitlebarControlsView: View {
 
     private var titlebarHintTrailingInset: CGFloat {
         // Keep room for blur + shadow so the rightmost hint never clips.
-        max(0, ShortcutHintDebugSettings.clamped(titlebarShortcutHintXOffset)) + titlebarHintRightSafetyShift + 8
+        TitlebarControlsStyleConfig.hintTrailingInset(xOffset: titlebarShortcutHintXOffset)
     }
 
     private func titlebarHintVerticalBaseOffset(for config: TitlebarControlsStyleConfig) -> CGFloat {
@@ -564,7 +570,7 @@ struct TitlebarControlsView: View {
             let rightEdge = config.groupPadding.leading
                 + titlebarButtonRightEdge(for: slot, config: config)
                 + xOffset
-                + titlebarHintRightSafetyShift
+                + TitlebarControlsStyleConfig.hintRightSafetyShift
                 + titlebarHintBaseXShift
             let index = slot.rawValue + (slot == .toggleSidebar ? 0 : 1)
             return (slot.action, shortcut, width, (rightEdge - width)...rightEdge, wrapsRows ? index / 3 : 0)

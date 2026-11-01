@@ -2304,6 +2304,7 @@ struct ContentView: View {
     private var m1bCustomTitlebarMigrated = false
 
     @AppStorage("titlebarControlsStyle") private var titlebarControlsStyleRaw = TitlebarControlsStyle.classic.rawValue
+    @AppStorage(ShortcutHintDebugSettings.titlebarHintXKey) private var titlebarHintXOffset = ShortcutHintDebugSettings.defaultTitlebarHintX
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
     private var fakeTitlebarTextColor: Color {
         _ = titlebarThemeGeneration
@@ -2442,7 +2443,7 @@ struct ContentView: View {
         let config = (TitlebarControlsStyle(rawValue: titlebarControlsStyleRaw) ?? .classic).config
         return config.titleLeadingPadding(sidebarWidth: sidebarWidth,
             sidebarVisible: sidebarState.isVisible, isFullScreen: isFullScreen,
-            extra: CGFloat(debugTitlebarLeadingExtra))
+            extra: CGFloat(debugTitlebarLeadingExtra), hintXOffset: titlebarHintXOffset)
     }
 
     private func updateTitlebarText() {

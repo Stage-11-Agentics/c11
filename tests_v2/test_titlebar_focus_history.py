@@ -418,7 +418,7 @@ end tell'''
         offset = self.debug_log.stat().st_size
         x, y, right, bottom = self.bounds(row)
         before = self.ui('frame')
-        self.mouse(((x + right) / 2, (y + bottom) / 2))
+        self.mouse((x + 2, (y + bottom) / 2))  # Left edge must clear the accessory hit area.
         self.key(53)  # Dismiss any folder drag session; never drop into another app.
 
         def logged():
@@ -455,6 +455,18 @@ end tell'''
         # require the actual folder AX element after closing the terminal fixture.
         self.control(FOLDER)
         self.javascript('document.querySelector("#jump").href=' + json.dumps('c11://panel/' + self.layout_target))
+        self.ui('style', 'Classic')
+        self.ui('press', 'titlebarControl.toggleSidebar')
+        self.wait(lambda: not self.call('debug.sidebar.visible', window_id=self.window)['visible'],
+                  'native sidebar hide')
+        hidden_sidebar = self.ui('layout')
+        folder = self.control(FOLDER)
+        self.report['hidden_sidebar_folder'] = dict(snapshot=hidden_sidebar,
+            click_log=self.folder_click(folder), click_x=folder['position'][0] + 2)
+        self.shot('07-hidden-sidebar-folder-edge')
+        self.ui('press', 'titlebarControl.toggleSidebar')
+        self.wait(lambda: self.call('debug.sidebar.visible', window_id=self.window)['visible'],
+                  'native sidebar restore')
         self.report['layout_matrix'] = [dict(
             case=f'{"minimal" if minimal else "standard"}-{style.lower()}-{width}-{appearance.lower()}',
             status='not_run', minimal=minimal, style=style, sidebar_width=width, appearance=appearance)

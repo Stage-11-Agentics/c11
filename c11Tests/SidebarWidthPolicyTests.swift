@@ -19,8 +19,8 @@ final class SidebarWidthPolicyTests: XCTestCase {
 final class TitlebarTitleReserveTests: XCTestCase {
     func testEveryStyleClearsSixControlsAtNarrowSidebarWidths() {
         let cases: [(TitlebarControlsStyle, CGFloat)] = [
-            (.classic, 284), (.compact, 240), (.roomy, 328),
-            (.pillGroup, 282), (.softButtons, 286)
+            (.classic, 298), (.compact, 254), (.roomy, 342),
+            (.pillGroup, 296), (.softButtons, 300)
         ]
         for (style, expectedTitleOrigin) in cases {
             for width: CGFloat in [180, 200] {
@@ -41,6 +41,16 @@ final class TitlebarTitleReserveTests: XCTestCase {
                 sidebarVisible: false, isFullScreen: false),
                 config.titleLeadingPadding(sidebarWidth: 180,
                     sidebarVisible: true, isFullScreen: false) + 180)
+        }
+    }
+
+    func testHiddenSidebarClearsTheFullAccessoryClickAreaAndHintOffset() {
+        let config = TitlebarControlsStyle.classic.config
+        XCTAssertEqual(config.titleLeadingPadding(sidebarWidth: 200,
+            sidebarVisible: false, isFullScreen: false), 298)
+        for (offset, expected): (Double, CGFloat) in [(-100, 294), (0, 294), (4, 298), (20, 314), (100, 314)] {
+            XCTAssertEqual(config.titleLeadingPadding(sidebarWidth: 200,
+                sidebarVisible: false, isFullScreen: false, hintXOffset: offset), expected)
         }
     }
 

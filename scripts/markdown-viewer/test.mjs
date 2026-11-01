@@ -570,6 +570,10 @@ try {
     // A top-level code block keeps the fence's own points; an indented block has no opening delimiter.
     {name:'indented code block',fencePoints:true,body:'    indented zero\n    indented one\n    indented two',lines:[[0,'indented zero'],[1,'indented one'],[2,'indented two']]},
     {name:'footnote definitions',footnote:true,body:'Body with a note[^a] and another[^b].'+Array.from({length:30},(_,i)=>`[^n${i}]`).join('')+'\n\n[^a]: Note alpha first\\\n    Note alpha second\n\n[^b]: Note beta'+Array.from({length:30},(_,i)=>`\n\n[^n${i}]: Later note ${i} leaves room to scroll.`).join(''),lines:[[2,'Note alpha first'],[3,'Note alpha second'],[5,'Note beta']]},
+    // The section renders definitions in reference order. A definition out of source order
+    // must still scroll to its own line and be the line visible() reports.
+    {name:'footnote referenced before an earlier definition',footnote:true,body:'Refs [^b] then [^a].'+Array.from({length:30},(_,i)=>`[^n${i}]`).join('')+'\n\n[^a]: Alpha defined first\n\n[^b]: Beta defined second'+Array.from({length:30},(_,i)=>`\n\n[^n${i}]: Later note ${i} leaves room to scroll.`).join(''),lines:[[2,'Alpha defined first'],[4,'Beta defined second']]},
+    {name:'footnote defined before an earlier reference',footnote:true,body:'Refs [^a] then [^b].'+Array.from({length:30},(_,i)=>`[^n${i}]`).join('')+'\n\n[^b]: Beta defined first\n\n[^a]: Alpha defined second'+Array.from({length:30},(_,i)=>`\n\n[^n${i}]: Later note ${i} leaves room to scroll.`).join(''),lines:[[2,'Beta defined first'],[4,'Alpha defined second']]},
   ];
   const lineCaseDocument=c=>c.footnote?`${lineCasePrefix}${c.body}\n`:`${lineCasePrefix}${c.body}\n\n${lineCaseFiller(40)}\n`;
   const lineCaseLoad=async(c,revision)=>{

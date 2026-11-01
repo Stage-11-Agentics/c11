@@ -12,32 +12,33 @@ The canary is the live-socket stand-in. Nothing here dials the operator's app.
 from __future__ import annotations
 
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
+
 import signal
 import socket
 import subprocess
-import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import socket_guard
-
-socket_guard.install()
-
 TESTS_DIR = Path(__file__).resolve().parent
 REPO = TESTS_DIR.parent
 
-# Files that would kill or launch an app, or take the machine build lock.
-# They still install the guard when someone runs them by hand.
+# Host-affecting files refuse to start unless C11_TEST_ALLOW_LIVE_APP=1.
+# The canary does not set that, and does not need to execute their bodies.
 SKIP = {
     "test_socket_guard_canary.py": "this runner",
-    "test_socket_access.py": "launches and kills a dev app",
-    "test_session_restore_unfocused_workspace_multi_window_cycle.py": "quits an app with pkill and osascript",
-    "test_session_restore_unfocused_workspace_relaunch_cycle.py": "quits an app with osascript",
-    "test_atlas_build_slots.py": "takes the shared build lock",
+    "test_socket_access.py": "refuses without C11_TEST_ALLOW_LIVE_APP; launches and kills a dev app",
+    "test_session_restore_unfocused_workspace_multi_window_cycle.py": "refuses without C11_TEST_ALLOW_LIVE_APP; pkills and quits an app",
+    "test_session_restore_unfocused_workspace_relaunch_cycle.py": "refuses without C11_TEST_ALLOW_LIVE_APP; pkills and quits an app",
+    "test_atlas_build_slots.py": "refuses without C11_TEST_ALLOW_LIVE_APP; takes the shared build lock",
+    "test_cmd_option_t_close_other_tabs_in_pane.py": "refuses without C11_TEST_ALLOW_LIVE_APP; sends the close-tabs shortcut",
 }
 
 # A live socket is accepted at startup. Tests that only wait on the missing

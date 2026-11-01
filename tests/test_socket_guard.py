@@ -4,19 +4,19 @@
 from __future__ import annotations
 
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import socket_guard
+
+socket_guard.install()
+
 import socket
 import subprocess
-import sys
 import tempfile
 import textwrap
 import threading
 import time
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import socket_guard
-
-socket_guard.install()
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TESTS_DIR)
@@ -379,6 +379,46 @@ def test_cmux_default_does_not_touch_canary() -> None:
         fail(f"cmux default connected to the canary ({accepted['n']})")
 
 
+def test_live_app_scripts_refuse_without_opt_in() -> None:
+    """Running a host-affecting file on a normal host exits before its body."""
+    for name in sorted(socket_guard.LIVE_APP_SCRIPTS):
+        env = os.environ.copy()
+        env.pop(socket_guard.LIVE_APP_ENV, None)
+        for key in socket_guard.SOCKET_ENV_KEYS:
+            env[key] = socket_guard.SENTINEL
+        proc = subprocess.run(
+            [sys.executable, os.path.join(TESTS_DIR, name)],
+            cwd=REPO,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        if proc.returncode != 2 or f"refusing to start {name}" not in proc.stderr:
+            fail(
+                f"live app refusal {name}\n"
+                f"code={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+            )
+        if proc.stdout.strip():
+            fail(f"live app script {name} printed before refusing:\n{proc.stdout}")
+
+    script = textwrap.dedent(
+        f"""
+        import os, sys
+        sys.path.insert(0, {TESTS_DIR!r})
+        os.environ[{socket_guard.LIVE_APP_ENV!r}] = "1"
+        import socket_guard
+        for name in sorted(socket_guard.LIVE_APP_SCRIPTS):
+            socket_guard.refuse_live_app(name)
+        print("allowed")
+        """
+    )
+    result = fresh(script)
+    if result.returncode != 0 or result.stdout.strip() != "allowed":
+        fail(f"live app opt-in\nstdout={result.stdout}\nstderr={result.stderr}")
+
+
 def main() -> int:
     tests = [
         test_install_scrubs_to_sentinel,
@@ -390,6 +430,7 @@ def main() -> int:
         test_existing_foreign_env_is_refused,
         test_well_known_bind_requires_allow,
         test_cmux_default_does_not_touch_canary,
+        test_live_app_scripts_refuse_without_opt_in,
     ]
     for test in tests:
         test()

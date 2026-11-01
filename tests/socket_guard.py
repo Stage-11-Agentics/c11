@@ -88,6 +88,21 @@ _orig_popen = subprocess.Popen
 _orig_mkdtemp = tempfile.mkdtemp
 
 
+# These scripts pkill, open, or quit an app, take the shared build lock, or
+# send the close-tabs shortcut. The socket scrub does not stop that. A normal
+# host must not start them. A sandbox guest exports the opt-in.
+LIVE_APP_ENV = "C11_TEST_ALLOW_LIVE_APP"
+LIVE_APP_SCRIPTS = frozenset(
+    {
+        "test_atlas_build_slots.py",
+        "test_cmd_option_t_close_other_tabs_in_pane.py",
+        "test_session_restore_unfocused_workspace_multi_window_cycle.py",
+        "test_session_restore_unfocused_workspace_relaunch_cycle.py",
+        "test_socket_access.py",
+    }
+)
+
+
 def red_proof_requested() -> bool:
     """True only for the canary's deliberate unguarded run."""
     return (
@@ -96,9 +111,25 @@ def red_proof_requested() -> bool:
     )
 
 
+def refuse_live_app(script_name: str) -> None:
+    """Exit before a host-affecting script can start, unless a guest opted in."""
+    if script_name not in LIVE_APP_SCRIPTS:
+        return
+    if os.environ.get(LIVE_APP_ENV) == "1":
+        return
+    print(
+        f"refusing to start {script_name} on a normal host. "
+        f"Set {LIVE_APP_ENV}=1 in a sandbox guest.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def install() -> None:
     """Scrub the environment and arm the connect and subprocess refusals."""
     global _installed
+    script = os.path.basename(sys.argv[0]) if sys.argv else ""
+    refuse_live_app(script)
     if red_proof_requested():
         return
     with _lock:

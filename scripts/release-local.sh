@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Production release of c11 without GitHub Actions.
+# Production release of c11 without GitHub Actions (the release path, C11-542).
 #
-# Mirrors .github/workflows/release.yml step for step, split by machine:
-#   Atlas    the heavy Release build (scripts/remote-build.sh --mode release)
-#   Hyperion the light tail: daemon assets, Sparkle keys, codesign, notarize,
-#            staple, DMG, Sparkle appcast, GitHub release, Homebrew cask
-#            dispatch, Sentry dSYMs (after publishing)
+# Mirrors .github/workflows/release.yml step for step. On Atlas, with
+# --host local and C11_SIGNING_KEYCHAIN, it runs end to end there: the build in
+# place, then daemon assets, Sparkle keys, codesign, notarize, staple, DMG,
+# Sparkle appcast, GitHub release, Homebrew cask dispatch and Sentry dSYMs
+# (after publishing), signed from Atlas's release keychain. Without those two,
+# it builds on Atlas over ssh and runs the tail on the calling Mac from its
+# login keychain.
 #
 # gh release create/upload use the REST API, so GitHub Actions billing does
 # not apply. Run from a clean checkout of the release tag:
@@ -465,11 +467,15 @@ else
   mkdir -p "$OUT/pristine"
   host_rsync -a "$(host_path "$REMOTE_PRODUCTS/c11.app")" "$OUT/pristine/"
   [[ -d "$PRISTINE" ]] || die "pristine c11.app not retrieved"
-  if [[ "$SENTRY_WANTED" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
-    note "fetching dSYMs for Sentry"
-    mkdir -p "$OUT/pristine/dsyms"
-    host_rsync -a $(host_path "$REMOTE_PRODUCTS")/*.dSYM "$OUT/pristine/dsyms/" \
-      || die "could not fetch dSYMs from $HOST"
+  # The dSYMs travel with the pristine app on every run, dry runs included, so
+  # a later --reuse-build of this build can upload them to Sentry.
+  note "fetching dSYMs with the pristine build"
+  mkdir -p "$OUT/pristine/dsyms"
+  if ! host_rsync -a $(host_path "$REMOTE_PRODUCTS")/*.dSYM "$OUT/pristine/dsyms/"; then
+    if [[ "$SENTRY_WANTED" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
+      die "could not fetch dSYMs from $HOST"
+    fi
+    note "WARNING: could not fetch dSYMs from $HOST; a later --reuse-build with Sentry will refuse this build"
   fi
 
   for rel in MacOS/c11 Resources/bin/c11 Resources/bin/ghostty; do
@@ -811,7 +817,6 @@ if [[ "$SKIP_SENTRY" -eq 1 ]]; then
 elif [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
   note "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"
 elif [[ "$DRY_RUN" -eq 1 ]]; then
-  would rsync -a "$(host_path "$REMOTE_PRODUCTS")/*.dSYM" "$OUT/pristine/dsyms/"
   would env SENTRY_ORG="$SENTRY_ORG" SENTRY_PROJECT="$SENTRY_PROJECT" sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/"
 elif ! command -v sentry-cli >/dev/null 2>&1; then
   note "sentry-cli not installed (brew install getsentry/tools/sentry-cli); skipping dSYM upload"

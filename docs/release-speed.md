@@ -16,7 +16,7 @@ PR CI, the hourly backstop and Drawbridge timings are recorded per attempt by `c
 | v1.6.0 | 1932 | 1581 | 34 | 129 | 66 | 22 | 13 |
 | v1.7.0 | 2113 | 1857 | 24 | 94 | 8 | 20 | 14 |
 
-The build is 84-87% of the job. In v1.5.1's 2383 s build: universal (arm64 + x86_64) whole-module `-O` Swift compile about 1555 s, the uncached `zig build cli-helper` about 538 s, dependencies and the CLI about 235 s, link and dSYM about 55 s. DerivedData is not cached; Swift packages are. The same universal Release build on Atlas (M2 Ultra) takes 172 s fresh and 20 s warm, but Atlas has Xcode 26.x, while releases are pinned to Xcode 16.4 (`RELEASE_DTXCODE` in `scripts/release-local.sh`).
+The build is 84-88% of the job. In v1.5.1's 2383 s build: universal (arm64 + x86_64) whole-module `-O` Swift compile about 1555 s, the uncached `zig build cli-helper` about 538 s, dependencies and the CLI about 235 s, link and dSYM about 55 s. DerivedData is not cached; Swift packages are. The same universal Release build on Atlas (M2 Ultra) took 172 s fresh and 20 s warm. That baseline (to v1.7.0) was built with Xcode 16.4; releases are now pinned to Xcode 26.3 (see Release path below).
 
 The appcast step used to clone Sparkle and xcodebuild its tools on every release (70-102 s). It now downloads the pinned, checksum-verified tarball through `scripts/fetch-sparkle-tools.sh` (8 s cold). The Sentry dSYM upload (continue-on-error) runs after the release upload, so it is off the tag-to-published path.
 
@@ -56,7 +56,7 @@ The `test_default_local_lock_remains_single_slot` failure (`2 != 1`, seen on #80
 | P1 | Release heads skip the guest yield, or reuse a main pass when the release tree is that commit plus version and changelog | ~18 min of prep (v1.6.0) | Lead (poller) |
 | P2 | A green cold `pr-swift` run posts success instead of pending plus a rerun | ~4.5 min when cold | Lead (poller) |
 | Q2 | Shard `CLIResolutionSnapshotTests` | `pr-swift` ~300 s to ~150 s | C11-538 B |
-| B | Release on Atlas through `release-local.sh`: the build runs before the go, then sign, notarize and publish on Atlas | ~30 min | C11-542, C11-541 |
+| B | Release on Atlas through `release-local.sh`: the build runs before the go, then sign, notarize and publish on Atlas | ~30 min | done (C11-542, C11-541) |
 
 ## Release path (C11-542, C11-541)
 

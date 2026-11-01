@@ -51,17 +51,50 @@ if [[ "$mode" != "check" ]]; then
 fi
 command -v sentry-cli >/dev/null || { echo "sentry-cli is not installed on Atlas" >&2; exit 1; }
 # Armed before the request: an unlock whose probe then fails still relocks.
-trap "bounded 30 \"$helper\" lock $$ >/dev/null 2>&1 || true" EXIT
+leases="${C11_SIGNING_LEASES:-$HOME/.acetate-release/leases}"
+# The exit handler relocks, then checks the real lock state: a helper that
+# could not lock must not leave a success behind. Another live release lease
+# is the one legitimate reason to find the keychain unlocked.
+finish() {
+  local rc=$? state="" others="" f p try
+  for try in 1 2; do
+    bounded 30 "$helper" lock $$ >/dev/null 2>&1 || true
+    others=""
+    for f in "$leases"/*; do
+      [[ -e "$f" ]] || continue
+      p="${f##*/}"
+      [[ "$p" != "$$" ]] && kill -0 "$p" 2>/dev/null && others="$others $p"
+    done
+    state="$(bounded 30 "$helper" status 2>/dev/null || echo error)"
+    [[ "$state" == locked || -n "$others" ]] && break
+  done
+  if [[ "$state" != locked && -z "$others" ]]; then
+    echo "cleanup FAILED: the release keychain is ${state:-unknown} and no other release holds a lease; lock it: $helper lock" >&2
+    [[ $rc -eq 0 ]] && rc=75
+  fi
+  exit $rc
+}
+trap finish EXIT
 bounded 60 "$helper" request-unlock 120 $$ >/dev/null
 if [[ "$mode" != "check" ]]; then
-  # Replace, not update: changing an existing item access list needs a prompt
-  # that a non-GUI session cannot answer.
-  bounded 30 security delete-generic-password -s "$service" -a "$org" "$kc" >/dev/null 2>&1 || true
-  printf "add-generic-password -s %s -a %s -T /usr/bin/security -w %s %s\n" \
-    "$service" "$org" "$token" "$kc" | bounded 30 security -i >/dev/null
-  unset token
+  # Never delete first, so no credential is lost on a failed store. An existing
+  # item is updated in place with -U and no -T (its access list is kept; a -T
+  # would ask to change it, which a non-GUI session cannot); a new item is
+  # created trusting /usr/bin/security.
+  if bounded 30 security find-generic-password -s "$service" -a "$org" "$kc" >/dev/null 2>&1; then
+    printf "add-generic-password -U -s %s -a %s -w %s %s\n" "$service" "$org" "$token" "$kc" | bounded 30 security -i >/dev/null
+  else
+    printf "add-generic-password -s %s -a %s -T /usr/bin/security -w %s %s\n" "$service" "$org" "$token" "$kc" | bounded 30 security -i >/dev/null
+  fi
+  stored="$(bounded 30 security find-generic-password -s "$service" -a "$org" -w "$kc" 2>/dev/null || true)"
+  [[ "$stored" == "$token" ]] || { unset token stored; echo "store did not take; the previous item, if any, is unchanged" >&2; echo failed; exit 1; }
+  unset token stored
 fi
-bounded 30 security find-generic-password -s "$service" -a "$org" "$kc" >/dev/null 2>&1 || { echo missing; exit 0; }
+if ! bounded 30 security find-generic-password -s "$service" -a "$org" "$kc" >/dev/null 2>&1; then
+  echo missing
+  [[ "$mode" == "check" ]] && exit 0
+  exit 1
+fi
 # An org auth token carries only the CI scope (uploads and releases), so the
 # check lists the releases of the project: read-only, and it fails on a bad token.
 if SENTRY_AUTH_TOKEN="$(bounded 30 security find-generic-password -s "$service" -a "$org" -w "$kc")" \

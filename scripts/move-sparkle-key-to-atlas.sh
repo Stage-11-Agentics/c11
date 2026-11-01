@@ -61,16 +61,43 @@ if [[ "$mode" != "check" ]]; then
 fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/c11-key-move.XXXXXX")"
 # Armed before the request: an unlock whose probe then fails still relocks.
-trap "bounded 30 \"$helper\" lock $$ >/dev/null 2>&1 || true; /bin/rm -rf \"$work\"" EXIT
+leases="${C11_SIGNING_LEASES:-$HOME/.acetate-release/leases}"
+# The exit handler relocks, then checks the real lock state: a helper that
+# could not lock must not leave a success behind. Another live release lease
+# is the one legitimate reason to find the keychain unlocked.
+finish() {
+  local rc=$? state="" others="" f p try
+  for try in 1 2; do
+    bounded 30 "$helper" lock $$ >/dev/null 2>&1 || true
+    others=""
+    for f in "$leases"/*; do
+      [[ -e "$f" ]] || continue
+      p="${f##*/}"
+      [[ "$p" != "$$" ]] && kill -0 "$p" 2>/dev/null && others="$others $p"
+    done
+    state="$(bounded 30 "$helper" status 2>/dev/null || echo error)"
+    [[ "$state" == locked || -n "$others" ]] && break
+  done
+  if [[ "$state" != locked && -z "$others" ]]; then
+    echo "cleanup FAILED: the release keychain is ${state:-unknown} and no other release holds a lease; lock it: $helper lock" >&2
+    [[ $rc -eq 0 ]] && rc=75
+  fi
+  /bin/rm -rf "$work"
+  exit $rc
+}
+trap finish EXIT
 bounded 60 "$helper" request-unlock 120 $$ >/dev/null
 if [[ "$mode" == "check" ]]; then
   bounded 30 security find-generic-password -s "$service" -a "$account" "$kc" >/dev/null 2>&1 || { echo missing; exit 0; }
 else
-  # Replace, not update: changing an existing item access list needs a prompt
-  # that a non-GUI session cannot answer (a rerun after rotating the key).
-  bounded 30 security delete-generic-password -s "$service" -a "$account" "$kc" >/dev/null 2>&1 || true
-  printf "add-generic-password -s %s -a %s -T /usr/bin/security -w %s %s\n" \
-    "$service" "$account" "$key" "$kc" | bounded 30 security -i >/dev/null
+  # Never delete first, so no key is lost on a failed store. An existing item is
+  # updated in place with -U and no -T (its access list is kept; a -T would ask
+  # to change it, which a non-GUI session cannot); a new item trusts security.
+  if bounded 30 security find-generic-password -s "$service" -a "$account" "$kc" >/dev/null 2>&1; then
+    printf "add-generic-password -U -s %s -a %s -w %s %s\n" "$service" "$account" "$key" "$kc" | bounded 30 security -i >/dev/null
+  else
+    printf "add-generic-password -s %s -a %s -T /usr/bin/security -w %s %s\n" "$service" "$account" "$key" "$kc" | bounded 30 security -i >/dev/null
+  fi
   unset key
 fi
 derive="$work/derive.swift"

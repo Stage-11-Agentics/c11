@@ -135,6 +135,11 @@ final class PanelLineage {
         return store.node(panelId: panelId)
     }
 
+    /// Parent links are fixed at insertion; reading one needs no identity refresh.
+    func parentPanelId(panelId: UUID) -> UUID? {
+        store.node(panelId: panelId)?.parentPanelId
+    }
+
     func family(startingAt panelId: UUID) -> (rootId: UUID, nodes: [PanelLineageNode])? {
         for node in store.snapshot() where !node.isClosed { refreshLiveNode(node.id) }
         return store.family(startingAt: panelId)

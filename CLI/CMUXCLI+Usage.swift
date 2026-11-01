@@ -46,6 +46,7 @@ extension CMUXCLI {
           version
           guide [page] [--json]       Print this build's bundled skill (alias: --skill)
           capabilities
+          fleet [--json]              Agent state across every window and workspace
           rpc <method> [json] [--json]
           brand [--json]
           history [list] [--json] [--limit <1...200>]

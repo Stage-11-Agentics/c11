@@ -21,6 +21,7 @@ struct CapabilityFeatures {
         case markdownAgentCLI = "markdown.agent_cli"
         case panelLinks = "links.panel"
         case terminalLinks = "links.terminal"
+        case fleet = "fleet"
     }
 
     struct Entry {
@@ -53,6 +54,7 @@ struct CapabilityFeatures {
         Entry(id: .markdownAgentCLI, version: 1, enabled: true),
         Entry(id: .panelLinks, version: 1, enabled: true),
         Entry(id: .terminalLinks, version: 1, enabled: true),
+        Entry(id: .fleet, version: 1, enabled: true),
     ])
 
     private let entries: [ID: Entry]

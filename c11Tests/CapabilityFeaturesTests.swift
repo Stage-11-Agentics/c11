@@ -67,6 +67,8 @@ final class CapabilityFeaturesTests: XCTestCase {
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.feedAsks.rawValue))
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.markdownAgentCLI.rawValue))
         XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.terminalInputState.rawValue))
+        XCTAssertTrue(featureIDs.contains(CapabilityFeatures.ID.fleet.rawValue))
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "system.fleet"), .socketWorker)
     }
 
     @MainActor

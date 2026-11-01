@@ -538,7 +538,7 @@ extension CMUXCLI {
         // Hooks keep their socket budget: the app follows the panel each hook
         // names, and turn-boundary drains find a moved inbox themselves.
         // Commands that never default to the caller's workspace skip it.
-        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents", "link"].contains(command),
+        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents", "fleet", "link"].contains(command),
            !Self.isMailboxHookDrain(command: command, commandArgs: commandArgs),
            Self.followCallerPanelWorkspace(client: client) == .connectionSuspect {
             client.close()
@@ -556,6 +556,10 @@ extension CMUXCLI {
         }
         if command == "agents" {
             try runAgentsLive(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+            return
+        }
+        if command == "fleet" {
+            try runFleetCommand(client: client, jsonOutput: jsonOutput)
             return
         }
 

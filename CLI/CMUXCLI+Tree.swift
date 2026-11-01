@@ -15,6 +15,30 @@ import Sentry
 
 extension CMUXCLI {
 
+    func runFleetCommand(client: SocketClient, jsonOutput: Bool) throws {
+        let response = try client.sendV2(method: "system.fleet")
+        if jsonOutput {
+            // The versioned fleet schema always carries UUIDs, never short refs.
+            print(jsonString(response))
+            return
+        }
+        func cell(_ value: Any?, width: Int) -> String {
+            let text = value is NSNull || value == nil ? "-" : String(describing: value!)
+            let safe = String(String.UnicodeScalarView(text.unicodeScalars.map {
+                CharacterSet.controlCharacters.contains($0) ? UnicodeScalar(32)! : $0
+            }))
+            let clipped = safe.count > width ? String(safe.prefix(width - 1)) + "…" : safe
+            return clipped.padding(toLength: width, withPad: " ", startingAt: 0)
+        }
+        // Headers are schema field names, shared with JSON and the API reference.
+        let columns = [("workspace_title", 24), ("panel_title", 28), ("agent_type", 12),
+                       ("model", 20), ("lifecycle", 9), ("flag", 5), ("mailbox_unread_count", 20)]
+        print(columns.map { cell($0.0, width: $0.1) }.joined(separator: "  "))
+        for panel in response["panels"] as? [[String: Any]] ?? [] {
+            print(columns.map { cell(panel[$0.0], width: $0.1) }.joined(separator: "  "))
+        }
+    }
+
     enum TreeScope: String {
         case workspace
         case window

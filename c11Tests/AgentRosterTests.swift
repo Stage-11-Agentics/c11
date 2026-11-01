@@ -347,6 +347,41 @@ final class AgentRosterTests: XCTestCase {
         return retained(draft, sequence: sequence, committedAtMs: 10_000 + sequence, effect: effect, attribution: attribution, toPhase: toPhase)
     }
 
+    func testFleetLastTurnEndRejectsAdvisoryAndKeepsEndAcrossNewTurn() throws {
+        let completed = retained(.turnCompleted, sequence: 2, native: "Stop", toPhase: .idle)
+        let working = retained(.turnStarted, sequence: 3, native: "UserPromptSubmit", toPhase: .working)
+        let advisory = retained(.turnCompleted, sequence: 4, native: "Stop", effect: .advisory, toPhase: .idle)
+        let unresolved = retained(.turnInterrupted, sequence: 5, native: "interrupt", toPhase: .blocked)
+        let unattributed = retained(.turnCompleted, sequence: 6, native: "Stop", attribution: "unattributed", toPhase: .idle)
+        let rows = [unattributed, unresolved, advisory, working, completed]
+        XCTAssertEqual(AgentRoster.lastTurnEndMs(eventsNewestFirst: rows), 10_002)
+        XCTAssertNil(AgentRoster.lastTurnEndMs(throughSequence: 1, eventsNewestFirst: rows))
+        XCTAssertNil(AgentRoster.lastTurnEndMs(eventsNewestFirst: [working]))
+    }
+
+    func testFleetEndCacheFollowsAppliedJournalAndOwnerChanges() throws {
+        let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try JournalStore(layout: .init(directory: directory), clock: { 1000 })
+        let coordinator = JournalCoordinator(store: store)
+        var start = JournalTestData.draft(.turnStarted)
+        start.turnID = "first"
+        coordinator.register(panelID: JournalTestData.panel, workspaceID: JournalTestData.workspace)
+        coordinator.setOwner(panelID: JournalTestData.panel, owner: start.owner)
+        _ = try coordinator.append(start)
+        XCTAssertNil(coordinator.cachedLastTurnEndedMs(panelID: JournalTestData.panel))
+        var stop = JournalTestData.draft(.turnCompleted)
+        stop.turnID = "first"
+        let end = try coordinator.append(stop)
+        XCTAssertEqual(end.receipt.projectionEffect, .applied)
+        XCTAssertEqual(coordinator.cachedLastTurnEndedMs(panelID: JournalTestData.panel), 1000)
+        start.eventID = UUID(); start.turnID = "second"
+        _ = try coordinator.append(start)
+        XCTAssertEqual(coordinator.cachedLastTurnEndedMs(panelID: JournalTestData.panel), 1000)
+        coordinator.setOwner(panelID: JournalTestData.panel, owner: nil)
+        XCTAssertNil(coordinator.cachedLastTurnEndedMs(panelID: JournalTestData.panel))
+    }
+
     private func retained(
         _ draft: JournalDraft,
         sequence: Int64,

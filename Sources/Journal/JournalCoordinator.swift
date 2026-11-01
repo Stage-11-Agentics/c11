@@ -10,6 +10,7 @@ final class JournalCoordinator: @unchecked Sendable {
     private var targets: [UUID: UUID] = [:]
     private var snapshots: [UUID: JournalSnapshot] = [:]
     private var turnStartedMs: [UUID: Int64] = [:]
+    private var lastTurnEnds: [UUID: (sequence: Int64, ms: Int64)] = [:]
     private var openAsks: [UUID: JournalOpenAsk] = [:]
     private var responseGate = OperatorResponseGate()
     private var store: JournalStore?
@@ -49,6 +50,7 @@ final class JournalCoordinator: @unchecked Sendable {
         targets.removeValue(forKey: panelID)
         let hadProjection = snapshots.removeValue(forKey: panelID) != nil
         turnStartedMs.removeValue(forKey: panelID)
+        lastTurnEnds.removeValue(forKey: panelID)
         openAsks.removeValue(forKey: panelID)
         responseGate.clear(panel: panelID)
         let callback = sink
@@ -64,6 +66,7 @@ final class JournalCoordinator: @unchecked Sendable {
         owners[panelID] = owner
         let hadProjection = snapshots.removeValue(forKey: panelID) != nil
         turnStartedMs.removeValue(forKey: panelID)
+        lastTurnEnds.removeValue(forKey: panelID)
         openAsks.removeValue(forKey: panelID)
         responseGate.clear(panel: panelID)
         let callback = sink
@@ -138,6 +141,7 @@ final class JournalCoordinator: @unchecked Sendable {
         lock.lock()
         let panelIDs = Array(snapshots.keys)
         snapshots.removeAll()
+        lastTurnEnds.removeAll()
         storageError = nil
         let callback = sink
         lock.unlock()
@@ -305,6 +309,11 @@ final class JournalCoordinator: @unchecked Sendable {
         return turnStartedMs[panelID]
     }
 
+    func cachedLastTurnEndedMs(panelID: UUID) -> Int64? {
+        lock.lock(); defer { lock.unlock() }
+        return lastTurnEnds[panelID]?.ms
+    }
+
     func registeredTargets() -> [UUID: UUID] {
         lock.lock(); defer { lock.unlock() }
         return targets
@@ -387,6 +396,13 @@ final class JournalCoordinator: @unchecked Sendable {
         guard result.receipt.projectionEffect == .applied, let panel = draft.panelID, let snap = result.changedSnapshot else { return }
         lock.lock()
         defer { lock.unlock() }
+        guard owners[panel] == snap.owner, targets[panel] == snap.workspaceID else { return }
+        if [.turnCompleted, .turnInterrupted].contains(draft.kind), result.toPhase == .idle,
+           result.receipt.sequence > (lastTurnEnds[panel]?.sequence ?? -1) {
+            let ms = draft.timeQuality == .nativeLocal
+                ? (draft.occurredAtMs ?? result.receipt.committedAtMs) : result.receipt.committedAtMs
+            lastTurnEnds[panel] = (result.receipt.sequence, ms)
+        }
         if draft.kind == .turnStarted, snap.turnID == nil || snap.turnID == draft.turnID {
             let ms = draft.timeQuality == .nativeLocal ? (draft.occurredAtMs ?? result.receipt.committedAtMs) : result.receipt.committedAtMs
             turnStartedMs[panel] = ms
@@ -418,6 +434,7 @@ final class JournalCoordinator: @unchecked Sendable {
         let page = try store.retainedOwnerEvents(
             owner: snap.owner, throughSequence: snap.lastSequence, limit: AgentRoster.restoreLimit)
         let turn = AgentRoster.turnStartMs(turnID: snap.turnID, throughSequence: snap.lastSequence, eventsNewestFirst: page.events)
+        let ended = AgentRoster.lastTurnEndMs(throughSequence: snap.lastSequence, eventsNewestFirst: page.events)
         let restored = AgentRoster.restoredAsk(snapshot: snap, eventsNewestFirst: page.events)
         lock.lock()
         defer { lock.unlock() }
@@ -425,6 +442,7 @@ final class JournalCoordinator: @unchecked Sendable {
               snapshots[panel]?.owner == snap.owner,
               (snapshots[panel]?.lastSequence ?? Int64.max) <= snap.lastSequence else { return }
         if turnStartedMs[panel] == nil, let turn { turnStartedMs[panel] = turn }
+        if lastTurnEnds[panel] == nil, let ended { lastTurnEnds[panel] = (snap.lastSequence, ended) }
         if openAsks[panel] == nil, let restored, let workspace = snap.workspaceID {
             openAsks[panel] = JournalOpenAsk(
                 owner: snap.owner, workspaceID: workspace, requestID: restored.requestID,

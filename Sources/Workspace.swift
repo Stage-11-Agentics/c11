@@ -5029,7 +5029,15 @@ final class Workspace: Identifiable, ObservableObject {
     /// Stable project-level cwd. Every new terminal surface in the workspace
     /// starts here (see `newSurfaceWorkingDirectory`). Unlike
     /// `currentDirectory`, this does not follow shell navigation.
-    @Published private(set) var rootDirectory: String?
+    @Published private(set) var rootDirectory: String? {
+        didSet { if oldValue != rootDirectory { refreshMissionObservation() } }
+    }
+    @Published private(set) var mission: WorkspaceMission?
+    private lazy var missionBinding = WorkspaceMissionBinding { [weak self] value in
+        guard let self, self.mission != value else { return }
+        self.mission = value
+    }
+    var missionRoot: String? { remoteConfiguration == nil ? rootDirectory : nil }
     /// C11-238: armed while the workspace has no root, so the first cwd its
     /// focused shell reports (other than home or `/`) becomes the root. Any
     /// root assignment or clear disarms it, so auto-adoption never overrides
@@ -5313,7 +5321,9 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var pullRequest: SidebarPullRequestState?
     @Published var panelPullRequests: [UUID: SidebarPullRequestState] = [:]
     @Published var panelListeningPorts: [UUID: [Int]] = [:]
-    @Published var remoteConfiguration: WorkspaceRemoteConfiguration?
+    @Published var remoteConfiguration: WorkspaceRemoteConfiguration? {
+        didSet { refreshMissionObservation() }
+    }
     @Published var remoteConnectionState: WorkspaceRemoteConnectionState = .disconnected
     @Published var remoteConnectionDetail: String?
     @Published var remoteDaemonStatus: WorkspaceRemoteDaemonStatus = WorkspaceRemoteDaemonStatus()
@@ -6129,6 +6139,7 @@ final class Workspace: Identifiable, ObservableObject {
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)
             }
+        refreshMissionObservation()
     }
 
     deinit {
@@ -8782,6 +8793,10 @@ final class Workspace: Identifiable, ObservableObject {
     func setRootDirectory(_ directory: String?) {
         rootDirectory = Self.normalizedRootDirectory(directory)
         rootAdoptionArmed = false
+    }
+
+    private func refreshMissionObservation() {
+        missionBinding.setRoot(missionRoot)
     }
 
     /// Session restore: keep the persisted root. A rootless snapshot stays
@@ -14896,12 +14911,14 @@ extension Workspace: BonsplitDelegate {
         // the identity the sidebar needs itself — no agent round-trip: the
         // type comes from `AgentDetector`, and we stamp the overlay-resolved
         // model plus a placeholder title here. An operator who configured a
-        // launch prompt still gets it delivered below (a staged file instruction for
-        // claude-code, post-ready sendText for other TUIs is a follow-up).
+        // launch prompt and workspace mission are staged off-main below and
+        // delivered using the harness's declared prompt-delivery mode.
         stampLaunchIdentity(surfaceId: panel.id, resolvedModel: resolvedModel)
-        panel.submitConfiguredAgentLaunch(agent: agent, launch: launch) { [weak self, weak panel] in
+        let missionRoot = self.missionRoot
+        panel.submitConfiguredAgentLaunch(agent: agent, launch: launch, missionRoot: missionRoot) { [weak self, weak panel] in
             guard let self, let panel else { return false }
             return self.terminalPanel(for: panel.id) === panel
+                && self.missionRoot == missionRoot
                 && self.bonsplitController.allPaneIds.contains(pane)
         }
         // C11-178 rail-1: record the launch off the critical path, now with the

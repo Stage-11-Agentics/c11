@@ -9183,6 +9183,7 @@ struct WorkspaceSidebar: View {
             availableGroups: workspaceManager.workspaceGroups,
             isActive: isActive,
             worktreeChipRows: worktreeChipRows,
+            missionSnapshot: ws.mission,
             canCloseWorkspace: canCloseWorkspace,
             accessibilityWorkspaceCount: workspaceCount,
             unreadCount: unreadCount,
@@ -12450,6 +12451,7 @@ private struct WorkspaceRowView: View, Equatable {
         lhs.availableGroups == rhs.availableGroups &&
         lhs.isActive == rhs.isActive &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
+        lhs.missionSnapshot == rhs.missionSnapshot &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
         lhs.unreadCount == rhs.unreadCount &&
@@ -12484,6 +12486,9 @@ private struct WorkspaceRowView: View, Equatable {
     /// not in a git directory. Keeping the projection upstream means
     /// the TabItemView body does zero IO/git work.
     let worktreeChipRows: [WorktreeChipRow]
+    /// Equality snapshot for parent updates. The already-observed workspace
+    /// also publishes file edits directly; the body reads its precomputed value.
+    let missionSnapshot: WorkspaceMission?
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
     let unreadCount: Int
@@ -13269,7 +13274,7 @@ private struct WorkspaceRowView: View, Equatable {
             AnyHashable(copyableSidebarSSHError), workspace.listeningPorts,
             AnyHashable(workspace.logEntries.last?.message), AnyHashable(workspace.logEntries.last?.level.rawValue),
             AnyHashable(workspace.progress?.value), AnyHashable(workspace.progress?.label),
-            AnyHashable(workspace.progress?.timestamp)
+            AnyHashable(workspace.progress?.timestamp), AnyHashable(workspace.mission)
         ]
         for block in workspace.sidebarMetadataBlocksInDisplayOrder() {
             values.append(contentsOf: [AnyHashable(block.key), AnyHashable(block.markdown),
@@ -13286,6 +13291,7 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func cardContents(compact: Bool) -> some View {
+        let mission = workspace.mission
         let closeWorkspaceTooltip = String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close Workspace")
         let detailVisibility = visibleAuxiliaryDetails
         // C11-104 v2 — branch+directory text-line precomputes retired.
@@ -13366,6 +13372,16 @@ private struct WorkspaceRowView: View, Equatable {
             if compact {
                 tileSecondRow
             } else {
+            if !sidebarHideAllDetails, !isMinimalMode, let mission {
+                Text(verbatim: mission.summary)
+                    .font(.system(size: chromeTokens.sidebarWorkspaceDetail))
+                    .foregroundColor(activeSecondaryColor())
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .safeHelp(mission.tooltip)
+                    .accessibilityLabel(String(localized: "sidebar.mission.label", defaultValue: "Mission"))
+                    .accessibilityValue(mission.paragraph)
+            }
             workspacePulseSummaries
 
             workspacePulseFooter
@@ -13634,6 +13650,7 @@ private struct WorkspaceRowView: View, Equatable {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.workspace.\(workspace.id.uuidString)")
         .accessibilityLabel(Text(accessibilityTitle))
+        .accessibilityValue(Text(workspace.mission?.paragraph ?? ""))
         .accessibilityHint(Text(accessibilityHintText))
         .accessibilityAction(named: Text(moveUpActionText)) {
             moveBy(-1)

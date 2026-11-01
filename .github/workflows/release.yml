@@ -167,7 +167,7 @@ jobs:
       - name: Build app (Release)
         if: steps.guard_release_assets.outputs.skip_all != 'true'
         run: |
-          # Apple silicon only since 1.8 (C11-541); 1.7.0 is the last universal build.
+          # Apple silicon only since 1.7.5 (C11-541); 1.7.0 is the last universal build.
           xcodebuild -scheme c11 -configuration Release -derivedDataPath build \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath .spm-cache \

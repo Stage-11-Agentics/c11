@@ -488,7 +488,7 @@ fi
 verify_pristine
 ARCHS="$(lipo -archs "$PRISTINE/Contents/MacOS/c11")" || die "lipo failed"
 note "architectures: $ARCHS"
-# Apple silicon only since 1.8 (C11-541); 1.7.0 is the last universal build.
+# Apple silicon only since 1.7.5 (C11-541); 1.7.0 is the last universal build.
 [[ "$ARCHS" == "arm64" ]] || die "app architectures are '$ARCHS'; releases are arm64-only"
 for binary in Resources/bin/c11 Resources/bin/ghostty; do
   bin_archs="$(lipo -archs "$PRISTINE/Contents/$binary")" || die "lipo failed on $binary"

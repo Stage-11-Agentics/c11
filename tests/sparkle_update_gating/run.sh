@@ -135,7 +135,7 @@ make_dmg() { # name binary short-version build
 make_dmg arm64 "$build/hello-arm64" 2.0.0 200
 make_dmg universal "$build/hello-universal" 1.6.0 160
 # A nightly payload numbered like nightly.yml (run id + two-digit attempt).
-make_dmg nightly "$build/hello-arm64" 1.8.0-nightly 3799999999901
+make_dmg nightly "$build/hello-arm64" 1.7.5-nightly 3799999999901
 # Hosts: 0.x (131), 1.0.0 (132), 1.x (160), the last Sparkle 2.8.1 nightly and the first 2.9.3 one.
 for b in 131:0.67.0 132:1.0.0 160:1.6.0 3684650524801:0.67.0-nightly 3711499935701:1.0.0-nightly; do
   mkdir -p "$build/FakeC11-${b%%:*}.app/Contents"

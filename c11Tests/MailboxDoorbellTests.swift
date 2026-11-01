@@ -2348,3 +2348,178 @@ final class TurnlessReringTests: XCTestCase {
         XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "other|attach", hasTurnEdge: false))
     }
 }
+
+/// C11-557: an OpenCode 2 hold after an ambiguous native failure. The
+/// exact snapshot stays off typed delivery while c11 waits for the plugin to
+/// reconnect and replay the same attempt, but only for a bounded time.
+final class OpenCodeHeldAttemptTests: XCTestCase {
+    private let hold = MailboxNativeDoorbell.openCodeReplayHold
+    private let failedAt = Date(timeIntervalSince1970: 1_000)
+    private let ambiguous = ["native_timeout", "native_disconnected", "native_write_failed",
+                             "native_replaced", "native_unavailable", "native_unconfirmed", "native_rejected"]
+
+    private func openCode2(replay: Bool = true) -> MailboxNativeDoorbell.Registration {
+        .init(id: UUID(), panelID: UUID(), agentPID: 123, processStart: 456,
+              sessionID: UUID().uuidString, route: .opencodePlugin, canQueue: false,
+              supportsAttemptReplay: replay)
+    }
+
+    private func held(_ reg: MailboxNativeDoorbell.Registration, _ reason: String) -> MailboxNativeDoorbell.Fallback {
+        .init(registration: reg, ids: ["mail-a"], reason: reason, failedAt: failedAt)
+    }
+
+    func testBoundIsAMinute() {
+        XCTAssertEqual(hold, 60)
+    }
+
+    /// The plugin never re-subscribes: the snapshot, and later mail with it,
+    /// is offered to the typed gate once the bound passes.
+    func testAmbiguousHoldLiftsForTypedDeliveryAfterTheBound() {
+        let reg = openCode2()
+        for reason in ambiguous {
+            let fallback = held(reg, reason)
+            XCTAssertEqual(fallback.typedHoldUntil, failedAt.addingTimeInterval(hold), reason)
+            XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                               now: failedAt.addingTimeInterval(hold - 1)),
+                          "\(reason): inside the bound the attempt waits for its replay")
+            XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a", "mail-b"], coveredIDs: [],
+                                               now: failedAt.addingTimeInterval(hold - 1)),
+                          "\(reason): later mail waits with it inside the bound")
+            XCTAssertFalse(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                                now: failedAt.addingTimeInterval(hold)),
+                           "\(reason): the held snapshot is offered again at the bound")
+            XCTAssertFalse(fallback.blocksTyped(unreadIDs: ["mail-a", "mail-b"], coveredIDs: [],
+                                                now: failedAt.addingTimeInterval(3_600)),
+                           "\(reason): it never waits indefinitely")
+        }
+    }
+
+    /// The stream that failed the attempt stays off native for those IDs at
+    /// any time, so a wedged open stream cannot loop timeouts and starve the
+    /// typed route. Only a new registration replays.
+    func testSameStreamStaysOffNativeAndANewRegistrationReplays() {
+        let reg = openCode2()
+        let fallback = held(reg, "native_timeout")
+        XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: []))
+        XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: [],
+                                            arrivingID: "mail-b"))
+        XCTAssertFalse(fallback.blocksNative(registrationID: UUID(), unreadIDs: ["mail-a"], coveredIDs: []))
+
+        // A reconnect inside the bound reuses the exact attempt for the same TUI.
+        let process = MailboxStdinBuffer.AgentProcess(pid: reg.agentPID, startTime: reg.processStart)
+        let attempt = MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: ["mail-a"])
+        XCTAssertEqual(MailboxNativeDoorbell.reusableAttempt(attempt, process: process, unreadIDs: ["mail-a", "mail-b"]),
+                       attempt)
+        XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                           now: failedAt.addingTimeInterval(30)),
+                      "nothing is typed while a reconnect inside the bound can still replay")
+        // A typed ring after the bound covers the snapshot, so a late
+        // reconnect finds nothing uncovered to replay.
+        XCTAssertFalse(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+        XCTAssertTrue(MailboxDoorbellSequence.unreadIsCovered(unreadIds: ["mail-a"], coveredIds: ["mail-a"]))
+    }
+
+    /// The half that fixes the symptom: a held look asks for a look at the
+    /// bound, so the hold lifts with no other event re-entering the ring.
+    func testHeldLookSchedulesALookWhenTheHoldLifts() {
+        let fallback = held(openCode2(), "native_disconnected")
+        var skips = 0
+        var rechecks: [TimeInterval] = []
+        func look(at offset: TimeInterval, unread: Set<String> = ["mail-a"]) -> Bool {
+            fallback.holdTypedLook(unreadIDs: unread, coveredIDs: [], now: failedAt.addingTimeInterval(offset),
+                                   skip: { skips += 1 }, recheck: { rechecks.append($0) })
+        }
+        XCTAssertTrue(look(at: 10))
+        XCTAssertEqual(rechecks, [hold - 10], "a held look re-looks when the hold lifts, measured from the failure")
+        XCTAssertTrue(look(at: 40, unread: ["mail-a", "mail-b"]))
+        XCTAssertEqual(rechecks, [hold - 10, hold - 40], "every held look asks again, so a replaced token is restored")
+        XCTAssertTrue(look(at: hold - 0.01))
+        XCTAssertEqual(rechecks.last, 0.05, "a look just before the bound takes one short hop, not a busy loop")
+        XCTAssertEqual(skips, 3)
+        XCTAssertFalse(look(at: hold), "at the bound the look goes to the typed route")
+        XCTAssertEqual(skips, 3)
+        XCTAssertEqual(rechecks.count, 3)
+
+        // A definite refusal is held with no timed look, as before.
+        let notReady = held(openCode2(), "native_not_ready")
+        var notReadyRechecks = 0
+        XCTAssertTrue(notReady.holdTypedLook(unreadIDs: ["mail-a"], coveredIDs: [],
+                                             now: failedAt.addingTimeInterval(3_600),
+                                             skip: {}, recheck: { _ in notReadyRechecks += 1 }))
+        XCTAssertEqual(notReadyRechecks, 0)
+    }
+
+    /// Grok's case: the typed ring at the bound covered A, B arrived after
+    /// it, and the plugin reconnects on the same TUI. The stale attempt X for
+    /// A must not be replayed; the new attempt names only B.
+    func testCoveredAttemptIsNotRevivedByLaterMail() throws {
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        let stale = MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: ["mail-a"])
+        let fresh = UUID()
+        let attempt = try XCTUnwrap(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: process, unreadIDs: ["mail-a", "mail-b"], coveredIDs: ["mail-a"], newID: fresh))
+        XCTAssertEqual(attempt.id, fresh, "a covered attempt is not replayed")
+        XCTAssertEqual(attempt.ids, ["mail-b"], "the new attempt names only uncovered mail")
+
+        // Uncovered A, before any typed ring: the same attempt replays, as today.
+        XCTAssertEqual(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: process, unreadIDs: ["mail-a", "mail-b"], coveredIDs: []), stale)
+        // Nothing uncovered: nothing is delivered.
+        XCTAssertNil(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: process, unreadIDs: ["mail-a"], coveredIDs: ["mail-a"]))
+        // A different TUI process never inherits the attempt.
+        XCTAssertEqual(MailboxNativeDoorbell.attemptSnapshot(
+            previous: stale, process: .init(pid: 124, startTime: 9), unreadIDs: ["mail-a"], coveredIDs: [],
+            newID: fresh)?.id, fresh)
+    }
+
+    /// Grok verify: the ring captured {A covered, B}; during the inbox read
+    /// B was claimed and C arrived. Nothing captured is uncovered, so the
+    /// ring sends nothing and looks again, which captures C.
+    func testAllCoveredSnapshotLooksAgainInsteadOfEnding() {
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        var relooks = 0
+        XCTAssertNil(MailboxNativeDoorbell.attemptToSend(
+            previous: nil, process: process, unreadIDs: ["mail-a"], coveredIDs: ["mail-a"],
+            relook: { relooks += 1 }))
+        XCTAssertEqual(relooks, 1, "an all-covered snapshot must look again so later mail is not left waiting")
+
+        let fresh = UUID()
+        let next = MailboxNativeDoorbell.attemptToSend(
+            previous: nil, process: process, unreadIDs: ["mail-a", "mail-c"], coveredIDs: ["mail-a"],
+            newID: fresh, relook: { relooks += 1 })
+        XCTAssertEqual(next?.ids, ["mail-c"], "the fresh look names only the new mail")
+        XCTAssertEqual(next?.id, fresh)
+        XCTAssertEqual(relooks, 1, "a ring with uncovered mail sends and does not look again")
+    }
+
+    /// A refusal before any prompt keeps waiting for the plugin's own
+    /// readiness or route recovery, as before.
+    func testDefiniteRefusalsKeepTheirHold() {
+        let reg = openCode2()
+        for reason in MailboxNativeDoorbell.Fallback.definiteRefusals {
+            let fallback = held(reg, reason)
+            XCTAssertNil(fallback.typedHoldUntil, reason)
+            XCTAssertTrue(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                               now: failedAt.addingTimeInterval(3_600)), reason)
+        }
+    }
+
+    /// OpenCode v1, Pi, omp and Claude never had a typed hold; the bound adds none.
+    func testOtherRoutesAreUnchanged() {
+        let others: [MailboxNativeDoorbell.Registration] = [openCode2(replay: false)] +
+            [MailboxNativeDoorbell.Route.piExtension, .ompExtension, .claudeInbox].map {
+                .init(id: UUID(), panelID: UUID(), agentPID: 123, processStart: 456,
+                      sessionID: UUID().uuidString, route: $0, canQueue: false)
+            }
+        for reg in others {
+            let fallback = held(reg, "native_timeout")
+            XCTAssertNil(fallback.typedHoldUntil, reg.route.rawValue)
+            for offset in [0.0, hold - 1, hold, 3_600] {
+                XCTAssertFalse(fallback.blocksTyped(unreadIDs: ["mail-a"], coveredIDs: [],
+                                                    now: failedAt.addingTimeInterval(offset)), reg.route.rawValue)
+            }
+            XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: []))
+        }
+    }
+}

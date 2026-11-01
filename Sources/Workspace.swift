@@ -7021,14 +7021,23 @@ final class Workspace: Identifiable, ObservableObject {
         if let nativeRoute {
             deliverNativeMailbox(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live, registration: nativeRoute)
         } else {
-            if let failed = mailboxNativeFallback[surfaceId] {
-                let unread = Set(live.map(\.id))
-                let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
-                if failed.blocksTyped(unreadIDs: unread, coveredIDs: covered) {
-                    mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                    logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
-                    return
-                }
+            if let failed = mailboxNativeFallback[surfaceId],
+               failed.holdTypedLook(
+                   unreadIDs: Set(live.map(\.id)),
+                   coveredIDs: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds,
+                   skip: {
+                       mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                       logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live,
+                                                     outcome: .doorbellSkipped, reason: "native_attempt_unconfirmed")
+                   },
+                   recheck: { delay in
+                       if let entry = live.first(where: { failed.ids.contains($0.id) }) {
+                           mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
+                               reason: "native_hold", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId)
+                       }
+                       scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
+                   }) {
+                return
             }
             typeMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live)
         }
@@ -7109,9 +7118,16 @@ final class Workspace: Identifiable, ObservableObject {
         var attemptID: UUID?
         if registration.route == .opencodePlugin && registration.supportsAttemptReplay {
             let process = MailboxStdinBuffer.AgentProcess(pid: registration.agentPID, startTime: registration.processStart)
-            let attempt = MailboxNativeDoorbell.reusableAttempt(
-                mailboxNativeAttempts[surfaceId], process: process, unreadIDs: unreadIDs
-            ) ?? MailboxNativeDoorbell.Attempt(id: UUID(), process: process, ids: unreadIDs)
+            guard let attempt = MailboxNativeDoorbell.attemptToSend(
+                previous: mailboxNativeAttempts[surfaceId], process: process, unreadIDs: unreadIDs,
+                coveredIDs: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds,
+                relook: {
+                    mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                    // Same as the miss guard above: mail that arrived during
+                    // the inbox hop is captured by a fresh look, never sent.
+                    ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+                }
+            ) else { return }
             mailboxNativeAttempts[surfaceId] = attempt
             attemptID = attempt.id
             ids = attempt.ids

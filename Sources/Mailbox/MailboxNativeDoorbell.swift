@@ -91,6 +91,35 @@ final class MailboxNativeDoorbell {
         return attempt
     }
 
+    /// The attempt a replay-capable OpenCode ring sends. Only mail no ring
+    /// has covered counts: after a typed ring covered an ambiguous attempt's
+    /// snapshot, later mail must not revive that attempt, or a plugin that
+    /// never admitted it would prompt again. Nil when nothing is uncovered,
+    /// so nothing is delivered.
+    static func attemptSnapshot(previous: Attempt?, process: MailboxStdinBuffer.AgentProcess,
+                                unreadIDs: Set<String>, coveredIDs: Set<String>,
+                                newID: UUID = UUID()) -> Attempt? {
+        let uncovered = unreadIDs.subtracting(coveredIDs)
+        guard !uncovered.isEmpty else { return nil }
+        return reusableAttempt(previous, process: process, unreadIDs: uncovered)
+            ?? Attempt(id: newID, process: process, ids: uncovered)
+    }
+
+    /// The attempt to send, or nil after `relook` when the snapshot this ring
+    /// captured is all covered. Later mail may have arrived while the inbox
+    /// was read (its own admission saw this ring in flight), so the ring must
+    /// look again rather than end: the fresh look names only the new mail.
+    static func attemptToSend(previous: Attempt?, process: MailboxStdinBuffer.AgentProcess,
+                              unreadIDs: Set<String>, coveredIDs: Set<String>, newID: UUID = UUID(),
+                              relook: () -> Void) -> Attempt? {
+        guard let attempt = attemptSnapshot(previous: previous, process: process, unreadIDs: unreadIDs,
+                                            coveredIDs: coveredIDs, newID: newID) else {
+            relook()
+            return nil
+        }
+        return attempt
+    }
+
     /// Keep accepted coverage across OpenCode /new route registrations from
     /// the same TUI process. A different process must be allowed to retry the
     /// still-unread invitation after a crash or restart.
@@ -100,10 +129,18 @@ final class MailboxNativeDoorbell {
         return previousProcess != currentProcess
     }
 
+    /// How long an OpenCode 2 ambiguous attempt holds its exact snapshot off
+    /// typed delivery while c11 waits for the plugin to reconnect and replay
+    /// it. The plugin reconnects once its own prompt result settles, with a
+    /// backoff capped at 10 s, so this is several reconnects of margin. After
+    /// it, the snapshot goes through the ordinary typed gate.
+    static let openCodeReplayHold: TimeInterval = 60
+
     struct Fallback {
         let registration: Registration
         let ids: Set<String>
         let reason: String
+        var failedAt = Date()
 
         /// A hard failure holds the same uncovered mail off native delivery.
         /// omp has no typed reader, so a genuinely new uncovered envelope may
@@ -125,9 +162,43 @@ final class MailboxNativeDoorbell {
         /// have been admitted by a prompt whose native acknowledgement was
         /// lost. Only the v2 TUI advertises replay support; v1 retains its
         /// documented at-least-once typed fallback behavior.
-        func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>) -> Bool {
+        func blocksTyped(unreadIDs: Set<String>, coveredIDs: Set<String>, now: Date = Date()) -> Bool {
             guard registration.route == .opencodePlugin, registration.supportsAttemptReplay else { return false }
+            if let until = typedHoldUntil, now >= until { return false }
             return !ids.isDisjoint(with: unreadIDs.subtracting(coveredIDs))
+        }
+
+        /// When an ambiguous OpenCode 2 hold stops blocking typed delivery, so
+        /// mail is never held for a plugin that does not come back. Nil for a
+        /// hold that does not expire: a definite refusal before any prompt
+        /// (`native_not_ready`, `native_session_conflict`) keeps waiting for
+        /// the plugin's own readiness or route recovery to re-register.
+        var typedHoldUntil: Date? {
+            guard registration.route == .opencodePlugin, registration.supportsAttemptReplay,
+                  !Fallback.definiteRefusals.contains(reason) else { return nil }
+            return failedAt.addingTimeInterval(MailboxNativeDoorbell.openCodeReplayHold)
+        }
+
+        static let definiteRefusals: Set<String> = ["native_not_ready", "native_session_conflict"]
+
+        /// One typed look at a held panel. Returns true when the hold keeps
+        /// the snapshot off typed delivery: `skip` records the hold, and
+        /// `recheck` asks for a look when it lifts. Nothing else re-looks
+        /// while the plugin stays away, so every held look asks again. A
+        /// panel has one recheck token: a shorter recheck that replaces it
+        /// leads to another held look, which asks again.
+        /// A longer recheck scheduled after it (a closed-gate decay of up to
+        /// 2 minutes, a 300 s turnless re-arm) can replace the token, so the
+        /// typed look may come at that later recheck or the next idle edge:
+        /// still bounded, not always at 60 s.
+        func holdTypedLook(unreadIDs: Set<String>, coveredIDs: Set<String>, now: Date = Date(),
+                           skip: () -> Void, recheck: (TimeInterval) -> Void) -> Bool {
+            guard blocksTyped(unreadIDs: unreadIDs, coveredIDs: coveredIDs, now: now) else { return false }
+            skip()
+            if let until = typedHoldUntil {
+                recheck(max(0.05, until.timeIntervalSince(now)))
+            }
+            return true
         }
     }
 

@@ -357,6 +357,9 @@ enum MailboxReceiptStatus {
                 set(.pending, "working")
             } else if reason == "turnless_idle" {
                 set(.pending, "turnless_idle")
+            } else if reason == "native_hold" {
+                // An OpenCode 2 attempt awaiting replay, not a composer hold.
+                set(.pending, "native_hold")
             } else {
                 set(.held)
             }

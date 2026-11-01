@@ -95,8 +95,22 @@ jobs:
         run: |
           cat > homebrew-c11/Casks/c11.rb << CASKEOF
           cask "c11" do
-            version "${VERSION}"
-            sha256 "${SHA256}"
+            # Apple silicon gets each release; Intel Macs stay on 1.7.0, the
+            # last universal build (C11-541).
+            on_arm do
+              version "${VERSION}"
+              sha256 "${SHA256}"
+            end
+            on_intel do
+              version "1.7.0"
+              sha256 "53f8ceda80bd61c071e0563315f9626bda26587aaa671dc683e81660ce9c26a6"
+
+              caveats <<~EOS
+                c11 1.7.0 is the last release for Intel Macs. To run a newer
+                c11 on this Mac, build it from source:
+                  https://github.com/Stage-11-Agentics/c11
+              EOS
+            end
 
             url "https://github.com/Stage-11-Agentics/c11/releases/download/v#{version}/c11-macos.dmg"
             name "c11"
@@ -108,7 +122,7 @@ jobs:
               strategy :github_latest
             end
 
-            depends_on macos: ">= :sonoma"
+            depends_on macos: :sonoma
 
             conflicts_with cask: "cmux"
 
@@ -135,13 +149,25 @@ jobs:
       - name: Verify cask SHA matches DMG
         if: steps.version.outputs.skip != 'true'
         run: |
-          CASK_SHA=$(grep 'sha256' homebrew-c11/Casks/c11.rb | sed 's/.*"\(.*\)".*/\1/')
+          # The first sha256 is the on_arm (current release) entry.
+          CASK_SHA=$(grep -m1 'sha256' homebrew-c11/Casks/c11.rb | sed 's/.*"\(.*\)".*/\1/')
           ACTUAL_SHA=$(shasum -a 256 c11.dmg | cut -d' ' -f1)
           if [ "$CASK_SHA" != "$ACTUAL_SHA" ]; then
             echo "SHA mismatch! Cask: $CASK_SHA, Actual: $ACTUAL_SHA" >&2
             exit 1
           fi
           echo "SHA verification passed: $CASK_SHA"
+          # The second sha256 is the on_intel entry: it must match the last
+          # universal release's DMG, which Intel Macs keep installing.
+          INTEL_VERSION=$(sed -n '/on_intel do/,/end/s/.*version "\(.*\)".*/\1/p' homebrew-c11/Casks/c11.rb)
+          INTEL_CASK_SHA=$(grep 'sha256' homebrew-c11/Casks/c11.rb | sed -n '2s/.*"\(.*\)".*/\1/p')
+          curl -fsSL -o intel.dmg "https://github.com/Stage-11-Agentics/c11/releases/download/v${INTEL_VERSION}/c11-macos.dmg"
+          INTEL_ACTUAL_SHA=$(shasum -a 256 intel.dmg | cut -d' ' -f1)
+          if [ -z "$INTEL_VERSION" ] || [ "$INTEL_CASK_SHA" != "$INTEL_ACTUAL_SHA" ]; then
+            echo "Intel SHA mismatch for ${INTEL_VERSION:-<none>}! Cask: $INTEL_CASK_SHA, Actual: $INTEL_ACTUAL_SHA" >&2
+            exit 1
+          fi
+          echo "Intel SHA verification passed: v${INTEL_VERSION} $INTEL_CASK_SHA"
 
       - name: Commit and push
         if: steps.version.outputs.skip != 'true'

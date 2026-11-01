@@ -75,7 +75,8 @@ def frame(ws):
 
 
 def mission(ws):
-    return ax(ws, 'value of attribute "AXValue" of e')
+    value = ax(ws, 'value of attribute "AXValueDescription" of e')
+    return "" if value == "missing value" else value
 
 
 def wait_for(predicate, label, timeout=5):
@@ -99,6 +100,7 @@ def note(name, **details):
     print("PASS", name, json.dumps(details), flush=True)
 
 
+osa('set value of attribute "AXEnhancedUserInterface" to true')
 osa("set frontmost to true")
 initial = call("system.identify")["focused"]
 WS, WINDOW = initial["workspace_id"], initial["window_id"]

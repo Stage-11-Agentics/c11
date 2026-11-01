@@ -111,7 +111,9 @@ window above the frontmost app, on the pointer's display and active Space.
 It names the live destination panel (when applicable) and workspace,
 and shows the canonical UUID URL. Titles are bounded plain text with control
 and bidirectional override characters removed. **Cancel is the default**;
-Confirm has no keyboard shortcut. Keyboard users and VoiceOver AXPress cannot
+Confirm has no keyboard shortcut. Since 1.7.8 (C11-562) the row reads Confirm
+then Cancel, so Cancel is the rightmost button, where a habitual "proceed"
+click lands; Return and Escape both cancel. Keyboard users and VoiceOver AXPress cannot
 confirm because the gate requires a fresh mouse-down/up sequence. It stays disabled for at least the system
 double-click interval or 0.75 seconds, whichever is longer, after presentation and requires a new plain mouse-down/up
 sequence begun after arming. Carried-over multi-clicks are refused. A pointer
@@ -292,7 +294,10 @@ no queue, a 2-second cooldown, scripted re-asks after Cancel dropped until the
 page navigates, and a hidden panel is never prompted (the drop is logged to the
 workspace log). "Always allow" stores `origin scheme` pairs in
 `browserExternalSchemeAllowlist`, editable in Settings > Browser; a page with
-no host gets no always-allow choice. Only `mailto:` opens without a prompt.
+no host gets no always-allow choice. Since 1.7.8 (C11-562) the editor is a
+draft: nothing is written until Save, closing Settings discards unsaved edits,
+and a line that can never match is named and keeps Save disabled instead of
+being dropped silently. The runtime parser is unchanged. Only `mailto:` opens without a prompt.
 Socket and omnibar navigation (`browser open|goto`, typed URLs) still open app
 links directly: that is the socket caller's or operator's own choice, within the
 existing socket trust boundary.

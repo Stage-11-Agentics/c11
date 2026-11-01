@@ -99,24 +99,6 @@ class Proof(base.Proof):
             cf.CFRelease(event)
             time.sleep(.05)
 
-    def type_text(self, text):
-        cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
-        cf = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
-        cg.CGEventCreateKeyboardEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_bool]
-        cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
-        cg.CGEventKeyboardSetUnicodeString.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p]
-        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        cf.CFRelease.argtypes = [ctypes.c_void_p]
-        for character in text:
-            units = character.encode('utf-16-le')
-            buffer = ctypes.create_string_buffer(units)
-            for down in (True, False):
-                event = cg.CGEventCreateKeyboardEvent(None, 0, down)
-                cg.CGEventKeyboardSetUnicodeString(event, len(units) // 2, buffer)
-                cg.CGEventPost(0, event)
-                cf.CFRelease(event)
-            time.sleep(.03)
-
     def wheel(self, x, y, pixels):
         # A real scroll-wheel event over the Settings page; SwiftUI's ScrollView
         # ignores AXScrollToVisible. Negative pixels scroll the content up.
@@ -149,6 +131,12 @@ class Proof(base.Proof):
             else:
                 self.wheel(round(wx + ww * .7), round(wy + wh / 2), -120)
         raise AssertionError(('could not scroll into view', identifiers))
+
+    def cliclick(self, *commands):
+        # Typed keys through cliclick, as C11-552 did in this guest: CGEvent
+        # Unicode strings did not reach the SwiftUI text editor.
+        self.run(['/opt/homebrew/bin/cliclick', '-w', '40', *commands])
+        time.sleep(.3)
 
     def stored(self):
         result = subprocess.run(['/usr/bin/defaults', 'read', self.bundle['CFBundleIdentifier'], KEY],
@@ -210,9 +198,10 @@ class Proof(base.Proof):
         self.wait(lambda: self.find(FIELD), 'allowlist editor shown')
         self.scroll_into_view([FIELD, SAVE])
         self.click(FIELD)
-        self.keys(0, command=True)  # select all
-        self.type_text('https://example.com vnc')
-        time.sleep(.5)
+        time.sleep(.4)
+        self.cliclick('kd:cmd', 't:a', 'ku:cmd')  # select all
+        self.cliclick('t:https://example.com vnc')
+        self.wait(lambda: (self.find(FIELD) or {}).get('value') == 'https://example.com vnc', 'typed line reaches the editor')
         save = self.wait(lambda: self.find(SAVE), 'Save button shown')
         assert self.stored() in (None, ''), ('typing must not write the allowlist', self.stored())
         assert save.get('enabled') is True, ('Save enabled with a valid unsaved edit', save)
@@ -226,9 +215,10 @@ class Proof(base.Proof):
 
         self.scroll_into_view([FIELD, SAVE])
         self.click(FIELD)
-        self.keys(125, command=True)  # Command-Down: end of text
-        self.keys(36)  # Return
-        self.type_text('zoom.us zoommtg')
+        time.sleep(.4)
+        self.cliclick('kd:cmd', 'kp:arrow-down', 'ku:cmd', 'kp:return', 't:zoom.us zoommtg')
+        self.wait(lambda: (self.find(FIELD) or {}).get('value') == 'https://example.com vnc\nzoom.us zoommtg',
+                  'invalid second line reaches the editor')
         caption = self.wait(lambda: self.find(INVALID), 'invalid line is reported')
         text = ' '.join(str(caption.get(k) or '') for k in ('value', 'title'))
         assert 'zoom.us zoommtg' in text and '2' in text, ('caption names line 2', caption)

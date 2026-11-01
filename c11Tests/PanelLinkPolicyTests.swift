@@ -10,6 +10,7 @@ import CoreGraphics
 final class PanelLinkPolicyTests: XCTestCase {
     private let id = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
 
+    @MainActor
     func testExternalGetURLConsumesC11BeforeSceneFallback() {
         let inputs = ["c11://panel/\(id)", " C11://workspace/\(id) ", "c11:invalid",
                       "c11://%", "c11://panel/\(id)?run=x", "c11:" + String(repeating: "x", count: 10_000)]
@@ -27,6 +28,7 @@ final class PanelLinkPolicyTests: XCTestCase {
         XCTAssertTrue(forwarded.isEmpty)
     }
 
+    @MainActor
     func testExternalGetURLPreservesOtherURLRouteAndDropsMissingPayload() throws {
         let inputs = ["http://localhost:1234/a", "https://example.com/c11:notes", "file:///tmp/example",
                       "https://example.com/" + String(repeating: "x", count: 2000)]

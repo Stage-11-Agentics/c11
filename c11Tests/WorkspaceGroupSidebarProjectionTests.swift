@@ -28,6 +28,19 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         XCTAssertTrue(WorkspaceSidebarTileRun.pack([]).isEmpty)
     }
 
+    func testTileRunLinesSplitRowMajorWithoutDroppingOrReorderingCards() {
+        let entries = (0..<5).map { _ in WorkspaceOrderEntry(id: UUID(), isPinned: false) }
+        let projection = WorkspaceGroupSidebarProjection.make(groups: [], workspaces: entries)
+        let run = WorkspaceSidebarTileRun(rows: projection.rows)
+        for (columns, expected) in [(2, [2, 2, 1]), (3, [3, 2]), (5, [5]), (8, [5]), (0, [1, 1, 1, 1, 1])] {
+            let lines = run.lines(columns: columns)
+            XCTAssertEqual(lines.map { $0.rows.count }, expected, "columns=\(columns)")
+            XCTAssertEqual(lines.flatMap { $0.rows.map(\.id) }, projection.rows.map(\.id))
+            XCTAssertEqual(Set(lines.map(\.id)).count, lines.count)
+        }
+        XCTAssertTrue(WorkspaceSidebarTileRun(rows: []).lines(columns: 2).isEmpty)
+    }
+
     func testRootSegmentsUseGroupPinAndCanonicalMemberIndexes() {
         let pinned = WorkspaceGroup(name: "Pinned", isPinned: true)
         let unpinned = WorkspaceGroup(name: "Unpinned")

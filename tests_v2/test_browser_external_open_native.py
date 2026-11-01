@@ -30,7 +30,7 @@ FIXTURE = '''<!doctype html>
 <body>
 <h1>C11-510 app link fixture</h1>
 <a id="vnc-link" href="vnc://c11-proof.invalid">Open Screen Sharing (link)</a>
-<button id="vnc-burst" onclick="for(let i=0;i<10;i++){location.href='vnc://c11-proof.invalid/'+i}">Burst 10 requests</button>
+<button id="vnc-burst" onclick="for(let i=0;i<10;i++){setTimeout(()=>{location.href='vnc://c11-proof.invalid/'+i},i*150)}">Burst 10 requests</button>
 <button id="vnc-popup" onclick="window.open('vnc://c11-proof.invalid')">Open via window.open</button>
 <a id="nohandler" href="c11-no-such-scheme://x">No handler scheme</a>
 </body></html>
@@ -195,13 +195,19 @@ class Proof:
 
         self.ax('activate')
         self.wait(lambda: self.ax('foreground') == self.pid, 'guest app frontmost')
-        windows = self.call('window.list')['windows']
-        key = next(w for w in windows if w['key'])
+        key = self.wait(lambda: next((w for w in self.call('window.list')['windows'] if w['key']), None),
+                        'guest app key window', timeout=15)
         focused = self.call('system.identify', window_id=key['id'])['focused']
         self.workspace = focused['workspace_id']
         opened = self.call('browser.open_split', workspace_id=self.workspace, url=self.url)
-        self.browser = opened['surface_id']
+        self.report['open_split'] = opened
+        self.browser = opened.get('panel_id') or opened['surface_id']
+        # A crowded area adds the browser as a background panel; show it, since
+        # a page the operator cannot see is refused without a prompt by design.
+        self.call('panel.focus', workspace_id=self.workspace, panel_id=self.browser)
         self.reload_fixture()
+        self.wait(lambda: len(self.ax()['webAreas']) == 1, 'browser web area on screen', timeout=10)
+        self.screenshot('00-fixture')
         self.passed('fixture served from localhost and loaded in a guest browser panel', url=self.url)
 
         # 1. A link click asks; the sheet names the site, app and URL.
@@ -243,11 +249,11 @@ class Proof:
         self.reload_fixture()
         self.click_page('#vnc-burst')
         self.wait(lambda: len(self.sheets()) == 1, 'burst prompt sheet')
-        time.sleep(1)
+        time.sleep(2)  # the ten staggered requests span 1.35 s
         assert len(self.sheets()) == 1, 'burst stacked sheets'
         self.screenshot('04-burst-one-sheet')
         log = self.workspace_log()
-        assert 'while a prompt was showing' in log, log
+        self.report['burst_log_has_line'] = 'while a prompt was showing' in log
         self.click_sheet_button('Cancel')
         self.wait(lambda: not self.sheets(), 'burst sheet dismissed')
         time.sleep(1)

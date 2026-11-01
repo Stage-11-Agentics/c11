@@ -85,6 +85,8 @@ def main():
         focus(b, 1.2)
         focus(c, 1.2)
         focus(d, 0.1)
+        # Back now checkpoints the currently visible D, even below one second.
+        require(client._call('history.back')['panel_id'] == c, history())
         require(client._call('history.back')['panel_id'] == b, history())
         time.sleep(1.2)
         require(client._call('history.forward')['panel_id'] == c, history())

@@ -130,6 +130,7 @@ enum UITestLaunchManifest {
 
 @main
 struct cmuxApp: App {
+    @ObservedObject private var focusHistory = FocusHistoryStore.shared
     @StateObject private var workspaceManager: WorkspaceManager
     @StateObject private var notificationStore = TerminalNotificationStore.shared
     @StateObject private var sidebarState = SidebarState()
@@ -1059,10 +1060,12 @@ struct cmuxApp: App {
                 splitCommandButton(title: String(localized: "menu.history.back", defaultValue: "Back"), shortcut: focusHistoryBackMenuShortcut) {
                     _ = FocusHistoryStore.shared.navigate(back: true)
                 }
+                .disabled(focusHistory.navigationState.back == nil)
 
                 splitCommandButton(title: String(localized: "menu.history.forward", defaultValue: "Forward"), shortcut: focusHistoryForwardMenuShortcut) {
                     _ = FocusHistoryStore.shared.navigate(back: false)
                 }
+                .disabled(focusHistory.navigationState.forward == nil)
             }
 
             // C11-41 Browser menu: every browser-surface verb in one home.

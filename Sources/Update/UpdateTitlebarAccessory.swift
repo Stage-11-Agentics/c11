@@ -251,6 +251,7 @@ struct TitlebarControlButton<Content: View>: View {
 }
 
 struct TitlebarControlsView: View {
+    @ObservedObject private var history = FocusHistoryStore.shared
     @ObservedObject var notificationStore: TerminalNotificationStore
     @ObservedObject var viewModel: TitlebarControlsViewModel
     @ObservedObject var sidebarState: SidebarState
@@ -273,6 +274,8 @@ struct TitlebarControlsView: View {
         case toggleSidebar
         case showNotifications
         case newTab
+        case historyBack
+        case historyForward
 
         var action: KeyboardShortcutSettings.Action {
             switch self {
@@ -282,6 +285,10 @@ struct TitlebarControlsView: View {
                 return .showNotifications
             case .newTab:
                 return .newWorkspace
+            case .historyBack:
+                return .focusHistoryBack
+            case .historyForward:
+                return .focusHistoryForward
             }
         }
     }
@@ -414,6 +421,9 @@ struct TitlebarControlsView: View {
             }
             .accessibilityIdentifier("titlebarControl.newTab")
             .accessibilityLabel(String(localized: "titlebar.newWorkspace.accessibilityLabel", defaultValue: "New Workspace"))
+
+            historyControl(back: true, config: config)
+            historyControl(back: false, config: config)
         }
 
         let paddedContent = content.padding(config.groupPadding)
@@ -437,6 +447,34 @@ struct TitlebarControlsView: View {
                     titlebarShortcutHintOverlay(items: hintLayoutItems, config: config)
                 }
         }
+    }
+
+    private func historyControl(back: Bool, config: TitlebarControlsStyleConfig) -> some View {
+        let destination = back ? history.navigationState.back : history.navigationState.forward
+        let action: KeyboardShortcutSettings.Action = back ? .focusHistoryBack : .focusHistoryForward
+        let label = back ? String(localized: "menu.history.back", defaultValue: "Back")
+            : String(localized: "menu.history.forward", defaultValue: "Forward")
+        return TitlebarControlButton(config: config, action: { _ = history.navigate(back: back) }) {
+            iconLabel(systemName: back ? "arrow.left" : "arrow.right", config: config)
+                .opacity(destination == nil ? 0.35 : 1)
+        }
+        .disabled(destination == nil)
+        .accessibilityIdentifier(back ? "titlebarControl.historyBack" : "titlebarControl.historyForward")
+        .accessibilityLabel(label)
+        .safeHelp(action.tooltip(historyHelp(back: back, destination: destination)))
+    }
+
+    private func historyHelp(back: Bool, destination: FocusHistoryEntry?) -> String {
+        guard let destination,
+              let location = AppDelegate.shared?.locateSurface(surfaceId: destination.panelId),
+              let workspace = location.workspaceManager.workspaces.first(where: { $0.id == location.workspaceId }),
+              let panel = workspace.panels[destination.panelId] else {
+            return back ? String(localized: "titlebar.history.noPrevious", defaultValue: "No previous location")
+                : String(localized: "titlebar.history.noLater", defaultValue: "No later location")
+        }
+        let format = back ? String(localized: "titlebar.history.backDestination", defaultValue: "Back to %@ · %@")
+            : String(localized: "titlebar.history.forwardDestination", defaultValue: "Forward to %@ · %@")
+        return String(format: format, workspace.panelTitle(panelId: panel.id) ?? panel.displayTitle, workspace.title)
     }
 
     private func titlebarHintLayoutItems(config: TitlebarControlsStyleConfig) -> [TitlebarHintLayoutItem] {
@@ -559,7 +597,6 @@ struct HiddenTitlebarSidebarControlsView: View {
     @ObservedObject var sidebarState: SidebarState
     @StateObject private var viewModel = TitlebarControlsViewModel()
 
-    private let hostWidth: CGFloat = 156
     private let hostHeight: CGFloat = 28
 
     var body: some View {
@@ -583,7 +620,8 @@ struct HiddenTitlebarSidebarControlsView: View {
             },
             visibilityMode: .onHover
         )
-        .frame(width: hostWidth, height: hostHeight, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: hostHeight, alignment: .leading)
     }
 }
 

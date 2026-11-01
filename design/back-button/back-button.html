@@ -15,25 +15,26 @@
 </head>
 <body>
 <svg aria-hidden="true" style="position:absolute;width:0;height:0"><defs>
-<symbol id="i-back" viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></symbol>
+<symbol id="i-back" viewBox="0 0 16 16"><path d="M13 8H3M7 3 2 8l5 5"/></symbol>
+<symbol id="i-forward" viewBox="0 0 16 16"><path d="M3 8h10M9 3l5 5-5 5"/></symbol>
 <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 2.5v11M2.5 8h11"/></symbol>
 <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="M6 2.5v11"/></symbol>
 <symbol id="i-wide" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1"/><path d="M8 2.5v11"/></symbol>
 <symbol id="i-bell" viewBox="0 0 16 16"><path d="M3 11.5h10l-1.5-2V6a3.5 3.5 0 0 0-7 0v3.5L3 11.5ZM6.5 14h3"/></symbol>
 </defs></svg>
 <main>
-<header class="top"><div><div class="eyebrow">c11 / Control study / 01</div><h1>A way back.</h1><p>Follow a panel link. Return to where you were with one click.</p></div><div class="theme-switch" role="group" aria-label="Prototype theme"><button class="key bracket" id="dark-theme" aria-pressed="true"><span>Dark</span></button><button class="key bracket" id="light-theme" aria-pressed="false"><span>Light</span></button></div></header>
-<section aria-labelledby="try-title"><div class="section-head"><h2 id="try-title">01 / Try the return</h2><span>The new control sits immediately after +.</span></div>
+<header class="top"><div><div class="eyebrow">c11 / Control study / 01</div><h1>Back. And forward.</h1><p>Follow a panel link. Return to where you were with one click.</p></div><div class="theme-switch" role="group" aria-label="Prototype theme"><button class="key bracket" id="dark-theme" aria-pressed="true"><span>Dark</span></button><button class="key bracket" id="light-theme" aria-pressed="false"><span>Light</span></button></div></header>
+<section aria-labelledby="try-title"><div class="section-head"><h2 id="try-title">01 / Try the return</h2><span>Back and Forward sit immediately after +.</span></div>
 <div class="window">
-<div class="titlebar"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="tools"><span class="icon" aria-hidden="true"><svg><use href="#i-sidebar"/></svg></span><span class="icon" aria-hidden="true"><svg><use href="#i-wide"/></svg></span><span class="icon" aria-hidden="true"><svg><use href="#i-bell"/></svg></span><span class="icon" aria-hidden="true"><svg><use href="#i-plus"/></svg></span><button class="icon back bracket" id="back" aria-label="Back to Chief of Staff in c11" aria-keyshortcuts="Meta+Alt+["><svg aria-hidden="true"><use href="#i-back"/></svg><span class="tip" aria-hidden="true"><span>Back to Chief of Staff · c11</span><kbd>⌥⌘[</kbd></span></button></div><span class="window-title" id="window-title">c11 · Review agent</span></div>
+<div class="titlebar"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><div class="tools"><span class="icon" aria-hidden="true"><svg><use href="#i-sidebar"/></svg></span><span class="icon" aria-hidden="true"><svg><use href="#i-wide"/></svg></span><span class="icon" aria-hidden="true"><svg><use href="#i-bell"/></svg></span><span class="icon" aria-hidden="true"><svg><use href="#i-plus"/></svg></span><button class="icon back bracket" id="back" aria-label="Back to Chief of Staff in c11" aria-keyshortcuts="Meta+Alt+["><svg aria-hidden="true"><use href="#i-back"/></svg><span class="tip" aria-hidden="true"><span>Back to Chief of Staff · c11</span><kbd>⌥⌘[</kbd></span></button><button class="icon back bracket" id="forward" aria-label="Forward, no later location" aria-keyshortcuts="Meta+Alt+]" disabled><svg aria-hidden="true"><use href="#i-forward"/></svg><span class="tip" aria-hidden="true"><span>Forward to Review agent · c11</span><kbd>⌥⌘]</kbd></span></button></div><span class="window-title" id="window-title">c11 · Review agent</span></div>
 <div class="window-body"><aside class="sidebar" aria-label="Workspace context"><div class="label">Workspaces</div><div class="workspace"><strong>c11</strong><small>Selected workspace</small></div><div class="workspace secondary"><strong>Research</strong><small>Another workspace</small></div></aside><div class="content" id="scene" aria-live="polite"><div class="eyebrow" id="scene-label">Terminal / Review agent</div><h3 id="scene-heading">You followed the link.</h3><p id="scene-copy">The review is here. Your Chief of Staff page is one step back.</p><div class="terminal" id="terminal">Review complete.
 Waiting for your decision.</div><div class="open-row" id="open-row" hidden><button class="key bracket" id="open-review"><span>Open review ↗</span></button></div></div></div>
 <div class="window-foot"><span id="journey">Chief of Staff → Review agent</span><span class="label" id="location">One step back</span></div></div>
-<div class="walkthrough-tools"><p id="try-hint">Press the back chevron, or try ⌥⌘[ while this page has focus.</p><button class="key bracket" id="reset"><span>Reset walkthrough</span></button></div>
-<p class="annotation"><b>24 pt target · 15 pt chevron · 10 pt spacing.</b> The slot stays put when Back is unavailable.</p></section>
+<div class="walkthrough-tools"><p id="try-hint">Press the Back arrow, or try ⌥⌘[ while this page has focus.</p><button class="key bracket" id="reset"><span>Reset walkthrough</span></button></div>
+<p class="annotation"><b>24 pt targets · 15 pt arrows · 10 pt spacing.</b> Both slots stay put when unavailable.</p></section>
 <section aria-labelledby="states-title"><div class="section-head"><h2 id="states-title">02 / States at actual size</h2><span>Light and dark, side by side.</span></div><div class="swatches" id="swatches"></div></section>
-<div class="notes"><div><div class="label">Return, not undo</div><p>Back changes your location. It does not answer a request or undo an action.</p></div><div><div class="label">A familiar menu</div><p><strong>History → Back / Forward.</strong><br>Proposed shortcuts: ⌥⌘[ and ⌥⌘].</p></div><div><div class="label">Closed destinations</div><p>Skip a closed panel. When nothing earlier remains, Back stays visible and disabled.</p></div></div>
-<footer><span>Local interaction prototype. The walkthrough stays inside this page.</span><span>Plan for review · No native changes</span></footer>
+<div class="notes"><div><div class="label">Return, not undo</div><p>Back changes your location. It does not answer a request or undo an action.</p></div><div><div class="label">A familiar menu</div><p><strong>History → Back / Forward.</strong><br>Default shortcuts: ⌥⌘[ and ⌥⌘].</p></div><div><div class="label">Closed destinations</div><p>Skip a closed panel. When nothing earlier remains, Back stays visible and disabled.</p></div></div>
+<footer><span>Local interaction prototype. The walkthrough stays inside this page.</span><span>Approved direction · Interaction prototype</span></footer>
 </main>
 <script>
 'use strict';
@@ -45,12 +46,15 @@ for(const theme of ['dark','light']){
  ['Available','available','<span class="icon back" aria-hidden="true">'+symbol('back')+'</span>'],
  ['Hover','hover-state','<span class="icon back bracket forced sample-hover" aria-hidden="true">'+symbol('back')+'<span class="tip"><span>Back to Chief of Staff · c11</span><kbd>⌥⌘[</kbd></span></span>'],
  ['Disabled','disabled','<button class="icon back" disabled aria-label="Back, no previous location">'+symbol('back')+'</button>']
- ].map(([label,cl,arrow])=>`<div class="state ${cl}"><span class="label">${label}</span><div class="sample-bar"><span class="icon" aria-hidden="true">${symbol('plus')}</span>${arrow}<span class="sample-name">${label==='Disabled'?'No previous location':'c11'}</span></div></div>`).join('');
+ ].map(([label,cl,arrow])=>`<div class="state ${cl}"><span class="label">${label}</span><div class="sample-bar"><span class="icon" aria-hidden="true">${symbol('plus')}</span>${arrow}<span class="icon back" aria-hidden="true" style="${label==='Disabled'?'color:var(--disabled)':''}">${symbol('forward')}</span><span class="sample-name">${label==='Disabled'?'No previous location':'c11'}</span></div></div>`).join('');
  $('swatches').append(swatch);
 }
 let atReview=true;
 function render(){
  $('back').disabled=!atReview;
+ $('forward').disabled=atReview;
+ $('forward').setAttribute('aria-label',atReview?'Forward, no later location':'Forward to Review agent in c11');
+ $('forward').title=atReview?'No later location':'';
  $('back').setAttribute('aria-label',atReview?'Back to Chief of Staff in c11':'Back, no previous location');
  $('back').title=atReview?'':'No previous location';
  $('window-title').textContent=atReview?'c11 · Review agent':'c11 · Chief of Staff';
@@ -60,11 +64,11 @@ function render(){
  $('terminal').hidden=!atReview;$('open-row').hidden=atReview;
  $('journey').textContent=atReview?'Chief of Staff → Review agent':'Chief of Staff';
  $('location').textContent=atReview?'One step back':'No previous location';
- $('try-hint').textContent=atReview?'Press the back chevron, or try ⌥⌘[ while this page has focus.':'Back is now disabled. Open review, or use ⌥⌘] to go forward.';
+ $('try-hint').textContent=atReview?'Press the Back arrow, or try ⌥⌘[ while this page has focus.':'Back is now disabled. Open review, or use ⌥⌘] to go forward.';
 }
 function back(){if(atReview){atReview=false;render();$('open-review').focus({preventScroll:true});}}
 function forward(){if(!atReview){atReview=true;render();$('back').focus({preventScroll:true});}}
-$('back').addEventListener('click',back);$('open-review').addEventListener('click',forward);
+$('forward').addEventListener('click',forward);$('back').addEventListener('click',back);$('open-review').addEventListener('click',forward);
 $('reset').addEventListener('click',()=>{atReview=true;render();});
 function theme(value){document.documentElement.dataset.theme=value;for(const t of ['dark','light'])$(t+'-theme').setAttribute('aria-pressed',String(t===value));}
 $('dark-theme').addEventListener('click',()=>theme('dark'));$('light-theme').addEventListener('click',()=>theme('light'));

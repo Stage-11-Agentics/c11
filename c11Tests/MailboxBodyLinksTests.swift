@@ -110,4 +110,53 @@ final class MailboxBodyLinksTests: XCTestCase {
         XCTAssertEqual(message.bodyRich.runs.filter { $0.link != nil }.count, 1)
         XCTAssertEqual(message.body, "go to [Seat](c11://panel/\(panelID))")
     }
+
+    // MARK: - C11-562: an Insights preview never links a URL its cut split
+
+    private func preview(_ body: String) -> MailboxPanelMail.Header {
+        MailboxPanelMail.Header(raw: ["from": "lead", "body": body])
+    }
+
+    private func linkTexts(_ attributed: AttributedString) -> [String] {
+        attributed.runs.filter { $0.link != nil }.map { String(attributed[$0.range].characters) }
+    }
+
+    func testPreviewLeavesABareURLTheCutSplitAsPlainText() throws {
+        let url = "https://example.com/a/very/long/path"
+        let body = String(repeating: "x", count: 125) + " " + url + " tail"
+        let header = preview(body)
+        XCTAssertEqual(header.preview.count, MailboxPanelMail.Header.previewLimit)
+        XCTAssertEqual(String(header.previewRich.characters), header.preview)
+        XCTAssertEqual(linkTexts(header.previewRich), [])
+        let full = MailboxBodyLinks.attributed(body)
+        XCTAssertEqual(full.runs.compactMap { $0.link?.absoluteString }, [url])
+    }
+
+    func testPreviewLeavesATitledLinkTheCutSplitAsPlainText() {
+        let filler = String(repeating: "x", count: 120) + " "
+        let body = filler + "[Seat](c11://panel/\(panelID)) after"
+        let header = preview(body)
+        XCTAssertEqual(header.preview, filler + "[Seat](c11://panel/")
+        XCTAssertEqual(String(header.previewRich.characters), header.preview)
+        XCTAssertEqual(linkTexts(header.previewRich), [])
+    }
+
+    func testPreviewLeavesASplitPanelLinkPlain() {
+        let body = String(repeating: "x", count: 120) + " c11://panel/\(panelID)"
+        let header = preview(body)
+        XCTAssertEqual(linkTexts(header.previewRich), [])
+        XCTAssertEqual(String(header.previewRich.characters), header.preview)
+    }
+
+    func testPreviewKeepsLinksThatEndInsideTheCut() {
+        let url = "https://example.com/x"
+        let exact = String(repeating: "x", count: MailboxPanelMail.Header.previewLimit - url.count - 1) + " " + url
+        XCTAssertEqual(exact.count, MailboxPanelMail.Header.previewLimit)
+        let atCut = preview(exact + ". and then a lot more words after the cut")
+        XCTAssertEqual(linkTexts(atCut.previewRich), [url])
+        let early = preview("see [docs](\(url)) and \(url), then " + String(repeating: "y", count: 200))
+        XCTAssertEqual(linkTexts(early.previewRich), ["docs", url])
+        XCTAssertEqual(String(early.previewRich.characters).count,
+                       MailboxPanelMail.Header.previewLimit - "[docs](\(url))".count + "docs".count)
+    }
 }

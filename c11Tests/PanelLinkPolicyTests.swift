@@ -436,3 +436,27 @@ final class ExternalPanelLinkGestureTests: XCTestCase {
         XCTAssertFalse(gate.end(at: 102.1, plain: true, clickCount: 1, inside: true))
     }
 }
+
+@MainActor
+final class ExternalPanelLinkButtonRowTests: XCTestCase {
+    /// C11-562: Cancel is the rightmost button and the only Return default;
+    /// Confirm sits left of it, disabled until its gesture arms.
+    func testConfirmSitsLeftOfCancelAndCancelKeepsReturn() throws {
+        let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: true, target: nil)
+        let ids = row.stack.arrangedSubviews.map { $0.accessibilityIdentifier() }
+        XCTAssertEqual(ids, ["c11.external-link.confirm", "c11.external-link.cancel"])
+        let confirm = try XCTUnwrap(row.confirm)
+        XCTAssertTrue(row.stack.arrangedSubviews.last === row.cancel)
+        XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+        XCTAssertEqual(confirm.keyEquivalent, "")
+        XCTAssertFalse(confirm.isEnabled)
+        XCTAssertTrue(row.cancel.isEnabled)
+    }
+
+    func testNoticeShowsCancelAlone() {
+        let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: false, target: nil)
+        XCTAssertNil(row.confirm)
+        XCTAssertEqual(row.stack.arrangedSubviews.map { $0.accessibilityIdentifier() }, ["c11.external-link.cancel"])
+        XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+    }
+}

@@ -755,28 +755,10 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         } else {
             label((prompt.notice ?? .unavailable).text, identifier: "c11.external-link.notice", wraps: true)
         }
-        let buttons = NSStackView()
-        buttons.orientation = .horizontal
-        buttons.spacing = 12
-        let cancel = ExternalPanelLinkButton(title: String(localized: "common.cancel", defaultValue: "Cancel"),
-                              requestID: prompt.id, target: self, action: #selector(cancelClicked(_:)))
-        cancel.bezelStyle = .rounded
-        cancel.keyEquivalent = "\r"
-        cancel.setAccessibilityIdentifier("c11.external-link.cancel")
-        buttons.addArrangedSubview(cancel)
-        window.defaultButtonCell = cancel.cell as? NSButtonCell
-        var confirmationButton: ExternalPanelLinkButton?
-        if prompt.destination != nil {
-            let confirm = ExternalPanelLinkButton(title: String(localized: "panelLink.external.confirm", defaultValue: "Confirm"),
-                                   requestID: prompt.id, target: self, action: #selector(confirmClicked(_:)))
-            confirm.bezelStyle = .rounded
-            confirm.keyEquivalent = ""
-            confirm.isEnabled = false
-            confirmationButton = confirm
-            confirm.setAccessibilityIdentifier("c11.external-link.confirm")
-            buttons.addArrangedSubview(confirm)
-        }
-        rows.addArrangedSubview(buttons)
+        let row = Self.makeButtonRow(requestID: prompt.id, hasDestination: prompt.destination != nil, target: self)
+        window.defaultButtonCell = row.cancel.cell as? NSButtonCell
+        let confirmationButton = row.confirm
+        rows.addArrangedSubview(row.stack)
         let content = NSView()
         content.addSubview(rows)
         rows.translatesAutoresizingMaskIntoConstraints = false
@@ -812,6 +794,34 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         let work = DispatchWorkItem { [weak self] in self?.dismiss(id: prompt.id, confirm: false) }
         expiry = work
         DispatchQueue.main.asyncAfter(deadline: .now() + max(0, prompt.expiresAt - ProcessInfo.processInfo.systemUptime), execute: work)
+    }
+
+    /// Confirm, when there is a destination, then Cancel. Cancel is the
+    /// rightmost button, where a habitual "proceed" click lands, and the only
+    /// one with Return; Confirm starts disabled until its gesture arms.
+    static func makeButtonRow(requestID: UUID, hasDestination: Bool, target: ExternalPanelLinkPresenter?)
+        -> (stack: NSStackView, confirm: ExternalPanelLinkButton?, cancel: ExternalPanelLinkButton) {
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.spacing = 12
+        var confirm: ExternalPanelLinkButton?
+        if hasDestination {
+            let button = ExternalPanelLinkButton(title: String(localized: "panelLink.external.confirm", defaultValue: "Confirm"),
+                                   requestID: requestID, target: target, action: #selector(ExternalPanelLinkPresenter.confirmClicked(_:)))
+            button.bezelStyle = .rounded
+            button.keyEquivalent = ""
+            button.isEnabled = false
+            button.setAccessibilityIdentifier("c11.external-link.confirm")
+            stack.addArrangedSubview(button)
+            confirm = button
+        }
+        let cancel = ExternalPanelLinkButton(title: String(localized: "common.cancel", defaultValue: "Cancel"),
+                              requestID: requestID, target: target, action: #selector(ExternalPanelLinkPresenter.cancelClicked(_:)))
+        cancel.bezelStyle = .rounded
+        cancel.keyEquivalent = "\r"
+        cancel.setAccessibilityIdentifier("c11.external-link.cancel")
+        stack.addArrangedSubview(cancel)
+        return (stack, confirm, cancel)
     }
 
     @objc private func cancelClicked(_ sender: ExternalPanelLinkButton) {

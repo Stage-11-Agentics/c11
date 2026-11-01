@@ -538,6 +538,7 @@
 		C397000000000000000000B3 /* MailboxDrawerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C397000000000000000000A3 /* MailboxDrawerView.swift */; };
 		C397000000000000000000B4 /* MailboxPanelMailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C397000000000000000000A4 /* MailboxPanelMailTests.swift */; };
 		C11524A003B2C3D4E5F60718 /* MailboxBodyLinksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11524F003B2C3D4E5F60718 /* MailboxBodyLinksTests.swift */; };
+		C11562A001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11562F001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift */; };
 		C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */; };
 		C4B4DCA031042170CC8F0C9F /* ModelCostsCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D2879EEABCEB73C55BFE42 /* ModelCostsCommand.swift */; };
 		C5FF88D3F69161C62B390149 /* MarkdownCorpusIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B28C2C5B2F4B366A740825 /* MarkdownCorpusIndex.swift */; };
@@ -1248,6 +1249,7 @@
 		C397000000000000000000A3 /* MailboxDrawerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDrawerView.swift; sourceTree = "<group>"; };
 		C397000000000000000000A4 /* MailboxPanelMailTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MailboxPanelMailTests.swift; sourceTree = "<group>"; };
 		C11524F003B2C3D4E5F60718 /* MailboxBodyLinksTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MailboxBodyLinksTests.swift; sourceTree = "<group>"; };
+		C11562F001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserExternalSchemeAllowlistDraftTests.swift; sourceTree = "<group>"; };
 		C585662B5CFF4AFB27E65C1E /* OpencodeResumeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OpencodeResumeTests.swift; path = OpencodeResumeTests.swift; sourceTree = "<group>"; };
 		C5E34AD8B3A4814F5DDD4B2D /* SidebarStalenessSettingsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarStalenessSettingsTests.swift; sourceTree = "<group>"; };
 		C967AD5F66B6E2304632FD54 /* ConfigHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigHandlers.swift; sourceTree = "<group>"; };
@@ -2232,6 +2234,7 @@
 				C1382000000000000000A003 /* PromptCacheReportTests.swift */,
 				C397000000000000000000A4 /* MailboxPanelMailTests.swift */,
 				C11524F003B2C3D4E5F60718 /* MailboxBodyLinksTests.swift */,
+				C11562F001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift */,
 				C1124400000000000000B013 /* PanelActivitySignalsTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketPanelRefValidatorTests.swift */,
 				C11537000000000000000001 /* IdentifyWithoutActiveManagerTests.swift */,
@@ -2666,6 +2669,7 @@
 				C1382000000000000000A004 /* PromptCacheReportTests.swift in Sources */,
 				C397000000000000000000B4 /* MailboxPanelMailTests.swift in Sources */,
 				C11524A003B2C3D4E5F60718 /* MailboxBodyLinksTests.swift in Sources */,
+				C11562A001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift in Sources */,
 				C1124400000000000000B014 /* PanelActivitySignalsTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketPanelRefValidatorTests.swift in Sources */,
 				C11537000000000000000002 /* IdentifyWithoutActiveManagerTests.swift in Sources */,

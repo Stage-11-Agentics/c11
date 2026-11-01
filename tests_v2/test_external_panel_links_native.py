@@ -86,8 +86,10 @@ class Proof(native.Proof):
 
     def terminal_origin(self):
         self.run(['/usr/bin/open', '-a', 'Terminal'])
-        body = 'tell application "Terminal"\nactivate\ndo script ' + json.dumps('/usr/bin/open ' + self.target_url) + '\nend tell'
-        self.run(['/usr/bin/osascript', '-e', body])
+        terminal_pid = int(self.run(['/usr/bin/osascript', '-e',
+            'tell application "System Events" to get unix id of process "Terminal"'], text=True).stdout)
+        self.wait(lambda: self.ui('foreground') == terminal_pid, 'Terminal.app is foreground before typing')
+        self.run(['/opt/homebrew/bin/cliclick', 't:/usr/bin/open ' + self.target_url, 'kp:enter'])
         self.wait(self.prompt, 'Terminal.app open shows confirmation')
         self.capture('01-terminal-origin')
         assert self.selection()[0] == self.source_workspace.lower()
@@ -157,7 +159,7 @@ end tell'''
                     source_stayed_foreground=front == safari_pid)
         time.sleep(2.1)
         self.back()
-        self.run(['/usr/bin/osascript', '-e', 'tell application "Safari" to activate'])
+        self.run(['/usr/bin/open', '-a', 'Safari'])
         self.run(['/usr/bin/open', '-g', self.target_url])
         self.wait(self.prompt, 'background delivery shows visible confirmation')
         assert self.ui('foreground') == safari_pid, 'prompt itself activated c11'
@@ -165,7 +167,46 @@ end tell'''
         self.cancel()
         assert self.ui('foreground') == safari_pid, 'Cancel activated c11'
         self.passed('prompt visible and clickable over Safari without adding app activation')
+        self.run(['/usr/bin/open', '-g', self.target_url])
+        self.wait(self.prompt, 'background confirmation presented')
+        assert self.ui('foreground') == safari_pid
+        self.click('c11.external-link.confirm')
+        self.wait(lambda: self.selection() == (self.destination.lower(), self.target.lower()),
+                  'fresh Confirm works while Safari is foreground')
+        self.wait(lambda: self.ui('foreground') == self.pid, 'intentional Confirm activates c11')
+        self.passed('fresh native Confirm works while source app is foreground')
+        time.sleep(2.1)
+        self.back()
         self.ui('activate')
+
+    def presentation_cancellation(self):
+        before = self.selection()
+        self.outside()
+        # Move this exact confirmation through native AX, then verify the
+        # presentation is revoked before any later click can authorize it.
+        script = f'''tell application "System Events" to tell (first process whose unix id is {self.pid})
+repeat with w in windows
+if name of w is "Outside c11 link" then
+set p to position of w
+set position of w to {{(item 1 of p) + 30, (item 2 of p) + 30}}
+return "moved"
+end if
+end repeat
+return "missing"
+end tell'''
+        assert self.run(['/usr/bin/osascript', '-e', script], text=True).stdout.strip() == 'moved'
+        self.wait(lambda: not self.prompt(), 'moving confirmation revokes it')
+        assert self.selection() == before
+        time.sleep(2.1)
+        self.outside()
+        self.ui('activate')
+        self.key(4, 'command down')  # Native Cmd+H hides the app.
+        self.wait(lambda: not self.prompt(), 'hiding app revokes confirmation')
+        assert self.selection() == before
+        self.ui('activate')
+        time.sleep(2.1)
+        self.passed('native movement and app hiding revoke pending confirmation')
+        self.report['limitations'].append('Active-Space cancellation is source-reviewed; this single-Space guest pass does not exercise a Space transition.')
 
     def surprise_click(self):
         self.outside()
@@ -175,7 +216,7 @@ end tell'''
         self.cancel()
         # Safari's local fixture is the source surface underneath the future
         # confirmation. The native clicks start there, not in a c11 web view.
-        self.run(['/usr/bin/osascript', '-e', 'tell application "Safari" to activate'])
+        self.run(['/usr/bin/open', '-a', 'Safari'])
         self.run(['/opt/homebrew/bin/cliclick', f'm:{cx},{cy}'])
         before = self.selection()
         self.run(['/usr/bin/open', self.target_url])
@@ -263,6 +304,7 @@ end tell'''
         self.seed()
         self.terminal_origin()
         self.safari_origin()
+        self.presentation_cancellation()
         self.surprise_click()
         self.mixed_event()
         self.burst()

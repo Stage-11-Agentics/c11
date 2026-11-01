@@ -824,8 +824,8 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         expiry = nil
         for (center, token) in visibilityObservers { center.removeObserver(token) }
         visibilityObservers.removeAll()
-        panel?.orderOut(nil)
         panel?.delegate = nil
+        panel?.orderOut(nil)
         panel = nil
         let result = request.finish(id: id, confirm: confirm, isSocketCommand: SocketCommandContext.current != nil)
         PanelLinkActivation.log(target: prompt.destination?.url ?? "", origin: "external",

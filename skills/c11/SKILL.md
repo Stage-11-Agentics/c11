@@ -94,6 +94,9 @@ these links. In web content, Cmd/middle/modified clicks and `target="_blank"` ar
 operator's workspace. Only the production Release app registers the macOS `c11://` scheme. Outside links show a
 floating, nonactivating confirmation naming the live panel/workspace and UUID
 URL; only a fresh click on Confirm after its short arming delay navigates.
+Keyboard users and VoiceOver AXPress cannot confirm because the gate requires
+a fresh mouse-down/up sequence. Switching to c11's Space cancels the prompt;
+click the outside link again to request a new confirmation.
 Cancel is the safe default. Closed or malformed
 targets show a notice. There is one pending prompt, no queue, a two-second
 cooldown after dismissal and a 60-second expiry; bursts are dropped. Cold

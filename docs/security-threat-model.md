@@ -111,7 +111,8 @@ window above the frontmost app, on the pointer's display and active Space.
 It names the live destination panel (when applicable) and workspace,
 and shows the canonical UUID URL. Titles are bounded plain text with control
 and bidirectional override characters removed. **Cancel is the default**;
-Confirm has no keyboard shortcut. It stays disabled for at least the system
+Confirm has no keyboard shortcut. Keyboard users and VoiceOver AXPress cannot
+confirm because the gate requires a fresh mouse-down/up sequence. It stays disabled for at least the system
 double-click interval or 0.75 seconds, whichever is longer, after presentation and requires a new plain mouse-down/up
 sequence begun after arming. Carried-over multi-clicks are refused. A pointer
 already over Confirm must leave and re-enter before it arms. Moving or hiding

@@ -6,10 +6,34 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.8] - 2026-11-01
+
+Headline: **c11 1.7.8. The mailbox drawer shows how long mail waited before an agent took it and jumps from a sender's name to that conversation, the workspace menu is shorter, and Markdown panels keep their place inside lists, callouts and footnotes.**
+
 ### Added
 
-- **Pickup wait in mailbox Insights.** Insights shows how long received mail waited before the agent took it: the median, p90 and slowest wait, a five-step distribution, and the median per sender, over the claims of the last 14 days. It follows every Insights filter. Claims come from the workspace's own claim records, read off the main thread from a bounded tail with an offset cache. Mail taken before c11 1.7.5 began recording claims has no pickup time, and a note says how many such messages there are.
-- **Jump from a sender to its conversation.** In the mailbox drawer, a sender's name on a Received card or an Insights message, and a recipient on a Sent card, open that peer's thread in Conversations. With a sender or recipient filter on, Insights offers Open conversation. Unstamped mail opens its name-only row; a name is never matched to a panel.
+- **Pickup wait in the mailbox drawer's Insights.** Insights now shows how long received mail waited before the agent took it, over the last 14 days: the median, the 90th percentile, the slowest wait, the number of messages taken, a five-step spread from under a minute to over two hours, and the median for the four busiest senders. It follows whatever filter you have chosen. Mail taken before 1.7.5 has no record and is counted separately. ([#867](https://github.com/Stage-11-Agentics/c11/pull/867))
+- **A sender's name opens that conversation.** In the mailbox drawer, click a sender on a Received card, a sender in an Insights message, or a recipient on a Sent card to open your conversation with that panel in the Conversations tab, placed at its first unread message. An Insights sender or recipient filter also offers Open conversation. ([#867](https://github.com/Stage-11-Agentics/c11/pull/867))
+
+### Changed
+
+- **The workspace right-click menu is shorter and regrouped.** Pin, Rename, Workspace Root and Close come first; then Color and Move to Group; then Move to Window and, on SSH workspaces, the SSH actions; then Hibernate, Mark as Read or Unread, and Copy Link. Move Up, Move Down and Move to Top leave the menu; dragging, the command palette, shortcuts and the CLI still reorder workspaces. ([#870](https://github.com/Stage-11-Agentics/c11/pull/870))
+- **Saving an empty name in Rename Workspace restores the automatic name.** The field shows the automatic name as its placeholder and says that an empty name uses it, so Remove Custom Workspace Name leaves the menu. Renaming a workspace without typing no longer fixes "Workspace N" as a custom name. ([#870](https://github.com/Stage-11-Agentics/c11/pull/870))
+
+### Fixed
+
+- **The gold workspace frame follows the window's rounded corners.** On macOS 26 the frame tapered away at the window's bottom corners; it now curves with the window's real corner radius. ([#875](https://github.com/Stage-11-Agentics/c11/pull/875))
+- **Markdown panels keep line positions right inside lists, callouts, footnotes, setext headings, tables and image lines.** Scrolling to a line, the visible-lines report and restoring your reading position now land on the right line in those blocks. Indented code blocks no longer sit one line off. ([#871](https://github.com/Stage-11-Agentics/c11/pull/871))
+- **Insights previews no longer link a cut-off URL.** A link that the preview cuts short shows as plain text; the full message keeps its links. ([#874](https://github.com/Stage-11-Agentics/c11/pull/874))
+
+### Security
+
+- **The confirmation for an outside `c11://` link puts Cancel on the right**, where a habitual click lands; Confirm still needs a fresh click after its short delay. ([#874](https://github.com/Stage-11-Agentics/c11/pull/874))
+- **Settings > Browser > Sites Allowed to Open Apps saves only when you click Save**, like the plain HTTP list beside it. A line that can never match is named in red and keeps Save off instead of being dropped, and closing Settings discards unsaved edits. ([#874](https://github.com/Stage-11-Agentics/c11/pull/874))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.7.7] - 2026-11-01
 

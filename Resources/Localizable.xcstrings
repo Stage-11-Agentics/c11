@@ -3861,6 +3861,18 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Диалоги"}}
       }
     },
+    "mailbox.conversations.marker.scanFloor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Conversations read only this panel's newest %lld received messages, back to %@, %@. Anything older with %@, sent or received, is not shown."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "会話は、このパネルが受信した最新の %lld 件のみを %@ %@ まで遡って読み取っています。それより古い、%@ との送受信は表示されません。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Розмови враховують лише найновіші %lld отриманих цією панеллю повідомлень, аж до %@, %@. Усе старіше, надіслане чи отримане, з %@ не показано."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "대화는 이 패널이 받은 최신 메시지 %lld개만 %@ %@까지 거슬러 올라가 읽습니다. 그보다 오래된 메시지는 보낸 것과 받은 것 모두 표시되지 않습니다 (상대: %@)."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "对话仅读取此面板收到的最新 %lld 条消息，最早到 %@ %@。更早的、与 %@ 之间收发的消息不会显示。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "對話僅讀取此面板收到的最新 %lld 則訊息，最早到 %@ %@。更早的、與 %@ 之間收發的訊息不會顯示。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Диалоги учитывают только новейшие %lld полученных этой панелью сообщений, вплоть до %@, %@. Всё более старое, отправленное или полученное, с %@ не показано."}}
+      }
+    },
     "markdown.reader.history.back": {
     "extractionState": "manual",
     "localizations": {

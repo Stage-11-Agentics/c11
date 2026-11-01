@@ -6,26 +6,25 @@ compare semantic outcomes and native window deltas, not process-local IDs.
 """
 import json
 from pathlib import Path
+import subprocess
 import time
 import traceback
+from urllib.parse import unquote, urlparse
 
 import test_external_panel_links_native as outside
 
 OUT = Path('/Volumes/My Shared Files/out/external-url-compat')
 outside.OUT = outside.native.OUT = OUT
 
-DOCK_ITEM = r'''
+DOCK_ITEMS = r'''
 function run(args) {
-    var expected = args[0];
     var dock = Application('System Events').processes.byName('Dock');
     function attr(e, name) { try { return e.attributes.byName(name).value(); } catch (_) { return null; } }
     var items = dock.lists()[0].uiElements().map(function(e) {
         return {title: attr(e, 'AXTitle'), url: String(attr(e, 'AXURL') || ''),
                 position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')};
     });
-    var matches = items.filter(function(e) { return decodeURI(e.url).indexOf(expected) >= 0; });
-    if (matches.length !== 1) throw Error('Exact guest app Dock item missing or ambiguous: '+JSON.stringify(items));
-    return JSON.stringify(matches[0]);
+    return JSON.stringify(items);
 }
 '''
 
@@ -83,7 +82,15 @@ class Compatibility(outside.Proof):
         self.key(4, 'command down')
         self.wait(lambda: self.ui('foreground') != self.pid, 'native Cmd+H hides c11')
         self.safari_foreground()
-        item = json.loads(self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', DOCK_ITEM, str(self.app)], text=True).stdout)
+        try:
+            items = json.loads(self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', DOCK_ITEMS], text=True).stdout)
+        except subprocess.CalledProcessError as error:
+            self.report['dock_lookup_error'] = dict(stdout=error.stdout, stderr=error.stderr)
+            raise
+        self.report['dock_items'] = items
+        matches = [item for item in items if unquote(urlparse(item['url']).path).rstrip('/') == str(self.app)]
+        assert len(matches) == 1, ('Exact guest app Dock item missing or ambiguous', items)
+        item = matches[0]
         x,y = item['position']; w,h = item['size']
         self.confirmation_mouse(int(x+w/2), int(y+h/2))
         self.wait(lambda: self.ui('foreground') == self.pid, 'real Dock click reopens exact app')

@@ -2050,6 +2050,13 @@ extension TerminalController {
                 removedKeys: result.removedKeys,
                 autoExpand: (params["auto_expand"] as? Bool) ?? true
             )
+            // An agent wrapper declares its type as it starts. The last scan
+            // saw the shell at its prompt, and nothing else rescans before
+            // the 10 s sweep, so a detected `shell` would mask the agent
+            // and refuse its mail routes until then (C11-553).
+            if metadataObj[MetadataKey.terminalType] != nil {
+                AgentDetector.shared.kick(workspaceId: resolved.workspaceId, panelId: resolved.surfaceId)
+            }
             return .ok(buildMetadataOkPayload(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,

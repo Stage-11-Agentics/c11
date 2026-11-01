@@ -78,6 +78,55 @@ final class AgentDetectorTests: XCTestCase {
         XCTAssertEqual(AgentDetector.classify(comm: "-zsh", args: ""), "shell")
     }
 
+    // MARK: - c11 agent wrappers (C11-553)
+
+    /// A tagged build's bundle path has spaces, as in the C11-553 guest.
+    private let wrapperBin = "/Users/admin/c11-sandbox/apps/c11-553-diag/c11 DEV C11-553.app/Contents/Resources/bin"
+
+    /// c11's `Resources/bin/<agent>` wrappers are `#!/usr/bin/env bash`
+    /// scripts, so while one runs `ps` shows `comm=bash` with the wrapper as
+    /// its operand. The preexec scan lands in that window. Reading it as
+    /// `shell` overrode the declared agent until the next 10 s sweep, which
+    /// refused the native route and the composer reader for new mail.
+    func testBundledWrapperKeepsDeclaredAgentKind() {
+        let facts = AgentDetector.ProcessFacts(
+            comm: "bash",
+            args: "bash \(wrapperBin)/opencode --auto -s ses_e6812b029ffefL7GJfytqWkiDW",
+            executablePath: "/bin/bash"
+        )
+        let detected = AgentDetector.classify(facts, wrapperDirectories: [wrapperBin])
+        XCTAssertNotEqual(detected, "shell")
+        XCTAssertEqual(
+            PanelActivityTerminalKindResolver.resolve(detectedTerminalType: detected, declaredTerminalType: "opencode"),
+            "opencode")
+        XCTAssertEqual(
+            AgentDetector.classify(
+                AgentDetector.ProcessFacts(comm: "bash", args: "bash \(wrapperBin)/claude"),
+                wrapperDirectories: [wrapperBin]),
+            "unknown")
+        // Directory spelling: a trailing slash and letter case do not matter.
+        XCTAssertEqual(
+            AgentDetector.classify(
+                AgentDetector.ProcessFacts(comm: "bash", args: "bash \(wrapperBin.uppercased())/OPENCODE --auto"),
+                wrapperDirectories: [wrapperBin + "/"]),
+            "unknown")
+    }
+
+    /// Only c11's own wrapper directory counts. An operator's script named
+    /// like an agent, a shell's `-c` text, or a later argument stays `shell`.
+    func testShellOutsideBundledWrapperStaysShell() {
+        let dirs = [wrapperBin]
+        for args in ["bash", "bash /Users/atin/bin/claude", "bash ./opencode --auto",
+                     "bash -c opencode", "zsh ./build.sh \(wrapperBin)/opencode",
+                     "bash \(wrapperBin)/c11", "bash \(wrapperBin)/opencode-v2-config.py version"] {
+            XCTAssertEqual(
+                AgentDetector.classify(AgentDetector.ProcessFacts(comm: "bash", args: args), wrapperDirectories: dirs),
+                "shell", args)
+        }
+        XCTAssertEqual(AgentDetector.classify(AgentDetector.ProcessFacts(comm: "-zsh", args: "-zsh"),
+                                              wrapperDirectories: dirs), "shell")
+    }
+
     // MARK: - Runtime shim invocations (C11-155: bun / node-symlink installs)
 
     /// omp ships as a `#!/usr/bin/env bun` shim → runs as `comm=bun` with the

@@ -330,7 +330,10 @@ final class AgentDetector: @unchecked Sendable {
         classify(ProcessFacts(comm: comm, args: args))
     }
 
-    static func classify(_ facts: ProcessFacts) -> String {
+    static func classify(
+        _ facts: ProcessFacts,
+        wrapperDirectories: [String] = bundledWrapperDirectories
+    ) -> String {
         let comm = facts.comm.lowercased()
         let args = facts.args.lowercased()
         // `ps` comm is argv[0] clipped to 16 characters, so a long path loses
@@ -380,11 +383,47 @@ final class AgentDetector: @unchecked Sendable {
         for name in names {
             let stripped = name.hasPrefix("-") ? String(name.dropFirst()) : name
             if canonicalShells.contains(stripped) {
+                // c11's own `Resources/bin/<agent>` wrappers are bash scripts
+                // that exec the real agent. While one runs, the shell is not
+                // evidence that an agent exited: report `unknown` so the
+                // declared terminal type stays in force (C11-553).
+                if isBundledAgentWrapper(args: args, directories: wrapperDirectories) {
+                    return "unknown"
+                }
                 return "shell"
             }
         }
 
         return "unknown"
+    }
+
+    /// This app's `Contents/Resources/bin`, lowercased, as the shell sees it
+    /// on PATH and with symlinks resolved. Empty outside an app bundle.
+    static let bundledWrapperDirectories: [String] = {
+        guard let bin = Bundle.main.resourceURL?.appendingPathComponent("bin", isDirectory: true) else { return [] }
+        let paths = [bin.path, bin.standardizedFileURL.path, bin.resolvingSymlinksInPath().path]
+        return Array(Set(paths.map { $0.lowercased() })).filter { !$0.isEmpty }
+    }()
+
+    /// True when a shell's script operand (the word after argv0) is one of
+    /// the agent wrappers in `directories`. The directory is matched as a
+    /// prefix, so a bundle path with spaces (`c11 DEV <tag>.app`) still
+    /// matches. A script elsewhere with an agent's name is not a wrapper.
+    static func isBundledAgentWrapper(args: String, directories: [String]) -> Bool {
+        let line = args.lowercased()
+        guard !directories.isEmpty,
+              let argv0End = line.firstIndex(where: \.isWhitespace) else { return false }
+        let operand = line[argv0End...].drop(while: \.isWhitespace)
+        for directory in directories {
+            let lowered = directory.lowercased()
+            let prefix = lowered.hasSuffix("/") ? lowered : lowered + "/"
+            guard operand.hasPrefix(prefix) else { continue }
+            let rest = operand.dropFirst(prefix.count)
+            let name = String(rest.prefix(while: { !$0.isWhitespace }))
+            guard !name.isEmpty, !name.contains("/") else { continue }
+            if AgentRegistry.shared.all.contains(where: { $0.detectComms.contains(name) }) { return true }
+        }
+        return false
     }
 
     private static func basename(_ path: String) -> String {

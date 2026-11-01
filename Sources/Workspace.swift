@@ -9072,6 +9072,7 @@ final class Workspace: Identifiable, ObservableObject {
     func setDetectedTerminalType(_ terminalType: String?, forSurface surfaceId: UUID) {
         let normalized = terminalType?.trimmingCharacters(in: .whitespacesAndNewlines)
         let value = normalized?.isEmpty == false ? normalized : nil
+        let previousKind = surfaceActivityTerminalKind(panelId: surfaceId)
         let changed: Bool
         if let value {
             if detectedTerminalTypesByPanel[surfaceId] != value {
@@ -9085,6 +9086,13 @@ final class Workspace: Identifiable, ObservableObject {
         }
         if changed {
             syncSurfacePanelActivityStateForPanel(surfaceId)
+            // The kind selects the composer reader and must match a native
+            // registration. A route or idle edge that arrived while it was
+            // wrong was refused, so look at held mail again now (C11-553).
+            let kind = surfaceActivityTerminalKind(panelId: surfaceId)
+            if kind != previousKind, AreaSizePolicy.isAgentKind(kind) {
+                ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+            }
         }
     }
 

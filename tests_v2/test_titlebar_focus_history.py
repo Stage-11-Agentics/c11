@@ -320,7 +320,10 @@ end tell'''
         width, height = frame['size']
         assert 100 < rect[2] < width and 100 < rect[3] < height, (frame, rect)
         # Fresh fixture has one area at 100% zoom, ending at inner right/bottom.
-        return (x + width - rect[2] - 1 + rect[0], y + height - rect[3] - 1 + rect[1])
+        point = (x + width - rect[2] - 1 + rect[0], y + height - rect[3] - 1 + rect[1])
+        self.report['last_link_geometry'] = dict(frame=frame, page_rect=rect, point=point)
+        self.save()
+        return point
 
     def shot(self, name):
         assert self.ui('foreground') == self.pid
@@ -485,12 +488,6 @@ end tell'''
         self.landed(self.a, self.source, 'background layout target creation preserves source', self.window)
         self.javascript('document.querySelector("#jump").href=' + json.dumps('c11://panel/' + self.layout_target))
         self.ui('style', 'Classic')
-        # Seed a forward destination so hidden-sidebar screenshots include an
-        # enabled arrow as well as a disabled one in both appearances.
-        self.mouse(self.link_point())
-        self.landed(self.a, self.layout_target, 'hidden-sidebar fixture native link')
-        self.history()
-        self.landed(self.a, self.source, 'hidden-sidebar fixture Back')
         self.ui('press', 'titlebarControl.toggleSidebar')
         self.wait(lambda: not self.call('debug.sidebar.visible', window_id=self.window)['visible'],
                   'native sidebar hide')

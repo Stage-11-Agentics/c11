@@ -128,6 +128,24 @@ ol li { margin-bottom: 10px; }
 .st { font-size: 9px; font-weight: 600; padding: 0 4px; border-radius: 3px; border: 1px solid var(--line); color: var(--dim); }
 .st.u { background: var(--amber); color: var(--onamber); border-color: transparent; }
 .st.urg { color: var(--amber); border-color: var(--amber); }
+
+/* pickup wait */
+.pk { display: grid; gap: 8px; }
+.pk .tiles .v.none { color: var(--faint); }
+.pkcols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.pkcol { display: grid; grid-template-rows: 32px auto auto; gap: 2px; min-width: 0; }
+.pkcol .bar { display: flex; align-items: flex-end; }
+.pkcol .bar i { display: block; width: 100%; background: var(--mark); border-radius: 2px 2px 0 0; }
+.pkcol .bar i.zero { background: var(--track); border-radius: 0; height: 1px; }
+.pkcol .bl { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkcol .bc { font: 10.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pkrow { display: grid; align-items: center; gap: 8px; grid-template-columns: var(--namew) 1fr 62px 72px; }
+.pkrow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkrow .c { font: 10.5px var(--mono); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pkrow .n { font: 10.5px var(--mono); text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pkrow.blank { visibility: hidden; }
+.fopen { all: unset; cursor: pointer; font: 10.5px var(--mono); color: var(--gold); white-space: nowrap; }
+.fopen:hover, .fopen:focus-visible { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -161,7 +179,7 @@ ol li { margin-bottom: 10px; }
       <div class="dhead">
         <b>Mail for Board Move</b><span class="id">board-move · panel 1</span><span class="sp"></span><span class="tot" id="tot"></span>
       </div>
-      <div class="tabs"><span class="seg" id="tabs"><button data-tab="received">Received</button><button data-tab="sent">Sent</button><button data-tab="insights" class="on">Insights</button></span></div>
+      <div class="tabs"><span class="seg" id="tabs"><button data-tab="received">Received</button><button data-tab="sent">Sent</button><button data-tab="conversations">Conversations</button><button data-tab="insights" class="on">Insights</button></span></div>
       <div class="scroll"><div id="pane"></div></div>
     </div>
   </div>
@@ -174,11 +192,17 @@ ol li { margin-bottom: 10px; }
 <h2>DRILL-DOWN</h2>
 <p>Every sender, topic and bar is a filter. Picking one narrows the whole tab to that slice: the tiles, both charts, the other rankings, and a list of that slice's newest messages underneath. Filters stack, one per kind: a sender and a topic and a time (an hour or a day). The chip row at the top always holds its height, so the layout never jumps when a filter comes or goes. With a filter on, the fourth tile shows the slice's share of all mail instead of the sent count.</p>
 
+<h2>PICKUP WAIT</h2>
+<p>How long mail waits in this inbox before the agent takes it. Each claim (<code>c11 mailbox recv --ack</code>, or a hook drain) appends a <code>claimed</code> row to the workspace's <code>mailboxes/_dispatch.log</code> with the claim time and the recipient panel. The wait is that time minus when the message landed in this inbox: the file's time, which the claim's rename into <code>_read/</code> keeps. Only this panel's own rows count, so a broadcast's copies in other inboxes never mix in.</p>
+<p>The section follows every received filter: pick a sender, topic, hour or day and the figures cover only that slice's taken messages. Median, p90 and slowest; the claim count and the window (claims in the last 14 days); a five-step distribution with a fixed height; and the median per sender for the four senders with the most claims, padded to the same row count when a filter narrows them.</p>
+<p>The log is read off the main thread: the last 8 MiB at most on the first look, then only the bytes appended since, cached by file offset. Mail taken before claim rows existed (c11 1.7.5) has no pickup time, and the section says how many taken messages that leaves out. A <b>from</b> chip offers <b>Open conversation</b>, which switches to the Conversations tab on that sender's thread.</p>
+
 <h2>DECISIONS</h2>
 <ol>
   <li><b>Sample.</b> Senders, topics and every drilled figure come from the newest 5,000 messages; a note says so when the mailbox holds more. Parsed headers are cached, so reopening and clicking are fast.</li>
   <li><b>Message list.</b> A slice lists its newest 50 messages.</li>
   <li><b>Recipients.</b> "Sent to" rows are clickable and show what this panel sent there and whether each copy was taken.</li>
+  <li><b>Pickup source.</b> Claim rows in the workspace dispatch log, not <code>mailbox.delivered</code> in the events log: they name the exact recipient panel, carry the claim time itself, and are written even with activity history off.</li>
 </ol>
 </main>
 
@@ -212,6 +236,18 @@ ol li { margin-bottom: 10px; }
         urgent: rnd() < 0.04, reply: rnd() < 0.2, body: BODIES[Math.floor(rnd() * BODIES.length)] });
     }
     msgs.sort((a, b) => a.age - b.age);
+    // Pickup: seconds from landing to the agent's claim, from the workspace's
+    // claim rows. A second generator, so the mail above stays the same.
+    // Claim rows start 9 days back (an upgrade), so older taken mail has none.
+    let s2 = 7 + total;
+    const r2 = () => (s2 = (s2 * 48271) % 2147483647) / 2147483647;
+    const SLOW = { "docs-bot": 6, "atlas-fleet": 3, "grok-seat": 2, "merge-captain": 0.4 };
+    for (const m of msgs) {
+      if (m.unread || m.age > 9 * 24) continue;
+      const r = r2();
+      let w = r < 0.55 ? 5 + r2() * 55 : r < 0.8 ? 60 + r2() * 240 : r < 0.92 ? 300 + r2() * 1500 : r < 0.98 ? 1800 + r2() * 5400 : 7200 + r2() * 30000;
+      m.wait = Math.round(w * (SLOW[m.from] || 1));
+    }
     return (cache[key] = msgs);
   }
   const volumes = { small: [38, 2], large: [12345, 7], huge: [123456, 31] };
@@ -250,10 +286,64 @@ ol li { margin-bottom: 10px; }
       senders: tally(all.filter((m) => matches(m, f, "from")), (m) => m.from),
       topics: tally(all.filter((m) => matches(m, f, "topic")), (m) => m.topic || "(no topic)"),
       urgent: sub.filter((m) => m.urgent).length, replies: sub.filter((m) => m.reply).length, untitled: sub.filter((m) => !m.topic).length,
-      oldestUnread: Math.max(0, ...sub.filter((m) => m.unread).map((m) => m.age))
+      oldestUnread: Math.max(0, ...sub.filter((m) => m.unread).map((m) => m.age)),
+      pickup: pickupOf(sub)
     };
   }
   const anyFilter = (f) => Object.keys(f).length > 0;
+
+  // Pickup wait, as the drawer computes it from the parsed records: every
+  // taken message in the slice whose claim row is in the last 14 days.
+  const BUCKETS = [["under 1m", 60], ["1–5m", 300], ["5–30m", 1800], ["30m–2h", 7200], ["over 2h", Infinity]];
+  const waitText = (s) => {
+    s = Math.max(0, Math.round(s));
+    if (s < 60) return s + "s";
+    if (s < 600) return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m";
+    if (s < 86400) return Math.floor(s / 3600) + "h " + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + "m";
+    return Math.floor(s / 86400) + "d " + Math.floor(s % 86400 / 3600) + "h";
+  };
+  const rank = (sorted, q) => sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)];
+  function pickupOf(list) {
+    const claimed = list.filter((m) => m.wait !== undefined);
+    const waits = claimed.map((m) => m.wait).sort((a, b) => a - b);
+    const buckets = BUCKETS.map(() => 0);
+    for (const w of waits) buckets[BUCKETS.findIndex(([, max]) => w < max)]++;
+    const by = {};
+    for (const m of claimed) (by[m.from] = by[m.from] || []).push(m.wait);
+    const senders = Object.entries(by).map(([name, ws]) => ({ name, n: ws.length, median: rank(ws.sort((a, b) => a - b), 0.5) }))
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).slice(0, 4);
+    const taken = list.filter((m) => !m.unread && m.age < 14 * 24).length;
+    return { n: waits.length, median: waits.length ? rank(waits, 0.5) : null, p90: waits.length ? rank(waits, 0.9) : null,
+      max: waits.length ? waits[waits.length - 1] : null, buckets, senders, unmatched: Math.max(0, taken - waits.length) };
+  }
+  function pickup(d, layout) {
+    const p = d.pickup, none = p.n === 0;
+    const tile = (v, l, help) => `<div class="tile" title="${help}"><div class="v${none ? " none" : ""}">${none ? "—" : v}</div><div class="l">${l}</div></div>`;
+    const peak = Math.max(...p.buckets, 1);
+    const cols = BUCKETS.map(([label], i) => {
+      const v = p.buckets[i], h = v ? Math.max(3, 32 * v / peak) : 0;
+      return `<div class="pkcol" title="${label}: ${fmt(v)} claims"><div class="bar"><i class="${v ? "" : "zero"}" style="${v ? `height:${h}px` : ""}"></i></div><span class="bl">${label}</span><span class="bc">${fmt(v)}</span></div>`;
+    }).join("");
+    const top = Math.max(...p.senders.map((s) => s.median), 1);
+    const rows = p.senders.map((s) => `<div class="pkrow"><span class="nm">${esc(s.name)}</span><div class="track"><i style="width:${Math.max(2, 100 * s.median / top)}%"></i></div><span class="c">${waitText(s.median)}</span><span class="n">${fmt(s.n)} claims</span></div>`).join("")
+      + Array.from({ length: Math.max(0, layout - p.senders.length) }, () => `<div class="pkrow blank"><span class="nm">&nbsp;</span><div class="track"></div><span class="c"></span><span class="n"></span></div>`).join("");
+    const notes = [];
+    if (p.unmatched) notes.push(`${fmt(p.unmatched)} taken message${p.unmatched === 1 ? " has" : "s have"} no claim record: c11 records claims from version 1.7.5, so mail taken before that has no pickup time.`);
+    return `<section class="pk">
+      <div class="sect-h"><span class="t">Pickup wait</span><span class="meta">${none ? "no claims" : fmt(p.n) + " claim" + (p.n === 1 ? "" : "s")} · last 14 days</span></div>
+      <div class="tiles">
+        ${tile(p.median === null ? "" : waitText(p.median), "MEDIAN", "Half of the messages were taken faster than this.")}
+        ${tile(p.p90 === null ? "" : waitText(p.p90), "P90", "Nine in ten were taken faster than this.")}
+        ${tile(p.max === null ? "" : waitText(p.max), "SLOWEST", "The longest any message waited.")}
+        ${tile(fmt(p.n), "CLAIMS", "Taken messages these figures cover.")}
+      </div>
+      <div class="meta">From landing in this inbox to the agent taking it (recv --ack or a hook drain)</div>
+      <div class="pkcols" role="group" aria-label="Pickup wait distribution">${cols}</div>
+      <div class="rank">${rows}</div>
+      ${notes.map((n) => `<div class="meta" style="white-space:normal">${n}</div>`).join("")}
+    </section>`;
+  }
 
   function chart(title, values, start, end, label, kind) {
     const peak = Math.max(...values, 0);
@@ -278,12 +368,12 @@ ol li { margin-bottom: 10px; }
   }
   function chips() {
     const f = state.f, out = [];
-    if (f.from) out.push(["from", `from ${esc(f.from)}`]);
+    if (f.from) out.push(["from", `from ${esc(f.from)}`, `<button class="fopen" data-goto="conversations" title="Open the conversation with ${esc(f.from)}">Open conversation</button>`]);
     if (f.topic !== undefined) out.push(["topic", `topic ${esc(f.topic)}`]);
     if (f.hour !== undefined) out.push(["time", hourName(f.hour)]);
     if (f.day !== undefined) out.push(["time", dayName(f.day)]);
     if (!out.length) return `<div class="filters"><span class="hint">All mail · click a sender, topic or bar to narrow</span></div>`;
-    return `<div class="filters">${out.map(([k, t]) => `<button class="fchip" data-clear="${k}" aria-label="Remove filter ${t}">${t}<span class="x">×</span></button>`).join("")}<button class="clear" data-clear="all">Clear all</button></div>`;
+    return `<div class="filters">${out.map(([k, t, extra]) => `<button class="fchip" data-clear="${k}" aria-label="Remove filter ${t}">${t}<span class="x">×</span></button>${extra || ""}`).join("")}<button class="clear" data-clear="all">Clear all</button></div>`;
   }
   function messageList(d) {
     const shown = d.sub.slice(0, 50);
@@ -314,6 +404,7 @@ ol li { margin-bottom: 10px; }
       ${ranking("Top senders", d.senders, { unread: true, kind: "from", selected: f.from })}
       ${ranking("Top topics", d.topics, { kind: "topic", selected: f.topic })}
       <div class="meta">Urgent ${fmt(d.urgent)} · replies ${fmt(d.replies)} · file bodies 0 · no topic ${fmt(d.untitled)}</div>
+      ${pickup(d, pickupOf(all).senders.length)}
       ${filtered ? messageList(d) : ranking("Sent to", { top: [{ name: "reviewer", n: 25 }], distinct: 1, others: 0 }, { kind: "to", trailing: "19 of 25 copies taken" })}
     </div>`;
   }
@@ -332,7 +423,9 @@ ol li { margin-bottom: 10px; }
     document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === state.tab));
     const scroller = document.querySelector(".scroll"), keep = scroller.scrollTop;
     $("pane").innerHTML = state.tab === "insights" ? insights(all, unread)
-      : `<div class="placeholder">${state.tab === "sent" ? "The Sent list, unchanged." : "The Received list" + (anyFilter(state.f) ? ", narrowed to the same filters." : ", unchanged.")}</div>`;
+      : `<div class="placeholder">${state.tab === "sent" ? "The Sent list, unchanged."
+        : state.tab === "conversations" ? (state.f.from ? `Conversations, open on the thread with ${esc(state.f.from)}: its stamped panel, or its name-only row for unstamped mail.` : "Conversations, unchanged.")
+        : "The Received list" + (anyFilter(state.f) ? ", narrowed to the same filters." : ", unchanged.")}</div>`;
     scroller.scrollTop = keep;
     wire();
   }

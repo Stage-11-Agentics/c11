@@ -124,9 +124,9 @@ log is best effort; recover current state with `c11 get-metadata --panel <ref>`.
 | Event | Payload | Meaning |
 |-------|---------|---------|
 | `supervisor.waiting_on_permission` | `agent, kind, source, since_ms` | One permission or choice wait began. `kind` is `permission`, `question`, `plan_review`, or `choice`. `source` is `journal` or `active_screen`. |
-| `supervisor.permission_cleared` | `agent, kind, source, since_ms, reason` | The wait ended. Unreadable screen capture never counts as an answer. |
+| `supervisor.permission_cleared` | `agent, kind, source, since_ms, reason` | The wait ended. `reason` is `answered` on continuation, `turn_ended` on a terminal phase, or `coverage_changed` when live confirmation is lost. Retirement uses `closed`, `owner_changed`, or `journal_cleared`. Unreadable screen capture never counts as an answer. |
 | `supervisor.turn_interrupted` | `agent, session_id, turn_id, reason, source, native_event, observed_at_ms` | A supported applied interruption/session failure, or suspension of a working turn by host sleep. `turn_id` may be null. |
-| `supervisor.stalled` | `agent, last_progress_at_ms, threshold_seconds, source` | A journal-confirmed working agent with known progress coverage passed the no-progress threshold. Emitted once until cleared. |
+| `supervisor.stalled` | `agent, last_progress_at_ms, threshold_seconds, source` | A working agent (journal or confirmed Claude screen continuation) with known progress coverage passed the no-progress threshold. Emitted once until cleared. |
 | `supervisor.stall_cleared` | `agent, since_ms, reason` | Progress, a turn end, waiting, or removal ended the stall. |
 
 Each event has the envelope's workspace and panel UUIDs. Payloads contain no
@@ -146,18 +146,19 @@ usage/spend-limit detection is separate.
 
 | Harness | Permission / choice detection | Resolution / limitations |
 |---------|-------------------------------|--------------------------|
-| Claude Code | Native `PermissionRequest`, question and plan hooks; recorded permission chooser also guards `send`. | Matching `PostToolUse` closes the request when the approved tool returns; long tools can retain the wait until then. Ordinary tool activity still reports separately. Notification-only waits without an ID need a correlated native turn end. |
+| Claude Code | Native `PermissionRequest`, Notification, question and plan hooks; recorded permission chooser also guards `send`. | An ID-less approval is sampled only while the journal remains blocked on approval. A positive composer clears the wait before the tool or turn ends; unknown capture does not. Identified question/plan asks retain their native matching resolution. |
 | Codex | Active-screen command approval menu (`Yes, proceed`, numbered options, live confirm/cancel footer). | Positive composer or turn end clears. Requires exact conversation capture and journal working eligibility. Other chooser layouts remain unknown. |
 | OpenCode | Native `permission.asked` and `question.asked`. | Matching `permission.replied`, `question.replied` or `question.rejected`; reject closes the wait with unknown turn outcome. No answers are stored. |
 | Pi | Active-screen extension selector, selected arrow plus navigation/select/cancel footer and bottom status rails. | Positive composer or turn end clears. Requires an exact persisted session and working journal. Other custom extension widgets remain unknown. |
 | Grok | Unknown: no recorded permission/choice layout is available. | No guessed reader. Transcript lifecycle and explicit primary-turn interruptions remain available. |
 
-For a harness/state without a native ask signal, screen fallback runs only while
-its journal is working or blocked, at most once per five seconds. Idle/cold panels
+Screen fallback runs only while a Codex/Pi journal is working or blocked, or a
+Claude journal is blocked on an ID-less approval, at most once per five seconds. Idle/cold panels
 are never scanned. Grok has no supported dialog reader and is not sampled. The target is detection within five seconds of journal
 eligibility. Codex turn discovery uses the existing ten-second transcript
 sweep, so a first dialog after an idle turn starts can take approximately fifteen
-seconds. Claude/OpenCode native waits retain the five-second bound. Captures use
+seconds. Claude/OpenCode native wait entry retains the five-second bound; Claude
+ID-less approval clearing uses the bounded screen sweep. Captures use
 the existing bounded input-state readers; classification and events run off-main.
 Main copies target a two-millisecond per-sweep budget, checked between panels.
 A new capture starts only during the first millisecond, reserving the second
@@ -166,6 +167,13 @@ one capture can overrun it. Metadata reports actual elapsed time and whether the
 budget deferred panels, so an overloaded sweep does not pretend it met the bound.
 Deferred panels rotate fairly. At 50 working sampled panels, detection can take
 longer than five seconds.
+
+For an ID-less Claude approval, one process-local screen observation remembers
+that the composer returned. Repeated native snapshots do not reopen that wait. A
+new positive chooser reopens it; a turn, owner/session or eligibility change resets
+the observation. The journal is never rewritten. `screen_confirmed_continuation`
+reports this state while `phase` retains the raw journal phase. This confirmed
+continuation counts as working for stall and host-sleep projection.
 
 Stalls use the transcript's last assistant/tool-result output time and increasing
 turn/session token counts, never a spinner repaint or operator keystroke. No
@@ -179,7 +187,7 @@ stall clock. The default threshold is ten minutes; set the c11-owned defaults ke
 Invalid values use ten. The monitor rereads this setting on its next observation.
 
 The `supervisor` object in panel metadata exposes `phase`, `source`, `coverage`,
-`waiting_on_permission`, `wait_kind`, `wait_source`, `wait_since_ms`, `stalled`,
+`screen_confirmed_continuation`, `waiting_on_permission`, `wait_kind`, `wait_source`, `wait_since_ms`, `stalled`,
 `stall_since_ms`, `last_progress_at_ms`, `progress_coverage`, `interruption_reason`,
 `interrupted_at_ms`, and `interruption_source`. Missing details are null. Screen
 candidates also report `capture_sweep_ms` and `capture_budget_exhausted`.

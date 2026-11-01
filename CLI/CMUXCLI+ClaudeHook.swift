@@ -66,7 +66,6 @@ extension CMUXCLI {
         telemetry: CLISocketSentryTelemetry,
         rawInput: String,
         journalDraft: JournalDraft?,
-        deliveryDrafts: [JournalDraft],
         socketCeiling: Date?
     ) throws {
         let subcommand = commandArgs.first?.lowercased() ?? "help"
@@ -104,7 +103,7 @@ extension CMUXCLI {
             ]
         )
         func spoolJournalDraft() {
-            for draft in deliveryDrafts { _ = JournalCommand.spool(draft) }
+            if let journalDraft { _ = JournalCommand.spool(journalDraft) }
         }
 
         // Claim Stop-hook mail before advisory lifecycle workspace resolution.
@@ -144,15 +143,12 @@ extension CMUXCLI {
         }
         func appendJournal(workspaceId: String, surfaceId: String) -> Bool {
             if let journalDelivery { return managedJournalDelivery(journalDelivery) }
-            var managed = true
-            for var draft in deliveryDrafts {
-                draft.panelID = UUID(uuidString: surfaceId)
-                draft.workspaceID = UUID(uuidString: workspaceId)
-                let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
-                journalDelivery = delivery
-                managed = managedJournalDelivery(delivery) && managed
-            }
-            return managed
+            guard var draft = journalDraft else { return true }
+            draft.panelID = UUID(uuidString: surfaceId)
+            draft.workspaceID = UUID(uuidString: workspaceId)
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
+            journalDelivery = delivery
+            return managedJournalDelivery(delivery)
         }
         func appendResolvedJournal() {
             var workspaceId = fallbackWorkspaceId

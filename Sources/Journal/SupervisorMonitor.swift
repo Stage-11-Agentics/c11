@@ -34,15 +34,30 @@ struct SupervisorProjection {
     private(set) var interruptionReason: String?
     private(set) var interruptedAt: Int64?
     private(set) var interruptionSource: String?
+    private var claudeApprovalAnswered = false
+
+    init(snapshot: JournalSnapshot) { self.snapshot = snapshot }
 
     static func thresholdMinutes(_ value: Double) -> Double {
         value.isFinite && value > 0 && value <= 1440 ? value : 10
     }
 
-    /// Native asks already cover Claude and OpenCode. No idle/cold scraping.
+    static func isIdlessClaudeApproval(_ snapshot: JournalSnapshot) -> Bool {
+        !snapshot.isHistorical && snapshot.owner.agentKind == "claude-code"
+            && snapshot.phase == .blocked && snapshot.reason == .approval && snapshot.requestID == nil
+    }
+
+    /// Claude's native permission hook has no answer id. Only that blocked
+    /// approval needs screen confirmation; its identified asks remain native.
     static func needsScreen(_ snapshot: JournalSnapshot) -> Bool {
-        !snapshot.isHistorical && [.working, .blocked].contains(snapshot.phase)
-            && ["codex", "pi"].contains(snapshot.owner.agentKind)
+        isIdlessClaudeApproval(snapshot) ||
+            (!snapshot.isHistorical && [.working, .blocked].contains(snapshot.phase)
+                && ["codex", "pi"].contains(snapshot.owner.agentKind))
+    }
+
+    var observesAsWorking: Bool {
+        !snapshot.isHistorical && (snapshot.phase == .working ||
+            (Self.isIdlessClaudeApproval(snapshot) && claudeApprovalAnswered))
     }
 
     static func interruptionReason(_ draft: JournalDraft, result: JournalAppendResult, observedSince: Int64) -> String? {
@@ -61,8 +76,15 @@ struct SupervisorProjection {
         prompt: PromptInputClassification? = nil, now: Int64, thresholdMs: Int64
     ) -> [Edge] {
         var edges: [Edge] = []
-        let newTurn = snapshot.turnID != next.turnID ||
-            (snapshot.phase != .working && next.phase == .working)
+        let wasWorking = observesAsWorking
+        let turnChanged = snapshot.turnID != next.turnID
+        let idlessApproval = Self.isIdlessClaudeApproval(next)
+        if !idlessApproval || turnChanged { claudeApprovalAnswered = false }
+        if idlessApproval, let prompt {
+            if prompt.state == .dialog { claudeApprovalAnswered = false }
+            else if [.empty, .suggestion, .draft].contains(prompt.state) { claudeApprovalAnswered = true }
+            // Unknown does not revoke a previously confirmed continuation.
+        }
         let advanced = nextProgress.map { value in
             guard let old = progress else { return false }
             return (value.outputAt.map { $0 > (old.outputAt ?? .distantPast) } ?? false)
@@ -71,18 +93,21 @@ struct SupervisorProjection {
         } ?? false
         snapshot = next
         progress = nextProgress
+        let working = observesAsWorking
+        let newTurn = turnChanged || (!wasWorking && working)
 
         if newTurn || advanced {
             lastProgressAt = now
             interruptionReason = nil; interruptedAt = nil; interruptionSource = nil
         }
-        if next.phase == .working && lastProgressAt == nil { lastProgressAt = now }
+        if working && lastProgressAt == nil { lastProgressAt = now }
 
         var kind = waitKind
         var source = waitSource
         if next.isHistorical || ![.working, .blocked].contains(next.phase) {
             kind = nil; source = nil
-        } else if next.phase == .blocked, let native = AgentRoster.waitingReason(next.reason) {
+        } else if next.phase == .blocked, !(idlessApproval && claudeApprovalAnswered),
+                  let native = AgentRoster.waitingReason(next.reason) {
             kind = native == "approval" ? "permission" : native
             source = "journal"
         } else if waitSource == "journal" {
@@ -101,21 +126,23 @@ struct SupervisorProjection {
             edges.append(edge(.supervisorWaitingOnPermission,
                               ["kind": kind, "source": source ?? "unknown", "since_ms": now]))
         } else if waitKind != nil, kind == nil {
+            let reason = next.isHistorical ? "coverage_changed" :
+                (working ? "answered" : "turn_ended")
             edges.append(edge(.supervisorPermissionCleared,
                               ["kind": waitKind!, "source": waitSource ?? "unknown",
-                               "since_ms": waitSince ?? now, "reason": "answered"]))
+                               "since_ms": waitSince ?? now, "reason": reason]))
             waitSince = nil
             lastProgressAt = now
         }
         waitKind = kind; waitSource = source
 
-        if let stalledSince, advanced || newTurn || next.phase != .working || kind != nil || next.isHistorical {
+        if let stalledSince, advanced || newTurn || !working || kind != nil {
             let reason = advanced ? "progress" : (kind != nil ? "waiting" : "turn_ended")
             edges.append(edge(.supervisorStallCleared,
                               ["since_ms": stalledSince, "reason": reason]))
             self.stalledSince = nil
         }
-        if kind != nil || next.phase != .working || next.isHistorical {
+        if kind != nil || !working {
             lastProgressAt = nil
         } else if stalledSince == nil, progress?.hasCoverage == true,
                   let lastProgressAt, now >= lastProgressAt, now - lastProgressAt >= thresholdMs {
@@ -155,6 +182,7 @@ struct SupervisorProjection {
         ["phase": snapshot.phase.rawValue,
          "source": snapshot.source.rawValue,
          "coverage": snapshot.isHistorical ? "historical" : "observed",
+         "screen_confirmed_continuation": claudeApprovalAnswered,
          "waiting_on_permission": waitKind != nil,
          "wait_kind": waitKind as Any? ?? NSNull(),
          "wait_source": waitSource as Any? ?? NSNull(),
@@ -215,7 +243,7 @@ final class SupervisorMonitor: @unchecked Sendable {
                                    "waiting_on_permission": false, "stalled": false]
     }
 
-    func observe(_ snapshot: JournalSnapshot) {
+    func observe(_ snapshot: JournalSnapshot, prompt: PromptInputClassification? = nil) {
         queue.async { [self] in
             // publish releases its lock before enqueueing. An owner change or
             // close can overtake this callback; consult the existing journal.
@@ -223,7 +251,7 @@ final class SupervisorMonitor: @unchecked Sendable {
                   current.owner == snapshot.owner, current.lastSequence >= snapshot.lastSequence else { return }
             guard (projections[snapshot.owner.panelID]?.snapshot.lastSequence ?? -1) <= snapshot.lastSequence else { return }
             startTimer()
-            update(snapshot, now: Self.nowMs)
+            update(snapshot, prompt: prompt, now: Self.nowMs)
         }
     }
 
@@ -258,7 +286,7 @@ final class SupervisorMonitor: @unchecked Sendable {
             sleeping = value
             let now = Self.nowMs
             for (panel, var projection) in projections {
-                if value, projection.snapshot.phase == .working, !projection.snapshot.isHistorical {
+                if value, projection.observesAsWorking {
                     emit(projection.interrupt(reason: "host_sleep", source: "c11", now: now,
                                               nativeEvent: "system.sleep"), snapshot: projection.snapshot)
                 }

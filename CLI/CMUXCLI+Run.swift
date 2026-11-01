@@ -421,8 +421,6 @@ extension CMUXCLI {
                 panelID: journalPanel.flatMap(UUID.init(uuidString:)), workspaceID: journalWorkspace.flatMap(UUID.init(uuidString:)))
         }
 
-        let journalHookDrafts = journalHookDraft.map(ClaudeHookMapping.deliveryDrafts) ?? []
-
         // C11-308 / cmux #15980: reject a sequence before authentication or
         // --window routing can send anything to the app. The command arms
         // retain their target validation and command-specific missing-key text.
@@ -502,7 +500,7 @@ extension CMUXCLI {
             if command == "claude-hook",
                let cliError = error as? CLIError,
                isAdvisoryHookConnectivityError(cliError) {
-                for draft in journalHookDrafts { _ = JournalCommand.spool(draft) }
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
                 if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
                 return
@@ -529,7 +527,7 @@ extension CMUXCLI {
             )
         } catch {
             if command == "claude-hook" {
-                for draft in journalHookDrafts { _ = JournalCommand.spool(draft) }
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
                 return
             }
@@ -2266,7 +2264,7 @@ extension CMUXCLI {
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
-                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft, deliveryDrafts: journalHookDrafts, socketCeiling: priorProcessDeadline)
+                try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft, socketCeiling: priorProcessDeadline)
                 cliTelemetry.breadcrumb("claude-hook.completed")
             } catch let error as CLIError where isAdvisoryHookConnectivityError(error)
                 || error.message == SocketClient.commandTimedOutMessage {
@@ -2278,7 +2276,7 @@ extension CMUXCLI {
                 // doesn't surface a hook-error banner on every prompt. Real
                 // hook bugs (malformed input, logic errors) still propagate.
                 cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
-                for draft in journalHookDrafts { _ = JournalCommand.spool(draft) }
+                if let journalHookDraft { _ = JournalCommand.spool(journalHookDraft) }
                 if commandArgs.first?.lowercased() == "permission-request" { print("{}") }
             } catch {
                 cliTelemetry.breadcrumb("claude-hook.failure")

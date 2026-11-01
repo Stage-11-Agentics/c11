@@ -656,6 +656,28 @@ final class SupervisorProjectionTests: XCTestCase {
         XCTAssertTrue(value.observe(snap, progress: progress(), now: 4, thresholdMs: 600_000).isEmpty)
     }
 
+    func testWaitClearReasonDoesNotInventAnAnswerAtTurnOrCoverageEnd() {
+        for phase in [JournalPhase.working, .idle, .error, .unknown] {
+            var snap = snapshot(.blocked, kind: "claude-code")
+            snap.reason = .approval
+            var value = SupervisorProjection(snapshot: snap)
+            _ = value.observe(snap, progress: progress(), now: 1, thresholdMs: 600_000)
+            snap.phase = phase; snap.reason = nil
+            let clear = value.observe(snap, progress: progress(), now: 2, thresholdMs: 600_000)
+            XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+            XCTAssertEqual(clear.first?.payload["reason"] as? String,
+                           phase == .working ? "answered" : "turn_ended")
+        }
+        var snap = snapshot(.blocked, kind: "claude-code")
+        snap.reason = .approval
+        var value = SupervisorProjection(snapshot: snap)
+        _ = value.observe(snap, progress: progress(), now: 1, thresholdMs: 600_000)
+        snap.confirmation = .unconfirmed
+        let clear = value.observe(snap, progress: progress(), now: 2, thresholdMs: 600_000)
+        XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+        XCTAssertEqual(clear.first?.payload["reason"] as? String, "coverage_changed")
+    }
+
     func testScreenDialogUnknownDoesNotClearAndIdleNeverOpens() {
         var snap = snapshot()
         var value = SupervisorProjection(snapshot: snap)
@@ -666,6 +688,69 @@ final class SupervisorProjectionTests: XCTestCase {
         XCTAssertEqual(value.observe(snap, progress: progress(), prompt: .init(state: .empty, draftLength: nil), now: 3, thresholdMs: 600_000).map(\.type), [.supervisorPermissionCleared])
         snap.phase = .idle
         XCTAssertTrue(value.observe(snap, progress: progress(), prompt: dialog, now: 4, thresholdMs: 600_000).isEmpty)
+    }
+
+    func testIdlessClaudeApprovalScreenContinuationDoesNotReopenAndCanStall() {
+        var snap = snapshot(.blocked, kind: "claude-code")
+        snap.reason = .approval
+        XCTAssertTrue(SupervisorProjection.needsScreen(snap))
+        var value = SupervisorProjection(snapshot: snap)
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 0, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission])
+        XCTAssertTrue(value.observe(snap, progress: progress(), prompt: .unknown, now: 1, thresholdMs: 100).isEmpty)
+        let clear = value.observe(snap, progress: progress(), prompt: .init(state: .draft, draftLength: 4), now: 2, thresholdMs: 100)
+        XCTAssertEqual(clear.map(\.type), [.supervisorPermissionCleared])
+        XCTAssertEqual(clear.first?.payload["reason"] as? String, "answered")
+        for now: Int64 in [3, 20, 50] {
+            XCTAssertTrue(value.observe(snap, progress: progress(), prompt: .unknown, now: now, thresholdMs: 100).isEmpty)
+            XCTAssertEqual(value.metadata["waiting_on_permission"] as? Bool, false)
+        }
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 102, thresholdMs: 100).map(\.type), [.supervisorStalled])
+        let dialog = PromptInputClassification(state: .dialog, draftLength: nil, dialogKind: "permission")
+        XCTAssertEqual(value.observe(snap, progress: progress(), prompt: dialog, now: 103, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission, .supervisorStallCleared])
+        XCTAssertTrue(value.observe(snap, progress: progress(), prompt: dialog, now: 104, thresholdMs: 100).isEmpty)
+        XCTAssertEqual(value.metadata["waiting_on_permission"] as? Bool, true)
+        snap.phase = .idle
+        _ = value.observe(snap, progress: progress(), now: 105, thresholdMs: 100)
+        snap.phase = .blocked
+        XCTAssertEqual(value.observe(snap, progress: progress(), now: 106, thresholdMs: 100).map(\.type), [.supervisorWaitingOnPermission])
+    }
+
+    func testClaudeScreenSamplingExcludesIdentifiedAsksAndOtherPhases() {
+        for phase in [JournalPhase.working, .idle, .error, .unknown] {
+            var snap = snapshot(phase, kind: "claude-code"); snap.reason = .approval
+            XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+        }
+        var snap = snapshot(.blocked, kind: "claude-code"); snap.reason = .approval
+        snap.requestID = "identified-request"
+        XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+        snap.requestID = nil
+        for reason in [JournalReason.question, .planReview] {
+            snap.reason = reason
+            XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+        }
+        snap.reason = .approval; snap.confirmation = .unconfirmed
+        XCTAssertFalse(SupervisorProjection.needsScreen(snap))
+    }
+
+    func testScreenConfirmedClaudeContinuationReceivesSleepAndResetsOnOwnerChange() {
+        var snap = snapshot(.blocked, kind: "claude-code"); snap.reason = .approval
+        var current = snap
+        var events: [SupervisorProjection.Edge] = []
+        let monitor = SupervisorMonitor(latestSnapshot: { _ in current }) { edge, _ in events.append(edge) }
+        monitor.observe(snap)
+        monitor.observe(snap, prompt: .init(state: .empty, draftLength: 0))
+        monitor.setSleeping(true)
+        monitor.drainForTesting()
+        XCTAssertEqual(events.map(\.type), [.supervisorWaitingOnPermission, .supervisorPermissionCleared, .supervisorTurnInterrupted])
+        XCTAssertEqual(events.last?.payload["reason"] as? String, "host_sleep")
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["phase"] as? String, "blocked")
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["screen_confirmed_continuation"] as? Bool, true)
+        current.owner = .init(panelID: snap.owner.panelID, agentKind: "claude-code", sessionID: "new-session")
+        monitor.setSleeping(false)
+        monitor.observe(current)
+        monitor.drainForTesting()
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["screen_confirmed_continuation"] as? Bool, false)
+        XCTAssertEqual(monitor.readback(panel: snap.owner.panelID)["waiting_on_permission"] as? Bool, true)
     }
 
     func testStallBoundaryOnceAndTokensClearThenCanStallAgain() {

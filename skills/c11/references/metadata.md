@@ -51,8 +51,10 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 
 **Agent state and rendering state are separate.** `get-metadata` adds read-only
 `journal` and `supervisor` objects. `journal.phase` is the authoritative agent
-phase; `supervisor` adds current permission/choice waits, interruptions and
-stalls with source/coverage fields. See [Supervising agents](events.md#supervising-agents).
+phase; `supervisor` retains that raw phase and adds current permission/choice waits, interruptions and
+stalls with source/coverage fields. `screen_confirmed_continuation` records a positive
+composer after an ID-less Claude approval, allowing stall/sleep projection without
+rewriting the journal. See [Supervising agents](events.md#supervising-agents).
 The legacy `lifecycle_state` key is terminal rendering (`active`, `throttled`,
 `hibernated`). Hidden workspaces are throttled even when their agents are working;
 it is not the agent lifecycle.

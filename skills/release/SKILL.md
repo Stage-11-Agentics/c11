@@ -141,6 +141,7 @@ This is a checklist trigger, not a CI gate.
 6.7. Pre-build the release on Atlas, in parallel with staging and CI:
 - Releases build and publish on Atlas, so the operator's Mac can sleep. Atlas's `~/c11-release` is used only for those two runs (6.7 and step 10); commits, pushes, the release PR and its checks stay in your release-branch checkout.
 - On Atlas (over ssh), check out the tested head detached, with submodules: `cd ~/c11-release && git fetch origin release/vX.Y.Z && git checkout --detach <tested head> && git submodule update --init --recursive ghostty vendor/bonsplit`. Then run `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --dry-run vX.Y.Z` there. `--host local` builds in place through the same admission slots as `remote-build.sh`. It builds the production app (cold, wholemodule, Apple silicon only, Xcode 26.3; about 6-7 minutes), signs it with the Developer ID from the release keychain, rehearses every step up to notarization, and keeps the build in `build-release-local/vX.Y.Z/pristine` for the real run to reuse.
+- Run both Atlas commands in a login shell (`ssh atlas 'zsh -lc "…"'`, escaping `\$HOME`): a plain ssh command lacks `/opt/homebrew/bin`, and preflight stops with `missing tool: gh`.
 - The tree must be clean: a build that carried uncommitted files cannot be reused. Rerun 6.7 whenever the tested head changes.
 - The pristine build keeps its dSYMs, so the real run can upload them to Sentry when `SENTRY_AUTH_TOKEN` is set there.
 - Signing-keychain mode takes one launchd unlock lease of Atlas's release keychain and relocks it on every exit path. That keychain holds the Developer ID identity (team UKQ4QALWD4), the `acetate-notary` profile and the `c11mux` Sparkle key. Notarization uses `c11-notary`, else `acetate-notary` (`C11_NOTARY_PROFILE` picks one), and the log names the profile and team. Before the first release from a machine, run `scripts/atlas-signing-check.sh` and `scripts/move-sparkle-key-to-atlas.sh --check` from your own Mac, not from the Atlas shell: both drive Atlas over ssh, and Atlas cannot ssh to itself.
@@ -163,7 +164,8 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
   SHA=<full tested head sha from the release PR body>
   test -n "$SHA" || { echo "STOP: no tested head"; exit 1; }
   test "$(git rev-parse origin/release/vX.Y.Z)" = "$SHA" || { echo "STOP: branch moved since it was tested"; exit 1; }
-  # Readers consume their whole input (no grep -q or -m1): under pipefail an early exit
+  # Readers consume their whole input (no grep -q, -m1, or grep into /dev/null, which ugrep
+  # treats as -q): under pipefail an early exit
   # kills the writer with SIGPIPE (141) and a valid head reads as a STOP. Each awk
   # reader exits nonzero when nothing matched.
   git show "$SHA:GhosttyTabs.xcodeproj/project.pbxproj" | awk '/MARKETING_VERSION = X\.Y\.Z;/ {p=1} END {exit !p}' \
@@ -177,7 +179,7 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
     || { echo "STOP: cannot read release.yml at $SHA"; exit 1; }
   grep -E '^[[:space:]]+push:' <<<"$ON" >/dev/null && { echo "STOP: release.yml at $SHA still starts on a tag push"; exit 1; }
   grep -E '^[[:space:]]+workflow_dispatch:' <<<"$ON" >/dev/null || { echo "STOP: release.yml at $SHA has no workflow_dispatch trigger"; exit 1; }
-  git show "$SHA:scripts/release-local.sh" | grep 'C11_SIGNING_KEYCHAIN' >/dev/null \
+  git show "$SHA:scripts/release-local.sh" | awk '/C11_SIGNING_KEYCHAIN/ {p=1} END {exit !p}' \
     || { echo "STOP: release-local.sh at $SHA has no signing-keychain mode"; exit 1; }
   ```
   Run the gate as a script or in an agent's shell: `exit` closes an interactive terminal.

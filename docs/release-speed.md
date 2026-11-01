@@ -82,6 +82,12 @@ C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db \
 | Dry run reusing the build, everything but notarization and upload | 25 |
 | Real notarization of app and DMG, with stapling and the signed DMG | 80 |
 
+Releases through `release-local.sh` on Atlas, from `build-release-local/timings.jsonl`:
+
+| Tag | Dry run s (build s) | Real run s, `--reuse-build` | Start to published s | Notarize app + DMG s | Publish s | Homebrew s |
+|---|---:|---:|---:|---:|---:|---:|
+| v1.7.5 | 469 (439) | 112 | 105 | 69 (32 + 37) | 9 | 2 |
+
 End-to-end rehearsal (#815 proof, 2026-10-31, nothing published): scratch release branch to would-publish in 8 min 52 s. Cheap CI was green at 1:57, `c11/pr-swift` at 3:45 (166 s), the Atlas dry run finished at 7:10, and notarization at 8:52. With the build done during the staging smoke, tag to published is about 2.5 min. Each run appends its step seconds to `build-release-local/timings.jsonl`; add a row to the release table above.
 
 Xcode 16.4 runs only through macOS 26.1.x ([Apple's support table](https://developer.apple.com/support/xcode/)), which is why the pin moved to Xcode 26.3 (DTXcode 2630).

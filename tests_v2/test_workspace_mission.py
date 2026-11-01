@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import signal
 import socket
 import subprocess
@@ -144,6 +145,43 @@ wait_for(lambda: mission(SHARED) == "", "changing root clears prior mission")
 call("workspace.set_root", workspace_id=SHARED, root_directory=str(A))
 wait_for(lambda: mission(SHARED) == mission(WS), "changing root back restores shared mission")
 note("recreation-and-root-change")
+
+# A process fixture records the actual environment and staged prompt emitted
+# by the native launch path. A real Codex mission read follows this UI script.
+fixture = ROOT / "launch-receipt.py"
+fixture.write_text('''import json, os, pathlib, sys
+instruction = next(a for a in sys.argv if a.startswith("Read the file at "))
+path = instruction[len("Read the file at "):-len(" and follow it exactly.")]
+pathlib.Path(os.environ["C11_TEST_MISSION_RECEIPT"]).write_text(json.dumps({"mission": os.environ.get("C11_MISSION_FILE"), "prompt": pathlib.Path(path).read_text(), "cwd": os.getcwd()}))
+''')
+task = "Keep this exact task text.\n  With trailing spaces  "
+for name, target, cwd, expected in [
+    ("cwd-override-keeps-target-mission", WS, B, str(FILE)),
+    ("new-workspace-uses-new-root", None, A, str(FILE)),
+    ("rootless-clears-inherited-context", EMPTY, A, ""),
+]:
+    if name.startswith("rootless"):
+        call("workspace.set_root", workspace_id=EMPTY, root_directory=None)
+    receipt = OUT / (name + ".json")
+    receipt.unlink(missing_ok=True)
+    params = dict(type="codex", cwd=str(cwd), prompt=task, focus=False,
+        command_override="/usr/bin/python3 " + shlex.quote(str(fixture)),
+        env={"C11_MISSION_FILE": "/wrong/inherited/C11.md", "C11_TEST_MISSION_RECEIPT": str(receipt)})
+    if target:
+        params["workspace_id"] = target
+    else:
+        params["new_workspace"] = True
+    launched = call("agent.launch", **params)
+    wait_for(receipt.exists, name + " process receipt", timeout=20)
+    observation = json.loads(receipt.read_text())
+    assert observation["mission"] == expected, (name, observation)
+    assert observation["cwd"] == str(cwd), (name, observation)
+    assert observation["prompt"].endswith(task), (name, observation)
+    if expected:
+        assert "C11_MISSION_FILE" in observation["prompt"], observation
+    else:
+        assert observation["prompt"] == task, observation
+    note(name, receipt=observation, panel=launched.get("panel_id"))
 
 osa('click menu item "Double Wide" of menu 1 of menu item "Sidebar" of menu 1 of menu bar item "View" of menu bar 1')
 wait_for(lambda: call("sidebar.state", workspace_id=WS)["layout"]["double_wide"], "Tiles enabled")

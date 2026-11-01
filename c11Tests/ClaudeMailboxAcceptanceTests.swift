@@ -153,6 +153,16 @@ final class GrokMailboxAcceptanceTests: XCTestCase {
             registry: Data("{".utf8), pid: 44036, birthMicros: birth, sessionID: bound))
     }
 
+    func testTypedRingRowsCarryOnlyAShortNativeStateToken() {
+        XCTAssertEqual(MailboxDispatchLog.nativeStateToken("grok_leader"), "grok_leader")
+        XCTAssertEqual(MailboxDispatchLog.nativeStateToken("off:no_socket"), "off:no_socket")
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken(""))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken("off:Sandbox"))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken("off: sandbox"))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken("off:\"injected\""))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken(String(repeating: "a", count: 49)))
+    }
+
     func testConfirmationIsTheInvitationEchoedInTheBoundSession() {
         let invitation = ClaudeMailboxAcceptance.invitation
         let queued: [String: Any] = ["jsonrpc": "2.0", "method": "_x.ai/queue/changed",

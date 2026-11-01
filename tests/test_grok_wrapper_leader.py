@@ -119,6 +119,7 @@ exit 0
 printf '%s\\n' "$*" >> "$FAKE_C11_LOG"
 [[ "${1:-}" == "--socket" ]] && shift 2
 [[ "${1:-}" == "ping" ]] && exit 0
+[[ "${1:-}" == "grok-mailbox" && -n "${FAKE_SIDECAR_EXIT:-}" ]] && exit "$FAKE_SIDECAR_EXIT"
 exit 0
 """)
         self.app_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -160,6 +161,13 @@ exit 0
             wait_for(lambda: any(" grok-mailbox " in c for c in self.c11_calls()), wait)
         return [c for c in self.c11_calls() if " grok-mailbox " in c]
 
+    def native_states(self, wait: float = 3.0) -> list[str]:
+        def states() -> list[str]:
+            return [c.split("--value ", 1)[1].split(" ", 1)[0] for c in self.c11_calls()
+                    if "--key mailbox.native_state" in c]
+        wait_for(lambda: bool(states()), wait)
+        return states()
+
     def close(self) -> None:
         self.app_socket.close()
         self.td.cleanup()
@@ -181,6 +189,7 @@ def test_interactive_launch_adds_private_leader_and_sidecar() -> None:
         expect(len(calls) == 1, f"one sidecar: {run.c11_calls()}")
         expect(f"--leader-socket {sock} --session-id {argv[4]}" in calls[0], calls[0])
         expect(f"--registry {run.tmp}/home/.grok/active_sessions.json" in calls[0], calls[0])
+        expect(run.native_states() == ["grok_leader"], str(run.c11_calls()))
     finally:
         run.close()
 
@@ -197,12 +206,14 @@ def test_resume_binds_the_resumed_session() -> None:
 
 def test_operator_choices_and_opt_out_skip_leader_mode() -> None:
     cases = [
-        (["--leader"], {}), (["--no-leader"], {}), (["--leader-socket", "/tmp/x.sock"], {}),
-        (["--leader-socket=/tmp/x.sock"], {}), (["--sandbox", "workspace"], {}), (["--sandbox=workspace"], {}),
-        ([], {"GROK_SANDBOX": "workspace"}), ([], {"C11_GROK_NATIVE_MAIL_DISABLED": "1"}),
-        (["--continue"], {}),
+        (["--leader"], {}, "off:operator_leader"), (["--no-leader"], {}, "off:operator_leader"),
+        (["--leader-socket", "/tmp/x.sock"], {}, "off:operator_leader"),
+        (["--leader-socket=/tmp/x.sock"], {}, "off:operator_leader"),
+        (["--sandbox", "workspace"], {}, "off:sandbox"), (["--sandbox=workspace"], {}, "off:sandbox"),
+        ([], {"GROK_SANDBOX": "workspace"}, "off:sandbox"), ([], {"C11_GROK_NATIVE_MAIL_DISABLED": "1"}, "off:opt_out"),
+        (["--continue"], {}, "off:no_session"),
     ]
-    for argv, extra in cases:
+    for argv, extra, state in cases:
         run = Run(argv, env_extra=extra)
         try:
             got = run.argv
@@ -210,6 +221,7 @@ def test_operator_choices_and_opt_out_skip_leader_mode() -> None:
             expect(got.count("--leader") == argv.count("--leader"), f"{argv} {extra}: {got}")
             expect(not any(a.startswith("/tmp/c11-grok-leader-") for a in got), f"{argv} {extra}: {got}")
             expect(run.sidecar_calls(wait=0.5) == [], f"{argv} {extra}: {run.c11_calls()}")
+            expect(run.native_states() == [state], f"{argv} {extra}: {run.c11_calls()}")
         finally:
             run.close()
 
@@ -219,6 +231,7 @@ def test_grok_without_leader_flag_launches_typed_only() -> None:
     try:
         expect(run.argv[0] == "--session-id" and "--leader" not in run.argv, str(run.argv))
         expect(run.sidecar_calls(wait=0.5) == [], str(run.c11_calls()))
+        expect(run.native_states() == ["off:no_leader_flag"], str(run.c11_calls()))
     finally:
         run.close()
 
@@ -228,6 +241,16 @@ def test_non_interactive_launch_is_untouched() -> None:
     try:
         expect("--leader" not in run.argv, str(run.argv))
         expect(run.sidecar_calls(wait=0.5) == [], str(run.c11_calls()))
+        expect(run.native_states() == ["off:non_interactive"], str(run.c11_calls()))
+    finally:
+        run.close()
+
+
+def test_leader_that_never_comes_up_is_recorded() -> None:
+    run = Run([], env_extra={"FAKE_SIDECAR_EXIT": "3"})
+    try:
+        wait_for(lambda: len(run.native_states(0)) >= 2, 4)
+        expect(run.native_states() == ["grok_leader", "off:no_socket"], str(run.c11_calls()))
     finally:
         run.close()
 

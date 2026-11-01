@@ -184,7 +184,8 @@ final class MailboxDispatcher {
         route: String? = nil,
         nativeRoute: String? = nil,
         nativeFailure: String? = nil,
-        recipientPanel: UUID? = nil
+        recipientPanel: UUID? = nil,
+        nativeState: String? = nil
     ) {
         // A held/skipped envelope has not selected a delivery route yet.
         let attempted = outcome == .doorbell || outcome == .doorbellFailed
@@ -200,7 +201,8 @@ final class MailboxDispatcher {
                 route: attempted ? route : nil,
                 nativeRoute: attempted ? nativeRoute : nil,
                 nativeFailure: attempted ? nativeFailure : nil,
-                recipientPanel: recipientPanel
+                recipientPanel: recipientPanel,
+                nativeState: attempted ? nativeState : nil
             )
         )
     }

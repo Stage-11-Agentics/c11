@@ -174,12 +174,11 @@ ol li { margin-bottom: 10px; }
 <h2>DRILL-DOWN</h2>
 <p>Every sender, topic and bar is a filter. Picking one narrows the whole tab to that slice: the tiles, both charts, the other rankings, and a list of that slice's newest messages underneath. Filters stack, one per kind: a sender and a topic and a time (an hour or a day). The chip row at the top always holds its height, so the layout never jumps when a filter comes or goes. With a filter on, the fourth tile shows the slice's share of all mail instead of the sent count.</p>
 
-<h2>QUESTIONS</h2>
+<h2>DECISIONS</h2>
 <ol>
-  <li><b>Exact slices past 5,000 messages.</b> Today senders and topics come from the newest 5,000 envelopes, so on a 12,345-message inbox, "everything from merge-captain" would cover only that sample. Recommendation: cache each envelope's sender, topic and flags by file name (envelopes never change), so the first scan pays once and every later scan and drill-down is exact and fast. The review of #831 suggested the same cache.</li>
-  <li><b>Message list length.</b> The slice lists its newest 50 messages, with a "show in Received" link for the rest. Recommendation: keep 50; the Received tab already handles the long list and could take the same filter.</li>
-  <li><b>Recipients.</b> "Sent to" rows could also be clickable, listing what this panel sent to that agent and whether it was taken. Recommendation: yes, same pattern, after the received side lands.</li>
-  <li><b>Still open from round one:</b> remember the last tab, and add the pickup-wait numbers from <code>mailbox.delivered</code> events.</li>
+  <li><b>Sample.</b> Senders, topics and every drilled figure come from the newest 5,000 messages; a note says so when the mailbox holds more. Parsed headers are cached, so reopening and clicking are fast.</li>
+  <li><b>Message list.</b> A slice lists its newest 50 messages.</li>
+  <li><b>Recipients.</b> "Sent to" rows are clickable and show what this panel sent there and whether each copy was taken.</li>
 </ol>
 </main>
 

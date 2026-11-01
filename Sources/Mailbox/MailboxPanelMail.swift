@@ -680,13 +680,112 @@ extension MailboxPanelMail {
     static let insightsHours = 24
     static let insightsDays = 14
 
+    /// A slice lists at most this many messages, newest first.
+    static let sliceMessageLimit = 50
+
     /// One name in a ranked list, with how many messages it accounts for.
     struct Tally: Equatable, Identifiable {
-        var id: String { name }
+        var id: String { key ?? name }
         let name: String
         let count: Int
         /// Of `count`, how many are still unread (senders only).
         var unread: Int = 0
+        /// What a click filters on, when it is not the name (a recipient panel).
+        var key: String? = nil
+    }
+
+    /// The parts of an envelope Insights reads. Envelopes never change once
+    /// written, so a header is cached by file name and parsed only once.
+    struct Header: Equatable {
+        let from: String
+        let topic: String?
+        let urgent: Bool
+        let reply: Bool
+        let fileBody: Bool
+        /// The body's first line, at most `previewLimit` characters.
+        let preview: String
+
+        static let previewLimit = 140
+        /// Sender and topic are untrusted and cached for the app's life, so
+        /// each is capped; a real address or topic is far shorter.
+        static let fieldLimit = 256
+
+        init(from: String, topic: String?, urgent: Bool, reply: Bool, fileBody: Bool, preview: String) {
+            self.from = from
+            self.topic = topic
+            self.urgent = urgent
+            self.reply = reply
+            self.fileBody = fileBody
+            self.preview = preview
+        }
+
+        init(raw: [String: Any]) {
+            func string(_ key: String) -> String? {
+                guard let value = raw[key] as? String, !value.isEmpty else { return nil }
+                return value
+            }
+            from = string("from").map { String($0.prefix(Self.fieldLimit)) } ?? "?"
+            topic = string("topic").map { String($0.prefix(Self.fieldLimit)) }
+            urgent = (raw["urgent"] as? Bool) == true
+            reply = string("in_reply_to") != nil
+            fileBody = string("body_ref") != nil
+            let body = raw["body"] as? String ?? ""
+            let firstLine = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+            preview = String(firstLine.prefix(Self.previewLimit))
+        }
+    }
+
+    /// One parsed received message.
+    struct Record: Equatable, Identifiable {
+        var id: String { (unread ? "unread/" : "read/") + fileId }
+        let fileId: String
+        let unread: Bool
+        /// When it was sent (its ULID), or the file time for a hand-dropped file.
+        let date: Date?
+        /// When an unread message landed, as the cell measures waits.
+        let landed: Date?
+        let header: Header
+        /// Its `hourly` and `daily` buckets in the scan that read it, computed
+        /// off the main thread so a click never touches the calendar.
+        var hour: Int? = nil
+        var day: Int? = nil
+    }
+
+    /// One message this panel sent, with where each recipient's copy stands.
+    struct SentRecord: Equatable, Identifiable {
+        var id: String { entryId }
+        let entryId: String
+        let sentAt: Date?
+        let topic: String?
+        /// Recipient panel key (lowercased UUID) to the state of its copy.
+        let states: [String: SentState]
+    }
+
+    /// Process-wide cache of parsed headers, keyed by inbox and file name. A
+    /// claim moves a file into `_read/` under the same name, so it stays
+    /// cached. Bounded: past `capacity` it starts over.
+    final class HeaderCache {
+        static let shared = HeaderCache()
+        static let capacity = 60_000
+
+        private let lock = NSLock()
+        private var headers: [String: Header] = [:]
+
+        func header(for key: String) -> Header? {
+            lock.lock(); defer { lock.unlock() }
+            return headers[key]
+        }
+
+        func store(_ header: Header, for key: String) {
+            lock.lock(); defer { lock.unlock() }
+            if headers.count >= Self.capacity { headers.removeAll(keepingCapacity: true) }
+            headers[key] = header
+        }
+
+        var count: Int {
+            lock.lock(); defer { lock.unlock() }
+            return headers.count
+        }
     }
 
     struct Ranking: Equatable {
@@ -723,6 +822,11 @@ extension MailboxPanelMail {
         var urgent = 0
         var replies = 0
         var fileBodies = 0
+
+        /// The parsed messages, newest first: what a drill-down filters.
+        var records: [Record] = []
+        /// Every sent entry the ledger holds, newest first.
+        var sentRecords: [SentRecord] = []
 
         /// Messages this panel sent that the ledger still records.
         var sent = 0
@@ -771,6 +875,7 @@ extension MailboxPanelMail {
         now: Date = Date(),
         scanLimit: Int = insightsScanLimit,
         calendar: Calendar = .current,
+        cache: HeaderCache? = .shared,
         fileManager: FileManager = .default
     ) -> Insights {
         var result = Insights()
@@ -785,18 +890,22 @@ extension MailboxPanelMail {
             calendar.date(byAdding: .day, value: offset - (insightsDays - 1), to: today) ?? today
         }
 
+        // Unread waits are measured from landing, as the cell measures them.
         let dated = (unreadFiles.map { ($0, true) } + readFiles.map { ($0, false) }).map { entry in
-            (url: entry.0, unread: entry.1, date: arrivalDate(of: entry.0, fileManager: fileManager))
+            (
+                url: entry.0,
+                unread: entry.1,
+                date: arrivalDate(of: entry.0, fileManager: fileManager),
+                landed: entry.1 ? landingDate(of: entry.0, fileManager: fileManager) : nil
+            )
         }
         for entry in dated {
+            if let landed = entry.landed, result.oldestUnreadAt.map({ landed < $0 }) ?? true {
+                result.oldestUnreadAt = landed
+            }
             guard let date = entry.date else { continue }
             if result.firstAt.map({ date < $0 }) ?? true { result.firstAt = date }
             if result.lastAt.map({ date > $0 }) ?? true { result.lastAt = date }
-            // Unread waits are measured from landing, as the cell measures them.
-            if entry.unread, let landed = landingDate(of: entry.url, fileManager: fileManager),
-               result.oldestUnreadAt.map({ landed < $0 }) ?? true {
-                result.oldestUnreadAt = landed
-            }
             let age = now.timeIntervalSince(date)
             if age >= 0 {
                 if age < 3600 { result.lastHour += 1 }
@@ -815,25 +924,44 @@ extension MailboxPanelMail {
         var senders: [String: (count: Int, unread: Int)] = [:]
         var topics: [String: Int] = [:]
         let newestFirst = dated.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        let cachePrefix = inbox.standardizedFileURL.path + "/"
+        result.records.reserveCapacity(min(newestFirst.count, max(0, scanLimit)))
         for entry in newestFirst.prefix(max(0, scanLimit)) {
-            guard case .success(let read) = readRegularFilePrefix(path: entry.url.path, limit: maxEnvelopeBytes, followSymlinks: false),
-                  !read.truncated,
-                  let raw = (try? JSONSerialization.jsonObject(with: read.data)) as? [String: Any] else {
-                result.unparsed += 1
-                continue
+            let name = entry.url.lastPathComponent
+            let header: Header
+            if let cached = cache?.header(for: cachePrefix + name) {
+                header = cached
+            } else {
+                // A failed read is not cached: it may succeed next time.
+                guard case .success(let read) = readRegularFilePrefix(path: entry.url.path, limit: maxEnvelopeBytes, followSymlinks: false),
+                      !read.truncated,
+                      let raw = (try? JSONSerialization.jsonObject(with: read.data)) as? [String: Any] else {
+                    result.unparsed += 1
+                    continue
+                }
+                header = Header(raw: raw)
+                cache?.store(header, for: cachePrefix + name)
             }
             result.scanned += 1
-            let from = (raw["from"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "?"
-            senders[from, default: (0, 0)].count += 1
-            if entry.unread { senders[from, default: (0, 0)].unread += 1 }
-            if let topic = raw["topic"] as? String, !topic.isEmpty {
+            result.records.append(Record(
+                fileId: entry.url.deletingPathExtension().lastPathComponent,
+                unread: entry.unread,
+                date: entry.date,
+                landed: entry.landed,
+                header: header,
+                hour: entry.date.flatMap { hourIndex($0, now: now) },
+                day: entry.date.flatMap { dayIndex($0, dayStarts: result.dayStarts, calendar: calendar) }
+            ))
+            senders[header.from, default: (0, 0)].count += 1
+            if entry.unread { senders[header.from, default: (0, 0)].unread += 1 }
+            if let topic = header.topic {
                 topics[topic, default: 0] += 1
             } else {
                 result.untitled += 1
             }
-            if (raw["urgent"] as? Bool) == true { result.urgent += 1 }
-            if let parent = raw["in_reply_to"] as? String, !parent.isEmpty { result.replies += 1 }
-            if let ref = raw["body_ref"] as? String, !ref.isEmpty { result.fileBodies += 1 }
+            if header.urgent { result.urgent += 1 }
+            if header.reply { result.replies += 1 }
+            if header.fileBody { result.fileBodies += 1 }
         }
         result.senders = ranking(senders.map { Tally(name: $0.key, count: $0.value.count, unread: $0.value.unread) })
         result.topics = ranking(topics.map { Tally(name: $0.key, count: $0.value) })
@@ -849,36 +977,268 @@ extension MailboxPanelMail {
         var labels: [String: String] = [:]
         for entry in entries {
             let direct = entry.recipients.count == 1 ? entry.to.flatMap { $0.isEmpty ? nil : $0 } : nil
+            var states: [String: SentState] = [:]
             for recipient in entry.recipients {
                 let key = recipient.panel.lowercased()
                 recipientCounts[key, default: 0] += 1
                 if let direct, directNames[key] == nil { directNames[key] = direct }
                 if labels[key] == nil, !recipient.name.isEmpty { labels[key] = recipient.name }
-                guard let panel = UUID(uuidString: recipient.panel) else { continue }
+                guard let panel = UUID(uuidString: recipient.panel) else {
+                    states[key] = .gone
+                    continue
+                }
                 let copyInbox = inboxURL(mailboxesRoot: mailboxesRoot, panelId: panel)
                 let file = MailboxLayout.envelopeFilename(id: entry.id)
                 if fileManager.fileExists(atPath: MailboxDrain.readURL(inbox: copyInbox).appendingPathComponent(file).path) {
                     result.sentCopies += 1
                     result.sentTaken += 1
+                    states[key] = .read
                 } else if fileManager.fileExists(atPath: copyInbox.appendingPathComponent(file).path) {
                     result.sentCopies += 1
+                    states[key] = .unread
+                } else {
+                    states[key] = .gone
                 }
             }
+            result.sentRecords.append(SentRecord(
+                entryId: entry.id,
+                sentAt: entry.ts.flatMap(parseTimestamp) ?? ulidDate(entry.id),
+                topic: entry.topic.flatMap { $0.isEmpty ? nil : $0 },
+                states: states
+            ))
         }
         result.recipients = ranking(recipientCounts.map { key, count in
-            Tally(name: directNames[key] ?? labels[key] ?? key, count: count)
+            Tally(name: directNames[key] ?? labels[key] ?? key, count: count, key: key)
         })
         return result
     }
 
-    /// Most messages first, then by name, so equal counts never reorder.
-    static func ranking(_ tallies: [Tally], top: Int = insightsTopCount) -> Ranking {
+    /// Most messages first, then by name, so equal counts never reorder. A
+    /// `pinned` name (the selected filter) always shows, in the last slot if
+    /// it would fall past the top, with a zero count if it has no messages.
+    static func ranking(_ tallies: [Tally], top: Int = insightsTopCount, pinned: String? = nil) -> Ranking {
         let ordered = tallies.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
-        let shown = Array(ordered.prefix(max(0, top)))
+        var shown = Array(ordered.prefix(max(0, top)))
+        if let pinned, top > 0, !shown.contains(where: { $0.name == pinned }) {
+            let tally = ordered.first { $0.name == pinned } ?? Tally(name: pinned, count: 0)
+            if shown.count == top { shown[top - 1] = tally } else { shown.append(tally) }
+        }
+        let shownNames = Set(shown.map(\.name))
         return Ranking(
             top: shown,
             distinct: ordered.count,
-            others: ordered.dropFirst(shown.count).reduce(0) { $0 + $1.count }
+            others: ordered.reduce(0) { shownNames.contains($1.name) ? $0 : $0 + $1.count }
         )
+    }
+
+    // MARK: Drill-down
+
+    /// What the reader clicked. Received filters stack (a sender, a topic and
+    /// one time bucket); a recipient filter shows the sent side instead.
+    struct InsightsFilter: Equatable {
+        var from: String?
+        var topic: String?
+        /// A time range in absolute dates, so a rescan never slides it.
+        var window: TimeWindow?
+        /// A recipient panel key from the "Sent to" list.
+        var recipient: String?
+
+        var isEmpty: Bool { self == InsightsFilter() }
+
+        enum Kind { case from, topic, time }
+
+        /// Picking the selected value again clears it. A time range replaces
+        /// any other, and the sent and received sides never mix.
+        mutating func toggleFrom(_ value: String) { recipient = nil; from = from == value ? nil : value }
+        mutating func toggleTopic(_ value: String) { recipient = nil; topic = topic == value ? nil : value }
+
+        /// Picks the hour bar `index` of this scan; the bar already selected clears.
+        mutating func pickHour(_ index: Int, in insights: Insights) {
+            recipient = nil
+            if selectedHour(in: insights) == index { window = nil; return }
+            let end = insights.scannedAt.addingTimeInterval(-TimeInterval(insightsHours - 1 - index) * 3600)
+            window = TimeWindow(start: end.addingTimeInterval(-3600), end: end, isDay: false)
+        }
+
+        /// Picks the day bar `index`, a calendar day; the day already selected clears.
+        mutating func pickDay(_ index: Int, in insights: Insights, calendar: Calendar = .current) {
+            recipient = nil
+            guard insights.dayStarts.indices.contains(index) else { return }
+            if selectedDay(in: insights) == index { window = nil; return }
+            let start = insights.dayStarts[index]
+            window = TimeWindow(start: start, end: calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400), isDay: true)
+        }
+
+        /// The hour bar holding the selected hour's middle in this scan.
+        func selectedHour(in insights: Insights) -> Int? {
+            guard let window, !window.isDay else { return nil }
+            return hourIndex(window.start.addingTimeInterval(window.end.timeIntervalSince(window.start) / 2), now: insights.scannedAt)
+        }
+
+        func selectedDay(in insights: Insights) -> Int? {
+            guard let window, window.isDay else { return nil }
+            return insights.dayStarts.firstIndex(of: window.start)
+        }
+
+        mutating func toggleRecipient(_ key: String) {
+            let same = recipient == key
+            self = InsightsFilter()
+            recipient = same ? nil : key
+        }
+    }
+
+    struct TimeWindow: Equatable {
+        let start: Date
+        let end: Date
+        let isDay: Bool
+
+        func contains(_ date: Date) -> Bool { date >= start && date < end }
+    }
+
+    /// The received figures for one filter, computed from the parsed records.
+    struct Slice: Equatable {
+        var count = 0
+        var unread = 0
+        /// The oldest and newest matching messages.
+        var firstAt: Date?
+        var lastAt: Date?
+        var lastHour = 0
+        var lastDay = 0
+        var lastWeek = 0
+        var oldestUnreadAt: Date?
+        /// Each chart ignores the time filter, so its other bars stay visible.
+        var hourly: [Int] = Array(repeating: 0, count: MailboxPanelMail.insightsHours)
+        var daily: [Int] = Array(repeating: 0, count: MailboxPanelMail.insightsDays)
+        /// Each ranking ignores its own filter, so a reader can switch within it.
+        var senders = Ranking()
+        var topics = Ranking()
+        var urgent = 0
+        var replies = 0
+        var fileBodies = 0
+        var untitled = 0
+        /// The newest `sliceMessageLimit` matching messages.
+        var messages: [Record] = []
+    }
+
+    static func hourIndex(_ date: Date, now: Date) -> Int? {
+        let age = now.timeIntervalSince(date)
+        guard age >= 0, age < 86400 else { return nil }
+        return insightsHours - 1 - Int(age / 3600)
+    }
+
+    static func dayIndex(_ date: Date, dayStarts: [Date], calendar: Calendar) -> Int? {
+        guard let today = dayStarts.last,
+              let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: today).day,
+              (0..<insightsDays).contains(days) else { return nil }
+        return insightsDays - 1 - days
+    }
+
+    static func matches(
+        _ record: Record,
+        _ filter: InsightsFilter,
+        ignoring kind: InsightsFilter.Kind? = nil,
+        now: Date,
+        dayStarts: [Date],
+        calendar: Calendar
+    ) -> Bool {
+        if kind != .from, let from = filter.from, record.header.from != from { return false }
+        if kind != .topic, let topic = filter.topic, record.header.topic != topic { return false }
+        if kind != .time, let window = filter.window {
+            guard let date = record.date, window.contains(date) else { return false }
+        }
+        return true
+    }
+
+    /// One pass over at most `insightsScanLimit` records per figure; pure, so
+    /// a click recomputes it in well under a frame.
+    static func slice(_ insights: Insights, filter: InsightsFilter, calendar: Calendar = .current) -> Slice {
+        let now = insights.scannedAt
+        let starts = insights.dayStarts
+        var result = Slice()
+        var senders: [String: (count: Int, unread: Int)] = [:]
+        var topics: [String: Int] = [:]
+        for record in insights.records {
+            let all = matches(record, filter, now: now, dayStarts: starts, calendar: calendar)
+            if all {
+                result.count += 1
+                if record.unread {
+                    result.unread += 1
+                    if let landed = record.landed ?? record.date, result.oldestUnreadAt.map({ landed < $0 }) ?? true {
+                        result.oldestUnreadAt = landed
+                    }
+                }
+                if let date = record.date {
+                    if result.lastAt == nil { result.lastAt = date }
+                    result.firstAt = date
+                    let age = now.timeIntervalSince(date)
+                    if age >= 0 {
+                        if age < 3600 { result.lastHour += 1 }
+                        if age < 86400 { result.lastDay += 1 }
+                        if age < 7 * 86400 { result.lastWeek += 1 }
+                    }
+                }
+                if record.header.urgent { result.urgent += 1 }
+                if record.header.reply { result.replies += 1 }
+                if record.header.fileBody { result.fileBodies += 1 }
+                if record.header.topic == nil { result.untitled += 1 }
+                if result.messages.count < sliceMessageLimit { result.messages.append(record) }
+            }
+            if record.hour != nil || record.day != nil,
+               all || matches(record, filter, ignoring: .time, now: now, dayStarts: starts, calendar: calendar) {
+                if let hour = record.hour { result.hourly[hour] += 1 }
+                if let day = record.day { result.daily[day] += 1 }
+            }
+            if all || matches(record, filter, ignoring: .from, now: now, dayStarts: starts, calendar: calendar) {
+                senders[record.header.from, default: (0, 0)].count += 1
+                if record.unread { senders[record.header.from, default: (0, 0)].unread += 1 }
+            }
+            if let topic = record.header.topic,
+               all || matches(record, filter, ignoring: .topic, now: now, dayStarts: starts, calendar: calendar) {
+                topics[topic, default: 0] += 1
+            }
+        }
+        result.senders = ranking(senders.map { Tally(name: $0.key, count: $0.value.count, unread: $0.value.unread) }, pinned: filter.from)
+        result.topics = ranking(topics.map { Tally(name: $0.key, count: $0.value) }, pinned: filter.topic)
+        return result
+    }
+
+    /// Up to `limit` sender names, most messages first: the ones worth
+    /// resolving to panel numbers. Off the main thread, from the records.
+    static func busiestSenders(_ insights: Insights, limit: Int = 200) -> [String] {
+        var counts: [String: Int] = [:]
+        for record in insights.records { counts[record.header.from, default: 0] += 1 }
+        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(limit).map(\.key)
+    }
+
+    /// What this panel sent to one recipient panel.
+    struct SentSlice: Equatable {
+        var sent = 0
+        var taken = 0
+        var waiting = 0
+        var gone = 0
+        /// The newest `sliceMessageLimit`, each with this recipient's state.
+        var messages: [SentItem] = []
+    }
+
+    struct SentItem: Equatable, Identifiable {
+        var id: String { record.id }
+        let record: SentRecord
+        let state: SentState
+    }
+
+    static func sentSlice(_ insights: Insights, recipient key: String) -> SentSlice {
+        var result = SentSlice()
+        for record in insights.sentRecords {
+            guard let state = record.states[key] else { continue }
+            result.sent += 1
+            switch state {
+            case .read: result.taken += 1
+            case .unread: result.waiting += 1
+            case .gone: result.gone += 1
+            }
+            if result.messages.count < sliceMessageLimit { result.messages.append(SentItem(record: record, state: state)) }
+        }
+        return result
     }
 }

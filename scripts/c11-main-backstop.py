@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -190,29 +191,56 @@ def gate(root, repo, sha, attempt):
         ("send-raw", ["/usr/bin/python3", "tests_v2/test_send_raw_and_flags.py", "--offline"], None, {}),
         ("shell", ["/bin/bash", "tests/test_shell_git_watchers.sh"], None, {}),
     ])
+    # A quick link or CodeSign failure in any xcodebuild stage is a stale cache:
+    # empty this key's DerivedData once and rerun the whole gate from the app build.
+    for run in (1, 2):
+        state, outcomes, stale = run_stages(root, repo, sha, attempt, stages, env, run)
+        if stale is None or run == 2:
+            return state, outcomes
+        record(root, "stale-cache", sha=sha, deps=key, stage=stale[0], kind=stale[1], seconds=stale[2])
+        poller.empty_derived_data(derived)
+    return state, outcomes
+
+
+XCODEBUILD_STAGES = ("app", "logic", "host")
+
+
+def run_stages(root, repo, sha, attempt, stages, env, run):
     outcomes = []
     for name, argv, result, overrides in stages:
+        if result is not None and run > 1:
+            # xcodebuild refuses an existing -resultBundlePath, and run 1 left one.
+            rerun = result.with_name("%s-%s.xcresult" % (result.stem, run))
+            argv = [str(rerun) if arg == str(result) else arg for arg in argv]
+            result = rerun
         started = time.monotonic()
-        with (attempt / (name + ".log")).open("w") as output:
+        log = attempt / ("%s.log" % name if run == 1 else "%s-%s.log" % (name, run))
+        with log.open("w") as output:
             code = subprocess.call(argv, cwd=repo, env={**env, **overrides}, stdout=output, stderr=output)
         elapsed = time.monotonic() - started
-        summary = None
-        if result is not None:
-            try:
-                summary = poller.xcresult_summary(result)
-            except (ValueError, subprocess.SubprocessError):
-                pass
+        summary = unreadable = None
+        if result is not None and code == 0:
+            summary, unreadable = poller.read_summary(lambda: poller.xcresult_summary(result), time.sleep, tries=2)
         if code == 75:
             raise Deferred("build lock unavailable")
         state = "failure" if code else "success"
+        description = None
         if result is not None and code == 0:
-            state, _ = poller.classify_result(elapsed, summary)
-        row = {"stage": name, "exit": code, "seconds": round(elapsed, 3), "state": state, "summary": summary}
+            state, description = poller.classify_result(elapsed, summary, unreadable)
+        row = {"stage": name, "exit": code, "seconds": round(elapsed, 3), "state": state, "summary": summary,
+               "run": run}
+        if unreadable:
+            row["unreadable"] = unreadable
+            row["description"] = description
         outcomes.append(row)
         record(root, "stage", sha=sha, **row)
         if state != "success":
-            return state, outcomes
-    return "success", outcomes
+            if code and name in XCODEBUILD_STAGES and elapsed < poller.STALE_CACHE_S:
+                kind = poller.stale_cache_signature(log.read_text(errors="replace"))
+                if kind:
+                    return state, outcomes, (name, kind, round(elapsed, 3))
+            return state, outcomes, None
+    return "success", outcomes, None
 
 
 def child(root, attempt):
@@ -242,11 +270,19 @@ def child(root, attempt):
         return 0
 
 
+def status_description(result):
+    """An unreadable result bundle says why; classify_result already fits the 140-character limit."""
+    if result["state"] == "error":
+        for stage in result.get("stages") or []:
+            if stage.get("unreadable") and stage.get("description"):
+                return stage["description"][:140]
+    return f"Atlas app, logic, host, CLI gate: {result['state']} ({int(result['seconds'])}s)"
+
+
 def post(result):
     if result.get("sha") and result["state"] in ("success", "failure", "error"):
         api("statuses/" + result["sha"], "-X", "POST", "-f", "context=" + CONTEXT,
-            "-f", "state=" + result["state"], "-f",
-            f"description=Atlas app, logic, host, CLI gate: {result['state']} ({int(result['seconds'])}s)")
+            "-f", "state=" + result["state"], "-f", "description=" + status_description(result))
 
 
 def cycle(root, publish=False, force=False):

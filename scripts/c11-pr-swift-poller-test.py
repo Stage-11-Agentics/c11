@@ -1066,6 +1066,263 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             poller.result_directory(self.root / "state", attempt_id, 1)
 
 
+class CacheResultGuestRevokeTests(unittest.TestCase):
+    """C11-561: stale-cache self-heal, unreadable results, bounded guest wait, silent revoke."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def timed_world(self, exits, log, seconds):
+        world = World(body=[pr()])
+        world.exits = list(exits)
+        world.build_log = log
+        spawn = world.spawn
+
+        def timed(command, log_path=None):
+            world.now += seconds
+            world.mono += seconds
+            return spawn(command, log_path)
+
+        world.spawn = timed
+        key = poller.dependency_key(["", ""], [GITLINK, GITLINK])
+        stale = self.root / "cache" / ("DerivedData-" + key) / "Build" / "stale.o"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("old")
+        return world, stale
+
+    def test_quick_link_failure_wipes_the_key_cache_and_rebuilds_once(self):
+        world, stale = self.timed_world([1, 0], "Undefined symbols for architecture arm64:\n", 20)
+        packages = stale.parent.parent / "SourcePackages" / "checkouts" / "Sparkle"
+        packages.mkdir(parents=True)
+        supervisor, _ = run(world, self.root)
+        self.assertEqual(len(supervisor.spawns), 2)
+        self.assertFalse(stale.exists())
+        self.assertTrue(packages.is_dir())
+        self.assertTrue(stale.parent.parent.is_dir())
+        decisions = _decisions(self.root)
+        self.assertTrue(any(d.get("decision") == "stale-cache" and d.get("kind") == "link" for d in decisions))
+        self.assertTrue(any(d.get("decision") == "cache-wiped" for d in decisions))
+        self.assertEqual([body["state"] for body in world.posts], ["success"])
+
+    def test_quick_codesign_failure_twice_posts_the_real_failure(self):
+        log = ("The following build commands failed:\n"
+               "\tCodeSign /x/Debug/c11Tests.xctest (in target 'c11Tests' from project 'GhosttyTabs')\n"
+               "(1 failure)\n")
+        world, stale = self.timed_world([65, 65], log, 20)
+        supervisor, _ = run(world, self.root)
+        self.assertEqual(len(supervisor.spawns), 2)
+        self.assertFalse(stale.exists())
+        self.assertEqual([d.get("kind") for d in _decisions(self.root) if d.get("decision") == "stale-cache"],
+                         ["codesign"])
+        self.assertEqual([body["state"] for body in world.posts], ["failure"])
+
+    def test_slow_or_ordinary_failure_keeps_the_cache(self):
+        for label, log, seconds in (("slow-link", "Undefined symbols for architecture arm64:\n", 90),
+                                    ("quick-compile", "error: cannot find 'x' in scope\n", 20)):
+            root = self.root / label
+            self.root, saved = root, self.root
+            try:
+                world, stale = self.timed_world([1, 0], log, seconds)
+                supervisor, _ = run(world, root)
+            finally:
+                self.root = saved
+            self.assertEqual(len(supervisor.spawns), 2, label)
+            self.assertTrue(stale.exists(), label)
+            self.assertFalse(any(d.get("decision") == "stale-cache" for d in _decisions(root)), label)
+
+    def test_stale_cache_signature_ignores_successful_codesign_lines(self):
+        self.assertIsNone(poller.stale_cache_signature("CodeSign /x/c11Tests.xctest (in target 'c11Tests')\n** BUILD FAILED **\n"))
+        self.assertEqual(poller.stale_cache_signature("ld: symbol(s) not found for architecture arm64"), "link")
+        self.assertEqual(poller.stale_cache_signature(
+            "The following build commands failed:\n\tLd /x/c11 normal (in target 'c11')\n(1 failure)"), "link")
+
+    def test_unreadable_summary_retries_once_then_posts_error_never_failure(self):
+        for label, failures, state in (("reads-on-retry", 1, "success"), ("stays-unreadable", 2, "error")):
+            world = World(body=[pr()])
+            calls = []
+
+            def summary(world=world, failures=failures, calls=calls):
+                calls.append(1)
+                if len(calls) <= failures:
+                    raise ValueError("xcresulttool exited 64")
+                return world.test_result
+
+            world.test_summary = summary
+            supervisor, _ = run(world, self.root / label)
+            self.assertEqual(len(calls), 2, label)
+            self.assertIn(poller.SUMMARY_RETRY_S, world.sleeps, label)
+            self.assertEqual([body["state"] for body in world.posts], [state], label)
+            if state == "error":
+                self.assertTrue(world.posts[0]["description"].startswith("result unreadable: xcresulttool exited 64 "))
+
+    def test_summary_read_allows_a_slow_xcresulttool(self):
+        self.assertGreaterEqual(poller.SUMMARY_TIMEOUT_S, 120)
+        fake = self.root / "xcrun"
+        fake.write_text("#!/bin/sh\nsleep 1\necho '{\"result\": \"Passed\"}'\n")
+        fake.chmod(0o755)
+        with unittest.mock.patch.dict(os.environ, {"C11_POLLER_XCRUN": str(fake)}), \
+                unittest.mock.patch.object(poller, "SUMMARY_TIMEOUT_S", 3):
+            self.assertEqual(poller.xcresult_summary(self.root / "r.xcresult"), {"result": "Passed"})
+        timeout = poller.read_summary(lambda: (_ for _ in ()).throw(subprocess.TimeoutExpired("x", 120)), lambda s: None)
+        self.assertEqual(timeout, (None, "xcresulttool timed out after 120s"))
+
+    def test_feature_head_waits_at_most_ten_minutes_for_a_guest(self):
+        world = World(body=[pr()])
+        world.guest_names = ["c11-sb-demo"]
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        world.sleep(poller.GUEST_WAIT_S - 30)
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        self.assertEqual(supervisor.spawns, [])
+        world.sleep(30)  # longer than the 25 s cadence
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertEqual(len(supervisor.spawns), 1)
+        self.assertTrue(any(d.get("decision") == "guest-wait-expired" for d in _decisions(self.root)))
+        # The same guest no longer yields a running feature build.
+        world.alive[99999999] = True
+        self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
+        self.assertEqual(world.kill_log, [])
+        # A later guest does not yield the build once the budget is spent.
+        world.guest_names = []
+        self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
+        world.guest_names = ["c11-sb-next"]
+        self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
+        self.assertEqual(world.kill_log, [])
+
+    def test_guest_wait_clock_does_not_carry_over_an_idle_gap(self):
+        world = World(body=[pr()])
+        world.guest_names = ["c11-sb-first"]
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        # The PR closes and the queue empties; the first guest ends while idle.
+        world.body = []
+        world.sleep(60)
+        self.assertEqual(supervisor.poll_once(), "idle")
+        world.guest_names = []
+        world.sleep(60)
+        self.assertEqual(supervisor.poll_once(), "idle")
+        # Hours later a new guest and a new feature head arrive together.
+        world.sleep(4 * 3600)
+        world.guest_names = ["c11-sb-second"]
+        world.body = [pr(number=9, sha=SHA_B)]
+        world.tip = SHA_B  # the new head is its branch tip, so only the guest can hold it
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_guests_that_come_and_go_share_one_ten_minute_budget(self):
+        world = World(body=[pr()])
+        world.alive[99999999] = True
+        record = {"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}
+        supervisor = poller.Supervisor(self.root, world)
+        # Round 1: a guest holds the head for six minutes, then leaves.
+        world.guest_names = ["c11-sb-one"]
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        world.sleep(360)
+        world.guest_names = []
+        # The build starts; a second guest arrives four minutes into the budget and yields it.
+        self.assertIsNone(supervisor.watch(record))
+        world.sleep(60)
+        world.guest_names = ["c11-sb-two"]
+        self.assertEqual(supervisor.watch(record), "guest")
+        world.alive[99999999] = True
+        # Ten minutes after the first hold, the head builds and a third guest cannot yield it.
+        world.sleep(poller.GUEST_WAIT_S - 420)
+        world.guest_names = []
+        world.sleep(5)
+        world.guest_names = ["c11-sb-three"]
+        world.body = [pr()]
+        self.assertEqual(supervisor.poll_once(), "started")
+        self.assertIsNone(supervisor.watch(record))
+        self.assertEqual([body["description"] for body in world.posts if body["state"] == "pending"],
+                         ["yielded to Atlas work"])
+
+    def test_guest_wait_clock_starts_only_for_a_waiting_feature_head(self):
+        world = World(body=[pr(number=8, ref="release/1.8.0")])
+        world.reported[SHA_A] = "success"
+        world.guest_names = ["c11-sb-demo"]
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()  # a release head only: no feature is waiting
+        world.sleep(poller.GUEST_WAIT_S + 100)
+        world.body = [pr(number=9, sha=SHA_B)]
+        world.tip = SHA_B  # the new head is its branch tip, so only the guest can hold it
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_failed_pr_lookup_at_queue_time_keeps_the_head(self):
+        world = World(body=[pr()])
+        supervisor = poller.Supervisor(self.root, world)
+        world.held_slots.add(1)
+        supervisor.poll_once()  # queued behind the busy slot
+        world.held_slots.clear()
+
+        def unavailable(number):
+            raise poller.LookupUnavailable("pull 7 returned 502")
+
+        world.pull = unavailable
+        world.sleep(30)
+        supervisor.poll_once()
+        self.assertEqual([item["pr"] for item in supervisor.queue], [7])
+        self.assertEqual(supervisor.spawns, [])
+        self.assertFalse(any(d.get("decision") == "revoked" for d in _decisions(self.root)))
+
+    def test_pr_merged_or_closed_mid_build_posts_nothing(self):
+        world = World(body=[pr()])
+        world.pull_body = pr(state="closed")
+        world.alive[99999999] = True
+        supervisor = poller.Supervisor(self.root, world)
+        reason = supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"})
+        self.assertEqual(reason, "revoked")
+        self.assertFalse(world.group_alive(99999999))
+        self.assertEqual(world.posts, [])
+        self.assertTrue(any(d.get("decision") == "revoked" and d.get("detail") == "not_open"
+                            for d in _decisions(self.root)))
+
+    def test_new_push_mid_build_posts_error_superseded_never_failure(self):
+        world = World(body=[pr(sha=SHA_B)])
+        world.pull_body = pr(sha=SHA_B)
+        world.alive[99999999] = True
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertEqual(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}), "superseded")
+        self.assertFalse(world.group_alive(99999999))
+        self.assertEqual([(body["state"], body["description"]) for body in world.posts], [("error", "superseded")])
+
+    def test_failed_pr_lookup_mid_build_keeps_the_build(self):
+        world = World(body=[pr()])
+        world.alive[99999999] = True
+
+        def unavailable(number):
+            raise poller.LookupUnavailable("pull 7 returned 502")
+
+        world.pull = unavailable
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertIsNone(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}))
+        self.assertEqual(world.kill_log, [])
+        self.assertEqual(world.posts, [])
+        self.assertTrue(any(d.get("decision") == "revalidate-unknown" for d in _decisions(self.root)))
+
+    def test_production_pull_treats_only_404_as_missing(self):
+        class Client:
+            def __init__(self, status):
+                self.status = status
+
+            def pull(self, number):
+                return {"status": self.status, "headers": {}, "body": pr()}
+
+        world = poller.ProductionWorld.__new__(poller.ProductionWorld)
+        world.client = Client(404)
+        self.assertIsNone(world.pull(7))
+        world.client = Client(200)
+        self.assertEqual(world.pull(7)["number"], 7)
+        for status in (0, 500, 502):
+            world.client = Client(status)
+            with self.assertRaises(poller.LookupUnavailable):
+                world.pull(7)
+
+
 class WorkspaceTests(unittest.TestCase):
     def test_submodule_residue_skips_and_clean_removes_it(self):
         tmp = tempfile.TemporaryDirectory()
@@ -2562,7 +2819,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
         _out, err = proc.communicate(timeout=40)
         self.assertEqual(proc.returncode, 0, err)
         self.assertFalse(poller.group_alive(int(ready.read_text())))
-        self.assertEqual(self.github.statuses()[-1], ("failure", "superseded"))
+        self.assertEqual(self.github.statuses()[-1], ("error", "superseded"))
 
     # B2: the queue and reported heads live in one process; a restart asks GitHub.
 

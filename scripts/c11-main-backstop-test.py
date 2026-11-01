@@ -32,6 +32,14 @@ class Acceptance(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / "state").mkdir()
+        if not Path(m.poller.DEVELOPER_DIR).is_dir() and Path("/usr/bin/xcode-select").exists():
+            # On a Mac without the pinned Xcode, /usr/bin/python3 needs a DEVELOPER_DIR
+            # that exists. Linux has no xcode-select and ignores DEVELOPER_DIR.
+            selected = subprocess.run(["/usr/bin/xcode-select", "-p"], text=True, capture_output=True).stdout.strip()
+            if selected:
+                developer = patch.object(m.poller, "DEVELOPER_DIR", selected)
+                developer.start()
+                self.addCleanup(developer.stop)
 
     def test_main_history_coalesces_and_refuses_rewrites(self):
         def g(repo, *args):
@@ -141,6 +149,94 @@ p.mkdir()
             if label == "green":
                 self.assertEqual(len(stages), 10)
                 self.assertEqual({r["stage"] for r in stages if r["summary"]}, {"logic", "host"})
+
+    def gate_env(self):
+        return patch.dict(os.environ, {"C11_ATLAS_BUILD_SLOT": "1", "C11_BUILD_LOCK_DIR": str(self.root / "lock")})
+
+    def test_quick_link_or_codesign_failure_rebuilds_once_from_a_clean_cache(self):
+        for label, failures, log, expected, builds in (
+                ("link-heals", 1, "Undefined symbols for architecture arm64:", "success", 2),
+                ("codesign-twice", 2, "The following build commands failed:\n\tCodeSign /x/c11Tests.xctest (in target 'c11Tests')\n(1 failure)", "failure", 2),
+                ("ordinary-failure", 2, "error: cannot find 'x' in scope", "failure", 1)):
+            repo, _ = self.gate_fixture()
+            counter = self.root / (label + ".count")
+            fake = executable(repo / ("xcodebuild-" + label), """#!/usr/bin/env python3
+import pathlib, sys
+c = pathlib.Path(%r)
+n = int(c.read_text()) + 1 if c.exists() else 1
+c.write_text(str(n))
+if n <= %d:
+    print(%r)
+    sys.exit(65)
+""" % (str(counter), failures, log))
+            attempt = self.root / label
+            attempt.mkdir()
+            key = m.poller.dependency_key(["", ""], [SHA, SHA])
+            stale = self.root / "cache" / ("DerivedData-" + key) / "Build" / "stale.o"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("old")
+            with self.gate_env(), patch.object(m, "git", return_value=SHA), patch.object(m.poller, "XCODEBUILD", str(fake)), \
+                 patch.object(m.poller, "xcresult_summary", side_effect=lambda p: m.read(p / "summary.json")):
+                state, _ = m.gate(self.root, repo, SHA, attempt)
+            self.assertEqual(state, expected, label)
+            self.assertEqual(int(counter.read_text()), builds, label)
+            events = [json.loads(line) for line in (self.root / "state/events.jsonl").read_text().splitlines()]
+            wiped = [e for e in events if e["event"] == "stale-cache" and e.get("deps") == key]
+            self.assertEqual(stale.exists(), builds == 1, label)
+            self.assertEqual(bool(wiped), builds == 2, label)
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            (self.root / "state/events.jsonl").unlink()
+
+    def test_quick_link_failure_in_the_logic_stage_reruns_with_a_new_bundle(self):
+        repo, fake = self.gate_fixture()
+        counter = self.root / "logic.count"
+        # Like xcodebuild: writes its bundle even when the link fails, refuses an existing one.
+        executable(repo / "scripts/test-unit-local.sh", """#!/usr/bin/env python3
+import json, os, pathlib, sys
+p = pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1])
+p.mkdir()
+c = pathlib.Path(%r)
+if os.environ.get('C11_TEST_SCHEME') == 'c11-logic':
+    n = int(c.read_text()) + 1 if c.exists() else 1
+    c.write_text(str(n))
+    if n == 1:
+        print('ld: symbol(s) not found for architecture arm64')
+        sys.exit(65)
+(p/'summary.json').write_text(json.dumps({'result': 'Passed', 'totalTestCount': 3, 'skippedTests': 0, 'failedTests': 0}))
+""" % str(counter))
+        attempt = self.root / "logic-stale"
+        attempt.mkdir()
+        with self.gate_env(), patch.object(m, "git", return_value=SHA), patch.object(m.poller, "XCODEBUILD", str(fake)), \
+             patch.object(m.poller, "xcresult_summary", side_effect=lambda p: m.read(p / "summary.json")):
+            state, stages = m.gate(self.root, repo, SHA, attempt)
+        self.assertEqual(state, "success", stages)
+        self.assertEqual(int(counter.read_text()), 2)
+        self.assertTrue((attempt / "logic-2.xcresult").is_dir())
+
+    def test_unreadable_result_retries_once_then_errors_never_failure(self):
+        for label, failures, expected in (("reads-on-retry", 1, "success"), ("stays-unreadable", 2, "error")):
+            repo, fake = self.gate_fixture()
+            attempt = self.root / label
+            attempt.mkdir()
+            calls = []
+            def summary(path):
+                calls.append(path)
+                if len(calls) <= failures:
+                    raise subprocess.TimeoutExpired("xcresulttool", 120)
+                return m.read(path / "summary.json")
+            with self.gate_env(), patch.object(m, "git", return_value=SHA), patch.object(m.poller, "XCODEBUILD", str(fake)), \
+                 patch.object(m.poller, "SUMMARY_RETRY_S", 0), patch.object(m.poller, "xcresult_summary", side_effect=summary):
+                state, stages = m.gate(self.root, repo, SHA, attempt)
+            self.assertEqual(state, expected, label)
+            self.assertEqual(len(calls), 2 if failures == 2 else 3, label)
+            if expected == "error":
+                self.assertIn("timed out after 120s", stages[-1]["unreadable"])
+                with patch.object(m, "api") as api:
+                    m.post({"sha": SHA, "state": state, "stages": stages, "seconds": 104})
+                description = [arg for arg in api.call_args[0] if arg.startswith("description=")][0]
+                self.assertTrue(description.startswith("description=result unreadable: xcresulttool timed out after 120s"),
+                                description)
+                self.assertLessEqual(len(description) - len("description="), 140)
 
     def cycle_fixture(self):
         slots = self.root / "slots"

@@ -516,4 +516,24 @@ final class FocusHistoryModelTests: XCTestCase {
         XCTAssertNotEqual(forward, KeyboardShortcutSettings.Action.nextSidebarWorkspace.defaultShortcut)
     }
 
+    @MainActor
+    func testSocketHistoryDoesNotCheckpointASubsecondCurrentVisit() {
+        var location = FocusHistoryLocation(workspaceId: workspace, panelId: a)
+        var time = date(0)
+        let store = FocusHistoryStore(now: { time }, currentLocation: { location },
+                                      workspaceForPanel: { _ in self.workspace })
+        store.noteTransition(panelId: a, at: time)
+        time = date(2)
+        location = .init(workspaceId: workspace, panelId: b)
+        store.noteTransition(panelId: b, at: time)
+        time = date(2.1)
+        let request = SocketCommandContext(method: "history.back", allowsFocus: true, callerPanelId: UUID())
+        SocketCommandContext.withContext(request) {
+            XCTAssertFalse(store.navigate(back: true, focus: { _, _, _ in
+                XCTFail("No completed earlier destination is available")
+            }))
+        }
+        XCTAssertEqual(store.snapshot().entries.map(\.panelId), [a])
+    }
+
 }

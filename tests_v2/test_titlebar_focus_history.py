@@ -6,7 +6,7 @@
 Requires a fresh English tagged app with default shortcuts. Socket calls only
 seed fixtures/read oracles; every tested navigation uses native guest input.
 Dismiss any guest screen-recording consent dialog before starting this script.
-180-second active / 200-second hard deadline. Inspect the PNGs for arrow glyph
+360-second active / 390-second hard deadline. Inspect the PNGs for arrow glyph
 direction and legibility; AX labels alone cannot prove the rendered glyphs.
 Evidence: /Volumes/My Shared Files/out/titlebar-history-proof (guest path).
 """
@@ -28,6 +28,11 @@ import traceback
 OUT = Path('/Volumes/My Shared Files/out/titlebar-history-proof')
 BACK = 'titlebarControl.historyBack'
 FORWARD = 'titlebarControl.historyForward'
+TITLE = 'workspace.titlebarTitle'
+FOLDER = 'workspace.titlebarFolder'
+MINIMAL_HOST = 'titlebarControl.minimalHost'
+CONTROL_IDS = {BACK, FORWARD, 'titlebarControl.toggleSidebar',
+               'titlebarControl.doubleWideSidebar', 'titlebarControl.showNotifications', 'titlebarControl.newTab'}
 
 # AX operations are scoped to the verified app PID and its front window. Do not
 # traverse terminal/page content to locate native chrome controls.
@@ -50,6 +55,20 @@ function run(args) {
         return JSON.stringify(rows);
     }
     if (op === 'frame') return JSON.stringify({position: p.windows[0].position(), size: p.windows[0].size()});
+    if (op === 'textSize') {
+        var attributes = $.NSMutableDictionary.alloc.init;
+        attributes.setObjectForKey($.NSFont.boldSystemFontOfSize(13), $.NSFontAttributeName);
+        var size = $(args[2]).sizeWithAttributes(attributes);
+        return JSON.stringify({width: size.width, height: size.height});
+    }
+    if (op === 'appearance' || op === 'style') {
+        var viewMenu = p.menuBars[0].menuBarItems.byName('View');
+        viewMenu.click();
+        var appearance = viewMenu.menus[0].menuItems.byName(op === 'style' ? 'Titlebar Controls' : 'Appearance');
+        appearance.click();
+        appearance.menus[0].menuItems.byName(args[2]).click();
+        return JSON.stringify(args[2]);
+    }
     if (op === 'menu') {
         var bar = p.menuBars[0].menuBarItems.byName('History');
         bar.click();
@@ -61,10 +80,16 @@ function run(args) {
     }
     var found = [], controls = [];
     function walk(e, depth) {
-        if (depth > 18 || (op !== 'controls' && found.length)) return;
+        if (depth > 18 || (op !== 'controls' && op !== 'layout' && found.length)) return;
         var id = attr(e, 'AXIdentifier'), role = attr(e, 'AXRole');
-        if ((op === 'controls' && String(id).indexOf('titlebarControl.history') === 0) || id === args[2]) {
-            var info = {id: id, role: role, title: attr(e, 'AXTitle'), description: attr(e, 'AXDescription'),
+        var subrole = role === 'AXButton' ? attr(e, 'AXSubrole') : null;
+        var trafficLight = ['AXCloseButton', 'AXMinimizeButton', 'AXZoomButton'].indexOf(subrole) >= 0;
+        if (op === 'layout' && trafficLight) id = 'native.' + subrole;
+        var layoutTarget = op === 'layout' && (String(id).indexOf('titlebarControl.') === 0 ||
+            String(id).indexOf('workspace.titlebar') === 0 || String(id).indexOf('sidebar.workspace.') === 0 ||
+            id === 'Sidebar' || trafficLight);
+        if (layoutTarget || (op === 'controls' && String(id).indexOf('titlebarControl.history') === 0) || id === args[2]) {
+            var info = {id: id, role: role, title: attr(e, 'AXTitle'), value: attr(e, 'AXValue'), description: attr(e, 'AXDescription'),
                 enabled: attr(e, 'AXEnabled'), help: attr(e, 'AXHelp'),
                 position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')};
             found.push(e); controls.push(info);
@@ -80,6 +105,8 @@ function run(args) {
         if (found.length !== 1 || controls[0].enabled === false) throw Error('AX control unavailable: ' + args[2]);
         found[0].click();
     }
+    if (op === 'layout') return JSON.stringify({rows: controls,
+        frame: {position: p.windows[0].position(), size: p.windows[0].size()}});
     return JSON.stringify(controls);
 }
 '''
@@ -89,10 +116,13 @@ class Proof:
     def __init__(self):
         self.started = time.monotonic()
         self.created_window = self.created_workspace = None
+        self.layout_target = None
+        self.mouse_down = False
+        self.last_mouse_point = (0, 0)
         self.fixture = None
         self.report = dict(status='running', checks=[], routes={name: 'not_run' for name in (
             'panel_link_immediate_back', 'titlebar_forward', 'history_menu', 'keyboard_history',
-            'sidebar_workspace', 'feed_open', 'attention_jump', 'cross_window')}, limitations=[
+            'sidebar_workspace', 'feed_open', 'attention_jump', 'cross_window', 'titlebar_layout')}, limitations=[
             'Rendered arrow direction and legibility require review of the PNGs.',
             '200-entry cap, restore and closed-target/duplicate handling belong to the logic suite.',
             'Feed uses a synthetic flag; no live agent or permission request is created.'])
@@ -103,6 +133,7 @@ class Proof:
         assert re.fullmatch(r'/tmp/c11-sandbox-[A-Za-z0-9._-]+\.sock', self.socket_path), 'sandbox socket required'
         assert stat.S_ISSOCK(Path(self.socket_path).stat().st_mode), 'not a socket'
         run_id = self.socket_path.removeprefix('/tmp/c11-sandbox-').removesuffix('.sock')
+        self.debug_log = Path('/tmp/c11-sandbox-' + run_id + '.log')
         app_root = Path.home() / 'c11-sandbox/apps' / run_id
         apps = list(app_root.glob('*.app'))
         assert len(apps) == 1, ('exact guest app required', apps)
@@ -133,19 +164,24 @@ class Proof:
         self.report['identity'] = dict(socket=self.socket_path, pid=self.pid, app=str(self.app),
             bundle=bundle['CFBundleIdentifier'], version=bundle.get('CFBundleShortVersionString'),
             build=bundle.get('CFBundleVersion'))
-        self.watchdog = threading.Timer(200, self.hard_stop)
+        self.watchdog = threading.Timer(390, self.hard_stop)
         self.watchdog.daemon = True
         self.watchdog.start()
         signal.signal(signal.SIGALRM, self.expired)
-        signal.alarm(180)
+        signal.alarm(360)
 
     def expired(self, *_):
-        raise TimeoutError('180-second active deadline')
+        raise TimeoutError('360-second active deadline')
 
     def hard_stop(self):
-        # No key remains held: all synthetic input is a complete key/click pair.
-        (OUT / 'hard-timeout.txt').write_text('200-second deadline; proof process terminated.\n')
-        os._exit(124)
+        try:
+            if self.mouse_down:
+                self.mouse(self.last_mouse_point, event_types=(2,), check_foreground=False)
+        finally:
+            try:
+                (OUT / 'hard-timeout.txt').write_text('390-second deadline; proof process terminated.\n')
+            finally:
+                os._exit(124)
 
     def ui(self, operation, *args):
         return json.loads(subprocess.check_output(['/usr/bin/osascript', '-l', 'JavaScript', '-e', UI,
@@ -213,8 +249,10 @@ tell p to key code {code}{suffix}
 end tell'''
         subprocess.run(['/usr/bin/osascript', '-e', script], check=True, timeout=8)
 
-    def mouse(self, point):
-        assert self.ui('foreground') == self.pid, 'exact guest PID must be foreground'
+    def mouse(self, point, event_types=(1, 2), check_foreground=True):
+        if check_foreground:
+            assert self.ui('foreground') == self.pid, 'exact guest PID must be foreground'
+        self.last_mouse_point = point
         class Point(ctypes.Structure):
             _fields_ = [('x', ctypes.c_double), ('y', ctypes.c_double)]
         cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
@@ -224,11 +262,13 @@ end tell'''
         cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
         cf.CFRelease.argtypes = [ctypes.c_void_p]
-        for event_type in (1, 2):
+        for event_type in event_types:
             event = cg.CGEventCreateMouseEvent(None, event_type, Point(*point), 0)
             assert event
             cg.CGEventSetIntegerValueField(event, 1, 1)
             cg.CGEventPost(0, event)
+            if event_type in (1, 2):
+                self.mouse_down = event_type == 1
             posted = time.monotonic()
             cf.CFRelease(event)
         return posted
@@ -265,6 +305,206 @@ end tell'''
         assert len(self.ui('displays')) == 1, 'one verified guest display required'
         subprocess.run(['/usr/sbin/screencapture', '-x', '-D', '1', str(OUT / (name + '.png'))], check=True, timeout=8)
 
+    def sidebar_width(self, width):
+        layout = self.call('sidebar.state', workspace_id=self.a)['layout']
+        assert not layout['double_wide'], 'normal single-column sidebar required'
+        if abs(layout['effective_width'] - width) <= .5:
+            return
+        frame = self.ui('frame')
+        x, y = frame['position']
+        start, end = (x + layout['effective_width'], y + 220), (x + width, y + 220)
+        self.mouse(start, event_types=(5, 1))
+        try:
+            time.sleep(.12)
+            for step in range(1, 7):
+                point = (start[0] + (end[0] - start[0]) * step / 6, end[1])
+                self.mouse(point, event_types=(6,), check_foreground=False)
+                time.sleep(.025)
+        finally:
+            self.mouse(end, event_types=(2,), check_foreground=False)
+        self.wait(lambda: abs(self.call('sidebar.state', workspace_id=self.a)['layout']['effective_width'] - width) <= 1,
+                  'native divider drag reaches ' + str(width))
+
+    def minimal_mode(self, enabled):
+        # Native command palette submission, with a read-only oracle proving the
+        # selected command before Return. No debug palette activation method.
+        title = ('Enable' if enabled else 'Disable') + ' Minimal Mode'
+        command_id = 'palette.' + ('enable' if enabled else 'disable') + 'MinimalMode'
+        self.key(35, 'command down, shift down')
+        self.wait(lambda: self.call('debug.command_palette.visible', window_id=self.window)['visible'], 'palette opens')
+        script = f'''tell application "System Events"
+set p to first process whose unix id is {self.pid}
+if not frontmost of p then error "Verified guest PID not foreground"
+tell p to keystroke {json.dumps(title)}
+end tell'''
+        subprocess.run(['/usr/bin/osascript', '-e', script], check=True, timeout=8)
+
+        def selected():
+            state = self.call('debug.command_palette.results', window_id=self.window, limit=5)
+            rows, index = state['results'], state['selected_index']
+            return state['visible'] and index < len(rows) and rows[index]['command_id'] == command_id
+
+        self.wait(selected, 'exact minimal-mode command selected')
+        self.key(36)
+        self.wait(lambda: not self.call('debug.command_palette.visible', window_id=self.window)['visible'], 'palette dismisses')
+
+    @staticmethod
+    def bounds(row):
+        x, y = row['position']
+        width, height = row['size']
+        return x, y, x + width, y + height
+
+    def layout_snapshot(self, minimal, hidden_shot=None):
+        snapshot = self.ui('layout')
+        if minimal:
+            frame = snapshot['frame']
+            self.mouse((frame['position'][0] + frame['size'][0] - 40,
+                        frame['position'][1] + frame['size'][1] - 40), event_types=(5,))
+            time.sleep(.18)
+            hidden = self.ui('layout')
+            if hidden_shot:
+                self.shot(hidden_shot)
+            host = next((r for r in hidden['rows'] if r['id'] == MINIMAL_HOST), None)
+            assert host, ('minimal host missing while controls are not hovered', hidden)
+            x, y, right, bottom = self.bounds(host)
+            self.mouse(((x + right) / 2, (y + bottom) / 2), event_types=(5,))
+            time.sleep(.18)  # Native hover fade is 0.14 seconds.
+            snapshot = self.ui('layout')
+            snapshot['before_hover'] = hidden
+        return snapshot
+
+    def assert_layout(self, snapshot, width, minimal, title, measured):
+        rows = {row['id']: row for row in snapshot['rows']}
+        assert len(rows) == len(snapshot['rows']), ('duplicate visible AX ids', snapshot)
+        assert CONTROL_IDS <= rows.keys(), ('six controls required', snapshot)
+        frame = snapshot['frame']
+        x, y = frame['position']
+        assert abs(frame['size'][0] - 820) <= 1, ('820px window required', frame)
+        controls = [rows[key] for key in CONTROL_IDS]
+        assert all(r['size'][0] > 0 and r['size'][1] > 0 for r in controls), snapshot
+        assert abs(self.call('sidebar.state', workspace_id=self.a)['layout']['effective_width'] - width) <= 1
+        if minimal:
+            host = self.bounds(rows[MINIMAL_HOST])
+            assert host[0] >= x and host[2] <= x + width, ('minimal host outside sidebar', snapshot)
+            for control in controls:
+                box = self.bounds(control)
+                assert box[0] >= host[0] and box[1] >= host[1] and box[2] <= host[2] + 1 and box[3] <= host[3] + 1, (
+                    'minimal control outside reserved host', control, host)
+            lights = [self.bounds(r) for key, r in rows.items() if key.startswith('native.AX')]
+            assert lights and host[1] >= max(b[3] for b in lights) + 2, ('minimal host overlaps traffic lights', snapshot)
+            cards = [self.bounds(r) for key, r in rows.items() if key.startswith('sidebar.workspace.')]
+            assert cards and min(b[1] for b in cards) >= host[3] + 2, ('minimal host overlaps workspace content', snapshot)
+            reserved = lambda items: {r['id']: (r['position'], r['size']) for r in items
+                                      if r['id'] == MINIMAL_HOST or r['id'].startswith('sidebar.workspace.')}
+            assert reserved(snapshot['before_hover']['rows']) == reserved(snapshot['rows']), (
+                'hover changed reserved host or workspace geometry', snapshot)
+            row_counts = {}
+            for control in controls:
+                top = round(control['position'][1])
+                row_counts[top] = row_counts.get(top, 0) + 1
+            assert sorted(row_counts.values()) == [3, 3], ('minimal controls must form two rows of three', snapshot)
+        else:
+            text, folder = rows[TITLE], rows[FOLDER]
+            assert text['value'] == title, ('long title not applied', text)
+            controls_right = max(self.bounds(r)[2] for r in controls)
+            assert folder['position'][0] >= controls_right + 4, ('controls overlap folder', snapshot)
+            assert text['position'][0] >= self.bounds(folder)[2] + 4, ('folder overlaps title', snapshot)
+            assert text['size'][0] >= measured['width'] - 1, ('long title is truncated', text, measured)
+            assert self.bounds(text)[2] <= x + frame['size'][0] - 8, ('title outside narrow window', snapshot)
+        return rows
+
+    def folder_click(self, row):
+        assert self.debug_log.exists(), 'guest DEBUG log required for folder click oracle'
+        offset = self.debug_log.stat().st_size
+        x, y, right, bottom = self.bounds(row)
+        before = self.ui('frame')
+        self.mouse(((x + right) / 2, (y + bottom) / 2))
+        self.key(53)  # Dismiss any folder drag session; never drop into another app.
+
+        def logged():
+            with self.debug_log.open() as stream:
+                stream.seek(offset)
+                return [line.strip() for line in stream if 'folder.mouseDown ' in line]
+
+        lines = self.wait(logged, 'native folder click reaches DraggableFolderNSView')
+        assert self.ui('frame') == before, 'folder click moved the window'
+        assert self.at(self.a, self.source, self.window), 'folder click changed panel focus'
+        return lines
+
+    def layout_matrix(self):
+        self.begin('titlebar_layout')
+        # Prune only this test's fixtures so the same-workspace two-panel pair
+        # has deterministic Back-disabled / Forward-disabled endpoints.
+        self.call('window.close', window_id=self.created_window)
+        self.created_window = None
+        self.call('workspace.close', workspace_id=self.created_workspace)
+        self.created_workspace = None
+        for panel in self.call('panel.list', workspace_id=self.a)['panels']:
+            if panel['id'] != self.source:
+                self.call('panel.close', workspace_id=self.a, panel_id=panel['id'])
+        title = 'C11-551 Architecture, Delivery, and Navigation Review'
+        self.call('workspace.rename', workspace_id=self.a, title=title)
+        resized = self.call('window.resize', window_id=self.window, width=820, height=650)
+        assert abs(resized['applied']['width'] - 820) <= 1, ('820px window required', resized)
+        measured = self.ui('textSize', title)
+        self.layout_target = self.call('panel.create', workspace_id=self.a, type='browser',
+                                       url=self.fixture.as_uri(), focus=False)['panel_id']
+        self.report['targets']['layout_target'] = self.layout_target
+        self.landed(self.a, self.source, 'background layout target creation preserves source', self.window)
+        # focusedDirectory falls back to workspace.currentDirectory for browsers;
+        # require the actual folder AX element after closing the terminal fixture.
+        self.control(FOLDER)
+        self.javascript('document.querySelector("#jump").href=' + json.dumps('c11://panel/' + self.layout_target))
+        self.report['layout_matrix'] = [dict(
+            case=f'{"minimal" if minimal else "standard"}-{style.lower()}-{width}-{appearance.lower()}',
+            status='not_run', minimal=minimal, style=style, sidebar_width=width, appearance=appearance)
+            for minimal in (False, True) for style in ('Classic', 'Roomy')
+            for width in (180, 200) for appearance in ('Dark', 'Light')]
+        self.save()
+        for minimal in (False, True):
+            if minimal:
+                self.minimal_mode(True)
+            for style in ('Classic', 'Roomy'):
+                self.ui('style', style)
+                for width in (180, 200):
+                    self.sidebar_width(width)
+                    for appearance in ('Dark', 'Light'):
+                        self.ui('appearance', appearance)
+                        name = f'{"minimal" if minimal else "standard"}-{style.lower()}-{width}-{appearance.lower()}'
+                        case = next(row for row in self.report['layout_matrix'] if row['case'] == name)
+                        case['status'] = 'running'
+                        self.save()
+                        try:
+                            self.landed(self.a, self.source, 'layout baseline remains source', self.window)
+                            before = self.layout_snapshot(minimal, hidden_shot=('07-' + name + '-hidden') if minimal else None)
+                            case['back_disabled'] = before
+                            rows = self.assert_layout(before, width, minimal, title, measured)
+                            assert rows[BACK]['enabled'] is False, ('source endpoint Back must be disabled', rows[BACK])
+                            if not minimal:
+                                case['folder_click_log'] = self.folder_click(rows[FOLDER])
+                            self.shot('07-' + name)
+                            self.mouse(self.link_point())
+                            self.landed(self.a, self.layout_target, 'layout native link lands')
+                            after = self.layout_snapshot(minimal)
+                            case['forward_disabled'] = after
+                            next_rows = self.assert_layout(after, width, minimal, title, measured)
+                            assert next_rows[BACK]['enabled'] is True and next_rows[FORWARD]['enabled'] is False
+                            geometry = lambda items: {key: (items[key]['position'], items[key]['size']) for key in CONTROL_IDS}
+                            assert geometry(rows) == geometry(next_rows), ('disabled controls changed geometry', before, after)
+                            self.mouse(self.center(BACK))
+                            self.landed(self.a, self.source, 'layout Back returns to source')
+                            case['status'] = 'passed'
+                            self.save()
+                        except Exception:
+                            case['status'] = 'failed'
+                            self.save()
+                            raise
+            if minimal:
+                self.minimal_mode(False)
+        self.ui('style', 'Classic')
+        self.note('16-case native layout matrix: styles, widths, appearances, minimal hover and stable disabled geometry',
+                  resize=resized, measured_title=measured)
+
     def execute(self):
         capabilities = self.call('system.capabilities')
         features = {entry['id']: entry['version'] for entry in capabilities['features']}
@@ -276,7 +516,13 @@ end tell'''
         self.a, self.window = initial['workspace_id'], initial['window_id']
         assert len(self.call('window.list')['windows']) == 1, 'fresh single-window guest required'
         assert len(self.call('workspace.list', window_id=self.window)['workspaces']) == 1, 'fresh guest required'
-        assert len(self.call('area.list', workspace_id=self.a)['areas']) == 1, 'single-area fixture required'
+        # The fresh golden image can start with the welcome quad. Collapse only
+        # this owned fixture to one area before measuring browser coordinates.
+        for panel in self.call('panel.list', workspace_id=self.a)['panels']:
+            if panel['id'] != initial['panel_id']:
+                self.call('panel.close', workspace_id=self.a, panel_id=panel['id'])
+        self.wait(lambda: len(self.call('area.list', workspace_id=self.a)['areas']) == 1,
+                  'single-area fixture prepared')
         self.call('workspace.rename', workspace_id=self.a, title='C11-551 A source')
         self.b = self.call('workspace.create', title='C11-551 B destination', window_id=self.window)['workspace_id']
         self.created_workspace = self.b
@@ -294,6 +540,11 @@ end tell'''
         controls = self.ui('controls')
         assert {row['id'] for row in controls} == {BACK, FORWARD}, controls
         self.report['initial_controls'] = controls
+        initial_title = self.control('workspace.titlebarTitle')
+        initial_forward = next(row for row in controls if row['id'] == FORWARD)
+        self.report['initial_title'] = initial_title
+        assert initial_title['position'][0] >= initial_forward['position'][0] + initial_forward['size'][0] + 4, (
+            'history controls overlap title before resizing', initial_title, initial_forward)
         self.shot('01-titlebar-source')
 
         # Cache chrome geometry before the jump: AX tree traversal must not add
@@ -381,6 +632,8 @@ end tell'''
         self.landed(self.a, self.source, 'final cross-window Back', self.window)
         self.note('Cross-window link, titlebar Back and Forward restore exact window/workspace/panel')
         self.shot('06-cross-window-return')
+
+        self.layout_matrix()
         self.report['final_controls'] = self.ui('controls')
         self.report['final_history'] = self.call('history.list', limit=200)
         self.report.pop('active_route', None)
@@ -390,7 +643,8 @@ end tell'''
         signal.alarm(0)
         errors = []
         for method, params in [('window.close', dict(window_id=self.created_window)),
-                               ('workspace.close', dict(workspace_id=self.created_workspace))]:
+                               ('workspace.close', dict(workspace_id=self.created_workspace)),
+                               ('panel.close', dict(panel_id=self.layout_target, workspace_id=getattr(self, 'a', None)))]:
             if next(iter(params.values())) is not None:
                 try:
                     self.call(method, **params)

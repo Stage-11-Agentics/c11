@@ -2394,12 +2394,14 @@ struct ContentView: View {
                 // Draggable folder icon + focused command name
                 if let directory = focusedDirectory {
                     DraggableFolderIcon(directory: directory)
+                        .accessibilityIdentifier("workspace.titlebarFolder")
                 }
 
                 Text(titlebarText)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(fakeTitlebarTextColor)
                     .lineLimit(1)
+                    .accessibilityIdentifier("workspace.titlebarTitle")
                     .allowsHitTesting(false)
 
                 Spacer(minLength: 8)
@@ -2420,7 +2422,7 @@ struct ContentView: View {
             // sat the content 30pt tall in a 32pt outer, with the implicit
             // bottom space stacking against the 1pt bottom border so the text
             // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
-            .padding(.leading, (isFullScreen && !sidebarState.isVisible) ? 8 : (sidebarState.isVisible ? 12 : titlebarLeadingInset + CGFloat(debugTitlebarLeadingExtra)))
+            .padding(.leading, customTitlebarLeadingPadding)
             .padding(.trailing, 8)
         }
         .frame(height: titlebarPadding)
@@ -2437,6 +2439,15 @@ struct ContentView: View {
                 .fill(resolvedCustomTitlebarBottomBorder)
                 .frame(height: 1)
         }
+    }
+
+    private var customTitlebarLeadingPadding: CGFloat {
+        if isFullScreen { return sidebarState.isVisible ? 12 : 8 }
+        // The custom strip starts after the sidebar, while native accessory
+        // widths are measured from the window's left edge. Reserve any controls
+        // extending beyond a narrow sidebar before placing the folder/title.
+        let contentOrigin = sidebarState.isVisible ? sidebarWidth : 0
+        return max(12, titlebarLeadingInset - contentOrigin + CGFloat(debugTitlebarLeadingExtra))
     }
 
     private func updateTitlebarText() {
@@ -8541,7 +8552,12 @@ struct WorkspaceSidebar: View {
     /// to begin at least ~12pt past the scrim's center to keep the
     /// rounded top corners legible.
     private let firstRowTopInset: CGFloat = 12
-    private let hiddenTitlebarControlsLeadingInset: CGFloat = 72
+    @AppStorage("titlebarControlsStyle") private var minimalControlsStyleRaw = TitlebarControlsStyle.classic.rawValue
+
+    private var sidebarTopReservedHeight: CGFloat {
+        let controls = (TitlebarControlsStyle(rawValue: minimalControlsStyleRaw) ?? .classic).config
+        return trafficLightPadding + (isMinimalMode ? controls.sidebarRowsHeight + 2 : 0)
+    }
 
     private var isMinimalMode: Bool {
         WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
@@ -8655,7 +8671,7 @@ struct WorkspaceSidebar: View {
                             // ~40% opaque where the top corner lands and the
                             // highlight reads as if the corner is cut off.
                             Spacer()
-                                .frame(height: trafficLightPadding + firstRowTopInset)
+                                .frame(height: sidebarTopReservedHeight + firstRowTopInset)
 
                             groupControls
 
@@ -8768,7 +8784,7 @@ struct WorkspaceSidebar: View {
                         .frame(width: 0, height: 0)
                     )
                     .overlay(alignment: .top) {
-                        SidebarTopScrim(height: trafficLightPadding + 20)
+                        SidebarTopScrim(height: sidebarTopReservedHeight + 20)
                             .allowsHitTesting(false)
                     }
                     .overlay(alignment: .top) {
@@ -8780,8 +8796,8 @@ struct WorkspaceSidebar: View {
                     .overlay(alignment: .topLeading) {
                         if isMinimalMode {
                             HiddenTitlebarSidebarControlsView(notificationStore: notificationStore, sidebarState: sidebarState)
-                                .padding(.leading, hiddenTitlebarControlsLeadingInset)
-                                .padding(.top, 2)
+                                .padding(.leading, 8)
+                                .padding(.top, trafficLightPadding + 2)
                         }
                     }
                     .background(Color.clear)

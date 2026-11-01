@@ -68,14 +68,20 @@ def main():
         # An unrelated explicit --window must be ignored by the app-wide read.
         other_window = client.new_window()
         focus(d, 0.1)
-        before = client._call('system.identify')
+        def focused_window():
+            windows = client._call('window.list')['windows']
+            key = next(window for window in windows if window['key'])
+            return client._call('system.identify', {'window_id': key['id']})
+
+        # Window creation changes the socket's default target, not the key window.
+        before = focused_window()
         require(before['focused']['window_id'] != other_window, 'Focus must start in the original window')
         seen_before = client._call('panel.list', {'workspace_id': workspace})['panels']
         result = subprocess.run([cli, '--socket', socket, '--window', other_window,
                                  'history', '--json', '--limit', '2'], capture_output=True, text=True)
         require(result.returncode == 0, result.stderr)
         require(json.loads(result.stdout) == history(2), result.stdout)
-        require(client._call('system.identify') == before, 'Listing changed current focus')
+        require(focused_window() == before, 'Listing changed current focus')
         seen_after = client._call('panel.list', {'workspace_id': workspace})['panels']
         require([(r['id'], r['being_seen']) for r in seen_before] ==
                 [(r['id'], r['being_seen']) for r in seen_after], 'Listing changed being_seen')
@@ -85,8 +91,7 @@ def main():
         focus(b, 1.2)
         focus(c, 1.2)
         focus(d, 0.1)
-        # Back now checkpoints the currently visible D, even below one second.
-        require(client._call('history.back')['panel_id'] == c, history())
+        # Socket traversal retains the ordinary dwell threshold for current D.
         require(client._call('history.back')['panel_id'] == b, history())
         time.sleep(1.2)
         require(client._call('history.forward')['panel_id'] == c, history())

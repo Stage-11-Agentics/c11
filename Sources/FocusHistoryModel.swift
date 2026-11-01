@@ -90,9 +90,9 @@ struct FocusHistoryModel {
     }
 
     /// Finalize the source before moving the cursor. Restart it for a boundary no-op.
-    mutating func prepareForNavigation(at now: Date) {
+    mutating func prepareForNavigation(at now: Date, checkpoint: Bool = true) {
         let previous = open
-        finishVisit(at: now, checkpoint: true)
+        finishVisit(at: now, checkpoint: checkpoint)
         if let previous { open = (previous.workspaceId, previous.panelId, now) }
     }
 

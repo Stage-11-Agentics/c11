@@ -940,17 +940,21 @@ focus a panel in the selected workspace; crossing to another workspace returns
 `workspace.last` attempts navigation and is blocked for socket callers. Use `workspace.current`'s `previous_workspace_id` to resolve previous workspace targets without navigating.
 
 Explicit operator jumps (panel/workspace links, Feed Open, attention jumps,
-sidebar/menu/shortcut workspace selection) record both endpoints immediately,
-including zero-dwell arrivals. They share the same app-wide stack across windows.
+sidebar/menu/shortcut workspace selection, panel moves that focus their destination,
+and omnibar panel switches) record both endpoints immediately,
+including zero-dwell arrivals. Cycling workspaces adds one step per selected workspace.
+They share the same app-wide stack across windows.
 Ordinary visits qualify after 1 second of continuous **being seen**, using the
 same visibility rules as `last_seen_at`. Incidental fast glances and background
 selections are absent. Lock, screensaver, sleep, occlusion and leaving c11 end a visit; unseen
 time never counts toward dwell. An ordinary open visit is absent until it ends; an explicit jump arrival is
-already present. Back/Forward checkpoint the current visible endpoint even when
-it has not reached the dwell threshold.
+already present. Native operator Back/Forward checkpoint the current visible endpoint
+even when it has not reached the dwell threshold. Socket history traversal keeps
+the ordinary dwell threshold and creates no subsecond checkpoint.
 Repeated visits to the cursor's panel replace that row; traversal landings do not
 record themselves. A new explicit jump or qualified visit after Back removes the
-forward branch.
+forward branch. A subsecond glance at another panel after Back is also checkpointed
+by the next native Back/Forward action, which drops the previous forward branch.
 Closed targets are pruned; traversal skips a surviving repeat of the current panel.
 Moved targets resolve their current location by UUID.
 No closed process is reopened.
@@ -991,7 +995,9 @@ the existing 8-second autosave and termination save; a crash can lose up to one 
 
 The titlebar has Back and Forward arrows immediately after New Workspace. They
 share History → Back / Forward and disable independently when no live destination
-remains. Native operator actions may return across windows and workspaces;
+remains. In minimal mode the hover controls occupy two reserved rows inside the
+sidebar, with New Workspace, Back and Forward together on the second row.
+Native operator actions may return across windows and workspaces;
 socket-triggered menu/key events do not gain operator authority.
 History Back/Forward in Settings → Keyboard Shortcuts default to Option-Command-[
 and Option-Command-]. Existing custom bindings and explicit unbound choices remain.

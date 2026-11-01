@@ -113,6 +113,14 @@ struct TitlebarControlsStyleConfig {
     let buttonBackground: Bool
     let buttonCornerRadius: CGFloat
     let hoverBackground: Bool
+
+    var sidebarRowsHeight: CGFloat {
+        2 * buttonSize + spacing + groupPadding.top + groupPadding.bottom
+    }
+
+    var sidebarRowSpacing: CGFloat {
+        (136 - groupPadding.leading - groupPadding.trailing - 3 * buttonSize) / 2
+    }
 }
 
 final class TitlebarControlsViewModel: ObservableObject {
@@ -259,6 +267,7 @@ struct TitlebarControlsView: View {
     let onToggleNotifications: () -> Void
     let onNewTab: () -> Void
     let visibilityMode: TitlebarControlsVisibilityMode
+    var wrapsRows = false
     @AppStorage("titlebarControlsStyle") private var styleRawValue = TitlebarControlsStyle.classic.rawValue
     @AppStorage(ShortcutHintDebugSettings.titlebarHintXKey) private var titlebarShortcutHintXOffset = ShortcutHintDebugSettings.defaultTitlebarHintX
     @AppStorage(ShortcutHintDebugSettings.titlebarHintYKey) private var titlebarShortcutHintYOffset = ShortcutHintDebugSettings.defaultTitlebarHintY
@@ -298,6 +307,7 @@ struct TitlebarControlsView: View {
         let shortcut: StoredShortcut
         let width: CGFloat
         let leftEdge: CGFloat
+        let topOffset: CGFloat
 
         var id: String { action.rawValue }
     }
@@ -364,7 +374,7 @@ struct TitlebarControlsView: View {
     @ViewBuilder
     private func controlsGroup(config: TitlebarControlsStyleConfig) -> some View {
         let hintLayoutItems = titlebarHintLayoutItems(config: config)
-        let content = HStack(spacing: config.spacing) {
+        let buttons = Group {
             TitlebarControlButton(config: config, action: {
                 #if DEBUG
                 dlog("titlebar.toggleSidebar")
@@ -426,6 +436,19 @@ struct TitlebarControlsView: View {
             historyControl(back: false, config: config)
         }
 
+        let content = Group {
+            if wrapsRows {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(config.buttonSize),
+                    spacing: config.sidebarRowSpacing), count: 3),
+                    alignment: .leading, spacing: config.spacing) {
+                    buttons
+                }
+                .frame(width: 136 - config.groupPadding.leading - config.groupPadding.trailing)
+            } else {
+                HStack(spacing: config.spacing) { buttons }
+            }
+        }
+
         let paddedContent = content.padding(config.groupPadding)
 
         if config.groupBackground {
@@ -484,23 +507,23 @@ struct TitlebarControlsView: View {
 
         // Keep all titlebar hints on the same Y lane and resolve overlaps by shifting left.
         let minimumSpacing: CGFloat = 6
-        let assignedRightEdges = ShortcutHintHorizontalPlanner.assignRightEdges(
-            for: intervals.map { $0.interval },
-            minSpacing: minimumSpacing
-        )
-
         var items: [TitlebarHintLayoutItem] = []
         items.reserveCapacity(intervals.count)
-        for (index, item) in intervals.enumerated() {
-            let rightEdge = assignedRightEdges[index]
-            items.append(
-                TitlebarHintLayoutItem(
-                    action: item.action,
-                    shortcut: item.shortcut,
-                    width: item.width,
-                    leftEdge: rightEdge - item.width
+        for row in 0..<(wrapsRows ? 2 : 1) {
+            let rowItems = intervals.filter { $0.row == row }
+            let assignedRightEdges = ShortcutHintHorizontalPlanner.assignRightEdges(
+                for: rowItems.map { $0.interval }, minSpacing: minimumSpacing)
+            for (index, item) in rowItems.enumerated() {
+                items.append(
+                    TitlebarHintLayoutItem(
+                        action: item.action,
+                        shortcut: item.shortcut,
+                        width: item.width,
+                        leftEdge: assignedRightEdges[index] - item.width,
+                        topOffset: CGFloat(row) * (config.buttonSize + config.spacing)
+                    )
                 )
-            )
+            }
         }
         return items
     }
@@ -508,7 +531,7 @@ struct TitlebarControlsView: View {
     private func titlebarHintIntervals(
         config: TitlebarControlsStyleConfig,
         xOffset: CGFloat
-    ) -> [(action: KeyboardShortcutSettings.Action, shortcut: StoredShortcut, width: CGFloat, interval: ClosedRange<CGFloat>)] {
+    ) -> [(action: KeyboardShortcutSettings.Action, shortcut: StoredShortcut, width: CGFloat, interval: ClosedRange<CGFloat>, row: Int)] {
         guard shouldShowTitlebarShortcutHints else { return [] }
 
         return HintSlot.allCases.compactMap { slot in
@@ -521,7 +544,8 @@ struct TitlebarControlsView: View {
                 + xOffset
                 + titlebarHintRightSafetyShift
                 + titlebarHintBaseXShift
-            return (slot.action, shortcut, width, (rightEdge - width)...rightEdge)
+            let index = slot.rawValue + (slot == .toggleSidebar ? 0 : 1)
+            return (slot.action, shortcut, width, (rightEdge - width)...rightEdge, wrapsRows ? index / 3 : 0)
         }
     }
 
@@ -532,8 +556,9 @@ struct TitlebarControlsView: View {
     }
 
     private func titlebarButtonRightEdge(for slot: HintSlot, config: TitlebarControlsStyleConfig) -> CGFloat {
-        let index = CGFloat(slot.rawValue + (slot == .toggleSidebar ? 0 : 1))
-        return (index + 1) * config.buttonSize + index * config.spacing
+        let buttonIndex = slot.rawValue + (slot == .toggleSidebar ? 0 : 1)
+        let index = CGFloat(wrapsRows ? buttonIndex % 3 : buttonIndex)
+        return (index + 1) * config.buttonSize + index * (wrapsRows ? config.sidebarRowSpacing : config.spacing)
     }
 
     @ViewBuilder
@@ -550,7 +575,7 @@ struct TitlebarControlsView: View {
                 titlebarShortcutHintPill(shortcut: item.shortcut, config: config)
                     .accessibilityIdentifier("titlebarShortcutHint.\(item.action.rawValue)")
                     .frame(width: item.width, alignment: .leading)
-                    .offset(x: item.leftEdge, y: yOffset)
+                    .offset(x: item.leftEdge, y: yOffset + item.topOffset)
             }
         }
         .animation(.easeInOut(duration: 0.14), value: shouldShowTitlebarShortcutHints)
@@ -597,8 +622,6 @@ struct HiddenTitlebarSidebarControlsView: View {
     @ObservedObject var sidebarState: SidebarState
     @StateObject private var viewModel = TitlebarControlsViewModel()
 
-    private let hostHeight: CGFloat = 28
-
     var body: some View {
         TitlebarControlsView(
             notificationStore: notificationStore,
@@ -618,10 +641,11 @@ struct HiddenTitlebarSidebarControlsView: View {
                     _ = AppDelegate.shared?.workspaceManager?.addTab()
                 }
             },
-            visibilityMode: .onHover
+            visibilityMode: .onHover,
+            wrapsRows: true
         )
-        .fixedSize(horizontal: true, vertical: false)
-        .frame(height: hostHeight, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: true)
+        .accessibilityIdentifier("titlebarControl.minimalHost")
     }
 }
 

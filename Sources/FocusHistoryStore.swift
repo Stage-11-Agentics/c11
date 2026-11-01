@@ -104,7 +104,7 @@ final class FocusHistoryStore: ObservableObject {
         reconcile()
         let priorModel = model
         let date = now()
-        model.prepareForNavigation(at: date)
+        model.prepareForNavigation(at: date, checkpoint: focus == nil)
         let entry = back ? model.back(isLive: { _ in true }) : model.forward(isLive: { _ in true })
         guard let entry,
               let location = AppDelegate.shared?.locateSurface(surfaceId: entry.panelId),

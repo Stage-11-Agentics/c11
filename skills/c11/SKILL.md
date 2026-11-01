@@ -133,7 +133,7 @@ Full cards show one truncated sentence; hover shows the mission paragraph and
 path. Tiles keep their geometry and show the mission in their full-card hover
 preview. File edits normally appear within a few seconds. Missing, empty,
 invalid UTF-8/binary, oversized (over 64 KiB), symlink and nonregular files
-produce no mission line. Rootless and remote workspaces do not discover local
+produce no mission card. Rootless and remote workspaces do not discover local
 missions. Those launches clear `C11_MISSION_FILE` to an empty value; an already
 running agent retains its launch context. c11 does not search parent folders
 or other agents' files.

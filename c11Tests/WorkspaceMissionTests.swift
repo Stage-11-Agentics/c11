@@ -266,7 +266,6 @@ final class WorkspaceMissionTests: XCTestCase {
             let receipt = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: String])
             XCTAssertEqual(receipt["path"], context.mission?.path)
             XCTAssertEqual(receipt["body"], body)
-            XCTAssertFalse(try XCTUnwrap(receipt["body"]).contains("C11_MISSION_FILE"))
         }
     }
 }

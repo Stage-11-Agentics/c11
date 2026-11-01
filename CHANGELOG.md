@@ -6,15 +6,36 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.7] - 2026-11-01
+
+Headline: **c11 1.7.7. c11 brings back your previous session at launch without asking, the mailbox drawer gains a Conversations tab and clickable links, and a web page must ask before it opens another app.**
+
 ### Added
 
-- **Links in mail are clickable in the mailbox drawer.** A mail body that carries `[Title](c11://panel/<id>)` now shows "Title" as a link, and a bare `c11://panel/<id>` or `c11://workspace/<id>` URL is a link too. Clicking one takes you to that panel the same way a link in a Markdown panel does, and closes the drawer. A closed or malformed target shows a notice over the drawer. `http` and `https` links open in your browser; every other scheme stays plain text.
+- **Conversations in the mailbox drawer.** A Conversations tab, beside Received, Sent and Insights, lists every panel this one has exchanged mail with, newest first. Open one to read the whole exchange in time order: their messages on the left, yours on the right, each of yours marked with whether it was taken. Mail without a sender stamp keeps its own row instead of being merged by name. The tab only reads; nothing is sent, claimed or deleted. ([#861](https://github.com/Stage-11-Agentics/c11/pull/861))
+- **Links in mail are clickable in the mailbox drawer.** A mail body that carries `[Title](c11://panel/<id>)` now shows "Title" as a link, and a bare `c11://panel/<id>` or `c11://workspace/<id>` URL is a link too. Clicking one takes you to that panel the same way a link in a Markdown panel does, and closes the drawer. A closed or malformed target shows a notice over the drawer. `http` and `https` links open in your browser; every other scheme stays plain text. ([#859](https://github.com/Stage-11-Agentics/c11/pull/859))
+- **A close button on the mailbox drawer.** An × at the drawer's top right closes it; a second click on the envelope still works. ([#855](https://github.com/Stage-11-Agentics/c11/pull/855))
 
 ### Changed
 
-- **Agent launches no longer carry a mission prompt.** A workspace with a `C11.md` still shows its mission on the sidebar card and still passes the file to agents through `C11_MISSION_FILE`, but c11 no longer adds "read the mission" to the launch prompt. A launch with no task opens a plain session again, and a task arrives exactly as written. The c11 skill now tells agents to read the mission when their task concerns the project, not at every launch.
-- **c11 resumes your previous session by default.** Launch no longer asks "Resume previous session?"; every workspace from your last session comes back. Settings > General > On Launch chooses between resuming the previous session, asking which workspaces to resume, or starting fresh. Hold Option while c11 starts to pick workspaces for that launch only.
-- **Tiles show the full workspace card.** A sidebar wide enough for two or more columns now draws every workspace as the same full card a one-column sidebar shows, with its mission line, agent census and marks, the details your sidebar settings turn on, and the agent rail. The compact tile and its hover preview are gone. Cards in one row stretch to the tallest card, so their edges line up.
+- **c11 resumes your previous session by default.** Launch no longer asks "Resume previous session?"; every workspace from your last session comes back. Settings > General > On Launch chooses between resuming the previous session, asking which workspaces to resume, or starting fresh. Hold Option while c11 starts to pick workspaces for that launch only. ([#856](https://github.com/Stage-11-Agentics/c11/pull/856))
+- **Agent launches no longer carry a mission prompt.** A workspace with a `C11.md` still shows its mission on the sidebar card and still passes the file to agents through `C11_MISSION_FILE`, but c11 no longer adds "read the mission" to the launch prompt. A launch with no task opens a plain session again, and a task arrives exactly as written. The c11 skill now tells agents to read the mission when their task concerns the project, not at every launch. ([#854](https://github.com/Stage-11-Agentics/c11/pull/854))
+- **Tiles show the full workspace card.** A sidebar wide enough for two or more columns now draws every workspace as the same full card a one-column sidebar shows, with its mission line, agent census and marks, the details your sidebar settings turn on, and the agent rail. The compact tile and its hover preview are gone. Cards in one row stretch to the tallest card, so their edges line up. ([#858](https://github.com/Stage-11-Agentics/c11/pull/858))
+- **The subtitle bar shows its chevron only when there is more to see**: when the subtitle is cut off, or when an expanded subtitle runs past one line. A subtitle that fits shows no chevron, and nothing in the bar moves when it appears. ([#855](https://github.com/Stage-11-Agentics/c11/pull/855))
+
+### Fixed
+
+- **New mail reaches agents that never report a finished turn.** Some agents never tell c11 when a turn ends, so after the first doorbell their later mail could sit unread for hours. c11 now rings such a panel again for new mail 5 minutes after its last ring, and still waits for drafts, questions and the other usual holds. ([#850](https://github.com/Stage-11-Agentics/c11/pull/850))
+- **OpenCode 2 mail is offered again after 60 seconds.** When a mail invitation to OpenCode 2 failed without a clear answer and its connection never came back, the message waited with no doorbell until c11 restarted. c11 now offers it the ordinary way after 60 seconds. ([#857](https://github.com/Stage-11-Agentics/c11/pull/857))
+- **The CLI's invalid panel error is translated** into all six languages c11 ships. ([#859](https://github.com/Stage-11-Agentics/c11/pull/859))
+
+### Security
+
+- **A web page asks before it opens another app.** When a page in a browser panel tries to open a non-web link, such as `smb:`, `vnc:`, `ssh:` or an app's own scheme, c11 asks first, naming the site, the app and the link. Cancel opens nothing; Open has no keyboard shortcut, so a page cannot time a keystroke into it. "Always allow" remembers that site and link type, and Settings > Browser > Sites Allowed to Open Apps lists them so you can remove one. A panel you can't see is never prompted, and repeated requests are dropped rather than queued. `mailto:` links, and app links an agent or you open with c11's own browser commands, open as before. ([#860](https://github.com/Stage-11-Agentics/c11/pull/860))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.7.6] - 2026-11-01
 

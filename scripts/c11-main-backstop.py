@@ -198,10 +198,7 @@ def gate(root, repo, sha, attempt):
         if stale is None or run == 2:
             return state, outcomes
         record(root, "stale-cache", sha=sha, deps=key, stage=stale[0], kind=stale[1], seconds=stale[2])
-        shutil.rmtree(derived, ignore_errors=True)
-        if derived.exists():
-            raise RuntimeError("stale cache could not be removed: " + derived.name)
-        derived.mkdir(parents=True)
+        poller.empty_derived_data(derived)
     return state, outcomes
 
 
@@ -211,6 +208,11 @@ XCODEBUILD_STAGES = ("app", "logic", "host")
 def run_stages(root, repo, sha, attempt, stages, env, run):
     outcomes = []
     for name, argv, result, overrides in stages:
+        if result is not None and run > 1:
+            # xcodebuild refuses an existing -resultBundlePath, and run 1 left one.
+            rerun = result.with_name("%s-%s.xcresult" % (result.stem, run))
+            argv = [str(rerun) if arg == str(result) else arg for arg in argv]
+            result = rerun
         started = time.monotonic()
         log = attempt / ("%s.log" % name if run == 1 else "%s-%s.log" % (name, run))
         with log.open("w") as output:
@@ -218,7 +220,7 @@ def run_stages(root, repo, sha, attempt, stages, env, run):
         elapsed = time.monotonic() - started
         summary = unreadable = None
         if result is not None and code == 0:
-            summary, unreadable = poller.read_summary(lambda: poller.xcresult_summary(result), time.sleep)
+            summary, unreadable = poller.read_summary(lambda: poller.xcresult_summary(result), time.sleep, tries=2)
         if code == 75:
             raise Deferred("build lock unavailable")
         state = "failure" if code else "success"

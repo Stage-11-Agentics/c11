@@ -1096,9 +1096,12 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
 
     def test_quick_link_failure_wipes_the_key_cache_and_rebuilds_once(self):
         world, stale = self.timed_world([1, 0], "Undefined symbols for architecture arm64:\n", 20)
+        packages = stale.parent.parent / "SourcePackages" / "checkouts" / "Sparkle"
+        packages.mkdir(parents=True)
         supervisor, _ = run(world, self.root)
         self.assertEqual(len(supervisor.spawns), 2)
         self.assertFalse(stale.exists())
+        self.assertTrue(packages.is_dir())
         self.assertTrue(stale.parent.parent.is_dir())
         decisions = _decisions(self.root)
         self.assertTrue(any(d.get("decision") == "stale-cache" and d.get("kind") == "link" for d in decisions))
@@ -1190,6 +1193,55 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
         self.assertEqual(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}), "guest")
         self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
 
+    def test_guest_wait_clock_does_not_carry_over_an_idle_gap(self):
+        world = World(body=[pr()])
+        world.guest_names = ["c11-sb-first"]
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        # The PR closes and the queue empties; the first guest ends while idle.
+        world.body = []
+        world.sleep(60)
+        self.assertEqual(supervisor.poll_once(), "idle")
+        world.guest_names = []
+        world.sleep(60)
+        self.assertEqual(supervisor.poll_once(), "idle")
+        # Hours later a new guest and a new feature head arrive together.
+        world.sleep(4 * 3600)
+        world.guest_names = ["c11-sb-second"]
+        world.body = [pr(number=9, sha=SHA_B)]
+        world.tip = SHA_B  # the new head is its branch tip, so only the guest can hold it
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_guest_wait_clock_starts_only_for_a_waiting_feature_head(self):
+        world = World(body=[pr(number=8, ref="release/1.8.0")])
+        world.reported[SHA_A] = "success"
+        world.guest_names = ["c11-sb-demo"]
+        supervisor = poller.Supervisor(self.root, world)
+        supervisor.poll_once()  # a release head only: no feature is waiting
+        world.sleep(poller.GUEST_WAIT_S + 100)
+        world.body = [pr(number=9, sha=SHA_B)]
+        world.tip = SHA_B  # the new head is its branch tip, so only the guest can hold it
+        self.assertEqual(supervisor.poll_once(), "no-start")
+        self.assertEqual(supervisor.spawns, [])
+
+    def test_failed_pr_lookup_at_queue_time_keeps_the_head(self):
+        world = World(body=[pr()])
+        supervisor = poller.Supervisor(self.root, world)
+        world.held_slots.add(1)
+        supervisor.poll_once()  # queued behind the busy slot
+        world.held_slots.clear()
+
+        def unavailable(number):
+            raise poller.LookupUnavailable("pull 7 returned 502")
+
+        world.pull = unavailable
+        world.sleep(30)
+        supervisor.poll_once()
+        self.assertEqual([item["pr"] for item in supervisor.queue], [7])
+        self.assertEqual(supervisor.spawns, [])
+        self.assertFalse(any(d.get("decision") == "revoked" for d in _decisions(self.root)))
+
     def test_pr_merged_or_closed_mid_build_posts_nothing(self):
         world = World(body=[pr()])
         world.pull_body = pr(state="closed")
@@ -1201,6 +1253,15 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
         self.assertEqual(world.posts, [])
         self.assertTrue(any(d.get("decision") == "revoked" and d.get("detail") == "not_open"
                             for d in _decisions(self.root)))
+
+    def test_new_push_mid_build_posts_error_superseded_never_failure(self):
+        world = World(body=[pr(sha=SHA_B)])
+        world.pull_body = pr(sha=SHA_B)
+        world.alive[99999999] = True
+        supervisor = poller.Supervisor(self.root, world)
+        self.assertEqual(supervisor.watch({"pgid": 99999999, "pr": 7, "sha": SHA_A, "ref": "feature"}), "superseded")
+        self.assertFalse(world.group_alive(99999999))
+        self.assertEqual([(body["state"], body["description"]) for body in world.posts], [("error", "superseded")])
 
     def test_failed_pr_lookup_mid_build_keeps_the_build(self):
         world = World(body=[pr()])
@@ -2731,7 +2792,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
         _out, err = proc.communicate(timeout=40)
         self.assertEqual(proc.returncode, 0, err)
         self.assertFalse(poller.group_alive(int(ready.read_text())))
-        self.assertEqual(self.github.statuses()[-1], ("failure", "superseded"))
+        self.assertEqual(self.github.statuses()[-1], ("error", "superseded"))
 
     # B2: the queue and reported heads live in one process; a restart asks GitHub.
 

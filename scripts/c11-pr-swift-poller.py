@@ -615,23 +615,40 @@ def xcresult_summary(result_path):
     return xcresult_report(result_path, ["test-results", "summary"], timeout=SUMMARY_TIMEOUT_S)
 
 
-def read_summary(read, sleep):
+def read_summary(read, sleep, tries=2):
     """One retry for an unreadable result bundle. Returns (summary, reason).
 
     Under load xcresulttool can time out or exit nonzero on a complete bundle,
     so an unreadable summary is never a test verdict: the caller posts error.
     """
     reason = None
-    for attempt in (1, 2):
+    for attempt in range(1, tries + 1):
         try:
             return read(), None
         except subprocess.TimeoutExpired as error:
             reason = "xcresulttool timed out after %ss" % int(error.timeout or 0)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             reason = str(error)[:80] or type(error).__name__
-        if attempt == 1:
+        if attempt < tries:
             sleep(SUMMARY_RETRY_S)
     return None, reason
+
+
+def empty_derived_data(derived):
+    """Remove a stale DerivedData's build products and module caches.
+
+    SourcePackages stays: package checkouts are keyed by the same dependency set,
+    and keeping them means the clean rebuild needs no network fetch.
+    """
+    derived = Path(derived)
+    derived.mkdir(parents=True, exist_ok=True)
+    for entry in derived.iterdir():
+        if entry.name == "SourcePackages":
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
 
 
 def stale_cache_signature(log_text):
@@ -1857,6 +1874,10 @@ class Supervisor:
             )
             if reason == CREDENTIAL_UNAVAILABLE:
                 return self._credential_skip(item)
+            if reason == "revoked" and str(_detail).startswith("lookup_failed"):
+                # Unknown, not revoked: the head stays queued for the next cycle.
+                self.log(decision="lookup-unavailable", pr=item["pr"], sha=item["sha"], detail=str(_detail)[:200])
+                continue
             if not ok:
                 # The captured SHA stays what the list admitted. A moved tip is not
                 # written into this attempt and is not fetched.
@@ -1895,9 +1916,10 @@ class Supervisor:
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
+        feature_waiting = any(not release_head(item) for item in self.queue)
+        guests = self._guest_blocks_features(self.world.guests(), feature_waiting)
         if not self.queue:
             return "idle"
-        guests = self._guest_blocks_features(self.world.guests())
         if guests and not any(release_head(item) for item in self.queue):
             self.log(decision="no-start", reason="guest")
             return "no-start"
@@ -1929,14 +1951,16 @@ class Supervisor:
             return "no-start"
         return self._spawn(item)
 
-    def _guest_blocks_features(self, guests):
+    def _guest_blocks_features(self, guests, feature_waiting=True):
         """True while a running guest should hold feature heads, at most GUEST_WAIT_S.
 
-        One clock starts when a guest is first seen holding feature work and clears
-        on any check that sees no guest. Once it is GUEST_WAIT_S old, feature heads
-        start and run as if no guest were present until the guests are gone.
+        One clock starts when a guest first holds a feature head and clears on any
+        check that sees no guest or no feature head waiting; every cycle checks.
+        Once it is GUEST_WAIT_S old, feature heads start and run as if no guest
+        were present until the guests are gone. An unreadable tart list counts as
+        a guest, so it expires the same way.
         """
-        if not guests:
+        if not guests or not feature_waiting:
             self.guest_wait_since = None
             self.guest_wait_logged = False
             return False
@@ -2101,6 +2125,7 @@ class Supervisor:
         self.delivered = False
         self.test_summary = None
         self.summary_unreadable = None
+        self.revoked_detail = None
         self.phase_timings = []
         self._drop(item)
         if not item.get("deps"):
@@ -2162,9 +2187,7 @@ class Supervisor:
         """Empty this dependency key's DerivedData so the second invocation builds clean."""
         (self.state() / "warmed-dependencies" / key).unlink(missing_ok=True)
         try:
-            if self.derived.exists():
-                shutil.rmtree(self.derived)
-            self.derived.mkdir(parents=True, exist_ok=True)
+            empty_derived_data(self.derived)
         except OSError as error:
             self.log(decision="cache-wipe-failed", deps=key, error=str(error)[:200])
             return False
@@ -2356,7 +2379,8 @@ class Supervisor:
             self.delivered = self._post(sha, "pending", "yielded to Atlas work", pr=record.get("pr"))
             self.log(decision="yielded", reason=reason, pr=record.get("pr"))
         elif reason == "superseded":
-            self.delivered = self._post(sha, "failure", "superseded", pr=record.get("pr"))
+            # A newer push cut this build short; nothing about this head failed.
+            self.delivered = self._post(sha, "error", "superseded", pr=record.get("pr"))
             self.log(decision="superseded", pr=record.get("pr"), sha=sha)
         elif reason == "revoked":
             # The PR merged, closed or left scope: nothing about this head failed.
@@ -2364,7 +2388,8 @@ class Supervisor:
             self.log(decision="revoked", pr=record.get("pr"), sha=sha, during="watch",
                      detail=str(self.revoked_detail)[:200], posted=None)
         else:
-            self.delivered = self._post(sha, "failure", reason, pr=record.get("pr"))
+            # A stop is never a build or test verdict.
+            self.delivered = self._post(sha, "error", str(reason)[:100], pr=record.get("pr"))
             self.log(decision=reason, pr=record.get("pr"), sha=sha)
         return reason
 

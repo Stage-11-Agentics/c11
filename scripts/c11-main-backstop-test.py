@@ -179,6 +179,32 @@ if n <= %d:
             stale.parent.mkdir(parents=True, exist_ok=True)
             (self.root / "state/events.jsonl").unlink()
 
+    def test_quick_link_failure_in_the_logic_stage_reruns_with_a_new_bundle(self):
+        repo, fake = self.gate_fixture()
+        counter = self.root / "logic.count"
+        # Like xcodebuild: writes its bundle even when the link fails, refuses an existing one.
+        executable(repo / "scripts/test-unit-local.sh", """#!/usr/bin/env python3
+import json, os, pathlib, sys
+p = pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1])
+p.mkdir()
+c = pathlib.Path(%r)
+if os.environ.get('C11_TEST_SCHEME') == 'c11-logic':
+    n = int(c.read_text()) + 1 if c.exists() else 1
+    c.write_text(str(n))
+    if n == 1:
+        print('ld: symbol(s) not found for architecture arm64')
+        sys.exit(65)
+(p/'summary.json').write_text(json.dumps({'result': 'Passed', 'totalTestCount': 3, 'skippedTests': 0, 'failedTests': 0}))
+""" % str(counter))
+        attempt = self.root / "logic-stale"
+        attempt.mkdir()
+        with self.gate_env(), patch.object(m, "git", return_value=SHA), patch.object(m.poller, "XCODEBUILD", str(fake)), \
+             patch.object(m.poller, "xcresult_summary", side_effect=lambda p: m.read(p / "summary.json")):
+            state, stages = m.gate(self.root, repo, SHA, attempt)
+        self.assertEqual(state, "success", stages)
+        self.assertEqual(int(counter.read_text()), 2)
+        self.assertTrue((attempt / "logic-2.xcresult").is_dir())
+
     def test_unreadable_result_retries_once_then_errors_never_failure(self):
         for label, failures, expected in (("reads-on-retry", 1, "success"), ("stays-unreadable", 2, "error")):
             repo, fake = self.gate_fixture()

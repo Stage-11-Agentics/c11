@@ -20,18 +20,23 @@ MUTANTS = (
     ("status-context", "c11-main-backstop.py", 'CONTEXT = "c11/main-atlas"', 'CONTEXT = "CI main (macOS)"', "test_status_context_and_elapsed_are_not_failure"),
     ("service-stop", "c11-main-backstop-service.py", '        stop()\n        if args.mode == "teardown":', '        pass\n        if args.mode == "teardown":', "test_service_install_update_rollback_teardown_leaves_poller"),
     ("backstop-stale-cache", "c11-main-backstop.py", "if stale is None or run == 2:", "if True:", "test_quick_link_or_codesign_failure_rebuilds_once_from_a_clean_cache"),
-    ("backstop-summary-retry", "c11-main-backstop.py", "poller.read_summary(lambda: poller.xcresult_summary(result), time.sleep)", "(poller.xcresult_summary(result), None)", "test_unreadable_result_retries_once_then_errors_never_failure"),
+    ("backstop-rerun-bundle", "c11-main-backstop.py", "        if result is not None and run > 1:\n", "        if False:\n", "test_quick_link_failure_in_the_logic_stage_reruns_with_a_new_bundle"),
+    ("backstop-summary-retry", "c11-main-backstop.py", "time.sleep, tries=2)", "time.sleep, tries=1)", "test_unreadable_result_retries_once_then_errors_never_failure"),
 )
 # C11-561 guards in the PR poller, run against its own suite.
 POLLER_MUTANTS = (
     ("poller-stale-cache", "if kind and elapsed < STALE_CACHE_S:", "if False:", "test_quick_link_failure_wipes_the_key_cache_and_rebuilds_once"),
     ("poller-stale-cache-codesign", "if kind and elapsed < STALE_CACHE_S:", "if kind == 'link' and elapsed < STALE_CACHE_S:", "test_quick_codesign_failure_twice_posts_the_real_failure"),
     ("poller-stale-cache-under-a-minute", "if kind and elapsed < STALE_CACHE_S:", "if kind:", "test_slow_or_ordinary_failure_keeps_the_cache"),
-    ("poller-summary-retry", "    for attempt in (1, 2):\n        try:\n            return read(), None", "    for attempt in (1,):\n        try:\n            return read(), None", "test_unreadable_summary_retries_once_then_posts_error_never_failure"),
+    ("poller-summary-retry", "def read_summary(read, sleep, tries=2):", "def read_summary(read, sleep, tries=1):", "test_unreadable_summary_retries_once_then_posts_error_never_failure"),
     ("poller-summary-reason", "        if unreadable:\n", "        if False:\n", "test_unreadable_summary_retries_once_then_posts_error_never_failure"),
     ("poller-summary-timeout", "SUMMARY_TIMEOUT_S = 120", "SUMMARY_TIMEOUT_S = 30", "test_summary_read_allows_a_slow_xcresulttool"),
+    ("poller-guest-clock-idle", "        if not guests or not feature_waiting:\n", "        if not guests:\n", "test_guest_wait_clock_starts_only_for_a_waiting_feature_head"),
+    ("poller-guest-clock-cycle", "        feature_waiting = any(not release_head(item) for item in self.queue)\n        guests = self._guest_blocks_features(self.world.guests(), feature_waiting)\n        if not self.queue:\n            return \"idle\"\n", "        if not self.queue:\n            return \"idle\"\n        feature_waiting = any(not release_head(item) for item in self.queue)\n        guests = self._guest_blocks_features(self.world.guests(), feature_waiting)\n", "test_guest_wait_clock_does_not_carry_over_an_idle_gap"),
+    ("poller-lookup-queued", 'if reason == "revoked" and str(_detail).startswith("lookup_failed"):', "if False:", "test_failed_pr_lookup_at_queue_time_keeps_the_head"),
     ("poller-guest-wait", "        if waited < GUEST_WAIT_S:\n", "        if True:\n", "test_feature_head_waits_at_most_ten_minutes_for_a_guest"),
     ("poller-revoke-silent", '            self.delivered = False\n            self.log(decision="revoked"', '            self.delivered = self._post(sha, "failure", "revoked", pr=record.get("pr"))\n            self.log(decision="revoked"', "test_pr_merged_or_closed_mid_build_posts_nothing"),
+    ("poller-superseded-error", 'self._post(sha, "error", "superseded"', 'self._post(sha, "failure", "superseded"', "test_new_push_mid_build_posts_error_superseded_never_failure"),
     ("poller-lookup-unknown", 'elif reason == "revoked" and (str(_detail).startswith("lookup_failed") or _detail == "ls_remote"):', "elif False:", "test_failed_pr_lookup_mid_build_keeps_the_build"),
     ("poller-pull-404", '        if status != 200:\n            raise LookupUnavailable', '        if status != 200:\n            return None\n            raise LookupUnavailable', "test_production_pull_treats_only_404_as_missing"),
 )

@@ -105,6 +105,21 @@ final class MailboxNativeDoorbell {
             ?? Attempt(id: newID, process: process, ids: uncovered)
     }
 
+    /// The attempt to send, or nil after `relook` when the snapshot this ring
+    /// captured is all covered. Later mail may have arrived while the inbox
+    /// was read (its own admission saw this ring in flight), so the ring must
+    /// look again rather than end: the fresh look names only the new mail.
+    static func attemptToSend(previous: Attempt?, process: MailboxStdinBuffer.AgentProcess,
+                              unreadIDs: Set<String>, coveredIDs: Set<String>, newID: UUID = UUID(),
+                              relook: () -> Void) -> Attempt? {
+        guard let attempt = attemptSnapshot(previous: previous, process: process, unreadIDs: unreadIDs,
+                                            coveredIDs: coveredIDs, newID: newID) else {
+            relook()
+            return nil
+        }
+        return attempt
+    }
+
     /// Keep accepted coverage across OpenCode /new route registrations from
     /// the same TUI process. A different process must be allowed to retry the
     /// still-unread invitation after a crash or restart.

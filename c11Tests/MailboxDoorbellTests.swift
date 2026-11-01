@@ -2473,6 +2473,26 @@ final class OpenCodeHeldAttemptTests: XCTestCase {
             newID: fresh)?.id, fresh)
     }
 
+    /// Grok verify: the ring captured {A covered, B}; during the inbox read
+    /// B was claimed and C arrived. Nothing captured is uncovered, so the
+    /// ring sends nothing and looks again, which captures C.
+    func testAllCoveredSnapshotLooksAgainInsteadOfEnding() {
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 456)
+        var relooks = 0
+        XCTAssertNil(MailboxNativeDoorbell.attemptToSend(
+            previous: nil, process: process, unreadIDs: ["mail-a"], coveredIDs: ["mail-a"],
+            relook: { relooks += 1 }))
+        XCTAssertEqual(relooks, 1, "an all-covered snapshot must look again so later mail is not left waiting")
+
+        let fresh = UUID()
+        let next = MailboxNativeDoorbell.attemptToSend(
+            previous: nil, process: process, unreadIDs: ["mail-a", "mail-c"], coveredIDs: ["mail-a"],
+            newID: fresh, relook: { relooks += 1 })
+        XCTAssertEqual(next?.ids, ["mail-c"], "the fresh look names only the new mail")
+        XCTAssertEqual(next?.id, fresh)
+        XCTAssertEqual(relooks, 1, "a ring with uncovered mail sends and does not look again")
+    }
+
     /// A refusal before any prompt keeps waiting for the plugin's own
     /// readiness or route recovery, as before.
     func testDefiniteRefusalsKeepTheirHold() {

@@ -7118,13 +7118,16 @@ final class Workspace: Identifiable, ObservableObject {
         var attemptID: UUID?
         if registration.route == .opencodePlugin && registration.supportsAttemptReplay {
             let process = MailboxStdinBuffer.AgentProcess(pid: registration.agentPID, startTime: registration.processStart)
-            guard let attempt = MailboxNativeDoorbell.attemptSnapshot(
+            guard let attempt = MailboxNativeDoorbell.attemptToSend(
                 previous: mailboxNativeAttempts[surfaceId], process: process, unreadIDs: unreadIDs,
-                coveredIDs: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
-            ) else {
-                mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
-                return
-            }
+                coveredIDs: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds,
+                relook: {
+                    mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                    // Same as the miss guard above: mail that arrived during
+                    // the inbox hop is captured by a fresh look, never sent.
+                    ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+                }
+            ) else { return }
             mailboxNativeAttempts[surfaceId] = attempt
             attemptID = attempt.id
             ids = attempt.ids

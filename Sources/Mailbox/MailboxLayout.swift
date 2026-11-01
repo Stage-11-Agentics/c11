@@ -222,13 +222,56 @@ enum MailboxLayout {
 /// as themselves. Only `draft` is called a draft.
 enum MailboxHoldNotice {
 
+    /// Queued ids whose invitation has not succeeded. Covered ids stay unread
+    /// until recv, and they are not held behind the draft.
+    static func uncoveredCount(queuedIds: [String], coveredIds: Set<String>) -> Int {
+        queuedIds.reduce(0) { $0 + (coveredIds.contains($1) ? 0 : 1) }
+    }
+
     /// Queued messages to show as held behind a draft. Nil when this look is
     /// not a held-composer look, so a quiet-window defer leaves the indicator.
-    /// Any other named look clears it.
+    /// Any other named look clears it. A count with no ids treats every queued
+    /// message as uncovered.
     static func draftHoldCount(relook: String?, queued: Int) -> Int? {
         guard let relook else { return nil }
         guard relook == "draft" else { return 0 }
         return max(0, queued)
+    }
+
+    static func draftHoldCount(relook: String?, queuedIds: [String], coveredIds: Set<String>) -> Int? {
+        guard let relook else { return nil }
+        guard relook == "draft" else { return 0 }
+        return uncoveredCount(queuedIds: queuedIds, coveredIds: coveredIds)
+    }
+
+    /// The reason written on a skip row. The decision can be `draft` while the
+    /// composer still holds the doorbell line; the row says `stranded`.
+    static func loggedSkipReason(decisionReason: String, relook: String?) -> String {
+        if decisionReason == "draft", relook == "stranded" { return "stranded" }
+        return decisionReason
+    }
+
+    /// The agent is working. That is not a draft holding mail.
+    static func holdAfterClosedGate() -> Int { 0 }
+
+    /// Claiming the last unread message clears a hold. A receipt that leaves
+    /// mail does not guess which ids remain.
+    static func holdAfterReceipt(unread: Int) -> Int? {
+        unread <= 0 ? 0 : nil
+    }
+
+    /// Human trace prints the JSON line and then the sentence. `--json` prints
+    /// the log records only, one object per line.
+    static func traceText(lines: [String], jsonOutput: Bool) -> String {
+        var out = ""
+        for line in lines {
+            let body = line.hasSuffix("\n") ? String(line.dropLast()) : line
+            out += body + "\n"
+            if !jsonOutput, let sentence = sentence(forLogLine: body) {
+                out += sentence + "\n"
+            }
+        }
+        return out
     }
 
     static func sentence(outcome: String, reason: String) -> String? {
@@ -282,13 +325,21 @@ enum MailboxHoldNotice {
     /// Tail reads arrive in chunks that may split a line. Completed lines are
     /// annotated. The returned pending is the trailing partial, so a caller
     /// can keep it without passing a captured variable as `inout`.
-    static func annotateChunk(_ chunk: String, pending: String) -> (shown: String, pending: String) {
+    static func annotateChunk(
+        _ chunk: String,
+        pending: String,
+        jsonOutput: Bool = false
+    ) -> (shown: String, pending: String) {
         var rest = pending + chunk
         var out = ""
         while let newline = rest.firstIndex(of: "\n") {
             let line = String(rest[..<newline])
             rest = String(rest[rest.index(after: newline)...])
-            out += annotated(line)
+            if jsonOutput {
+                out += line + "\n"
+            } else {
+                out += annotated(line)
+            }
         }
         return (out, rest)
     }

@@ -6307,10 +6307,35 @@ final class Workspace: Identifiable, ObservableObject {
             noteRing: { [weak self] decision, effect in
                 guard let self else { return }
                 let retryBusy = captureNote.failed && decision == .skip(reason: "unavailable")
-                if !retryBusy {
-                    self.logMailboxDoorbell(surfaceId: surfaceId, entry: entry, effect: effect)
+                let strandedDoorbell: Bool
+                if case .keep(let reason) = effect {
+                    strandedDoorbell = reason == "draft" && captureNote.stranded
+                } else {
+                    strandedDoorbell = false
                 }
-                guard case .keep(let reason) = effect else { return }
+                let plan = self.mailboxDoorbellPlan(
+                    decision: decision,
+                    surfaceId: surfaceId,
+                    epoch: ringEpoch,
+                    busyExhausted: false,
+                    strandedDoorbell: strandedDoorbell
+                )
+                if !retryBusy {
+                    if strandedDoorbell, case .keep(let reason) = effect {
+                        self.logMailboxDoorbellEntriesOnce(
+                            surfaceId: surfaceId,
+                            entries: [entry],
+                            outcome: .doorbellSkipped,
+                            reason: MailboxHoldNotice.loggedSkipReason(
+                                decisionReason: reason,
+                                relook: plan.relook
+                            )
+                        )
+                    } else {
+                        self.logMailboxDoorbell(surfaceId: surfaceId, entry: entry, effect: effect)
+                    }
+                }
+                guard case .keep = effect else { return }
                 if retryBusy {
                     self.scheduleMailboxDoorbellRecheck(
                         surfaceId: surfaceId,
@@ -6319,13 +6344,6 @@ final class Workspace: Identifiable, ObservableObject {
                     )
                     return
                 }
-                let plan = self.mailboxDoorbellPlan(
-                    decision: decision,
-                    surfaceId: surfaceId,
-                    epoch: ringEpoch,
-                    busyExhausted: false,
-                    strandedDoorbell: reason == "draft" && captureNote.stranded
-                )
                 // Oldest first, as every later look names it.
                 self.logMailboxDoorbellRelook(
                     self.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
@@ -6596,6 +6614,10 @@ final class Workspace: Identifiable, ObservableObject {
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
                 workspace.logMailboxDoorbellEntriesOnce(surfaceId: surfaceId, entries: live, outcome: .doorbellSkipped,
                     reason: MailboxStdinDelivery.closedGateReason(state: workspace.mailboxStdinState, surfaceId: surfaceId, gate: gate))
+                MailboxBadgeStore.shared.setDraftHold(
+                    panelId: surfaceId,
+                    count: MailboxHoldNotice.holdAfterClosedGate()
+                )
                 if let heldUntil, !live.isEmpty {
                     workspace.scheduleMailboxDoorbellDecayRecheck(surfaceId: surfaceId, deadline: heldUntil)
                 }
@@ -6682,7 +6704,17 @@ final class Workspace: Identifiable, ObservableObject {
         case .keep:
             pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
                 guard !live.isEmpty else { return }
-                workspace.logMailboxDoorbellEffect(surfaceId: surfaceId, entries: live, effect: plan.arrival)
+                if case .keep(let reason) = plan.arrival,
+                   MailboxHoldNotice.loggedSkipReason(decisionReason: reason, relook: plan.relook) != reason {
+                    workspace.logMailboxDoorbellEntriesOnce(
+                        surfaceId: surfaceId,
+                        entries: live,
+                        outcome: .doorbellSkipped,
+                        reason: MailboxHoldNotice.loggedSkipReason(decisionReason: reason, relook: plan.relook)
+                    )
+                } else {
+                    workspace.logMailboxDoorbellEffect(surfaceId: surfaceId, entries: live, effect: plan.arrival)
+                }
                 workspace.logMailboxDoorbellRelook(live, plan: plan, surfaceId: surfaceId)
                 workspace.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
             }
@@ -6707,7 +6739,12 @@ final class Workspace: Identifiable, ObservableObject {
             reason: reason,
             nextMs: Int((next * 1000).rounded())
         )
-        if let count = MailboxHoldNotice.draftHoldCount(relook: reason, queued: entries.count) {
+        let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+        if let count = MailboxHoldNotice.draftHoldCount(
+            relook: reason,
+            queuedIds: entries.map(\.id),
+            coveredIds: covered
+        ) {
             MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: count)
         }
     }
@@ -6752,8 +6789,15 @@ final class Workspace: Identifiable, ObservableObject {
                         )
                     }
                     then(workspace, remaining)
-                    if remaining.isEmpty {
+                    let covered = workspace.mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+                    let uncovered = MailboxHoldNotice.uncoveredCount(
+                        queuedIds: remaining.map(\.id),
+                        coveredIds: covered
+                    )
+                    if uncovered == 0 {
                         workspace.clearDraftHoldIndicator(surfaceId: surfaceId)
+                    } else if MailboxBadgeStore.shared.draftHoldCount(panelId: surfaceId) > 0 {
+                        MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: uncovered)
                     }
                 }
             }

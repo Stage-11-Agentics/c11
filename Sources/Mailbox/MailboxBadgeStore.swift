@@ -126,8 +126,9 @@ final class MailboxBadgeStore {
         draftHolds[panelId] ?? 0
     }
 
-    /// Publish or clear the draft hold. Any thread. A recount of the inbox
-    /// does not call this, so the indicator stays until a later look clears it.
+    /// Publish or clear the draft hold. Any thread. A recount that still has
+    /// unread mail does not call this. A recount that finds the last unread
+    /// message claimed does.
     func setDraftHold(panelId: UUID, count: Int) {
         let apply = { [weak self] in
             guard let self else { return }
@@ -233,6 +234,9 @@ final class MailboxBadgeStore {
             let previous = summaries[key.panelId] ?? .empty
             summaries[key.panelId] = summary
             models[key.panelId]?.apply(summary, now: now())
+            if previous.unread > 0, let cleared = MailboxHoldNotice.holdAfterReceipt(unread: summary.unread) {
+                setDraftHold(panelId: key.panelId, count: cleared)
+            }
             if previous.hasMail != summary.hasMail {
                 // Mail can be what gives a panel its bar; the bar's presence is
                 // read from the workspace, so the workspace republishes.
@@ -285,9 +289,16 @@ final class MailboxBadgeModel: ObservableObject {
     }
 
     func apply(_ summary: MailboxPanelMail.Summary, now: Date) {
+        let hadUnread = self.summary.unread > 0
         if summary != self.summary {
             self.summary = summary
             revision &+= 1
+        }
+        // A first empty count is not a receipt. Clearing there would drop a
+        // hold recorded before the cell had a summary. Unread falling to zero
+        // is the claim.
+        if hadUnread, let cleared = MailboxHoldNotice.holdAfterReceipt(unread: summary.unread) {
+            setDraftHold(cleared)
         }
         let fresh = summary.isFresh(now: now)
         if fresh != isFresh { isFresh = fresh }

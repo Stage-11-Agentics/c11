@@ -110,7 +110,7 @@ extension CMUXCLI {
         case "trace":
             try runMailboxTraceCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "tail":
-            try runMailboxTailCommand(subArgs: rest, client: client)
+            try runMailboxTailCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
         case "outbox-dir":
             try runMailboxOutboxDirCommand(subArgs: rest, client: client)
         case "inbox-dir":
@@ -975,11 +975,12 @@ extension CMUXCLI {
         // ISO-8601 UTC timestamps sort lexically into chronological order, so a
         // string sort merges events from multiple workspace logs correctly.
         matches.sort { $0.ts < $1.ts }
-        for match in matches {
-            print(match.line)
-            if let sentence = MailboxHoldNotice.sentence(forLogLine: match.line) {
-                print(sentence)
-            }
+        let text = MailboxHoldNotice.traceText(
+            lines: matches.map(\.line),
+            jsonOutput: jsonOutput
+        )
+        if !text.isEmpty {
+            print(text, terminator: "")
         }
     }
 
@@ -987,7 +988,8 @@ extension CMUXCLI {
 
     func runMailboxTailCommand(
         subArgs: [String],
-        client: SocketClient
+        client: SocketClient,
+        jsonOutput: Bool
     ) throws {
         let (workspaceId, _, _, _) = try resolveMailboxCaller(
             client: client,
@@ -1005,7 +1007,11 @@ extension CMUXCLI {
         func flushHandle(_ handle: FileHandle) {
             let data = (try? handle.readToEnd()) ?? nil ?? Data()
             if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
-                let annotated = MailboxHoldNotice.annotateChunk(text, pending: pending)
+                let annotated = MailboxHoldNotice.annotateChunk(
+                    text,
+                    pending: pending,
+                    jsonOutput: jsonOutput
+                )
                 pending = annotated.pending
                 if !annotated.shown.isEmpty {
                     print(annotated.shown, terminator: "")

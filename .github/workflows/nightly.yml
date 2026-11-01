@@ -219,7 +219,7 @@ jobs:
           echo "App binary architectures: $APP_ARCHS"
           echo "CLI binary architectures: $CLI_ARCHS"
           echo "Ghostty helper architectures: $HELPER_ARCHS"
-          # Apple silicon only since 1.8 (C11-541).
+          # Apple silicon only since 1.7.5 (C11-541).
           [[ "$APP_ARCHS" == "arm64" ]]
           [[ "$CLI_ARCHS" == "arm64" ]]
           [[ "$HELPER_ARCHS" == "arm64" ]]

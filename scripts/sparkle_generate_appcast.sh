@@ -158,7 +158,7 @@ fi
 # Sparkle 2.9+ clients on Intel skip an item that carries
 # <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>, and
 # generate_appcast emits it only when the app's main executable has no x86_64
-# slice. c11 ships arm64-only since 1.8 (C11-541), so check the tag is there
+# slice. c11 ships arm64-only since 1.7.5 (C11-541), so check the tag is there
 # rather than trusting it: without it, Intel Macs would be offered a build
 # they cannot run.
 mkdir -p "$work_dir/mnt"

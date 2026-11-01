@@ -1506,16 +1506,16 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Срочные %lld · ответы %lld · тексты из файлов %lld · без темы %lld"}}
       }
     },
-    "mailbox.insights.note.partial": {
+    "mailbox.insights.note.sample": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Senders and topics cover the newest %lld of %lld messages."}},
-        "ja": {"stringUnit": {"state": "translated", "value": "送信元とトピックは、最新の %lld 件（全 %lld 件中）が対象です。"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "Відправники й теми враховують найновіші %lld із %lld повідомлень."}},
-        "ko": {"stringUnit": {"state": "translated", "value": "보낸 이와 주제는 최신 %lld개 / 전체 %lld개 메시지 기준입니다."}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "发件方和主题仅统计最新 %lld 条（共 %lld 条）消息。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "寄件者與主題僅統計最新 %lld 則（共 %lld 則）訊息。"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "Отправители и темы учитывают новейшие %lld из %lld сообщений."}}
+        "en": {"stringUnit": {"state": "translated", "value": "Senders, topics and the urgent, reply, file-body and no-topic counts cover only the newest %lld of %lld messages."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "送信元、トピック、および緊急・返信・ファイル本文・トピックなしの件数は、最新の %lld 件（全 %lld 件中）のみが対象です。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Відправники, теми та кількості термінових, відповідей, вмісту із файлів і повідомлень без теми враховують лише найновіші %lld із %lld повідомлень."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "보낸 이, 주제, 긴급·답장·파일 본문·주제 없음 개수는 최신 %lld개 / 전체 %lld개 메시지만 기준으로 합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "发件方、主题，以及紧急、回复、文件正文、无主题的数量，仅统计最新 %lld 条（共 %lld 条）消息。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "寄件者、主題，以及緊急、回覆、檔案內文、無主題的數量，僅統計最新 %lld 則（共 %lld 則）訊息。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Отправители, темы и числа срочных, ответов, текстов из файлов и сообщений без темы учитывают только новейшие %lld из %lld сообщений."}}
       }
     },
     "mailbox.insights.note.unparsed": {

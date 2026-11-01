@@ -174,6 +174,28 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertEqual(Set(insights.senders.top.map(\.name)), ["a1", "a2", "a3"], "the newest are scanned")
     }
 
+    func testSampledCountsAreLabeledWhenAFlagLiesOutsideTheSample() throws {
+        let now = Date()
+        // The only urgent, reply, file-body and no-topic message is the oldest,
+        // outside a three-message sample of ordinary messages.
+        try write(["urgent": true, "in_reply_to": "01X", "body_ref": "/tmp/x"], id: ulid(now.addingTimeInterval(-600)), read: true)
+        for minute in 1...3 {
+            try write(["topic": "t"], id: ulid(now.addingTimeInterval(TimeInterval(-60 * minute))), read: true)
+        }
+        let sampled = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: root, now: now, scanLimit: 3)
+        XCTAssertEqual(sampled.received, 4)
+        XCTAssertEqual([sampled.urgent, sampled.replies, sampled.fileBodies, sampled.untitled], [0, 0, 0, 0])
+        let note = try XCTUnwrap(sampled.sampleScopeNote, "sampled counts must carry their scope")
+        XCTAssertTrue(note.contains("urgent"), note)
+        XCTAssertTrue(note.contains("3"), note)
+        XCTAssertTrue(note.contains("4"), note)
+
+        // With the whole mailbox scanned, the counts are totals and carry no note.
+        let full = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: root, now: now)
+        XCTAssertEqual([full.urgent, full.replies, full.fileBodies, full.untitled], [1, 1, 1, 1])
+        XCTAssertNil(full.sampleScopeNote)
+    }
+
     func testInsightsSentCountsRecipientsAndWhatTheyTook() throws {
         let now = Date()
         let sender = inbox!

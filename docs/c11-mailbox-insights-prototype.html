@@ -145,7 +145,7 @@ ol li { margin-bottom: 10px; }
 <div class="cells" id="cells"></div>
 
 <h2>WHAT IS BUILT</h2>
-<p>The real build (branch <code>c11/mailbox-insights</code>) matches this page: four total tiles, recent rates, 24-hour and 14-day bars, top senders with their unread, top topics, recipients with how many copies were taken, and footnotes when a figure covers only part of the mail. Senders and topics come from the newest 5,000 envelopes; totals and activity cover every one.</p>
+<p>The real build (branch <code>c11/mailbox-insights</code>) matches this page: four total tiles, recent rates, 24-hour and 14-day bars, top senders with their unread, top topics, recipients with how many copies were taken, and footnotes when a figure covers only part of the mail. Senders, topics and the urgent, reply, file-body and no-topic counts come from the newest 5,000 envelopes, with a note under them when the mailbox holds more; totals and activity cover every one.</p>
 
 <h2>QUESTIONS</h2>
 <ol>
@@ -231,7 +231,6 @@ ol li { margin-bottom: 10px; }
   }
   function insights(d) {
     const notes = [];
-    if (d.scanned < d.total) notes.push(`Senders and topics cover the newest ${fmt(d.scanned)} of ${fmt(d.total)} messages.`);
     return `<div class="pane">
       <div class="tiles">
         <div class="tile" title="Every message this panel has received."><div class="v">${fmt(d.total)}</div><div class="l">RECEIVED</div></div>
@@ -248,7 +247,8 @@ ol li { margin-bottom: 10px; }
       ${chart("Received, last 14 days", d.daily, dayName(0), "today", dayName)}
       ${ranking("Top senders", d.senders, { unread: true })}
       ${ranking("Top topics", d.topics, {})}
-      <div class="meta">${fmt(d.urgent)} urgent · ${fmt(d.replies)} replies · 0 with a file body · ${fmt(d.untitled)} without a topic</div>
+      <div class="meta">Urgent ${fmt(d.urgent)} · replies ${fmt(d.replies)} · file bodies 0 · no topic ${fmt(d.untitled)}</div>
+      ${d.scanned < d.total ? `<div class="meta" style="white-space:normal">Senders, topics and the urgent, reply, file-body and no-topic counts cover only the newest ${fmt(d.scanned)} of ${fmt(d.total)} messages.</div>` : ""}
       ${ranking("Sent to", d.recipients, { trailing: `${d.sentTaken} of ${d.sentCopies} copies taken` })}
       ${notes.length ? `<div class="lines">${notes.map((n) => `<div class="meta">${n}</div>`).join("")}</div>` : ""}
     </div>`;

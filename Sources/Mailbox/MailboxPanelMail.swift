@@ -737,6 +737,18 @@ extension MailboxPanelMail {
         var sentIsTrimmed: Bool { sent >= MailboxSentLedger.retain }
         var scanIsPartial: Bool { scanned + unparsed < received }
 
+        /// Every figure that comes from parsing envelopes (senders, topics and
+        /// the urgent, reply, file-body and no-topic counts) covers only the
+        /// newest `scanLimit`. When the scan stopped short, this says so, next
+        /// to those figures; nil when they cover everything.
+        var sampleScopeNote: String? {
+            guard scanIsPartial else { return nil }
+            return String(
+                localized: "mailbox.insights.note.sample",
+                defaultValue: "Senders, topics and the urgent, reply, file-body and no-topic counts cover only the newest \(scanned + unparsed) of \(received) messages."
+            )
+        }
+
         /// When the scan ran; rates are measured up to it.
         var scannedAt = Date()
 

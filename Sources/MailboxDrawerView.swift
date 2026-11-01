@@ -982,6 +982,14 @@ private struct MailboxInsightsView: View {
                     detail: { _ in nil }
                 )
                 compositionLine
+                if let note = insights.sampleScopeNote {
+                    // Right under the sampled figures, and wrapping, so the
+                    // qualification stays readable in a narrow drawer.
+                    Text(note)
+                        .font(metaFont.monospacedDigit())
+                        .foregroundColor(style.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if insights.sent > 0 {
                 rankingSection(
@@ -1298,12 +1306,6 @@ private struct MailboxInsightsView: View {
         VStack(alignment: .leading, spacing: 3) {
             if insights.received == 0 && insights.sent == 0 {
                 metaLine(String(localized: "mailbox.drawer.empty", defaultValue: "No mail yet."))
-            }
-            if insights.scanIsPartial {
-                metaLine(String(
-                    localized: "mailbox.insights.note.partial",
-                    defaultValue: "Senders and topics cover the newest \(insights.scanned + insights.unparsed) of \(insights.received) messages."
-                ))
             }
             if insights.unparsed > 0 {
                 metaLine(String(

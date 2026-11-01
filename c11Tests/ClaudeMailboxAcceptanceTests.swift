@@ -119,3 +119,56 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
         XCTAssertTrue(observed)
     }
 }
+
+final class GrokMailboxAcceptanceTests: XCTestCase {
+    private let bound = "909f490f-cdde-47ed-b8e6-2ec3274979e0"
+    private let other = "01a1992a-fd6e-77a3-82fc-f10d48225436"
+    private let birth: UInt64 = 1_793_570_764_543_966
+
+    private func registry(_ entries: [(String, Int, UInt64)]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: entries.map {
+            ["session_id": $0.0, "pid": $0.1, "pid_start": $0.2, "cwd": "/tmp/p", "opened_at": "2026-11-01T22:06:05Z"]
+        })
+    }
+
+    func testNativeRingNeedsTheTUIToHoldOnlyTheBoundSession() throws {
+        // One session, the bound one: the panel shows it.
+        XCTAssertTrue(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(bound, 44036, birth), (other, 51000, birth)]),
+            pid: 44036, birthMicros: birth + 400_000, sessionID: bound.uppercased()))
+        // After /new or /resume the TUI holds two sessions: refuse.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(bound, 44036, birth), (other, 44036, birth)]),
+            pid: 44036, birthMicros: birth, sessionID: bound))
+        // The TUI holds a different session only.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(other, 44036, birth)]), pid: 44036, birthMicros: birth, sessionID: bound))
+        // The entry belongs to an earlier process that had this PID.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(bound, 44036, birth - 60_000_000)]), pid: 44036, birthMicros: birth, sessionID: bound))
+        // Missing or malformed registry: refuse.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([]), pid: 44036, birthMicros: birth, sessionID: bound))
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: Data("{".utf8), pid: 44036, birthMicros: birth, sessionID: bound))
+    }
+
+    func testConfirmationIsTheInvitationEchoedInTheBoundSession() {
+        let invitation = ClaudeMailboxAcceptance.invitation
+        let queued: [String: Any] = ["jsonrpc": "2.0", "method": "_x.ai/queue/changed",
+            "params": ["sessionId": bound, "entries": [["id": "e1", "version": 0, "kind": "prompt", "text": invitation]]]]
+        XCTAssertTrue(GrokMailboxAcceptance.confirms(frame: queued, sessionID: bound))
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: queued, sessionID: other))
+        let otherText: [String: Any] = ["method": "_x.ai/queue/changed",
+            "params": ["sessionId": bound, "entries": [["kind": "prompt", "text": "operator prompt"]]]]
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: otherText, sessionID: bound))
+        let userRow: [String: Any] = ["method": "session/update", "params": ["sessionId": bound,
+            "update": ["sessionUpdate": "user_message_chunk", "content": ["type": "text", "text": invitation]]]]
+        XCTAssertTrue(GrokMailboxAcceptance.confirms(frame: userRow, sessionID: bound))
+        let agentRow: [String: Any] = ["method": "session/update", "params": ["sessionId": bound,
+            "update": ["sessionUpdate": "agent_message_chunk", "content": ["type": "text", "text": invitation]]]]
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: agentRow, sessionID: bound))
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: ["method": "_x.ai/sessions/changed",
+            "params": ["sessionId": bound]], sessionID: bound))
+    }
+}

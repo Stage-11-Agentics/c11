@@ -8,6 +8,7 @@ final class MailboxNativeDoorbell {
     enum Route: String {
         case typed, piExtension = "pi_extension", ompExtension = "omp_extension"
         case codexQueue = "codex_queue", claudeInbox = "claude_inbox", opencodePlugin = "opencode_plugin"
+        case grokLeader = "grok_leader"
     }
     struct Registration: Equatable {
         let id: UUID
@@ -41,6 +42,7 @@ final class MailboxNativeDoorbell {
             case .codexQueue: return kind == "codex"
             case .claudeInbox: return kind == "claude-code" || kind == "claude"
             case .opencodePlugin: return kind == "opencode"
+            case .grokLeader: return kind == "grok"
             case .typed: return false
             }
         }

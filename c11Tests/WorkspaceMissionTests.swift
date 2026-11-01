@@ -97,9 +97,10 @@ final class WorkspaceMissionTests: XCTestCase {
         let file = root.appendingPathComponent("C11.md")
         try "First.".write(to: file, atomically: true, encoding: .utf8)
         let reads = MissionReadCounter()
+        let observedRoot = root.path
         let monitor = WorkspaceMissionMonitor(interval: 0.05) { root in
             XCTAssertFalse(Thread.isMainThread)
-            reads.increment()
+            if root == observedRoot { reads.increment() }
             return WorkspaceMissionFile.read(root: root)
         }
         let initial = expectation(description: "both shared-root subscribers")
@@ -130,18 +131,35 @@ final class WorkspaceMissionTests: XCTestCase {
         await fulfillment(of: [deleted], timeout: 2)
         try "Third.".write(to: file, atomically: true, encoding: .utf8)
         await fulfillment(of: [recreated], timeout: 2)
-        XCTAssertEqual(reads.value, 4)
-        // A byte-identical atomic save may trigger one read, but never another
-        // publication (over-fulfilling the expectations above is a failure).
+        XCTAssertGreaterThanOrEqual(reads.value, 4)
+        // Atomic-save metadata can settle across more than one poll. Require
+        // another read, but never another publication (over-fulfillment fails).
+        let beforeIdenticalSave = reads.value
         try "Third.".write(to: file, atomically: true, encoding: .utf8)
-        try await Task.sleep(nanoseconds: 150_000_000)
-        XCTAssertEqual(reads.value, 5)
+        let deadline = Date().addingTimeInterval(2)
+        while reads.value == beforeIdenticalSave && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThan(reads.value, beforeIdenticalSave)
         XCTAssertNotNil(first); XCTAssertNotNil(second)
         first = nil; second = nil
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // A new root's callback follows both unsubscriptions on the same
+        // serial queue and keeps polling active, making cleanup observable.
+        let sentinelRoot = try directory()
+        defer { try? FileManager.default.removeItem(at: sentinelRoot) }
+        try "Sentinel.".write(to: sentinelRoot.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+        let sentinelReady = expectation(description: "unsubscribe queue drained")
+        var sentinel: WorkspaceMissionMonitor.Subscription? = monitor.observe(root: sentinelRoot.path) { value in
+            XCTAssertEqual(value?.summary, "Sentinel.")
+            sentinelReady.fulfill()
+        }
+        await fulfillment(of: [sentinelReady], timeout: 2)
+        let afterUnsubscribe = reads.value
         try "Fourth.".write(to: file, atomically: true, encoding: .utf8)
-        try await Task.sleep(nanoseconds: 150_000_000)
-        XCTAssertEqual(reads.value, 5, "last unsubscribe must stop reading this root")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(reads.value, afterUnsubscribe, "last unsubscribe must stop reading this root")
+        XCTAssertNotNil(sentinel)
+        sentinel = nil
     }
 
     @MainActor

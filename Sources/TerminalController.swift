@@ -10873,7 +10873,6 @@ class TerminalController {
         }
         guard let missionTarget else { return "ERROR: surface not found: \(surfaceId.uuidString)" }
         let missionContext = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionTarget.root))
-        let prompt = missionContext.prompt(prompt)
         let stagedPrompt: LaunchPromptStore.StagedPrompt?
         do {
             if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

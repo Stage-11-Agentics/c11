@@ -1464,7 +1464,7 @@ extension TerminalController {
             model: v2RawString(params, "model"),
             effort: v2RawString(params, "effort"),
             task: v2RawString(params, "task"),
-            prompt: missionContext.prompt(v2RawString(params, "prompt")),
+            prompt: v2RawString(params, "prompt"),
             systemPrompt: systemPromptSetting,
             extraEnv: missionContext.environment(v2StringMap(params, "env") ?? [:]),
             // C11-180: `config launch` rides its saved config's full-command

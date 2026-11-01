@@ -178,11 +178,7 @@ for name, target, cwd, expected in [
     observation = json.loads(receipt.read_text())
     assert observation["mission"] == expected, (name, observation)
     assert observation["cwd"] == str(cwd), (name, observation)
-    assert observation["prompt"].endswith(task), (name, observation)
-    if expected:
-        assert "C11_MISSION_FILE" in observation["prompt"], observation
-    else:
-        assert observation["prompt"] == task, observation
+    assert observation["prompt"] == task, (name, observation)
     note(name, receipt=observation, panel=launched.get("panel_id"))
 
 osa('click menu item "Double Wide" of menu 1 of menu item "Sidebar" of menu 1 of menu bar item "View" of menu bar 1')

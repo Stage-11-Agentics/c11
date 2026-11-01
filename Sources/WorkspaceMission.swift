@@ -244,18 +244,12 @@ final class WorkspaceMissionBinding {
     }
 }
 
-/// Only a path is carried into the harness. Mission content stays in the
-/// operator-owned file; task text is preserved byte-for-byte after the prefix.
+/// Only a path is carried into the harness, through the environment. Mission
+/// content stays in the operator-owned file, and the launch prompt is never
+/// touched: a launch with no task stays a plain session.
 struct WorkspaceMissionLaunchContext: Sendable {
     static let environmentKey = "C11_MISSION_FILE"
     let mission: WorkspaceMission?
-
-    func prompt(_ original: String?) -> String? {
-        guard mission != nil else { return original }
-        let reference = "Workspace mission and project notes: read the file named by the C11_MISSION_FILE environment variable before starting. These supplement the project instructions."
-        guard let original, !original.isEmpty else { return reference }
-        return reference + "\n\n" + original
-    }
 
     /// Apply after shell startup too, including an existing panel. An empty
     /// value clears inherited context without guessing from the panel's cwd.

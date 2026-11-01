@@ -232,6 +232,11 @@ def main() -> int:
                 check(proc.returncode == 0 and backlog.encode() in proc.stdout and current.encode() in proc.stdout
                       and unrelated.encode() not in proc.stdout, "shared recv from " + caller,
                       repr(proc.stdout) + repr(proc.stderr))
+                owner_receipts = fixture.receipts(drain.MOVED_TO)
+                alias_receipts = fixture.receipts()
+                check(len(owner_receipts) == 1 and owner_receipts[0].get("panel_id", "").upper() == drain.SIBLING
+                      and len(alias_receipts) == 1 and alias_receipts[0].get("panel_id", "").upper() == drain.TAB,
+                      "shared receipts identify the actual inbox owner", repr(owner_receipts) + repr(alias_receipts))
                 empty, _ = drain.run(cli, ["--socket", server.path, "mailbox", "recv", "--ack"], env)
                 check(empty.returncode == 0 and not empty.stdout, "shared recv claims once")
                 inbox, _ = drain.run(cli, ["--socket", server.path, "mailbox", "inbox-dir"], env)

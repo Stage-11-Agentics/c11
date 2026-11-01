@@ -662,6 +662,7 @@ extension CMUXCLI {
             panelId: panelId,
             panelName: panelName
         )
+        var sharedInboxRecipients: [URL: (id: UUID, name: String)] = [:]
         // Authenticated duplicate views share the owner's inbox. Include
         // the live views' prior inboxes as well, so mail received before the
         // conflict was captured remains readable from either agent environment.
@@ -681,7 +682,10 @@ extension CMUXCLI {
                           let ws = inbox["workspace_id"].flatMap(UUID.init(uuidString:)) else { continue }
                     let sharedURLs = MailboxLayout.recvInboxURLs(state: stateURL, workspaceId: ws,
                                                                 panelId: id, panelName: inbox["name"] ?? "")
-                    for url in sharedURLs where !inboxURLs.contains(url) { inboxURLs.append(url) }
+                    for url in sharedURLs {
+                        sharedInboxRecipients[url.standardizedFileURL] = (id, inbox["name"] ?? panelName)
+                        if !inboxURLs.contains(url) { inboxURLs.append(url) }
+                    }
                 }
             }
         }
@@ -740,7 +744,18 @@ extension CMUXCLI {
         // override's resolved UUID with it, nil when a `--tab` name matched no
         // single live tab (the event then carries no surface rather than the
         // caller's).
-        writeDeliveryReceipts(claimed, recipientPanelId: panelId, via: "recv", recipient: { _ in panelName })
+        // A shared drain can claim files owned by more than one panel. Each
+        // receipt names the inbox actually claimed, not the tool's inherited
+        // panel environment, so the drawer and delivery journal agree.
+        if sharedInboxRecipients.isEmpty {
+            writeDeliveryReceipts(claimed, recipientPanelId: panelId, via: "recv", recipient: { _ in panelName })
+        } else {
+            for (inbox, messages) in Dictionary(grouping: claimed, by: { $0.inbox.standardizedFileURL }) {
+                let recipient = sharedInboxRecipients[inbox]
+                writeDeliveryReceipts(messages, recipientPanelId: recipient?.id ?? panelId, via: "recv",
+                                      recipient: { _ in recipient?.name ?? panelName })
+            }
+        }
     }
 
     /// Checked stdout write: false when the bytes could not be written.

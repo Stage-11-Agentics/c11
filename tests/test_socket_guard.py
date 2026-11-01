@@ -379,6 +379,67 @@ def test_cmux_default_does_not_touch_canary() -> None:
         fail(f"cmux default connected to the canary ({accepted['n']})")
 
 
+def test_pathlib_socket_argument_is_refused() -> None:
+    """Popen accepts pathlib.Path. The guard must refuse that form too."""
+    directory = tempfile.mkdtemp(prefix="c11-509-patharg-")
+    path = os.path.join(directory, "foreign.sock")
+    accepted = {"n": 0}
+    stop = threading.Event()
+
+    def serve() -> None:
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            server.bind(path)
+            server.listen(1)
+            server.settimeout(0.2)
+            while not stop.is_set():
+                try:
+                    conn, _ = server.accept()
+                except TimeoutError:
+                    continue
+                accepted["n"] += 1
+                conn.close()
+        finally:
+            server.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    deadline = time.time() + 2
+    while not os.path.exists(path):
+        if time.time() > deadline:
+            stop.set()
+            fail("pathlib canary did not bind")
+        time.sleep(0.02)
+    script = textwrap.dedent(
+        f"""
+        import subprocess, sys
+        from pathlib import Path
+        sys.path.insert(0, {TESTS_DIR!r})
+        import socket_guard
+        socket_guard.install()
+        try:
+            subprocess.run(
+                [sys.executable, "--socket", Path({path!r}), "-c", "print('ran')"],
+                check=False,
+            )
+        except socket_guard.SocketGuardError as exc:
+            print(type(exc).__name__)
+            raise SystemExit(0)
+        raise SystemExit("child was spawned")
+        """
+    )
+    result = fresh(script)
+    time.sleep(0.2)
+    stop.set()
+    thread.join(timeout=2)
+    if result.returncode != 0 or "SocketGuardError" not in result.stdout:
+        fail(f"pathlib argv\nstdout={result.stdout}\nstderr={result.stderr}")
+    if accepted["n"] != 0:
+        fail(f"pathlib argv connected ({accepted['n']})")
+
+
 def test_live_app_scripts_refuse_without_opt_in() -> None:
     """Running a host-affecting file on a normal host exits before its body."""
     for name in sorted(socket_guard.LIVE_APP_SCRIPTS):
@@ -430,6 +491,7 @@ def main() -> int:
         test_existing_foreign_env_is_refused,
         test_well_known_bind_requires_allow,
         test_cmux_default_does_not_touch_canary,
+        test_pathlib_socket_argument_is_refused,
         test_live_app_scripts_refuse_without_opt_in,
     ]
     for test in tests:

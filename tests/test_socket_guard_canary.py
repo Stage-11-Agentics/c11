@@ -31,20 +31,21 @@ TESTS_DIR = Path(__file__).resolve().parent
 REPO = TESTS_DIR.parent
 
 # Host-affecting files refuse to start unless C11_TEST_ALLOW_LIVE_APP=1.
-# The canary does not set that, and does not need to execute their bodies.
+# The canary does not set that, and does not execute their bodies.
+# The Atlas slot suite is not here: its locks stay in a temp directory.
 SKIP = {
     "test_socket_guard_canary.py": "this runner",
     "test_socket_access.py": "refuses without C11_TEST_ALLOW_LIVE_APP; launches and kills a dev app",
     "test_session_restore_unfocused_workspace_multi_window_cycle.py": "refuses without C11_TEST_ALLOW_LIVE_APP; pkills and quits an app",
     "test_session_restore_unfocused_workspace_relaunch_cycle.py": "refuses without C11_TEST_ALLOW_LIVE_APP; pkills and quits an app",
-    "test_atlas_build_slots.py": "refuses without C11_TEST_ALLOW_LIVE_APP; takes the shared build lock",
     "test_cmd_option_t_close_other_tabs_in_pane.py": "refuses without C11_TEST_ALLOW_LIVE_APP; sends the close-tabs shortcut",
 }
 
-# A live socket is accepted at startup. Tests that only wait on the missing
-# sentinel return in about two seconds. Eight workers keep the CI job inside
-# its eight minutes; the serial red phases stay one process.
-PER_TEST_TIMEOUT_S = 4
+# stdin is DEVNULL, so Ctrl+interactive finishes after its 10s signal wait.
+# Browser stability gives the missing socket 5s. OpenCode's wrapper suite is
+# the long pole, about 80s locally. A timeout is failed coverage, not a pass.
+PER_TEST_TIMEOUT_S = 120
+
 WORKERS = 8
 
 
@@ -119,6 +120,7 @@ def run_test(path: Path, env: dict[str, str]) -> str:
             [sys.executable, str(path)],
             cwd=str(REPO),
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -244,6 +246,9 @@ def main() -> int:
         )
         if inherited.accepted:
             failures.append(f"inherited phase accepted {inherited.accepted}")
+        inherited_timeouts = [name for name, status, _ in inherited_rows if status == "timeout"]
+        if inherited_timeouts:
+            failures.append("incomplete coverage: " + ", ".join(inherited_timeouts))
 
         with socket_guard.permit_implicit_discovery():
             bare_rows = run_phase(
@@ -253,6 +258,9 @@ def main() -> int:
             )
         if default.accepted:
             failures.append(f"default-path phase accepted {default.accepted}")
+        bare_timeouts = [name for name, status, _ in bare_rows if status == "timeout"]
+        if bare_timeouts:
+            failures.append("incomplete default-path coverage: " + ", ".join(bare_timeouts))
 
         before_red = inherited.accepted
         red_incident_count_start = inherited.accepted

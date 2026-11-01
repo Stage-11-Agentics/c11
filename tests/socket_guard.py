@@ -88,13 +88,13 @@ _orig_popen = subprocess.Popen
 _orig_mkdtemp = tempfile.mkdtemp
 
 
-# These scripts pkill, open, or quit an app, take the shared build lock, or
-# send the close-tabs shortcut. The socket scrub does not stop that. A normal
-# host must not start them. A sandbox guest exports the opt-in.
+# These scripts pkill, open, or quit an app, or send the close-tabs shortcut.
+# The socket scrub does not stop that. A normal host must not start them.
+# A sandbox guest exports the opt-in. The Atlas slot suite is not in this set:
+# it keeps its locks under C11_ATLAS_SLOTS_DIR and CI runs it with no opt-in.
 LIVE_APP_ENV = "C11_TEST_ALLOW_LIVE_APP"
 LIVE_APP_SCRIPTS = frozenset(
     {
-        "test_atlas_build_slots.py",
         "test_cmd_option_t_close_other_tabs_in_pane.py",
         "test_session_restore_unfocused_workspace_multi_window_cycle.py",
         "test_session_restore_unfocused_workspace_relaunch_cycle.py",
@@ -296,14 +296,32 @@ def _guard_mkdtemp(*args: object, **kwargs: object) -> str:
     return path
 
 
+def _as_arg(arg: object) -> Optional[str]:
+    """Render one Popen argument. Path and bytes are ordinary argv values."""
+    if isinstance(arg, str):
+        return arg
+    if isinstance(arg, bytes):
+        return os.fsdecode(arg)
+    try:
+        rendered = os.fspath(arg)  # type: ignore[arg-type]
+    except TypeError:
+        return None
+    if isinstance(rendered, str):
+        return rendered
+    if isinstance(rendered, bytes):
+        return os.fsdecode(rendered)
+    return None
+
+
 def _argv_socket_paths(args: Sequence[object]) -> list[str]:
     paths: list[str] = []
-    for index, arg in enumerate(args):
-        if not isinstance(arg, str):
+    rendered = [_as_arg(arg) for arg in args]
+    for index, arg in enumerate(rendered):
+        if not arg:
             continue
-        if arg == "--socket" and index + 1 < len(args):
-            nxt = args[index + 1]
-            if isinstance(nxt, str):
+        if arg == "--socket" and index + 1 < len(rendered):
+            nxt = rendered[index + 1]
+            if nxt:
                 paths.append(nxt)
         elif arg.startswith("--socket="):
             paths.append(arg.split("=", 1)[1])

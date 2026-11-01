@@ -297,6 +297,19 @@ enum MailboxDoorbellSequence {
         return rungAt.addingTimeInterval(MailboxDoorbell.turnlessReringInterval)
     }
 
+    /// The envelope a re-look row names. A held composer names the oldest
+    /// unread envelope. A turn-less wait names the oldest one no ring has
+    /// covered: that is the mail it is waiting to ring for, and a trace of it
+    /// should show why.
+    static func relookEntry(
+        _ entries: [MailboxStdinBuffer.Entry],
+        relook: String,
+        coveredIds: Set<String>
+    ) -> MailboxStdinBuffer.Entry? {
+        guard relook == "turnless_idle" else { return entries.first }
+        return entries.first { !coveredIds.contains($0.id) }
+    }
+
     static func turnlessReringDue(at reringAt: Date?, now: Date) -> Bool {
         guard let reringAt else { return false }
         return now >= reringAt

@@ -6765,7 +6765,11 @@ final class Workspace: Identifiable, ObservableObject {
     ) {
         guard let reason = plan.relook,
               case .after(let next) = plan.rearm,
-              let entry = entries.first,
+              let entry = MailboxDoorbellSequence.relookEntry(
+                  entries,
+                  relook: reason,
+                  coveredIds: mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+              ),
               let dispatcher = mailboxDispatcher else { return }
         dispatcher.logStdinRecheck(
             id: entry.id,

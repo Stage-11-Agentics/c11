@@ -2322,6 +2322,22 @@ final class TurnlessReringTests: XCTestCase {
         XCTAssertEqual(plan(muchLater, state: state, surface: surface).rearm, .none)
     }
 
+    func testTurnlessRecheckRowNamesTheMailItWaitsFor() {
+        let entries = ["a", "b", "c"].map {
+            MailboxStdinBuffer.Entry(id: $0, recipientName: "r", block: "", bufferedAt: at(1))
+        }
+        XCTAssertEqual(
+            MailboxDoorbellSequence.relookEntry(entries, relook: "turnless_idle", coveredIds: ["a"])?.id,
+            "b"
+        )
+        XCTAssertNil(MailboxDoorbellSequence.relookEntry(entries, relook: "turnless_idle", coveredIds: ["a", "b", "c"]))
+        XCTAssertEqual(
+            MailboxDoorbellSequence.relookEntry(entries, relook: "draft", coveredIds: ["a"])?.id,
+            "a",
+            "a held composer still names the oldest unread envelope"
+        )
+    }
+
     func testStrandedReturnStartsTheIntervalToo() {
         var ledger = MailboxDoorbell.Ledger()
         ledger.recordStrandedReturn(at: at(50), epoch: "10000|attach")

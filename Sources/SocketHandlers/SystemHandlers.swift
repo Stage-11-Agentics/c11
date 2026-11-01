@@ -60,6 +60,7 @@ extension TerminalController {
             "journal.status",
             "system.ping",
             "system.capabilities",
+            "system.fleet",
             "system.identify",
             "system.brand",
             "system.tree",

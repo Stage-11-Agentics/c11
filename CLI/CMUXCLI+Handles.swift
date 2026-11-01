@@ -620,7 +620,7 @@ extension CMUXCLI {
              "set-buffer", "respawn-pane", "display-message", "open-browser", "navigate",
              "popup", "bind-key", "unbind-key", "copy-mode", "claude-teams":
             return .any
-        case "ping", "capabilities", "brand", "identify", "link", "list-windows", "current-window", "new-window",
+        case "ping", "capabilities", "fleet", "brand", "identify", "link", "list-windows", "current-window", "new-window",
              "focus-window", "close-window", "move-workspace-to-window", "reorder-workspaces", "get-titlebar-state",
              "list-workspaces", "ssh-session-end", "workspace-apply", "snapshot", "list-snapshots", "new-workspace",
              "list-areas", "list-area-panels", "tree", "family", "launch-agent", "lower-flag", "delegate",
@@ -908,7 +908,7 @@ extension CMUXCLI {
             return journalFlagPreflightSpec(args)
         case "agent-event":
             return CLIFlagPreflightSpec(flags: ["--stdin"])
-        case "brand", "list-workspaces", "capabilities":
+        case "brand", "list-workspaces", "capabilities", "fleet":
             return CLIFlagPreflightSpec(flags: ["--json"])
         case "app":
             if firstCommandWord(args, valueOptions: []) == "restart" {

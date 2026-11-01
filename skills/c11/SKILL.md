@@ -21,6 +21,11 @@ versioned features, both CLI/server identities, and `sha_match` (null when a
 commit stamp is unavailable). Use that server feature list to check support;
 the PATH CLI can belong to a different build.
 
+**Read the fleet:** `c11 fleet --json` returns every live agent terminal across
+all windows and workspaces in one read-only request. Plain `c11 fleet` prints a
+short table. Check feature `fleet` version 1; the versioned schema, source
+semantics and explicit nulls are in [the API reference](references/api.md#fleet).
+
 `C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_PANEL_ID`, `C11_SOCKET_PATH`, `C11_PANEL_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
 
 `open` on PATH inside a panel is the bundled `Resources/bin/open` shim. In the shipped layout it falls back to system `open`, and the destination depends on the OS handler for that URL. Use `c11 browser open <url>` for a c11 browser panel. When a specific external browser is required, use `/usr/bin/open -a <browser> <url>`.

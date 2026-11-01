@@ -2570,6 +2570,7 @@ class TerminalController {
         // Static build facts plus a listener-lock snapshot; no AppKit or
         // workspace state is read by system.capabilities.
         "system.capabilities",
+        "system.fleet",
         // Cache telemetry: validated and folded into a lock-guarded store on
         // the worker; the liveness sweep reads it, so no main-thread hop.
         "agent.prompt_cache.report",

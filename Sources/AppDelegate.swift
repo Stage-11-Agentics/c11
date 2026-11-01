@@ -6347,6 +6347,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         mainWindowContexts.values.flatMap { $0.workspaceManager.workspaces }
     }
 
+    /// Fleet reads every registered window, without resolving/focusing NSWindows
+    /// or rebuilding the scriptable window index.
+    func fleetWorkspaces() -> [(windowId: UUID, workspace: Workspace)] {
+        mainWindowContexts.values.flatMap { context in
+            context.workspaceManager.workspaces.map { (context.windowId, $0) }
+        }
+    }
+
     func locateSurface(surfaceId: UUID) -> (windowId: UUID, workspaceId: UUID, workspaceManager: WorkspaceManager)? {
         for ctx in mainWindowContexts.values {
             for ws in ctx.workspaceManager.workspaces {

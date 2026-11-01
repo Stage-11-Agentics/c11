@@ -91,6 +91,12 @@ final class MailboxBadgeStore {
         summaries[panelId] ?? .empty
     }
 
+    /// Unlike the cell's empty placeholder, an unmeasured inbox is unknown.
+    /// Does not start tracking, schedule a recount, or claim any mail.
+    func knownSummary(panelId: UUID) -> MailboxPanelMail.Summary? {
+        summaries[panelId]
+    }
+
     /// The observable counts one mailbox cell renders.
     @MainActor
     func model(workspace: Workspace, panelId: UUID) -> MailboxBadgeModel {

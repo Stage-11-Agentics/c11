@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C11549000000000000000004 /* FleetSnapshotHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11549000000000000000003 /* FleetSnapshotHostTests.swift */; };
+		C11549000000000000000002 /* FleetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11549000000000000000001 /* FleetSnapshot.swift */; };
 		C11515C001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */; };
 		C11525A003B2C3D4E5F60718 /* PanelLinkFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11525F003B2C3D4E5F60718 /* PanelLinkFormatTests.swift */; };
 		C11515A001B2C3D4E5F60718 /* PanelLinkActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */; };
@@ -778,6 +780,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C11549000000000000000003 /* FleetSnapshotHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSnapshotHostTests.swift; sourceTree = "<group>"; };
+		C11549000000000000000001 /* FleetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSnapshot.swift; sourceTree = "<group>"; };
 		C11515D001B2C3D4E5F60718 /* PanelLinkPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkPolicyTests.swift; sourceTree = "<group>"; };
 		C11525F003B2C3D4E5F60718 /* PanelLinkFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PanelLinkFormatTests.swift"; sourceTree = "<group>"; };
 		C11515B001B2C3D4E5F60718 /* PanelLinkActivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelLinkActivation.swift; sourceTree = "<group>"; };
@@ -1615,6 +1619,7 @@
 				A5001543 /* PanelMetadataStore.swift */,
 				C11840000000000000000002 /* AttentionModel.swift */,
 				C1124300000000000000A001 /* PanelSeenClock.swift */,
+				C11549000000000000000001 /* FleetSnapshot.swift */,
 				C11262000000000000000003 /* FocusHistoryStore.swift */,
 				C11262000000000000000001 /* FocusHistoryModel.swift */,
 				C1124400000000000000B001 /* AgentModelDetection.swift */,
@@ -2027,6 +2032,7 @@
 				970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */,
 				58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */,
 				02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */,
+				C11549000000000000000003 /* FleetSnapshotHostTests.swift */,
 				C1128000A1B2C3D4E5F60013 /* CreateInitialInputRuntimeTests.swift */,
 				C1125801A1B2C3D4E5F60011 /* LaunchPostBootAttachmentTests.swift */,
 				71F8ED91A4B55D34BE6A0668 /* WorkspaceUnitTests.swift */,
@@ -2694,6 +2700,7 @@
 				A5001542 /* PanelMetadataStore.swift in Sources */,
 				C11840000000000000000001 /* AttentionModel.swift in Sources */,
 				C1124300000000000000A002 /* PanelSeenClock.swift in Sources */,
+				C11549000000000000000002 /* FleetSnapshot.swift in Sources */,
 				C11262000000000000000004 /* FocusHistoryStore.swift in Sources */,
 				C11262000000000000000002 /* FocusHistoryModel.swift in Sources */,
 				C1124400000000000000B002 /* AgentModelDetection.swift in Sources */,
@@ -3092,6 +3099,7 @@
 				E12E88F82733EC42F32C36A3 /* BrowserConfigTests.swift in Sources */,
 				1F14445B9627DE9D3AF4FD2E /* BrowserPanelTests.swift in Sources */,
 				46F6AC15863EC84DCD3770A2 /* TerminalAndGhosttyTests.swift in Sources */,
+				C11549000000000000000004 /* FleetSnapshotHostTests.swift in Sources */,
 				F2DFDC31F79D62CC65B97C66 /* TerminalControllerSocketSecurityTests.swift in Sources */,
 				C1128000A1B2C3D4E5F60004 /* CreateInitialInputRuntimeTests.swift in Sources */,
 				C1125801A1B2C3D4E5F60001 /* LaunchPostBootAttachmentTests.swift in Sources */,

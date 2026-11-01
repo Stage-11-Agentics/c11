@@ -490,7 +490,9 @@ final class SocketClient {
                 try validateScopedTargets(params, window: scopedWindow, deadline: deadline)
             }
         }
-        if method == "system.capabilities" {
+        // Fleet is app-wide and exists only with canonical vocabulary. One
+        // request must suffice, without a capability probe or target lookup.
+        if method == "system.capabilities" || method == "system.fleet" {
             return try sendV2Raw(method: method, params: params, deadline: deadline)
         }
         // Panel-vocabulary app: send canonical names, never retry. Older app: its method,

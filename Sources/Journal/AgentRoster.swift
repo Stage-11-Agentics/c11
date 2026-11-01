@@ -212,6 +212,18 @@ enum AgentRoster {
         return (row.draft.requestID, row.draft.eventID, opened, row.draft)
     }
 
+    /// The latest accepted end, even when a newer turn is already working.
+    /// Advisory, stale, duplicate and unresolved-request interruptions are not ends.
+    static func lastTurnEndMs(throughSequence: Int64? = nil, eventsNewestFirst: [RetainedEvent]) -> Int64? {
+        guard let row = eventsNewestFirst.first(where: {
+            $0.effect == .applied && $0.attribution == "exact"
+                && isBehindBaseline($0, through: throughSequence) && $0.toPhase == .idle
+                && [.turnCompleted, .turnInterrupted].contains($0.draft.kind)
+        }) else { return nil }
+        return row.draft.timeQuality == .nativeLocal
+            ? (row.draft.occurredAtMs ?? row.committedAtMs) : row.committedAtMs
+    }
+
     static func isAsk(_ kind: JournalKind) -> Bool {
         kind == .questionRequested || kind == .approvalRequested || kind == .planReviewRequested
     }

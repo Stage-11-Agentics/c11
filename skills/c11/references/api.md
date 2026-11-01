@@ -16,6 +16,7 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Per-panel metadata](#per-panel-metadata)
 - [Agent declaration](#agent-declaration)
 - [Agent roster](#agent-roster)
+- [Fleet](#fleet)
 - [Title & description](#title--description)
 - [Sidebar reporting](#sidebar-reporting)
 - [Spatial layout (`c11 tree`)](#spatial-layout-c11-tree)
@@ -1183,6 +1184,79 @@ the `journal.clear` socket method; with c11 stopped it clears only the selected
 bundle namespace's lifecycle database and spool while preserving the sequence
 and coverage reset boundary. It does not delete
 conversations, snapshots, launch statistics, or tenant configuration.
+
+## Fleet
+
+`c11 fleet --json` calls `system.fleet` once with `{}`. Plain `c11 fleet` prints
+a short table. Discovery: feature `fleet` version 1 and method `system.fleet`
+in `c11 capabilities --json`. The method takes no parameters. The CLI ignores
+global `--window` for this app-wide read; no workspace or panel filter exists.
+
+Scope is every **live agent terminal** in every registered window, including
+hidden workspaces, collapsed folders and background windows. The existing
+agent-kind resolver decides inclusion: a detected shell excludes a terminal
+whose old agent declaration remains. Browsers, markdown and ordinary terminals
+are excluded even if they carry agent metadata. Closed panels are excluded.
+
+The result is an object with `schema_version: 1`, `scope: "agents"`,
+`captured_at` (ISO-8601), `window_count`, `workspace_count`,
+`main_copy_duration_ms`, `serialization_on_main_thread` (false on the socket
+path), and `panels` (array sorted by panel UUID). Counts include workspaces
+and windows without agents. UUIDs always remain UUIDs, regardless of CLI
+`--id-format`. Every field below is present; unavailable values are JSON null.
+
+| Panel field | Type and source |
+| --- | --- |
+| `window_id`, `workspace_id`, `panel_id` | UUID strings from the live graph |
+| `workspace_title`, `panel_title` | Strings using the same title resolution as tree |
+| `agent_type` | String from detected terminal kind, falling back to `terminal_type` metadata |
+| `model`, `model_label` | String or null; same explicit/declared, detected, launch precedence as the panel sheet |
+| `lifecycle` | `working`, `waiting`, `idle`, `cold` or null; existing panel activity resolver, including notification/journal attention and delegation presentation |
+| `flag` | Boolean, whether canonical flag reason exists |
+| `flag_reason` | Canonical flag string or null |
+| `flag_kind` | Null or the active kind's immutable `{id,name,color,emoji}` snapshot; absent emoji is null |
+| `delegated` | Canonical delegation boolean |
+| `delegated_by` | Owner panel UUID string or null for no owner, including legacy ownerless delegation |
+| `parent_panel_id` | Creator panel UUID string or null; same lineage as tree/get-metadata, distinct from delegation |
+| `last_turn_end` | ISO-8601 or null; latest accepted completed/interrupted journal event for the exact current session, retained across later turns |
+| `prompt_cache` | Null or existing tree/panel-list cache projection, described below |
+| `mailbox_address` | `mailbox.address` string or null |
+| `mailbox_unread_count` | Integer or null; last known MailboxBadgeStore count used by the mailbox cell |
+| `description` | Canonical description string or null |
+| `last_seen_at`, `being_seen` | Same timestamp/null and boolean as tree; while being seen the timestamp represents now |
+
+`prompt_cache` objects contain `state`, `source`, `basis`, `lifetime_seconds`,
+`requested_at`, `cold_at`, `reset`, `prompt_tokens`, and `misses`. Values are
+the existing cache projection. An explicit unknown report has `state: "unknown"`,
+`source: "report"`, and null for the remaining fields. No observation is null
+for the entire object. A cold cache does not itself mean the agent is cold.
+
+`last_turn_end` uses the accepted event's native timestamp when validated,
+otherwise its commit timestamp. Advisory, stale, duplicate and unresolved
+interrupt events do not count. After restart the existing retained journal
+window (up to 64 owner events) supplies this value; missing/pruned evidence is
+null. Changing exact session ownership clears it. It is never inferred from
+last activity, cache expiry or an arbitrary idle observation.
+
+Mail counts are asynchronous: dispatcher/receipt recounts and the existing
+periodic reconcile update the cell. Fleet neither recounts nor starts tracking
+an inbox. Unknown counts remain null rather than claiming zero. Raw files
+added by hand may not appear until the normal reconcile. This is a snapshot
+of existing runtime sources, not a transaction across external files.
+
+Threading: the socket worker performs one deadline-bound asynchronous main
+copy of topology and in-memory values. Field projection, sorting, timestamp
+formatting and JSON encoding run off-main. No layout walk, filesystem scan,
+transcript read or lineage refresh runs on main. The graph cannot close/move
+a panel midway through that copy; subsequent mutations cannot alter copied
+records. `main_copy_duration_ms` measures only that closure, excluding queue
+wait and serialization. A caller that cannot finish in eight seconds receives
+`main_thread_timeout`; an abandoned queued capture does not run later.
+
+Reads do not focus, select, mark seen, claim mail, change flags or touch agent
+state. Repeated snapshots may still differ as real agents and the existing
+asynchronous sources advance. `agents.list` remains the journal roster and
+restore-candidate API; fleet supplies the live cross-workspace view.
 
 ## Agent roster
 

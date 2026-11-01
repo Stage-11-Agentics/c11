@@ -48,7 +48,8 @@ extension TerminalController {
         item["prompt_cache"] = Self.promptCacheField(
             PromptCacheSources.observation(forPanel: panelId, now: now),
             reportedUnknown: PromptCacheSources.reportsUnknown(forPanel: panelId),
-            now: now
+            now: now,
+            formatter: Self.seenTimestampFormatter
         )
     }
 
@@ -62,7 +63,8 @@ extension TerminalController {
     /// operator's statusline reported the harness's exact state, with `misses`).
     /// A reporter that cannot tell (a cache warmer is running) gives
     /// `{"state": "unknown", "source": "report"}`.
-    static func promptCacheField(_ cache: PromptCacheObservation?, reportedUnknown: Bool = false, now: Date) -> Any {
+    nonisolated static func promptCacheField(_ cache: PromptCacheObservation?, reportedUnknown: Bool = false, now: Date,
+                                            formatter: ISO8601DateFormatter = ISO8601DateFormatter()) -> Any {
         guard let cache else {
             guard reportedUnknown else { return NSNull() }
             return ["state": "unknown", "source": PromptCacheObservation.Source.report.rawValue] as [String: Any]
@@ -77,8 +79,8 @@ extension TerminalController {
             "state": now >= coldAt ? "cold" : "warm",
             "basis": cache.isEstimate ? "estimate" : "ttl",
             "lifetime_seconds": Int(seconds),
-            "requested_at": seenTimestampFormatter.string(from: cache.requestAt),
-            "cold_at": seenTimestampFormatter.string(from: coldAt),
+            "requested_at": formatter.string(from: cache.requestAt),
+            "cold_at": formatter.string(from: coldAt),
             "reset": cache.reset.map { reset -> Any in
                 switch reset {
                 case .modelSwitch: return "model_switch"

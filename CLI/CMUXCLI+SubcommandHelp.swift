@@ -69,6 +69,17 @@ extension CMUXCLI {
             Print methods, versioned features, CLI/server bundle identities and sha_match as JSON.
             sha_match is null when either build has no commit stamp.
             """
+        case "fleet":
+            return """
+            Usage: c11 fleet [--json]
+
+            Read every agent terminal across every window and workspace in one call.
+            Ordinary terminals, browsers and markdown panels are excluded. No focus,
+            selection, flag, seen-state or mailbox changes. --window does not narrow it.
+            JSON uses schema_version 1, durable UUIDs and explicit nulls for unknowns.
+            Mail counts are the mailbox cell's last cached count, null until measured.
+            See c11 guide api for the complete schema. Plain output is a short table.
+            """
         case "rpc":
             return """
             Usage: c11 rpc <method> [json] [--json]

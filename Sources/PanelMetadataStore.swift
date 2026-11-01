@@ -209,6 +209,17 @@ final class PanelMetadataStore: @unchecked Sendable {
 
     // MARK: - Canonical key validation
 
+    /// Immutable COW read of the canonical values and provenance. Fleet takes
+    /// one copy with its live topology, then projects fields on the worker.
+    struct ReadSnapshot {
+        let metadata: [UUID: [UUID: [String: Any]]]
+        let sources: [UUID: [UUID: [String: SourceRecord]]]
+    }
+
+    func readSnapshot() -> ReadSnapshot {
+        queue.sync { ReadSnapshot(metadata: metadata, sources: sources) }
+    }
+
     /// Reserved canonical keys. Keys not in this set accept any JSON value.
     ///
     /// `claude.session_id` is reserved because its value is interpolated

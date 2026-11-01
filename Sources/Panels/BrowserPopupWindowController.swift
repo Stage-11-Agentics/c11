@@ -338,7 +338,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
             url,
             origin: origin,
             userClick: userClick,
-            host: .webView(webView, noticePresenter: externalOpenNoticePresenter)
+            host: .webView(webView, noticePresenter: externalOpenNoticePresenter) { [weak openerPanel] line in
+                openerPanel?.appendExternalOpenLog(line)
+            }
         )
     }
 

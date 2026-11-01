@@ -19,6 +19,7 @@ final class BrowserExternalOpenGateTests: XCTestCase {
     private var presented: [BrowserExternalOpenGate.Prompt] = []
     private var answers: [(BrowserExternalOpenGate.Answer) -> Void] = []
     private var notices: [String] = []
+    private var logs: [String] = []
     private var visible = true
     private var handler: String? = "Screen Sharing"
 
@@ -31,6 +32,7 @@ final class BrowserExternalOpenGateTests: XCTestCase {
         presented = []
         answers = []
         notices = []
+        logs = []
         visible = true
         handler = "Screen Sharing"
     }
@@ -56,7 +58,8 @@ final class BrowserExternalOpenGateTests: XCTestCase {
                 self.presented.append(prompt)
                 self.answers.append(answer)
             },
-            notice: { [unowned self] in self.notices.append($0) }
+            notice: { [unowned self] in self.notices.append($0) },
+            log: { [unowned self] in self.logs.append($0) }
         )
     }
 
@@ -131,6 +134,28 @@ final class BrowserExternalOpenGateTests: XCTestCase {
         clock += 3
         gate.pageDidNavigate()
         XCTAssertEqual(gate.request(vnc, origin: page, userClick: false, host: host), .prompted)
+        XCTAssertEqual(opened, [])
+    }
+
+    func testDroppedRequestsLeaveOneOperatorLogLinePerReasonAndWindow() {
+        visible = false
+        let gate = makeGate()
+        for _ in 0..<5 { gate.request(vnc, origin: page, userClick: false, host: host) }
+        XCTAssertEqual(logs.count, 1)
+        XCTAssertTrue(logs[0].contains("example.com") && logs[0].contains("vnc:") && logs[0].contains("hidden"), logs[0])
+
+        visible = true
+        gate.request(vnc, origin: page, userClick: true, host: host)
+        for _ in 0..<5 { gate.request(vnc, origin: page, userClick: true, host: host) }
+        answers[0](.cancel)
+        for _ in 0..<5 { gate.request(vnc, origin: page, userClick: true, host: host) }
+        XCTAssertEqual(logs.count, 3, "hidden, pending and cooldown: one line each")
+
+        clock += BrowserExternalOpenGate.dropLogInterval + 1
+        gate.pageDidNavigate()
+        visible = false
+        XCTAssertEqual(gate.request(vnc, origin: page, userClick: false, host: host), .droppedHidden)
+        XCTAssertEqual(logs.count, 4, "a new window allows one more line")
         XCTAssertEqual(opened, [])
     }
 

@@ -100,6 +100,8 @@ struct BrowserExternalOpenHost {
     var present: (BrowserExternalOpenGate.Prompt, @escaping (BrowserExternalOpenGate.Answer) -> Void) -> Void
     /// Shows a short, non-blocking notice in the panel.
     var notice: (String) -> Void
+    /// Records a dropped request where the operator can find it later.
+    var log: (String) -> Void = { _ in }
 }
 
 /// The one door between page content and `NSWorkspace` for non-web schemes.
@@ -142,6 +144,8 @@ final class BrowserExternalOpenGate {
     private(set) var pending: Prompt?
     private var nextAdmission: TimeInterval = 0
     private var declined = Set<String>()
+    private var lastDropLog: [String: TimeInterval] = [:]
+    static let dropLogInterval: TimeInterval = 30
     private let appName: (URL) -> String?
     private let open: (URL) -> Bool
     private let now: () -> TimeInterval
@@ -176,6 +180,7 @@ final class BrowserExternalOpenGate {
     ) -> Outcome {
         let outcome = admit(url, origin: origin, userClick: userClick, host: host)
         Self.log(url: url, origin: origin, userClick: userClick, outcome: outcome.rawValue)
+        recordDrop(outcome, scheme: url.scheme?.lowercased() ?? "", origin: origin, host: host)
         return outcome
     }
 
@@ -243,6 +248,39 @@ final class BrowserExternalOpenGate {
         return result
     }
 
+    /// One operator-visible line per reason, site and scheme every 30 s, so a
+    /// page cannot flush the log with a burst.
+    private func recordDrop(
+        _ outcome: Outcome,
+        scheme: String,
+        origin: BrowserExternalOpenOrigin,
+        host: BrowserExternalOpenHost
+    ) {
+        let asker = origin.host ?? String(localized: "browser.externalOpen.thisPage", defaultValue: "This page")
+        let line: String
+        switch outcome {
+        case .droppedHidden:
+            line = String(localized: "browser.externalOpen.log.hidden",
+                          defaultValue: "\(asker) tried to open a \(scheme): link while its panel was hidden. Nothing opened.")
+        case .droppedPending:
+            line = String(localized: "browser.externalOpen.log.pending",
+                          defaultValue: "\(asker) asked again to open a \(scheme): link while a prompt was showing. Nothing opened.")
+        case .droppedCooldown:
+            line = String(localized: "browser.externalOpen.log.cooldown",
+                          defaultValue: "\(asker) asked again to open a \(scheme): link right after a prompt closed. Nothing opened.")
+        case .droppedDeclined:
+            line = String(localized: "browser.externalOpen.log.declined",
+                          defaultValue: "\(asker) asked again to open a \(scheme): link after Cancel. Nothing opened.")
+        default:
+            return
+        }
+        let key = "\(outcome.rawValue) \(origin.allowKey ?? "opaque") \(scheme)"
+        let at = now()
+        if let last = lastDropLog[key], at - last < Self.dropLogInterval { return }
+        lastDropLog[key] = at
+        host.log(line)
+    }
+
     /// A new main-frame document: scripted requests may ask again.
     func pageDidNavigate() {
         declined.removeAll()
@@ -268,7 +306,11 @@ final class BrowserExternalOpenGate {
 extension BrowserExternalOpenHost {
     /// Binds prompts and notices to `webView`: a sheet on its own window,
     /// never `runModal`, and only while the page is on screen.
-    static func webView(_ webView: WKWebView, noticePresenter: PanelLinkNoticePresenter) -> BrowserExternalOpenHost {
+    static func webView(
+        _ webView: WKWebView,
+        noticePresenter: PanelLinkNoticePresenter,
+        log: @escaping (String) -> Void
+    ) -> BrowserExternalOpenHost {
         BrowserExternalOpenHost(
             isVisible: { [weak webView] in
                 guard let webView, let window = webView.window else { return false }
@@ -293,7 +335,8 @@ extension BrowserExternalOpenHost {
             notice: { [weak webView] text in
                 guard let webView else { return }
                 noticePresenter.show(text: text, in: webView)
-            }
+            },
+            log: log
         )
     }
 }

@@ -2,6 +2,194 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "browser.externalOpen.log.hidden": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ tried to open a %2$@: link while its panel was hidden. Nothing opened."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ がパネルの非表示中に %2$@: リンクを開こうとしました。何も開かれていません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Спроба від %1$@ відкрити посилання %2$@:, поки панель була прихована. Нічого не відкрито."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 패널이 숨겨진 동안 %2$@: 링크를 열려고 했습니다. 아무것도 열리지 않았습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在面板隐藏时尝试打开 %2$@: 链接。未打开任何内容。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在面板隱藏時嘗試開啟 %2$@: 連結。未開啟任何內容。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Попытка от %1$@ открыть ссылку %2$@:, пока панель была скрыта. Ничего не открыто."
+          }
+        }
+      }
+    },
+    "browser.externalOpen.log.pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ asked again to open a %2$@: link while a prompt was showing. Nothing opened."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ がプロンプト表示中に再度 %2$@: リンクを開こうとしました。何も開かれていません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторний запит від %1$@ на відкриття посилання %2$@: під час показу запиту. Нічого не відкрито."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 확인 창이 표시된 동안 %2$@: 링크 열기를 다시 요청했습니다. 아무것도 열리지 않았습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在提示显示期间再次请求打开 %2$@: 链接。未打开任何内容。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在提示顯示期間再次要求開啟 %2$@: 連結。未開啟任何內容。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторный запрос от %1$@ на открытие ссылки %2$@: во время показа запроса. Ничего не открыто."
+          }
+        }
+      }
+    },
+    "browser.externalOpen.log.cooldown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ asked again to open a %2$@: link right after a prompt closed. Nothing opened."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ がプロンプトを閉じた直後に再度 %2$@: リンクを開こうとしました。何も開かれていません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторний запит від %1$@ на відкриття посилання %2$@: одразу після закриття запиту. Нічого не відкрито."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 확인 창이 닫힌 직후 %2$@: 링크 열기를 다시 요청했습니다. 아무것도 열리지 않았습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在提示关闭后立即再次请求打开 %2$@: 链接。未打开任何内容。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在提示關閉後立即再次要求開啟 %2$@: 連結。未開啟任何內容。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторный запрос от %1$@ на открытие ссылки %2$@: сразу после закрытия запроса. Ничего не открыто."
+          }
+        }
+      }
+    },
+    "browser.externalOpen.log.declined": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ asked again to open a %2$@: link after Cancel. Nothing opened."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ が「キャンセル」の後に再度 %2$@: リンクを開こうとしました。何も開かれていません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторний запит від %1$@ на відкриття посилання %2$@: після натискання «Скасувати». Нічого не відкрито."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 ‘취소’ 후 %2$@: 링크 열기를 다시 요청했습니다. 아무것도 열리지 않았습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在点击“取消”后再次请求打开 %2$@: 链接。未打开任何内容。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在按下「取消」後再次要求開啟 %2$@: 連結。未開啟任何內容。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторный запрос от %1$@ на открытие ссылки %2$@: после нажатия «Отменить». Ничего не открыто."
+          }
+        }
+      }
+    },
     "browser.externalOpen.noHandler": {
       "extractionState": "manual",
       "localizations": {

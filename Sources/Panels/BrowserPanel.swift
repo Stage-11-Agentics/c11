@@ -5104,8 +5104,17 @@ extension BrowserPanel {
             url,
             origin: origin,
             userClick: userClick,
-            host: .webView(requestingWebView, noticePresenter: externalOpenNoticePresenter)
+            host: .webView(requestingWebView, noticePresenter: externalOpenNoticePresenter) { [weak self] line in
+                self?.appendExternalOpenLog(line)
+            }
         )
+    }
+
+    /// Writes to the owning workspace's log (`c11 list-log`), so a prompt that
+    /// never appeared can be explained.
+    func appendExternalOpenLog(_ line: String) {
+        AppDelegate.shared?.workspaceContainingPanel(panelId: id, preferredWorkspaceId: workspaceId)?
+            .workspace.appendSidebarLog(message: line, level: .warning, source: "browser")
     }
 
     func shouldOpenLinkInNewPanel(_ url: URL) -> Bool {

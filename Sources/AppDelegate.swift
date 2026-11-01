@@ -2599,17 +2599,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         PanelLineage.shared.installConversationStoreCloseObserver()
     }
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        let directories = externalOpenDirectories(from: urls)
-        guard !directories.isEmpty else { return }
+    private lazy var externalPanelLinks = ExternalPanelLinkPresenter(
+        resolve: { [weak self] in self?.externalPanelLinkDestination($0) },
+        open: { [weak self] in self?.openPanelLink($0, cause: "external_link") == true }
+    )
 
-        prepareForExplicitOpenIntentAtStartup()
-        for directory in directories {
-            openWorkspaceForExternalDirectory(
-                workingDirectory: directory,
-                debugSource: "application.openURLs"
-            )
+    private var externalPanelLinkStartupHold = ExternalPanelLinkStartupHold()
+
+    private func receiveExternalPanelLink(_ href: String) {
+        if !didCompleteInitialSessionRestore {
+            if let held = externalPanelLinkStartupHold.capture(href, now: ProcessInfo.processInfo.systemUptime) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+                    self?.externalPanelLinkStartupHold.expire(id: held.id, now: ProcessInfo.processInfo.systemUptime)
+                }
+            }
+            return
         }
+        externalPanelLinks.receive(href)
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // The SwiftUI delegate continues scene creation after forwarding its
+        // open-URL callback to this adaptor. Consume c11 at the Apple Event
+        // boundary instead, before that window-creation fallback can run.
+        NSAppleEventManager.shared().setEventHandler(self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        Self.routeExternalGetURL(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+            panelLink: { href in
+                let started = ProcessInfo.processInfo.systemUptime
+                PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch",
+                    result: "event=4755524c/4755524c,urls=1,c11=1,files=0")
+                receiveExternalPanelLink(href)
+                PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch_end",
+                    result: "elapsed_us=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1_000_000))")
+            }, otherURL: { url in
+                // Preserve the existing SwiftUI/AppKit delegate route for web
+                // and other URLs. Only c11 bypasses it. odoc and Dock reopen
+                // keep their original Apple Event handlers entirely.
+                NSApp.delegate?.application?(NSApp, open: [url])
+            })
+    }
+
+    /// A bounded prefix recognizes c11 before URL parsing, including malformed
+    /// payloads. Never forward a c11 spelling into SwiftUI scene creation.
+    static func routeExternalGetURL(_ href: String?, panelLink: (String) -> Void, otherURL: (URL) -> Void) {
+        guard let href else { return }
+        let prefix = String(decoding: href.utf8.prefix(129), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard prefix.contains(":") else { return }
+        if prefix.prefix(4).lowercased() == "c11:" {
+            panelLink(href)
+            return
+        }
+        guard let url = URL(string: href) else { return }
+        if PanelLinkTarget.usesScheme(url) {
+            panelLink(href)
+        } else {
+            otherURL(url)
+        }
+    }
+
+    /// Event classification is exclusive even when a c11 request is malformed,
+    /// pending, or rate-limited. A mixed event never reaches folder opening.
+    static func routeExternalOpenURLs(_ urls: [URL], panelLink: (URL) -> Void, directories: ([URL]) -> Void) {
+        if let link = urls.first(where: PanelLinkTarget.usesScheme) {
+            panelLink(link)
+            return
+        }
+        directories(urls)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            let elapsed = (ProcessInfo.processInfo.systemUptime - receivedAt) * 1_000_000
+            PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch_end",
+                result: "elapsed_us=\(Int(elapsed))")
+        }
+        // Record event boundaries without logging untrusted URL text. Launch
+        // Services may split one sender's URL list into distinct Apple Events.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let eventClass = String(format: "%08x", event?.eventClass ?? 0)
+        let eventID = String(format: "%08x", event?.eventID ?? 0)
+        let panelLinks = urls.filter(PanelLinkTarget.usesScheme).count
+        let files = urls.filter(\.isFileURL).count
+        PanelLinkActivation.log(target: "", origin: "external", activation: "open_batch",
+            result: "event=\(eventClass)/\(eventID),urls=\(urls.count),c11=\(panelLinks),files=\(files)")
+        Self.routeExternalOpenURLs(urls, panelLink: { receiveExternalPanelLink($0.absoluteString) }, directories: { urls in
+            let directories = externalOpenDirectories(from: urls)
+            guard !directories.isEmpty else { return }
+            prepareForExplicitOpenIntentAtStartup()
+            for directory in directories {
+                openWorkspaceForExternalDirectory(
+                    workingDirectory: directory,
+                    debugSource: "application.openURLs"
+                )
+            }
+        })
     }
 
     private func migrateLegacyPreferencesIfNeeded() {
@@ -3935,6 +4025,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         TerminalController.shared.setInitialSessionRestoreReady(true)
         TerminalController.shared.v2RefreshKnownRefs()
         NSLog("session.restore.ready")
+        if let held = externalPanelLinkStartupHold.take(now: ProcessInfo.processInfo.systemUptime) {
+            externalPanelLinks.receive(held.href, expiresAt: held.expiresAt)
+        }
     }
 
     private func completeStartupSessionRestore() {
@@ -13927,14 +14020,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         contextContainingWorkspaceId(workspaceId)?.workspaceManager
     }
 
-    /// Reached only from the isolated native link activation adapter. Socket
-    /// commands keep their existing workspace-switch prohibition.
-    @discardableResult
-    func openPanelLink(_ target: PanelLinkTarget) -> Bool {
-        FocusHistoryStore.shared.withExplicitJump { performOpenPanelLink(target) }
+    func externalPanelLinkDestination(_ target: PanelLinkTarget) -> ExternalPanelLinkDestination? {
+        let workspace: Workspace
+        let panelID: UUID?
+        switch target {
+        case .panel(let id):
+            guard let located = workspaceContainingPanel(panelId: id) else { return nil }
+            workspace = located.workspace
+            panelID = id
+        case .workspace(let id):
+            guard let manager = workspaceManagerFor(workspaceId: id),
+                  let found = manager.workspaces.first(where: { $0.id == id }) else { return nil }
+            workspace = found
+            panelID = nil
+        }
+        guard let context = contextContainingWorkspaceId(workspace.id),
+              (context.window ?? mainWindow(for: context.windowId)) != nil else { return nil }
+        return ExternalPanelLinkDestination(target: target, workspaceID: workspace.id,
+            workspaceTitle: PanelLinkFormat.sanitizedTitle(workspace.customTitle ?? workspace.title),
+            panelTitle: panelID.map { PanelLinkFormat(kind: .panel, id: $0,
+                title: workspace.panelTitle(panelId: $0) ?? "").title })
     }
 
-    private func performOpenPanelLink(_ target: PanelLinkTarget) -> Bool {
+    /// Reached from native in-app link activation or explicit outside-link
+    /// confirmation. This is the only outside-originated workspace-switch path:
+    /// the URL alone has no authority, and confirmation grants no agent power.
+    /// Socket commands keep their existing workspace-switch prohibition.
+    @discardableResult
+    func openPanelLink(_ target: PanelLinkTarget, cause: String = "panel_link") -> Bool {
+        FocusHistoryStore.shared.withExplicitJump { performOpenPanelLink(target, cause: cause) }
+    }
+
+    private func performOpenPanelLink(_ target: PanelLinkTarget, cause: String) -> Bool {
         let requestedAt = FlashRequestTime()
         guard SocketCommandContext.current == nil else { return false }
         let workspaceID: UUID
@@ -13964,7 +14081,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // its previous browser can enqueue an omnibar request on reveal.
             if let panelID { workspace.focusPanel(panelID) }
             bringToFront(window)
-            manager.focusWorkspace(workspaceID, surfaceId: panelID, suppressFlash: true, cause: "panel_link")
+            manager.focusWorkspace(workspaceID, surfaceId: panelID, suppressFlash: true, cause: cause)
             guard manager.selectedWorkspaceId == workspaceID else { return false }
             manager.requestSidebarReveal(workspaceId: workspaceID)
             // focusPanel can briefly focus the area's previous selected panel
@@ -13987,7 +14104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
             workspace.triggerFocusFlash(
                 panelId: panelID, appearance: FlashAppearance.current(envelope: .paneRing),
-                source: "panel_link", requestedAt: requestedAt
+                source: cause, requestedAt: requestedAt
             )
         }
         return true

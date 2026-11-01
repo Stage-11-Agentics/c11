@@ -47,7 +47,7 @@ enum PanelLinkTarget: Equatable {
 }
 
 enum PanelLinkNotice {
-    case invalid, unavailable, localOnly, activation, terminalActivation
+    case invalid, unavailable, destinationChanged, localOnly, activation, terminalActivation
 
     var text: String {
         switch self {
@@ -55,6 +55,8 @@ enum PanelLinkNotice {
             return String(localized: "panelLink.notice.invalid", defaultValue: "That c11 link is invalid. Use a panel or workspace UUID.")
         case .unavailable:
             return String(localized: "panelLink.notice.unavailable", defaultValue: "That panel or workspace is no longer available.")
+        case .destinationChanged:
+            return String(localized: "panelLink.notice.destinationChanged", defaultValue: "That destination moved to another workspace. Click the link again to confirm it.")
         case .localOnly:
             return String(localized: "panelLink.notice.localOnly", defaultValue: "Panel links work only from local files and localhost pages.")
         case .activation:
@@ -421,5 +423,437 @@ final class TerminalPanelLinkPreview {
             return "\(panelLine)\n\(workspaceLine)\n\(PanelLinkFormat.url(kind: .panel, id: panelID))"
         }
         return "\(workspaceLine)\n\(PanelLinkFormat.url(kind: .workspace, id: workspace.id))"
+    }
+}
+
+/// The identity shown to the operator, resolved from live native state only.
+struct ExternalPanelLinkDestination: Equatable {
+    let target: PanelLinkTarget
+    let workspaceID: UUID
+    let workspaceTitle: String
+    let panelTitle: String?
+
+    var url: String {
+        switch target {
+        case .panel(let id): return PanelLinkFormat.url(kind: .panel, id: id)
+        case .workspace(let id): return PanelLinkFormat.url(kind: .workspace, id: id)
+        }
+    }
+}
+
+/// Cold startup holds one bounded URL until the initial graph exists. The
+/// original deadline survives restore; no array or arbitrary payload is kept.
+struct ExternalPanelLinkStartupHold {
+    struct Held {
+        let id = UUID()
+        let href: String
+        let expiresAt: TimeInterval
+    }
+    private(set) var pending: Held?
+
+    mutating func capture(_ href: String, now: TimeInterval) -> Held? {
+        guard pending == nil else { return nil }
+        let held = Held(href: href.utf8.prefix(129).count <= 128 ? href : "c11:invalid", expiresAt: now + 60)
+        pending = held
+        return held
+    }
+
+    mutating func take(now: TimeInterval) -> Held? {
+        defer { pending = nil }
+        guard let pending, now < pending.expiresAt else { return nil }
+        return pending
+    }
+
+    mutating func expire(id: UUID, now: TimeInterval) {
+        guard pending?.id == id, let deadline = pending?.expiresAt, now >= deadline else { return }
+        pending = nil
+    }
+}
+
+/// One pending request, no queue. The UI and tests use this same admission and
+/// decision path; a URL is data until an explicit confirmation consumes it.
+@MainActor
+final class ExternalPanelLinkRequest {
+    struct Prompt {
+        let id = UUID()
+        let destination: ExternalPanelLinkDestination?
+        let notice: PanelLinkNotice?
+        let expiresAt: TimeInterval
+        let armedAt: TimeInterval
+    }
+
+    private(set) var pending: Prompt?
+    private var nextAdmission: TimeInterval = 0
+    private let now: () -> TimeInterval
+    private let armingDelay: TimeInterval
+    private let resolve: (PanelLinkTarget) -> ExternalPanelLinkDestination?
+    private let open: (PanelLinkTarget) -> Bool
+
+    init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         armingDelay: TimeInterval = max(0.75, NSEvent.doubleClickInterval),
+         resolve: @escaping (PanelLinkTarget) -> ExternalPanelLinkDestination?,
+         open: @escaping (PanelLinkTarget) -> Bool) {
+        self.now = now
+        self.armingDelay = max(0.75, armingDelay)
+        self.resolve = resolve
+        self.open = open
+    }
+
+    @discardableResult
+    func receive(_ href: String, expiresAt: TimeInterval? = nil) -> Prompt? {
+        let receivedAt = now()
+        guard pending == nil, receivedAt >= nextAdmission,
+              expiresAt == nil || receivedAt < expiresAt! else { return nil }
+        let destination: ExternalPanelLinkDestination?
+        let notice: PanelLinkNotice?
+        // Bound before trimming, URLComponents, display or logging. No rejected
+        // payload is retained. In-app parsing and activation remain unchanged.
+        if href.utf8.prefix(129).count <= 128, let target = PanelLinkTarget(href) {
+            destination = resolve(target)
+            notice = destination == nil ? .unavailable : nil
+        } else {
+            destination = nil
+            notice = .invalid
+        }
+        let prompt = Prompt(destination: destination, notice: notice,
+                            expiresAt: min(receivedAt + (destination == nil ? 5 : 60), expiresAt ?? .infinity),
+                            armedAt: receivedAt + armingDelay)
+        pending = prompt
+        return prompt
+    }
+
+    func showNotice(_ notice: PanelLinkNotice) -> Prompt {
+        let prompt = Prompt(destination: nil, notice: notice, expiresAt: now() + 5, armedAt: .infinity)
+        pending = prompt
+        return prompt
+    }
+
+    /// Consume once before resolving/opening, including on reentrant calls.
+    /// A moved destination requires a new click; live title changes do not.
+    @discardableResult
+    func finish(id: UUID, confirm: Bool, isSocketCommand: Bool = false) -> String {
+        guard let prompt = pending, prompt.id == id else { return "stale_confirmation" }
+        if confirm, prompt.destination != nil, now() < prompt.armedAt { return "not_armed" }
+        pending = nil
+        nextAdmission = now() + 2
+        guard confirm else { return "cancelled" }
+        guard !isSocketCommand else { return "socket_command" }
+        guard now() < prompt.expiresAt else { return "expired" }
+        guard let destination = prompt.destination else { return "unavailable" }
+        guard let live = resolve(destination.target) else { return "unavailable" }
+        guard live.target == destination.target, live.workspaceID == destination.workspaceID else { return "destination_changed" }
+        return open(destination.target) ? "opened" : "unavailable"
+    }
+}
+
+/// A floating confirmation can be clicked while another application is active,
+/// but cannot take a terminal's key focus or turn Return into consent.
+final class ExternalPanelLinkWindow: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+/// A newly appeared control is not consent. Bind one fresh plain click to
+/// this presentation, after a double-click interval and any required re-entry.
+struct ExternalPanelLinkGesture {
+    private let readyAt: TimeInterval
+    private var mustReenter: Bool
+    private var hasLeft: Bool
+    private var downAt: TimeInterval?
+
+    init(presentedAt: TimeInterval, doubleClickInterval: TimeInterval, pointerInside: Bool) {
+        readyAt = presentedAt + max(0.75, doubleClickInterval)
+        mustReenter = pointerInside
+        hasLeft = !pointerInside
+    }
+
+    func isArmed(at now: TimeInterval) -> Bool { now >= readyAt && !mustReenter }
+
+    mutating func pointer(inside: Bool) {
+        if !inside { hasLeft = true; downAt = nil }
+        else if hasLeft { mustReenter = false }
+    }
+
+    mutating func begin(at now: TimeInterval, plain: Bool, clickCount: Int, inside: Bool) -> Bool {
+        downAt = nil
+        guard isArmed(at: now), plain, clickCount == 1, inside else { return false }
+        downAt = now
+        return true
+    }
+
+    mutating func end(at now: TimeInterval, plain: Bool, clickCount: Int, inside: Bool) -> Bool {
+        defer { downAt = nil }
+        guard let downAt, now >= downAt, isArmed(at: now), plain, clickCount == 1, inside else { return false }
+        return true
+    }
+
+    mutating func cancelPress() { downAt = nil }
+}
+
+private final class ExternalPanelLinkButton: NSButton {
+    let requestID: UUID
+    private var gesture: ExternalPanelLinkGesture?
+    private var confirmationTracking: NSTrackingArea?
+
+    func armConfirmation() {
+        guard let window else { return }
+        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        gesture = ExternalPanelLinkGesture(presentedAt: ProcessInfo.processInfo.systemUptime,
+            doubleClickInterval: NSEvent.doubleClickInterval, pointerInside: bounds.contains(point))
+        updateTrackingAreas()
+        refreshArming()
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.75, NSEvent.doubleClickInterval)) { [weak self] in
+            self?.refreshArming()
+        }
+    }
+
+    private func refreshArming() {
+        if let gesture { isEnabled = gesture.isArmed(at: ProcessInfo.processInfo.systemUptime) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let confirmationTracking { removeTrackingArea(confirmationTracking) }
+        guard gesture != nil else { return }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        confirmationTracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        gesture?.pointer(inside: true)
+        refreshArming()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        gesture?.pointer(inside: false)
+        refreshArming()
+    }
+
+    private func plain(_ event: NSEvent) -> Bool {
+        event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+    }
+
+    private func inside(_ event: NSEvent) -> Bool {
+        event.window === window && bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        refreshArming()
+        if gesture != nil {
+            let visible = window?.isVisible == true
+            let socket = SocketCommandContext.current != nil
+            let armed = gesture?.isArmed(at: event.timestamp) == true
+            let unmodified = plain(event)
+            let inBounds = inside(event)
+            let accepted = visible && !socket &&
+                gesture?.begin(at: event.timestamp, plain: unmodified,
+                               clickCount: event.clickCount, inside: inBounds) == true
+            let result = accepted ? "accepted" : !visible ? "hidden" : socket ? "socket_command" :
+                !armed ? "not_armed_at_event" : !unmodified ? "modified" :
+                event.clickCount != 1 ? "multiple_click" : !inBounds ? "outside_window_or_bounds" : "refused"
+            PanelLinkActivation.log(target: "", origin: "external", activation: "native_down", result: result)
+            guard accepted else { return }
+        }
+        super.mouseDown(with: event)
+        gesture?.cancelPress()
+    }
+
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        if gesture != nil {
+            let eventType = NSApp.currentEvent?.type.rawValue
+            guard let event = NSApp.currentEvent, event.type == .leftMouseUp,
+                  window?.isVisible == true, SocketCommandContext.current == nil,
+                  gesture?.end(at: event.timestamp, plain: plain(event), clickCount: event.clickCount,
+                               inside: inside(event)) == true else {
+                let result = eventType == nil ? "missing_event" : eventType != NSEvent.EventType.leftMouseUp.rawValue ?
+                    "unexpected_event_\(eventType!)" : "release_refused"
+                PanelLinkActivation.log(target: "", origin: "external", activation: "native_action", result: result)
+                gesture?.cancelPress()
+                return false
+            }
+            PanelLinkActivation.log(target: "", origin: "external", activation: "native_action", result: "accepted")
+        }
+        return super.sendAction(action, to: target)
+    }
+
+    init(title: String, requestID: UUID, target: AnyObject?, action: Selector) {
+        self.requestID = requestID
+        super.init(frame: .zero)
+        self.title = title
+        self.target = target
+        self.action = action
+        self.bezelStyle = .rounded
+        self.setButtonType(.momentaryPushIn)
+    }
+
+    required init?(coder: NSCoder) { return nil }
+}
+
+@MainActor
+final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
+    private let request: ExternalPanelLinkRequest
+    private var panel: ExternalPanelLinkWindow?
+    private var expiry: DispatchWorkItem?
+    private var visibilityObservers: [(NotificationCenter, NSObjectProtocol)] = []
+
+    init(resolve: @escaping (PanelLinkTarget) -> ExternalPanelLinkDestination?,
+         open: @escaping (PanelLinkTarget) -> Bool) {
+        request = ExternalPanelLinkRequest(resolve: resolve, open: open)
+        super.init()
+    }
+
+    func receive(_ href: String, expiresAt: TimeInterval? = nil) {
+        guard SocketCommandContext.current == nil,
+              let prompt = request.receive(href, expiresAt: expiresAt) else { return }
+        show(prompt)
+        PanelLinkActivation.log(target: prompt.destination?.url ?? "", origin: "external",
+                                activation: "request", result: prompt.destination == nil ? "notice" : "confirmation")
+    }
+
+    private func show(_ prompt: ExternalPanelLinkRequest.Prompt) {
+        let window = ExternalPanelLinkWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 240),
+            styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.title = String(localized: "panelLink.external.title", defaultValue: "Outside c11 link")
+        window.identifier = NSUserInterfaceItemIdentifier("c11.external-link.confirmation")
+        window.setAccessibilityIdentifier("c11.external-link.confirmation")
+        window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
+        window.becomesKeyOnlyIfNeeded = true
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.delegate = self
+        let rows = NSStackView()
+        rows.orientation = .vertical
+        rows.alignment = .leading
+        rows.spacing = 10
+        func label(_ text: String, identifier: String, wraps: Bool = false) {
+            let field = NSTextField(wrappingLabelWithString: text)
+            field.font = .systemFont(ofSize: 13)
+            // Trusted guidance must remain readable; destination titles are
+            // untrusted display text and keep one bounded, truncated row.
+            field.maximumNumberOfLines = wraps ? 0 : 1
+            field.lineBreakMode = wraps ? .byWordWrapping : .byTruncatingTail
+            field.preferredMaxLayoutWidth = 480
+            field.setAccessibilityIdentifier(identifier)
+            rows.addArrangedSubview(field)
+            field.widthAnchor.constraint(equalToConstant: 480).isActive = true
+        }
+        if let destination = prompt.destination {
+            label(String(localized: "panelLink.external.explanation", defaultValue: "An outside link wants to select this destination. Confirm only if you intended to open it."), identifier: "c11.external-link.explanation", wraps: true)
+            if let title = destination.panelTitle {
+                label(String(localized: "panelLink.preview.panel", defaultValue: "Panel: \(title)"), identifier: "c11.external-link.panel")
+            }
+            let title = destination.workspaceTitle
+            label(String(localized: "panelLink.preview.workspace", defaultValue: "Workspace: \(title)"), identifier: "c11.external-link.workspace")
+            label(destination.url, identifier: "c11.external-link.url")
+        } else {
+            label((prompt.notice ?? .unavailable).text, identifier: "c11.external-link.notice", wraps: true)
+        }
+        let buttons = NSStackView()
+        buttons.orientation = .horizontal
+        buttons.spacing = 12
+        let cancel = ExternalPanelLinkButton(title: String(localized: "common.cancel", defaultValue: "Cancel"),
+                              requestID: prompt.id, target: self, action: #selector(cancelClicked(_:)))
+        cancel.bezelStyle = .rounded
+        cancel.keyEquivalent = "\r"
+        cancel.setAccessibilityIdentifier("c11.external-link.cancel")
+        buttons.addArrangedSubview(cancel)
+        window.defaultButtonCell = cancel.cell as? NSButtonCell
+        var confirmationButton: ExternalPanelLinkButton?
+        if prompt.destination != nil {
+            let confirm = ExternalPanelLinkButton(title: String(localized: "panelLink.external.confirm", defaultValue: "Confirm"),
+                                   requestID: prompt.id, target: self, action: #selector(confirmClicked(_:)))
+            confirm.bezelStyle = .rounded
+            confirm.keyEquivalent = ""
+            confirm.isEnabled = false
+            confirmationButton = confirm
+            confirm.setAccessibilityIdentifier("c11.external-link.confirm")
+            buttons.addArrangedSubview(confirm)
+        }
+        rows.addArrangedSubview(buttons)
+        let content = NSView()
+        content.addSubview(rows)
+        rows.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            rows.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            rows.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
+            rows.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
+            rows.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20)
+        ])
+        window.contentView = content
+        window.setContentSize(NSSize(width: 520, height: rows.fittingSize.height + 40))
+        // The source app may be on a different display/Space from c11. The
+        // pointer identifies the display for an outside click; no window rises.
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        if let frame = screen?.visibleFrame {
+            // Place before assigning panel = window; otherwise windowDidMove cancels the prompt.
+            window.setFrameOrigin(NSPoint(x: frame.midX - window.frame.width / 2,
+                                          y: frame.midY - window.frame.height / 2))
+        }
+        panel = window
+        window.orderFrontRegardless()
+        content.layoutSubtreeIfNeeded()
+        confirmationButton?.armConfirmation()
+        for (center, name) in [
+            (NotificationCenter.default, NSApplication.didHideNotification),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification)
+        ] {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.cancelPending() }
+            }
+            visibilityObservers.append((center, token))
+        }
+        let work = DispatchWorkItem { [weak self] in self?.dismiss(id: prompt.id, confirm: false) }
+        expiry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, prompt.expiresAt - ProcessInfo.processInfo.systemUptime), execute: work)
+    }
+
+    @objc private func cancelClicked(_ sender: ExternalPanelLinkButton) {
+        dismiss(id: sender.requestID, confirm: false)
+    }
+
+    @objc private func confirmClicked(_ sender: ExternalPanelLinkButton) {
+        dismiss(id: sender.requestID, confirm: true)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if sender === panel, let prompt = request.pending { dismiss(id: prompt.id, confirm: false) }
+        return false
+    }
+
+    private func cancelPending() {
+        if let prompt = request.pending { dismiss(id: prompt.id, confirm: false) }
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let moved = notification.object as? NSWindow, moved === panel else { return }
+        cancelPending()
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let changed = notification.object as? NSWindow, changed === panel else { return }
+        if !changed.isVisible { cancelPending() }
+    }
+
+    private func dismiss(id: UUID, confirm: Bool) {
+        guard let prompt = request.pending, prompt.id == id else { return }
+        if confirm, ProcessInfo.processInfo.systemUptime < prompt.armedAt { return }
+        expiry?.cancel()
+        expiry = nil
+        for (center, token) in visibilityObservers { center.removeObserver(token) }
+        visibilityObservers.removeAll()
+        panel?.delegate = nil
+        panel?.orderOut(nil)
+        panel = nil
+        let result = request.finish(id: id, confirm: confirm, isSocketCommand: SocketCommandContext.current != nil)
+        PanelLinkActivation.log(target: prompt.destination?.url ?? "", origin: "external",
+                                activation: confirm ? "confirm" : "cancel", result: result)
+        if confirm && result != "opened" {
+            // Keep the same admission occupied by a notice; never substitute a
+            // different target or open another app after a stale confirmation.
+            show(request.showNotice(result == "destination_changed" ? .destinationChanged : .unavailable))
+        }
     }
 }

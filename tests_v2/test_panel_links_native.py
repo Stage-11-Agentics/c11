@@ -329,15 +329,30 @@ try:
     osa('key code 36')
     wait_for(lambda: focus()['workspace_id'] == B and focus()['panel_id'] == TERMINAL, 'native Return must select B terminal')
     print('PASS native Return activation', flush=True)
-    # AX queries into a tracking menu can block. Read its top-level geometry
-    # first, then use the native pointer on the screenshot-verified Back row.
+    # Inspect only the named native menu item. A fixed offset plus cliclick
+    # did not prove Back was dispatched; this path uses observed bounds and
+    # a complete native HID pair, with history snapshots on both sides.
+    history_before = call('history.list', limit=200)
     hx, hy, hw, hh = [float(x) for x in osa('get {position, size} of menu bar item "History" of menu bar 1').split(', ')]
-    subprocess.run(['/opt/homebrew/bin/cliclick', f'c:{round(hx+hw/2)},{round(hy+hh/2)}', 'w:150',
-                    f'c:{round(hx+hw/2)},{round(hy+hh+24)}'], check=True)
-    time.sleep(.4)
-    history_returned = focus()['workspace_id'] == A and focus()['panel_id'] == SOURCE
-    (OUT / 'focus-history.json').write_text(json.dumps(dict(returned_to_source=history_returned, actual=focus()), indent=2))
-    print('OBSERVED Focus History Back returns to source=' + str(history_returned), flush=True)
+    post_mouse(round(hx+hw/2), round(hy+hh/2))
+    time.sleep(.15)
+    bx, by, bw, bh = [float(x) for x in osa('''set backItem to menu item "Back" of menu 1 of menu bar item "History" of menu bar 1
+if not enabled of backItem then error "History Back is disabled"
+get {position, size} of backItem''').split(', ')]
+    assert bw > 0 and bh > 0
+    shot('focus-history-menu')
+    post_mouse(round(bx+bw/2), round(by+bh/2))
+    try:
+        wait_for(lambda: focus()['workspace_id'] == A and focus()['panel_id'] == SOURCE,
+                 'native History Back must return to exact browser source')
+    finally:
+        actual = focus()
+        history_returned = actual['workspace_id'] == A and actual['panel_id'] == SOURCE
+        (OUT / 'focus-history.json').write_text(json.dumps(dict(returned_to_source=history_returned,
+            actual=actual, before=history_before, after=call('history.list', limit=200),
+            back_item_bounds=[bx, by, bw, bh], transport='native_hid_click_count_1'), indent=2))
+    assert history_returned
+    print('PASS native History Back returns to exact source', flush=True)
     back_to_a()
 
     repeat_target = call('panel.split', workspace_id=A, panel_id=SOURCE, direction='left', force=True)['panel_id']

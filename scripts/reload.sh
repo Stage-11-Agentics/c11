@@ -376,6 +376,8 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
       || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$INFO_PLIST"
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$INFO_PLIST" 2>/dev/null \
       || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$INFO_PLIST"
+    # Rebranded copies must never compete with the production URL handler.
+    /usr/bin/python3 "$PWD/scripts/prepare-info-plist.py" "$INFO_PLIST" "$INFO_PLIST" --configuration Debug
     # xcodebuild may process the source Info.plist after target shell phases,
     # so stamp the final tagged bundle immediately before signing. The CLI and
     # socket server use this shared identity to prove they are the same build.

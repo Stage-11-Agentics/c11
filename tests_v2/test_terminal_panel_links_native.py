@@ -190,7 +190,7 @@ class Proof:
         assert self.cli.is_file()
         with (self.app / 'Contents/Info.plist').open('rb') as stream:
             self.bundle = plistlib.load(stream)
-        assert self.bundle['CFBundleIdentifier'].startswith('com.stage11.c11.debug.'), 'tagged dev bundle required'
+        assert self.accepts_bundle(self.bundle['CFBundleIdentifier']), 'unexpected guest bundle identity'
         # No inherited live connection or panel context may affect a subprocess.
         for key in list(os.environ):
             if key.startswith(('C11_SOCKET', 'CMUX_SOCKET')) or key in (
@@ -219,6 +219,9 @@ class Proof:
         self.watchdog.start()
         signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('420-second active deadline')))
         signal.setitimer(signal.ITIMER_REAL, max(.1, ACTIVE_SECONDS - (time.monotonic() - self.started)))
+
+    def accepts_bundle(self, identity):
+        return identity.startswith('com.stage11.c11.debug.')
 
     def hard_stop(self):
         try:
@@ -509,10 +512,13 @@ finally:
     def native_click(self, x, y, command=False):
         self.native_mouse(x, y, (1, 2), command=command)
 
-    def native_mouse(self, x, y, event_types, command=False):
+    def native_mouse(self, x, y, event_types, command=False, foreground_pid=None):
         # Explicit HID mouse events were independently proved against this
         # guest after cliclick's combined key/move/click did not activate links.
-        self.ensure_frontmost()
+        if foreground_pid is None:
+            self.ensure_frontmost()
+        else:
+            assert self.ui('foreground') == foreground_pid, 'verified source app must remain foreground'
         class Point(ctypes.Structure):
             _fields_ = [('x', ctypes.c_double), ('y', ctypes.c_double)]
         cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
@@ -521,6 +527,7 @@ finally:
         cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
         cg.CGEventSetFlags.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
         cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
+        cg.CGEventSetTimestamp.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
         cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         cf.CFRelease.argtypes = [ctypes.c_void_p]
         for event_type in event_types:
@@ -528,6 +535,9 @@ finally:
             assert event
             cg.CGEventSetFlags(event, (1 << 20) if command else 0)
             cg.CGEventSetIntegerValueField(event, 1, 1)
+            # Fresh HID metadata, rather than CGEventCreateMouseEvent's zero
+            # timestamp. Outside confirmation compares event time to arming.
+            cg.CGEventSetTimestamp(event, time.monotonic_ns())
             cg.CGEventPost(0, event)
             cf.CFRelease(event)
             time.sleep(.12)

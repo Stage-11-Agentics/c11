@@ -88,43 +88,116 @@ c11.entitlements                                       (the six declarations)
 
 ## 3. URL handler
 
-c11 declares itself a `Default` handler for the `http` and `https`
-schemes in `Resources/Info.plist`. No `c11://` or `cmux://` scheme is
-registered with Launch Services; URL-as-action from other apps is
-constrained to whatever `AppDelegate.application(_:open:)` does with the
-incoming URL list. `c11://panel/<uuid>` and `c11://workspace/<uuid>`
-links (1.6) exist only inside c11: they are routed in-process from a
-native click in a terminal, markdown panel or local browser page, and are
-never accepted from another app, the CLI or the socket (section 4, Panel
-links).
+c11 declares itself a `Default` handler for `http`, `https` and, since
+1.7.6 (C11-552), `c11` in `Resources/Info.plist`. The macOS URL handler is
+an **untrusted-input vector**. Any local app or process, any web page via
+a link, and documents authored by other users can send `c11:` URLs. This
+includes agents inside c11 terminals invoking `/usr/bin/open c11://...`.
+Launch Services does not authenticate their authors or prove a human
+clicked. No caller-provided title, origin or permission is trusted.
 
-The handler converts incoming URLs to *folders* via
-`externalOpenDirectories(from:)` and opens those folders as new c11
-workspaces. Non-folder URLs are not opened by the application
-delegate; web URLs hit the system handler chain like any other app.
-Only `file://` URLs are considered, and since 1.0 a URL that resolves
-(through symlinks) into c11's own app bundle is dropped, so Launch
-Services handing c11 itself to c11 no longer suppresses session
-restore. 1.1 leaves this handler unchanged; its `AppDelegate` changes
-route markdown reader shortcuts through the existing operator-intent
-key handler and touch no URL path.
+An outside link can request only selection of an **existing** panel or
+workspace by exact UUID, after a fresh operator confirmation. It cannot
+create a workspace or panel, launch an agent or command, type, run, close,
+open a path, answer an ask, or carry any parameter. The app uses the same
+canonical parser as in-app links: at most 128 UTF-8 bytes; only
+`c11://panel/<uuid>` or `c11://workspace/<uuid>`; no short refs, userinfo,
+port, escaping, query, fragment or extra path segment. Malformed,
+oversized and unavailable targets produce a bounded notice and are
+consumed, never passed to another application or treated as paths.
 
-So the URL-handler attack surface is:
+Every admitted outside request shows a nonmodal, nonactivating confirmation
+window above the frontmost app, on the pointer's display and active Space.
+It names the live destination panel (when applicable) and workspace,
+and shows the canonical UUID URL. Titles are bounded plain text with control
+and bidirectional override characters removed. **Cancel is the default**;
+Confirm has no keyboard shortcut. Keyboard users and VoiceOver AXPress cannot
+confirm because the gate requires a fresh mouse-down/up sequence. It stays disabled for at least the system
+double-click interval or 0.75 seconds, whichever is longer, after presentation and requires a new plain mouse-down/up
+sequence begun after arming. Carried-over multi-clicks are refused. A pointer
+already over Confirm must leave and re-enter before it arms. Moving or hiding
+the prompt or changing Spaces cancels it, so a stale action cannot authorize
+a different presentation. This mitigates surprise-overlay consent, not arbitrary
+hostile desktop overlays or already-authorized OS input automation. The window does not become key or main,
+does not capture terminal typing, and never calls `runModal` or starts a
+sheet. Only an explicit Confirm click can select the destination. Cancel,
+close and the confirmation's 60-second expiry select nothing. Notices expire
+after five seconds. Confirm resolves the exact
+UUID again; a closed target is refused, and a panel moved to another workspace
+gets a distinct notice requesting a new click. Live panel/workspace titles are
+display-only and may change without invalidating the same UUID/workspace binding.
+An agent-written title stays within a fixed "Panel:" prefix and one collapsed
+line; it is never instructions or authority.
 
-- Whatever folder paths an attacker can convince LaunchServices to
-  hand to c11 via an `open <url>` call. macOS already constrains this
-  to file:// URLs and folders the calling user has read access to;
-  c11 does not loosen this.
-- Whatever the operator's drag-and-drop / Services menu sends through
-  the `openTab` / `openWindow` Apple Events (see section 5).
+There is one process-wide pending confirmation or notice, no request queue,
+and a two-second cooldown after dismissal. Further outside requests during
+that interval or while a window is present are dropped, never queued or
+auto-confirmed. On cold launch only, one bounded URL may wait for initial
+session readiness. Its original 60-second deadline survives restore; subsequent
+requests are dropped and an expired held URL is discarded. A multi-URL event containing any `c11:` URL is c11-only: at most its first
+c11 request is considered, even when refused or rate-limited, and every folder
+in that event is ignored. File-only events retain the existing folder route. A burst
+cannot replace the destination under the Confirm button or pile up windows.
+The process installs a Get URL Apple Event handler before launch completes.
+It consumes c11 spellings before SwiftUI's scene fallback, including rejected
+and rate-limited requests, so even one outside link cannot create an extra
+main window. Other URL schemes retain the existing delegate route; document
+and Dock-reopen Apple Event handlers are unchanged.
+The handler never activates the app or restores focus on receipt. macOS
+may independently launch or activate a URL's registered handler on each send,
+as `open -a c11` already can; this existing OS behavior is not authority to
+navigate. A hostile local app's ability to overlay desktop windows is the
+operator-tier boundary in section 1, outside this confirmation's guarantee. Logs use bounded result codes and canonical
+targets, not rejected URL payloads.
+
+Confirm is the only outside-originated path allowed to switch workspaces:
+the operator's explicit consent calls the existing native navigation route,
+while the external sender gains no reusable authority.
+
+In-app terminal, browser and markdown link rules remain unchanged (section
+4). CLI/browser automation still refuses c11 URLs and socket commands still
+cannot switch the selected workspace. Outside-link handling adds no socket,
+script, command or agent permission, and confirmation is never cached.
+
+Only the production Release bundle (`com.stage11.c11`) claims `c11:`.
+This means any Release build with that production identity, including a QA
+artifact, not only `/Applications/c11.app`; it has the same scheme-registration
+exposure as `http` and `https`.
+The build generates its Info.plist with that identity/configuration policy;
+Debug products omit only `c11`, preserving their existing web schemes. The
+nightly rebrand also removes only `c11`. c11 does not set Launch Services
+preferences or appoint itself as the default handler.
+
+Staging copies use the C11-536 isolation procedure: remove the entire
+`CFBundleURLTypes` entry before ad hoc signing and launch, so they claim
+neither `c11` nor web schemes. Inspect the **built** release and isolated
+staging, tagged Debug and nightly-style bundles to verify registration and
+its absence; source-plist checks
+do not prove this boundary.
+
+Separately, incoming file URLs go through `externalOpenDirectories(from:)`
+and open folders as new c11 workspaces. Only `file://` URLs enter that route;
+a URL resolving through symlinks into c11's own app bundle is dropped, so
+Launch Services handing c11 itself to c11 does not suppress session restore.
+A delivered batch containing `c11:` never invokes the folder route. A sender's
+single `open` command can instead produce separate URL and folder Apple Events;
+the separate file-only event keeps ordinary folder-opening behavior, even while
+a link confirmation is pending. The Services menu and folder Apple Events retain
+their existing behavior (section 5). Bounded logs record event class/ID and URL
+kind counts without the sender's payload, so this boundary can be inspected.
 
 Evidence:
 
 ```
-Resources/Info.plist:76-91                             (CFBundleURLTypes)
-Sources/AppDelegate.swift:2594                         (application(_:open:))
-Sources/AppDelegate.swift:7233                         (externalOpenDirectories)
-Sources/AppDelegate.swift:~580-615                     (FinderServicePathResolver.orderedUniqueDirectories)
+Resources/Info.plist                                   (CFBundleURLTypes)
+Sources/AppDelegate.swift                              (application(_:open:), exact live target resolution)
+Sources/PanelLinkActivation.swift                      (strict parser and outside confirmation)
+scripts/prepare-info-plist.py                         (production identity and Release configuration only)
+GhosttyTabs.xcodeproj/project.pbxproj                  (generated Info.plist is the build input)
+scripts/reload.sh                                     (tagged Debug rebrand)
+scripts/reloads.sh                                    (staging removes URL types before signing)
+.github/workflows/nightly.yml                         (nightly rebrand removes c11 only)
+Sources/AppDelegate.swift                              (externalOpenDirectories, FinderServicePathResolver)
 ```
 
 ---
@@ -910,6 +983,5 @@ Items intentionally not covered here (yet):
 - **Operator threat models.** c11 does not defend against the
   operator (see section 1). If the threat model needs to assume a
   hostile operator, it's a different document.
-- **Hypothetical surfaces.** A `c11://` URL scheme, mTLS for the
-  socket, or sandboxed agent runtimes — none exist today. This doc
-  describes only the current posture.
+- **Hypothetical surfaces.** mTLS for the socket or sandboxed agent runtimes.
+  None exist today. This doc describes only the current posture.

@@ -45,6 +45,11 @@ final class MailboxBodyLinksTests: XCTestCase {
         let url = try XCTUnwrap(found.first?.url)
         XCTAssertEqual(PanelLinkTarget(url.absoluteString), .panel(UUID(uuidString: panelID)!))
         XCTAssertEqual(rendered(body), body)
+
+        for sentence in ["see c11://panel/\(panelID).", "see c11://panel/\(panelID)!", "(c11://panel/\(panelID))"] {
+            XCTAssertEqual(links(sentence).map(\.text), ["c11://panel/\(panelID)"], sentence)
+            XCTAssertEqual(rendered(sentence), sentence)
+        }
     }
 
     func testHTTPSLinksTitledAndBare() {

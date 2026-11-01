@@ -28,7 +28,7 @@ Headline: **c11 1.7.8. The mailbox drawer shows how long mail waited before an a
 
 ### Security
 
-- **The confirmation for an outside `c11://` link puts Cancel on the right**, where a habitual click lands. Return and Escape cancel it; Confirm still needs a fresh click after its short delay. ([#874](https://github.com/Stage-11-Agentics/c11/pull/874))
+- **The confirmation for an outside `c11://` link puts Cancel on the right**, where a habitual click lands; Confirm still needs a fresh click after its short delay. ([#874](https://github.com/Stage-11-Agentics/c11/pull/874))
 - **Settings > Browser > Sites Allowed to Open Apps saves only when you click Save**, like the plain HTTP list beside it. A line that can never match is named in red and keeps Save off instead of being dropped, and closing Settings discards unsaved edits. ([#874](https://github.com/Stage-11-Agentics/c11/pull/874))
 
 ### Thanks to 1 contributor!

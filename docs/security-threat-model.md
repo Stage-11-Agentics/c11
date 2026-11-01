@@ -113,7 +113,9 @@ and shows the canonical UUID URL. Titles are bounded plain text with control
 and bidirectional override characters removed. **Cancel is the default**;
 Confirm has no keyboard shortcut. Since 1.7.8 (C11-562) the row reads Confirm
 then Cancel, so Cancel is the rightmost button, where a habitual "proceed"
-click lands; Return and Escape both cancel. Keyboard users and VoiceOver AXPress cannot
+click lands. Cancel holds Return and a hidden twin holds Escape, but the
+prompt never becomes key, so in practice neither key reaches it (observed in
+the 1.7.8 staging smoke). Keyboard users and VoiceOver AXPress cannot
 confirm because the gate requires a fresh mouse-down/up sequence. It stays disabled for at least the system
 double-click interval or 0.75 seconds, whichever is longer, after presentation and requires a new plain mouse-down/up
 sequence begun after arming. Carried-over multi-clicks are refused. A pointer

@@ -4016,7 +4016,7 @@ final class SidebarTilesWindowTests: ShortcutRoutingTestSupport {
         savedControllerManager = nil
     }
 
-    func testWindowOwnedModeAndOracleStayIndependent() throws {
+    func testWidthDrivenTilesAndOracleStayIndependent() throws {
         let app = try XCTUnwrap(AppDelegate.shared)
         let firstId = app.createMainWindow()
         let secondId = app.createMainWindow()
@@ -4024,42 +4024,36 @@ final class SidebarTilesWindowTests: ShortcutRoutingTestSupport {
         let second = try XCTUnwrap(app.mainWindow(for: secondId))
         let a = try XCTUnwrap(app.sidebarState(for: first))
         let b = try XCTUnwrap(app.sidebarState(for: second))
-        a.persistedWidth = 238
-        XCTAssertFalse(a.isDoubleWide)
-        XCTAssertFalse(b.isDoubleWide)
-        a.toggleDoubleWide()
-        XCTAssertTrue(a.isDoubleWide)
-        XCTAssertFalse(b.isDoubleWide)
-        XCTAssertEqual(a.persistedWidth, 400)
+        first.setContentSize(NSSize(width: 1600, height: 900))
+        second.setContentSize(NSSize(width: 1600, height: 900))
         let manager = try XCTUnwrap(app.workspaceManagerFor(windowId: firstId))
+        let otherManager = try XCTUnwrap(app.workspaceManagerFor(windowId: secondId))
         let selected = manager.selectedWorkspaceId
         let key = NSApp.keyWindow
-        let oracle = try XCTUnwrap(app.sidebarLayout(for: manager))
-        XCTAssertEqual(oracle["double_wide"] as? Bool, true)
-        XCTAssertEqual(oracle["window_id"] as? String, firstId.uuidString)
+        for (width, tiles, columns) in [(323.0, false, 1), (324, true, 2), (486, true, 3), (220, false, 1)] {
+            a.persistedWidth = CGFloat(width)
+            let oracle = try XCTUnwrap(app.sidebarLayout(for: manager))
+            XCTAssertEqual(oracle["double_wide"] as? Bool, tiles, "width \(width)")
+            XCTAssertEqual(oracle["columns"] as? Int, columns, "width \(width)")
+            XCTAssertEqual(oracle["window_id"] as? String, firstId.uuidString)
+        }
+        a.persistedWidth = 400
+        b.persistedWidth = 200
+        XCTAssertEqual(try XCTUnwrap(app.sidebarLayout(for: manager))["double_wide"] as? Bool, true)
+        XCTAssertEqual(try XCTUnwrap(app.sidebarLayout(for: otherManager))["double_wide"] as? Bool, false)
         XCTAssertEqual(manager.selectedWorkspaceId, selected)
         XCTAssertTrue(NSApp.keyWindow === key)
-        a.resize(to: 200, initialWidth: 400)
-        XCTAssertTrue(a.isDoubleWide)
-        a.toggleDoubleWide()
-        XCTAssertFalse(a.isDoubleWide)
-        XCTAssertEqual(a.persistedWidth, 238)
-        XCTAssertEqual(b.persistedWidth, 200)
     }
 
     func testRestoredWindowUsesItsOwnSidebarSnapshot() throws {
         let app = try XCTUnwrap(AppDelegate.shared)
         let snapshot = SessionWindowSnapshot(frame: nil, display: nil,
             workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: []),
-            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 486,
-                                            doubleWide: true, singleWideWidth: 225))
+            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 486))
         let id = app.createMainWindow(sessionWindowSnapshot: snapshot)
         let state = try XCTUnwrap(app.sidebarState(for: app.mainWindow(for: id)))
-        XCTAssertTrue(state.isDoubleWide)
         XCTAssertEqual(state.persistedWidth, 486)
-        state.toggleDoubleWide()
-        XCTAssertEqual(state.persistedWidth, 225)
         let fresh = app.createMainWindow()
-        XCTAssertFalse(try XCTUnwrap(app.sidebarState(for: app.mainWindow(for: fresh))).isDoubleWide)
+        XCTAssertEqual(try XCTUnwrap(app.sidebarState(for: app.mainWindow(for: fresh))).persistedWidth, 200)
     }
 }

@@ -666,7 +666,7 @@ c11 log [--level <level>] [--source <name>] [--workspace <id|ref>] <message>
 c11 list-log [--limit <n>] [--workspace <id|ref>]
 c11 clear-log [--workspace <id|ref>]
 c11 sidebar-state [--workspace <id|ref>]
-c11 sidebar-state --json --workspace <id|ref>  # layout: window_id, double_wide, requested_width, effective_width, columns
+c11 sidebar-state --json --workspace <id|ref>  # layout: window_id, double_wide (Tiles, derived from effective_width), requested_width, effective_width, columns
 ```
 
 These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies the caller's workspace when `--workspace` is omitted; from a bare shell or cron, pass `--workspace`. Every command above fails without a target; global `--window` alone is not a workspace target. They never read or change the operator's selected workspace.

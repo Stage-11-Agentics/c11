@@ -18,10 +18,10 @@ final class SidebarWidthPolicyTests: XCTestCase {
 }
 
 final class TitlebarTitleReserveTests: XCTestCase {
-    func testEveryStyleClearsSixControlsAtNarrowSidebarWidths() {
+    func testEveryStyleClearsFiveControlsAndTheirBackdropAtNarrowSidebarWidths() {
         let cases: [(TitlebarControlsStyle, CGFloat)] = [
-            (.classic, 298), (.compact, 254), (.roomy, 342),
-            (.pillGroup, 296), (.softButtons, 300)
+            (.classic, 276), (.compact, 240), (.roomy, 312),
+            (.pillGroup, 268), (.softButtons, 278)
         ]
         for (style, expectedTitleOrigin) in cases {
             for width: CGFloat in [180, 200] {
@@ -30,6 +30,26 @@ final class TitlebarTitleReserveTests: XCTestCase {
                 XCTAssertEqual(width + padding, expectedTitleOrigin, accuracy: 0.001,
                                "\(style) at sidebar width \(width)")
             }
+        }
+    }
+
+    func testReserveIncludesTheBackdropPadding() {
+        let backdrop = TitlebarControlsStyleConfig.backdropInsets
+        XCTAssertGreaterThan(backdrop.leading, 0)
+        XCTAssertGreaterThan(backdrop.trailing, 0)
+        for style in TitlebarControlsStyle.allCases {
+            let config = style.config
+            // The painted backdrop is the padded content, so its insets are the group padding.
+            XCTAssertEqual(config.groupPadding.leading, backdrop.leading, "\(style)")
+            XCTAssertEqual(config.groupPadding.trailing, backdrop.trailing, "\(style)")
+            let controls = 5 * config.buttonSize + 4 * config.spacing
+            XCTAssertEqual(config.titlebarRowWidth, controls + backdrop.leading + backdrop.trailing,
+                           accuracy: 0.001, "\(style)")
+            let reserved = 180 + config.titleLeadingPadding(sidebarWidth: 180,
+                sidebarVisible: true, isFullScreen: false)
+            let backdropRightEdge = TitlebarControlsStyleConfig.trafficLightInset
+                + TitlebarControlsStyleConfig.leadingPadding + controls + backdrop.leading + backdrop.trailing
+            XCTAssertGreaterThanOrEqual(reserved, backdropRightEdge, "\(style)")
         }
     }
 
@@ -48,8 +68,8 @@ final class TitlebarTitleReserveTests: XCTestCase {
     func testHiddenSidebarClearsTheFullAccessoryClickAreaAndHintOffset() {
         let config = TitlebarControlsStyle.classic.config
         XCTAssertEqual(config.titleLeadingPadding(sidebarWidth: 200,
-            sidebarVisible: false, isFullScreen: false), 298)
-        for (offset, expected): (Double, CGFloat) in [(-100, 294), (0, 294), (4, 298), (20, 314), (100, 314)] {
+            sidebarVisible: false, isFullScreen: false), 276)
+        for (offset, expected): (Double, CGFloat) in [(-100, 272), (0, 272), (4, 276), (20, 292), (100, 292)] {
             XCTAssertEqual(config.titleLeadingPadding(sidebarWidth: 200,
                 sidebarVisible: false, isFullScreen: false, hintXOffset: offset), expected)
         }
@@ -66,38 +86,29 @@ final class TitlebarTitleReserveTests: XCTestCase {
 }
 
 final class TitlebarControlContrastTests: XCTestCase {
-    func testHistoryUsesTheCustomTitlebarForegroundBeyondNarrowSidebars() {
-        for style in [TitlebarControlsStyle.classic, .roomy] {
-            for width: CGFloat in [180, 200] {
-                for index in [4, 5] {
-                    for foreground in [Color.white.opacity(0.82), Color.black.opacity(0.78)] {
-                        XCTAssertEqual(style.config.controlForeground(index: index,
-                            sidebarWidth: width, sidebarVisible: true, nativeAccessory: true,
-                            customTitlebarForeground: foreground), foreground)
-                    }
-                }
+    func testControlsOnTheBackdropUseTheTitlebarForeground() {
+        for style in TitlebarControlsStyle.allCases where style != .softButtons {
+            for foreground in [Color.white.opacity(0.82), Color.black.opacity(0.78)] {
+                XCTAssertEqual(style.config.controlForeground(customTitlebarForeground: foreground), foreground)
             }
         }
-    }
-
-    func testHiddenSidebarUsesTheCustomTitlebarForEveryControl() {
-        for index in 0..<6 {
-            XCTAssertEqual(TitlebarControlsStyle.classic.config.controlForeground(index: index,
-                sidebarWidth: 200, sidebarVisible: false, nativeAccessory: true,
-                customTitlebarForeground: .red), .red)
-        }
-    }
-
-    func testControlsOverSidebarAndOtherSurfacesKeepPrimary() {
-        let classic = TitlebarControlsStyle.classic.config
-        XCTAssertEqual(classic.controlForeground(index: 0, sidebarWidth: 180,
-            sidebarVisible: true, nativeAccessory: true, customTitlebarForeground: .red), .primary)
-        XCTAssertEqual(classic.controlForeground(index: 5, sidebarWidth: 400,
-            sidebarVisible: true, nativeAccessory: true, customTitlebarForeground: .red), .primary)
-        XCTAssertEqual(classic.controlForeground(index: 5, sidebarWidth: 180,
-            sidebarVisible: true, nativeAccessory: false, customTitlebarForeground: .red), .primary)
-        XCTAssertEqual(TitlebarControlsStyle.softButtons.config.controlForeground(index: 5,
-            sidebarWidth: 180, sidebarVisible: false, nativeAccessory: true,
+        XCTAssertEqual(TitlebarControlsStyle.softButtons.config.controlForeground(
             customTitlebarForeground: .red), .primary)
+    }
+
+    func testBackdropIsOpaqueAndDistinctFromLightAndDarkTitlebars() throws {
+        let dark = NSColor(srgbRed: 0.07, green: 0.08, blue: 0.10, alpha: 0.85)
+        let light = NSColor(srgbRed: 0.96, green: 0.96, blue: 0.95, alpha: 1)
+        for (background, isDark) in [(dark, true), (light, false)] {
+            let colors = TitlebarControlsColors(titlebarBackground: background)
+            let backdrop = try XCTUnwrap(colors.backdropNSColor.usingColorSpace(.sRGB))
+            XCTAssertEqual(backdrop.alphaComponent, 1, accuracy: 0.001)
+            let delta = backdrop.luminance - background.luminance
+            // Moved toward the foreground: lighter on dark titlebars, darker on light ones.
+            XCTAssertGreaterThan(isDark ? delta : -delta, 0.05, "\(background)")
+            XCTAssertEqual(colors.foreground, isDark ? Color.white.opacity(0.82) : Color.black.opacity(0.78))
+            // Icons keep contrast: the backdrop stays on the background's side of mid-gray.
+            XCTAssertEqual(backdrop.isLightColor, !isDark)
+        }
     }
 }

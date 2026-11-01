@@ -3968,8 +3968,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
 #endif
         context.workspaceManager.restoreSessionSnapshot(snapshot.workspaceManager)
-        context.sidebarState.isDoubleWide = snapshot.sidebar.doubleWide ?? false
-        context.sidebarState.singleWideWidth = CGFloat(SessionPersistencePolicy.sanitizedSidebarWidth(snapshot.sidebar.singleWideWidth))
         context.sidebarState.isVisible = snapshot.sidebar.isVisible
         context.sidebarState.persistedWidth = CGFloat(
             SessionPersistencePolicy.sanitizedSidebarWidth(snapshot.sidebar.width)
@@ -4475,8 +4473,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             hasher.combine(context.windowId)
             hasher.combine(context.workspaceManager.sessionAutosaveFingerprint())
             hasher.combine(context.sidebarState.isVisible)
-            hasher.combine(context.sidebarState.isDoubleWide)
-            hasher.combine(Double(context.sidebarState.singleWideWidth))
             hasher.combine(
                 Int(SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth)).rounded())
             )
@@ -5090,9 +5086,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     sidebar: SessionSidebarSnapshot(
                         isVisible: context.sidebarState.isVisible,
                         selection: SessionSidebarSelection(selection: context.sidebarSelectionState.selection),
-                        width: SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth)),
-                        doubleWide: context.sidebarState.isDoubleWide,
-                        singleWideWidth: Double(context.sidebarState.singleWideWidth)
+                        width: SessionPersistencePolicy.sanitizedSidebarWidth(Double(context.sidebarState.persistedWidth))
                     )
                 )
             }
@@ -7220,9 +7214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let width = SidebarLayoutPolicy.effectiveWidth(Double(state.persistedWidth),
             windowWidth: Double(window.contentView?.bounds.width ?? window.contentLayoutRect.width))
         let scale = ChromeScaleTokens.resolved().multiplier
-        return ["window_id": context.windowId.uuidString, "double_wide": state.isDoubleWide,
+        let tiles = SidebarLayoutPolicy.showsTiles(width: width, scale: Double(scale))
+        return ["window_id": context.windowId.uuidString, "double_wide": tiles,
                 "requested_width": Double(state.persistedWidth), "effective_width": width,
-                "columns": state.isDoubleWide ? SidebarLayoutPolicy.columns(width: width, scale: Double(scale)) : 1]
+                "columns": tiles ? SidebarLayoutPolicy.columns(width: width, scale: Double(scale)) : 1]
     }
 
     func sidebarVisibility(windowId: UUID) -> Bool? {
@@ -7768,9 +7763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ?? SessionPersistencePolicy.defaultSidebarWidth
         let sidebarState = SidebarState(
             isVisible: sessionWindowSnapshot?.sidebar.isVisible ?? true,
-            persistedWidth: CGFloat(sidebarWidth),
-            isDoubleWide: sessionWindowSnapshot?.sidebar.doubleWide ?? false,
-            singleWideWidth: sessionWindowSnapshot?.sidebar.singleWideWidth.map { CGFloat($0) }
+            persistedWidth: CGFloat(sidebarWidth)
         )
         let sidebarSelectionState = SidebarSelectionState(
             selection: sessionWindowSnapshot?.sidebar.selection.sidebarSelection ?? .tabs

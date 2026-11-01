@@ -7,13 +7,10 @@ enum SessionSnapshotSchema {
 }
 
 /// Operator-owned sidebar geometry. Window clamping never overwrites the
-/// requested Tiles width, so widening a window restores its columns.
+/// requested width, so widening a window restores its columns. Width alone
+/// picks the layout: Tiles whenever two tile columns fit, cards otherwise.
 enum SidebarLayoutPolicy {
-    struct State: Equatable {
-        var doubleWide: Bool = false
-        var width: Double = 200
-        var singleWideWidth: Double = 200
-    }
+    static let tileColumnWidth: Double = 162
 
     static func effectiveWidth(_ requested: Double, windowWidth: Double) -> Double {
         let available = windowWidth.isFinite && windowWidth > 0 ? windowWidth : 1800
@@ -25,25 +22,13 @@ enum SidebarLayoutPolicy {
     static func columns(width: Double, scale: Double = 1) -> Int {
         let scale = scale.isFinite && scale > 0 ? scale : 1
         let width = width.isFinite ? max(0, min(width, 600)) : 200
-        return max(1, Int(floor(width / (162 * scale))))
+        return max(1, Int(floor(width / (tileColumnWidth * scale))))
     }
 
-    static func toggled(_ state: State) -> State {
-        if state.doubleWide {
-            return State(width: SessionPersistencePolicy.sanitizedSidebarWidth(state.singleWideWidth),
-                         singleWideWidth: SessionPersistencePolicy.sanitizedSidebarWidth(state.singleWideWidth))
-        }
-        return State(doubleWide: true, width: 400,
-                     singleWideWidth: SessionPersistencePolicy.sanitizedSidebarWidth(state.width))
-    }
-
-    static func dragged(_ state: State, width: Double, initialWidth: Double) -> State {
-        let width = SessionPersistencePolicy.sanitizedSidebarWidth(width)
-        let crossesThreshold = initialWidth < 300 && width >= 300
-        return State(doubleWide: state.doubleWide || crossesThreshold, width: width,
-                     singleWideWidth: !state.doubleWide && crossesThreshold
-                        ? SessionPersistencePolicy.sanitizedSidebarWidth(initialWidth)
-                        : state.singleWideWidth)
+    /// Tiles (the two-column sidebar) at or above the width where two
+    /// columns fit at this chrome scale: 324 pt at the standard scale.
+    static func showsTiles(width: Double, scale: Double = 1) -> Bool {
+        columns(width: width, scale: scale) >= 2
     }
 }
 
@@ -332,8 +317,6 @@ struct SessionSidebarSnapshot: Codable, Sendable {
     var isVisible: Bool
     var selection: SessionSidebarSelection
     var width: Double?
-    var doubleWide: Bool? = nil
-    var singleWideWidth: Double? = nil
 }
 
 struct SessionStatusEntrySnapshot: Codable, Sendable {

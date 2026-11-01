@@ -17,6 +17,7 @@ OUT = Path('/Volumes/My Shared Files/out/external-url-compat')
 outside.OUT = outside.native.OUT = OUT
 
 DOCK_ITEMS = r'''
+ObjC.import('AppKit');
 function run(args) {
     var dock = Application('System Events').processes.byName('Dock');
     function attr(e, name) { try { return e.attributes.byName(name).value(); } catch (_) { return null; } }
@@ -24,7 +25,12 @@ function run(args) {
         return {title: attr(e, 'AXTitle'), url: String(attr(e, 'AXURL') || ''),
                 position: attr(e, 'AXPosition'), size: attr(e, 'AXSize')};
     });
-    return JSON.stringify(items);
+    var apps = $.NSWorkspace.sharedWorkspace.runningApplications, running = [];
+    for (var i = 0; i < Number(apps.count); ++i) {
+        var app = apps.objectAtIndex(i), url = app.bundleURL;
+        if (!url.isNil()) running.push({pid: Number(app.processIdentifier), path: ObjC.unwrap(url.path)});
+    }
+    return JSON.stringify({items: items, running: running});
 }
 '''
 
@@ -83,14 +89,21 @@ class Compatibility(outside.Proof):
         self.wait(lambda: self.ui('foreground') != self.pid, 'native Cmd+H hides c11')
         self.safari_foreground()
         try:
-            items = json.loads(self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', DOCK_ITEMS], text=True).stdout)
+            inventory = json.loads(self.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', DOCK_ITEMS], text=True).stdout)
         except subprocess.CalledProcessError as error:
             self.report['dock_lookup_error'] = dict(stdout=error.stdout, stderr=error.stderr)
             raise
-        self.report['dock_items'] = items
-        matches = [item for item in items if unquote(urlparse(item['url']).path).rstrip('/') == str(self.app)]
-        assert len(matches) == 1, ('Exact guest app Dock item missing or ambiguous', items)
+        self.report['dock_inventory'] = inventory
+        # System Events exposes no Dock AXURL values in the guest. Bind the
+        # unique observed title to the unique running bundle with this name,
+        # then verify its full path and PID before posting native input.
+        running = [app for app in inventory['running'] if Path(app['path']).name == self.app.name]
+        assert running == [dict(pid=self.pid, path=str(self.app))], running
+        matches = [item for item in inventory['items'] if item['title'] == self.app.stem]
+        assert len(matches) == 1, ('Exact guest app Dock item missing or ambiguous', inventory)
         item = matches[0]
+        if item['url']:
+            assert unquote(urlparse(item['url']).path).rstrip('/') == str(self.app), item
         x,y = item['position']; w,h = item['size']
         self.confirmation_mouse(int(x+w/2), int(y+h/2))
         self.wait(lambda: self.ui('foreground') == self.pid, 'real Dock click reopens exact app')

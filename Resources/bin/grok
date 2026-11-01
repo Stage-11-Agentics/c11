@@ -228,13 +228,21 @@ grok_reap_leader() {
     fi
     /bin/rm -f "$sock" "$lock" >/dev/null 2>&1 || true
 }
+# The leader socket lives in the per-user temp directory. A socket path is
+# limited to 104 bytes (Grok may add `.daemon` beside it), so an unusually
+# long TMPDIR falls back to /tmp.
+grok_leader_dir="${TMPDIR:-/tmp}"
+grok_leader_dir="${grok_leader_dir%/}"
+if (( ${#grok_leader_dir} > 64 )) || [[ ! -d "$grok_leader_dir" || ! -w "$grok_leader_dir" ]]; then
+    grok_leader_dir=/tmp
+fi
 # A wrapper whose watcher died with its panel leaves a leader behind. Reap
 # every c11 leader whose Grok is gone.
 grok_reap_stale_leaders() {
     local sock owner
-    for sock in /tmp/c11-grok-leader-*.sock; do
+    for sock in "$grok_leader_dir"/c11-grok-leader-*.sock; do
         [[ -e "$sock" ]] || continue
-        owner="${sock#/tmp/c11-grok-leader-}"
+        owner="${sock#"$grok_leader_dir"/c11-grok-leader-}"
         owner="${owner%.sock}"
         [[ "$owner" =~ ^[0-9]+$ ]] || continue
         /bin/kill -0 "$owner" >/dev/null 2>&1 && continue
@@ -286,7 +294,7 @@ if [[ -n "$grok_off" && -n "$c11_bin" ]]; then
 fi
 leader_args=()
 if [[ "$grok_native" == "1" ]]; then
-    leader_socket="/tmp/c11-grok-leader-$$.sock"
+    leader_socket="$grok_leader_dir/c11-grok-leader-$$.sock"
     leader_args=(--leader --leader-socket "$leader_socket")
     wrapped_pid="$$"
     ( grok_reap_stale_leaders ) >/dev/null 2>&1 &
@@ -297,7 +305,11 @@ if [[ "$grok_native" == "1" ]]; then
             --leader-socket "$leader_socket" --session-id "$capture_id" \
             --grok "$REAL_GROK" --registry "${GROK_HOME:-$HOME/.grok}/active_sessions.json" \
             </dev/null >/dev/null 2>&1
-        [[ $? == 3 ]] && grok_native_state off:no_socket
+        case $? in
+            3) grok_native_state off:no_socket ;;
+            4) grok_native_state off:client_failed ;;
+            5) grok_native_state off:subscribe_refused ;;
+        esac
     ) </dev/null >/dev/null 2>&1 &
     disown 2>/dev/null || true
     (

@@ -338,11 +338,13 @@ enum GrokMailboxCommand {
     static let confirmWindow: TimeInterval = 1.8
     static let lateWindow: TimeInterval = 10
 
-    static func run(binding: Binding, descriptor: Int32) throws {
+    enum Outcome { case ended, clientFailed, subscribeRefused }
+
+    static func run(binding: Binding, descriptor: Int32) throws -> Outcome {
         signal(SIGPIPE, SIG_IGN)
         var client = readyClient(binding)
         defer { client?.terminate() }
-        guard client != nil else { return }
+        guard client != nil else { return .clientFailed }
         let stream = try ClaudeMailboxStream(descriptor: descriptor)
         let requestID = UUID().uuidString
         try stream.write([
@@ -351,7 +353,7 @@ enum GrokMailboxCommand {
                        "route": "grok_leader", "session_id": UUID().uuidString, "can_queue": false]
         ], deadline: uptime + 1)
         guard let reply = try stream.read(deadline: uptime + 1),
-              reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
+              reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return .subscribeRefused }
 
         var late: (deliveryID: String, until: TimeInterval)?
         while binding.isAlive {
@@ -410,8 +412,9 @@ enum GrokMailboxCommand {
                 late = (deliveryID, uptime + lateWindow)
                 return true
             }
-            if !shouldContinue { return }
+            if !shouldContinue { return .ended }
         }
+        return .ended
     }
 
     /// One ACP client stays connected for the sidecar's life, so a delivery is

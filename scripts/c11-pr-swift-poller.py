@@ -82,6 +82,17 @@ PACKAGE_RESOLVED = (
 )
 DERIVED_KEEP = 3
 STALE_MODULE = "has been modified since the module file"
+# A quick link or CodeSign failure is a stale DerivedData shape, not the PR.
+STALE_CACHE_S = 60
+STALE_CACHE_MARKERS = (
+    ("Undefined symbols for architecture", "link"),
+    ("symbol(s) not found for architecture", "link"),
+    ("Command CodeSign failed", "codesign"),
+)
+SUMMARY_TIMEOUT_S = 120
+TIMING_TIMEOUT_S = 30
+SUMMARY_RETRY_S = 5
+GUEST_WAIT_S = 600
 DISARMED_SLEEP_S = 3600
 TERMINAL_STATES = frozenset(("success", "failure"))
 KNOWN_STAGES = frozenset(("plist_installed", "app_installed", "key_placed", "gh_configured"))
@@ -113,6 +124,10 @@ class QuarantineUnreadable(Exception):
 
 class ScopeStop(Exception):
     pass
+
+
+class LookupUnavailable(Exception):
+    """A PR lookup that returned neither the PR nor a definitive 404."""
 
 
 class CredentialUnavailable(Exception):
@@ -332,7 +347,7 @@ def revalidate(captured, fetch_pr, ls_remote):
     except CredentialUnavailable:
         return False, CREDENTIAL_UNAVAILABLE, None
     except Exception as error:
-        return False, "revoked", str(error)
+        return False, "revoked", "lookup_failed: %s" % str(error)[:200]
     if body is None:
         return False, "revoked", "missing"
     ok, reason, fresh = admit(body)
@@ -597,15 +612,53 @@ def build_env():
 
 def xcresult_summary(result_path):
     """Read XCTest's result bundle summary; parallel xcodebuild logs omit totals."""
-    return xcresult_report(result_path, ["test-results", "summary"])
+    return xcresult_report(result_path, ["test-results", "summary"], timeout=SUMMARY_TIMEOUT_S)
 
 
-def xcresult_report(result_path, command):
+def read_summary(read, sleep):
+    """One retry for an unreadable result bundle. Returns (summary, reason).
+
+    Under load xcresulttool can time out or exit nonzero on a complete bundle,
+    so an unreadable summary is never a test verdict: the caller posts error.
+    """
+    reason = None
+    for attempt in (1, 2):
+        try:
+            return read(), None
+        except subprocess.TimeoutExpired as error:
+            reason = "xcresulttool timed out after %ss" % int(error.timeout or 0)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            reason = str(error)[:80] or type(error).__name__
+        if attempt == 1:
+            sleep(SUMMARY_RETRY_S)
+    return None, reason
+
+
+def stale_cache_signature(log_text):
+    """"link" or "codesign" when a failed build log has a stale-cache shape, else None."""
+    text = log_text or ""
+    for marker, kind in STALE_CACHE_MARKERS:
+        if marker in text:
+            return kind
+    failed = text.rsplit("The following build commands failed:", 1)
+    if len(failed) == 2:
+        for line in failed[1].splitlines()[1:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("("):
+                break
+            if stripped.startswith("CodeSign "):
+                return "codesign"
+            if stripped.startswith("Ld "):
+                return "link"
+    return None
+
+
+def xcresult_report(result_path, command, timeout=TIMING_TIMEOUT_S):
     tool = os.environ.get("C11_POLLER_XCRUN") or "xcrun"
     result = subprocess.run(
         [tool, "xcresulttool", "get", *command,
          "--path", str(result_path), "--compact"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=timeout,
     )
     if result.returncode != 0:
         raise ValueError("xcresulttool exited %s" % result.returncode)
@@ -660,9 +713,11 @@ def xcresult_passes(report):
     )
 
 
-def classify_result(build_seconds, summary):
+def classify_result(build_seconds, summary, unreadable=None):
     seconds = int(build_seconds)
     if type(summary) is not dict:
+        if unreadable:
+            return "error", ("result unreadable: %s" % unreadable)[:120] + " %ss" % seconds
         return "error", "result unavailable %ss" % seconds
     if summary.get("result") == "Failed":
         return "failure", "failed %ss" % seconds
@@ -1511,6 +1566,10 @@ class Supervisor:
         self.awaiting_kit = {}
         self.status_owed = {}
         self.derived = self.root / "cache" / "DerivedData"
+        self.summary_unreadable = None
+        self.guest_wait_since = None
+        self.guest_wait_logged = False
+        self.revoked_detail = None
 
     def state(self):
         path = self.root / "state"
@@ -1756,6 +1815,10 @@ class Supervisor:
                 self.log(decision=CREDENTIAL_UNAVAILABLE, pr=item["pr"], sha=item["sha"])
                 kept.append(item)
                 continue
+            except LookupUnavailable as error:
+                self.log(decision="lookup-unavailable", pr=item["pr"], sha=item["sha"], reason=str(error)[:200])
+                kept.append(item)
+                continue
             if looked is None or (type(looked) is dict and looked.get("status") == 404):
                 self.log(decision="revoked", pr=item["pr"], reason="absent")
                 continue
@@ -1834,7 +1897,7 @@ class Supervisor:
             return "stuck"
         if not self.queue:
             return "idle"
-        guests = bool(self.world.guests())
+        guests = self._guest_blocks_features(self.world.guests())
         if guests and not any(release_head(item) for item in self.queue):
             self.log(decision="no-start", reason="guest")
             return "no-start"
@@ -1861,10 +1924,32 @@ class Supervisor:
             self._rotate(item)
             return "residue"
         item["deps"] = self._dependency_key(item)
-        if (not release_head(item) and self.world.guests()) or self.world.slot_held(1):
+        if (not release_head(item) and self._guest_blocks_features(self.world.guests())) or self.world.slot_held(1):
             self.log(decision="no-start", reason="raced")
             return "no-start"
         return self._spawn(item)
+
+    def _guest_blocks_features(self, guests):
+        """True while a running guest should hold feature heads, at most GUEST_WAIT_S.
+
+        One clock starts when a guest is first seen holding feature work and clears
+        on any check that sees no guest. Once it is GUEST_WAIT_S old, feature heads
+        start and run as if no guest were present until the guests are gone.
+        """
+        if not guests:
+            self.guest_wait_since = None
+            self.guest_wait_logged = False
+            return False
+        now = self.world.monotonic()
+        if self.guest_wait_since is None:
+            self.guest_wait_since = now
+        waited = now - self.guest_wait_since
+        if waited < GUEST_WAIT_S:
+            return True
+        if not self.guest_wait_logged:
+            self.guest_wait_logged = True
+            self.log(decision="guest-wait-expired", waited_seconds=round(waited, 3), guests=list(guests)[:5])
+        return False
 
     def _reuse_release(self, item):
         if not release_head(item):
@@ -2015,12 +2100,14 @@ class Supervisor:
         self.stopped = None
         self.delivered = False
         self.test_summary = None
+        self.summary_unreadable = None
         self.phase_timings = []
         self._drop(item)
         if not item.get("deps"):
             item["deps"] = self._dependency_key(item)
         self.derived = self._derived_data(item["deps"])
         for invocation in (1, 2):
+            invocation_start = self.world.time()
             code = self._spawn_one(item, invocation)
             self.build_end = self.world.time()
             self._note_acquired()
@@ -2039,12 +2126,14 @@ class Supervisor:
                 self.log(decision="xcresult-timing-unavailable", pr=item["pr"], sha=item["sha"],
                          invocation=invocation, reason=str(error))
             if self.world.last_exit == 0:
-                try:
-                    self.test_summary = self.world.test_summary()
-                except (OSError, ValueError, subprocess.SubprocessError) as error:
-                    self.test_summary = None
-                    self.log(decision="xcresult-summary-unavailable", pr=item["pr"], sha=item["sha"],
-                             invocation=invocation, reason=str(error))
+                def read():
+                    try:
+                        return self.world.test_summary()
+                    except (OSError, ValueError, subprocess.SubprocessError) as error:
+                        self.log(decision="xcresult-summary-unavailable", pr=item["pr"], sha=item["sha"],
+                                 invocation=invocation, reason=str(error)[:200])
+                        raise
+                self.test_summary, self.summary_unreadable = read_summary(read, self.world.sleep)
                 if xcresult_passes(self.test_summary):
                     self._mark_dependency_warm(item["deps"])
                 elif self.test_summary is not None:
@@ -2054,24 +2143,47 @@ class Supervisor:
                 break
             self.test_summary = None
             self.phase_timings.append(timings)
-            if STALE_MODULE in (self.world.build_log or ""):
+            build_log = self.world.build_log or ""
+            if STALE_MODULE in build_log:
                 return self._cache_fault(item, invocation)
+            if invocation == 1:
+                start = self.acquired_at if self.acquired_at is not None else invocation_start
+                elapsed = max(0.0, self.build_end - start)
+                kind = stale_cache_signature(build_log)
+                if kind and elapsed < STALE_CACHE_S:
+                    self.log(decision="stale-cache", pr=item["pr"], sha=item["sha"], deps=item["deps"],
+                             kind=kind, seconds=round(elapsed, 3))
+                    if not self._wipe_derived(item["deps"]):
+                        return self._cache_fault(item, invocation, "cache: stale, wipe failed")
         self._finish(item, self.world.last_exit)
         return "started"
 
-    def _cache_fault(self, item, invocation):
+    def _wipe_derived(self, key):
+        """Empty this dependency key's DerivedData so the second invocation builds clean."""
+        (self.state() / "warmed-dependencies" / key).unlink(missing_ok=True)
+        try:
+            if self.derived.exists():
+                shutil.rmtree(self.derived)
+            self.derived.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            self.log(decision="cache-wipe-failed", deps=key, error=str(error)[:200])
+            return False
+        self.log(decision="cache-wiped", deps=key, entry=self.derived.name)
+        return True
+
+    def _cache_fault(self, item, invocation, description="cache: stale module"):
         """A stale precompiled module is the cache's fault: error, never failure, no rebuild.
 
         The head counts as reported once the error POST is accepted. Until then it
         is a status-only debt: each cycle retries the POST and never reruns the build.
         """
         self.log(decision="cache-fault", pr=item["pr"], sha=item["sha"], deps=item["deps"], invocation=invocation)
-        self.delivered = self._post(item["sha"], "error", "cache: stale module", pr=item["pr"], deps=item["deps"])
+        self.delivered = self._post(item["sha"], "error", description, pr=item["pr"], deps=item["deps"])
         if self.delivered:
             self.reported[item["pr"]] = item["sha"]
         else:
             self.status_owed[(item["pr"], item["sha"])] = {
-                "state": "error", "description": "cache: stale module", "deps": item["deps"],
+                "state": "error", "description": description, "deps": item["deps"],
             }
         return "cache-fault"
 
@@ -2139,7 +2251,7 @@ class Supervisor:
 
     def _finish(self, item, exit_code):
         seconds = self.build_seconds()
-        state, description = classify_result(seconds, self.test_summary)
+        state, description = classify_result(seconds, self.test_summary, self.summary_unreadable)
         if exit_code != 0:
             state, description = "failure", "failed %ss" % int(seconds)
         timings = {}
@@ -2219,9 +2331,18 @@ class Supervisor:
             if reason == CREDENTIAL_UNAVAILABLE:
                 # Unknown, not revoked: keep the build and check again next tick.
                 self.log(decision=CREDENTIAL_UNAVAILABLE, pr=record["pr"], sha=record["sha"], during="watch")
+            elif reason == "revoked" and (str(_detail).startswith("lookup_failed") or _detail == "ls_remote"):
+                # A failed lookup is unknown too, never proof the PR closed.
+                self.log(decision="revalidate-unknown", pr=record["pr"], sha=record["sha"],
+                         detail=str(_detail)[:200], during="watch")
             elif not ok:
+                if reason == "revoked":
+                    self.revoked_detail = _detail
                 return reason
-        return None if release_head(record) else yield_reason(self.world.guests())
+        if release_head(record):
+            return None
+        guests = self.world.guests()
+        return yield_reason(guests) if self._guest_blocks_features(guests) else None
 
     def watch(self, record):
         """Every 5s while a build runs. Revalidate, then kill until the group is gone."""
@@ -2238,8 +2359,10 @@ class Supervisor:
             self.delivered = self._post(sha, "failure", "superseded", pr=record.get("pr"))
             self.log(decision="superseded", pr=record.get("pr"), sha=sha)
         elif reason == "revoked":
-            self.delivered = self._post(sha, "failure", "revoked", pr=record.get("pr"))
-            self.log(decision="revoked", pr=record.get("pr"), sha=sha)
+            # The PR merged, closed or left scope: nothing about this head failed.
+            self.delivered = False
+            self.log(decision="revoked", pr=record.get("pr"), sha=sha, during="watch",
+                     detail=str(self.revoked_detail)[:200], posted=None)
         else:
             self.delivered = self._post(sha, "failure", reason, pr=record.get("pr"))
             self.log(decision=reason, pr=record.get("pr"), sha=sha)
@@ -2483,8 +2606,11 @@ class ProductionWorld:
     def pull(self, number):
         response = self.client.pull(number)
         raise_if_unavailable(response)
-        if response.get("status") != 200:
+        status = response.get("status") if type(response) is dict else None
+        if status == 404:
             return None
+        if status != 200:
+            raise LookupUnavailable("pull %s returned %s" % (number, status))
         return response.get("body")
 
     def main_statuses(self, sha):

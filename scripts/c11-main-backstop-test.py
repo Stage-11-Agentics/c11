@@ -142,6 +142,62 @@ p.mkdir()
                 self.assertEqual(len(stages), 10)
                 self.assertEqual({r["stage"] for r in stages if r["summary"]}, {"logic", "host"})
 
+    def gate_env(self):
+        return patch.dict(os.environ, {"C11_ATLAS_BUILD_SLOT": "1", "C11_BUILD_LOCK_DIR": str(self.root / "lock")})
+
+    def test_quick_link_or_codesign_failure_rebuilds_once_from_a_clean_cache(self):
+        for label, failures, log, expected, builds in (
+                ("link-heals", 1, "Undefined symbols for architecture arm64:", "success", 2),
+                ("codesign-twice", 2, "The following build commands failed:\n\tCodeSign /x/c11Tests.xctest (in target 'c11Tests')\n(1 failure)", "failure", 2),
+                ("ordinary-failure", 2, "error: cannot find 'x' in scope", "failure", 1)):
+            repo, _ = self.gate_fixture()
+            counter = self.root / (label + ".count")
+            fake = executable(repo / ("xcodebuild-" + label), """#!/usr/bin/env python3
+import pathlib, sys
+c = pathlib.Path(%r)
+n = int(c.read_text()) + 1 if c.exists() else 1
+c.write_text(str(n))
+if n <= %d:
+    print(%r)
+    sys.exit(65)
+""" % (str(counter), failures, log))
+            attempt = self.root / label
+            attempt.mkdir()
+            key = m.poller.dependency_key(["", ""], [SHA, SHA])
+            stale = self.root / "cache" / ("DerivedData-" + key) / "Build" / "stale.o"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("old")
+            with self.gate_env(), patch.object(m, "git", return_value=SHA), patch.object(m.poller, "XCODEBUILD", str(fake)), \
+                 patch.object(m.poller, "xcresult_summary", side_effect=lambda p: m.read(p / "summary.json")):
+                state, _ = m.gate(self.root, repo, SHA, attempt)
+            self.assertEqual(state, expected, label)
+            self.assertEqual(int(counter.read_text()), builds, label)
+            events = [json.loads(line) for line in (self.root / "state/events.jsonl").read_text().splitlines()]
+            wiped = [e for e in events if e["event"] == "stale-cache" and e.get("deps") == key]
+            self.assertEqual(stale.exists(), builds == 1, label)
+            self.assertEqual(bool(wiped), builds == 2, label)
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            (self.root / "state/events.jsonl").unlink()
+
+    def test_unreadable_result_retries_once_then_errors_never_failure(self):
+        for label, failures, expected in (("reads-on-retry", 1, "success"), ("stays-unreadable", 2, "error")):
+            repo, fake = self.gate_fixture()
+            attempt = self.root / label
+            attempt.mkdir()
+            calls = []
+            def summary(path):
+                calls.append(path)
+                if len(calls) <= failures:
+                    raise subprocess.TimeoutExpired("xcresulttool", 120)
+                return m.read(path / "summary.json")
+            with self.gate_env(), patch.object(m, "git", return_value=SHA), patch.object(m.poller, "XCODEBUILD", str(fake)), \
+                 patch.object(m.poller, "SUMMARY_RETRY_S", 0), patch.object(m.poller, "xcresult_summary", side_effect=summary):
+                state, stages = m.gate(self.root, repo, SHA, attempt)
+            self.assertEqual(state, expected, label)
+            self.assertEqual(len(calls), 2 if failures == 2 else 3, label)
+            if expected == "error":
+                self.assertIn("timed out after 120s", stages[-1]["unreadable"])
+
     def cycle_fixture(self):
         slots = self.root / "slots"
         env = m.poller.build_env()

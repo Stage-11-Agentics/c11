@@ -52,7 +52,7 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
                         conn.settimeout(timeout_seconds)
                         pending = bytearray()
 
-                        def request():
+                        def read_line():
                             while b"\n" not in pending:
                                 data = conn.recv(4096)
                                 if not data:
@@ -60,11 +60,19 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
                                 pending.extend(data)
                             line, _, rest = pending.partition(b"\n")
                             pending[:] = rest
+                            return line
+
+                        def request():
+                            line = read_line()
                             record.setdefault("request_received", time.monotonic())
                             value = json.loads(line)
                             record["requests"].append(value["method"])
                             return value
 
+                        # A known explicit password bypasses saved files and Keychain.
+                        # Authentication is setup; each handler still sees only JSON.
+                        assert read_line() == b"auth c11-fixture-only", "unexpected auth prelude"
+                        conn.sendall(b"OK\n")
                         handler(conn, request, record, stopped)
                         stopped.wait(timeout_seconds)
                 except Exception as exc:
@@ -73,11 +81,16 @@ def exchange(cli, handler, *, method="system.capabilities", deadline_ms=2000):
             worker = threading.Thread(target=serve, daemon=True)
             worker.start()
             env = fake_server_env(path)
+            home = Path(directory) / "home"
+            home.mkdir()
+            env.pop("CMUX_SOCKET_PASSWORD", None)
+            env.update(HOME=str(home), CFFIXED_USER_HOME=str(home),
+                       XDG_CONFIG_HOME=str(home / ".config"))
             env.update(C11_DEFAULT_SOCKET_DEADLINE_MS=str(deadline_ms),
                        CMUX_CLI_SENTRY_DISABLED="1", CMUX_CLAUDE_HOOK_SENTRY_DISABLED="1",
                        C11_QUIET_DISCOVERY="1")
             try:
-                result = subprocess.run([cli, "--socket", path, "rpc", method], env=env,
+                result = subprocess.run([cli, "--socket", path, "--password", "c11-fixture-only", "rpc", method], env=env,
                                         capture_output=True, timeout=timeout_seconds)
             finally:
                 stopped.set()

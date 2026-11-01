@@ -32,6 +32,13 @@ final class MailboxDispatchLog {
         }
     }
 
+    /// One diagnostic per native attempt, independent of its envelope count.
+    /// Called by the broker's failure worker; both log writes are asynchronous.
+    func recordNativeFailure(_ diagnostic: MailboxNativeDoorbell.FailureDiagnostic, workspaceID: UUID) {
+        append(.nativeUnconfirmed(diagnostic))
+        EventEmitter.shared.emitMailboxNativeUnconfirmed(workspace: workspaceID, diagnostic: diagnostic)
+    }
+
     /// Blocks until all previously-enqueued appends have completed.
     func flush() {
         queue.sync { }
@@ -40,6 +47,7 @@ final class MailboxDispatchLog {
     // MARK: - Event model
 
     enum Event {
+        case nativeUnconfirmed(MailboxNativeDoorbell.FailureDiagnostic)
         case received(id: String, from: String, to: String?, topic: String?)
         case resolved(id: String, recipients: [String])
         case copied(id: String, recipient: String)
@@ -160,6 +168,9 @@ final class MailboxDispatchLog {
             "ts": formatTimestamp(now),
         ]
         switch event {
+        case .nativeUnconfirmed(let diagnostic):
+            payload.merge(diagnostic.payload) { _, new in new }
+            payload["event"] = "native_unconfirmed"
         case .received(let id, let from, let to, let topic):
             payload["event"] = "received"
             payload["id"] = id

@@ -1,6 +1,6 @@
 # Release Local
 
-Ship a c11 production release through `scripts/release-local.sh`, the default release path (C11-542). `release.yml` is the manual GitHub fallback. The script mirrors `.github/workflows/release.yml` step for step: the Release build runs on Atlas, and signing, notarization, DMG, Sparkle appcast and `gh release` run on this Mac. The `gh release` calls use the REST API, so Actions billing does not apply to them.
+Ship a c11 production release through `scripts/release-local.sh`, the release path (C11-542). It runs on Atlas, so the operator's Mac can sleep: the build happens in place (`--host local`), and signing, notarization, DMG, Sparkle appcast, `gh release` and the Homebrew dispatch use Atlas's release keychain. `release.yml` is the manual GitHub fallback. The `gh release` calls use the REST API, so Actions billing does not apply to them.
 
 ## Steps
 
@@ -10,30 +10,35 @@ Follow `skills/release/SKILL.md` through tagging: choose the version, update `CH
 
 A tag push starts no workflow. If someone dispatched the `release.yml` fallback for this tag, the script refuses to publish while that run is active.
 
-### 2. Check out the tag cleanly
+### 2. Check out the tag cleanly on Atlas
 
-Run from a clean checkout whose HEAD is the tag's commit, with submodules provisioned (`git submodule update --init --recursive ghostty vendor/bonsplit`). A real run refuses on a dirty tree, a HEAD that is not the tag's commit locally and on origin, or a `MARKETING_VERSION` that does not match the tag.
+In `~/c11-release` on Atlas: `git fetch origin --tags && git checkout --detach vX.Y.Z && git submodule update --init --recursive ghostty vendor/bonsplit`. A real run refuses on a dirty tree, a HEAD that is not the tag's commit locally and on origin, or a `MARKETING_VERSION` that does not match the tag. Every command below runs there over ssh, with:
+
+```bash
+export C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db
+```
 
 ### 3. Dry run
 
 ```bash
-scripts/release-local.sh --dry-run vX.Y.Z
+scripts/release-local.sh --host local --dry-run vX.Y.Z
 ```
 
-This builds on Atlas, then signs, builds a rehearsal DMG and appcast (signed with a throwaway key), and prints every notarize and publish command without running it. It publishes nothing.
+This builds in place, signs with the Developer ID, builds a rehearsal DMG and appcast (signed with a throwaway key), and prints every notarize and publish command without running it. It publishes nothing. The skill runs it before the go (step 6.7), so the real run reuses its build.
 
 ### 4. Real run
 
 ```bash
-scripts/release-local.sh vX.Y.Z
+scripts/release-local.sh --host local --reuse-build vX.Y.Z
 ```
 
-Before it runs, check that:
-- A notarytool keychain profile for team UKQ4QALWD4 works: `c11-notary`, else `acetate-notary`, or the one `C11_NOTARY_PROFILE` names (the preflight fails fast without one).
-- Atlas builds with the pinned release toolchain. The script refuses an app whose `DTXcode` differs from `RELEASE_DTXCODE` (1640, Xcode 16.4, as v0.67.0 shipped). Moving the pin (`C11_RELEASE_DTXCODE`) is a deliberate SDK change and should move `release.yml` with it.
-- Someone is at the Mac: the first read of the `c11mux` Sparkle key shows one keychain dialog for Sparkle's `generate_keys`, asking for the login password. *Always Allow* makes later runs silent.
+Drop `--reuse-build` when there is no dry-run build of this HEAD; the run then builds first. Before it runs, check that:
+- `scripts/atlas-signing-check.sh` passes: the release keychain unlocks through its launchd lease, codesign and notarytool work from a non-GUI session, and it ends locked.
+- The `c11mux` Sparkle key is on Atlas: `scripts/move-sparkle-key-to-atlas.sh --check` prints `match`.
+- Notarization uses `c11-notary`, else `acetate-notary` (team UKQ4QALWD4), or the one `C11_NOTARY_PROFILE` names. The log names the profile and team.
+- The build matches the release toolchain pin, `RELEASE_DTXCODE` 2630 (Xcode 26.3). Moving the pin (`C11_RELEASE_DTXCODE`) is a deliberate SDK change and should move `release.yml` with it.
 
-`--reuse-build` reruns the tail from the existing Atlas build of the same HEAD, for example after a notarization failure. If the run fails, run `say "c11 release failed"` and read `build-release-local/vX.Y.Z/release-local.log`.
+`--reuse-build` also reruns the tail after a failure, for example a notarization error; a rerun on an already-published release only dispatches the Homebrew update. If the run fails, read `build-release-local/vX.Y.Z/release-local.log`.
 
 ### 5. Verify
 

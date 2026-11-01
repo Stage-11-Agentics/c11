@@ -1,8 +1,9 @@
 name: Release c11 macOS app
 
-# Releases run through scripts/release-local.sh: the Release build on Atlas,
-# signing, notarization and publishing on Hyperion (C11-542, Atin's go
-# 2026-10-31). This workflow is the manual fallback when that path is down:
+# Releases run through scripts/release-local.sh on Atlas: the build in place
+# (--host local) and signing, notarization and publishing from Atlas's release
+# keychain (C11-542, Atin's go 2026-10-31). This workflow is the manual
+# fallback when that path is down:
 #   gh workflow run release.yml --repo Stage-11-Agentics/c11 --ref vX.Y.Z
 # A tag push no longer starts it, so the two publishers never race.
 on:

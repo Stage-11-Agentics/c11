@@ -82,8 +82,10 @@ def start_fake_leader(tmp: Path, sock: str) -> int:
 
 class Run:
     def __init__(self, argv: list[str], *, env_extra: dict[str, str] | None = None,
-                 interactive: bool = True, no_leader_support: bool = False, spawn_leader: bool = False):
-        self.td = tempfile.TemporaryDirectory(prefix="c11-grok-leader-test-")
+                 interactive: bool = True, no_leader_support: bool = False, spawn_leader: bool = False,
+                 tmpdir: str | None = None):
+        # Under /tmp so the wrapper's TMPDIR stays short enough to hold the socket.
+        self.td = tempfile.TemporaryDirectory(prefix="c11-grok-test-", dir="/tmp")
         tmp = Path(self.td.name)
         self.tmp = tmp
         home = tmp / "home"
@@ -129,7 +131,7 @@ exit 0
         for key in [k for k in env if k.startswith(("C11_", "CMUX_", "GROK_"))]:
             env.pop(key)
         env.update({
-            "HOME": str(home), "TMPDIR": str(tmp), "PATH": f"{wrapper_dir}:{real_dir}:/usr/bin:/bin",
+            "HOME": str(home), "TMPDIR": tmpdir or str(tmp), "PATH": f"{wrapper_dir}:{real_dir}:/usr/bin:/bin",
             "CMUX_SURFACE_ID": "6E8B3C64-1C8D-4F5A-9B0E-2D7C5A1F3E90", "CMUX_SOCKET_PATH": app_path,
             "FAKE_REAL_ARGS_LOG": str(self.real_log), "FAKE_C11_LOG": str(self.c11_log),
             "FAKE_NO_LEADER": "1" if no_leader_support else "0",
@@ -148,6 +150,9 @@ exit 0
             if terminal:
                 for descriptor in terminal:
                     os.close(descriptor)
+
+    def leader_socket(self) -> str:
+        return f"{self.tmp}/c11-grok-leader-{self.pid}.sock"
 
     @property
     def argv(self) -> list[str]:
@@ -181,7 +186,7 @@ def expect(condition: bool, message: str) -> None:
 def test_interactive_launch_adds_private_leader_and_sidecar() -> None:
     run = Run([])
     try:
-        sock = f"/tmp/c11-grok-leader-{run.pid}.sock"
+        sock = run.leader_socket()
         argv = run.argv
         expect(argv[:3] == ["--leader", "--leader-socket", sock], f"leader args first: {argv}")
         expect(argv[3] == "--session-id" and len(argv[4]) == 36, f"injected session id: {argv}")
@@ -219,7 +224,7 @@ def test_operator_choices_and_opt_out_skip_leader_mode() -> None:
             got = run.argv
             expect(got[len(got) - len(argv):] == argv, f"operator args kept: {argv} {extra}: {got}")
             expect(got.count("--leader") == argv.count("--leader"), f"{argv} {extra}: {got}")
-            expect(not any(a.startswith("/tmp/c11-grok-leader-") for a in got), f"{argv} {extra}: {got}")
+            expect(not any("c11-grok-leader-" in a for a in got), f"{argv} {extra}: {got}")
             expect(run.sidecar_calls(wait=0.5) == [], f"{argv} {extra}: {run.c11_calls()}")
             expect(run.native_states() == [state], f"{argv} {extra}: {run.c11_calls()}")
         finally:
@@ -246,6 +251,27 @@ def test_non_interactive_launch_is_untouched() -> None:
         run.close()
 
 
+def test_long_tmpdir_falls_back_to_tmp_for_the_socket() -> None:
+    with tempfile.TemporaryDirectory(prefix="c11-grok-long-", dir="/tmp") as td:
+        long_dir = Path(td) / ("d" * 70)
+        long_dir.mkdir()
+        run = Run([], tmpdir=str(long_dir))
+        try:
+            expect(run.argv[2] == f"/tmp/c11-grok-leader-{run.pid}.sock", str(run.argv))
+        finally:
+            run.close()
+
+
+def test_sidecar_failures_are_recorded_by_reason() -> None:
+    for code, state in (("4", "off:client_failed"), ("5", "off:subscribe_refused")):
+        run = Run([], env_extra={"FAKE_SIDECAR_EXIT": code})
+        try:
+            wait_for(lambda: len(run.native_states(0)) >= 2, 4)
+            expect(run.native_states() == ["grok_leader", state], f"{code}: {run.c11_calls()}")
+        finally:
+            run.close()
+
+
 def test_leader_that_never_comes_up_is_recorded() -> None:
     run = Run([], env_extra={"FAKE_SIDECAR_EXIT": "3"})
     try:
@@ -258,7 +284,7 @@ def test_leader_that_never_comes_up_is_recorded() -> None:
 def test_own_leader_is_reaped_when_grok_exits() -> None:
     run = Run([], spawn_leader=True)
     try:
-        sock = f"/tmp/c11-grok-leader-{run.pid}.sock"
+        sock = run.leader_socket()
         leader = int(run.leader_pid_file.read_text().strip())
         expect(wait_for(lambda: not alive(leader), 6), "leader still running after Grok exited")
         expect(not Path(sock).exists() and not Path(sock[:-5] + ".lock").exists(), "socket or lock left behind")
@@ -267,17 +293,17 @@ def test_own_leader_is_reaped_when_grok_exits() -> None:
 
 
 def test_stale_leader_of_a_dead_grok_is_reaped_and_live_one_kept() -> None:
-    with tempfile.TemporaryDirectory(prefix="c11-grok-stale-") as td:
+    with tempfile.TemporaryDirectory(prefix="c11-grok-stale-", dir="/tmp") as td:
         tmp = Path(td)
         dead = subprocess.Popen(["/usr/bin/true"])
         dead.wait()
-        stale_sock = f"/tmp/c11-grok-leader-{dead.pid}.sock"
+        stale_sock = f"{td}/c11-grok-leader-{dead.pid}.sock"
         live_owner = subprocess.Popen(["/bin/sleep", "30"])
-        live_sock = f"/tmp/c11-grok-leader-{live_owner.pid}.sock"
+        live_sock = f"{td}/c11-grok-leader-{live_owner.pid}.sock"
         stale_leader = start_fake_leader(tmp, stale_sock)
         live_leader = start_fake_leader(tmp, live_sock)
         try:
-            run = Run([])
+            run = Run([], tmpdir=td)
             try:
                 expect(wait_for(lambda: not alive(stale_leader), 6), "stale leader not reaped")
                 expect(not Path(stale_sock).exists(), "stale socket left behind")
@@ -301,15 +327,15 @@ def test_stale_leader_of_a_dead_grok_is_reaped_and_live_one_kept() -> None:
 
 def test_unverified_lock_pid_is_never_signalled() -> None:
     # A lock naming a process that does not hold the socket must not be killed.
-    with tempfile.TemporaryDirectory(prefix="c11-grok-lock-"):
+    with tempfile.TemporaryDirectory(prefix="c11-grok-lock-", dir="/tmp") as td:
         dead = subprocess.Popen(["/usr/bin/true"])
         dead.wait()
-        sock = f"/tmp/c11-grok-leader-{dead.pid}.sock"
+        sock = f"{td}/c11-grok-leader-{dead.pid}.sock"
         bystander = subprocess.Popen(["/bin/sleep", "30"])
         Path(sock).write_text("")
         Path(sock[:-5] + ".lock").write_text(str(bystander.pid))
         try:
-            run = Run([])
+            run = Run([], tmpdir=td)
             try:
                 expect(wait_for(lambda: not Path(sock).exists(), 6), "stale files not removed")
                 expect(bystander.poll() is None, "unrelated process was signalled")

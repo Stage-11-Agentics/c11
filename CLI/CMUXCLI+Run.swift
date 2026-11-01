@@ -137,8 +137,9 @@ extension CMUXCLI {
             // private leader before contacting the app.
             guard envSocketPath != nil || socketPathSource == .explicitFlag,
                   let binding = GrokMailboxCommand.Binding(environment: processEnv, arguments: commandArgs) else { return }
-            // Exit 3 tells the wrapper no leader came up (sandbox, a config
-            // that refuses leader mode, or a Grok that ignores the flag).
+            // Distinct exits tell the wrapper why the panel stays typed: 3, no
+            // leader came up (sandbox, a config that refuses leader mode, or a
+            // Grok that ignores the flag); 4, no ACP client; 5, subscribe refused.
             guard binding.waitForLeader() else { Foundation.exit(3) }
             let priorDeadline = SocketClient.processDeadline
             defer { SocketClient.processDeadline = priorDeadline }
@@ -150,7 +151,11 @@ extension CMUXCLI {
                 try client.connect()
                 try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: socketPath)
                 SocketClient.processDeadline = priorDeadline
-                try GrokMailboxCommand.run(binding: binding, descriptor: client.takeConnectedDescriptor())
+                switch try GrokMailboxCommand.run(binding: binding, descriptor: client.takeConnectedDescriptor()) {
+                case .clientFailed: Foundation.exit(4)
+                case .subscribeRefused: Foundation.exit(5)
+                case .ended: break
+                }
             } catch {
                 // Silent: the app owns fallback logging.
             }

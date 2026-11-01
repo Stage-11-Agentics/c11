@@ -273,7 +273,7 @@ struct PanelTitleBarView: View {
     }
 
     private var chevronAccessibilityLabel: String {
-        if effectiveCollapsed {
+        if displaysCollapsed {
             return String(localized: "titlebar.chevron.expand",
                           defaultValue: "Expand title bar")
         } else {
@@ -287,7 +287,7 @@ struct PanelTitleBarView: View {
     private var descriptionBar: some View {
         HStack(alignment: .top, spacing: 6) {
             Group {
-                if effectiveCollapsed {
+                if displaysCollapsed {
                     collapsedDescription
                 } else {
                     // An expanded mail-only bar renders the placeholder the way
@@ -322,7 +322,7 @@ struct PanelTitleBarView: View {
                 .onDisappear { updateCellRegistration(false) }
             }
             Button(action: onToggleCollapsed) {
-                Image(systemName: effectiveCollapsed ? "chevron.right" : "chevron.down")
+                Image(systemName: displaysCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: chromeTokens.surfaceTitleBarAccessory, weight: .semibold))
                     .foregroundColor(resolvedSecondaryForegroundColor)
                     .frame(width: 14, height: 14)
@@ -343,35 +343,46 @@ struct PanelTitleBarView: View {
         // One height for every collapsed bar (placeholder or description,
         // mailbox cell or not), so the panel below never moves. Expanded,
         // the bar only grows from there.
-        .frame(minHeight: rowHeight, maxHeight: effectiveCollapsed ? rowHeight : nil, alignment: .top)
+        .frame(minHeight: rowHeight, maxHeight: displaysCollapsed ? rowHeight : nil, alignment: .top)
     }
 
     private var showsChevron: Bool {
-        Self.chevronVisible(
+        Self.needsMoreThanOneLine(
             description: descriptionText,
-            collapsed: effectiveCollapsed,
             fontSize: chromeTokens.surfaceTitleBarTitle,
-            availableWidth: descriptionWidth,
-            expandedHeight: measuredDescriptionHeight,
-            rowHeight: rowHeight
+            availableWidth: descriptionWidth
         )
     }
 
-    /// Whether the expand/collapse chevron means anything. Collapsed: only
-    /// when the one-line description is cut off. Expanded: also when the
-    /// description runs past one line, so it can be folded back. Before the
-    /// bar has a width it shows nothing.
-    static func chevronVisible(
-        description: String,
-        collapsed: Bool,
-        fontSize: CGFloat,
-        availableWidth: CGFloat,
-        expandedHeight: CGFloat,
-        rowHeight: CGFloat
-    ) -> Bool {
+    /// What the bar draws: collapsed when the panel says so, and also when the
+    /// description fits on one line, since expanding it would show the same
+    /// line. A short description is never stuck expanded with no way back.
+    private var displaysCollapsed: Bool {
+        Self.displaysCollapsed(
+            collapsed: effectiveCollapsed,
+            description: descriptionText,
+            fontSize: chromeTokens.surfaceTitleBarTitle,
+            availableWidth: descriptionWidth
+        )
+    }
+
+    /// The description needs more than the one collapsed line: that line is
+    /// cut off, or the text has its own line breaks. Content alone decides,
+    /// so the chevron (shown exactly when this holds) means the same thing
+    /// whether the bar is expanded or collapsed. Before the bar has a width
+    /// it is false.
+    static func needsMoreThanOneLine(description: String, fontSize: CGFloat, availableWidth: CGFloat) -> Bool {
         guard !description.isEmpty, availableWidth > 0 else { return false }
-        if lineOverflows(collapsedLine(description).text, fontSize: fontSize, width: availableWidth) { return true }
-        return !collapsed && expandedHeight > rowHeight + 1
+        if description.contains(where: \.isNewline) { return true }
+        return lineOverflows(collapsedLine(description).text, fontSize: fontSize, width: availableWidth)
+    }
+
+    /// Until the bar has a width, it follows the panel's state so the first
+    /// frame matches the last; after that a one-line description draws collapsed.
+    static func displaysCollapsed(collapsed: Bool, description: String, fontSize: CGFloat, availableWidth: CGFloat) -> Bool {
+        if collapsed { return true }
+        guard availableWidth > 0 else { return false }
+        return !needsMoreThanOneLine(description: description, fontSize: fontSize, availableWidth: availableWidth)
     }
 
     /// The line is wider than `width` in the bar's font. Biased by 2 pt

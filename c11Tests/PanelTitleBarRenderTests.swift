@@ -126,26 +126,37 @@ final class PanelTitleBarRenderTests: XCTestCase {
         let font: CGFloat = 12
         let short = "Working on it."
         let long = String(repeating: "A long description that cannot fit on one line. ", count: 4)
-        func visible(_ text: String, collapsed: Bool, width: CGFloat = 400, expandedHeight: CGFloat = 0) -> Bool {
-            PanelTitleBarView.chevronVisible(
-                description: text, collapsed: collapsed, fontSize: font,
-                availableWidth: width, expandedHeight: expandedHeight, rowHeight: 18
-            )
+        func needs(_ text: String, width: CGFloat = 400) -> Bool {
+            PanelTitleBarView.needsMoreThanOneLine(description: text, fontSize: font, availableWidth: width)
         }
         // One line that fits: nothing to expand, no chevron.
-        XCTAssertFalse(visible(short, collapsed: true))
-        // Cut off: the chevron expands it, and stays to collapse it again.
-        XCTAssertTrue(visible(long, collapsed: true))
-        XCTAssertTrue(visible(long, collapsed: false, expandedHeight: 60))
-        // Line breaks that fit on one collapsed line still fold back once expanded.
-        XCTAssertFalse(visible("Working.\nNext: verify.", collapsed: true))
-        XCTAssertTrue(visible("Working.\nNext: verify.", collapsed: false, expandedHeight: 34))
-        XCTAssertFalse(visible(short, collapsed: false, expandedHeight: 16))
+        XCTAssertFalse(needs(short))
+        // Cut off, or its own line breaks: the chevron shows.
+        XCTAssertTrue(needs(long))
+        XCTAssertTrue(needs("Working.\nNext: verify."))
         // A narrow bar cuts off even a short line; no width yet shows nothing.
-        XCTAssertTrue(visible(short, collapsed: true, width: 40))
-        XCTAssertFalse(visible(long, collapsed: true, width: 0))
+        XCTAssertTrue(needs(short, width: 40))
+        XCTAssertFalse(needs(long, width: 0))
         // No description (a mail-only bar): never.
-        XCTAssertFalse(visible("", collapsed: true, width: 10))
+        XCTAssertFalse(needs("", width: 10))
+    }
+
+    func testShortDescriptionIsNeverStuckExpanded() {
+        let font: CGFloat = 12
+        func draws(_ text: String, collapsed: Bool, width: CGFloat = 400) -> Bool {
+            PanelTitleBarView.displaysCollapsed(collapsed: collapsed, description: text, fontSize: font, availableWidth: width)
+        }
+        // set-metadata auto-expands; a one-line description still draws as
+        // one line, with no chevron, so there is nothing left to collapse.
+        XCTAssertTrue(draws("Working on it.", collapsed: false))
+        XCTAssertTrue(draws("Working on it.", collapsed: true))
+        // A description that needs more draws expanded when the panel says so.
+        let long = String(repeating: "A long description that cannot fit on one line. ", count: 4)
+        XCTAssertFalse(draws(long, collapsed: false))
+        XCTAssertTrue(draws(long, collapsed: true))
+        XCTAssertFalse(draws("Working.\nNext: verify.", collapsed: false))
+        // Before the bar is measured it follows the panel's state.
+        XCTAssertFalse(draws("Working on it.", collapsed: false, width: 0))
     }
 
     func testRenderingNeverFiresTheToggle() {

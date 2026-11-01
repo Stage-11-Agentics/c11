@@ -553,6 +553,29 @@ final class WindowTerminalHostView: NSView {
 struct PortalChromeOverlaySegment {
     let rect: NSRect
     let color: NSColor
+    /// A rounded frame corner. When set, the overlay fills this path instead
+    /// of `rect`, which then only bounds it for dirty-rect checks.
+    var path: NSBezierPath? = nil
+}
+
+/// The rounded corners of the window that hosts a portal, in the portal
+/// host's coordinates.
+struct PortalWindowCorners {
+    let bounds: NSRect
+    let radius: CGFloat
+
+    init(bounds: NSRect, radius: CGFloat) {
+        self.bounds = bounds
+        self.radius = radius
+    }
+
+    init?(window: NSWindow?, hostView: NSView) {
+        guard let window, let contentView = window.contentView else { return nil }
+        let radius = WindowCornerRadius.resolve(for: window)
+        guard radius > 0 else { return nil }
+        self.bounds = hostView.convert(contentView.bounds, from: contentView)
+        self.radius = radius
+    }
 }
 
 struct PortalChromeOverlayDividerSegment {
@@ -613,6 +636,7 @@ enum PortalWorkspaceFrameOverlay {
         style: PortalWorkspaceFrameStyle,
         color: NSColor,
         dividerSegments: [PortalChromeOverlayDividerSegment],
+        windowCorners: PortalWindowCorners? = nil,
         into segments: inout [PortalChromeOverlaySegment]
     ) {
         let visibleFrame = frame.intersection(hostBounds)
@@ -630,18 +654,126 @@ enum PortalWorkspaceFrameOverlay {
             segments.append(PortalChromeOverlaySegment(rect: clipped, color: color))
         }
 
-        if style.edges.leading && !edgeTouchesDivider(.leading, frame: frame, dividerSegments: dividerSegments) {
-            appendClipped(NSRect(x: frame.minX, y: frame.minY, width: thickness, height: frame.height))
+        let drawsLeading = style.edges.leading
+            && !edgeTouchesDivider(.leading, frame: frame, dividerSegments: dividerSegments)
+        let drawsTrailing = style.edges.trailing
+            && !edgeTouchesDivider(.trailing, frame: frame, dividerSegments: dividerSegments)
+        let drawsBottom = style.edges.bottom
+            && !edgeTouchesDivider(.bottom, frame: frame, dividerSegments: dividerSegments)
+        let drawsTop = style.edges.top
+            && !edgeTouchesDivider(.top, frame: frame, dividerSegments: dividerSegments)
+
+        // Where the frame meets a rounded window corner, straight strips run
+        // into the window's corner mask and get shaved away at the diagonal.
+        // Draw that corner as an arc concentric with the window instead.
+        let radius = windowCorners.map { min($0.radius, frame.width / 2, frame.height / 2) } ?? 0
+        func roundsCorner(_ corner: Corner, _ firstEdge: Bool, _ secondEdge: Bool) -> Bool {
+            guard let windowCorners, radius > thickness, firstEdge, secondEdge else { return false }
+            return cornerMatchesWindow(corner, frame: frame, windowBounds: windowCorners.bounds)
         }
-        if style.edges.trailing && !edgeTouchesDivider(.trailing, frame: frame, dividerSegments: dividerSegments) {
-            appendClipped(NSRect(x: frame.maxX - thickness, y: frame.minY, width: thickness, height: frame.height))
+        let roundsMinXMinY = roundsCorner(.minXMinY, drawsLeading, drawsBottom)
+        let roundsMaxXMinY = roundsCorner(.maxXMinY, drawsTrailing, drawsBottom)
+        let roundsMinXMaxY = roundsCorner(.minXMaxY, drawsLeading, drawsTop)
+        let roundsMaxXMaxY = roundsCorner(.maxXMaxY, drawsTrailing, drawsTop)
+
+        if drawsLeading {
+            let minY = frame.minY + (roundsMinXMinY ? radius : 0)
+            let maxY = frame.maxY - (roundsMinXMaxY ? radius : 0)
+            appendClipped(NSRect(x: frame.minX, y: minY, width: thickness, height: maxY - minY))
         }
-        if style.edges.bottom && !edgeTouchesDivider(.bottom, frame: frame, dividerSegments: dividerSegments) {
-            appendClipped(NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: thickness))
+        if drawsTrailing {
+            let minY = frame.minY + (roundsMaxXMinY ? radius : 0)
+            let maxY = frame.maxY - (roundsMaxXMaxY ? radius : 0)
+            appendClipped(NSRect(x: frame.maxX - thickness, y: minY, width: thickness, height: maxY - minY))
         }
-        if style.edges.top && !edgeTouchesDivider(.top, frame: frame, dividerSegments: dividerSegments) {
-            appendClipped(NSRect(x: frame.minX, y: frame.maxY - thickness, width: frame.width, height: thickness))
+        if drawsBottom {
+            let minX = frame.minX + (roundsMinXMinY ? radius : 0)
+            let maxX = frame.maxX - (roundsMaxXMinY ? radius : 0)
+            appendClipped(NSRect(x: minX, y: frame.minY, width: maxX - minX, height: thickness))
         }
+        if drawsTop {
+            let minX = frame.minX + (roundsMinXMaxY ? radius : 0)
+            let maxX = frame.maxX - (roundsMaxXMaxY ? radius : 0)
+            appendClipped(NSRect(x: minX, y: frame.maxY - thickness, width: maxX - minX, height: thickness))
+        }
+
+        for (corner, rounds) in [
+            (Corner.minXMinY, roundsMinXMinY),
+            (.maxXMinY, roundsMaxXMinY),
+            (.minXMaxY, roundsMinXMaxY),
+            (.maxXMaxY, roundsMaxXMaxY),
+        ] where rounds {
+            let segment = cornerArcSegment(corner, frame: frame, radius: radius, thickness: thickness, color: color)
+            if segment.rect.intersects(hostBounds) {
+                segments.append(segment)
+            }
+        }
+    }
+
+    enum Corner {
+        case minXMinY
+        case maxXMinY
+        case minXMaxY
+        case maxXMaxY
+    }
+
+    private static func cornerMatchesWindow(
+        _ corner: Corner,
+        frame: NSRect,
+        windowBounds: NSRect,
+        epsilon: CGFloat = 1.5
+    ) -> Bool {
+        let (frameX, frameY, windowX, windowY): (CGFloat, CGFloat, CGFloat, CGFloat)
+        switch corner {
+        case .minXMinY: (frameX, frameY, windowX, windowY) = (frame.minX, frame.minY, windowBounds.minX, windowBounds.minY)
+        case .maxXMinY: (frameX, frameY, windowX, windowY) = (frame.maxX, frame.minY, windowBounds.maxX, windowBounds.minY)
+        case .minXMaxY: (frameX, frameY, windowX, windowY) = (frame.minX, frame.maxY, windowBounds.minX, windowBounds.maxY)
+        case .maxXMaxY: (frameX, frameY, windowX, windowY) = (frame.maxX, frame.maxY, windowBounds.maxX, windowBounds.maxY)
+        }
+        return abs(frameX - windowX) <= epsilon && abs(frameY - windowY) <= epsilon
+    }
+
+    /// A quarter ring hugging the window's corner: outer radius `radius`,
+    /// inner radius `radius - thickness`, joining the shortened edge strips.
+    static func cornerArcSegment(
+        _ corner: Corner,
+        frame: NSRect,
+        radius: CGFloat,
+        thickness: CGFloat,
+        color: NSColor
+    ) -> PortalChromeOverlaySegment {
+        let center: NSPoint
+        let startAngle: CGFloat
+        let box: NSRect
+        switch corner {
+        case .minXMinY:
+            center = NSPoint(x: frame.minX + radius, y: frame.minY + radius)
+            startAngle = 180
+            box = NSRect(x: frame.minX, y: frame.minY, width: radius, height: radius)
+        case .maxXMinY:
+            center = NSPoint(x: frame.maxX - radius, y: frame.minY + radius)
+            startAngle = 270
+            box = NSRect(x: frame.maxX - radius, y: frame.minY, width: radius, height: radius)
+        case .minXMaxY:
+            center = NSPoint(x: frame.minX + radius, y: frame.maxY - radius)
+            startAngle = 90
+            box = NSRect(x: frame.minX, y: frame.maxY - radius, width: radius, height: radius)
+        case .maxXMaxY:
+            center = NSPoint(x: frame.maxX - radius, y: frame.maxY - radius)
+            startAngle = 0
+            box = NSRect(x: frame.maxX - radius, y: frame.maxY - radius, width: radius, height: radius)
+        }
+        let path = NSBezierPath()
+        path.appendArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: startAngle + 90)
+        path.appendArc(
+            withCenter: center,
+            radius: radius - thickness,
+            startAngle: startAngle + 90,
+            endAngle: startAngle,
+            clockwise: true
+        )
+        path.close()
+        return PortalChromeOverlaySegment(rect: box, color: color, path: path)
     }
 
     enum Edge {
@@ -758,7 +890,11 @@ final class PortalSplitDividerOverlayView: NSView {
 
         for segment in chromeSegments where segment.rect.intersects(dirtyRect) {
             segment.color.setFill()
-            NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
+            if let path = segment.path {
+                path.fill()
+            } else {
+                NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
+            }
         }
     }
 
@@ -1207,6 +1343,7 @@ final class WindowTerminalPortal: NSObject {
         let hostBounds = hostView.bounds
         guard hostBounds.width > 1, hostBounds.height > 1 else { return [] }
 
+        let windowCorners = PortalWindowCorners(window: window, hostView: hostView)
         var segments: [PortalChromeOverlaySegment] = []
         for entry in entriesByHostedId.values {
             guard entry.visibleInUI,
@@ -1230,6 +1367,7 @@ final class WindowTerminalPortal: NSObject {
                 style: style,
                 color: color,
                 dividerSegments: dividerSegments,
+                windowCorners: windowCorners,
                 into: &segments
             )
         }

@@ -387,6 +387,15 @@ final class ExternalPanelLinkRequestTests: XCTestCase {
 }
 
 final class ExternalPanelLinkGestureTests: XCTestCase {
+    func testLongerSystemDoubleClickIntervalSetsArmingDeadline() {
+        var gate = ExternalPanelLinkGesture(presentedAt: 100, doubleClickInterval: 1.0, pointerInside: false)
+        XCTAssertFalse(gate.isArmed(at: 100.999))
+        XCTAssertFalse(gate.begin(at: 100.999, plain: true, clickCount: 1, inside: true))
+        XCTAssertTrue(gate.isArmed(at: 101))
+        XCTAssertTrue(gate.begin(at: 101, plain: true, clickCount: 1, inside: true))
+        XCTAssertTrue(gate.end(at: 101.1, plain: true, clickCount: 1, inside: true))
+    }
+
     func testDelayFreshPlainClickAndSingleClickAreRequired() {
         var gate = ExternalPanelLinkGesture(presentedAt: 100, doubleClickInterval: 0.5, pointerInside: false)
         XCTAssertFalse(gate.isArmed(at: 100.49))

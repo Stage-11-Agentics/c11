@@ -100,7 +100,8 @@ click the outside link again to request a new confirmation.
 Cancel is the safe default. Closed or malformed
 targets show a notice. There is one pending prompt, no queue, a two-second
 cooldown after dismissal and a 60-second expiry; bursts are dropped. Cold
-startup holds one link until the session is ready, within its original expiry. In-app
+startup holds one link until the session is ready, within its original expiry.
+If c11 was not running, answer the Resume picker within a minute or click the link again. In-app
 clicks keep the rules above. Debug, nightly and staging copies do not register the scheme.
 `open c11://…` from a panel asks the operator; it is not a way to switch their
 workspace.

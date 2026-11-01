@@ -121,7 +121,8 @@ a different presentation. This mitigates surprise-overlay consent, not arbitrary
 hostile desktop overlays or already-authorized OS input automation. The window does not become key or main,
 does not capture terminal typing, and never calls `runModal` or starts a
 sheet. Only an explicit Confirm click can select the destination. Cancel,
-close and the 60-second expiry select nothing. Confirm resolves the exact
+close and the confirmation's 60-second expiry select nothing. Notices expire
+after five seconds. Confirm resolves the exact
 UUID again; a closed target is refused, and a panel moved to another workspace
 gets a distinct notice requesting a new click. Live panel/workspace titles are
 display-only and may change without invalidating the same UUID/workspace binding.
@@ -159,6 +160,9 @@ cannot switch the selected workspace. Outside-link handling adds no socket,
 script, command or agent permission, and confirmation is never cached.
 
 Only the production Release bundle (`com.stage11.c11`) claims `c11:`.
+This means any Release build with that production identity, including a QA
+artifact, not only `/Applications/c11.app`; it has the same scheme-registration
+exposure as `http` and `https`.
 The build generates its Info.plist with that identity/configuration policy;
 Debug products omit only `c11`, preserving their existing web schemes. The
 nightly rebrand also removes only `c11`. c11 does not set Launch Services

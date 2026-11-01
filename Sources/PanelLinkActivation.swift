@@ -640,6 +640,7 @@ private final class ExternalPanelLinkButton: NSButton {
     }
 
     override func mouseDown(with event: NSEvent) {
+        refreshArming()
         if gesture != nil {
             let visible = window?.isVisible == true
             let socket = SocketCommandContext.current != nil
@@ -787,6 +788,7 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         // pointer identifies the display for an outside click; no window rises.
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         if let frame = screen?.visibleFrame {
+            // Place before assigning panel = window; otherwise windowDidMove cancels the prompt.
             window.setFrameOrigin(NSPoint(x: frame.midX - window.frame.width / 2,
                                           y: frame.midY - window.frame.height / 2))
         }

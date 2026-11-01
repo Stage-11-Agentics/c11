@@ -273,6 +273,48 @@ final class MailboxHoldNoticeTests: XCTestCase {
         XCTAssertTrue(rest.pending.isEmpty)
     }
 
+    /// The cell label and the drawer banner say how many are held. A question
+    /// or an unreadable prompt leaves the count at zero, so neither says draft.
+    func testCellAndDrawerTextNameOnlyADraftHold() {
+        XCTAssertEqual(
+            MailboxHoldCopy.cellAccessibility(unread: 1, received: 1, heldBehindDraft: 1),
+            "Mailbox, 1 unread, 1 received. 1 message held behind your draft"
+        )
+        XCTAssertEqual(
+            MailboxHoldCopy.cellAccessibility(unread: 3, received: 3, heldBehindDraft: 3),
+            "Mailbox, 3 unread, 3 received. 3 messages held behind your draft"
+        )
+        XCTAssertEqual(
+            MailboxHoldCopy.cellHelp(
+                linesBeforeHold: ["1 unread: the agent has not taken them yet", "1 received"],
+                heldBehindDraft: 1
+            ),
+            [
+                "1 unread: the agent has not taken them yet",
+                "1 received",
+                "1 message held behind your draft",
+            ]
+        )
+        XCTAssertEqual(
+            MailboxHoldCopy.drawerBanner(heldBehindDraft: 1),
+            "1 message held behind your draft"
+        )
+        XCTAssertEqual(
+            MailboxHoldCopy.drawerBanner(heldBehindDraft: 3),
+            "3 messages held behind your draft"
+        )
+        XCTAssertFalse(
+            MailboxHoldCopy.cellAccessibility(unread: 1, received: 1, heldBehindDraft: 0)
+                .contains("held behind")
+        )
+        XCTAssertNil(MailboxHoldCopy.drawerBanner(heldBehindDraft: 0))
+        XCTAssertFalse(
+            MailboxHoldCopy.cellHelp(linesBeforeHold: ["1 received"], heldBehindDraft: 0)
+                .joined(separator: "\n")
+                .contains("held behind")
+        )
+    }
+
     /// The existing draft guard: a recognized draft is a skip, so nothing is typed.
     func testNamingADraftDoesNotAdmitARing() {
         var draft = MailboxDoorbell.Input()

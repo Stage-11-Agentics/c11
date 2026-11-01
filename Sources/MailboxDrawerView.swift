@@ -125,22 +125,17 @@ struct MailboxCellView: View {
             lines.append(line)
         }
         lines.append(String(localized: "mailbox.cell.help.received", defaultValue: "\(received) received"))
-        if let held = MailboxHoldNotice.panelLine(count: model.heldBehindDraft) {
-            lines.append(held)
-        }
+        lines = MailboxHoldCopy.cellHelp(linesBeforeHold: lines, heldBehindDraft: model.heldBehindDraft)
         lines.append(String(localized: "mailbox.cell.help.open", defaultValue: "Click to read"))
         return lines.joined(separator: "\n")
     }
 
     private var accessibilityText: String {
-        var text = String(
-            localized: "mailbox.cell.accessibility",
-            defaultValue: "Mailbox, \(unread) unread, \(received) received"
+        MailboxHoldCopy.cellAccessibility(
+            unread: unread,
+            received: received,
+            heldBehindDraft: model.heldBehindDraft
         )
-        if let held = MailboxHoldNotice.panelLine(count: model.heldBehindDraft) {
-            text += ". " + held
-        }
-        return text
     }
 }
 
@@ -195,7 +190,7 @@ struct MailboxDrawerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if let held = MailboxHoldNotice.panelLine(count: model.heldBehindDraft) {
+            if let held = MailboxHoldCopy.drawerBanner(heldBehindDraft: model.heldBehindDraft) {
                 Text(held)
                     .font(metaFont)
                     .foregroundColor(Color(nsColor: .systemOrange))

@@ -468,6 +468,29 @@ final class MailboxBadgeStoreTests: XCTestCase {
         XCTAssertEqual(store.modelForPanel(panel).heldBehindDraft, 3)
     }
 
+    /// The cell and the drawer read the model. Removing the sentence from
+    /// that copy fails this test. Nothing here types into a composer.
+    func testCellAndDrawerCopyTheModelHold() {
+        let panel = UUID()
+        store.setDraftHold(panelId: panel, count: 1)
+        let model = store.modelForPanel(panel)
+        XCTAssertEqual(
+            MailboxHoldCopy.cellAccessibility(unread: 1, received: 1, heldBehindDraft: model.heldBehindDraft),
+            "Mailbox, 1 unread, 1 received. 1 message held behind your draft"
+        )
+        XCTAssertEqual(
+            MailboxHoldCopy.drawerBanner(heldBehindDraft: model.heldBehindDraft),
+            "1 message held behind your draft"
+        )
+
+        store.setDraftHold(panelId: panel, count: 0)
+        XCTAssertNil(MailboxHoldCopy.drawerBanner(heldBehindDraft: model.heldBehindDraft))
+        XCTAssertFalse(
+            MailboxHoldCopy.cellAccessibility(unread: 0, received: 0, heldBehindDraft: model.heldBehindDraft)
+                .contains("held behind")
+        )
+    }
+
     func testDeliveryToAPanelMovedToAnotherWorkspaceRecountsItThere() throws {
         let before = UUID(), after = UUID(), panel = UUID()
         store.track(panelId: panel, workspaceId: before)

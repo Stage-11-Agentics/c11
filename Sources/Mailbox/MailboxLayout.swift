@@ -313,6 +313,34 @@ enum MailboxHoldNotice {
     }
 }
 
+/// The words the mailbox cell and the drawer show for a draft hold.
+/// Both surfaces call this, so a test fails when the sentence is removed.
+enum MailboxHoldCopy {
+    static func cellAccessibility(unread: Int, received: Int, heldBehindDraft: Int) -> String {
+        var text = String(
+            localized: "mailbox.cell.accessibility",
+            defaultValue: "Mailbox, \(unread) unread, \(received) received"
+        )
+        if let held = MailboxHoldNotice.panelLine(count: heldBehindDraft) {
+            text += ". " + held
+        }
+        return text
+    }
+
+    /// The hold sentence is inserted after the count lines and before "Click to read".
+    static func cellHelp(linesBeforeHold: [String], heldBehindDraft: Int) -> [String] {
+        var lines = linesBeforeHold
+        if let held = MailboxHoldNotice.panelLine(count: heldBehindDraft) {
+            lines.append(held)
+        }
+        return lines
+    }
+
+    static func drawerBanner(heldBehindDraft: Int) -> String? {
+        MailboxHoldNotice.panelLine(count: heldBehindDraft)
+    }
+}
+
 /// One-time-per-process migration of the c11 state directory from the legacy
 /// `c11mux` name to the canonical `c11` name. Every state-root resolver
 /// (`MailboxLayout.defaultStateURL`, `SocketControlSettings.stableSocketDirectoryURL`,

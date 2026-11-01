@@ -5563,10 +5563,12 @@ final class Workspace: Identifiable, ObservableObject {
         isFlagged: Bool,
         promptCacheExpired: Bool,
         lightBackground: Bool,
-        flagKind: PanelFlagKind? = nil
+        flagKind: PanelFlagKind? = nil,
+        usageLimited: Bool = false
     ) -> String? {
-        switch ActivityMarkTint.resolve(flagged: isFlagged, promptCacheExpired: promptCacheExpired) {
+        switch ActivityMarkTint.resolve(flagged: isFlagged, promptCacheExpired: promptCacheExpired, usageLimited: usageLimited) {
         case .flag: return flagKind?.colorHex(lightBackground: lightBackground) ?? "#9D8AD9"
+        case .usageLimit: return lightBackground ? "#B42318" : "#FF6B6B"
         case .promptCacheCold: return promptCacheColdHex(lightBackground: lightBackground)
         case .lifecycle: return nil
         }
@@ -8356,7 +8358,8 @@ final class Workspace: Identifiable, ObservableObject {
                 promptCacheExpired: help?.promptCacheExpired == true,
                 lightBackground: bonsplitController.configuration.appearance.chromeColors.backgroundHex
                     .flatMap { NSColor(hex: $0) }?.isLightColor ?? false,
-                flagKind: attention.flagKind
+                flagKind: attention.flagKind,
+                usageLimited: help?.usageLimited == true
             ),
             motion: attention.isFlagged
                 ? (activityState == .waiting ? .binaryFlash : .breathe)

@@ -228,10 +228,12 @@ struct FeedQuickViewRow: View {
             if let kind = flag.kind { return kind.displayText(reason: flag.reason) }
             return row.prompt ?? flag.reason
         }
+        if row.prompt == nil, let limit = row.usageLimit { return limit.label }
         return row.prompt ?? String(localized: "feed.quick.prompt.missing", defaultValue: "—")
     }
 
     private var flagColor: Color {
+        if row.flag == nil, row.usageLimit != nil { return .red }
         guard let kind = row.flag?.kind,
               let color = NSColor(hex: kind.colorHex(lightBackground: colorScheme == .light)) else {
             return .primary
@@ -242,12 +244,14 @@ struct FeedQuickViewRow: View {
     var accessibleHelp: String {
         var lines = [title, evidence, prompt]
         if evidence != evidenceSource { lines.append(evidenceSource) }
+        if let limit = row.usageLimit, !lines.contains(limit.label) { lines.append(limit.label) }
         return String(lines.joined(separator: "\n").prefix(1024))
     }
 
     private var glyph: String {
         if row.flag != nil { return "flag.fill" }
         switch row.kind {
+        case .error: return "exclamationmark.circle"
         case .question: return "questionmark.circle"
         case .plan: return "list.bullet.clipboard"
         case .permission: return "lock"
@@ -258,6 +262,7 @@ struct FeedQuickViewRow: View {
     private var kindTitle: String {
         if let label = row.flag?.kind?.displayLabel, !label.isEmpty { return label }
         switch row.kind {
+        case .error: return String(localized: "journal.state.error", defaultValue: "Error")
         case .question: return String(localized: "feed.quick.kind.question", defaultValue: "Question")
         case .plan: return String(localized: "feed.quick.kind.plan", defaultValue: "Plan")
         case .permission: return String(localized: "feed.quick.kind.permission", defaultValue: "Permission")
@@ -282,6 +287,7 @@ struct FeedQuickViewRow: View {
            !askPrompt.isEmpty {
             return kind.displayText(reason: flag.reason)
         }
+        if let limit = row.usageLimit, row.flag != nil || row.prompt != nil { return limit.label }
         return evidenceSource
     }
 

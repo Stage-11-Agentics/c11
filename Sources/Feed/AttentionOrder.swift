@@ -34,7 +34,7 @@ enum AttentionOrder {
 
     static func ordered(_ rows: [FeedRow]) -> [FeedRow] {
         rows.sorted { lhs, rhs in
-            func tier(_ row: FeedRow) -> Int { row.flag != nil ? 0 : (isOpenAsk(row) ? 1 : 2) }
+            func tier(_ row: FeedRow) -> Int { row.flag != nil ? 0 : (isOpenAsk(row) || row.kind == .error ? 1 : 2) }
             if tier(lhs) != tier(rhs) { return tier(lhs) < tier(rhs) }
             return precedes(
                 time: lhs.flag != nil ? lhs.flag?.raisedAtMs : lhs.openedAtMs,
@@ -64,7 +64,7 @@ enum AttentionOrder {
     static func candidates(rows: [FeedRow], unreadTail: [Candidate]) -> [Candidate] {
         var seen: Set<Target> = []
         let prefix = rows.compactMap { row -> Candidate? in
-            guard row.flag != nil || isOpenAsk(row) else { return nil }
+            guard row.flag != nil || isOpenAsk(row) || row.kind == .error else { return nil }
             let target = Target(workspaceID: row.workspaceID, panelID: row.panelID)
             guard seen.insert(target).inserted else { return nil }
             return Candidate(target: target, notificationID: nil)
@@ -82,7 +82,7 @@ struct FeedProjectionSnapshot: Equatable {
     let rows: [FeedRow]
     static let empty = FeedProjectionSnapshot(rows: [])
     var attentionRows: [FeedRow] {
-        rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) }.map { row in
+        rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) || $0.kind == .error }.map { row in
             guard row.kind == .turnEnd else { return row }
             // A finished turn may still carry a flag; attention presents just that flag.
             return FeedRow(workspaceID: row.workspaceID, panelID: row.panelID, kind: nil,

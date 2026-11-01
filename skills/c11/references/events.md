@@ -131,7 +131,7 @@ log is best effort; recover current state with `c11 get-metadata --panel <ref>`.
 
 Each event has the envelope's workspace and panel UUIDs. Payloads contain no
 prompt, command, options, transcript text, or provider error message.
-Interruption reasons are `cancelled`, `provider_error`, `host_sleep`, and
+Interruption reasons are `cancelled`, `provider_error`, `usage_limit`, `host_sleep`, and
 `unknown`. A host-sleep event reports suspension, not proof that the remote
 provider stopped permanently; it does not force the journal idle. Normal turn
 completion and individual tool failures are not interrupted turns. Old transcript
@@ -141,8 +141,10 @@ Claude PermissionRequest/Notification and question/plan hooks, and OpenCode
 `permission.asked` and `question.asked`, supply native waits. Claude StopFailure and OpenCode
 `session.error` supply session failures. The existing Codex `turn_aborted`, Claude
 correlated Esc marker and Grok primary `turn_ended` cancellation/interruption
-records supply transcript interruptions. Unknown provider outcomes remain unknown;
-usage/spend-limit detection is separate.
+records supply transcript interruptions. Recorded Claude monthly-spend and
+session-usage failures supply `usage_limit`; unsupported limit shapes and other
+provider outcomes remain unknown. See `docs/agent-usage-limits.md` in the repo
+for the recorded shapes and root binding contract.
 
 | Harness | Permission / choice detection | Resolution / limitations |
 |---------|-------------------------------|--------------------------|

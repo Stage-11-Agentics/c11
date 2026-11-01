@@ -50,7 +50,7 @@ final class MailboxDispatchLog {
         case nativeUnconfirmed(MailboxNativeDoorbell.FailureDiagnostic)
         case received(id: String, from: String, to: String?, topic: String?)
         case resolved(id: String, recipients: [String])
-        case copied(id: String, recipient: String)
+        case copied(id: String, recipient: String, recipientUsageLimit: String? = nil)
         case handler(
             id: String,
             recipient: String,
@@ -181,10 +181,11 @@ final class MailboxDispatchLog {
             payload["event"] = "resolved"
             payload["id"] = id
             payload["recipients"] = recipients
-        case .copied(let id, let recipient):
+        case .copied(let id, let recipient, let recipientUsageLimit):
             payload["event"] = "copied"
             payload["id"] = id
             payload["recipient"] = recipient
+            if let recipientUsageLimit { payload["recipient_usage_limit"] = recipientUsageLimit }
         case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure):
             payload["event"] = "handler"
             payload["id"] = id

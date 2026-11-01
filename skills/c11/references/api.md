@@ -996,7 +996,7 @@ specific control observations. A caller cannot set a confidence integer.
 
 Optional structural fields include `turn_id`, `request_id`, `parent_session_id`,
 `is_child`, `occurred_at_ms`, `time_quality`, `native_event`, `adapter_version`,
-`tool_class`, `reason_code`, `signal`, and `resolution`. Unknown keys and
+`tool_class`, `reason_code`, `signal`, `resolution`, and optional `usage_limit`. Unknown keys and
 free-form payloads are rejected. Never send a prompt, command, arguments,
 question, plan, output, cwd, notification body, or raw error text. Missing native
 time/IDs remain null; CLI invocation time is not native occurrence evidence.
@@ -1300,7 +1300,7 @@ c11 feed answer <panel> --text <text> [--workspace <id|ref>] [--by agent|operato
 c11 feed watch [--json] [--scope attention|all]
 ```
 
-`feed list` defaults to scope `attention`: open blocking asks and flag rows.
+`feed list` defaults to scope `attention`: open blocking asks, usage-limit error rows, and flag rows.
 `--scope all` adds non-delegated `turn_end` rows. Both scopes use one projector.
 Rows sort flags first by raised time, then eligible open asks by opened time,
 oldest first with missing times last. Ties use panel UUID, then workspace UUID.
@@ -1383,3 +1383,18 @@ Every socket caller is background automation. Requests that would change a windo
 `focus-panel --workspace <w> --panel <t>` and `focus-area --workspace <w> --area <a>` update the target workspace's focused panel/area even while it is hidden. They neither select its workspace nor activate c11. Sending input, browser eval/click/snapshot, creating panels/workspaces, launching agents, and metadata writes work in background workspaces. `ssh` creates and configures its workspace without selecting it. tmux previous targets resolve from history without navigation.
 
 Panel creation preserves focus. Workspace close/move is refused if removing the selected workspace would force a visible switch. Operator close chooses the most recently seen remaining workspace, then the index neighbour if there is no seen history. Sidebar, keyboard, palette, notification, attention jump, menu and launch restore remain operator navigation paths.
+
+### Recorded usage limits
+
+Claude Code monthly-spend and five-hour session failures produce an error mark
+and a Feed row (`kind=error`, `usage_limit=monthly_spend|session_usage`).
+The read-only `journal.usage_limit` panel metadata has the same finite value; it
+stays present during a retry and clears on a later successful completion.
+`journal.phase` still reports the real turn phase. The current transcript poll
+interval is ten seconds. The existing `agent.error.reported` journal event uses
+`reason_code=usage_limit`, `native_event=turn.failed`, `adapter=claude_transcript`.
+Only recorded structural Claude API errors are accepted, never quoted output.
+Codex and other harnesses are unsupported pending recorded terminal signals.
+Mail to a limited recipient is copied unread; the delivery trace's `copied` row
+adds `recipient_usage_limit`. Detection never acknowledges the envelope.
+See [supported shapes and recovery](../../../docs/agent-usage-limits.md).

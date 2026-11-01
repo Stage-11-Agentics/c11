@@ -1,0 +1,42 @@
+[
+  {
+    "type": "user",
+    "isSidechain": false,
+    "promptId": "fixture-prompt",
+    "uuid": "fixture-root"
+  },
+  {
+    "type": "user",
+    "promptId": "fixture-prompt",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result"
+        }
+      ]
+    },
+    "isSidechain": false,
+    "uuid": "fixture-context",
+    "parentUuid": "fixture-root"
+  },
+  {
+    "type": "assistant",
+    "isSidechain": false,
+    "error": "rate_limit",
+    "isApiErrorMessage": true,
+    "apiErrorStatus": 429,
+    "message": {
+      "model": "<synthetic>",
+      "role": "assistant",
+      "stop_reason": "stop_sequence",
+      "content": [
+        {
+          "type": "text",
+          "text": "You've hit your monthly spend limit."
+        }
+      ]
+    },
+    "parentUuid": "fixture-context"
+  }
+]

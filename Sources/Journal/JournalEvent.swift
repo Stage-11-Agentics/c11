@@ -40,7 +40,7 @@ enum JournalSource: String, Codable, Sendable {
 enum JournalAdapter: String, Codable, Sendable {
     case claudeHook = "claude_hook", opencodePlugin = "opencode_plugin", piPlugin = "pi_plugin"
     case codexNotify = "codex_notify", codexTranscript = "codex_transcript", grokTranscript = "grok_transcript"
-    /// Claude's transcript, read only for the Esc interrupt its hooks never report.
+    /// Claude's transcript supplies Esc interrupts and recorded terminal usage limits.
     case claudeTranscript = "claude_transcript"
     case shell, keypress, selfReport = "self_report", c11
     var source: JournalSource {
@@ -61,7 +61,7 @@ enum JournalAdapter: String, Codable, Sendable {
         case .piPlugin, .codexNotify: return ["turn"]
         case .codexTranscript: return ["turn", "interrupt"]
         case .grokTranscript: return ["turn", "interrupt"]
-        case .claudeTranscript: return ["interrupt"]
+        case .claudeTranscript: return ["interrupt", "error"]
         case .c11: return ["control"]
         default: return []
         }
@@ -76,7 +76,30 @@ enum JournalSignal: String, Codable {
     case legacyWorking = "legacy_working", legacyIdle = "legacy_idle", observation
 }
 enum JournalResolution: String, Codable { case resumed, cancelled, unknown }
-enum JournalReason: String, Codable { case approval, question, planReview = "plan_review", sessionFailure = "session_failure", toolFailure = "tool_failure", observation }
+enum JournalReason: String, Codable { case approval, question, planReview = "plan_review", sessionFailure = "session_failure", toolFailure = "tool_failure", usageLimit = "usage_limit", observation }
+
+/// Closed, recorded harness outcomes. Never store the provider's text here.
+enum JournalUsageLimitKind: String, Codable, Sendable {
+    case monthlySpend = "monthly_spend"
+    case sessionUsage = "session_usage"
+
+    var label: String {
+        switch self {
+        case .monthlySpend:
+            return String(localized: "journal.limit.monthlySpend", defaultValue: "Monthly spend limit reached")
+        case .sessionUsage:
+            return String(localized: "journal.limit.sessionUsage", defaultValue: "Session usage limit reached")
+        }
+    }
+}
+
+/// The last failed limit turn, retained while a retry runs and cleared by its
+/// successful completion. Part of the existing journal, not a second lifecycle.
+struct JournalUsageLimit: Codable, Equatable {
+    let kind: JournalUsageLimitKind
+    let turnID: String
+    let sinceMs: Int64
+}
 
 struct JournalOwner: Codable, Hashable {
     let panelID: UUID
@@ -113,6 +136,7 @@ struct JournalDraft: Codable, Equatable {
     var reasonCode: JournalReason? = nil
     var signal: JournalSignal? = nil
     var resolution: JournalResolution? = nil
+    var usageLimit: JournalUsageLimitKind? = nil
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case schemaVersion = "schema_version", eventID = "event_id", kind, emittedAtMs = "emitted_at_ms"
@@ -120,6 +144,7 @@ struct JournalDraft: Codable, Equatable {
         case sessionID = "session_id", agentKind = "agent_kind", isChild = "is_child", parentSessionID = "parent_session_id"
         case source, adapter, adapterVersion = "adapter_version", nativeEvent = "native_event"
         case turnID = "turn_id", requestID = "request_id", toolClass = "tool_class", reasonCode = "reason_code", signal, resolution
+        case usageLimit = "usage_limit"
     }
 
     var owner: JournalOwner? {
@@ -157,7 +182,7 @@ struct JournalDraft: Codable, Equatable {
             guard let s else { return true }
             return !s.isEmpty && s.utf8.count <= limit && s.utf8.allSatisfy { $0 >= 33 && $0 <= 126 && $0 != 47 && $0 != 92 }
         }
-        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "StopFailure", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "permission.replied", "question.asked", "question.replied", "question.rejected", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "connection_lost", "operator_response", "adapter_gap", "adapter_recovered"]
+        let nativeNames: Set<String> = ["other", "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "StopFailure", "Notification", "PermissionRequest", "session.created", "session.status", "session.idle", "session.error", "permission.asked", "permission.replied", "question.asked", "question.replied", "question.rejected", "chat.message", "agent_start", "agent_settled", "agent-turn-complete", "turn.started", "turn.completed", "turn.interrupted", "turn.failed", "connection_lost", "operator_response", "adapter_gap", "adapter_recovered"]
         guard schemaVersion == 1 else { throw JournalError.unsupportedVersion }
         guard source == adapter.source, emittedAtMs >= 0, occurredAtMs.map({ $0 >= 0 }) ?? true,
               (occurredAtMs == nil) == (timeQuality == .missing),
@@ -167,6 +192,11 @@ struct JournalDraft: Codable, Equatable {
               opaque(adapterVersion, 64), adapterVersion.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) }), nativeNames.contains(nativeEvent),
               signal == nil || kind == .stateChanged,
               resolution == nil || kind == .attentionResolved else { throw JournalError.invalidEvent }
+        if reasonCode == .usageLimit || usageLimit != nil {
+            guard kind == .errorReported, reasonCode == .usageLimit, usageLimit != nil,
+                  agentKind == "claude-code", adapter == .claudeTranscript,
+                  nativeEvent == "turn.failed", turnID != nil, !isChild else { throw JournalError.invalidEvent }
+        }
         guard try canonicalData().count <= 4096 else { throw JournalError.invalidEvent }
     }
 
@@ -208,7 +238,8 @@ enum JournalNativeClockEvidence {
              ("grok", .grokTranscript, "turn.started", .turnStarted),
              ("grok", .grokTranscript, "turn.completed", .turnCompleted),
              ("grok", .grokTranscript, "turn.interrupted", .turnInterrupted),
-             ("claude-code", .claudeTranscript, "turn.interrupted", .turnInterrupted):
+             ("claude-code", .claudeTranscript, "turn.interrupted", .turnInterrupted),
+             ("claude-code", .claudeTranscript, "turn.failed", .errorReported):
             return true
         default:
             return false
@@ -253,8 +284,9 @@ struct JournalSnapshot: Codable, Equatable {
     var lastLiveSequence: Int64 = 0
     var lastLiveEmittedAtMs: Int64 = 0
     var modelID: String? = nil
+    var usageLimit: JournalUsageLimit? = nil
     var isHistorical: Bool { confirmation == .unconfirmed || connection != .live }
-    var paintsAttention: Bool { phase == .blocked || phase == .error }
+    var paintsAttention: Bool { phase == .blocked || phase == .error || usageLimit != nil }
     func isFresh(at now: Int64) -> Bool { now >= observedAtMs && now - observedAtMs <= 30_000 }
 }
 

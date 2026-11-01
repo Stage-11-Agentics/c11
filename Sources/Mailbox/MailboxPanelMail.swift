@@ -135,9 +135,17 @@ enum MailboxPanelMail {
         return UInt8(index)
     }
 
-    /// A count as the cell shows it: `99+` above 99, so a slot never grows.
+    /// The widest count the cell shows, in characters. Every slot is sized
+    /// for it, so a count changing never moves the bar.
+    static let countSlotCharacters = 5
+
+    /// A count as the cell shows it: exact through 99999, then whole
+    /// thousands (`123k`) or millions (`12M`), never wider than the slot.
     static func countText(_ count: Int) -> String {
-        count > 99 ? "99+" : String(max(0, count))
+        let count = max(0, count)
+        if count <= 99_999 { return String(count) }
+        if count <= 999_999 { return "\(count / 1000)k" }
+        return "\(min(count / 1_000_000, 9999))M"
     }
 
     // MARK: - Messages
@@ -656,6 +664,221 @@ enum MailboxPanelMail {
                 defaultValue: "This entry is not a regular file, so c11 did not open it."
             ),
             referenceContent: .notRegularFile
+        )
+    }
+}
+
+// MARK: - Insights
+
+extension MailboxPanelMail {
+
+    /// The insights scan parses at most this many envelopes, newest first.
+    /// Counts and activity come from file names and cover everything.
+    static let insightsScanLimit = 5000
+    /// Ranked lists show this many names before folding the rest into "others".
+    static let insightsTopCount = 6
+    static let insightsHours = 24
+    static let insightsDays = 14
+
+    /// One name in a ranked list, with how many messages it accounts for.
+    struct Tally: Equatable, Identifiable {
+        var id: String { name }
+        let name: String
+        let count: Int
+        /// Of `count`, how many are still unread (senders only).
+        var unread: Int = 0
+    }
+
+    struct Ranking: Equatable {
+        var top: [Tally] = []
+        /// How many distinct names there are in all.
+        var distinct = 0
+        /// Messages from names past `top`.
+        var others = 0
+    }
+
+    /// What the drawer's Insights view shows about one panel's mail.
+    struct Insights: Equatable {
+        var received = 0
+        var unread = 0
+        var firstAt: Date?
+        var lastAt: Date?
+        var oldestUnreadAt: Date?
+        var lastHour = 0
+        var lastDay = 0
+        var lastWeek = 0
+        /// Received per rolling hour, oldest first; the last bucket is the past hour.
+        var hourly: [Int] = Array(repeating: 0, count: MailboxPanelMail.insightsHours)
+        /// Received per calendar day, oldest first; the last bucket is today.
+        var daily: [Int] = Array(repeating: 0, count: MailboxPanelMail.insightsDays)
+        /// The start of each `daily` bucket's day.
+        var dayStarts: [Date] = []
+
+        /// Envelopes parsed for the breakdowns below, and those that would not parse.
+        var scanned = 0
+        var unparsed = 0
+        var senders = Ranking()
+        var topics = Ranking()
+        var untitled = 0
+        var urgent = 0
+        var replies = 0
+        var fileBodies = 0
+
+        /// Messages this panel sent that the ledger still records.
+        var sent = 0
+        var recipients = Ranking()
+        /// Recipient copies still on disk, and how many of those were taken.
+        var sentCopies = 0
+        var sentTaken = 0
+
+        /// The ledger keeps only about its newest `retain` entries, so at that
+        /// size older sends may be missing. A ledger between `retain` and its
+        /// trim threshold may not have been trimmed yet; the note says "may".
+        var sentIsTrimmed: Bool { sent >= MailboxSentLedger.retain }
+        var scanIsPartial: Bool { scanned + unparsed < received }
+
+        /// Every figure that comes from parsing envelopes (senders, topics and
+        /// the urgent, reply, file-body and no-topic counts) covers only the
+        /// newest `scanLimit`. When the scan stopped short, this says so, next
+        /// to those figures; nil when they cover everything.
+        var sampleScopeNote: String? {
+            guard scanIsPartial else { return nil }
+            return String(
+                localized: "mailbox.insights.note.sample",
+                defaultValue: "Senders, topics and the urgent, reply, file-body and no-topic counts cover only the newest \(scanned + unparsed) of \(received) messages."
+            )
+        }
+
+        /// When the scan ran; rates are measured up to it.
+        var scannedAt = Date()
+
+        /// Received per day from the first message until the scan, when that
+        /// spans a day or more. A burst long ago reads as a low rate now.
+        var perDay: Double? {
+            guard let firstAt else { return nil }
+            let days = scannedAt.timeIntervalSince(firstAt) / 86400
+            guard days >= 1 else { return nil }
+            return Double(received) / days
+        }
+    }
+
+    /// Reads one panel's inbox, `_read/` and `_sent/` ledger. Lists every
+    /// envelope, parses the newest `scanLimit`, and stats each sent
+    /// recipient's copy. Call it off the main thread.
+    static func insights(
+        inbox: URL,
+        mailboxesRoot: URL,
+        now: Date = Date(),
+        scanLimit: Int = insightsScanLimit,
+        calendar: Calendar = .current,
+        fileManager: FileManager = .default
+    ) -> Insights {
+        var result = Insights()
+        result.scannedAt = now
+        let unreadFiles = envelopeFiles(in: inbox, fileManager: fileManager)
+        let readFiles = envelopeFiles(in: MailboxDrain.readURL(inbox: inbox), fileManager: fileManager)
+        result.unread = unreadFiles.count
+        result.received = unreadFiles.count + readFiles.count
+
+        let today = calendar.startOfDay(for: now)
+        result.dayStarts = (0..<insightsDays).map { offset in
+            calendar.date(byAdding: .day, value: offset - (insightsDays - 1), to: today) ?? today
+        }
+
+        let dated = (unreadFiles.map { ($0, true) } + readFiles.map { ($0, false) }).map { entry in
+            (url: entry.0, unread: entry.1, date: arrivalDate(of: entry.0, fileManager: fileManager))
+        }
+        for entry in dated {
+            guard let date = entry.date else { continue }
+            if result.firstAt.map({ date < $0 }) ?? true { result.firstAt = date }
+            if result.lastAt.map({ date > $0 }) ?? true { result.lastAt = date }
+            // Unread waits are measured from landing, as the cell measures them.
+            if entry.unread, let landed = landingDate(of: entry.url, fileManager: fileManager),
+               result.oldestUnreadAt.map({ landed < $0 }) ?? true {
+                result.oldestUnreadAt = landed
+            }
+            let age = now.timeIntervalSince(date)
+            if age >= 0 {
+                if age < 3600 { result.lastHour += 1 }
+                if age < 86400 {
+                    result.lastDay += 1
+                    result.hourly[insightsHours - 1 - Int(age / 3600)] += 1
+                }
+                if age < 7 * 86400 { result.lastWeek += 1 }
+            }
+            if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: today).day,
+               (0..<insightsDays).contains(days) {
+                result.daily[insightsDays - 1 - days] += 1
+            }
+        }
+
+        var senders: [String: (count: Int, unread: Int)] = [:]
+        var topics: [String: Int] = [:]
+        let newestFirst = dated.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        for entry in newestFirst.prefix(max(0, scanLimit)) {
+            guard case .success(let read) = readRegularFilePrefix(path: entry.url.path, limit: maxEnvelopeBytes, followSymlinks: false),
+                  !read.truncated,
+                  let raw = (try? JSONSerialization.jsonObject(with: read.data)) as? [String: Any] else {
+                result.unparsed += 1
+                continue
+            }
+            result.scanned += 1
+            let from = (raw["from"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "?"
+            senders[from, default: (0, 0)].count += 1
+            if entry.unread { senders[from, default: (0, 0)].unread += 1 }
+            if let topic = raw["topic"] as? String, !topic.isEmpty {
+                topics[topic, default: 0] += 1
+            } else {
+                result.untitled += 1
+            }
+            if (raw["urgent"] as? Bool) == true { result.urgent += 1 }
+            if let parent = raw["in_reply_to"] as? String, !parent.isEmpty { result.replies += 1 }
+            if let ref = raw["body_ref"] as? String, !ref.isEmpty { result.fileBodies += 1 }
+        }
+        result.senders = ranking(senders.map { Tally(name: $0.key, count: $0.value.count, unread: $0.value.unread) })
+        result.topics = ranking(topics.map { Tally(name: $0.key, count: $0.value) })
+
+        let (entries, total) = MailboxSentLedger.entries(senderInbox: inbox, limit: Int.max, fileManager: fileManager)
+        result.sent = total
+        // Tallied by recipient panel, so direct and broadcast sends to one panel
+        // share a row. A panel is named by the address of its newest direct
+        // send when it had one (the dispatcher's label is often only a title),
+        // else by its newest label. Entries come newest first.
+        var recipientCounts: [String: Int] = [:]
+        var directNames: [String: String] = [:]
+        var labels: [String: String] = [:]
+        for entry in entries {
+            let direct = entry.recipients.count == 1 ? entry.to.flatMap { $0.isEmpty ? nil : $0 } : nil
+            for recipient in entry.recipients {
+                let key = recipient.panel.lowercased()
+                recipientCounts[key, default: 0] += 1
+                if let direct, directNames[key] == nil { directNames[key] = direct }
+                if labels[key] == nil, !recipient.name.isEmpty { labels[key] = recipient.name }
+                guard let panel = UUID(uuidString: recipient.panel) else { continue }
+                let copyInbox = inboxURL(mailboxesRoot: mailboxesRoot, panelId: panel)
+                let file = MailboxLayout.envelopeFilename(id: entry.id)
+                if fileManager.fileExists(atPath: MailboxDrain.readURL(inbox: copyInbox).appendingPathComponent(file).path) {
+                    result.sentCopies += 1
+                    result.sentTaken += 1
+                } else if fileManager.fileExists(atPath: copyInbox.appendingPathComponent(file).path) {
+                    result.sentCopies += 1
+                }
+            }
+        }
+        result.recipients = ranking(recipientCounts.map { key, count in
+            Tally(name: directNames[key] ?? labels[key] ?? key, count: count)
+        })
+        return result
+    }
+
+    /// Most messages first, then by name, so equal counts never reorder.
+    static func ranking(_ tallies: [Tally], top: Int = insightsTopCount) -> Ranking {
+        let ordered = tallies.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+        let shown = Array(ordered.prefix(max(0, top)))
+        return Ranking(
+            top: shown,
+            distinct: ordered.count,
+            others: ordered.dropFirst(shown.count).reduce(0) { $0 + $1.count }
         )
     }
 }

@@ -18,7 +18,7 @@ extension CMUXCLI {
     // MARK: - CMUX-37 Phase 1: snapshot commands
 
     /// `c11 snapshot [--workspace <ref>] [--out <path>] [--all] [--json]`. Defaults
-    /// to the current workspace (`$CMUX_WORKSPACE_ID`). Prints the resolved
+    /// to the current workspace (`$C11_WORKSPACE_ID`). Prints the resolved
     /// path + snapshot id. Backed by `snapshot.create` v2.
     ///
     /// `--out <path>` is honoured in the CLI process, not over the socket.

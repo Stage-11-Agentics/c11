@@ -248,7 +248,7 @@ extension CMUXCLI {
         let surfaceIdStr = Self.callerPanelEnv(env)
         guard let surfaceIdStr, let surfaceId = UUID(uuidString: surfaceIdStr) else {
             guard envWorkspaceId != nil else { throw workspaceNotSet }
-            throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
+            throw mailboxPanelIdUnavailableError()
         }
 
         let payload: [String: Any]
@@ -395,7 +395,7 @@ extension CMUXCLI {
             mailboxAddress: mailboxAddress,
             panelId: callerPanelId
         ) else {
-            throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
+            throw mailboxPanelIdUnavailableError()
         }
         let envelope = try MailboxEnvelope.build(
             from: from,
@@ -1005,6 +1005,15 @@ extension CMUXCLI {
         }
     }
 
+    /// Every mailbox command that needs the caller's panel fails the same,
+    /// localized way when the environment carries no valid panel UUID.
+    func mailboxPanelIdUnavailableError() -> CLIError {
+        CLIError(message: String(
+            localized: "mailbox.cli.error.panel-id-unavailable",
+            defaultValue: "C11_PANEL_ID is missing or is not a valid panel UUID. Pass --from <panel> to override."
+        ))
+    }
+
     // MARK: - status (C11-550)
 
     /// `c11 mailbox status <id> [--json]`: sent, delivered and read per
@@ -1432,7 +1441,7 @@ extension CMUXCLI {
             mailboxAddress: mailboxAddress,
             panelId: panelId
         ) else {
-            throw CLIError(message: "C11_PANEL_ID not set — pass --from <panel> to override")
+            throw mailboxPanelIdUnavailableError()
         }
         print(from)
     }

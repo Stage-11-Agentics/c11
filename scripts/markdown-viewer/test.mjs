@@ -14,9 +14,11 @@ const page=await browser.newPage({viewport:{width:1200,height:820}});
 const errors=[],requests=[],blockedHandlers=[];
 // Inside the hostile-fixture scenarios, the page CSP blocking a fixture's inline handler is the
 // defense working; those scenarios assert the payloads stay inert. Anywhere else it is an error.
-const blockedHandler="Executing inline event handler violates the following Content Security Policy directive 'script-src 'self''.";
+// Chromium builds word this report differently ("Refused to execute inline event handler because it
+// violates..." in 141, "Executing inline event handler violates..." later), so match its parts.
+const isBlockedHandler=text=>/inline event handler/i.test(text)&&/Content Security Policy directive/i.test(text)&&text.includes("script-src 'self'");
 let hostileFixtures=false;
-page.on('console',m=>{if(m.type()!=='error')return;(hostileFixtures&&m.text().startsWith(blockedHandler)?blockedHandlers:errors).push(m.text());});
+page.on('console',m=>{if(m.type()!=='error')return;(hostileFixtures&&isBlockedHandler(m.text())?blockedHandlers:errors).push(m.text());});
 page.on('pageerror',e=>errors.push(e.message));
 page.on('request',r=>{if(!r.url().startsWith('file:')&&!r.url().startsWith('c11md-asset:'))requests.push(r.url());});
 await page.addInitScript(()=>{window.testMessages=[];window.webkit={messageHandlers:{c11md:{postMessage:m=>window.testMessages.push(m)}}};});

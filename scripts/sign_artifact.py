@@ -83,6 +83,17 @@ def configure(root):
         # Local HTTP updater fixtures need URLSession access, beyond the normal
         # WebKit-only ATS exception. This override exists only in the proof app.
         plist["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
+        # Only the production Release identity claims c11 URLs, as in
+        # prepare-info-plist.py; a proof app is a rebrand like staging.
+        types = []
+        for entry in plist.get("CFBundleURLTypes", []):
+            schemes = [s for s in entry.get("CFBundleURLSchemes", []) if s.lower() != "c11"]
+            if schemes:
+                types.append({**entry, "CFBundleURLSchemes": schemes})
+        if types:
+            plist["CFBundleURLTypes"] = types
+        else:
+            plist.pop("CFBundleURLTypes", None)
         feed = identity["proofFeedBase"] + "/appcast.xml"
         download = identity["proofFeedBase"]
         notes = download + "/notes.html"

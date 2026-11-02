@@ -1004,16 +1004,28 @@
         "ru": {"stringUnit": {"state": "translated", "value": "link: --format должен быть url, markdown или osc8"}}
       }
     },
-    "cli.link.targetInvalid": {
+    "cli.link.targetInvalid.panel": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "link: invalid %@ target '%@'; use a UUID, ref, or index"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ の対象 '%@' が無効です。UUID、参照、またはインデックスを使用してください"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "link: недійсна ціль %@ '%@'; використайте UUID, посилання або індекс"}},
-        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 대상 '%@'이(가) 유효하지 않습니다. UUID, 참조 또는 인덱스를 사용하세요"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 目标 '%@' 无效；请使用 UUID、引用或索引"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 目標 '%@' 無效；請使用 UUID、參照或索引"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "link: недопустимая цель %@ '%@'; используйте UUID, ссылку или индекс"}}
+        "en": {"stringUnit": {"state": "translated", "value": "link: invalid panel target '%@'; use a UUID, ref, or index"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: パネルの対象 '%@' が無効です。UUID、ref、またはインデックスを使用してください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: недійсна ціль панелі '%@'; використайте UUID, ref або індекс"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: 패널 대상 '%@'이(가) 유효하지 않습니다. UUID, ref 또는 인덱스를 사용하세요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: 面板目标 '%@' 无效；请使用 UUID、ref 或索引"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: 面板目標 '%@' 無效；請使用 UUID、ref 或索引"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: недопустимая цель панели '%@'; используйте UUID, ref или индекс"}}
+      }
+    },
+    "cli.link.targetInvalid.workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: invalid workspace target '%@'; use a UUID, ref, or index"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: ワークスペースの対象 '%@' が無効です。UUID、ref、またはインデックスを使用してください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: недійсна ціль робочого простору '%@'; використайте UUID, ref або індекс"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: 워크스페이스 대상 '%@'이(가) 유효하지 않습니다. UUID, ref 또는 인덱스를 사용하세요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: 工作区目标 '%@' 无效；请使用 UUID、ref 或索引"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: 工作區目標 '%@' 無效；請使用 UUID、ref 或索引"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: недопустимая цель рабочего пространства '%@'; используйте UUID, ref или индекс"}}
       }
     },
     "cli.link.inventoryInvalid": {
@@ -1028,28 +1040,52 @@
         "ru": {"stringUnit": {"state": "translated", "value": "link: c11 вернул недопустимый идентификатор цели"}}
       }
     },
-    "cli.link.targetAmbiguous": {
+    "cli.link.targetAmbiguous.panel": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "link: %@ target '%@' is ambiguous; use a UUID, ref, or narrower scope"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ の対象 '%@' を一意に特定できません。UUID や参照を指定するか、範囲を絞り込んでください"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль %@ '%@' неоднозначна; використайте UUID, посилання або вужчу область"}},
-        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 대상 '%@'이(가) 모호합니다. UUID, 참조 또는 더 좁은 범위를 사용하세요"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 目标 '%@' 不明确；请使用 UUID、引用或更小的范围"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 目標 '%@' 不明確；請使用 UUID、參照或更小的範圍"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "link: цель %@ '%@' неоднозначна; используйте UUID, ссылку или более узкую область"}}
+        "en": {"stringUnit": {"state": "translated", "value": "link: panel target '%@' is ambiguous; use a UUID, ref, or narrower scope"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: パネルの対象 '%@' を一意に特定できません。UUID や ref を指定するか、範囲を絞り込んでください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль панелі '%@' неоднозначна; використайте UUID, ref або вужчу область"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: 패널 대상 '%@'이(가) 모호합니다. UUID, ref 또는 더 좁은 범위를 사용하세요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: 面板目标 '%@' 不明确；请使用 UUID、ref 或更小的范围"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: 面板目標 '%@' 不明確；請使用 UUID、ref 或更小的範圍"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: цель панели '%@' неоднозначна; используйте UUID, ref или более узкую область"}}
       }
     },
-    "cli.link.targetNotFound": {
+    "cli.link.targetAmbiguous.workspace": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "link: %@ target '%@' is not available in the requested scope"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "link: %@ の対象 '%@' は指定された範囲では利用できません"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль %@ '%@' недоступна в запитаній області"}},
-        "ko": {"stringUnit": {"state": "translated", "value": "link: %@ 대상 '%@'은(는) 요청한 범위에서 사용할 수 없습니다"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: %@ 目标 '%@' 在请求的范围内不可用"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: %@ 目標 '%@' 在要求的範圍內無法使用"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "link: цель %@ '%@' недоступна в запрошенной области"}}
+        "en": {"stringUnit": {"state": "translated", "value": "link: workspace target '%@' is ambiguous; use a UUID, ref, or narrower scope"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: ワークスペースの対象 '%@' を一意に特定できません。UUID や ref を指定するか、範囲を絞り込んでください"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль робочого простору '%@' неоднозначна; використайте UUID, ref або вужчу область"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: 워크스페이스 대상 '%@'이(가) 모호합니다. UUID, ref 또는 더 좁은 범위를 사용하세요"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: 工作区目标 '%@' 不明确；请使用 UUID、ref 或更小的范围"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: 工作區目標 '%@' 不明確；請使用 UUID、ref 或更小的範圍"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: цель рабочего пространства '%@' неоднозначна; используйте UUID, ref или более узкую область"}}
+      }
+    },
+    "cli.link.targetNotFound.panel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: panel target '%@' is not available in the requested scope"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: パネルの対象 '%@' は指定された範囲では利用できません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль панелі '%@' недоступна в запитаній області"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: 패널 대상 '%@'은(는) 요청한 범위에서 사용할 수 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: 面板目标 '%@' 在请求的范围内不可用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: 面板目標 '%@' 在要求的範圍內無法使用"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: цель панели '%@' недоступна в запрошенной области"}}
+      }
+    },
+    "cli.link.targetNotFound.workspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "link: workspace target '%@' is not available in the requested scope"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "link: ワークスペースの対象 '%@' は指定された範囲では利用できません"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "link: ціль робочого простору '%@' недоступна в запитаній області"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "link: 워크스페이스 대상 '%@'은(는) 요청한 범위에서 사용할 수 없습니다"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "link: 工作区目标 '%@' 在请求的范围内不可用"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "link: 工作區目標 '%@' 在要求的範圍內無法使用"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "link: цель рабочего пространства '%@' недоступна в запрошенной области"}}
       }
     },
     "cli.dragPanelToSplit.direction.count": {
@@ -2609,6 +2645,18 @@
       "extractionState": "manual",
       "localizations": {
         "en": {"stringUnit": {"state": "translated", "value": "C11_WORKSPACE_ID is not set. Run from a c11 panel or set it for a script."}}
+      }
+    },
+    "mailbox.cli.error.panel-id-unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "C11_PANEL_ID is missing or is not a valid panel UUID. Pass --from <panel> to override."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "C11_PANEL_ID が未設定か、有効なパネルの UUID ではありません。--from <panel> を指定して上書きしてください。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "C11_PANEL_ID відсутній або не є дійсним UUID панелі. Передайте --from <panel>, щоб перевизначити."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "C11_PANEL_ID가 없거나 유효한 패널 UUID가 아닙니다. 재정의하려면 --from <panel>을(를) 전달하세요."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "C11_PANEL_ID 缺失或不是有效的面板 UUID。请传入 --from <panel> 进行覆盖。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "C11_PANEL_ID 缺失或不是有效的面板 UUID。請傳入 --from <panel> 以覆寫。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Переменная C11_PANEL_ID отсутствует или не является допустимым UUID панели. Передайте --from <panel>, чтобы переопределить."}}
       }
     },
     "mailbox.cli.error.caller-not-open": {

@@ -48,7 +48,10 @@ extension CMUXCLI {
             let parts = canonical.split(separator: ":", omittingEmptySubsequences: false)
             let isRef = parts.count == 2 && parts[0] == kind && Int(parts[1]).map { $0 > 0 } == true
             guard isUUID(raw) || isRef || Int(raw).map({ $0 >= 0 }) == true else {
-                throw CLIError(message: String(format: String(localized: "cli.link.targetInvalid", defaultValue: "link: invalid %@ target '%@'; use a UUID, ref, or index"), kind, raw))
+                let format = kind == "panel"
+                    ? String(localized: "cli.link.targetInvalid.panel", defaultValue: "link: invalid panel target '%@'; use a UUID, ref, or index")
+                    : String(localized: "cli.link.targetInvalid.workspace", defaultValue: "link: invalid workspace target '%@'; use a UUID, ref, or index")
+                throw CLIError(message: String(format: format, raw))
             }
         }
         return LinkArguments(panel: values["--panel"], workspace: values["--workspace"], format: format)
@@ -70,11 +73,18 @@ extension CMUXCLI {
             }
             return id
         }
-        func targetError(kind: String, raw: String, ambiguous: Bool = false) -> CLIError {
+        // One string per kind: translations cannot inflect a substituted English word.
+        func targetError(kind: PanelLinkFormat.Kind, raw: String, ambiguous: Bool = false) -> CLIError {
             if ambiguous {
-                return CLIError(message: String(format: String(localized: "cli.link.targetAmbiguous", defaultValue: "link: %@ target '%@' is ambiguous; use a UUID, ref, or narrower scope"), kind, raw))
+                let format = kind == .panel
+                    ? String(localized: "cli.link.targetAmbiguous.panel", defaultValue: "link: panel target '%@' is ambiguous; use a UUID, ref, or narrower scope")
+                    : String(localized: "cli.link.targetAmbiguous.workspace", defaultValue: "link: workspace target '%@' is ambiguous; use a UUID, ref, or narrower scope")
+                return CLIError(message: String(format: format, raw))
             }
-            return CLIError(message: "not_found: " + String(format: String(localized: "cli.link.targetNotFound", defaultValue: "link: %@ target '%@' is not available in the requested scope"), kind, raw))
+            let format = kind == .panel
+                ? String(localized: "cli.link.targetNotFound.panel", defaultValue: "link: panel target '%@' is not available in the requested scope")
+                : String(localized: "cli.link.targetNotFound.workspace", defaultValue: "link: workspace target '%@' is not available in the requested scope")
+            return CLIError(message: "not_found: " + String(format: format, raw))
         }
 
         let windows: [[String: Any]]
@@ -95,7 +105,7 @@ extension CMUXCLI {
             }
         }
         if let workspace = arguments.workspace, workspaces.count != 1 {
-            throw targetError(kind: "workspace", raw: workspace, ambiguous: workspaces.count > 1)
+            throw targetError(kind: .workspace, raw: workspace, ambiguous: workspaces.count > 1)
         }
 
         let target: [String: Any]
@@ -112,7 +122,7 @@ extension CMUXCLI {
                 }
             }
             guard found.count == 1, let destination = found.first else {
-                throw targetError(kind: "panel", raw: panel, ambiguous: found.count > 1)
+                throw targetError(kind: .panel, raw: panel, ambiguous: found.count > 1)
             }
             target = destination.panel
             workspace = destination.workspace
@@ -122,7 +132,7 @@ extension CMUXCLI {
             guard let destination = workspaces.first, let workspaceRef = arguments.workspace else {
                 throw CLIError(message: String(localized: "cli.link.targetRequired", defaultValue: "link requires --panel or --workspace; no current target is assumed"))
             }
-            guard workspaces.count == 1 else { throw targetError(kind: "workspace", raw: workspaceRef, ambiguous: true) }
+            guard workspaces.count == 1 else { throw targetError(kind: .workspace, raw: workspaceRef, ambiguous: true) }
             target = destination.item
             workspace = destination.item
             windowID = destination.windowID

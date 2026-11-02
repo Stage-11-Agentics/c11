@@ -58,7 +58,8 @@ class Proof:
         self.pid = pids[0]
         with (self.app / 'Contents/Info.plist').open('rb') as stream:
             self.bundle = plistlib.load(stream)
-        assert self.bundle['CFBundleIdentifier'].startswith('com.stage11.c11.debug.'), self.bundle['CFBundleIdentifier']
+        # A tagged Debug or tagged staging copy, never the production identity whose defaults are the operator's.
+        assert self.bundle['CFBundleIdentifier'].startswith(('com.stage11.c11.debug.', 'com.stage11.c11.staging.')), self.bundle['CFBundleIdentifier']
         self.cli = str(self.app / 'Contents/Resources/bin/c11')
         for key in list(os.environ):
             if key.startswith(('C11_SOCKET', 'CMUX_SOCKET')) or key in ('C11_PANEL_ID', 'CMUX_SURFACE_ID',

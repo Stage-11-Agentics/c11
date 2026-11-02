@@ -87,7 +87,7 @@ if [[ "$mode" != "check" ]]; then
     printf "add-generic-password -s %s -a %s -T /usr/bin/security -w %s %s\n" "$service" "$org" "$token" "$kc" | bounded 30 security -i >/dev/null
   fi
   stored="$(bounded 30 security find-generic-password -s "$service" -a "$org" -w "$kc" 2>/dev/null || true)"
-  [[ "$stored" == "$token" ]] || { unset token stored; echo "store did not take; the previous item, if any, is unchanged" >&2; echo failed; exit 1; }
+  [[ "$stored" == "$token" ]] || { unset token stored; echo "store did not verify; the keychain item may hold the previous token or none. Run again to store it" >&2; echo failed; exit 1; }
   unset token stored
 fi
 if ! bounded 30 security find-generic-password -s "$service" -a "$org" "$kc" >/dev/null 2>&1; then

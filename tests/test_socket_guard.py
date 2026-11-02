@@ -624,16 +624,242 @@ def test_shell_strings_are_refused() -> None:
             "os_popen": 'os.popen(f"{PY} {PROBE} --socket {FOREIGN}").read()',
             "generator_argv": 'subprocess.Popen(iter([PY, PROBE, "--socket", FOREIGN])).wait()',
             "bytes_env_key": 'subprocess.run([PY, PROBE], env={b"C11_SOCKET_PATH": os.fsencode(LIVE), b"PATH": b"/usr/bin:/bin"}, check=False)',
+            "python_c_connect": 'subprocess.run([PY, "-c", f"import socket; socket.socket(socket.AF_UNIX).connect({LIVE!r})"], check=False)',
+            "endpoint_inside_a_word": """subprocess.run([PY, "-c", "import socket, sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1].split(':')[1].split(',')[0])", f"UNIX-CONNECT:{LIVE},retry=1"], check=False)""",
         },
     )
+
+
+def test_relative_socket_paths_use_the_child_directory() -> None:
+    """A relative endpoint means a path under the directory the child runs in."""
+    assert_all_refused(
+        "relative path",
+        {
+            "env_kwarg_child_cwd": 'subprocess.run([PY, PROBE], cwd=DIR, env={"C11_SOCKET_PATH": "live.sock"}, check=False)',
+            "env_kwarg_bytes_cwd": 'subprocess.run([PY, PROBE], cwd=os.fsencode(DIR), env={"C11_SOCKET_PATH": "live.sock"}, check=False)',
+            "env_kwarg_foreign": 'subprocess.run([PY, PROBE], cwd=DIR, env={"C11_SOCKET_PATH": "foreign.sock"}, check=False)',
+            "positional_cwd_and_env": 'subprocess.Popen([PY, PROBE], -1, None, None, None, None, None, True, False, DIR, {"C11_SOCKET_PATH": "live.sock"}).wait()',
+            "env_kwarg_cwd_in_shell": 'subprocess.run(f"cd {DIR}; {PY} {PROBE}", shell=True, env={"C11_SOCKET_PATH": "live.sock"}, check=False)',
+            "shell_cd_socket_flag": 'subprocess.run(f"cd {DIR}; {PY} {PROBE} --socket live.sock", shell=True, check=False)',
+            "shell_cd_env_prefix": 'subprocess.run(f"cd {DIR} && C11_SOCKET_PATH=foreign.sock {PY} {PROBE}", shell=True, check=False)',
+            "shell_cd_newline": 'subprocess.run(f"cd {DIR}\\n{PY} {PROBE} --socket foreign.sock", shell=True, check=False)',
+            "shell_subshell_cd": 'subprocess.run(f"(cd {DIR}; {PY} {PROBE} --socket foreign.sock)", shell=True, check=False)',
+            "shell_cd_chain": """subprocess.run(f"cd {os.path.dirname(DIR)} && cd {os.path.basename(DIR)} && {PY} {PROBE} --socket foreign.sock", shell=True, check=False)""",
+            "sh_c_cd": 'subprocess.run(["/bin/sh", "-c", f"cd {DIR}; {PY} {PROBE} --socket foreign.sock"], check=False)',
+            "shell_cd_unreadable": 'subprocess.run(f"cd $(printf %s {DIR}); {PY} {PROBE} --socket foreign.sock", shell=True, check=False)',
+            "system_cd_socket_flag": 'os.system(f"cd {DIR}; {PY} {PROBE} --socket foreign.sock")',
+        },
+    )
+
+
+def test_cleared_socket_env_stays_on_the_sentinel() -> None:
+    """A test that clears the socket variables must not hand a child implicit discovery."""
+    rig = BypassRig()
+    default_helper = os.path.join(rig.directory, "default_helper.py")
+    with open(default_helper, "w", encoding="utf-8") as handle:
+        handle.write(
+            textwrap.dedent(
+                f"""
+                import os, socket, sys
+                path = os.environ.get("C11_SOCKET_PATH") or {rig.live.path!r}
+                client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                client.settimeout(2)
+                try:
+                    client.connect(path)
+                except OSError:
+                    print("no default")
+                    raise SystemExit(0)
+                print("connected default")
+                """
+            )
+        )
+    forms = {
+        "system": "os.system(f'{PY} {HELPER}')",
+        "popen": "os.popen(f'{PY} {HELPER}').read()",
+        "subprocess": "subprocess.run([PY, HELPER], check=False)",
+        "execv": "os.execv(PY, [PY, HELPER])",
+        "spawnv": "os.spawnv(os.P_WAIT, PY, [PY, HELPER])",
+    }
+    problems = []
+    try:
+        for name, form in forms.items():
+            result = rig.run_case(
+                "\n".join(
+                    [
+                        f"HELPER = {default_helper!r}",
+                        "for key in socket_guard.SOCKET_ENV_KEYS:",
+                        "    os.environ.pop(key, None)",
+                        form,
+                    ]
+                )
+            )
+            if "connected default" in result.stdout:
+                problems.append(f"{name}: {result.stdout.strip()!r}")
+    finally:
+        rig.close()
+    if problems or rig.live.accepted:
+        fail(f"cleared env reached the default, accepted {rig.live.accepted}: {problems}")
+
+
+def test_harmless_data_naming_a_similar_path_still_runs() -> None:
+    """Only a complete endpoint is refused. A longer path that contains it is just data."""
+    rig = BypassRig()
+    try:
+        result = rig.run_case(
+            """
+            show = [PY, "-c", "import sys; print(sys.argv[1])"]
+            for word in (
+                "diagnostic=" + LIVE + ".backup",
+                LIVE + ".backup",
+                LIVE + "-old",
+                LIVE + "/child",
+                "/backup" + LIVE,
+                "note: " + LIVE + "x is gone",
+            ):
+                proc = subprocess.run(show + [word], check=True, capture_output=True, text=True)
+                assert proc.stdout.strip() == word, proc.stdout
+            proc = subprocess.run(f"echo {LIVE}.backup", shell=True, check=True, capture_output=True, text=True)
+            assert proc.stdout.strip() == LIVE + ".backup", proc.stdout
+            print("ok")
+            """
+        )
+    finally:
+        rig.close()
+    if result.returncode != 0 or "ok" not in result.stdout or "refused:" in result.stdout:
+        fail(f"harmless data\nstdout={result.stdout}\nstderr={result.stderr}")
+    if rig.live.accepted or rig.foreign.accepted:
+        fail("harmless data reached a listener")
+
+
+def test_wrappers_keep_the_original_api() -> None:
+    """Valid calls, malformed calls and return values match the unwrapped functions."""
+    directory = tempfile.mkdtemp(prefix="c573-api-")
+    marker = os.path.join(directory, "launched")
+    script = textwrap.dedent(
+        f"""
+        import inspect, os, signal, subprocess, sys
+        sys.path.insert(0, {TESTS_DIR!r})
+        import socket_guard
+        socket_guard.install()
+        MARKER = {marker!r}
+        SH = "/bin/sh"
+        TOUCH = ["sh", "-c", "touch " + MARKER]
+        SEVEN = ["sh", "-c", "exit 7"]
+        ENV = dict(os.environ)
+
+        def launched():
+            found = os.path.exists(MARKER)
+            if found:
+                os.remove(MARKER)
+            return found
+
+        def raises_type_error(call):
+            try:
+                call()
+            except TypeError:
+                pass
+            else:
+                raise AssertionError("no TypeError")
+            assert not launched(), "a malformed call launched a child"
+
+        # The names match, so a keyword call means the same thing.
+        originals = dict(socket_guard._orig_spawn)
+        originals["execve"] = socket_guard._orig_execve
+        originals["system"] = socket_guard._orig_system
+        for name, original in originals.items():
+            expected = list(inspect.signature(original).parameters)
+            actual = list(inspect.signature(getattr(os, name)).parameters)
+            assert expected == actual, (name, expected, actual)
+
+        # Valid keyword forms.
+        assert os.spawnv(mode=os.P_WAIT, file=SH, args=SEVEN) == 7
+        assert os.spawnvp(mode=os.P_WAIT, file="sh", args=SEVEN) == 7
+        assert os.spawnve(mode=os.P_WAIT, file=SH, args=SEVEN, env=ENV) == 7
+        assert os.spawnvpe(mode=os.P_WAIT, file="sh", args=SEVEN, env=ENV) == 7
+        assert os.spawnve(os.P_WAIT, SH, SEVEN, ENV) == 7
+        assert os.spawnl(os.P_WAIT, SH, *SEVEN) == 7
+        assert os.spawnle(os.P_WAIT, SH, *SEVEN, ENV) == 7
+        assert os.spawnlp(os.P_WAIT, "sh", *SEVEN) == 7
+        assert os.spawnlpe(os.P_WAIT, "sh", *SEVEN, ENV) == 7
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.execve(path=SH, argv=SEVEN, env=ENV)
+            finally:
+                os._exit(99)
+        assert os.waitpid(pid, 0)[1] == 7 << 8
+        pid = os.posix_spawn(SH, SEVEN, ENV)
+        assert os.waitpid(pid, 0)[1] == 7 << 8
+        pid = os.posix_spawnp("sh", SEVEN, ENV, setsid=True)
+        assert os.waitpid(pid, 0)[1] == 7 << 8
+
+        # A required env stays required, and nothing launches without it.
+        raises_type_error(lambda: os.spawnve(os.P_WAIT, SH, TOUCH))
+        raises_type_error(lambda: os.spawnvpe(os.P_WAIT, "sh", TOUCH))
+        raises_type_error(lambda: os.spawnve(mode=os.P_WAIT, file=SH, args=TOUCH))
+        raises_type_error(lambda: os.execve(SH, TOUCH))
+        raises_type_error(lambda: os.execve(SH, TOUCH, None))
+        raises_type_error(lambda: os.posix_spawn(SH, TOUCH))
+        if sys.version_info < (3, 13):
+            raises_type_error(lambda: os.posix_spawn(SH, TOUCH, None))
+            raises_type_error(lambda: os.posix_spawnp("sh", TOUCH, None))
+        else:
+            # Since 3.13, None means inherit.
+            assert os.waitpid(os.posix_spawn(SH, SEVEN, None), 0)[1] == 7 << 8
+            assert os.waitpid(os.posix_spawnp("sh", SEVEN, None), 0)[1] == 7 << 8
+        raises_type_error(lambda: os.spawnv(os.P_WAIT, SH, TOUCH, ENV))
+        # The originals' child fails on a None env, so the status is 127 and nothing runs.
+        assert os.spawnve(os.P_WAIT, SH, TOUCH, None) == 127
+        assert not launched()
+        assert os.spawnvpe(os.P_WAIT, "sh", TOUCH, None) == 127
+        assert not launched()
+
+        # os.system: the same raw wait status, signals included.
+        assert os.system("exit 7") == 7 << 8
+        assert os.system("exit 0") == 0
+        assert os.system("kill -9 $$") == signal.SIGKILL
+        parameter = next(iter(inspect.signature(socket_guard._orig_system).parameters))
+        assert os.system(**{{parameter: "exit 7"}}) == 7 << 8
+        assert os.system(b"exit 7") == 7 << 8
+        raises_type_error(lambda: os.system(5))
+        # It sends the sanitized env and leaves the process-wide mapping alone.
+        os.environ["C11_SOCKET_PATH"] = "/c573-missing/a.sock"
+        before = dict(os.environ)
+        before_mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+        assert os.system('test "$CMUX_SOCKET" = /c573-missing/a.sock') == 0
+        assert dict(os.environ) == before
+        assert signal.pthread_sigmask(signal.SIG_BLOCK, []) == before_mask
+        print("ok")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode != 0 or result.stdout.strip() != "ok":
+        fail(f"wrapper api\nstdout={result.stdout}\nstderr={result.stderr}")
 
 
 def test_exec_and_spawn_are_refused() -> None:
     """Every os.exec*, os.spawn* and os.posix_spawn* form is refused before the child runs."""
     env = '{**os.environ, "C11_SOCKET_PATH": LIVE}'
+    # Since Python 3.13, posix_spawn's env=None means inherit. Before that, the
+    # original raises TypeError, so there is nothing to refuse.
+    inherit_none: dict[str, str] = {}
+    if sys.version_info >= (3, 13):
+        inherit_none = {
+            "posix_spawn_none_env_argv": 'os.waitpid(os.posix_spawn(PY, [PY, PROBE, "--socket", LIVE], None), 0)',
+            "posix_spawn_none_env_mutated": 'os.environ["C11_SOCKET_PATH"] = LIVE; os.waitpid(os.posix_spawn(PY, [PY, PROBE], None), 0)',
+            "posix_spawnp_none_env_argv": 'os.waitpid(os.posix_spawnp(PY, [PY, PROBE, "--socket", LIVE], None), 0)',
+        }
     assert_all_refused(
         "exec and spawn",
         {
+            **inherit_none,
             "execv": 'os.execv(PY, [PY, PROBE, "--socket", LIVE])',
             "execv_shell": 'os.execv("/bin/sh", ["/bin/sh", "-c", f"{PY} {PROBE} --socket {LIVE}"])',
             "execv_mutated_environ": 'os.environ["C11_SOCKET_PATH"] = LIVE; os.execv(PY, [PY, PROBE])',
@@ -787,6 +1013,10 @@ def test_private_listener_traffic_still_works() -> None:
                 lambda: os.spawnlp(os.P_WAIT, PY, PY, PROBE, "--socket", OWN),
                 lambda: os.waitpid(os.posix_spawn(PY, [PY, PROBE], env), 0),
                 lambda: os.waitpid(os.posix_spawnp(PY, [PY, PROBE, "--socket", OWN], dict(os.environ)), 0),
+                lambda: sub([PY, PROBE], cwd=root, env={{**os.environ, "C11_SOCKET_PATH": "own.sock"}}),
+                lambda: sub(f"cd {{root}}; {{PY}} {{PROBE}} --socket own.sock", shell=True),
+                lambda: sub(f"cd {{root}} && C11_SOCKET_PATH=own.sock {{PY}} {{PROBE}}", shell=True),
+                lambda: subprocess.Popen([PY, PROBE], -1, None, None, None, None, None, True, False, root, {{**os.environ, "C11_SOCKET_PATH": "own.sock"}}).wait(),
             ]
             for form in forms:
                 form()
@@ -810,6 +1040,14 @@ def test_private_listener_traffic_still_works() -> None:
             missing = os.path.join(root, "not-there.sock")
             proc = subprocess.run(f"echo {{missing}} --socket {{missing}}", shell=True, capture_output=True, text=True, check=True)
             assert missing in proc.stdout, proc.stdout
+            # A deleted working directory is the child's problem, not the guard's.
+            gone = tempfile.mkdtemp(prefix="c573-gone-")
+            os.chdir(gone)
+            os.rmdir(gone)
+            assert subprocess.run(["/bin/sh", "-c", "exit 3"], cwd="/").returncode == 3
+            assert subprocess.run("exit 4", shell=True, cwd="/").returncode == 4
+            assert subprocess.run(["/bin/sh", "-c", "exit 5"]).returncode == 5
+            assert os.system("exit 6") == 6 << 8
             print("ok")
             """
         )
@@ -933,7 +1171,11 @@ def main() -> int:
         test_pathlib_socket_argument_is_refused,
         test_live_app_scripts_refuse_without_opt_in,
         test_shell_strings_are_refused,
+        test_relative_socket_paths_use_the_child_directory,
         test_exec_and_spawn_are_refused,
+        test_cleared_socket_env_stays_on_the_sentinel,
+        test_wrappers_keep_the_original_api,
+        test_harmless_data_naming_a_similar_path_still_runs,
         test_symlinks_resolve_before_the_allowlist,
         test_live_socket_named_directly_stays_refused,
         test_private_listener_traffic_still_works,

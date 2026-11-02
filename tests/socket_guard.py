@@ -20,9 +20,11 @@ auto-discover ``~/Library/Application Support/c11/c11.sock`` or ``/tmp/c11*.sock
 from __future__ import annotations
 
 import errno
+import inspect
 import os
 import re
 import shlex
+import signal
 import socket
 import stat
 import subprocess
@@ -188,7 +190,8 @@ def install() -> None:
         os.execve = _guard_execve  # type: ignore[assignment]
         os.system = _guard_system  # type: ignore[assignment]
         for name, original in _orig_spawn.items():
-            setattr(os, name, _make_spawn_guard(name, original))
+            make_guard = _make_spawn_env_guard if name.endswith("e") else _make_spawn_guard
+            setattr(os, name, make_guard(name, original))
         for name, original in _orig_posix_spawn.items():
             setattr(os, name, _make_posix_spawn_guard(original))
         _installed = True
@@ -253,7 +256,8 @@ def _capture_and_scrub() -> None:
     for key in SOCKET_ENV_KEYS:
         value = os.environ.get(key, "").strip()
         if value:
-            _captured_sockets.append(value)
+            # A relative value means the directory it was inherited in, not a later one.
+            _captured_sockets.append(value if os.path.isabs(value) else _normalize(value))
         os.environ[key] = SENTINEL
     for key in IDENTITY_ENV_KEYS:
         value = os.environ.get(key)
@@ -406,6 +410,11 @@ _SHELL_MARKERS = re.compile(r"[\s;&|<>()`$'\"=]")
 _ENV_REFERENCE = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
 _ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
 _MAX_NESTING = 4
+_MAX_DIRECTORIES = 16
+_DIRECTORY_CHANGERS = frozenset({"cd", "pushd", "chdir", "-C"})
+_SHELL_OPERATOR_CHARS = frozenset("();<>|&")
+# A path character on either side makes it a different path: live.sock.backup.
+_PATH_CHARS = r"[\w./~-]"
 _MAX_PATH_TOKEN = 1024
 
 
@@ -453,50 +462,140 @@ def _token_candidates(token: str) -> list[str]:
     return out
 
 
-def _named_socket_refusal(value: str, env: Mapping[str, str], cwd: str, how: str) -> None:
+def _effective_cwd(cwd: Optional[object]) -> str:
+    """The directory a child starts in. A deleted cwd must not break the launch."""
+    try:
+        base = os.fspath(cwd) if cwd is not None else os.getcwd()  # type: ignore[arg-type]
+        return os.path.abspath(os.fsdecode(base))
+    except (TypeError, OSError):
+        return os.sep
+
+
+def _command_directories(
+    tokens: Sequence[str],
+    env: Mapping[str, str],
+    directories: Sequence[str],
+) -> tuple[list[str], bool]:
+    """Every directory these words may run in, and whether one could not be read.
+
+    A string can branch (``cd a || cd b``) or use a subshell, so a relative path
+    is checked against all of them rather than by following the shell's order.
+    """
+    known = list(directories)
+    unreadable = False
+    for index, token in enumerate(tokens):
+        target: Optional[str] = None
+        if token.startswith("--chdir="):
+            target = token.split("=", 1)[1]
+        elif token in _DIRECTORY_CHANGERS:
+            for word in tokens[index + 1 :]:
+                if set(word) <= _SHELL_OPERATOR_CHARS:
+                    break
+                if word.startswith("-") and word != "-":
+                    continue
+                target = word
+                break
+            else:
+                target = None
+            if target is None:
+                target = env.get("HOME")
+        else:
+            continue
+        if target is None or target == "-":
+            continue
+        expanded = _expand(target, env)
+        if any(char in expanded for char in "$`*?["):
+            unreadable = True
+            continue
+        for base in list(known):
+            changed = os.path.join(base, expanded)
+            if changed not in known:
+                known.append(changed)
+        if len(known) > _MAX_DIRECTORIES:
+            return known, True
+    return known, unreadable
+
+
+def _named_socket_refusal(
+    value: str,
+    env: Mapping[str, str],
+    directories: Sequence[str],
+    unreadable: bool,
+    how: str,
+) -> None:
     """``--socket X`` or ``C11_SOCKET_PATH=X``: refuse X unless this test made it."""
     expanded = _expand(value, env)
     if not expanded or len(expanded) > _MAX_PATH_TOKEN or "\0" in expanded:
         return
-    path = os.path.join(cwd, expanded)
-    if _must_refuse(path):
-        raise SocketGuardError(f"refusing {how} {path}: not a socket this test created")
+    if unreadable and not os.path.isabs(expanded):
+        raise SocketGuardError(
+            f"refusing {how} {expanded}: relative, after a directory change this guard cannot read"
+        )
+    for directory in directories:
+        path = os.path.join(directory, expanded)
+        if _must_refuse(path):
+            raise SocketGuardError(f"refusing {how} {path}: not a socket this test created")
 
 
-def _check_tokens(tokens: Sequence[str], env: Mapping[str, str], cwd: str, depth: int) -> None:
+def _check_tokens(
+    tokens: Sequence[str],
+    env: Mapping[str, str],
+    directories: Sequence[str],
+    unreadable: bool,
+    depth: int,
+) -> None:
     # `D=/x; c11 --socket $D/s.sock` sets its own variable before using it.
     env = dict(env)
     for token in tokens:
         match = _ASSIGNMENT.match(token)
         if match:
             env[match.group(1)] = _expand(match.group(2), env)
+    directories, changed_unreadable = _command_directories(tokens, env, directories)
+    unreadable = unreadable or changed_unreadable
+    # `cd /x; c11 ping` with C11_SOCKET_PATH=s.sock reaches /x/s.sock.
+    for key in SOCKET_ENV_KEYS:
+        value = env.get(key, "").strip()
+        if value and not os.path.isabs(value):
+            _named_socket_refusal(value, env, directories, unreadable, f"{key}=")
     for index, token in enumerate(tokens):
         if token == "--socket" and index + 1 < len(tokens):
-            _named_socket_refusal(tokens[index + 1], env, cwd, "--socket")
+            _named_socket_refusal(tokens[index + 1], env, directories, unreadable, "--socket")
         elif token.startswith("--socket="):
-            _named_socket_refusal(token.split("=", 1)[1], env, cwd, "--socket")
+            _named_socket_refusal(token.split("=", 1)[1], env, directories, unreadable, "--socket")
         if "=" in token:
             key, value = token.split("=", 1)
             if key in SOCKET_ENV_KEYS:
-                _named_socket_refusal(value, env, cwd, f"{key}=")
+                _named_socket_refusal(value, env, directories, unreadable, f"{key}=")
         for candidate in _token_candidates(_expand(token, env)):
-            path = _resolve_candidate(candidate, cwd)
-            if path is None:
-                continue
-            if _is_captured_live(path):
-                raise SocketGuardError(
-                    f"refusing a command that names the operator socket {path}"
-                )
-            # A bare word only mentions a path, and a helper's fixture socket is
-            # fine to mention. Refuse it only when it names a shared c11 socket.
-            if _names_shared_socket(path) and _is_socket_file(path) and not _is_allowed(path):
-                raise SocketGuardError(
-                    f"refusing a command that names the shared socket {path}"
-                )
+            for directory in directories:
+                path = _resolve_candidate(candidate, directory)
+                if path is None:
+                    continue
+                if _is_captured_live(path):
+                    raise SocketGuardError(
+                        f"refusing a command that names the operator socket {path}"
+                    )
+                # A bare word only mentions a path, and a helper's fixture socket is
+                # fine to mention. Refuse it only when it names a shared c11 socket.
+                if _names_shared_socket(path) and _is_socket_file(path) and not _is_allowed(path):
+                    raise SocketGuardError(
+                        f"refusing a command that names the shared socket {path}"
+                    )
         if depth < _MAX_NESTING and _SHELL_MARKERS.search(token):
             nested = _shell_tokens(token)
             if nested and nested != [token]:
-                _check_tokens(nested, env, cwd, depth + 1)
+                _check_tokens(nested, env, directories, unreadable, depth + 1)
+
+
+def _names_captured_endpoint(text: str, captured: Sequence[str]) -> Optional[str]:
+    """A captured path as a complete endpoint inside a word: ``UNIX-CONNECT:/x,retry=1``."""
+    for live in captured:
+        for spelling in {live, _normalize(live)}:
+            if spelling and re.search(
+                rf"(?<!{_PATH_CHARS}){re.escape(spelling)}(?!{_PATH_CHARS})", text
+            ):
+                return live
+    return None
 
 
 def _check_command(args: object, env: Mapping[str, str], cwd: Optional[object] = None) -> None:
@@ -506,11 +605,6 @@ def _check_command(args: object, env: Mapping[str, str], cwd: Optional[object] =
     (``sh -c "..."``, ``env K=V cmd``, ``shell=True``) is tokenized again,
     so ``--socket`` or ``C11_SOCKET_PATH=`` inside the string is seen.
     """
-    try:
-        base = os.fspath(cwd) if cwd is not None else os.getcwd()  # type: ignore[arg-type]
-        cwd_text = os.fsdecode(base)
-    except (TypeError, OSError):
-        cwd_text = os.getcwd()
     if not isinstance(args, list):
         rendered = _as_arg(args)
         if rendered is None:
@@ -523,12 +617,10 @@ def _check_command(args: object, env: Mapping[str, str], cwd: Optional[object] =
     with _lock:
         captured = list(_captured_sockets)
     for text in texts:
-        for live in captured:
-            if live and (live in text or _normalize(live) in text):
-                raise SocketGuardError(
-                    f"refusing a command that names the operator socket {live}"
-                )
-    _check_tokens(tokens, env, cwd_text, 0)
+        live = _names_captured_endpoint(text, captured)
+        if live is not None:
+            raise SocketGuardError(f"refusing a command that names the operator socket {live}")
+    _check_tokens(tokens, env, [_effective_cwd(cwd)], False, 0)
 
 
 def _must_refuse(path: str) -> bool:
@@ -537,7 +629,7 @@ def _must_refuse(path: str) -> bool:
     return True
 
 
-def _sanitize_env(env: Mapping[object, object]) -> dict[str, str]:
+def _sanitize_env(env: Mapping[object, object], cwd: Optional[object] = None) -> dict[str, str]:
     # Popen and execve take bytes keys too. Decode them, or b"C11_SOCKET_PATH"
     # would pass unseen beside the sanitized str key.
     out = {os.fsdecode(key): os.fsdecode(value) for key, value in env.items()}  # type: ignore[arg-type]
@@ -547,6 +639,12 @@ def _sanitize_env(env: Mapping[object, object]) -> dict[str, str]:
     for key, captured in captured_identity.items():
         if out.get(key) == captured:
             out.pop(key, None)
+    # A relative value means a path under the child's directory, not this process's.
+    directory = _effective_cwd(cwd)
+
+    def in_child(path: str) -> str:
+        return os.path.join(directory, path)
+
     values = []
     for key in SOCKET_ENV_KEYS:
         raw = out.get(key, "").strip()
@@ -554,26 +652,34 @@ def _sanitize_env(env: Mapping[object, object]) -> dict[str, str]:
             values.append(raw)
     if discovering:
         for path in values:
-            if _is_captured_live(path):
+            if _is_captured_live(in_child(path)):
                 raise SocketGuardError(
                     f"refusing to pass the operator socket {path} to a child"
                 )
         return out
     for path in values:
-        if _must_refuse(path):
+        if _must_refuse(in_child(path)):
             raise SocketGuardError(
                 f"refusing to pass {path} to a child: not a socket this test created"
             )
     chosen: Optional[str] = None
-    allowed_real = [path for path in values if _is_allowed(path) and not _is_sentinel(path)]
-    allowed_norm = {_normalize(path) for path in allowed_real}
+    allowed_real = [
+        path
+        for path in values
+        if _is_allowed(in_child(path)) and not _is_sentinel(in_child(path))
+    ]
+    allowed_norm = {_normalize(in_child(path)) for path in allowed_real}
     if len(allowed_norm) > 1:
         raise SocketGuardError("a child env names more than one test socket")
     if allowed_real:
         chosen = allowed_real[0]
     else:
-        missing = [path for path in values if not _is_sentinel(path) and not os.path.exists(path)]
-        missing_norm = {_normalize(path) for path in missing}
+        missing = [
+            path
+            for path in values
+            if not _is_sentinel(in_child(path)) and not os.path.exists(in_child(path))
+        ]
+        missing_norm = {_normalize(in_child(path)) for path in missing}
         if len(missing_norm) > 1:
             raise SocketGuardError("a child env names more than one missing socket")
         chosen = missing[0] if missing else SENTINEL
@@ -587,7 +693,7 @@ def _prepare_child(
     env: Optional[Mapping[str, str]],
     cwd: Optional[object] = None,
 ) -> tuple[object, dict[str, str]]:
-    sanitized = _sanitize_env(os.environ if env is None else env)
+    sanitized = _sanitize_env(os.environ if env is None else env, cwd)
     # Popen takes any iterable. Read it once here, or the scan would see nothing
     # (or use up a generator the child still needs).
     if not isinstance(args, (str, bytes, os.PathLike)):
@@ -596,47 +702,90 @@ def _prepare_child(
     return args, sanitized
 
 
+# Popen(args, bufsize, executable, stdin, stdout, stderr, preexec_fn, close_fds,
+# shell, cwd, env, ...), counted after args.
+_POPEN_CWD_INDEX = 8
+_POPEN_ENV_INDEX = 9
+
+
 class _GuardedPopen(_orig_popen):  # type: ignore[misc, valid-type]
     def __init__(self, args: object, *args_rest: object, **kwargs: object) -> None:
-        env = kwargs.get("env")
-        mapped: Optional[Mapping[str, str]]
-        if env is None:
-            mapped = None
+        rest = list(args_rest)
+        cwd = rest[_POPEN_CWD_INDEX] if len(rest) > _POPEN_CWD_INDEX else kwargs.get("cwd")
+        positional_env = len(rest) > _POPEN_ENV_INDEX
+        env = rest[_POPEN_ENV_INDEX] if positional_env else kwargs.get("env")
+        prepared, sanitized = _prepare_child(args, env, cwd)  # type: ignore[arg-type]
+        if positional_env:
+            rest[_POPEN_ENV_INDEX] = sanitized
         else:
-            mapped = env  # type: ignore[assignment]
-        prepared, sanitized = _prepare_child(args, mapped, kwargs.get("cwd"))
-        kwargs["env"] = sanitized
-        super().__init__(prepared, *args_rest, **kwargs)
+            kwargs["env"] = sanitized
+        super().__init__(prepared, *rest, **kwargs)
 
 
-def _guard_execv(path: object, args: Sequence[object]) -> None:
+def _guard_execv(path: object, argv: Sequence[object]) -> None:
     """``execv`` inherits ``os.environ``. Exec with the sanitized copy instead."""
-    _, sanitized = _prepare_child(list(args), None)
-    _orig_execve(path, args, sanitized)
+    _, sanitized = _prepare_child(list(argv), None)
+    _orig_execve(path, argv, sanitized)
 
 
-def _guard_execve(path: object, args: Sequence[object], env: Mapping[str, str]) -> None:
-    _, sanitized = _prepare_child(list(args), env)
-    _orig_execve(path, args, sanitized)
+def _guard_execve(path: object, argv: Sequence[object], env: Mapping[str, str]) -> None:
+    # A bad env is the original's TypeError. None must not mean "inherit" here.
+    if not isinstance(env, Mapping):
+        _orig_execve(path, argv, env)
+        return
+    _, sanitized = _prepare_child(list(argv), env)
+    _orig_execve(path, argv, sanitized)
 
 
-def _guard_system(command: object) -> int:
-    """``os.system`` runs ``/bin/sh -c`` with ``os.environ``. Refuse before it forks."""
-    _prepare_child(command, None)
-    return _orig_system(command)
+def _guard_system(*args: object, **kwargs: object) -> int:
+    """Run ``/bin/sh -c`` as ``system(3)`` does, but with the sanitized environment.
+
+    ``os.system`` can only inherit ``os.environ``. Spawning keeps that process-wide
+    mapping untouched, and the return value is the same raw wait status. The
+    parameter's name differs by Python version, so the original's signature binds it.
+    """
+    bound = _SYSTEM_SIGNATURE.bind(*args, **kwargs)
+    command = next(iter(bound.arguments.values()))
+    _, sanitized = _prepare_child(command, None)
+    blocked = {signal.SIGINT, signal.SIGQUIT, signal.SIGCHLD}
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+    try:
+        pid = _orig_posix_spawn["posix_spawn"](
+            "/bin/sh",
+            ["sh", "-c", os.fsdecode(command)],  # type: ignore[arg-type]
+            sanitized,
+            setsigmask=previous,
+        )
+        _, status = os.waitpid(pid, 0)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    return status
+
+
+_SYSTEM_SIGNATURE = inspect.signature(_orig_system)
+_guard_system.__signature__ = _SYSTEM_SIGNATURE  # type: ignore[attr-defined]
 
 
 def _make_spawn_guard(name: str, original: object) -> object:
-    with_env = name.endswith("e")
+    """``spawnv`` and ``spawnvp``. The child's guarded execv passes the sanitized env."""
 
-    def guard(mode: int, file: object, args: Sequence[object], *rest: object) -> int:
-        if with_env:
-            env = rest[0] if rest else os.environ
-            _, sanitized = _prepare_child(list(args), env)  # type: ignore[arg-type]
-            return original(mode, file, args, sanitized, *rest[1:])  # type: ignore[operator]
-        # The child calls the guarded execv, which passes the sanitized env.
+    def guard(mode: int, file: object, args: Sequence[object]) -> int:
         _prepare_child(list(args), None)
-        return original(mode, file, args, *rest)  # type: ignore[operator]
+        return original(mode, file, args)  # type: ignore[operator]
+
+    guard.__name__ = name
+    return guard
+
+
+def _make_spawn_env_guard(name: str, original: object) -> object:
+    """``spawnve`` and ``spawnvpe``, whose ``env`` is a required argument."""
+
+    def guard(mode: int, file: object, args: Sequence[object], env: Mapping[str, str]) -> int:
+        # A bad env fails in the original's child. None must not mean "inherit" here.
+        if not isinstance(env, Mapping):
+            return original(mode, file, args, env)  # type: ignore[operator]
+        _, sanitized = _prepare_child(list(args), env)
+        return original(mode, file, args, sanitized)  # type: ignore[operator]
 
     guard.__name__ = name
     return guard
@@ -644,6 +793,11 @@ def _make_spawn_guard(name: str, original: object) -> object:
 
 def _make_posix_spawn_guard(original: object) -> object:
     def guard(path: object, argv: Sequence[object], env: Mapping[str, str], *rest: object, **kwargs: object) -> int:
+        # Since Python 3.13, None means inherit. Before that it is a TypeError.
+        if env is None and sys.version_info >= (3, 13):
+            env = os.environ
+        if not isinstance(env, Mapping):
+            return original(path, argv, env, *rest, **kwargs)  # type: ignore[operator]
         _, sanitized = _prepare_child(list(argv), env)
         return original(path, argv, sanitized, *rest, **kwargs)  # type: ignore[operator]
 

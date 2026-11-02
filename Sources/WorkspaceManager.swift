@@ -1072,6 +1072,9 @@ class WorkspaceManager: ObservableObject {
         }
         didSet {
             guard selectedWorkspaceId != oldValue else { return }
+            // C11-527: the visible split tree changed wholesale; no divider the
+            // portal overlays painted for the previous workspace may survive.
+            PortalOverlayRepaint.requestAllWindows(reason: "workspace.selected")
             // C11-243: workspace switch changes what the operator is looking at.
             PanelSeenTracker.shared.refresh()
             PanelRailTipCenter.shared.scheduleRefresh()

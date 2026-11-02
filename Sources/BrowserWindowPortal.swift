@@ -2725,7 +2725,7 @@ final class WindowBrowserSlotView: NSView {
 final class WindowBrowserPortal: NSObject {
     private static let transientRecoveryRetryBudget: Int = 12
 
-    private weak var window: NSWindow?
+    private(set) weak var window: NSWindow?
     private let hostView = WindowBrowserHostView(frame: .zero)
     private let chromeOverlayView = PortalSplitDividerOverlayView(
         frame: .zero,
@@ -3527,6 +3527,22 @@ final class WindowBrowserPortal: NSObject {
         chromeOverlayView.needsDisplay = true
         synchronizeWebView(withId: webViewId, source: source)
     }
+
+    /// C11-527: discard whatever the chrome overlay last painted. It sits above the
+    /// terminal portal, so a stale divider here covers terminals until a full redraw.
+    func invalidateChromeOverlay() {
+#if DEBUG
+        overlayInvalidationCountForTesting += 1
+#endif
+        chromeOverlayView.needsDisplay = true
+    }
+
+#if DEBUG
+    @discardableResult
+    func ensureInstalledForTesting() -> Bool { ensureInstalled() }
+
+    private(set) var overlayInvalidationCountForTesting = 0
+#endif
 
     func updateWorkspaceFrameStyle(
         forWebViewId webViewId: ObjectIdentifier,
@@ -4750,6 +4766,31 @@ enum BrowserWindowPortalRegistry {
         installWindowCloseObserverIfNeeded(for: window)
         return portal
     }
+
+    static func invalidateChromeOverlay(for window: NSWindow) {
+        existingPortal(for: window)?.invalidateChromeOverlay()
+    }
+
+    static func windowsWithPortals() -> [NSWindow] {
+        portalsByWindowId.values.compactMap { $0.window }
+    }
+
+    private static func existingPortal(for window: NSWindow) -> WindowBrowserPortal? {
+        if let existing = objc_getAssociatedObject(window, &cmuxWindowBrowserPortalKey) as? WindowBrowserPortal {
+            return existing
+        }
+        return portalsByWindowId[ObjectIdentifier(window)]
+    }
+
+#if DEBUG
+    static func portalForTesting(window: NSWindow) -> WindowBrowserPortal? {
+        existingPortal(for: window)
+    }
+
+    static func ensurePortalForTesting(window: NSWindow) -> WindowBrowserPortal {
+        portal(for: window)
+    }
+#endif
 
     static func bind(webView: WKWebView, to anchorView: NSView, visibleInUI: Bool, zPriority: Int = 0) {
         guard let window = anchorView.window else { return }

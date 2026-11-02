@@ -4807,3 +4807,140 @@ final class PortalDiagnosticSnapshotTests: XCTestCase {
         XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "debug.portal.snapshot"), .socketWorker)
     }
 }
+
+/// C11-527: a divider the portal overlays painted must not outlive the split that
+/// drew it. Field capture (1.7.8): a gold line stayed over a single-area workspace
+/// at x 1793 with no split view anywhere in the window, cleared only by a later
+/// browser repaint. These tests drive the real app window and Bonsplit tree.
+@MainActor
+final class PortalOverlayRepaintTests: XCTestCase {
+    private var tempDir: URL!
+
+    override func setUpWithError() throws {
+        tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("c11-527-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        PortalOverlayRepaint.requestsForTesting.removeAll()
+    }
+
+    override func tearDownWithError() throws {
+        EventEmitter.shared.resetForTesting()
+        if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+    }
+
+    private static func splitViewCount(in view: NSView?) -> Int {
+        guard let view else { return 0 }
+        return (view is NSSplitView ? 1 : 0) + view.subviews.reduce(0) { $0 + splitViewCount(in: $1) }
+    }
+
+    private func appWindow() throws -> (NSWindow, WorkspaceManager) {
+        let delegate = try XCTUnwrap(AppDelegate.shared)
+        let windowId = delegate.createMainWindow()
+        let window = try XCTUnwrap(delegate.mainWindow(for: windowId))
+        let manager = try XCTUnwrap(delegate.workspaceManagerFor(windowId: windowId))
+        window.makeKeyAndOrderFront(nil)
+        return (window, manager)
+    }
+
+    private func events(_ url: URL, type: String) -> [[String: Any]] {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").compactMap {
+            try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }.filter { $0["type"] as? String == type }
+    }
+
+    /// A repaint request marks BOTH overlays (the browser one sits above the
+    /// terminals) and runs once more after the current main-loop turn.
+    func testRepaintRequestInvalidatesTerminalAndBrowserOverlaysNowAndAfterTheTurn() async throws {
+        let (window, _) = try appWindow()
+        defer { window.close() }
+        let terminal = TerminalWindowPortalRegistry.ensurePortalForTesting(window: window)
+        let browser = BrowserWindowPortalRegistry.ensurePortalForTesting(window: window)
+        XCTAssertTrue(terminal.ensureInstalledForTesting())
+        XCTAssertTrue(browser.ensureInstalledForTesting())
+        // Let window setup's own requests settle so only ours are counted.
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
+        let windowId = ObjectIdentifier(window)
+        PortalOverlayRepaint.deferredWindowPassesForTesting.removeAll()
+        let terminalBefore = terminal.overlayInvalidationCountForTesting
+        let browserBefore = browser.overlayInvalidationCountForTesting
+
+        PortalOverlayRepaint.request(for: window, reason: "test.first")
+        PortalOverlayRepaint.request(for: window, reason: "test.second")
+
+        XCTAssertEqual(terminal.overlayInvalidationCountForTesting, terminalBefore + 2)
+        XCTAssertEqual(browser.overlayInvalidationCountForTesting, browserBefore + 2,
+                       "The browser overlay paints above terminals; it must repaint too")
+        let ran = await waitForC11HostCondition {
+            PortalOverlayRepaint.deferredWindowPassesForTesting.contains(windowId)
+        }
+        XCTAssertTrue(ran, "A deferred pass must repaint after the tree settles")
+        await withCheckedContinuation { done in DispatchQueue.main.async { done.resume() } }
+        XCTAssertEqual(PortalOverlayRepaint.deferredWindowPassesForTesting.filter { $0 == windowId }.count, 1,
+                       "Requests within one turn coalesce into one deferred pass")
+        XCTAssertGreaterThanOrEqual(browser.overlayInvalidationCountForTesting, browserBefore + 3,
+                                    "The deferred pass repaints the browser overlay again")
+    }
+
+    /// Closing an area removes its Bonsplit split view; a repaint of that window
+    /// must run once the split view is gone, and the journal must name the split
+    /// and the close with window-point frames.
+    func testSplitAndCloseJournalFramesAndSplitViewRemovalRepaintsItsWindow() async throws {
+        let url = tempDir.appendingPathComponent("events.ndjson")
+        EventEmitter.shared.startForTesting(log: EventLog(url: url, instance: "c11-527"), instance: "c11-527")
+        let (window, manager) = try appWindow()
+        defer { window.close() }
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let ready = await waitForC11HostCondition { workspace.focusedPanelId != nil }
+        XCTAssertTrue(ready)
+        let source = try XCTUnwrap(workspace.focusedPanelId)
+        let originalArea = try XCTUnwrap(workspace.paneIdForPanel(source))
+
+        let split = try XCTUnwrap(workspace.newTerminalSplit(from: source, orientation: .horizontal, focus: false))
+        let newArea = try XCTUnwrap(workspace.paneIdForPanel(split.id))
+        let mounted = await waitForC11HostCondition { Self.splitViewCount(in: window.contentView) > 0 }
+        XCTAssertTrue(mounted, "Fixture must mount a real split view")
+        XCTAssertTrue(PortalOverlayRepaint.requestsForTesting.contains { $0.reason == "area.split" })
+
+        PortalOverlayRepaint.requestsForTesting.removeAll()
+        PortalOverlayRepaint.invalidationSplitCountsForTesting.removeAll()
+        PortalOverlayRepaint.recordsSplitPresenceForTesting = true
+        defer { PortalOverlayRepaint.recordsSplitPresenceForTesting = false }
+        XCTAssertTrue(workspace.closePanel(split.id, force: true))
+        let removed = await waitForC11HostCondition { Self.splitViewCount(in: window.contentView) == 0 }
+        XCTAssertTrue(removed, "Closing the only panel of an area must remove the split view")
+        XCTAssertTrue(PortalOverlayRepaint.requestsForTesting.contains { $0.reason == "area.closed" })
+        // The property that keeps stale paint off screen: some repaint of this
+        // window ran after its split view was gone, so the overlays redrew from a
+        // tree with no divider in it.
+        let windowId = ObjectIdentifier(window)
+        let settled = await waitForC11HostCondition {
+            PortalOverlayRepaint.invalidationSplitCountsForTesting.contains { $0.windowId == windowId && $0.splitViews == 0 }
+        }
+        XCTAssertTrue(settled, "No overlay repaint saw the window without its split view: "
+            + "\(PortalOverlayRepaint.invalidationSplitCountsForTesting.filter { $0.windowId == windowId }.map(\.splitViews))")
+
+        EventEmitter.shared.flush()
+        let splitRow = try XCTUnwrap(events(url, type: "area.split").first { $0["area"] as? String == newArea.id.uuidString })
+        XCTAssertEqual(splitRow["workspace"] as? String, workspace.id.uuidString)
+        let payload = try XCTUnwrap(splitRow["payload"] as? [String: Any])
+        XCTAssertEqual(payload["original_area_id"] as? String, originalArea.id.uuidString)
+        XCTAssertEqual(payload["orientation"] as? String, "horizontal")
+        let frame = try XCTUnwrap(payload["frame"] as? [String: Double])
+        let original = try XCTUnwrap(payload["original_frame"] as? [String: Double])
+        XCTAssertGreaterThan(try XCTUnwrap(frame["width"]), 0)
+        XCTAssertGreaterThan(try XCTUnwrap(frame["x"]), try XCTUnwrap(original["x"]),
+                             "A horizontal split puts the new area to the right; its x is the divider")
+        let closedRow = try XCTUnwrap(events(url, type: "area.closed").first { $0["area"] as? String == newArea.id.uuidString })
+        let lastFrame = try XCTUnwrap((closedRow["payload"] as? [String: Any])?["last_frame"] as? [String: Double])
+        XCTAssertGreaterThan(try XCTUnwrap(lastFrame["width"]), 0)
+    }
+
+    func testSelectingAnotherWorkspaceRepaintsOverlays() throws {
+        let (window, manager) = try appWindow()
+        defer { window.close() }
+        PortalOverlayRepaint.requestsForTesting.removeAll()
+        _ = manager.addWorkspace(select: true)
+        XCTAssertTrue(PortalOverlayRepaint.requestsForTesting.contains { $0.reason == "workspace.selected" })
+    }
+}

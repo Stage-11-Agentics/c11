@@ -733,7 +733,8 @@ enum ActivityAnalysisCommand {
         var isGraphEvent: Bool {
             switch type {
             case "workspace.created", "workspace.renamed", "workspace.closed", "workspace.selected",
-                 "workspace.switch_blocked", "workspace.reordered", "panel.created", "panel.closed",
+                 "workspace.switch_blocked", "workspace.reordered", "area.split", "area.closed",
+                 "panel.created", "panel.closed",
                  "metadata.changed", "liveness.derived", "waiting.entered", "waiting.left", "lifecycle.changed",
                  "flag.raised", "flag.lowered", "flag.suppressed", "flag.unsuppressed",
                  "mailbox.accepted", "mailbox.delivered", "panel.input_sent",

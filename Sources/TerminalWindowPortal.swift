@@ -1045,7 +1045,7 @@ final class WindowTerminalPortal: NSObject {
     private static let transientRecoveryEnabled = false
 #endif
 
-    private weak var window: NSWindow?
+    private(set) weak var window: NSWindow?
     private let hostView = WindowTerminalHostView(frame: .zero)
     private let dividerOverlayView = PortalSplitDividerOverlayView(frame: .zero)
     private weak var installedContainerView: NSView?
@@ -1824,6 +1824,23 @@ final class WindowTerminalPortal: NSObject {
         scheduleDeferredFullSynchronizeAll()
     }
 
+    /// C11-527: discard whatever the divider overlay last painted. Its draw
+    /// recomputes segments from the live view tree, so a full redraw can never
+    /// keep a divider whose split view has gone.
+    func invalidateDividerOverlay() {
+#if DEBUG
+        overlayInvalidationCountForTesting += 1
+#endif
+        dividerOverlayView.needsDisplay = true
+    }
+
+#if DEBUG
+    @discardableResult
+    func ensureInstalledForTesting() -> Bool { ensureInstalled() }
+
+    private(set) var overlayInvalidationCountForTesting = 0
+#endif
+
     func updateWorkspaceFrameStyle(
         forHostedId hostedId: ObjectIdentifier,
         style: PortalWorkspaceFrameStyle?
@@ -2579,6 +2596,24 @@ enum TerminalWindowPortalRegistry {
         portal.synchronizeHostedViewForAnchor(anchorView)
     }
 
+    static func invalidateDividerOverlay(for window: NSWindow) {
+        existingPortal(for: window)?.invalidateDividerOverlay()
+    }
+
+    static func windowsWithPortals() -> [NSWindow] {
+        portalsByWindowId.values.compactMap { $0.window }
+    }
+
+#if DEBUG
+    static func portalForTesting(window: NSWindow) -> WindowTerminalPortal? {
+        existingPortal(for: window)
+    }
+
+    static func ensurePortalForTesting(window: NSWindow) -> WindowTerminalPortal {
+        portal(for: window)
+    }
+#endif
+
     static func scheduleExternalGeometrySynchronize(for window: NSWindow, trigger: String) {
         existingPortal(for: window)?.scheduleExternalGeometrySynchronize(trigger: trigger)
     }
@@ -2969,5 +3004,97 @@ extension TerminalWindowPortalRegistry {
     static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
         // Lookup only: portal(for:) installs views and is forbidden on this path.
         portalsByWindowId[ObjectIdentifier(window)]?.diagnosticSnapshot(geometry, identities: identities) ?? ["present": false]
+    }
+}
+
+/// C11-527: one place that tells both window portals to repaint their divider
+/// overlays. Each overlay caches its last paint, and the browser overlay sits above
+/// the terminals, so a divider painted while a split existed could stay on screen
+/// after the split view left the window, until some unrelated browser event
+/// repainted it. Every structural change that can remove, add, hide or move a
+/// divider routes here: area split, close and geometry changes, and the visible
+/// workspace changing.
+///
+/// Repaint is a full invalidation now, then once more on the next main-loop turn
+/// so the draw sees the tree after SwiftUI and AppKit have settled. Requests for a
+/// window coalesce until that turn runs. Nothing here runs per keystroke.
+@MainActor
+enum PortalOverlayRepaint {
+    private static var pendingWindowIds: Set<ObjectIdentifier> = []
+    private static var pendingAllWindows = false
+
+#if DEBUG
+    struct RequestRecord: Equatable {
+        let windowId: ObjectIdentifier?
+        let reason: String
+    }
+    static var requestsForTesting: [RequestRecord] = []
+    static var deferredPassCountForTesting = 0
+    static var deferredWindowPassesForTesting: [ObjectIdentifier] = []
+    /// When set, every invalidation records how many split views its window
+    /// still holds, so a test can prove the last repaint saw the settled tree.
+    static var recordsSplitPresenceForTesting = false
+    static var invalidationSplitCountsForTesting: [(windowId: ObjectIdentifier, splitViews: Int)] = []
+
+    private static func splitViewCount(in view: NSView?) -> Int {
+        guard let view else { return 0 }
+        return (view is NSSplitView ? 1 : 0) + view.subviews.reduce(0) { $0 + splitViewCount(in: $1) }
+    }
+#endif
+
+    /// Repaint the overlays of one window.
+    static func request(for window: NSWindow, reason: String) {
+#if DEBUG
+        requestsForTesting.append(RequestRecord(windowId: ObjectIdentifier(window), reason: reason))
+#endif
+        invalidate(window)
+        let windowId = ObjectIdentifier(window)
+        guard pendingWindowIds.insert(windowId).inserted else { return }
+        DispatchQueue.main.async { [weak window] in
+            MainActor.assumeIsolated {
+                Self.pendingWindowIds.remove(windowId)
+#if DEBUG
+                Self.deferredPassCountForTesting += 1
+                Self.deferredWindowPassesForTesting.append(windowId)
+#endif
+                if let window { Self.invalidate(window) }
+            }
+        }
+    }
+
+    /// Repaint every window's overlays. For callers that do not know their window
+    /// (a workspace's area tree, the selected workspace changing).
+    static func requestAllWindows(reason: String) {
+#if DEBUG
+        requestsForTesting.append(RequestRecord(windowId: nil, reason: reason))
+#endif
+        for window in allWindows() { invalidate(window) }
+        guard !pendingAllWindows else { return }
+        pendingAllWindows = true
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                Self.pendingAllWindows = false
+#if DEBUG
+                Self.deferredPassCountForTesting += 1
+#endif
+                for window in Self.allWindows() { Self.invalidate(window) }
+            }
+        }
+    }
+
+    private static func allWindows() -> [NSWindow] {
+        var seen = Set<ObjectIdentifier>()
+        return (TerminalWindowPortalRegistry.windowsWithPortals() + BrowserWindowPortalRegistry.windowsWithPortals())
+            .filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
+    private static func invalidate(_ window: NSWindow) {
+#if DEBUG
+        if recordsSplitPresenceForTesting {
+            invalidationSplitCountsForTesting.append((ObjectIdentifier(window), splitViewCount(in: window.contentView)))
+        }
+#endif
+        TerminalWindowPortalRegistry.invalidateDividerOverlay(for: window)
+        BrowserWindowPortalRegistry.invalidateChromeOverlay(for: window)
     }
 }

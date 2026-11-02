@@ -7904,6 +7904,13 @@ final class Workspace: Identifiable, ObservableObject {
     /// Panel IDs that were in a pane when a pane-close operation was approved.
     /// Bonsplit pane-close does not emit per-tab didClose callbacks.
     private var pendingAreaClosePanelIds: [UUID: [UUID]] = [:]
+    /// C11-527: last known window-point frame of each area, so `area.closed` can name
+    /// where the removed divider stood. Updated from Bonsplit geometry callbacks.
+    private var lastAreaFramesForJournal: [UUID: [String: Double]] = [:]
+    /// C11-527: areas seen in this workspace's Bonsplit tree. Bonsplit removes an
+    /// emptied area internally (last tab closed, or a tab moved out) without
+    /// calling `didClosePane`, so closes are found by diffing against this set.
+    private var knownAreaIdsForJournal: Set<UUID> = []
     private var pendingClosedBrowserRestoreSnapshots: [TabID: ClosedBrowserPanelRestoreSnapshot] = [:]
     private var isApplyingPanelSelection = false
     private struct PendingPanelSelectionRequest {
@@ -14306,6 +14313,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didCloseTab bonsplitTabId: TabID, fromPane pane: PaneID) {
+        reconcileClosedAreasAndRepaintDividers(controller)
         forceCloseBonsplitTabIds.remove(bonsplitTabId)
         let selectBonsplitTabId = postCloseSelectBonsplitTabId.removeValue(forKey: bonsplitTabId)
         let closedBrowserRestoreSnapshot = pendingClosedBrowserRestoreSnapshots.removeValue(forKey: bonsplitTabId)
@@ -14481,6 +14489,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didMoveTab bonsplitTab: Bonsplit.Tab, fromPane source: PaneID, toPane destination: PaneID) {
+        reconcileClosedAreasAndRepaintDividers(controller)
 #if DEBUG
         let now = ProcessInfo.processInfo.systemUptime
         let sincePrev: String
@@ -14553,6 +14562,7 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didClosePane paneId: PaneID) {
+        reconcileClosedAreasAndRepaintDividers(controller)
         PanelRailTipCenter.shared.notePaneClosed(workspace: self, paneId: paneId)
         // The pane is gone — drop any pending pane-scoped overlay (e.g. a stale
         // pane-close confirmation that survived the close path) so its
@@ -14664,6 +14674,7 @@ extension Workspace: BonsplitDelegate {
 
     func splitTabBar(_ controller: BonsplitController, didSplitPane originalPane: PaneID, newPane: PaneID, orientation: SplitOrientation) {
         _ = TerminalController.shared.v2EnsureHandleRef(kind: .pane, uuid: newPane.id)
+        journalAreaSplitAndRepaintDividers(controller, originalPane: originalPane, newPane: newPane, orientation: orientation)
 #if DEBUG
         let panelKindForBonsplitTab: (TabID) -> String = { bonsplitTabId in
             guard let panelId = self.tabIdFromBonsplitTabId(bonsplitTabId),
@@ -15748,7 +15759,12 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didChangeGeometry snapshot: LayoutSnapshot) {
-        _ = snapshot
+        // Journal any area that vanished before its frame is replaced.
+        reconcileClosedAreasAndRepaintDividers(controller)
+        rememberAreaFramesForJournal(snapshot)
+        // C11-527: a divider moved or an area resized; drop any divider the
+        // overlays painted at the old geometry. Drags arrive debounced (50 ms).
+        PortalOverlayRepaint.requestAllWindows(reason: "area.geometry")
         scheduleTerminalGeometryReconcile()
         if !isDetachingCloseTransaction {
             scheduleFocusReconcile()
@@ -15756,6 +15772,59 @@ extension Workspace: BonsplitDelegate {
     }
 
     // No post-close polling refresh loop: we rely on view invariants and Ghostty's wakeups.
+
+    // MARK: C11-527 area journal and divider repaint
+
+    private static func journalFrame(_ rect: PixelRect) -> [String: Double] {
+        ["x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height]
+    }
+
+    private func rememberAreaFramesForJournal(_ snapshot: LayoutSnapshot) {
+        var frames: [UUID: [String: Double]] = [:]
+        for pane in snapshot.panes {
+            guard let id = UUID(uuidString: pane.paneId) else { continue }
+            frames[id] = Self.journalFrame(pane.frame)
+        }
+        lastAreaFramesForJournal = frames
+    }
+
+    private func journalAreaSplitAndRepaintDividers(
+        _ controller: BonsplitController,
+        originalPane: PaneID,
+        newPane: PaneID,
+        orientation: SplitOrientation
+    ) {
+        // The tree already holds the new split, so its fractions are exact even
+        // before SwiftUI lays the views out.
+        reconcileClosedAreasAndRepaintDividers(controller)
+        let snapshot = controller.layoutSnapshot()
+        rememberAreaFramesForJournal(snapshot)
+        let hasContainer = snapshot.containerFrame.width > 0 && snapshot.containerFrame.height > 0
+        EventEmitter.shared.emitAreaSplit(
+            workspace: id,
+            area: newPane.id,
+            originalArea: originalPane.id,
+            orientation: orientation.rawValue,
+            containerFrame: hasContainer ? Self.journalFrame(snapshot.containerFrame) : nil,
+            frame: hasContainer ? lastAreaFramesForJournal[newPane.id] : nil,
+            originalFrame: hasContainer ? lastAreaFramesForJournal[originalPane.id] : nil
+        )
+        PortalOverlayRepaint.requestAllWindows(reason: "area.split")
+    }
+
+    /// Emits `area.closed` once for every area that left the tree since the last
+    /// look, and repaints the divider overlays when any did.
+    private func reconcileClosedAreasAndRepaintDividers(_ controller: BonsplitController) {
+        let current = Set(controller.allPaneIds.map(\.id))
+        let closed = knownAreaIdsForJournal.subtracting(current)
+        knownAreaIdsForJournal = current
+        guard !closed.isEmpty else { return }
+        for area in closed.sorted(by: { $0.uuidString < $1.uuidString }) {
+            let lastFrame = lastAreaFramesForJournal.removeValue(forKey: area)
+            EventEmitter.shared.emitAreaClosed(workspace: id, area: area, lastFrame: lastFrame)
+        }
+        PortalOverlayRepaint.requestAllWindows(reason: "area.closed")
+    }
 }
 
 /// C11-563: what the sidebar's Rename Workspace field shows. The field holds

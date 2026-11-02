@@ -8556,11 +8556,13 @@ struct WorkspaceSidebar: View {
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
     @AppStorage(ChromeScaleSettings.customMultiplierKey)
     private var chromeScaleCustomMultiplier = Double(ChromeScaleSettings.defaultCustomMultiplier)
-    /// Width alone picks Tiles: two columns whenever they fit at the tile scale.
-    private var compact: Bool {
-        SidebarLayoutPolicy.showsTiles(width: Double(width), scale: Double(ChromeScaleSettings.multiplier(
+    /// Tile columns at this width and chrome scale; the footer follows them.
+    private var tileColumns: Int {
+        SidebarLayoutPolicy.columns(width: Double(width), scale: Double(ChromeScaleSettings.multiplier(
             presetRaw: chromeScalePresetRaw, customMultiplier: chromeScaleCustomMultiplier)))
     }
+    /// Width alone picks Tiles: two columns whenever they fit at the tile scale.
+    private var compact: Bool { tileColumns >= 2 }
     /// C11-104 v2 — chip row is gated by the preserved
     /// `sidebarShowBranchDirectory` key (existing user prefs survive
     /// the legacy-row → chip-row migration).
@@ -8851,7 +8853,8 @@ struct WorkspaceSidebar: View {
                 // The footer floats over the scroll area: cards slide beneath
                 // it and dissolve in its scrim instead of hard-clipping at a
                 // structural boundary.
-                SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
+                SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback,
+                              columns: tileColumns)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         // Solid blur under the controls, fading out over the
@@ -10201,12 +10204,14 @@ private struct SidebarExternalDropDelegate: DropDelegate {
 private struct SidebarFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
+    /// Sidebar tile columns; the attention buttons take one column each.
+    let columns: Int
 
     var body: some View {
 #if DEBUG
-        SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
+        SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns)
 #else
-        SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
+        SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns)
             .padding(.horizontal, 10)
             .padding(.top, 4)
             .padding(.bottom, 6)
@@ -10217,10 +10222,11 @@ private struct SidebarFooter: View {
 private struct SidebarFooterButtons: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
+    let columns: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarWaitingAgentCluster()
+            SidebarWaitingAgentCluster(columns: columns)
             HStack(spacing: 4) {
                 SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                 UpdatePill(model: updateViewModel)
@@ -11167,23 +11173,49 @@ private struct SidebarHelpMenuButton: View {
 
 // MARK: - Waiting Agent Cluster
 
+/// One column of cards stacks Flagged over Waiting at full width. In Tiles
+/// each button is one tile column wide, on the tiles' grid (6 pt edge, 12 pt
+/// gutter): Waiting first, Flagged beside it, later columns left empty.
 private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
     @ObservedObject private var attentionIndex = PanelAttentionIndex.shared
+    let columns: Int
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            if attentionIndex.flaggedCount > 0 {
-                FlaggedAgentsRow(
-                    count: attentionIndex.flaggedCount,
-                    onJump: jump
-                )
+        if columns >= 2 {
+            HStack(alignment: .top, spacing: 12) {
+                WaitingAgentRow(display: display, onJump: jump)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    if attentionIndex.flaggedCount > 0 {
+                        FlaggedAgentsRow(count: attentionIndex.flaggedCount, onJump: jump)
+                    } else {
+                        Color.clear.frame(height: 0)
+                    }
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                ForEach(2..<columns, id: \.self) { _ in
+                    Color.clear.frame(minWidth: 0, maxWidth: .infinity, maxHeight: 0)
+                }
             }
-            WaitingAgentRow(display: display, onJump: jump)
+            .fixedSize(horizontal: false, vertical: true)
+            // The footer insets 10 pt; tile cards sit 6 pt from the edge.
+            .padding(.horizontal, -4)
+        } else {
+            VStack(spacing: 6) {
+                if attentionIndex.flaggedCount > 0 {
+                    FlaggedAgentsRow(
+                        count: attentionIndex.flaggedCount,
+                        onJump: jump
+                    )
+                }
+                WaitingAgentRow(display: display, onJump: jump)
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -11213,6 +11245,7 @@ private struct FlaggedAgentsRow: View {
                 ))
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
 
                 Text(verbatim: String(count))
                     .font(.system(size: 9, weight: .bold))
@@ -11231,7 +11264,7 @@ private struct FlaggedAgentsRow: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(violet)
@@ -11250,6 +11283,10 @@ private struct FlaggedAgentsRow: View {
             defaultValue: "Jump to oldest flagged agent"
         )))
         .accessibilityValue(Text(verbatim: String(count)))
+        .safeHelp(String(
+            localized: "statusBar.flaggedAgents.accessibility",
+            defaultValue: "Jump to oldest flagged agent"
+        ))
     }
 }
 
@@ -11277,6 +11314,7 @@ private struct WaitingAgentRow: View {
                 Text(label)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 if let badge = display.badgeText {
                     Text(badge)
@@ -11299,12 +11337,14 @@ private struct WaitingAgentRow: View {
                         .font(.system(size: 13, weight: .medium))
                     Text(shortcutText)
                         .font(.system(size: 9, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .opacity(isLit ? 0.6 : 0.5)
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             // Sustained "agent is waiting" lit state is a solid c11-gold
             // fill with void (black) content — the standard c11 gold button.
             // Deliberately no motion; the gold does the attention work. Rest
@@ -11518,12 +11558,13 @@ private struct SidebarFooterIconButtonStyleBody: View {
 private struct SidebarDevFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
+    let columns: Int
     @AppStorage(DevBuildBannerDebugSettings.sidebarBannerVisibleKey)
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
+            SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns)
             if showSidebarDevBuildBanner {
                 Text(String(localized: "debug.devBuildBanner.title", defaultValue: "THIS IS A DEV BUILD"))
                     .font(.system(size: 11, weight: .semibold))

@@ -306,6 +306,13 @@ if [[ -f "$INFO_PLIST" ]]; then
     || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$INFO_PLIST"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$INFO_PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$INFO_PLIST"
+  # A warm build reprocesses Info.plist after the target's commit-stamp phase,
+  # so stamp the final staging bundle, as reload.sh does for tagged Debug.
+  C11_COMMIT="$(git -C "$PWD" rev-parse --short=9 HEAD 2>/dev/null || true)"
+  if [[ -n "$C11_COMMIT" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :C11Commit $C11_COMMIT" "$INFO_PLIST" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c "Add :C11Commit string $C11_COMMIT" "$INFO_PLIST"
+  fi
 
   # Inject staging socket paths via LSEnvironment so the Release binary
   # (which defaults to the per-user stable socket) uses isolated sockets instead.

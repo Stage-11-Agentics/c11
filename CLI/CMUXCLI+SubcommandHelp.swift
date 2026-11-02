@@ -294,7 +294,7 @@ extension CMUXCLI {
             Print server identity and caller context details.
 
             Flags:
-              --workspace <id|ref|index>   Caller workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref|index>   Caller workspace context (default: $C11_WORKSPACE_ID)
               --panel <id|ref|index>   Caller panel context (default: $C11_PANEL_ID)
               --no-caller                  Omit caller context from the request
             """
@@ -522,7 +522,7 @@ extension CMUXCLI {
               --action <name>              Action name (required if not positional)
               --panel <id|ref|index|self>  Target panel (default: $C11_PANEL_ID, then focused panel;
                                            required for close-left | close-right | close-others)
-              --workspace <id|ref|index>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <id|ref|index>   Workspace context (default: current/$C11_WORKSPACE_ID)
               --title <text>               Title for rename (or pass trailing title text)
               --url <url>                  Optional URL for new-browser-right
 
@@ -543,7 +543,7 @@ extension CMUXCLI {
             3) currently focused panel (optionally within --workspace)
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: current/$C11_WORKSPACE_ID)
               --panel <id|ref>       Panel target (supports panel:<n>)
               --title <text>         Explicit title (or use trailing positional title)
 
@@ -562,7 +562,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <ref>   Target panel (default: $C11_PANEL_ID, then focused)
-              --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <ref>   Workspace context (default: current/$C11_WORKSPACE_ID)
               --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
               --from-file <path>  Read title text from file (use '-' for stdin)
               --json              Emit raw v2 socket result as JSON
@@ -586,7 +586,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <ref>     Target panel (default: $C11_PANEL_ID, then focused)
-              --workspace <ref>     Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <ref>     Workspace context (default: current/$C11_WORKSPACE_ID)
               --source <src>        Write source: explicit | declare | osc | heuristic (default: explicit)
               --from-file <path>    Read description text from file (use '-' for stdin)
               --auto-expand=false   Suppress first-set auto-expand behavior for this write
@@ -609,7 +609,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <ref>       Target panel (default: $C11_PANEL_ID)
-              --workspace <ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
               --clear             Remove the icon (an empty value does the same)
               --json              Emit raw v2 socket result as JSON
@@ -634,7 +634,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <ref>       Target panel (default: $C11_PANEL_ID)
-              --workspace <ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
               --clear             Remove the color (an empty value does the same)
               --json              Emit raw v2 socket result as JSON
@@ -653,7 +653,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <ref>   Target panel (default: $C11_PANEL_ID, then focused)
-              --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <ref>   Workspace context (default: current/$C11_WORKSPACE_ID)
               --json              Emit raw v2 socket result as JSON
 
             Example:
@@ -786,7 +786,7 @@ extension CMUXCLI {
 
             Flags:
               --command <text>                    Queue text+Return into the new terminal shell
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Panel to split from (default: $C11_PANEL_ID)
               --title <text>         Seed the new area's title metadata atomically with creation
               --cwd <path|inherit>   Working directory for the new shell. A path
@@ -823,7 +823,7 @@ extension CMUXCLI {
             List areas in a workspace.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
 
             Example:
               c11 list-areas
@@ -836,7 +836,7 @@ extension CMUXCLI {
             List panels in an area.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --area <id|ref>        Restrict to a specific area (default: focused area)
 
             Example:
@@ -910,7 +910,7 @@ extension CMUXCLI {
 
             Flags:
               --area <id|ref>          Area to focus (required unless passed positionally)
-              --workspace <id|ref>     Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>     Workspace context (default: $C11_WORKSPACE_ID)
 
             Example:
               c11 focus-area --area area:2
@@ -1101,7 +1101,7 @@ extension CMUXCLI {
             List health details for panels in a workspace.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
 
             Example:
               c11 panel-health
@@ -1121,7 +1121,7 @@ extension CMUXCLI {
             Trigger the unread flash indicator for a panel.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
               --color <#hex>         One-shot color override (e.g. "#F5C518" or "#F5C518FF").
                                      Defaults to the c11 yellow signal color. Tints the
@@ -1148,7 +1148,7 @@ extension CMUXCLI {
             and for panels with no active persistent flash.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
 
             Example:
@@ -1162,7 +1162,7 @@ extension CMUXCLI {
             List panels in a workspace.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
 
             Example:
               c11 list-panels
@@ -1176,7 +1176,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <id|ref>     Panel to focus (required)
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
 
             Example:
               c11 focus-panel --panel panel:2
@@ -1216,7 +1216,7 @@ extension CMUXCLI {
             tmux-compatible alias: rename-window
 
             Flags:
-              --workspace <id|ref|index>   Workspace to rename (default: current/$CMUX_WORKSPACE_ID)
+              --workspace <id|ref|index>   Workspace to rename (default: current/$C11_WORKSPACE_ID)
 
             Example:
               c11 rename-workspace "backend logs"
@@ -1263,8 +1263,8 @@ extension CMUXCLI {
             tmux-compatible alias for reading terminal text from a pane.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
-              --surface <id|ref>     Surface context (default: $CMUX_SURFACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
+              --surface <id|ref>     Surface context (default: $C11_PANEL_ID)
               --scrollback           Include scrollback
               --lines <n>            Return only the last N lines (implies --scrollback)
 
@@ -1279,7 +1279,7 @@ extension CMUXCLI {
 
             Flags:
               --pane <id|ref>        Pane to resize (default: focused pane)
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               -L|-R|-U|-D            Direction (default: -R)
               --amount <n>           Resize amount (default: 1)
             """
@@ -1290,7 +1290,7 @@ extension CMUXCLI {
             Capture pane text and pipe it to a shell command via stdin.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --surface <id|ref>     Surface context (default: focused surface)
               --command <command>    Shell command to run (or pass as trailing text)
             """
@@ -1313,7 +1313,7 @@ extension CMUXCLI {
             Flags:
               --pane <id|ref>         Source pane (required)
               --target-pane <id|ref>  Target pane (required)
-              --workspace <id|ref>    Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>    Workspace context (default: $C11_WORKSPACE_ID)
             """
         case "break-pane":
             return """
@@ -1322,7 +1322,7 @@ extension CMUXCLI {
             Move a pane/surface out into its own pane context.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --pane <id|ref>        Source pane
               --surface <id|ref>     Source surface
             """
@@ -1334,7 +1334,7 @@ extension CMUXCLI {
 
             Flags:
               --target-pane <id|ref>  Target pane (required)
-              --workspace <id|ref>    Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>    Workspace context (default: $C11_WORKSPACE_ID)
               --pane <id|ref>         Source pane
               --surface <id|ref>      Source surface
             """
@@ -1351,7 +1351,7 @@ extension CMUXCLI {
             Focus the previously focused pane in a workspace.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
             """
         case "find-window":
             return """
@@ -1370,7 +1370,7 @@ extension CMUXCLI {
             Clear terminal scrollback history.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --surface <id|ref>     Surface context (default: focused surface)
             """
         case "set-hook":
@@ -1412,7 +1412,7 @@ extension CMUXCLI {
 
             Flags:
               --name <name>         Buffer name (default: default)
-              --workspace <id|ref>  Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>  Workspace context (default: $C11_WORKSPACE_ID)
               --surface <id|ref>    Surface context (default: focused surface)
             """
         case "list-buffers":
@@ -1428,7 +1428,7 @@ extension CMUXCLI {
             Send a command (or default shell restart command) to a surface.
 
             Flags:
-              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
               --surface <id|ref>     Surface context (default: focused surface)
               --command <cmd>        Command text (or pass trailing command text)
             """
@@ -1467,7 +1467,7 @@ extension CMUXCLI {
             Read terminal text from a panel as plain text.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
               --scrollback           Include scrollback (not just visible viewport)
               --lines <n>            Limit to the last n lines (implies --scrollback)
@@ -1513,7 +1513,7 @@ extension CMUXCLI {
             Pass one key per call; a second key is an error. Send the next key in its own call.
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
 
             send-key is not guarded: it does not check for a draft or dialog.
@@ -1533,7 +1533,7 @@ extension CMUXCLI {
 
             Flags:
               --panel <id|ref>     Target panel (required)
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
 
             Example:
               c11 send-key-panel --panel panel:2 enter
@@ -1549,7 +1549,7 @@ extension CMUXCLI {
               --title <text>         Notification title (default: "Notification")
               --subtitle <text>      Notification subtitle
               --body <text>          Notification body
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
 
             Example:
@@ -1748,7 +1748,7 @@ extension CMUXCLI {
               --task <id>              Opaque task identifier
               --role <id>              Opaque role identifier
               --panel <id|ref>     Target panel (default: $C11_PANEL_ID / focused)
-              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
               --json                   Emit raw JSON-RPC result
 
             Examples:
@@ -1779,7 +1779,7 @@ extension CMUXCLI {
                                                focused one); pass --workspace to scope it.
               --workspace <id|ref|index>       Scope --in-panel ref/index resolution to a
                                                single workspace. Defaults to searching all
-                                               workspaces (or CMUX_WORKSPACE_ID from the env).
+                                               workspaces (or C11_WORKSPACE_ID from the env).
               --area <uuid|index>              Legacy A-button mimic: create a NEW agent
                                                panel in the named area (focused area if
                                                omitted). Mutually exclusive with
@@ -1823,7 +1823,7 @@ extension CMUXCLI {
               --source <src>           Write source (default: explicit)
               --panel <id|ref>     Target panel (default: $C11_PANEL_ID / focused)
               --area <id|ref>          Target area (routes to area.set_metadata)
-              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
 
             Examples:
               c11 set-metadata --key title --value "My Panel"
@@ -1845,7 +1845,7 @@ extension CMUXCLI {
               --sources                Include metadata_sources sidecar
               --panel <id|ref>     Target panel (default: $C11_PANEL_ID / focused)
               --area <id|ref>          Target area (routes to area.get_metadata)
-              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
               --json                   Emit raw JSON result
 
             Examples:
@@ -1868,7 +1868,7 @@ extension CMUXCLI {
               --source <src>           Precedence source (default: explicit)
               --panel <id|ref>     Target panel (default: $C11_PANEL_ID / focused)
               --area <id|ref>          Target area (routes to area.clear_metadata)
-              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
               --json                   Emit raw JSON result
 
             Examples:
@@ -2026,7 +2026,7 @@ extension CMUXCLI {
               pre-compact        Record a compaction observation
 
             Flags:
-              --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
 
             Example:
@@ -2191,7 +2191,7 @@ extension CMUXCLI {
 
             Capture the current workspace (or a named one) to
             `~/.c11-snapshots/<ulid>.json`. No args → current workspace
-            (resolved from $CMUX_WORKSPACE_ID / $C11_WORKSPACE_ID).
+            (resolved from $C11_WORKSPACE_ID).
 
             Flags:
               --workspace <ref>   Workspace to capture (ref or UUID)
@@ -2235,7 +2235,7 @@ extension CMUXCLI {
 
             \(inPlaceNote)
 
-            When $C11_SESSION_RESUME (mirror: $CMUX_SESSION_RESUME) is set to a
+            When $C11_SESSION_RESUME is set to a
             truthy value, Claude Code terminals resume their prior session via
             `cc --resume <session-id>`. Unset the env var to restore the layout
             with fresh shells instead.

@@ -36,7 +36,9 @@ if name == 'xcodebuild':
         app=Path('build/Build/Products/Release/c11.app/Contents');app.mkdir(parents=True)
         (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.stage11.c11',
             'CFBundleShortVersionString':os.environ.get('FIXTURE_VERSION','0.67.0'),'CFBundleVersion':'131',
-            'NSAppTransportSecurity':{'NSAllowsArbitraryLoadsInWebContent':True}}))
+            'NSAppTransportSecurity':{'NSAllowsArbitraryLoadsInWebContent':True},
+            'CFBundleURLTypes':[{'CFBundleURLName':'c11 links','CFBundleURLSchemes':['c11']},
+                                {'CFBundleURLName':'fixture','CFBundleURLSchemes':['C11','fixture-scheme']}]}))
         for n in ('c11','ghostty'):
             p=app/'Resources/bin'/n;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('fixture');p.chmod(0o755)
 elif name == 'swift': print('synthetic-public-key')
@@ -129,6 +131,8 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(m["sourceSHA"], self.sha)
         plist = plistlib.loads((self.root / "build/Build/Products/Release/c11.app/Contents/Info.plist").read_bytes())
         self.assertEqual(plist["NSAppTransportSecurity"], {"NSAllowsArbitraryLoads": True})
+        # A proof app is a rebrand: it never claims c11 links (C11-556 #11a).
+        self.assertEqual(plist["CFBundleURLTypes"], [{"CFBundleURLName": "fixture", "CFBundleURLSchemes": ["fixture-scheme"]}])
         self.assertEqual(len(m["assets"]), 8)
         self.assertEqual(len(list(d.iterdir())), 10)
         for p in d.iterdir():
@@ -152,6 +156,7 @@ class SigningTests(unittest.TestCase):
         self.assertIn("/releases/latest/", m["feedURL"])
         plist = plistlib.loads((self.root / "build/Build/Products/Release/c11.app/Contents/Info.plist").read_bytes())
         self.assertEqual(plist["NSAppTransportSecurity"], {"NSAllowsArbitraryLoadsInWebContent": True})
+        self.assertEqual([s for t in plist["CFBundleURLTypes"] for s in t["CFBundleURLSchemes"]], ["c11", "C11", "fixture-scheme"])
 
     def test_sha_mismatch_fails_before_tools_or_secrets(self):
         self.env["SIGN_EXPECTED_SHA"] = "b" * 40

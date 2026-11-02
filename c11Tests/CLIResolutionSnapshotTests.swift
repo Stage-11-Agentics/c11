@@ -1794,6 +1794,21 @@ extension CLIResolutionSnapshotTests {
         }
     }
 
+    func testMailboxSendWithoutACallerPanelNamesTheMissingPanel() throws {
+        // C11-480 (ov-459): the error is localized and says what is wrong
+        // with C11_PANEL_ID, whether it is absent or not a UUID.
+        for panel in [nil, "not-a-uuid"] as [String?] {
+            let socket = try CapturedCLISocket()
+            var environment = ["C11_WORKSPACE_ID": Self.linkWorkspaceA]
+            if let panel { environment["C11_PANEL_ID"] = panel }
+            guard let result = runCLI(["mailbox", "send", "--to", "peer", "hello"],
+                                      socketPath: socket.path, environmentOverrides: environment) else { return }
+            XCTAssertNotEqual(result.status, 0)
+            XCTAssertTrue(result.stderr.contains("C11_PANEL_ID is missing or is not a valid panel UUID. Pass --from <panel> to override."),
+                          "\(panel ?? "unset"): \(result.stderr)")
+        }
+    }
+
     func testLinkFormatsAndJSONResolveLivePanelAcrossWindows() throws {
         let url = "c11://panel/\(Self.linkPanelB)"
         let markdown = "[\\[Agent\\] Two](\(url))"

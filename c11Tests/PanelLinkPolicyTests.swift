@@ -680,9 +680,12 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
     /// another window while the prompt is up, cancel and expiry leave key there.
     func testDismissalLeavesKeyWhereTheOperatorPutIt() throws {
         let target = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+        // Nonactivating panels can take key in the inactive bare runner, where
+        // an ordinary NSWindow cannot; the restore bug is the same either way.
         func window() -> NSWindow {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
-                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+                            styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
+            (w as? NSPanel)?.becomesKeyOnlyIfNeeded = false
             w.isReleasedWhenClosed = false
             return w
         }

@@ -9,6 +9,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 ### Added
 - After a relaunch, each resumed agent gets one c11 mailbox notice at its first idle prompt saying c11 restarted, how many of its background jobs ended (measured at quit, omitted after a crash), and that it must re-arm its watchers and use UUIDs. A second relaunch replaces an unread notice. A new `app.relaunched` event lists the previous run's short refs with their UUIDs. (C11-568)
 
+### Changed
+
+- **The sidebar button steps through column counts.** Clicking the titlebar sidebar button now goes from hidden to one column, two columns, three columns, and back to hidden, setting the sidebar width each step needs. Counts the window is too narrow for are skipped. Right-click the button to pick Hide Sidebar or a column count directly; a width you dragged is kept when it already shows that count. The Toggle Sidebar shortcut and menu item still just hide and show.
+
 ## [1.7.8] - 2026-11-01
 
 Headline: **c11 1.7.8. The mailbox drawer shows how long mail waited before an agent took it and jumps from a sender's name to that conversation, the workspace menu is shorter, and Markdown panels keep their place inside lists, callouts and footnotes.**

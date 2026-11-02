@@ -127,6 +127,41 @@ final class SidebarTilesPolicyTests: XCTestCase {
         XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: SidebarLayoutPolicy.effectiveWidth(486, windowWidth: 1800)))
     }
 
+    func testTitlebarButtonCyclesHiddenThroughThreeColumns() {
+        let state = SidebarState(isVisible: false, persistedWidth: 260)
+        var seen: [Int] = []
+        for _ in 0..<5 {
+            state.cycleColumns(windowWidth: 2400, scale: 1)
+            seen.append(state.shownColumns(windowWidth: 2400, scale: 1))
+        }
+        XCTAssertEqual(seen, [1, 2, 3, 0, 1])
+        // A dragged one-column width survives the hidden → 1 step.
+        XCTAssertEqual(SidebarState(isVisible: false, persistedWidth: 260).show(columns: 1, windowWidth: 2400, scale: 1), 1)
+        XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 1, current: 260, windowWidth: 2400, scale: 1), 260)
+        XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 1, current: 400, windowWidth: 2400, scale: 1), 200)
+        XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 3, current: 200, windowWidth: 2400, scale: 1), 486)
+    }
+
+    func testColumnChoicesTheWindowCannotFitAreSkipped() {
+        // A 1200 pt window caps the sidebar at 400 pt: two columns, never three.
+        XCTAssertNil(SidebarLayoutPolicy.requestedWidth(forColumns: 3, current: 200, windowWidth: 1200, scale: 1))
+        let state = SidebarState(isVisible: true, persistedWidth: 324)
+        state.cycleColumns(windowWidth: 1200, scale: 1)
+        XCTAssertFalse(state.isVisible)
+        // The menu's 3 Columns falls back to the most that fit.
+        XCTAssertEqual(state.show(columns: 3, windowWidth: 1200, scale: 1), 2)
+        XCTAssertTrue(state.isVisible)
+        // At 1.6x chrome scale three columns would need 778 pt, past the 600 pt maximum.
+        XCTAssertNil(SidebarLayoutPolicy.requestedWidth(forColumns: 3, current: 200, windowWidth: 3000, scale: 1.6))
+        // A 486 pt request shows two columns here but three once the window widens;
+        // picking 2 Columns writes a width that stays at two.
+        XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 2, current: 486, windowWidth: 1200, scale: 1), 324)
+        // Stored widths respect the 180 pt minimum even at a tiny chrome scale.
+        XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 2, current: 400, windowWidth: 2400, scale: 0.5), 180)
+        XCTAssertEqual(SidebarLayoutPolicy.nextColumnChoice(after: 2) { $0 < 3 }, 0)
+        XCTAssertEqual(SidebarLayoutPolicy.nextColumnChoice(after: 0) { _ in true }, 1)
+    }
+
     func testWidthAloneSwitchesToTilesAtTheTwoColumnEdge() {
         // Below, at and above the edge where two 162 pt columns fit.
         for (width, tiles) in [(180.0, false), (299, false), (300, false), (323.9, false),

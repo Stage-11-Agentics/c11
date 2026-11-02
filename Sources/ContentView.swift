@@ -364,6 +364,46 @@ final class SidebarState: ObservableObject {
     func toggle() {
         isVisible.toggle()
     }
+
+    /// Columns the sidebar shows now in a window this wide; 0 when hidden.
+    func shownColumns(windowWidth: Double, scale: Double) -> Int {
+        guard isVisible else { return 0 }
+        return SidebarLayoutPolicy.shownColumns(requested: Double(persistedWidth),
+                                                windowWidth: windowWidth, scale: scale)
+    }
+
+    /// Shows `count` columns, or the most below it the window fits; 0 hides.
+    /// Returns the columns actually chosen.
+    @discardableResult
+    func show(columns count: Int, windowWidth: Double, scale: Double) -> Int {
+        guard count > 0 else {
+            isVisible = false
+            return 0
+        }
+        for candidate in stride(from: min(count, SidebarLayoutPolicy.maximumColumnChoice), through: 1, by: -1) {
+            guard let width = SidebarLayoutPolicy.requestedWidth(
+                forColumns: candidate, current: Double(persistedWidth),
+                windowWidth: windowWidth, scale: scale) else { continue }
+            if abs(Double(persistedWidth) - width) > 0.5 {
+                persistedWidth = CGFloat(width)
+            }
+            isVisible = true
+            return candidate
+        }
+        isVisible = true
+        return shownColumns(windowWidth: windowWidth, scale: scale)
+    }
+
+    /// The titlebar button: hidden → 1 → 2 → 3 columns → hidden.
+    func cycleColumns(windowWidth: Double, scale: Double) {
+        let next = SidebarLayoutPolicy.nextColumnChoice(
+            after: shownColumns(windowWidth: windowWidth, scale: scale)
+        ) { candidate in
+            SidebarLayoutPolicy.requestedWidth(forColumns: candidate, current: Double(persistedWidth),
+                                               windowWidth: windowWidth, scale: scale) != nil
+        }
+        show(columns: next, windowWidth: windowWidth, scale: scale)
+    }
 }
 
 enum SidebarResizeInteraction {
@@ -2355,7 +2395,6 @@ struct ContentView: View {
             notificationStore: TerminalNotificationStore.shared,
             viewModel: fullscreenControlsViewModel,
             sidebarState: sidebarState,
-            onToggleSidebar: { sidebarState.toggle() },
             onToggleNotifications: { [fullscreenControlsViewModel] in
                 AppDelegate.shared?.toggleNotificationsPopover(
                     animated: true,

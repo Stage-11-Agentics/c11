@@ -157,12 +157,21 @@ class Proof:
         self.report['events'].append(dict(kind='right-click' if right else 'click', label=label, x=x, y=y,
                                           flags=flags, posted_ms=stamps))
 
-    def key(self, code, label, flags=0):
+    def key(self, code, label):
         assert self.ax('foreground') == self.pid, 'exact guest PID must be foreground'
         for down in (True, False):
-            self.post(CG.CGEventCreateKeyboardEvent(HID_SOURCE, code, down), flags)
+            self.post(CG.CGEventCreateKeyboardEvent(HID_SOURCE, code, down))
             time.sleep(.06)
-        self.report['events'].append(dict(kind='key', label=label, code=code, flags=flags,
+        self.report['events'].append(dict(kind='key', label=label, code=code,
+                                          posted_ms=round(time.time() * 1000)))
+
+    def chord(self, label, *commands):
+        # Modifier chords go through cliclick kd/ku. Command flags set on an
+        # HID-state key event latch Command in the guest, so every later key
+        # becomes a shortcut.
+        assert self.ax('foreground') == self.pid, 'exact guest PID must be foreground'
+        subprocess.run(['/opt/homebrew/bin/cliclick', '-w', '70', *commands], check=True, timeout=15)
+        self.report['events'].append(dict(kind='chord', label=label, commands=list(commands),
                                           posted_ms=round(time.time() * 1000)))
 
     @staticmethod
@@ -212,6 +221,8 @@ class Proof:
 
     def execute(self):
         subprocess.run(['/usr/bin/pkill', '-x', 'System Settings'], timeout=5, check=False)
+        # Release any modifier an earlier run left down.
+        subprocess.run(['/opt/homebrew/bin/cliclick', 'ku:cmd', 'ku:alt', 'ku:shift', 'ku:ctrl'], timeout=15, check=False)
         before = self.workspaces()
         assert before, 'guest has a workspace'
         plain = before[0]
@@ -266,7 +277,7 @@ class Proof:
         self.passed('rename field holds the custom name with the automatic name as placeholder',
                     value=field['value'], placeholder=field['placeholder'])
         self.click(*self.center(field), 'focus rename field')
-        self.key(0, 'select all', flags=CMD)
+        self.chord('select all', 'kd:cmd', 't:a', 'ku:cmd')
         self.key(51, 'delete')
         self.wait(lambda: self.rename_field()['value'] == '', 'field cleared')
         self.screenshot('04-rename-empty')

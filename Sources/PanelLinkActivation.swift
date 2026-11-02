@@ -550,11 +550,67 @@ final class ExternalPanelLinkRequest {
     }
 }
 
-/// A floating confirmation can be clicked while another application is active,
-/// but cannot take a terminal's key focus or turn Return into consent.
+/// Return, keypad Enter or Escape cancels on the key-up of a press that began
+/// in the prompt. Acting on key-up keeps autorepeat of a held key from reaching
+/// the window that regains focus; a repeat or key-up with no fresh key-down here
+/// (a key already held when the prompt appeared) does nothing. No key confirms.
+struct ExternalPanelLinkKeyGate {
+    /// Return, keypad Enter, Escape.
+    static let cancelKeyCodes: Set<UInt16> = [36, 76, 53]
+    private var pressed: UInt16?
+
+    static func isPlain(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.intersection([.command, .control, .option]).isEmpty
+    }
+
+    mutating func keyDown(keyCode: UInt16, isRepeat: Bool, plain: Bool) {
+        guard !isRepeat else { return }
+        pressed = plain && Self.cancelKeyCodes.contains(keyCode) ? keyCode : nil
+    }
+
+    /// True when this key-up ends a fresh cancel press.
+    mutating func keyUp(keyCode: UInt16) -> Bool {
+        guard let pressed, pressed == keyCode else { return false }
+        self.pressed = nil
+        return true
+    }
+}
+
+/// A floating confirmation that takes key focus without activating c11 or
+/// becoming main, so Return and Escape reach it from another app too. While it
+/// is key it owns every key event: cancel keys go through the key gate, every
+/// other key (Space, Tab, Command chords) is dropped, and nothing reaches
+/// Confirm, the main menu or the window behind it.
 final class ExternalPanelLinkWindow: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var onCancelKey: (() -> Void)?
+    private var keyGate = ExternalPanelLinkKeyGate()
+
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown:
+            noteKeyDown(event)
+        case .keyUp:
+            if keyGate.keyUp(keyCode: event.keyCode) { onCancelKey?() }
+        default:
+            super.sendEvent(event)
+        }
+    }
+
+    /// Never super: Cancel's Return default-button match would fire on key-down
+    /// and hand autorepeat to the window behind. Not key, it claims nothing.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard isKeyWindow else { return false }
+        if event.type == .keyDown { noteKeyDown(event) }
+        return true
+    }
+
+    private func noteKeyDown(_ event: NSEvent) {
+        keyGate.keyDown(keyCode: event.keyCode, isRepeat: event.isARepeat,
+                        plain: ExternalPanelLinkKeyGate.isPlain(event.modifierFlags))
+    }
 }
 
 /// A newly appeared control is not consent. Bind one fresh plain click to
@@ -682,6 +738,10 @@ final class ExternalPanelLinkButton: NSButton {
         return super.sendAction(action, to: target)
     }
 
+    /// A click lands on the first press, as it did when the prompt could not
+    /// become key; Confirm's gesture gate still decides whether it counts.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     init(title: String, requestID: UUID, target: AnyObject?, action: Selector) {
         self.requestID = requestID
         super.init(frame: .zero)
@@ -690,6 +750,8 @@ final class ExternalPanelLinkButton: NSButton {
         self.action = action
         self.bezelStyle = .rounded
         self.setButtonType(.momentaryPushIn)
+        // No keyboard focus ring: Tab and Space never reach a button.
+        self.refusesFirstResponder = true
     }
 
     required init?(coder: NSCoder) { return nil }
@@ -699,7 +761,13 @@ final class ExternalPanelLinkButton: NSButton {
 final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
     private let request: ExternalPanelLinkRequest
     private var panel: ExternalPanelLinkWindow?
+    /// The window that was key when the prompt took focus; it gets key back on
+    /// every dismissal that does not navigate.
+    private weak var restoreKeyWindow: NSWindow?
     private var expiry: DispatchWorkItem?
+
+    var isPresenting: Bool { panel != nil }
+    var presentedWindow: ExternalPanelLinkWindow? { panel }
     private var visibilityObservers: [(NotificationCenter, NSObjectProtocol)] = []
 
     init(resolve: @escaping (PanelLinkTarget) -> ExternalPanelLinkDestination?,
@@ -724,7 +792,7 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         window.setAccessibilityIdentifier("c11.external-link.confirmation")
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
-        window.becomesKeyOnlyIfNeeded = true
+        window.becomesKeyOnlyIfNeeded = false
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
@@ -778,8 +846,13 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
             window.setFrameOrigin(NSPoint(x: frame.midX - window.frame.width / 2,
                                           y: frame.midY - window.frame.height / 2))
         }
+        window.onCancelKey = { [weak self, id = prompt.id] in
+            MainActor.assumeIsolated { self?.dismiss(id: id, confirm: false) }
+        }
+        if let key = NSApp.keyWindow, !(key is ExternalPanelLinkWindow) { restoreKeyWindow = key }
         panel = window
-        window.orderFrontRegardless()
+        // Key, not active: c11 is not activated and no other window rises.
+        window.makeKeyAndOrderFront(nil)
         content.layoutSubtreeIfNeeded()
         confirmationButton?.armConfirmation()
         for (center, name) in [
@@ -798,11 +871,10 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
 
     /// Confirm, when there is a destination, then Cancel. Cancel is the
     /// rightmost button, where a habitual "proceed" click lands, and the only
-    /// one with Return; Confirm starts disabled until its gesture arms.
-    /// Escape cancels too, through an invisible twin outside the arranged row.
+    /// one marked for Return; Confirm starts disabled until its gesture arms.
+    /// The window's key gate, not the buttons, handles Return and Escape.
     static func makeButtonRow(requestID: UUID, hasDestination: Bool, target: ExternalPanelLinkPresenter?)
-        -> (stack: NSStackView, confirm: ExternalPanelLinkButton?, cancel: ExternalPanelLinkButton,
-            escape: ExternalPanelLinkButton) {
+        -> (stack: NSStackView, confirm: ExternalPanelLinkButton?, cancel: ExternalPanelLinkButton) {
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 12
@@ -823,17 +895,14 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         cancel.keyEquivalent = "\r"
         cancel.setAccessibilityIdentifier("c11.external-link.cancel")
         stack.addArrangedSubview(cancel)
-        // A button holds one key equivalent and Cancel holds Return, so Escape
-        // gets a zero-size twin with Cancel's action. The prompt never becomes
-        // key; AppKit still offers it key equivalents the key window declines.
-        let escape = ExternalPanelLinkButton(title: "", requestID: requestID, target: target,
-                                             action: #selector(ExternalPanelLinkPresenter.cancelClicked(_:)))
-        escape.frame = .zero
-        escape.isBordered = false
-        escape.keyEquivalent = "\u{1b}"
-        escape.setAccessibilityElement(false)
-        stack.addSubview(escape)
-        return (stack, confirm, cancel, escape)
+        return (stack, confirm, cancel)
+    }
+
+    private func restoreKeyFocus() {
+        defer { restoreKeyWindow = nil }
+        guard NSApp.isActive, let window = restoreKeyWindow, window.isVisible, !window.isMiniaturized,
+              window.isOnActiveSpace, window.canBecomeKey, NSApp.keyWindow !== window else { return }
+        window.makeKey()
     }
 
     @objc private func cancelClicked(_ sender: ExternalPanelLinkButton) {
@@ -871,11 +940,16 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         for (center, token) in visibilityObservers { center.removeObserver(token) }
         visibilityObservers.removeAll()
         panel?.delegate = nil
+        panel?.onCancelKey = nil
         panel?.orderOut(nil)
         panel = nil
         let result = request.finish(id: id, confirm: confirm, isSocketCommand: SocketCommandContext.current != nil)
         PanelLinkActivation.log(target: prompt.destination?.url ?? "", origin: "external",
                                 activation: confirm ? "confirm" : "cancel", result: result)
+        // A confirmed open hands focus to its destination. Otherwise the window
+        // that was key gets it back; with c11 inactive the OS returns key to
+        // the active app, and c11 makes no window key.
+        if result != "opened" { restoreKeyFocus() }
         if confirm && result != "opened" {
             // Keep the same admission occupied by a notice; never substitute a
             // different target or open another app after a stale confirmation.

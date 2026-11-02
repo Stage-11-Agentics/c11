@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -453,20 +454,16 @@ final class ExternalPanelLinkButtonRowTests: XCTestCase {
         XCTAssertTrue(row.cancel.isEnabled)
     }
 
-    /// C11-562 review: Escape cancels through a hidden twin; the visible row
-    /// and Cancel's Return stay as they are.
-    func testEscapeCancelsThroughAHiddenTwin() {
+    /// C11-565: Return and Escape go through the window's key gate, so no
+    /// button holds Escape and no hidden twin remains in the row.
+    func testNoButtonHoldsEscape() {
         for hasDestination in [true, false] {
             let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: hasDestination, target: nil)
-            XCTAssertEqual(row.escape.keyEquivalent, "\u{1b}")
-            XCTAssertEqual(row.escape.action.map(NSStringFromSelector), "cancelClicked:")
-            XCTAssertEqual(row.escape.requestID, row.cancel.requestID)
-            XCTAssertTrue(row.escape.superview === row.stack)
-            XCTAssertFalse(row.stack.arrangedSubviews.contains(row.escape))
-            XCTAssertFalse(row.escape.isAccessibilityElement())
-            XCTAssertEqual(row.escape.frame.size, .zero)
-            XCTAssertEqual(row.cancel.keyEquivalent, "\r")
-            XCTAssertEqual(row.stack.subviews.filter { ($0 as? NSButton)?.keyEquivalent == "\u{1b}" }.count, 1)
+            XCTAssertEqual(row.stack.subviews.filter { ($0 as? NSButton)?.keyEquivalent == "\u{1b}" }.count, 0)
+            XCTAssertEqual(row.stack.subviews.count, row.stack.arrangedSubviews.count)
+            for case let button as NSButton in row.stack.subviews {
+                XCTAssertTrue(button.refusesFirstResponder)
+            }
         }
     }
 
@@ -475,5 +472,153 @@ final class ExternalPanelLinkButtonRowTests: XCTestCase {
         XCTAssertNil(row.confirm)
         XCTAssertEqual(row.stack.arrangedSubviews.map { $0.accessibilityIdentifier() }, ["c11.external-link.cancel"])
         XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+    }
+}
+
+final class ExternalPanelLinkKeyGateTests: XCTestCase {
+    func testFreshPlainPressCancelsOnKeyUpOnly() {
+        for code: UInt16 in [36, 76, 53] {
+            var gate = ExternalPanelLinkKeyGate()
+            gate.keyDown(keyCode: code, isRepeat: false, plain: true)
+            XCTAssertTrue(gate.keyUp(keyCode: code))
+            XCTAssertFalse(gate.keyUp(keyCode: code))
+        }
+    }
+
+    func testHeldKeyFromBeforeThePromptDoesNothing() {
+        var gate = ExternalPanelLinkKeyGate()
+        gate.keyDown(keyCode: 36, isRepeat: true, plain: true)
+        gate.keyDown(keyCode: 36, isRepeat: true, plain: true)
+        XCTAssertFalse(gate.keyUp(keyCode: 36))
+        XCTAssertFalse(gate.keyUp(keyCode: 53))
+    }
+
+    func testHoldingReturnCancelsOnceOnRelease() {
+        var gate = ExternalPanelLinkKeyGate()
+        gate.keyDown(keyCode: 36, isRepeat: false, plain: true)
+        for _ in 0..<30 { gate.keyDown(keyCode: 36, isRepeat: true, plain: true) }
+        XCTAssertTrue(gate.keyUp(keyCode: 36))
+        XCTAssertFalse(gate.keyUp(keyCode: 36))
+    }
+
+    func testModifiedOtherAndInterleavedKeysDoNotCancel() {
+        var gate = ExternalPanelLinkKeyGate()
+        gate.keyDown(keyCode: 36, isRepeat: false, plain: false)
+        XCTAssertFalse(gate.keyUp(keyCode: 36))
+        for code: UInt16 in [49, 48, 0] { // Space, Tab, A
+            gate.keyDown(keyCode: code, isRepeat: false, plain: true)
+            XCTAssertFalse(gate.keyUp(keyCode: code))
+        }
+        gate.keyDown(keyCode: 53, isRepeat: false, plain: true)
+        gate.keyDown(keyCode: 0, isRepeat: false, plain: true)
+        XCTAssertFalse(gate.keyUp(keyCode: 53))
+        XCTAssertTrue(ExternalPanelLinkKeyGate.isPlain([.shift]))
+        XCTAssertFalse(ExternalPanelLinkKeyGate.isPlain([.command]))
+        XCTAssertFalse(ExternalPanelLinkKeyGate.isPlain([.option]))
+        XCTAssertFalse(ExternalPanelLinkKeyGate.isPlain([.control]))
+    }
+}
+
+@MainActor
+final class ExternalPanelLinkWindowKeyTests: XCTestCase {
+    private func key(_ type: NSEvent.EventType, _ code: UInt16, _ chars: String,
+                     repeating: Bool = false, flags: NSEvent.ModifierFlags = [], window: NSWindow) -> NSEvent {
+        NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                         windowNumber: window.windowNumber, context: nil, characters: chars,
+                         charactersIgnoringModifiers: chars, isARepeat: repeating, keyCode: code)!
+    }
+
+    private func makeWindow() -> ExternalPanelLinkWindow {
+        let window = ExternalPanelLinkWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+                                             styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        return window
+    }
+
+    func testPromptCanBecomeKeyButNeverMain() {
+        let window = makeWindow()
+        XCTAssertTrue(window.canBecomeKey)
+        XCTAssertFalse(window.canBecomeMain)
+        XCTAssertTrue(window.styleMask.contains(.nonactivatingPanel))
+    }
+
+    func testReturnAndEscapeCancelOnKeyUpThroughSendEvent() {
+        for (code, chars) in [(UInt16(36), "\r"), (53, "\u{1b}"), (76, "\u{3}")] {
+            let window = makeWindow()
+            var cancels = 0
+            window.onCancelKey = { cancels += 1 }
+            window.sendEvent(key(.keyDown, code, chars, window: window))
+            XCTAssertEqual(cancels, 0, "key-down alone must not cancel")
+            window.sendEvent(key(.keyDown, code, chars, repeating: true, window: window))
+            window.sendEvent(key(.keyUp, code, chars, window: window))
+            XCTAssertEqual(cancels, 1)
+            window.sendEvent(key(.keyUp, code, chars, window: window))
+            XCTAssertEqual(cancels, 1)
+        }
+    }
+
+    func testRepeatOrReleaseWithoutFreshPressDoesNotCancel() {
+        let window = makeWindow()
+        var cancels = 0
+        window.onCancelKey = { cancels += 1 }
+        window.sendEvent(key(.keyDown, 36, "\r", repeating: true, window: window))
+        window.sendEvent(key(.keyUp, 36, "\r", window: window))
+        window.sendEvent(key(.keyDown, 36, "\r", flags: [.command], window: window))
+        window.sendEvent(key(.keyUp, 36, "\r", window: window))
+        XCTAssertEqual(cancels, 0)
+    }
+
+    /// The default button's Return must never fire on key-down: that path would
+    /// close the prompt mid-press and hand autorepeat to the window behind.
+    func testKeyEquivalentsNeverReachTheDefaultButton() {
+        final class Recorder: NSObject { var fired = 0; @objc func fire(_ sender: Any?) { fired += 1 } }
+        let window = makeWindow()
+        let recorder = Recorder()
+        let button = NSButton(title: "Cancel", target: recorder, action: #selector(Recorder.fire(_:)))
+        button.keyEquivalent = "\r"
+        window.contentView?.addSubview(button)
+        window.defaultButtonCell = button.cell as? NSButtonCell
+        // Not key: the prompt claims nothing, so a terminal's key equivalents pass by.
+        XCTAssertFalse(window.performKeyEquivalent(with: key(.keyDown, 36, "\r", window: window)))
+        window.sendEvent(key(.keyDown, 36, "\r", window: window))
+        window.sendEvent(key(.keyDown, 49, " ", window: window))
+        window.sendEvent(key(.keyDown, 48, "\t", window: window))
+        XCTAssertEqual(recorder.fired, 0)
+    }
+}
+
+@MainActor
+final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
+    private func key(_ type: NSEvent.EventType, _ code: UInt16, _ chars: String, window: NSWindow) -> NSEvent {
+        NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                         windowNumber: window.windowNumber, context: nil, characters: chars,
+                         charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+    }
+
+    /// C11-565 acceptance 1 and 2: Return and Escape cancel a live prompt;
+    /// no key, including Return, Space and Tab after arming, confirms it.
+    func testKeysCancelThePromptAndNeverConfirm() throws {
+        let target = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+        for (code, chars) in [(UInt16(36), "\r"), (53, "\u{1b}")] {
+            var opened = 0
+            let presenter = ExternalPanelLinkPresenter(
+                resolve: { ExternalPanelLinkDestination(target: $0, workspaceID: target, workspaceTitle: "W", panelTitle: "P") },
+                open: { _ in opened += 1; return true })
+            presenter.receive("c11://panel/\(target.uuidString)")
+            let window = try XCTUnwrap(presenter.presentedWindow)
+            XCTAssertTrue(presenter.isPresenting)
+            RunLoop.main.run(until: Date().addingTimeInterval(1.0)) // past the arming delay
+            for (other, otherChars) in [(UInt16(49), " "), (48, "\t")] {
+                window.sendEvent(key(.keyDown, other, otherChars, window: window))
+                window.sendEvent(key(.keyUp, other, otherChars, window: window))
+            }
+            XCTAssertTrue(presenter.isPresenting)
+            window.sendEvent(key(.keyDown, code, chars, window: window))
+            XCTAssertTrue(presenter.isPresenting, "cancel waits for key-up")
+            window.sendEvent(key(.keyUp, code, chars, window: window))
+            XCTAssertFalse(presenter.isPresenting)
+            XCTAssertFalse(window.isVisible)
+            XCTAssertEqual(opened, 0)
+        }
     }
 }

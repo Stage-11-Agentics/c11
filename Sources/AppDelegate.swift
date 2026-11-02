@@ -11411,6 +11411,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Local monitor only receives events when app is active (not global)
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
+            // The outside-link prompt owns its keys while it is key (C11-565):
+            // no app shortcut runs from it, and its Escape key-up is never consumed.
+            if event.window is ExternalPanelLinkWindow { return event }
             if event.type == .keyDown {
 #if DEBUG
                 let phaseTotalStart = ProcessInfo.processInfo.systemUptime

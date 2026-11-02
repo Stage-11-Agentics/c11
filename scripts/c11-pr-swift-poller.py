@@ -72,6 +72,8 @@ BUDGET_S = 120
 HTTP_TIMEOUT_S = 20
 MAX_PAGES = 10
 DECISION_LIMIT = 200
+RESULT_RETENTION_S = 7 * 24 * 60 * 60
+SWEEP_INTERVAL_S = 60 * 60
 REUSE_MAIN_LIMIT = 100
 VERSION_PROJECT = "GhosttyTabs.xcodeproj/project.pbxproj"
 VERSION_VALUE = re.compile(rb"^([ \t]*(?:MARKETING_VERSION|CURRENT_PROJECT_VERSION) = )([0-9]+(?:\.[0-9]+)*)(;[ \t]*\r?)$", re.MULTILINE)
@@ -544,6 +546,71 @@ def result_directory(state, attempt_id, invocation):
     if path.exists():
         raise FileExistsError(str(path))
     return path
+
+
+def names_attempt(name, attempts):
+    """<attempt>-<n>, its .log and its .xcresult all belong to that attempt."""
+    return any(attempt and (name == attempt or name.startswith((attempt + "-", attempt + ".")))
+               for attempt in attempts)
+
+
+def sweep_results(results, now, attempts=(), retention=RESULT_RETENTION_S):
+    """Remove entries directly inside results older than retention, except live attempts.
+
+    Age is the entry's own lstat mtime. A symlink is unlinked, never followed, and
+    rmtree unlinks symlinks inside a bundle. A symlinked results root is refused, so
+    nothing outside it is reached. Per-entry failures are counted and never raised.
+    """
+    outcome = {"removed": 0, "kept": 0, "failed": 0, "error": None}
+
+    def failed(name, error):
+        outcome["failed"] += 1
+        if outcome["error"] is None:
+            outcome["error"] = "%s: %s" % (name, type(error).__name__)
+
+    results = os.fspath(results)
+    try:
+        if os.path.islink(results):
+            raise NotADirectoryError(results)
+        with os.scandir(results) as listing:
+            entries = list(listing)
+    except FileNotFoundError:
+        return outcome
+    except OSError as error:
+        failed(os.path.basename(results), error)
+        return outcome
+    cutoff = now - retention
+    for entry in entries:
+        try:
+            if entry.stat(follow_symlinks=False).st_mtime >= cutoff or names_attempt(entry.name, attempts):
+                outcome["kept"] += 1
+            elif entry.is_dir(follow_symlinks=False):
+                shutil.rmtree(entry.path)
+                outcome["removed"] += 1
+            else:
+                os.unlink(entry.path)
+                outcome["removed"] += 1
+        except Exception as error:
+            failed(entry.name, error)
+    return outcome
+
+
+def sweep_results_if_due(results, now, last, attempts, log):
+    """Sweep at most hourly and return the time to remember. Logs one line; never raises.
+
+    attempts is a callable, so a failure to read live attempts removes nothing.
+    """
+    if last is not None and 0 <= now - last < SWEEP_INTERVAL_S:
+        return last
+    try:
+        outcome = sweep_results(results, now, attempts())
+    except Exception as error:
+        outcome = {"removed": 0, "kept": 0, "failed": 1, "error": "sweep: %s" % type(error).__name__}
+    try:
+        log(**outcome)
+    except Exception:
+        pass
+    return now
 
 
 def logic_quarantine_ids(worktree):
@@ -1587,6 +1654,7 @@ class Supervisor:
         self.guest_wait_since = None
         self.guest_wait_logged = False
         self.revoked_detail = None
+        self.last_sweep = None
 
     def state(self):
         path = self.root / "state"
@@ -1606,7 +1674,7 @@ class Supervisor:
         self._trim_decisions(path)
 
     def _trim_decisions(self, path):
-        """Keep the last DECISION_LIMIT lines. Result directories are not swept."""
+        """Keep the last DECISION_LIMIT lines. Result directories have their own sweep."""
         try:
             lines = path.read_text().splitlines()
         except OSError:
@@ -1645,6 +1713,7 @@ class Supervisor:
             self.disarmed = True
             self.log(decision="stuck")
             return "stuck"
+        self._sweep_results()
         if self.world.time() < self.not_before:
             waited = self.not_before - self.world.time()
             self.world.sleep(waited)
@@ -1731,6 +1800,17 @@ class Supervisor:
         self._deliver_owed()
         self.not_before = self.world.time() + (wait or self.cadence)
         return self.maybe_start()
+
+    def _sweep_results(self):
+        """Runs only between builds: cycle calls it after recover says no build is live."""
+        self.last_sweep = sweep_results_if_due(
+            self.root / "state" / "results", self.world.time(), self.last_sweep,
+            self._live_attempts, lambda **outcome: self.log(decision="results-sweep", **outcome),
+        )
+
+    def _live_attempts(self):
+        recorded = read_running(self.root) or {}
+        return {recorded.get("attempt_id")} | {item.get("attempt_id") for item in self.queue}
 
     def _list_headers(self):
         saved = load_list_store(self.state() / "list.json")

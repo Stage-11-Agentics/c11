@@ -122,7 +122,7 @@ Before going live, the 120 second budget was measured by hand with `scripts/remo
 
 ## Retention
 
-`state/decisions.jsonl` keeps the last 200 lines. A result directory for an attempt that is no longer queued is eligible for deletion after 7 days. No sweeper is installed.
+`state/decisions.jsonl` keeps the last 200 lines. The supervisor sweeps `state/results/` at most hourly, from its cycle after recovery says no build is live. It removes entries (bundle, log, symlink) whose own modification time is older than 7 days, unless the entry belongs to a queued or running attempt. A symlink is removed as a link and never followed. Each sweep writes one `results-sweep` decision with `removed`, `kept`, `failed` and the first `error`; a failure is only that line and never touches a build, a status or the supervisor. `c11-main-backstop.py` uses the same code.
 
 ## Fixtures
 

@@ -24,7 +24,7 @@ Copy these files into an isolated scratch `bin` directory on Atlas: `c11-main-ba
 /usr/bin/python3 ~/c11-466-scratch/bin/c11-main-backstop.py once --root ~/c11-466-scratch --force
 ```
 
-This executes the real fixed gate but posts **no status**. Exit 0 means success or unchanged; 75 means capacity deferral; 1 means failure/error. Repeat once to measure the warm cache. The installed slot runner is read-only. Dry runs use their own checkout, result directories and dependency-keyed DerivedData. They do not borrow the poller's cache. `state/events.jsonl` includes local timestamps, source SHA, load average, each stage duration and xcresult counts; each `state/results/<attempt>/` retains logs and result bundles. A sandbox guest makes the manual run defer too.
+This executes the real fixed gate but posts **no status**. Exit 0 means success or unchanged; 75 means capacity deferral; 1 means failure/error. Repeat once to measure the warm cache. The installed slot runner is read-only. Dry runs use their own checkout, result directories and dependency-keyed DerivedData. They do not borrow the poller's cache. `state/events.jsonl` includes local timestamps, source SHA, load average, each stage duration and xcresult counts; each `state/results/<attempt>/` retains logs and result bundles for 7 days. A sandbox guest makes the manual run defer too.
 
 ## Install and update (after GO-INSTALL)
 
@@ -60,7 +60,7 @@ python3 ~/c11-main-backstop/bin/c11-main-backstop-service.py stop
 python3 ~/c11-main-backstop/bin/c11-main-backstop-service.py teardown
 ```
 
-Health prints the exact service, installed manifest, last completed result and active process record. `stop` retains caches and evidence. `teardown` first stops and verifies recovery, then removes only this service's plist and `~/c11-main-backstop`. It never bootouts the PR poller, removes its files, changes shared slots, or deletes the gh login. Keep evidence externally before teardown. Cache/result retention is operator-managed; stop before pruning this root.
+Health prints the exact service, installed manifest, last completed result and active process record. `stop` retains caches and evidence. `teardown` first stops and verifies recovery, then removes only this service's plist and `~/c11-main-backstop`. It never bootouts the PR poller, removes its files, changes shared slots, or deletes the gh login. Keep evidence externally before teardown. The supervisor removes `state/results/` entries older than 7 days at most hourly, between attempts, with the PR poller's code, and records one `results-sweep` event with the counts. Cache retention is operator-managed; stop before pruning this root.
 
 ## Acceptance
 

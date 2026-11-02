@@ -85,6 +85,9 @@ extension TerminalController {
            let rejection = LegacyWireAliases.unsupportedRoutingKey(request.params) {
             return v2Error(id: request.id, code: rejection.code, message: rejection.message)
         }
+        if let rejection = v2RejectUnresolvableTargetHandles(method: request.method, params: request.params) {
+            return v2Error(id: request.id, code: rejection.code, message: rejection.message)
+        }
 
         return withSocketCommandPolicy(commandKey: request.method, isV2: true) {
             socketWorkerV2Response(request)
@@ -1150,6 +1153,9 @@ extension TerminalController {
 
         if CapabilityFeatures.current.supports(.canonicalRoutingKeys),
            let rejection = LegacyWireAliases.unsupportedRoutingKey(params) {
+            return v2Error(id: id, code: rejection.code, message: rejection.message)
+        }
+        if let rejection = v2RejectUnresolvableTargetHandles(method: method, params: params) {
             return v2Error(id: id, code: rejection.code, message: rejection.message)
         }
 

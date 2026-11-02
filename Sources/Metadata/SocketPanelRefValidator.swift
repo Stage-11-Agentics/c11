@@ -95,4 +95,41 @@ internal enum SocketPanelRefValidator {
         }
         return nil
     }
+
+    /// C11-576: the routing keys every v2 method shares. A value in one of
+    /// them that names nothing must be refused before any handler runs: the
+    /// shared resolvers read an unresolvable ref as an absent key and take the
+    /// selected workspace or focused panel instead.
+    static let routingTargetKeys = ["window_id", "workspace_id", "pane_id", "surface_id", "tab_id", "panel_id"]
+
+    struct UnresolvedTarget: Equatable {
+        let code: String
+        let key: String
+        let handle: String
+    }
+
+    /// Returns the first routing key whose explicit value cannot name a live
+    /// target: empty or non-string (`empty_ref`), or a non-UUID that is not a
+    /// handle this process minted (`not_found`; a short ref from an earlier
+    /// launch, an index, or a name). UUIDs pass: their handlers look them up
+    /// and refuse an unknown one. Absent keys keep each method's default.
+    static func unresolvedTarget(
+        params: [String: Any],
+        isKnownHandle: (String) -> Bool
+    ) -> UnresolvedTarget? {
+        for key in routingTargetKeys {
+            switch classify(params[key]) {
+            case .absent:
+                continue
+            case .empty:
+                return UnresolvedTarget(code: emptyRefCode, key: key, handle: "")
+            case .present(let handle):
+                // Check the untrimmed value: that is what the resolvers parse.
+                let raw = params[key] as? String ?? handle
+                if UUID(uuidString: raw) != nil || isKnownHandle(raw) { continue }
+                return UnresolvedTarget(code: "not_found", key: key, handle: handle)
+            }
+        }
+        return nil
+    }
 }

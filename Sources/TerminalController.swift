@@ -567,6 +567,11 @@ class TerminalController {
     // never frees its ordinal for reuse. Lifecycle hooks register new objects;
     // only the initial, complete startup graph needs a full walk.
     private var v2DidSeedKnownRefs = false
+
+    /// C11-576: the minted refs, readable off main. Updated beside the ref
+    /// maps (same main-actor turns), so the socket worker can refuse a ref this
+    /// process never minted without a main hop.
+    nonisolated let v2KnownRefs = V2KnownRefSet()
 #if DEBUG
     private(set) var debugKnownRefSeedCount = 0
 #endif
@@ -2415,6 +2420,13 @@ class TerminalController {
                     )
                     return true
                 }
+                if let rejection = self.v2RejectUnresolvableTargetHandles(method: request.method, params: request.params) {
+                    _ = Self.writeSocketResponse(
+                        self.v2Error(id: request.id, code: rejection.code, message: rejection.message),
+                        to: streamSocket
+                    )
+                    return true
+                }
                 if request.method == "mailbox.native.subscribe" {
                     self.v2StreamNativeMailbox(id: request.id, params: request.params, socket: streamSocket,
                                                peer: nativePeer, shouldContinue: shouldContinue)
@@ -3164,6 +3176,7 @@ class TerminalController {
         v2RefByUUID[kind] = byUUID
         v2UUIDByRef[kind] = byRef
         v2NextHandleOrdinal[kind] = next + 1
+        v2KnownRefs.insert(ref)
         return ref
     }
 
@@ -3251,6 +3264,7 @@ class TerminalController {
               releasable.contains(uuid) {
             byRef.removeValue(forKey: "\(kind.rawValue):\(next - 1)")
             byUUID.removeValue(forKey: uuid)
+            v2KnownRefs.remove("\(kind.rawValue):\(next - 1)")
             next -= 1
         }
         v2RefByUUID[kind] = byUUID
@@ -3411,6 +3425,34 @@ class TerminalController {
             return uuid
         }
         return v2ResolveHandleRef(s)
+    }
+
+    /// C11-576: one guard for every v2 method, run at each entry point before
+    /// dispatch. A routing key whose value names nothing (a short ref from an
+    /// earlier launch, an index, a name, an empty or non-string value) would
+    /// otherwise read as absent and resolve to the selected workspace or the
+    /// focused panel. Debug methods keep their own index-tolerant parsing.
+    nonisolated func v2RejectUnresolvableTargetHandles(
+        method: String,
+        params: [String: Any]
+    ) -> (code: String, message: String)? {
+        guard !method.hasPrefix("debug.") else { return nil }
+        let known = v2KnownRefs
+        guard let target = SocketPanelRefValidator.unresolvedTarget(
+            params: params,
+            isKnownHandle: { known.contains($0) || known.contains(LegacyWireAliases.canonicalHandle($0)) }
+        ) else { return nil }
+        let key = LegacyWireAliases.displayKey(target.key)
+        if target.code == SocketPanelRefValidator.emptyRefCode {
+            return (target.code, String(format: String(
+                localized: "socket.target.empty",
+                defaultValue: "%@ was provided but empty; commands with explicit targets never fall back to the selected or focused target."
+            ), key))
+        }
+        return (target.code, String(format: String(
+            localized: "socket.target.notFound",
+            defaultValue: "Unknown %1$@: %2$@. Short refs last only for the current c11 process; commands with explicit targets never fall back to the selected or focused target."
+        ), key, target.handle))
     }
 
     /// Commands using an explicit target never fall back to the focused target
@@ -11042,5 +11084,27 @@ class TerminalController {
             NotificationCenter.default.removeObserver(browserDownloadObserver)
         }
         stop()
+    }
+}
+
+/// C11-576: a lock-protected copy of the minted v2 handle refs, so the socket
+/// worker can tell a live ref from a stale one without reading main-actor state.
+final class V2KnownRefSet: @unchecked Sendable {
+    private let lock = NSLock()
+    private var refs: Set<String> = []
+
+    func insert(_ ref: String) {
+        lock.lock(); defer { lock.unlock() }
+        refs.insert(ref)
+    }
+
+    func remove(_ ref: String) {
+        lock.lock(); defer { lock.unlock() }
+        refs.remove(ref)
+    }
+
+    func contains(_ ref: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return refs.contains(ref)
     }
 }

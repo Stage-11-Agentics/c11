@@ -207,7 +207,119 @@ if [[ -n "$c11_bin" && -n "$capture_id" ]]; then
     disown 2>/dev/null || true
 fi
 
-if [[ "$injected_id" == "1" ]]; then
-    exec "$REAL_GROK" --session-id "$capture_id" "$@"
+# Native mail (route grok_leader). Grok's hidden `--leader` flag runs this
+# TUI's agent in a private leader on a c11-owned socket, with no Grok config.
+# The `c11 grok-mailbox` sidecar offers the fixed invitation to the bound
+# session through that leader's ACP interface. The sidecar is started here,
+# before exec, so it descends from the Grok process. Any skip or failure
+# leaves the typed doorbell.
+grok_leader_lock() { printf '%s' "${1%.sock}.lock"; }
+grok_lsof=/usr/sbin/lsof
+[[ -x "$grok_lsof" ]] || grok_lsof=/usr/bin/lsof
+# Stop exactly the leader serving this socket: its lock names the PID, and
+# that PID must hold the socket. Never `grok leader kill` (it stops them all).
+grok_reap_leader() {
+    local sock="$1" lock leader_pid
+    lock="$(grok_leader_lock "$sock")"
+    leader_pid="$(/usr/bin/head -c 32 "$lock" 2>/dev/null | /usr/bin/tr -cd '0-9')"
+    if [[ -n "$leader_pid" ]] \
+        && "$grok_lsof" -nP -a -p "$leader_pid" -U 2>/dev/null | /usr/bin/grep -qF "$sock"; then
+        /bin/kill -TERM "$leader_pid" >/dev/null 2>&1 || true
+    fi
+    /bin/rm -f "$sock" "$lock" >/dev/null 2>&1 || true
+}
+# The leader socket lives in the per-user temp directory. A socket path is
+# limited to 104 bytes (Grok may add `.daemon` beside it), so an unusually
+# long TMPDIR falls back to /tmp.
+grok_leader_dir="${TMPDIR:-/tmp}"
+grok_leader_dir="${grok_leader_dir%/}"
+if (( ${#grok_leader_dir} > 64 )) || [[ ! -d "$grok_leader_dir" || ! -w "$grok_leader_dir" ]]; then
+    grok_leader_dir=/tmp
 fi
-exec "$REAL_GROK" "$@"
+# A wrapper whose watcher died with its panel leaves a leader behind. Reap
+# every c11 leader whose Grok is gone.
+grok_reap_stale_leaders() {
+    local sock owner
+    for sock in "$grok_leader_dir"/c11-grok-leader-*.sock; do
+        [[ -e "$sock" ]] || continue
+        owner="${sock#"$grok_leader_dir"/c11-grok-leader-}"
+        owner="${owner%.sock}"
+        [[ "$owner" =~ ^[0-9]+$ ]] || continue
+        /bin/kill -0 "$owner" >/dev/null 2>&1 && continue
+        grok_reap_leader "$sock"
+    done
+}
+
+# Record why this panel's rings are or are not native, as the panel's
+# `mailbox.native_state`; c11 adds it to each typed ring's `_dispatch.log` row.
+grok_native_state() {
+    [[ -n "$c11_bin" ]] || return 0
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-metadata --panel "${CMUX_SURFACE_ID}" \
+        --key mailbox.native_state --value "$1" --type string >/dev/null 2>&1
+}
+
+grok_native=0
+grok_off=""
+if [[ -z "${C11_AGENT_INTERACTIVE_PID:-}" ]]; then
+    grok_off="off:non_interactive"
+elif [[ "${C11_GROK_NATIVE_MAIL_DISABLED:-}" == "1" ]]; then
+    grok_off="off:opt_out"
+elif [[ -n "${GROK_SANDBOX:-}" ]]; then
+    grok_off="off:sandbox"
+elif [[ -z "$capture_id" ]]; then
+    grok_off="off:no_session"
+elif [[ -n "$c11_bin" ]]; then
+    grok_native=1
+    # The operator's own leader or sandbox choice wins. Grok refuses leader
+    # mode under any sandbox profile, so skipping costs nothing there.
+    for arg in "$@"; do
+        case "$arg" in
+            --) break ;;
+            --leader|--leader=*|--no-leader|--leader-socket|--leader-socket=*)
+                grok_native=0; grok_off="off:operator_leader" ;;
+            --sandbox|--sandbox=*)
+                grok_native=0; grok_off="off:sandbox" ;;
+        esac
+    done
+fi
+# A Grok that no longer accepts --leader would exit on it: probe first.
+if [[ "$grok_native" == "1" ]] && ! "$REAL_GROK" --leader --version >/dev/null 2>&1; then
+    grok_native=0
+    grok_off="off:no_leader_flag"
+fi
+if [[ -n "$grok_off" && -n "$c11_bin" ]]; then
+    ( grok_native_state "$grok_off" ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+fi
+leader_args=()
+if [[ "$grok_native" == "1" ]]; then
+    leader_socket="$grok_leader_dir/c11-grok-leader-$$.sock"
+    leader_args=(--leader --leader-socket "$leader_socket")
+    wrapped_pid="$$"
+    ( grok_reap_stale_leaders ) >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    (
+        grok_native_state grok_leader
+        "$c11_bin" --socket "${CMUX_SOCKET_PATH}" grok-mailbox \
+            --leader-socket "$leader_socket" --session-id "$capture_id" \
+            --grok "$REAL_GROK" --registry "${GROK_HOME:-$HOME/.grok}/active_sessions.json" \
+            </dev/null >/dev/null 2>&1
+        case $? in
+            3) grok_native_state off:no_socket ;;
+            4) grok_native_state off:client_failed ;;
+            5) grok_native_state off:subscribe_refused ;;
+        esac
+    ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    (
+        while /bin/kill -0 "$wrapped_pid" >/dev/null 2>&1; do /bin/sleep 1; done
+        grok_reap_leader "$leader_socket"
+    ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+fi
+
+if [[ "$injected_id" == "1" ]]; then
+    exec "$REAL_GROK" ${leader_args[@]+"${leader_args[@]}"} --session-id "$capture_id" "$@"
+fi
+exec "$REAL_GROK" ${leader_args[@]+"${leader_args[@]}"} "$@"

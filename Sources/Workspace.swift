@@ -6589,6 +6589,8 @@ final class Workspace: Identifiable, ObservableObject {
         guard let dispatcher = mailboxDispatcher else { return }
         for entry in entries {
             let fallback = route == .typed ? mailboxNativeFallback.values.first { $0.ids.contains(entry.id) } : nil
+            let nativeState = route == .typed && fallback == nil
+                ? entry.recipientPanelId.flatMap(mailboxNativeState(surfaceId:)) : nil
             dispatcher.logStdinLifecycle(
                 id: entry.id,
                 recipient: entry.recipientName,
@@ -6598,9 +6600,20 @@ final class Workspace: Identifiable, ObservableObject {
                 route: route.rawValue,
                 nativeRoute: fallback?.registration.route.rawValue,
                 nativeFailure: fallback?.reason,
-                recipientPanel: entry.recipientPanelId
+                recipientPanel: entry.recipientPanelId,
+                nativeState: nativeState
             )
         }
+    }
+
+    /// Why a typed ring was not native, as the wrapper recorded it at launch
+    /// (`mailbox.native_state`, e.g. `off:sandbox`). Only a short token
+    /// enters the log, so metadata cannot write arbitrary text there.
+    private func mailboxNativeState(surfaceId: UUID) -> String? {
+        guard let raw = PanelMetadataStore.shared.metadataValue(
+            workspaceId: id, surfaceId: surfaceId, key: "mailbox.native_state"
+        ) as? String else { return nil }
+        return MailboxDispatchLog.nativeStateToken(raw)
     }
 
     /// Deliver-path effect for a ring or a defer. A keep is re-armed by the

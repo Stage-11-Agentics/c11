@@ -2123,6 +2123,45 @@ extension CLIResolutionSnapshotTests {
         XCTAssertTrue(tmux.requests.contains { $0.contains("--json") }, "tmux words lost --json: \(tmux.requests)")
     }
 
+    /// `ssh <dest> <cmd>`: a `--json` in the remote command line is part of
+    /// that command and does not switch the output.
+    func testSSHRemoteCommandKeepsLiteralJSONWord() throws {
+        let tmp = temporaryHome()
+        guard let socket = try? CapturedCLISocket(),
+              let result = runCLI(
+                  ["ssh", "example.invalid", "echo", "--json"],
+                  socketPath: socket.path,
+                  environmentOverrides: ["HOME": tmp, "TMPDIR": tmp + "/"]
+              )
+        else { return }
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertFalse(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), result.stdout)
+        _ = socket.waitUntilFinished()
+        let params = try XCTUnwrap(
+            socket.requests.first(where: { $0["method"] as? String == "workspace.create" })?["params"] as? [String: Any],
+            "\(socket.requests) \(result.stderr)"
+        )
+        let quotedPath = try XCTUnwrap(params["initial_command"] as? String)
+        let path = quotedPath.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+        let script = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertTrue(script.contains("echo") && script.contains("--json"), script)
+    }
+
+    /// `set-metadata --json <value>` is that command's own option: its value
+    /// reaches the request and the output stays plain.
+    func testSetMetadataOwnJSONOptionKeepsItsValue() {
+        guard let run = globalFlagRun(
+            ["set-metadata", "--panel", Self.declPanelID, "--json", "{\"c11_569\":\"kept\"}"],
+            home: temporaryHome()
+        ) else { return }
+        XCTAssertEqual(run.status, 0, run.stderr)
+        XCTAssertFalse(run.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), run.stdout)
+        XCTAssertTrue(
+            run.requests.contains { $0.contains("panel.set_metadata") && $0.contains("c11_569") && $0.contains("kept") },
+            "\(run.requests)"
+        )
+    }
+
     /// Unknown flags are still refused before socket discovery, beside a
     /// trailing global flag; a trailing `--id-format` needs its value.
     func testUnknownFlagBesideTrailingGlobalFlagStillFailsOffline() {

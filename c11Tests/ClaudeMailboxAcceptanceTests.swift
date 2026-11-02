@@ -181,4 +181,39 @@ final class GrokMailboxAcceptanceTests: XCTestCase {
         XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: ["method": "_x.ai/sessions/changed",
             "params": ["sessionId": bound]], sessionID: bound))
     }
+
+    private func decoded(_ request: GrokLeaderRequest, id: Int) throws -> [String: Any] {
+        let data = try XCTUnwrap(request.frame(id: id))
+        XCTAssertEqual(data.last, 0x0A)
+        XCTAssertEqual(data.filter { $0 == 0x0A }.count, 1, "one frame per line")
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    // A second client's session/load blanks a live Grok TUI for every later
+    // turn (C11-477 round 2), so a ring must send the prompt and nothing else.
+    func testARingSendsOnlyThePromptNeverASessionLoad() throws {
+        let upper = bound.uppercased()
+        let requests = GrokLeaderRequest.delivery(sessionID: upper, text: ClaudeMailboxAcceptance.invitation)
+        XCTAssertEqual(requests.map(\.method), ["session/prompt"])
+        let frames = try requests.enumerated().map { try decoded($0.element, id: $0.offset + 2) }
+        XCTAssertFalse(frames.contains { ($0["method"] as? String)?.hasPrefix("session/load") == true })
+        let params = try XCTUnwrap(frames.first?["params"] as? [String: Any])
+        // Grok keys sessions by the exact string it was given.
+        XCTAssertEqual(params["sessionId"] as? String, upper)
+        let prompt = try XCTUnwrap(params["prompt"] as? [[String: Any]])
+        XCTAssertEqual(prompt.count, 1)
+        XCTAssertEqual(prompt.first?["type"] as? String, "text")
+        XCTAssertEqual(prompt.first?["text"] as? String, ClaudeMailboxAcceptance.invitation)
+        XCTAssertEqual(frames.first?["id"] as? Int, 2)
+    }
+
+    func testTheClientOpensWithInitializeAlone() throws {
+        let frame = try decoded(.initialize, id: 1)
+        XCTAssertEqual(frame["method"] as? String, "initialize")
+        XCTAssertEqual(frame["id"] as? Int, 1)
+        XCTAssertEqual(frame["jsonrpc"] as? String, "2.0")
+        let params = try XCTUnwrap(frame["params"] as? [String: Any])
+        XCTAssertEqual(params["protocolVersion"] as? Int, 1)
+        XCTAssertNil(params["sessionId"], "initialize must not name or load a session")
+    }
 }

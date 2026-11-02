@@ -76,6 +76,37 @@ final class ClaudeMailboxAcceptance {
     }
 }
 
+/// One ACP request the Grok sidecar's client sends to the panel's private
+/// leader. The client sends nothing else: `initialize` once, then `delivery`
+/// per ring. There is deliberately no `session/load`: in Grok 1.0.70 a second
+/// client's load of a live session fails and leaves that TUI showing only
+/// "Worked for Ns" for every later turn, typed ones included.
+struct GrokLeaderRequest {
+    let method: String
+    let params: [String: Any]
+
+    static let initialize = GrokLeaderRequest(method: "initialize", params: [
+        "protocolVersion": 1,
+        "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false], "terminal": false],
+        "clientInfo": ["name": "c11-grok-mailbox", "version": "1"],
+    ])
+
+    /// Everything one ring sends: the prompt alone, to the session id exactly
+    /// as Grok holds it (Grok keys sessions by the string it was given).
+    static func delivery(sessionID: String, text: String) -> [GrokLeaderRequest] {
+        [GrokLeaderRequest(method: "session/prompt",
+                           params: ["sessionId": sessionID, "prompt": [["type": "text", "text": text]]])]
+    }
+
+    /// The newline-terminated JSON-RPC frame for this request.
+    func frame(id: Int) -> Data? {
+        guard var data = try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id,
+                                                                     "method": method, "params": params]) else { return nil }
+        data.append(0x0A)
+        return data
+    }
+}
+
 /// Pure checks for the Grok leader route. The sidecar holds no transcript and
 /// reads only Grok's session registry and the leader's protocol echoes.
 enum GrokMailboxAcceptance {

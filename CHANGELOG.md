@@ -6,12 +6,41 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.9] - 2026-11-01
+
+Headline: **c11 1.7.9. The sidebar button steps through one, two and three columns, resumed agents learn that c11 restarted, the outside-link prompt takes Return and Escape from another app, and commands refuse a target that no longer exists.**
+
 ### Added
-- After a relaunch, each resumed agent gets one c11 mailbox notice at its first idle prompt saying c11 restarted, how many of its background jobs ended (measured at quit, omitted after a crash), and that it must re-arm its watchers and use UUIDs. A second relaunch replaces an unread notice. A new `app.relaunched` event lists the previous run's short refs with their UUIDs. (C11-568)
+
+- **Resumed agents are told that c11 restarted.** After a relaunch, each agent c11 resumes gets one mailbox notice at its first idle prompt. It says when c11 restarted, how many of the agent's background jobs ended (counted at quit, left out after a crash), and that its background shells, watchers and monitors are gone and short refs have renumbered, so it should re-arm what it depends on and use UUIDs. A second relaunch replaces a notice that is still unread. A new `app.relaunched` event lists the previous run's short refs beside their UUIDs. ([#884](https://github.com/Stage-11-Agentics/c11/pull/884))
+- **Grok gets its mail without a line typed into its prompt.** In a c11 terminal, Grok Build now receives the mail invitation through a private Grok leader that c11 starts for that panel, the way Claude Code, OpenCode, Pi and omp already get theirs, so a half-typed draft stays as it was. c11 stops that leader when Grok exits. After `/new` or `/resume`, the typed doorbell is used until Grok restarts; a `--sandbox` or `--continue` launch, or a Grok without leader mode, uses the typed doorbell throughout. Set `C11_GROK_NATIVE_MAIL_DISABLED=1` to keep the typed doorbell. ([#876](https://github.com/Stage-11-Agentics/c11/pull/876))
 
 ### Changed
 
-- **The sidebar button steps through column counts.** Clicking the titlebar sidebar button now goes from hidden to one column, two columns, three columns, and back to hidden, setting the sidebar width each step needs. Counts the window is too narrow for are skipped. Right-click the button to pick Hide Sidebar or a column count directly; a width you dragged is kept when it already shows that count. The Toggle Sidebar shortcut and menu item still just hide and show.
+- **The sidebar button steps through column counts.** Clicking the titlebar sidebar button now goes from hidden to one column, two columns, three columns and back to hidden, setting the width each step needs. Counts the window is too narrow for are skipped. Right-click the button to pick Hide Sidebar, 1 Column, 2 Columns or 3 Columns; a checkmark shows the current choice, and a width you dragged is kept when it already shows that count. The button now acts on its own window's sidebar. The Toggle Sidebar shortcut, View menu item and command palette entry still only hide and show. ([#885](https://github.com/Stage-11-Agentics/c11/pull/885))
+- **Waiting and Flagged sit side by side in Tiles.** When the sidebar is wide enough for two columns, the footer's Waiting Agent button fills the left column and Flagged Agents the right, lined up with the cards above. With three columns the third stays empty. The Flagged slot keeps its place while nothing is flagged, so Waiting never moves. A one-column sidebar still stacks the two buttons. ([#886](https://github.com/Stage-11-Agentics/c11/pull/886))
+- **CLI help names the `C11_*` variables.** Subcommand help shows `$C11_WORKSPACE_ID`, `$C11_PANEL_ID` and the other `C11_*` defaults in place of the old `CMUX_*` names. The CLI already read the `C11_*` names first. ([#888](https://github.com/Stage-11-Agentics/c11/pull/888))
+
+### Fixed
+
+- **`--json` and `--id-format` work after a command's own flags.** `c11 new-workspace --title X --json`, `c11 mailbox recv --json` and a trailing `--id-format <format>` on commands such as `tree` and `list-workspaces` now behave the same as the flag placed before the command, instead of failing with an unknown-flag error. Text you pass through, such as `respawn-pane`'s command or words after `--`, still reaches the command unchanged. ([#883](https://github.com/Stage-11-Agentics/c11/pull/883))
+- **A target that no longer exists is refused.** A command given a `--window`, `--workspace`, `--area` or `--panel` that names nothing, such as a short ref from before c11 restarted or an unknown UUID, now fails with `not_found` and changes nothing. Before, many commands quietly used the selected workspace or the focused panel instead. Leaving the flag off still uses them. ([#891](https://github.com/Stage-11-Agentics/c11/pull/891))
+- **A stale divider line no longer stays over a workspace.** After a split closed, a thin gold line could stay painted where its divider had been until you opened a browser workspace. c11 now repaints that layer when an area splits, closes or resizes and when you switch workspaces. The event journal records `area.split` and `area.closed` with the areas' frames. ([#890](https://github.com/Stage-11-Agentics/c11/pull/890))
+- **Mermaid pie and Gantt charts use the theme's colors** in light and dark, so slices, legends and task names stay readable. Before, Gantt task names in the dark theme were nearly invisible. ([#887](https://github.com/Stage-11-Agentics/c11/pull/887))
+- **A Cmd-click no longer says a live panel is gone.** A Cmd-click that reached a window that was not in front, or a hidden view, showed "That panel or workspace is no longer available" although the target was fine. c11 still ignores that click, now without the notice. ([#887](https://github.com/Stage-11-Agentics/c11/pull/887))
+- **The update popover stops offering Restart Now once c11 is quitting to install.** It reads "Installing…" instead, because a restart can no longer be requested at that point. An automatic install still restarts c11. ([#887](https://github.com/Stage-11-Agentics/c11/pull/887))
+- **Sidebar cards stop refreshing for nothing.** A workspace with a plain terminal no longer redraws its sidebar card on every 10-second agent check when nothing about it changed. ([#887](https://github.com/Stage-11-Agentics/c11/pull/887))
+- **`c11 mailbox send` explains a missing caller.** When `C11_PANEL_ID` is unset or is not a panel UUID, `mailbox send` and the other commands that need the calling panel stop with one translated message that says so and suggests `--from <panel>`. ([#888](https://github.com/Stage-11-Agentics/c11/pull/888))
+- **`c11 link` errors are fully translated.** An invalid, ambiguous or unavailable panel or workspace target now reads as one whole sentence in every language c11 ships, instead of a translation with the English word "panel" or "workspace" spliced in. English output is unchanged. ([#888](https://github.com/Stage-11-Agentics/c11/pull/888))
+
+### Security
+
+- **The outside-link prompt takes Return and Escape when the link came from another app.** When a `c11://` link opened from another app asks for confirmation, Return, Enter, Escape, Command-W and Command-period now cancel it without bringing c11 forward, and focus goes back to that app. A held key cancels once and never reaches the window behind; every other key does nothing. With c11 in front the prompt stays click-only, so your typing keeps going to the terminal. Confirm still takes a click. ([#882](https://github.com/Stage-11-Agentics/c11/pull/882))
+- **Sites Allowed to Open Apps accepts IPv6 addresses.** An IPv6 site is written in brackets, such as `http://[::1]:8080`, and the editor and the check now agree on it. A line an earlier build saved without brackets (`http://::1:8080 vnc`) no longer matches, so that site asks again, and the editor marks the line invalid until you remove it. ([#887](https://github.com/Stage-11-Agentics/c11/pull/887))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.7.8] - 2026-11-01
 

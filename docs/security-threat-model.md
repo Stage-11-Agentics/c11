@@ -184,7 +184,8 @@ artifact, not only `/Applications/c11.app`; it has the same scheme-registration
 exposure as `http` and `https`.
 The build generates its Info.plist with that identity/configuration policy;
 Debug products omit only `c11`, preserving their existing web schemes. The
-nightly rebrand also removes only `c11`. c11 does not set Launch Services
+nightly rebrand and, since 1.7.9 (C11-556), proof-signed QA apps
+(`scripts/sign_artifact.py`, purpose `proof`) also remove only `c11`. c11 does not set Launch Services
 preferences or appoint itself as the default handler.
 
 Staging copies use the C11-536 isolation procedure: remove the entire
@@ -216,6 +217,7 @@ GhosttyTabs.xcodeproj/project.pbxproj                  (generated Info.plist is 
 scripts/reload.sh                                     (tagged Debug rebrand)
 scripts/reloads.sh                                    (staging removes URL types before signing)
 .github/workflows/nightly.yml                         (nightly rebrand removes c11 only)
+scripts/sign_artifact.py                              (proof signing removes c11 only)
 Sources/AppDelegate.swift                              (externalOpenDirectories, FinderServicePathResolver)
 ```
 
@@ -279,7 +281,9 @@ selected workspace, so it is gated on native operator input:
   visible window. The OSC 8 label is untrusted: the Cmd-hover preview shows
   the destination's live panel title and workspace, never the label. A
   malformed `c11:` string is consumed so it never reaches Ghostty's external
-  opener.
+  opener. Since 1.7.9 (C11-533), a Cmd-click refused only because its window
+  is not key or its view is hidden shows no notice, because that refusal says
+  nothing about the target; it is still refused and logged.
 - The parser accepts only the exact canonical spelling (at most 128 bytes,
   a UUID path, no user, port, query or fragment). Unknown, stale or malformed
   targets resolve nothing and show a non-modal notice. Each activation logs
@@ -314,7 +318,11 @@ workspace log). "Always allow" stores `origin scheme` pairs in
 no host gets no always-allow choice. Since 1.7.8 (C11-562) the editor is a
 draft: nothing is written until Save, closing Settings discards unsaved edits,
 and a line that can never match is named and keeps Save disabled instead of
-being dropped silently. The runtime parser is unchanged. Only `mailto:` opens without a prompt.
+being dropped silently. Since 1.7.9 (C11-567) the gate and the editor both
+key an IPv6 origin in brackets (`http://[::1]:8080`). A line an earlier build
+saved unbracketed (`http://::1:8080 vnc`) no longer matches, so that site
+prompts again, and the editor marks the line invalid until it is removed; it is
+not migrated, because `::1:8080` also parses as an IPv6 address. Only `mailto:` opens without a prompt.
 Socket and omnibar navigation (`browser open|goto`, typed URLs) still open app
 links directly: that is the socket caller's or operator's own choice, within the
 existing socket trust boundary.
@@ -934,6 +942,39 @@ Changes to what reaches the socket in 1.1:
   the destructive commands in rejecting an empty or stale target ref
   instead of falling back to the focused target.
 
+Changes to what reaches the socket and agents in 1.7.9:
+
+- Explicit targets fail closed on every v2 method (C11-576). After
+  session-ready, a routing key (`window_id`, `workspace_id`, `pane_id`,
+  `surface_id`, `tab_id`, `panel_id`, or a hidden alias) whose value is
+  neither a UUID nor a handle this process minted (a short ref from an
+  earlier launch, an index, a name) returns `not_found` before any handler
+  runs, on the main, worker and stream paths; an unknown UUID fails in its
+  handler's own lookup. A request can no longer land on the selected
+  workspace or focused panel by naming something that is gone. An absent
+  key keeps its default. Creation and move destination keys keep their own
+  lookups, `debug.*` methods are exempt, and v1 telemetry is unchanged.
+- Relaunch record and notice (C11-568). At quit c11 writes
+  `~/.c11/runtime/relaunch.<bundle id>.json`, set to `0600`, holding the
+  run's short refs with their UUIDs and a background-job count per agent
+  panel; autosave keeps a refs-only copy. The next launch reads it and
+  deletes it. It holds no text. Each resumed agent panel then gets one
+  `c11.relaunch` envelope from `c11` through the ordinary outbox, which
+  carries no more authority than any other mail, and the events log gains
+  `app.relaunched` with the previous run's refs and UUIDs.
+- Grok native mail (C11-477). The bundled `grok` wrapper starts an
+  interactive Grok with Grok's own `--leader` on a per-process socket,
+  `c11-grok-leader-<pid>.sock`, in the per-user `TMPDIR` (or `/tmp` when
+  that path is longer than 64 bytes), plus a `c11 grok-mailbox` sidecar.
+  The socket's mode is Grok's: any process that can open it can prompt that
+  Grok session, the exposure Grok's own leader mode carries. The sidecar
+  sends only the fixed mail invitation to the bound session, never answers
+  Grok's permission prompts, and refuses unless Grok's session registry
+  shows that Grok process holding exactly the bound session. The wrapper
+  writes no Grok configuration, signals a leader only after `lsof` shows
+  its PID holds that socket, and skips leader mode under `--sandbox`,
+  `GROK_SANDBOX` or `C11_GROK_NATIVE_MAIL_DISABLED=1`.
+
 The connection reader buffers a request until its newline with no size
 cap, as it did before 1.0. A client already past the connection gate
 can grow app memory by never sending a newline; that is a
@@ -959,6 +1000,11 @@ CLI/ActivityAnalysisCommand.swift                      (offline usage and report
 Sources/Journal/JournalStorageLayout.swift             (journal location and permissions)
 Sources/LaunchPromptStore.swift                        (staged launch prompts)
 Sources/SocketHandlers/                                (per-domain command dispatch, v0.58.0)
+Sources/Metadata/SocketPanelRefValidator.swift         (unresolvedTarget: routing-key classification, 1.7.9)
+Sources/TerminalController.swift                       (v2RejectUnresolvableTargetHandles at the three v2 entry points)
+Sources/Relaunch/RelaunchNotice.swift                  (relaunch record store and c11.relaunch envelope)
+Resources/bin/grok                                     (Grok leader socket, reaping, skip list)
+CLI/ClaudeMailboxCommand.swift                         (c11 grok-mailbox sidecar)
 c11Tests/TerminalControllerSocketSecurityTests.swift   (focus-policy negative tests)
 c11Tests/SocketControlSafetyTests.swift                (SocketPasswordModeTests, C11-347)
 ```

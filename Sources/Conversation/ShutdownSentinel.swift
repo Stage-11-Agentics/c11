@@ -51,7 +51,7 @@ enum ShutdownSentinel {
         directory: URL? = nil
     ) -> URL? {
         guard let dir = directory ?? defaultDirectory() else { return nil }
-        let safe = sanitiseBundleId(bundleId)
+        let safe = sanitisedBundleId(bundleId)
         return dir.appendingPathComponent("shutdown.\(safe).dirty", isDirectory: false)
     }
 
@@ -61,7 +61,7 @@ enum ShutdownSentinel {
         directory: URL? = nil
     ) -> URL? {
         guard let dir = directory ?? defaultDirectory() else { return nil }
-        let safe = sanitiseBundleId(bundleId)
+        let safe = sanitisedBundleId(bundleId)
         return dir.appendingPathComponent("shutdown.\(safe).clean", isDirectory: false)
     }
 
@@ -170,7 +170,7 @@ enum ShutdownSentinel {
 
     // MARK: - Helpers
 
-    private static func sanitiseBundleId(_ raw: String) -> String {
+    static func sanitisedBundleId(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "unknown" }
         let component = trimmed.replacingOccurrences(

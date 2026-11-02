@@ -847,6 +847,8 @@ c11 mailbox recv --drain
 
 Inboxes survive c11 restarts; envelopes sitting in the outbox at restart are picked up by the dispatcher's initial scan.
 
+After a relaunch, c11 itself mails each agent it resumed: `from` is `c11`, `topic` is `c11.relaunch`, and the body says the agent's background processes ended and must be re-armed. It is ordinary mail, rung at the first idle prompt and claimed once with `recv --ack`; c11 removes an unread notice from an earlier relaunch before sending a new one.
+
 ### Fire-and-forget notification
 
 Set the recipient's `mailbox.delivery` to `silent` if you want a logged delivery without PTY noise. The envelope is copied to the inbox and the silent handler logs `ok`. Useful for status broadcasts where the recipient polls or analyzes asynchronously.

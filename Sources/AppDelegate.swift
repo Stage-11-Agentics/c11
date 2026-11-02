@@ -2493,6 +2493,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// How long launch blocked main waiting for the conversation seed (C11-468).
     private(set) var startupConversationSeedWaitMs = 0
     private var didEmitResolvedResumeRecoveryMode = false
+    /// C11-568: this run's launch stamp, also written into the dirty
+    /// sentinel, so the next launch can tell this run's relaunch record from
+    /// an older one.
+    private var relaunchRunLaunchedAt = Date()
+    /// C11-568: the previous run's record, consumed at arming.
+    private var priorRelaunchRecord: RelaunchRecord?
+    private var relaunchNoticeLedger = RelaunchNotice.Ledger()
+    private var didEmitRelaunchedEvent = false
+    /// Ref total at the last autosave copy; a new ref means a new copy.
+    private var lastPersistedRelaunchRefCount = -1
+    /// Serializes relaunch record writes and notice delivery off main.
+    private let relaunchQueue = DispatchQueue(label: "c11.relaunch", qos: .utility)
     private var didAttemptStartupSessionRestore = false
     /// Option was held while c11 started: show the resume picker for this
     /// launch only. Sampled at launch, kept in memory, never persisted.
@@ -2799,14 +2811,129 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             dlog("shutdown.sentinel prior=invalid — fail-closed dirty recovery")
         }
 #endif
-        ShutdownSentinel.writeDirty(bundleId: bundleId)
+        // C11-568: consume the previous run's relaunch record before this
+        // run can write its own, then stamp this run's dirty marker with the
+        // launch time the record will carry.
+        let launchedAt = Date()
+        relaunchRunLaunchedAt = launchedAt
+        if let recordURL = RelaunchRecordStore.url(bundleId: bundleId) {
+            priorRelaunchRecord = RelaunchRecordStore.consume(url: recordURL, priorShutdown: priorShutdown)
+        }
+        ShutdownSentinel.writeDirty(bundleId: bundleId, at: launchedAt)
     }
 
     private func recordResolvedResumeRecoveryMode(_ mode: ResumeRecoveryMode) {
         resolvedResumeRecoveryMode = mode
+        emitRelaunchedEventIfNeeded()
         guard !didEmitResolvedResumeRecoveryMode else { return }
         didEmitResolvedResumeRecoveryMode =
             EventEmitter.shared.emitConversationResumeMode(mode)
+    }
+
+    // MARK: - C11-568: relaunch record, notice and event
+
+    /// One `app.relaunched` event per launch that followed an earlier run,
+    /// with that run's short refs. Retried with the resume-mode event until
+    /// the event log has started.
+    private func emitRelaunchedEventIfNeeded() {
+        guard !didEmitRelaunchedEvent else { return }
+        let prior = priorShutdownAtLaunch
+        if case .missing = prior, priorRelaunchRecord == nil {
+            didEmitRelaunchedEvent = true
+            return
+        }
+        didEmitRelaunchedEvent = EventEmitter.shared.emitRelaunched(
+            priorShutdown: prior,
+            restartedAt: relaunchRunLaunchedAt,
+            record: priorRelaunchRecord
+        )
+    }
+
+    /// Every workspace of every live manager, once each.
+    private func relaunchLiveWorkspaces() -> [Workspace] {
+        var seenManagers: Set<ObjectIdentifier> = []
+        var seenWorkspaces: Set<UUID> = []
+        let managers = knownWorkspaceManagers.values.compactMap(\.value)
+            + mainWindowContexts.values.map(\.workspaceManager)
+            + [workspaceManager].compactMap { $0 }
+        var out: [Workspace] = []
+        for manager in managers where seenManagers.insert(ObjectIdentifier(manager)).inserted {
+            for workspace in manager.workspaces where seenWorkspaces.insert(workspace.id).inserted {
+                out.append(workspace)
+            }
+        }
+        return out
+    }
+
+    /// Quit: measure each agent's background process groups (off main,
+    /// bounded by `RelaunchProcessCount.quitTimeout`) and write the record
+    /// with this run's refs. Runs before anything tears terminals down.
+    private func writeRelaunchRecordForQuit() {
+        guard let url = RelaunchRecordStore.url(
+            bundleId: Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+        ) else { return }
+        let agents = relaunchLiveWorkspaces().flatMap { $0.relaunchAgentProcesses() }
+        let counts = RelaunchProcessCount.measure(agents: agents)
+        var record = RelaunchRecord(
+            runLaunchedAt: relaunchRunLaunchedAt.timeIntervalSince1970,
+            writtenAt: Date().timeIntervalSince1970,
+            reason: .quit,
+            refs: TerminalController.shared.relaunchRefSnapshot()
+        )
+        if let counts {
+            record.backgroundProcesses = Dictionary(
+                uniqueKeysWithValues: counts.map { ($0.key.uuidString, $0.value.backgroundGroups) }
+            )
+            record.descendantProcesses = Dictionary(
+                uniqueKeysWithValues: counts.map { ($0.key.uuidString, $0.value.descendants) }
+            )
+        }
+        // Behind any autosave copy still queued, so the quit record lands last.
+        relaunchQueue.sync {
+            _ = RelaunchRecordStore.write(record, to: url)
+        }
+    }
+
+    /// Autosave: keep a refs-only copy current, so a crash still leaves the
+    /// next launch the old refs. Written only when a new ref was minted.
+    private func persistRelaunchRefsIfChanged() {
+        let refCount = TerminalController.shared.relaunchRefCount
+        guard refCount != lastPersistedRelaunchRefCount,
+              let url = RelaunchRecordStore.url(
+                  bundleId: Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+              ) else { return }
+        lastPersistedRelaunchRefCount = refCount
+        let record = RelaunchRecord(
+            runLaunchedAt: relaunchRunLaunchedAt.timeIntervalSince1970,
+            writtenAt: Date().timeIntervalSince1970,
+            reason: .autosave,
+            refs: TerminalController.shared.relaunchRefSnapshot()
+        )
+        relaunchQueue.async {
+            _ = RelaunchRecordStore.write(record, to: url)
+        }
+    }
+
+    /// Called when this launch types a resume into `panelId`: one mailbox
+    /// notice, at most once per panel per launch, delivered off main.
+    func sendRelaunchNoticeIfNeeded(workspaceId: UUID, panelId: UUID) {
+        guard relaunchNoticeLedger.claim(panelId) else { return }
+        let count = priorRelaunchRecord?.backgroundProcessCount(panelId: panelId)
+        let restartedAt = relaunchRunLaunchedAt
+        relaunchQueue.async {
+            do {
+                let stateURL = try MailboxLayout.defaultStateURL()
+                _ = try RelaunchNotice.deliver(
+                    workspaceId: workspaceId,
+                    panelId: panelId,
+                    restartedAt: restartedAt,
+                    backgroundProcesses: count,
+                    stateURL: stateURL
+                )
+            } catch {
+                NSLog("c11.relaunch.notice_failed panel=%@ error=%@", panelId.uuidString, String(describing: error))
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -3374,6 +3501,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminatingApp = true
+        // C11-568: count each agent's background work while it is still alive.
+        writeRelaunchRecordForQuit()
         // C11-163: drain any queued events before exit so a tailing consumer
         // sees the final transitions of this instance.
         EventEmitter.shared.shutdown()
@@ -4953,6 +5082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func performSessionAutosaveTick(source: String) async {
         defer { sessionAutosaveTickInFlight = false }
+        persistRelaunchRefsIfChanged()
 
         // Non-blocking read of the *global* conversation store off the main
         // thread. Unlike the old `readConversationsByPanelIdSync` semaphore

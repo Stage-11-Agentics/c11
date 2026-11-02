@@ -74,6 +74,25 @@ final class PanelLinkPolicyTests: XCTestCase {
         XCTAssertEqual(value.refusalReason, "view_hidden")
     }
 
+    func testTerminalRefusalNoticeNeverCallsALiveTargetUnavailable() {
+        // C11-533 #2: a click that only reached a non-key window or a hidden
+        // view says nothing about the target, so it shows no notice.
+        let base = TerminalPanelLinkPolicy(isNativeCommandClick: true, isSocketCommand: false, isKeyWindow: true, isVisible: true)
+        var notKey = base
+        notKey.isKeyWindow = false
+        var hidden = base
+        hidden.isVisible = false
+        for policy in [notKey, hidden] {
+            XCTAssertNil(PanelLinkNotice.forTerminalRefusal(policy.refusalReason ?? ""))
+        }
+        var plainClick = base
+        plainClick.isNativeCommandClick = false
+        XCTAssertEqual(PanelLinkNotice.forTerminalRefusal(plainClick.refusalReason ?? ""), .terminalActivation)
+        var socket = base
+        socket.isSocketCommand = true
+        XCTAssertEqual(PanelLinkNotice.forTerminalRefusal(socket.refusalReason ?? ""), .terminalActivation)
+    }
+
     func testExactUUIDLinksAreCaseInsensitive() {
         XCTAssertEqual(PanelLinkTarget("c11://panel/\(id.uuidString)"), .panel(id))
         XCTAssertEqual(PanelLinkTarget("C11://WORKSPACE/\(id.uuidString.lowercased())"), .workspace(id))

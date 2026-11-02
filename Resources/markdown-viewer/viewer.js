@@ -1052,7 +1052,13 @@ function configureMermaid(mathLabels=false,ganttWidth) {
       secondaryColor:c.cluster,tertiaryColor:c.cluster,lineColor:c.line,textColor:c.text,mainBkg:c.node,nodeBorder:c.border,nodeTextColor:c.text,
       clusterBkg:c.cluster,clusterBorder:c.clusterB,titleColor:c.text,edgeLabelBackground:c.bg,actorBkg:c.node,actorBorder:c.border,actorTextColor:c.text,actorLineColor:c.clusterB,
       signalColor:c.line,signalTextColor:c.text,labelBoxBkgColor:c.node,labelBoxBorderColor:c.border,labelTextColor:c.text,loopTextColor:c.text,
-      noteBkgColor:c.note,noteTextColor:c.noteT,noteBorderColor:c.noteB,activationBkgColor:c.act,activationBorderColor:c.border}});
+      noteBkgColor:c.note,noteTextColor:c.noteT,noteBorderColor:c.noteB,activationBkgColor:c.act,activationBorderColor:c.border,
+      // Pie and Gantt read their own variables; Mermaid's derived defaults are unreadable on these themes.
+      ...Object.fromEntries(Array.from({length:12},(_,i)=>['pie'+(i+1),c.series[i%c.series.length]])),
+      pieSectionTextColor:c.onSeries,pieTitleTextColor:c.text,pieLegendTextColor:c.text,pieStrokeColor:c.bg,pieOuterStrokeColor:c.border,pieOpacity:'1',
+      sectionBkgColor:c.cluster,altSectionBkgColor:c.bg,sectionBkgColor2:c.cluster,gridColor:c.clusterB,todayLineColor:c.critB,excludeBkgColor:c.act,
+      taskBkgColor:c.task,taskBorderColor:c.taskB,activeTaskBkgColor:c.active,activeTaskBorderColor:c.activeB,doneTaskBkgColor:c.act,doneTaskBorderColor:c.border,
+      critBkgColor:c.crit,critBorderColor:c.critB,taskTextColor:c.text,taskTextDarkColor:c.text,taskTextLightColor:c.text,taskTextOutsideColor:c.text,taskTextClickableColor:c.taskB}});
 }
 function stripMathLabelInlineStyles(source) {
   // Mermaid attaches temporary HTML labels to the document while rendering.

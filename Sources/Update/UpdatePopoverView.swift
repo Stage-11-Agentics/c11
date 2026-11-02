@@ -271,10 +271,14 @@ fileprivate struct InstallingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "update.popover.restartRequired", defaultValue: "Restart Required"))
+                Text(installing.offersRestartNow
+                    ? String(localized: "update.popover.restartRequired", defaultValue: "Restart Required")
+                    : String(localized: "update.installing.status", defaultValue: "Installing…"))
                     .font(.system(size: 13, weight: .semibold))
 
-                Text(String(localized: "update.popover.restartRequired.message", defaultValue: "The update is ready. Restart c11 to install it."))
+                Text(installing.offersRestartNow
+                    ? String(localized: "update.popover.restartRequired.message", defaultValue: "The update is ready. Restart c11 to install it.")
+                    : String(localized: "update.installingAndRestarting", defaultValue: "Installing the update, then restarting."))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -290,14 +294,15 @@ fileprivate struct InstallingView: View {
 
                 Spacer()
 
-                Button(String(localized: "common.restartNow", defaultValue: "Restart Now")) {
-                    UpdateLogStore.shared.append("retry terminating application (source=popover)")
-                    installing.retryTerminatingApplication()
-                    dismiss()
+                if installing.offersRestartNow {
+                    Button(String(localized: "common.restartNow", defaultValue: "Restart Now")) {
+                        installing.restartNow(source: "popover")
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
         }
         .padding(16)

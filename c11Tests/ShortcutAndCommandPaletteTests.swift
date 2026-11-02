@@ -1038,6 +1038,27 @@ final class UpdateViewModelPresentationTests: XCTestCase {
         XCTAssertEqual(viewModel.iconColor, .secondary)
     }
 
+    func testPopoverRestartNowNeverRetriesAfterTermination() {
+        // C11-556 #7 (#825 review): Sparkle forbids the retry once the app was
+        // terminated; the popover's Restart Now must neither show nor call it.
+        var restarts = 0
+        func installing(auto: Bool, terminated: Bool) -> UpdateState.Installing {
+            .init(isAutoUpdate: auto, applicationTerminated: terminated,
+                  retryTerminatingApplication: { restarts += 1 }, dismiss: {})
+        }
+        let terminated = installing(auto: false, terminated: true)
+        XCTAssertFalse(terminated.offersRestartNow)
+        XCTAssertFalse(terminated.restartNow(source: "test"))
+        XCTAssertFalse(installing(auto: true, terminated: true).restartNow(source: "test"))
+        XCTAssertEqual(restarts, 0)
+
+        XCTAssertTrue(installing(auto: false, terminated: false).restartNow(source: "test"))
+        XCTAssertEqual(restarts, 1)
+        // An automatic install still restarts from the popover.
+        XCTAssertTrue(installing(auto: true, terminated: false).restartNow(source: "test"))
+        XCTAssertEqual(restarts, 2)
+    }
+
     func testAutoUpdateInstallLabelUnchanged() {
         let viewModel = UpdateViewModel()
         var restarts = 0

@@ -49,6 +49,13 @@ enum PanelLinkTarget: Equatable {
 enum PanelLinkNotice {
     case invalid, unavailable, destinationChanged, localOnly, activation, terminalActivation
 
+    /// The notice for a refused terminal Cmd-click. A click on a window that is
+    /// not key, or on a hidden view, says nothing about the target, which may
+    /// be live; it shows no notice, and the refusal is still logged.
+    static func forTerminalRefusal(_ reason: String) -> PanelLinkNotice? {
+        reason == "window_not_key" || reason == "view_hidden" ? nil : .terminalActivation
+    }
+
     var text: String {
         switch self {
         case .invalid:

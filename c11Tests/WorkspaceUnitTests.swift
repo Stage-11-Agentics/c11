@@ -1611,6 +1611,33 @@ final class WorkspaceBrowserProfileSelectionTests: XCTestCase {
 
 @MainActor
 final class WorkspaceAgentPresentationTests: XCTestCase {
+    func testUnchangedColdStatePublishesNothing() throws {
+        // C11-533 #12: the detector sweep reconciles every plain terminal to
+        // "not cold" every 10 s; that must not republish the workspace.
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        var publishes = 0
+        let subscription = workspace.objectWillChange.sink { _ in publishes += 1 }
+        defer { subscription.cancel() }
+
+        workspace.setAgentCold(false, forSurface: panelId)
+        workspace.setAgentCold(false, promptCacheExpired: false, forSurface: panelId)
+        XCTAssertEqual(publishes, 0)
+
+        workspace.setAgentCold(true, promptCacheExpired: true, forSurface: panelId)
+        XCTAssertTrue(workspace.coldAgentSurfaceIds.contains(panelId))
+        XCTAssertTrue(workspace.promptCacheExpiredAgentIds.contains(panelId))
+        let afterChange = publishes
+        XCTAssertGreaterThan(afterChange, 0)
+
+        workspace.setAgentCold(true, promptCacheExpired: true, forSurface: panelId)
+        XCTAssertEqual(publishes, afterChange)
+
+        workspace.setAgentCold(false, forSurface: panelId)
+        XCTAssertFalse(workspace.coldAgentSurfaceIds.contains(panelId))
+        XCTAssertFalse(workspace.promptCacheExpiredAgentIds.contains(panelId))
+    }
+
     func testLiveIdleAgentProjectsColdOnlyWhileDormant() throws {
         let workspace = Workspace()
         let panelId = try XCTUnwrap(workspace.focusedPanelId)

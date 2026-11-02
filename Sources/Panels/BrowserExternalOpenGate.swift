@@ -27,7 +27,10 @@ struct BrowserExternalOpenOrigin: Equatable {
 
     init(scheme: String?, host: String?, port: Int?) {
         let scheme = (scheme ?? "").lowercased()
-        let host = (host ?? "").lowercased()
+        var host = (host ?? "").lowercased()
+        // URL.host and WebKit give an IPv6 literal without brackets; the key
+        // keeps them, so `http://[::1]:8080` stays one unambiguous origin.
+        if host.contains(":"), !host.hasPrefix("[") { host = "[\(host)]" }
         guard !scheme.isEmpty, !host.isEmpty else {
             allowKey = nil
             self.host = nil

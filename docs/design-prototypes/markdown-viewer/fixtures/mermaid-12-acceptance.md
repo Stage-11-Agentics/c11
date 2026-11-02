@@ -66,6 +66,17 @@ gantt
     Mermaid 12 proof :active, upgrade, after baseline, 1d
 ```
 
+## Pie
+
+```mermaid
+pie title Panel kinds
+    "Terminal" : 42
+    "Browser" : 21
+    "Markdown" : 13
+    "Agent" : 8
+    "Other" : 5
+```
+
 ## Math in a label
 
 Mermaid math syntax uses double dollar delimiters.

@@ -49,8 +49,8 @@ try {
   const mermaid12=await readFile(path.join(fixtures,'mermaid-12-acceptance.md'),'utf8');
   await load(mermaid12,'/synthetic/mermaid-12-acceptance.md');
   const mermaid12Labels=await page.locator('.diagram-stage > svg').allTextContents();
-  assert.equal(mermaid12Labels.length,6,'flowchart, sequence, class, state, gantt, and math diagrams must render');
-  for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof']])
+  assert.equal(mermaid12Labels.length,7,'flowchart, sequence, class, state, gantt, pie, and math diagrams must render');
+  for(const [index,label] of [[0,'Dispatcher'],[1,'Sender panel'],[2,'Workspace'],[3,'Processing'],[4,'Baseline proof'],[5,'Terminal']])
     assert.ok(mermaid12Labels[index].includes(label),`diagram ${index+1} did not render its ${label} label`);
   const assertMathLabels=async()=>{
     assert.equal(await page.locator('.diagram-stage math').count(),2,'both formulas must survive as MathML in the label');
@@ -84,6 +84,40 @@ try {
     for(let index=1;index<metrics.ticks.length;index++)assert.ok(metrics.ticks[index-1].right<=metrics.ticks[index].x+1,`Gantt axis labels overlap: ${metrics.ticks[index-1].text} / ${metrics.ticks[index].text}`);
   };
   await assertGanttAxis();
+  // C11-480 R4: pie slice and Gantt task text must stay readable in both themes.
+  const assertDiagramContrast=async theme=>{
+    const pairs=await page.evaluate(()=>{
+      const rgb=value=>{const m=String(value).match(/[\d.]+/g);return m&&m.length>=3?m.slice(0,3).map(Number):null;};
+      const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
+      const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+0.05)/(y+0.05);};
+      const svgs=[...document.querySelectorAll('.diagram-stage > svg')];
+      const opaque=el=>{for(;el;el=el.parentElement){const m=String(getComputedStyle(el).backgroundColor).match(/[\d.]+/g);if(m&&(m.length<4||Number(m[3])>0))return m.slice(0,3).map(Number);}return [255,255,255];};
+      const page=opaque(document.querySelector('.diagram-stage'));
+      const out=[];
+      const pie=svgs.find(svg=>svg.querySelector('.pieCircle'));
+      const slices=[...pie.querySelectorAll('.pieCircle')],labels=[...pie.querySelectorAll('text.slice')];
+      labels.forEach((label,i)=>out.push({what:'pie slice '+label.textContent,ratio:ratio(rgb(getComputedStyle(label).fill),rgb(getComputedStyle(slices[i]).fill))}));
+      for(const text of pie.querySelectorAll('.legend text'))out.push({what:'pie legend '+text.textContent,ratio:ratio(rgb(getComputedStyle(text).fill),page)});
+      const gantt=svgs.find(svg=>svg.querySelector('rect.task'));
+      for(const text of gantt.querySelectorAll('text[id$="-text"]')){
+        const bar=gantt.querySelector('#'+CSS.escape(text.id.replace(/-text$/,'')));
+        const back=String(text.getAttribute('class')).includes('Outside')||!bar?page:rgb(getComputedStyle(bar).fill);
+        out.push({what:'gantt '+text.textContent,ratio:ratio(rgb(getComputedStyle(text).fill),back)});
+      }
+      return out;
+    });
+    assert.ok(pairs.filter(p=>p.what.startsWith('pie slice')).length>=5,`${theme}: pie slice labels missing: ${JSON.stringify(pairs)}`);
+    assert.ok(pairs.filter(p=>p.what.startsWith('gantt')).length>=2,`${theme}: gantt task labels missing: ${JSON.stringify(pairs)}`);
+    for(const pair of pairs)assert.ok(pair.ratio>=4.5,`${theme}: ${pair.what} contrast ${pair.ratio.toFixed(2)} is below 4.5`);
+    return pairs.length;
+  };
+  const contrastChecks={};
+  for(const theme of ['light','dark']){
+    await settings({theme,scale:1,typeface:'serif',outlineOpen:'auto'});
+    await load(mermaid12,'/synthetic/mermaid-12-acceptance.md',10+(theme==='dark'?1:0));
+    contrastChecks[theme]=await assertDiagramContrast(theme);
+  }
+  scenario('Mermaid pie and Gantt text keep 4.5:1 contrast in light and dark',contrastChecks);
   await page.setViewportSize({width:560,height:820});
   await load(mermaid12,'/synthetic/mermaid-12-acceptance.md',2);
   await assertGanttAxis();

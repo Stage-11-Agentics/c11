@@ -78,10 +78,11 @@ struct InstallUpdateMenuItem: View {
     @ObservedObject var model: UpdateViewModel
 
     var body: some View {
-        if model.state.isInstallable {
+        // Visibility and the action read the same state (DEBUG overrides included).
+        if model.effectiveState.isInstallable {
             Button(String(localized: "update.installAndRelaunch", defaultValue: "Install Update and Relaunch")) {
                 if !model.performRestartIfWaiting(source: "menu") {
-                    model.state.confirm()
+                    model.effectiveState.confirm()
                 }
             }
         }

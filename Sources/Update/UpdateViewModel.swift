@@ -689,5 +689,18 @@ enum UpdateState: Equatable {
         var awaitsUserRestart: Bool {
             !isAutoUpdate && !applicationTerminated
         }
+
+        /// Sparkle's contract: never retry terminating once the app was
+        /// terminated. An automatic install still restarts through this.
+        var offersRestartNow: Bool { !applicationTerminated }
+
+        /// The popover's Restart Now. Returns whether it asked Sparkle to retry.
+        @discardableResult
+        func restartNow(source: String) -> Bool {
+            guard offersRestartNow else { return false }
+            UpdateLogStore.shared.append("retry terminating application (source=\(source))")
+            retryTerminatingApplication()
+            return true
+        }
     }
 }

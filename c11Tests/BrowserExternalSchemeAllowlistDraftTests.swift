@@ -71,6 +71,26 @@ final class BrowserExternalSchemeAllowlistDraftTests: XCTestCase {
         XCTAssertTrue(BrowserExternalSchemeSettings.isAllowed(originKey: "https://zoom.us", scheme: "zoommtg", defaults: defaults))
     }
 
+    /// C11-567 #2: an IPv6 page must be allowlistable. The gate writes the key
+    /// bracketed and the editor accepts exactly that spelling.
+    func testIPv6OriginIsBracketedInTheGateAndAcceptedByTheEditor() {
+        for host in ["::1", "[::1]"] {
+            XCTAssertEqual(BrowserExternalOpenOrigin(scheme: "http", host: host, port: 8080).allowKey, "http://[::1]:8080", host)
+        }
+        XCTAssertEqual(BrowserExternalOpenOrigin(pageURL: URL(string: "http://[::1]:8080/page")).allowKey, "http://[::1]:8080")
+        XCTAssertEqual(BrowserExternalOpenOrigin(pageURL: URL(string: "https://[fe80::1]/")).allowKey, "https://[fe80::1]")
+
+        BrowserExternalSchemeSettings.allow(originKey: "http://[::1]:8080", scheme: "vnc", defaults: defaults)
+        var draft = BrowserExternalSchemeAllowlistDraft(saved: stored ?? "")
+        XCTAssertNil(draft.invalidLine, draft.text)
+        draft.text = "http://[::1]:8080 vnc\nhttp://::1:8080 smb"
+        XCTAssertEqual(draft.invalidLine?.number, 2)
+        draft.text = "http://[::1]:8080 vnc"
+        XCTAssertTrue(draft.save(to: defaults))
+        XCTAssertTrue(BrowserExternalSchemeSettings.isAllowed(
+            originKey: BrowserExternalOpenOrigin(scheme: "http", host: "::1", port: 8080).allowKey ?? "", scheme: "vnc", defaults: defaults))
+    }
+
     /// C11-562 review: the Settings window outlives a close, so an abandoned
     /// edit must not come back on reopen and ride along with the next Save.
     func testClosingSettingsDiscardsUnsavedEditsWithoutWriting() {

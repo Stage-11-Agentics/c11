@@ -396,6 +396,7 @@ jobs:
           launch_cli_test ssh-shell env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_ssh_shell_bootstrap.py
           launch_cli_test focus-history env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_focus_history.py
           launch_cli_test window-scope env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_window_scope.py
+          launch_cli_test stale-targets env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_stale_targets.py
           launch_cli_test activity-analysis env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_activity_analysis.py
           launch_cli_test shortcuts-columns env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_shortcuts_columns.py
           launch_cli_test mailbox-body env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_mailbox_body_cli.py "$CLI_BINARY"

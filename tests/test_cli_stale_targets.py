@@ -225,11 +225,11 @@ ROWS = [
     ("new-panel workspace", "new-panel --workspace {workspace}"),
     ("new-panel area", "new-panel --area {area}"),
     ("new-area workspace", "new-area --workspace {workspace}"),
-    ("new-area panel", "new-area --panel {panel}"),
-    ("new-workspace window", "new-workspace --window {window}"),
-    ("launch-agent workspace", "launch-agent --type claude --workspace {workspace}"),
-    ("launch-agent area", "launch-agent --type claude --area {area}"),
-    ("launch-agent panel", "launch-agent --type claude --panel {panel}"),
+    ("new-area browser", "new-area --workspace {workspace} --type browser --url about:blank"),
+    ("new-workspace window", "--window {window} new-workspace"),
+    ("list-panels window", "--window {window} list-panels"),
+    ("launch-agent workspace", "launch-agent --type claude-code --workspace {workspace}"),
+    ("launch-agent area", "launch-agent --type claude-code --area {area}"),
     ("send", "send --workspace {workspace} --panel {panel} -- echo stale"),
     ("send panel only", "send --panel {panel} -- echo stale"),
     ("send-key", "send-key --panel {panel} enter"),
@@ -258,7 +258,7 @@ ROWS = [
     ("set-panel-icon", "set-panel-icon --panel {panel} X"),
     ("set-panel-color", "set-panel-color --panel {panel} teal"),
     ("trigger-flash", "trigger-flash --panel {panel}"),
-    ("raise-flag", "raise-flag --panel {panel} stale"),
+    ("raise-flag", "raise-flag --by operator --panel {panel} stale"),
 ]
 
 
@@ -288,18 +288,23 @@ def run_row(cli: str, socket_path: str, server: Server, md: str, label: str, tem
         calls = list(server.calls)
     if mutations:
         failures.append(f"{name}: mutation accepted: {mutations}")
-    # A live target the caller named (only the "set-status panel" row names one).
-    named_live = {LIVE_WS, find("workspace", LIVE_WS)["id"]} if LIVE_WS in argv else set()
+    # No fallback: wherever a request carries a key of a kind the caller named,
+    # it carries the named value. An omitted flag may still take its default
+    # (rename-panel without --workspace sends the selected workspace).
+    named_kinds = {kind for kind in KINDS if "{" + kind + "}" in template}
     for method, params in calls:
         if method in READ_ONLY and method not in ("sidebar.state", "panel.get_metadata"):
             continue  # listing live state to resolve a handle is not a fallback
         if "wire" in params:
-            carried = {v for v in LIVE_VALUES if v in params["wire"]}
+            options = dict(arg[2:].split("=", 1) for arg in shlex.split(params["wire"])[1:]
+                           if arg.startswith("--") and "=" in arg)
+            pairs = [("workspace" if find("workspace", v) or k == "tab" and not find("panel", v) else "panel", v)
+                     for k, v in options.items() if k in ("tab", "surface", "panel")]
         else:
-            carried = {params[k] for k in ROUTING_KEYS if isinstance(params.get(k), str)} & LIVE_VALUES
-        fallback = carried - named_live
-        if fallback:
-            failures.append(f"{name}: {method} carried a target nobody named: {sorted(fallback)}")
+            pairs = [(ROUTING_KEYS[k], params[k]) for k in ROUTING_KEYS if isinstance(params.get(k), str)]
+        for kind, value in pairs:
+            if kind in named_kinds and value != values[kind]:
+                failures.append(f"{name}: {method} sent {kind}={value}, not the named {values[kind]}")
     return failures
 
 

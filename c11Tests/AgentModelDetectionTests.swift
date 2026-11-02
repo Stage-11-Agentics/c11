@@ -1765,12 +1765,15 @@ extension AgentModelDetectionTests {
         }
 
         /// A hook payload through the real Claude mapping.
-        func hook(_ subcommand: String, prompt: String = "prompt-A", tool: String? = nil, toolUse: String? = nil) throws {
+        @discardableResult
+        func hook(_ subcommand: String, prompt: String = "prompt-A", tool: String? = nil, toolUse: String? = nil) throws -> JournalEffect {
             var object: [String: Any] = ["session_id": session, "prompt_id": prompt]
             object["tool_name"] = tool; object["tool_use_id"] = toolUse
             var draft = try XCTUnwrap(ClaudeHookMapping.map(subcommand: subcommand, object: object))
             draft.panelID = target.surfaceId; draft.workspaceID = target.workspaceId
-            deliver(draft, try coordinator.append(draft))
+            let result = try coordinator.append(draft)
+            deliver(draft, result)
+            return result.receipt.projectionEffect
         }
 
         @discardableResult
@@ -1889,7 +1892,7 @@ extension AgentModelDetectionTests {
             XCTAssertEqual(try scenario.transcript(limit, ref: conversation), .applied)
             XCTAssertEqual(scenario.announced, ["usage_limit"])
 
-            try scenario.hook("stop-failure")
+            XCTAssertEqual(try scenario.hook("stop-failure"), .duplicateEvidence)
             XCTAssertEqual(try scenario.transcript(limit, ref: conversation), .duplicateEvidence)
             XCTAssertEqual(scenario.announced, ["usage_limit"], "the later hook is the same failure")
             XCTAssertEqual(scenario.snapshot?.reason, .usageLimit)
@@ -2003,24 +2006,24 @@ extension AgentModelDetectionTests {
 
     func testLimitMustBeStrictlyLaterThanThePermissionPrompt() throws {
         // After the monitor's historical cutoff, so only the prompt boundary can reject these.
-        // Fixed, because native time truncates to the millisecond and some seconds lose one.
-        let promptSecond: Int64 = 4_000_000_000
-        let promptAt = promptSecond * 1000
-        for (offset, retained) in [(Int64(-1), false), (0, false), (1, true)] {
-            let scenario = try limitScenario("boundary-\(offset)", storeClock: { promptAt })
+        let time = ISO8601DateFormatter().string(from: Date().addingTimeInterval(10))
+        let observed = try XCTUnwrap(midTurnLimit(at: time).first)
+        let conversation = ref("claude-code", id: claudeId)
+        // Set the prompt from the limit's own parsed millisecond, so rounding cannot move the boundary.
+        let limitAt = try XCTUnwrap(JournalTranscriptProducer.makeDraft(observation: observed,
+            target: AgentModelDetector.Target(workspaceId: JournalTestData.workspace,
+                                              surfaceId: JournalTestData.panel, kind: "claude-code"),
+            ref: conversation, emittedAt: Date())?.occurredAtMs)
+        for (limitAfterPrompt, retained) in [(Int64(-1), false), (0, false), (1, true)] {
+            let message = "limit at prompt \(limitAfterPrompt >= 0 ? "+" : "")\(limitAfterPrompt) ms"
+            let promptAt = limitAt - limitAfterPrompt
+            let scenario = try limitScenario("boundary-\(limitAfterPrompt)", storeClock: { promptAt })
             defer { scenario.close() }
             try scenario.hook("prompt-submit")
             try scenario.hook("permission-request", tool: "Bash", toolUse: "tool-B")
-            XCTAssertEqual(scenario.snapshot?.sinceMs, promptAt)
-            // Written out, since a date formatter can drift a millisecond at this boundary.
-            let second = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(offset < 0 ? promptSecond - 1 : promptSecond)))
-            let time = second.dropLast() + (offset < 0 ? ".999Z" : ".00\(offset)Z")
-            let observed = try XCTUnwrap(midTurnLimit(at: String(time)).first)
-            XCTAssertEqual(JournalTranscriptProducer.makeDraft(observation: observed, target: scenario.target,
-                ref: ref("claude-code", id: claudeId), emittedAt: Date())?.occurredAtMs, promptAt + offset)
-            XCTAssertEqual(try scenario.transcript(observed, ref: ref("claude-code", id: claudeId)),
-                           retained ? .applied : .stale, "offset \(offset)")
-            try assertPermissionWait(scenario, request: "tool-B", limit: retained ? .monthlySpend : nil, "offset \(offset)")
+            XCTAssertEqual(scenario.snapshot?.sinceMs, promptAt, message)
+            XCTAssertEqual(try scenario.transcript(observed, ref: conversation), retained ? .applied : .stale, message)
+            try assertPermissionWait(scenario, request: "tool-B", limit: retained ? .monthlySpend : nil, message)
         }
     }
 

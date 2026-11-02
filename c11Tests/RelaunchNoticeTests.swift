@@ -155,7 +155,8 @@ final class RelaunchNoticeTests: XCTestCase {
             args.forEach { free($0) }
             posix_spawnattr_destroy(&attr)
             XCTAssertEqual(result, 0)
-            spawned.append(pid)
+            // Never kill(0): that signals this test's whole process group.
+            if result == 0, pid > 0 { spawned.append(pid) }
         }
         let me = getpid()
         let processes = try XCTUnwrap(RelaunchProcessCount.liveProcesses())

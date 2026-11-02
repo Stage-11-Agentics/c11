@@ -501,7 +501,10 @@ private final class GrokLeaderClient {
     }
 
     /// Arms confirmation, then writes the prompt. The leader runs it in the
-    /// bound session even though this client never loaded it.
+    /// bound session even though this client never loaded it. Never send
+    /// `session/load` here: in Grok 1.0.70 a second client's load of a live
+    /// session fails and leaves the TUI showing only "Worked for Ns" for every
+    /// later turn of that session, typed ones included.
     func prompt(_ text: String) -> Bool {
         lock.lock()
         hit = false

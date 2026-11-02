@@ -128,13 +128,13 @@ extension CMUXCLI {
             for item in items where intFromAny(item["index"]) == index {
                 if let id = item["id"] as? String { return id }
             }
-            throw CLIError(message: "Workspace index not found")
+            throw CLIError(message: "not_found: Workspace index not found: \(raw)")
         }
 
         // A supplied value that is not a UUID, ref or index is a typo or a stale
         // environment value; only an absent value (nil) means the current workspace.
         if let raw {
-            throw CLIError(message: String(localized: "cli.workspace.handle.invalid", defaultValue: "Invalid workspace handle: \(raw) (expected UUID, ref like workspace:1, or index)"))
+            throw CLIError(message: "not_found: " + String(localized: "cli.workspace.handle.invalid", defaultValue: "Invalid workspace handle: \(raw) (expected UUID, ref like workspace:1, or index)"))
         }
 
         let current = try client.sendV2(method: "workspace.current")
@@ -176,7 +176,7 @@ extension CMUXCLI {
             for item in items where (item["ref"] as? String).map(Self.canonicalHandle) == Self.canonicalHandle(raw) {
                 if let id = item["id"] as? String { return id }
             }
-            throw CLIError(message: "Panel ref not found: \(raw)")
+            throw CLIError(message: "not_found: Panel ref not found: \(raw)")
         }
 
         let listed = try client.sendV2(method: "panel.list", params: ["workspace_id": workspaceId])
@@ -186,11 +186,11 @@ extension CMUXCLI {
             for item in items where intFromAny(item["index"]) == index {
                 if let id = item["id"] as? String { return id }
             }
-            throw CLIError(message: "Panel index not found")
+            throw CLIError(message: "not_found: Panel index not found: \(raw)")
         }
 
         if let raw {
-            throw CLIError(message: String(localized: "cli.panel.handle.invalid", defaultValue: "Invalid panel handle: \(raw) (expected UUID, ref like panel:1, or index)"))
+            throw CLIError(message: "not_found: " + String(localized: "cli.panel.handle.invalid", defaultValue: "Invalid panel handle: \(raw) (expected UUID, ref like panel:1, or index)"))
         }
 
         if let focused = items.first(where: { ($0["focused"] as? Bool) == true }) {

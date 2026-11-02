@@ -235,7 +235,7 @@ extension CMUXCLI {
                 return handle
             }
         }
-        throw CLIError(message: String(format:
+        throw CLIError(message: "not_found: " + String(format:
             String(localized: "cli.window.unknown", defaultValue: "Unknown window '%@'."), raw))
     }
 
@@ -258,7 +258,7 @@ extension CMUXCLI {
             return trimmed
         }
         guard let wantedIndex = Int(trimmed) else {
-            throw CLIError(message: "Invalid workspace handle: \(trimmed) (expected UUID, ref like workspace:1, or index)")
+            throw CLIError(message: "not_found: Invalid workspace handle: \(trimmed) (expected UUID, ref like workspace:1, or index)")
         }
 
         if let windowHandle {
@@ -282,7 +282,7 @@ extension CMUXCLI {
                 }
             }
         }
-        throw CLIError(message: "Workspace index not found")
+        throw CLIError(message: "not_found: Workspace index not found: \(trimmed)")
     }
 
     func canonicalWorkspaceID(_ handle: String, client: SocketClient) throws -> String? {
@@ -300,7 +300,7 @@ extension CMUXCLI {
                 return item["id"] as? String
             }
         }
-        throw CLIError(message: "Workspace handle no longer resolves: \(handle)")
+        throw CLIError(message: "not_found: Workspace handle no longer resolves: \(handle)")
     }
 
     func canonicalPanelID(_ handle: String, workspaceID: String?, client: SocketClient) throws -> String? {
@@ -315,7 +315,7 @@ extension CMUXCLI {
             ($0["ref"] as? String).map { Self.canonicalHandle($0).lowercased() == wanted } == true
                 || ($0["id"] as? String)?.caseInsensitiveCompare(handle) == .orderedSame
         }), let id = item["id"] as? String else {
-            throw CLIError(message: "Panel handle no longer resolves: \(handle)")
+            throw CLIError(message: "not_found: Panel handle no longer resolves: \(handle)")
         }
         return id
     }
@@ -339,7 +339,7 @@ extension CMUXCLI {
             return trimmed
         }
         guard let wantedIndex = Int(trimmed) else {
-            throw CLIError(message: "Invalid area handle: \(trimmed) (expected UUID, ref like area:1, or index)")
+            throw CLIError(message: "not_found: Invalid area handle: \(trimmed) (expected UUID, ref like area:1, or index)")
         }
 
         var params: [String: Any] = [:]
@@ -351,7 +351,7 @@ extension CMUXCLI {
         for item in items where intFromAny(item["index"]) == wantedIndex {
             return (item["ref"] as? String) ?? (item["id"] as? String)
         }
-        throw CLIError(message: "Area index not found")
+        throw CLIError(message: "not_found: Area index not found: \(trimmed)")
     }
 
     /// C11-173: an explicitly-passed but empty ref — `--surface "$REF"` where the
@@ -2219,7 +2219,7 @@ extension CMUXCLI {
             return trimmed
         }
         guard let wantedIndex = Int(trimmed) else {
-            throw CLIError(message: "Invalid panel handle: \(trimmed) (expected UUID, ref like panel:1, or index)")
+            throw CLIError(message: "not_found: Invalid panel handle: \(trimmed) (expected UUID, ref like panel:1, or index)")
         }
 
         var params: [String: Any] = [:]
@@ -2231,7 +2231,7 @@ extension CMUXCLI {
         for item in items where intFromAny(item["index"]) == wantedIndex {
             return (item["ref"] as? String) ?? (item["id"] as? String)
         }
-        throw CLIError(message: "Panel index not found")
+        throw CLIError(message: "not_found: Panel index not found: \(trimmed)")
     }
 
     func canonicalSurfaceHandleFromPanelInput(_ value: String) -> String {

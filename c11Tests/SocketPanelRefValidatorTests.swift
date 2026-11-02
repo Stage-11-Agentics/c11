@@ -263,3 +263,142 @@ final class TerminalReadBytesTests: XCTestCase {
         XCTAssertEqual(bytes.formatted(includeScrollback: true, lineLimit: nil), "")
     }
 }
+
+/// C11-576: an explicit routing target that names nothing fails closed on
+/// every method, through the real command router (main-actor and socket-worker
+/// paths alike). Before the fix a short ref from an earlier launch read as an
+/// absent key and resolved to the selected workspace or focused panel.
+@MainActor
+final class ExplicitTargetFailClosedRouterTests: XCTestCase {
+    private func call(_ controller: TerminalController, _ method: String,
+                      _ params: [String: Any]) async throws -> [String: Any] {
+        let data = try JSONSerialization.data(withJSONObject: ["id": 576, "method": method, "params": params])
+        let command = String(decoding: data, as: UTF8.self)
+        let response = await Task.detached {
+            controller.processCommandUsingSocketExecutionPolicy(command)
+        }.value
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+    }
+
+    /// The methods behind new-panel, new-area, new-workspace, launch-agent,
+    /// list-panels, send, send-key, the sidebar reads, browser and markdown
+    /// open, metadata writes, rename and flags. Each row names the routing key
+    /// under test and the method's other required params.
+    private let rows: [(method: String, key: String, extra: [String: Any])] = [
+        ("panel.list", "workspace_id", [:]),
+        ("area.list", "workspace_id", [:]),
+        ("area.panels", "pane_id", [:]),
+        ("panel.create", "workspace_id", ["type": "terminal"]),
+        ("panel.create", "pane_id", ["type": "terminal"]),
+        ("area.create", "workspace_id", ["direction": "right"]),
+        ("area.create", "surface_id", ["direction": "right"]),
+        ("workspace.create", "window_id", [:]),
+        ("agent.launch", "workspace_id", ["type": "claude-code", "by": "operator"]),
+        ("agent.launch", "pane_id", ["type": "claude-code", "by": "operator"]),
+        ("agent.launch", "surface_id", ["type": "claude-code", "by": "operator"]),
+        ("panel.send_text", "surface_id", ["text": "echo stale"]),
+        ("panel.send_text", "workspace_id", ["text": "echo stale"]),
+        ("panel.send_key", "surface_id", ["key": "enter"]),
+        ("sidebar.state", "workspace_id", [:]),
+        ("browser.open_split", "workspace_id", ["url": "about:blank"]),
+        ("browser.open_split", "surface_id", ["url": "about:blank"]),
+        ("markdown.open", "workspace_id", ["path": "/tmp/c11-576.md"]),
+        ("markdown.open", "surface_id", ["path": "/tmp/c11-576.md"]),
+        ("panel.set_metadata", "surface_id", ["metadata": ["title": "stale"]]),
+        ("workspace.set_metadata", "workspace_id", ["metadata": ["k": "v"]]),
+        ("workspace.rename", "workspace_id", ["title": "stale"]),
+        ("panel.trigger_flash", "surface_id", [:]),
+        ("flag.raise", "surface_id", ["reason": "stale", "by": "operator"]),
+        ("panel.focus", "surface_id", [:]),
+    ]
+
+    private func staleRef(for key: String) -> String {
+        switch key {
+        case "window_id": return "window:999999"
+        case "workspace_id": return "workspace:999999"
+        case "pane_id": return "area:999999"
+        default: return "panel:999999"
+        }
+    }
+
+    private struct Snapshot: Equatable {
+        let workspaceIDs: [UUID]
+        let selected: UUID?
+        let panelCounts: [Int]
+        let titles: [String]
+    }
+
+    private func snapshot(_ manager: WorkspaceManager) -> Snapshot {
+        Snapshot(
+            workspaceIDs: manager.workspaces.map(\.id),
+            selected: manager.selectedWorkspaceId,
+            panelCounts: manager.workspaces.map { $0.panels.count },
+            titles: manager.workspaces.map(\.title)
+        )
+    }
+
+    func testStaleRefsUnknownUUIDsIndexesAndNamesFailClosedOnEveryRow() async throws {
+        let manager = WorkspaceManager()
+        let selected = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        _ = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
+        manager.selectWorkspace(selected)
+        let controller = TerminalController.makeForTesting()
+        controller.setActiveWorkspaceManager(manager)
+        // Mint the live refs so a live `workspace:1` is not what we probe.
+        for workspace in manager.workspaces {
+            _ = controller.workspaceOrdinal(forWorkspaceUUID: workspace.id)
+            for panelID in workspace.panels.keys { _ = controller.surfaceOrdinal(forSurfaceUUID: panelID) }
+        }
+        let before = snapshot(manager)
+        for row in rows {
+            var values = [staleRef(for: row.key), UUID().uuidString]
+            if row.key == "workspace_id" { values += ["7", "scratch"] }
+            for value in values {
+                var params = row.extra
+                params[row.key] = value
+                let response = try await call(controller, row.method, params)
+                let label = "\(row.method) \(row.key)=\(value): \(response)"
+                XCTAssertEqual(response["ok"] as? Bool, false, label)
+                // `surface_not_found` is the documented not-found code of the
+                // panel metadata and attention methods (references/metadata.md).
+                let code = (response["error"] as? [String: Any])?["code"] as? String
+                XCTAssertTrue(["not_found", "surface_not_found"].contains(code ?? ""), label)
+                XCTAssertNil(response["result"], label)
+                XCTAssertEqual(snapshot(manager), before, "mutated: \(label)")
+            }
+        }
+    }
+
+    func testAbsentTargetKeepsDefaultAndLiveRefStillResolves() async throws {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        let controller = TerminalController.makeForTesting()
+        controller.setActiveWorkspaceManager(manager)
+        let ordinal = controller.workspaceOrdinal(forWorkspaceUUID: workspace.id)
+        for params: [String: Any] in [[:], ["workspace_id": "workspace:\(ordinal)"], ["workspace_id": workspace.id.uuidString]] {
+            let response = try await call(controller, "panel.list", params)
+            XCTAssertEqual(response["ok"] as? Bool, true, "\(params): \(response)")
+            let result = try XCTUnwrap(response["result"] as? [String: Any])
+            XCTAssertEqual(result["workspace_id"] as? String, workspace.id.uuidString, "\(params)")
+        }
+    }
+
+    func testClassifierRejectsOnlyValuesThatNameNothing() {
+        let known: Set<String> = ["workspace:3", "panel:4", "area:2"]
+        let isKnown: (String) -> Bool = { known.contains($0) }
+        XCTAssertNil(SocketPanelRefValidator.unresolvedTarget(params: [:], isKnownHandle: isKnown))
+        XCTAssertNil(SocketPanelRefValidator.unresolvedTarget(
+            params: ["workspace_id": "workspace:3", "surface_id": UUID().uuidString, "pane_id": "area:2"],
+            isKnownHandle: isKnown))
+        for (key, value) in [("workspace_id", "workspace:99"), ("surface_id", "panel:99"), ("pane_id", "1"),
+                             ("window_id", "main"), ("tab_id", "tab:77"), ("panel_id", " workspace:3")] {
+            let target = SocketPanelRefValidator.unresolvedTarget(params: [key: value], isKnownHandle: isKnown)
+            XCTAssertEqual(target?.code, "not_found", "\(key)=\(value)")
+            XCTAssertEqual(target?.key, key)
+        }
+        XCTAssertEqual(SocketPanelRefValidator.unresolvedTarget(params: ["workspace_id": ""], isKnownHandle: isKnown)?.code,
+                       SocketPanelRefValidator.emptyRefCode)
+        XCTAssertEqual(SocketPanelRefValidator.unresolvedTarget(params: ["workspace_id": 3], isKnownHandle: isKnown)?.code,
+                       SocketPanelRefValidator.emptyRefCode)
+    }
+}

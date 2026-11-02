@@ -112,6 +112,10 @@ extension TerminalController {
 
     private func v2WorkspaceCreate(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
+            // C11-576: a named window that is gone is not found, not "unavailable".
+            if let window = params["window_id"] as? String {
+                return .err(code: "not_found", message: "Window not found: \(window)", data: ["window_id": window])
+            }
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 

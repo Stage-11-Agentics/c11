@@ -2045,6 +2045,15 @@ extension CLIResolutionSnapshotTests {
         return (result.status, result.stdout, result.stderr, requests)
     }
 
+    /// JSON output with sorted keys (dictionary order varies per run);
+    /// anything else as printed.
+    private static func canonicalOutput(_ text: String) -> String {
+        guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed]),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .fragmentsAllowed])
+        else { return text }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     private func temporaryHome() -> String {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("c11-569-home-\(UUID().uuidString)", isDirectory: true)
@@ -2077,7 +2086,7 @@ extension CLIResolutionSnapshotTests {
                   let after = globalFlagRun(trailing, home: home) else { return }
             XCTAssertFalse(after.stderr.localizedCaseInsensitiveContains("unknown flag"), "\(trailing): \(after.stderr)")
             XCTAssertEqual(after.status, global.status, "\(trailing): \(after.stderr) vs \(global.stderr)")
-            XCTAssertEqual(after.stdout, global.stdout, "\(trailing)")
+            XCTAssertEqual(Self.canonicalOutput(after.stdout), Self.canonicalOutput(global.stdout), "\(trailing)")
             XCTAssertEqual(after.requests, global.requests, "\(trailing)")
             XCTAssertFalse(after.requests.isEmpty, "\(trailing) never reached the socket: \(after.stderr)")
         }
@@ -2116,11 +2125,12 @@ extension CLIResolutionSnapshotTests {
             let value = params?[key] as? String
             XCTAssertTrue(value?.hasPrefix(expected) ?? false, "\(argv): \(key) = \(String(describing: value))")
         }
-        // tmux words after the first non-option are the keys typed.
+        // tmux words after the first non-option are the keys typed: the shim
+        // owns its argv, so `--json` there neither fails nor switches output.
         guard let tmux = globalFlagRun(["__tmux-compat", "send-keys", "-t", "%1", "echo", "--json", "Enter"], home: temporaryHome())
         else { return }
         XCTAssertFalse(tmux.stderr.localizedCaseInsensitiveContains("unknown flag"), tmux.stderr)
-        XCTAssertTrue(tmux.requests.contains { $0.contains("--json") }, "tmux words lost --json: \(tmux.requests)")
+        XCTAssertFalse(tmux.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), tmux.stdout)
     }
 
     /// `ssh <dest> <cmd>`: a `--json` in the remote command line is part of

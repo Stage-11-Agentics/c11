@@ -521,6 +521,12 @@ final class ExternalPanelLinkKeyGateTests: XCTestCase {
 
 @MainActor
 final class ExternalPanelLinkWindowKeyTests: XCTestCase {
+    // c11LogicTests has no host app; windows need the shared application.
+    override func setUp() {
+        super.setUp()
+        _ = NSApplication.shared
+    }
+
     private func key(_ type: NSEvent.EventType, _ code: UInt16, _ chars: String,
                      repeating: Bool = false, flags: NSEvent.ModifierFlags = [], window: NSWindow) -> NSEvent {
         NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
@@ -593,6 +599,12 @@ final class ExternalPanelLinkWindowKeyTests: XCTestCase {
 
 @MainActor
 final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
+    // c11LogicTests has no host app; windows need the shared application.
+    override func setUp() {
+        super.setUp()
+        _ = NSApplication.shared
+    }
+
     private func key(_ type: NSEvent.EventType, _ code: UInt16, _ chars: String, window: NSWindow) -> NSEvent {
         NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                          windowNumber: window.windowNumber, context: nil, characters: chars,

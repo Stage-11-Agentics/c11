@@ -725,27 +725,6 @@ extension MailboxPanelMail {
         /// each is capped; a real address or topic is far shorter.
         static let fieldLimit = 256
 
-        init(
-            from: String,
-            topic: String?,
-            urgent: Bool,
-            reply: Bool,
-            fileBody: Bool,
-            preview: String,
-            senderPanel: UUID? = nil,
-            fileName: String? = nil
-        ) {
-            self.from = from
-            self.topic = topic
-            self.urgent = urgent
-            self.reply = reply
-            self.fileBody = fileBody
-            self.preview = preview
-            self.previewRich = MailboxBodyLinks.attributed(preview)
-            self.senderPanel = senderPanel
-            self.fileName = fileName
-        }
-
         init(raw: [String: Any]) {
             func string(_ key: String) -> String? {
                 guard let value = raw[key] as? String, !value.isEmpty else { return nil }

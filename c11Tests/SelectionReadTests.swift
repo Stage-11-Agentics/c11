@@ -88,6 +88,18 @@ final class SelectionReadTests: XCTestCase {
         wait(for: [cleanup], timeout: 1)
     }
 
+    func testValueCompletedInTimeSurvivesALateWake() {
+        // C11-533 #8: the waiter can wake after the deadline although the
+        // capture finished before it; that value is in time, not a timeout.
+        let operation = SelectionReadOperation<String>(timeout: 0.05)
+        XCTAssertTrue(operation.beginCapture())
+        XCTAssertTrue(operation.complete("in time"))
+        let pastDeadline = DispatchSemaphore(value: 0)
+        _ = pastDeadline.wait(timeout: operation.deadline + 0.05)
+        XCTAssertEqual(operation.wait(), "in time")
+        XCTAssertFalse(operation.canPublish)
+    }
+
     func testEncodingConsumesSameDeadline() {
         let operation = SelectionReadOperation<String>(timeout: 0.03)
         XCTAssertTrue(operation.beginCapture())

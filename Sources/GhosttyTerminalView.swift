@@ -7133,9 +7133,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             if let reason = policy.refusalReason {
                 if let self {
                     self.panelLinkPreview.clear()
-                    let notice: PanelLinkNotice = reason == "window_not_key" || reason == "view_hidden"
-                        ? .unavailable : .terminalActivation
-                    self.panelLinkNotice.show(notice, in: self.terminalSurface?.hostedView ?? self)
+                    if let notice = PanelLinkNotice.forTerminalRefusal(reason) {
+                        self.panelLinkNotice.show(notice, in: self.terminalSurface?.hostedView ?? self)
+                    }
                 }
                 PanelLinkActivation.log(target: href, origin: "terminal", activation: "refused", result: reason)
                 return

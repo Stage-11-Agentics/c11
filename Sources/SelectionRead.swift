@@ -45,7 +45,10 @@ final class SelectionReadOperation<Value>: @unchecked Sendable {
         _ = wake.wait(timeout: deadline)
         lock.lock()
         defer { lock.unlock() }
-        guard DispatchTime.now() < deadline, case .completed(let value) = state else {
+        // complete() accepts a value only before the deadline, so a completed
+        // value is in time even when this thread wakes after the deadline.
+        // Callers that encode afterwards still check canPublish.
+        guard case .completed(let value) = state else {
             state = .abandoned
             return nil
         }

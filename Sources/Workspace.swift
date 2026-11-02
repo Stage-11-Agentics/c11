@@ -9104,16 +9104,21 @@ final class Workspace: Identifiable, ObservableObject {
     /// `promptCacheExpired` is independent of cold: a waiting agent's cache
     /// expires too (text only), and a switch from dormancy to cache repaints.
     func setAgentCold(_ isCold: Bool, promptCacheExpired: Bool = false, forSurface surfaceId: UUID) {
-        var changed: Bool
-        if isCold {
-            changed = coldAgentSurfaceIds.insert(surfaceId).inserted
-        } else {
-            changed = coldAgentSurfaceIds.remove(surfaceId) != nil
+        // Mutating a @Published set publishes even when the member is already
+        // there or absent, and the 10 s detector sweep calls this for every
+        // plain terminal. Touch a set only when its membership changes.
+        var changed = false
+        if coldAgentSurfaceIds.contains(surfaceId) != isCold {
+            if isCold { coldAgentSurfaceIds.insert(surfaceId) } else { coldAgentSurfaceIds.remove(surfaceId) }
+            changed = true
         }
-        if promptCacheExpired {
-            changed = promptCacheExpiredAgentIds.insert(surfaceId).inserted || changed
-        } else {
-            changed = promptCacheExpiredAgentIds.remove(surfaceId) != nil || changed
+        if promptCacheExpiredAgentIds.contains(surfaceId) != promptCacheExpired {
+            if promptCacheExpired {
+                promptCacheExpiredAgentIds.insert(surfaceId)
+            } else {
+                promptCacheExpiredAgentIds.remove(surfaceId)
+            }
+            changed = true
         }
         if changed {
             syncSurfacePanelActivityStateForPanel(surfaceId)

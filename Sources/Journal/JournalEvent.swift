@@ -324,6 +324,18 @@ struct JournalContext {
     }
 }
 
+extension JournalDraft {
+    /// The owner this event may establish when its panel has none (C11-580).
+    /// Only an interactive Claude session's own hook qualifies: the wrapper
+    /// marks that process, a nested headless run carries no marker, and a
+    /// subagent's id is not the panel's session.
+    func adoptableOwner(interactivePID: Int32?) -> JournalOwner? {
+        guard interactivePID != nil, source == .hook, adapter == .claudeHook,
+              !isChild, kind != .sessionEnded else { return nil }
+        return owner
+    }
+}
+
 struct JournalEvent: Codable {
     let sequence: Int64
     let committedAtMs: Int64

@@ -30,6 +30,7 @@ extension TerminalController {
                 }
                 pid = number.int32Value
             } else { pid = nil }
+            adoptLostJournalOwner(draft, interactivePID: pid)
             let result = try JournalCoordinator.shared.append(draft, interactivePID: pid)
             let bytes = try JSONEncoder().encode(result.receipt)
             let receipt = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
@@ -37,6 +38,28 @@ extension TerminalController {
         } catch {
             let code = (error as? JournalError)?.rawValue ?? JournalError.unavailable.rawValue
             return .err(code: code, message: code, data: nil)
+        }
+    }
+
+    /// SessionStart's `conversation.push` can miss its socket window while c11
+    /// is busy. Nothing else reports the id, so the panel would keep its
+    /// wrapper placeholder for life: no owner, no snapshot, no agent PID, and
+    /// mail that never rings (C11-580). A later hook from the same interactive
+    /// session names the id, so it recovers the owner before its own append.
+    /// Costs one actor hop per hook only while the panel has no owner.
+    private nonisolated func adoptLostJournalOwner(_ draft: JournalDraft, interactivePID: Int32?) {
+        guard let owner = draft.adoptableOwner(interactivePID: interactivePID),
+              !ConversationStorePolicy.isDisabled,
+              JournalCoordinator.shared.target(panelID: owner.panelID) != nil,
+              JournalCoordinator.shared.exactOwner(panelID: owner.panelID) == nil,
+              ConversationStrategyRegistry.v1.strategy(forKind: owner.agentKind)?.isValidId(owner.sessionID) != false
+        else { return }
+        _ = conversationStoreSync { store in
+            await store.adoptHookSession(
+                surfaceId: owner.panelID.uuidString,
+                kind: owner.agentKind,
+                id: owner.sessionID
+            )
         }
     }
 

@@ -375,8 +375,12 @@ enum MailboxReceiptStatus {
             case "unavailable":
                 // An unreadable or busy prompt read; retried like a hold.
                 set(.held, "unknown_prompt")
+            case "agent_not_foreground":
+                // No idle edge is coming from a panel c11 has no agent for, so
+                // this must not read as a wait. A later ring row still wins.
+                set(.notRung)
             case "once_per_idle", "already_covered", "in_flight", "native_attempt_unconfirmed",
-                 "operator_active", "input_transaction", "gate_closed", "input_unavailable", "agent_not_foreground":
+                 "operator_active", "input_transaction", "gate_closed", "input_unavailable":
                 if [.notPushed, .pending, .notRung].contains(recipient.delivery) {
                     set(.pending)
                 }
@@ -384,6 +388,8 @@ enum MailboxReceiptStatus {
                 set(.notRung)
             }
         case "buffered":
+            // The queue row that follows a skip does not undo "cannot ring".
+            if recipient.delivery == .notRung, recipient.deliveryReason == "agent_not_foreground" { break }
             set(.pending, "waiting_for_idle")
         case "skipped":
             // Already claimed by a drain: the read state says the rest.
@@ -706,6 +712,8 @@ extension MailboxReceiptStatus.Report {
             return String(localized: "mailbox.status.delivered.pending", defaultValue: "delivered  no, waiting for the recipient's next idle prompt")
         case .failed:
             return String(localized: "mailbox.status.delivered.failed", defaultValue: "delivered  no, the last attempt failed (\(reason)); c11 tries again")
+        case .notRung where reason == "agent_not_foreground":
+            return String(localized: "mailbox.status.delivered.noAgent", defaultValue: "delivered  no, c11 cannot ring: no interactive agent is connected to this panel. The mail stays in its inbox")
         case .notRung:
             return String(localized: "mailbox.status.delivered.notRung", defaultValue: "delivered  no, the doorbell does not ring this panel (\(reason))")
         case .notPushed:

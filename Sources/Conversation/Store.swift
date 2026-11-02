@@ -853,6 +853,18 @@ extension ConversationStore {
         return bySurface[surfaceId]?.active ?? ref
     }
 
+    /// A later hook recovering the session id a lost SessionStart would have
+    /// pushed (C11-580). Fills only an empty slot or this kind's wrapper
+    /// placeholder; a real ref of any source stays.
+    @discardableResult
+    func adoptHookSession(surfaceId: String, kind: String, id: String) -> ConversationRef? {
+        let current = bySurface[surfaceId]?.active
+        if let current, !(current.placeholder && current.capturedVia == .wrapperClaim && current.kind == kind) {
+            return nil
+        }
+        return push(surfaceId: surfaceId, kind: kind, id: id, source: .hook, cwd: current?.cwd)
+    }
+
     /// Capture the root displayed by one OpenCode TUI. The check and write
     /// are one actor mutation: another panel's exact ref or pre-capture
     /// `-s` reservation rejects the candidate without changing ownership.

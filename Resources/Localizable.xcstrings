@@ -2004,6 +2004,53 @@
         }
       }
     },
+    "mailbox.status.delivered.noAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "delivered  no, c11 cannot ring: no interactive agent is connected to this panel. The mail stays in its inbox"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配信       いいえ、c11 は通知できません: このパネルには対話型エージェントが接続されていません。メールは受信箱に残ります"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "доставлено  ні, c11 не може подзвонити: до цієї панелі не підключено інтерактивного агента. Лист залишається у скриньці"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전달       아니요, c11이 알릴 수 없음: 이 패널에 연결된 대화형 에이전트가 없음. 메일은 받은편지함에 남아 있음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已送达     否, c11 无法提示: 没有交互式代理连接到此面板。邮件仍保留在收件箱中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已送達     否, c11 無法提示: 沒有互動式代理連接到此面板。郵件仍保留在收件匣中"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "доставлено  нет, c11 не может позвонить: к этой панели не подключён интерактивный агент. Письмо остаётся во входящих"
+          }
+        }
+      }
+    },
     "mailbox.status.delivered.notPushed": {
       "extractionState": "manual",
       "localizations": {

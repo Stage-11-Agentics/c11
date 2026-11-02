@@ -420,10 +420,41 @@ final class MailboxReceiptStatusTests: XCTestCase {
 
         try writeLog(dispatched(id, at: t) + [
             line(stdin(id, .doorbellSkipped, "flagged"), t.addingTimeInterval(1)),
-            line(stdin(id, .doorbellSkipped, "agent_not_foreground"), t.addingTimeInterval(2)),
+            line(stdin(id, .doorbellSkipped, "gate_closed"), t.addingTimeInterval(2)),
         ])
         row = try XCTUnwrap(try status(id).recipients.first)
         XCTAssertEqual(row.delivery, .pending)
+    }
+
+    /// C11-580: a panel with no agent process has no idle edge coming. The
+    /// sender reads "cannot ring", and the queue row that always follows the
+    /// skip does not turn it back into a wait.
+    func testNoAgentConnectionReadsCannotRingNotPending() throws {
+        let t = Date().addingTimeInterval(-30)
+        let id = newId(t)
+        try writeLog(dispatched(id, at: t) + [
+            line(stdin(id, .doorbellSkipped, "agent_not_foreground"), t.addingTimeInterval(1)),
+            line(stdin(id, .buffered, nil), t.addingTimeInterval(1)),
+        ])
+        try deliverFile(id, to: recipient, read: false)
+        let row = try XCTUnwrap(try status(id).recipients.first)
+        XCTAssertEqual(row.delivery, .notRung)
+        XCTAssertEqual(row.deliveryReason, "agent_not_foreground")
+    }
+
+    /// C11-580: once the panel's agent connects, the queued mail rings and the
+    /// earlier "cannot ring" gives way to the delivery.
+    func testRingAfterNoAgentConnectionReadsDelivered() throws {
+        let t = Date().addingTimeInterval(-30)
+        let id = newId(t)
+        try writeLog(dispatched(id, at: t) + [
+            line(stdin(id, .doorbellSkipped, "agent_not_foreground"), t.addingTimeInterval(1)),
+            line(stdin(id, .buffered, nil), t.addingTimeInterval(1)),
+            line(stdin(id, .doorbell, "submitted"), t.addingTimeInterval(20)),
+        ])
+        try deliverFile(id, to: recipient, read: false)
+        let row = try XCTUnwrap(try status(id).recipients.first)
+        XCTAssertEqual(row.delivery, .delivered)
     }
 
     /// C11-555: a turn-less panel's re-ring wait is pending, not a composer hold.

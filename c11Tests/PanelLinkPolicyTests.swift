@@ -532,12 +532,16 @@ final class ExternalPanelLinkWindowKeyTests: XCTestCase {
         let window = ExternalPanelLinkWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
                                              styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
+        window.takesKeyFocus = true
         return window
     }
 
-    func testPromptCanBecomeKeyButNeverMain() {
+    /// Key only for a prompt shown while another app was active; never main.
+    func testPromptBecomesKeyOnlyWhenShownFromAnotherApp() {
         let window = makeWindow()
         XCTAssertTrue(window.canBecomeKey)
+        window.takesKeyFocus = false
+        XCTAssertFalse(window.canBecomeKey)
         XCTAssertFalse(window.canBecomeMain)
         XCTAssertTrue(window.styleMask.contains(.nonactivatingPanel))
     }
@@ -607,6 +611,7 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
             presenter.receive("c11://panel/\(target.uuidString)")
             let window = try XCTUnwrap(presenter.presentedWindow)
             XCTAssertTrue(presenter.isPresenting)
+            XCTAssertEqual(window.canBecomeKey, !NSApp.isActive)
             RunLoop.main.run(until: Date().addingTimeInterval(1.0)) // past the arming delay
             for (other, otherChars) in [(UInt16(49), " "), (48, "\t")] {
                 window.sendEvent(key(.keyDown, other, otherChars, window: window))

@@ -576,16 +576,20 @@ struct ExternalPanelLinkKeyGate {
     }
 }
 
-/// A floating confirmation that takes key focus without activating c11 or
-/// becoming main, so Return and Escape reach it from another app too. While it
-/// is key it owns every key event: cancel keys go through the key gate, every
+/// A floating confirmation that never becomes main. Shown while another app is
+/// active (a link clicked in Safari), it takes key focus without activating c11,
+/// so Return and Escape reach it. Shown while c11 is active, it is click-only and
+/// never key, so an agent's `open c11://` cannot take the operator's typing.
+/// While key it owns every key event: cancel keys go through the key gate, every
 /// other key (Space, Tab, Command chords) is dropped, and nothing reaches
 /// Confirm, the main menu or the window behind it.
 final class ExternalPanelLinkWindow: NSPanel {
     var onCancelKey: (() -> Void)?
+    /// Set once at presentation from whether c11 was active.
+    var takesKeyFocus = false
     private var keyGate = ExternalPanelLinkKeyGate()
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { takesKeyFocus }
     override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
@@ -849,10 +853,17 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         window.onCancelKey = { [weak self, id = prompt.id] in
             MainActor.assumeIsolated { self?.dismiss(id: id, confirm: false) }
         }
+        // From another app the prompt takes key, never activation: the source
+        // app stays active and no c11 window rises. With c11 active it stays
+        // click-only and the operator's typing keeps its window.
+        window.takesKeyFocus = !NSApp.isActive
         if let key = NSApp.keyWindow, !(key is ExternalPanelLinkWindow) { restoreKeyWindow = key }
         panel = window
-        // Key, not active: c11 is not activated and no other window rises.
-        window.makeKeyAndOrderFront(nil)
+        if window.takesKeyFocus {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderFrontRegardless()
+        }
         content.layoutSubtreeIfNeeded()
         confirmationButton?.armConfirmation()
         for (center, name) in [

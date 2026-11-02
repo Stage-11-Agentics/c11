@@ -108,23 +108,36 @@ consumed, never passed to another application or treated as paths.
 
 Every admitted outside request shows a nonmodal, nonactivating confirmation
 window above the frontmost app, on the pointer's display and active Space.
+When another app is active at presentation (a link clicked in a browser or
+chat app), the prompt takes key focus without activating c11 or becoming
+main: the frontmost app stays active and no other c11 window rises. When c11
+itself is active (an agent ran `open c11://` in a terminal), the prompt never
+becomes key and captures no keystrokes; typing keeps going to the terminal or
+window that had it, and the prompt is click-only.
 It names the live destination panel (when applicable) and workspace,
 and shows the canonical UUID URL. Titles are bounded plain text with control
 and bidirectional override characters removed. **Cancel is the default**;
 Confirm has no keyboard shortcut. Since 1.7.8 (C11-562) the row reads Confirm
 then Cancel, so Cancel is the rightmost button, where a habitual "proceed"
-click lands. Cancel holds Return and a hidden twin holds Escape, but the
-prompt never becomes key, so in practice neither key reaches it (observed in
-the 1.7.8 staging smoke). Keyboard users and VoiceOver AXPress cannot
+click lands. Since 1.7.9 (C11-565), for a prompt shown from another app,
+Return, keypad Enter or Escape cancels on the key-up of a press that began in
+the prompt; a key already held when the prompt appeared, and its autorepeat, do
+nothing, so a held Return never reaches the window behind. While the prompt
+is key it drops every other key, including Space, Tab and Command chords, and
+c11's shortcut monitor stands aside for it. Its buttons refuse keyboard focus.
+Keyboard users and VoiceOver AXPress cannot
 confirm because the gate requires a fresh mouse-down/up sequence. It stays disabled for at least the system
 double-click interval or 0.75 seconds, whichever is longer, after presentation and requires a new plain mouse-down/up
 sequence begun after arming. Carried-over multi-clicks are refused. A pointer
 already over Confirm must leave and re-enter before it arms. Moving or hiding
 the prompt or changing Spaces cancels it, so a stale action cannot authorize
 a different presentation. This mitigates surprise-overlay consent, not arbitrary
-hostile desktop overlays or already-authorized OS input automation. The window does not become key or main,
-does not capture terminal typing, and never calls `runModal` or starts a
-sheet. Only an explicit Confirm click can select the destination. Cancel,
+hostile desktop overlays or already-authorized OS input automation. The window never becomes main
+and never calls `runModal` or starts a sheet. It can become key only when it
+was shown while another app was active, and only while shown. Every dismissal
+that does not navigate leaves key focus where the operator had it: the OS
+returns key to the frontmost app, and if c11 became active meanwhile, the c11
+window that was key gets it back when still visible on the active Space. Only an explicit Confirm click can select the destination. Cancel,
 close and the confirmation's 60-second expiry select nothing. Notices expire
 after five seconds. Confirm resolves the exact
 UUID again; a closed target is refused, and a panel moved to another workspace

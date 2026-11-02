@@ -2012,6 +2012,187 @@ extension CLIResolutionSnapshotTests {
         XCTAssertTrue(text?.hasSuffix("ls -la\n") ?? false, String(describing: text))
     }
 
+    // MARK: - C11-569: --json and --id-format after a command's own flags
+
+    /// One run of the bundled CLI against its own fake socket: exit status,
+    /// output, and every request it sent without its per-run id.
+    private func globalFlagRun(
+        _ argv: [String],
+        home: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> (status: Int32, stdout: String, stderr: String, requests: [String])? {
+        guard let socket = try? CapturedCLISocket(),
+              let result = runCLI(
+                  argv,
+                  socketPath: socket.path,
+                  environmentOverrides: [
+                      "HOME": home,
+                      "C11_WORKSPACE_ID": "11111111-2222-3333-4444-555566667777",
+                      "C11_PANEL_ID": Self.declPanelID,
+                  ],
+                  file: file,
+                  line: line
+              )
+        else { return nil }
+        _ = socket.waitUntilFinished()
+        let requests = socket.requests.map { request -> String in
+            var request = request
+            request.removeValue(forKey: "id")
+            let data = (try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])) ?? Data()
+            return String(decoding: data, as: UTF8.self)
+        }
+        return (result.status, result.stdout, result.stderr, requests)
+    }
+
+    /// JSON output with sorted keys (dictionary order varies per run);
+    /// anything else as printed.
+    private static func canonicalOutput(_ text: String) -> String {
+        guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed]),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .fragmentsAllowed])
+        else { return text }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func temporaryHome() -> String {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-569-home-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url.path
+    }
+
+    /// `--json` and `--id-format <fmt>` after any command's own flags behave
+    /// exactly as the leading global form: same requests, same output, same
+    /// exit status. Before C11-569 strict parsers (new-workspace, mailbox)
+    /// rejected a trailing `--json`, and every command without its own
+    /// `--id-format` rejected that.
+    func testTrailingGlobalOutputFlagsMatchTheLeadingForm() {
+        let cases: [(leading: [String], trailing: [String])] = [
+            (["--json", "new-workspace", "--title", "X"], ["new-workspace", "--title", "X", "--json"]),
+            (["--json", "new-workspace"], ["new-workspace", "--json"]),
+            (["--json", "mailbox", "recv"], ["mailbox", "recv", "--json"]),
+            (["--json", "mailbox", "recv", "--ack"], ["mailbox", "recv", "--ack", "--json"]),
+            (["--id-format", "both", "list-workspaces"], ["list-workspaces", "--id-format", "both"]),
+            (["--id-format", "both", "tree"], ["tree", "--id-format", "both"]),
+            (["--id-format", "both", "mailbox", "recv"], ["mailbox", "recv", "--id-format", "both"]),
+            (["--id-format", "uuids", "--json", "new-workspace"], ["new-workspace", "--id-format=uuids", "--json"]),
+            (["--id-format", "refs", "new-workspace", "--title", "x"], ["new-workspace", "--id-format", "refs", "--title", "x"]),
+            (["--json", "--id-format", "both", "tree", "--all"], ["tree", "--json", "--all", "--id-format", "both"]),
+        ]
+        for (leading, trailing) in cases {
+            let home = temporaryHome()
+            guard let global = globalFlagRun(leading, home: home),
+                  let after = globalFlagRun(trailing, home: home) else { return }
+            XCTAssertFalse(after.stderr.localizedCaseInsensitiveContains("unknown flag"), "\(trailing): \(after.stderr)")
+            XCTAssertEqual(after.status, global.status, "\(trailing): \(after.stderr) vs \(global.stderr)")
+            XCTAssertEqual(Self.canonicalOutput(after.stdout), Self.canonicalOutput(global.stdout), "\(trailing)")
+            XCTAssertEqual(after.requests, global.requests, "\(trailing)")
+            XCTAssertFalse(after.requests.isEmpty, "\(trailing) never reached the socket: \(after.stderr)")
+        }
+    }
+
+    /// The JSON switch really switches: a trailing `--json` prints the same
+    /// JSON object as the leading form, not the plain-text reply.
+    func testTrailingJSONOnStrictCommandPrintsJSON() {
+        let home = temporaryHome()
+        guard let plain = globalFlagRun(["new-workspace", "--title", "X"], home: home),
+              let after = globalFlagRun(["new-workspace", "--title", "X", "--json"], home: home) else { return }
+        XCTAssertEqual(after.status, 0, after.stderr)
+        XCTAssertTrue(after.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), after.stdout)
+        XCTAssertNotEqual(after.stdout, plain.stdout)
+    }
+
+    /// After `--`, in trailing command lines and in tmux words, `--json` and
+    /// `--id-format` stay literal text and do not switch the output.
+    func testGlobalOutputFlagsStayLiteralInTextPositions() {
+        let p = Self.declPanelID
+        let cases: [(argv: [String], method: String, key: String, expected: String)] = [
+            (["respawn-pane", "--panel", p, "echo", "--json"], "panel.send_text", "text", "echo --json\n"),
+            (["respawn-pane", "--panel", p, "echo", "--id-format", "both"], "panel.send_text", "text", "echo --id-format both\n"),
+            (["respawn-pane", "--panel", p, "--", "--json"], "panel.send_text", "text", "--json\n"),
+            (["send", "--panel", p, "--", "--json"], "panel.send_text", "text", "--json"),
+            (["browser", p, "type", "#x", "--", "--json"], "browser.type", "text", "--json"),
+            (["browser", p, "fill", "#x", "--", "--id-format", "both"], "browser.fill", "text", "--id-format both"),
+        ]
+        for (argv, method, key, expected) in cases {
+            guard let run = globalFlagRun(argv, home: temporaryHome()) else { return }
+            XCTAssertEqual(run.status, 0, "\(argv): \(run.stderr)")
+            XCTAssertFalse(run.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), "\(argv) switched to JSON: \(run.stdout)")
+            let params = run.requests
+                .compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
+                .first(where: { $0["method"] as? String == method })?["params"] as? [String: Any]
+            let value = params?[key] as? String
+            XCTAssertTrue(value?.hasPrefix(expected) ?? false, "\(argv): \(key) = \(String(describing: value))")
+        }
+        // tmux words after the first non-option are the keys typed: the shim
+        // owns its argv, so `--json` there neither fails nor switches output.
+        guard let tmux = globalFlagRun(["__tmux-compat", "send-keys", "-t", "%1", "echo", "--json", "Enter"], home: temporaryHome())
+        else { return }
+        XCTAssertFalse(tmux.stderr.localizedCaseInsensitiveContains("unknown flag"), tmux.stderr)
+        XCTAssertFalse(tmux.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), tmux.stdout)
+    }
+
+    /// `ssh <dest> -- <cmd>`: a `--json` in the remote command line is part of
+    /// that command and does not switch the output. (The ssh parser takes a
+    /// flag-shaped remote word only after `--`.)
+    func testSSHRemoteCommandKeepsLiteralJSONWord() throws {
+        let tmp = temporaryHome()
+        guard let socket = try? CapturedCLISocket(),
+              let result = runCLI(
+                  ["ssh", "example.invalid", "--", "echo", "--json"],
+                  socketPath: socket.path,
+                  environmentOverrides: ["HOME": tmp, "TMPDIR": tmp + "/"]
+              )
+        else { return }
+        XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("unknown flag"), result.stderr)
+        XCTAssertFalse(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), result.stdout)
+        _ = socket.waitUntilFinished()
+        let params = try XCTUnwrap(
+            socket.requests.first(where: { $0["method"] as? String == "workspace.create" })?["params"] as? [String: Any],
+            "\(socket.requests) \(result.stderr)"
+        )
+        let quotedPath = try XCTUnwrap(params["initial_command"] as? String)
+        let path = quotedPath.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+        let script = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertTrue(script.contains("echo") && script.contains("--json"), script)
+    }
+
+    /// `set-metadata --json <value>` is that command's own option: its value
+    /// reaches the request and the output stays plain.
+    func testSetMetadataOwnJSONOptionKeepsItsValue() {
+        guard let run = globalFlagRun(
+            ["set-metadata", "--panel", Self.declPanelID, "--json", "{\"c11_569\":\"kept\"}"],
+            home: temporaryHome()
+        ) else { return }
+        XCTAssertEqual(run.status, 0, run.stderr)
+        XCTAssertFalse(run.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), run.stdout)
+        XCTAssertTrue(
+            run.requests.contains { $0.contains("panel.set_metadata") && $0.contains("c11_569") && $0.contains("kept") },
+            "\(run.requests)"
+        )
+    }
+
+    /// Unknown flags are still refused before socket discovery, beside a
+    /// trailing global flag; a trailing `--id-format` needs its value.
+    func testUnknownFlagBesideTrailingGlobalFlagStillFailsOffline() {
+        let cases: [([String], String)] = [
+            (["new-workspace", "--json", "--not-a-real-flag"], "unknown flag"),
+            (["mailbox", "recv", "--id-format", "both", "--not-a-real-flag"], "unknown flag"),
+            (["tree", "--not-a-real-flag", "--json"], "unknown flag"),
+            (["tree", "--id-format"], "--id-format requires a value"),
+            (["list-workspaces", "--id-format", "--"], "--id-format requires a value"),
+        ]
+        for (argv, message) in cases {
+            // No listener at the default path: a socket attempt would say so.
+            guard let result = runCLI(argv) else { return }
+            XCTAssertNotEqual(result.status, 0, "\(argv)")
+            XCTAssertEqual(result.stdout, "", "\(argv)")
+            XCTAssertTrue(result.stderr.localizedCaseInsensitiveContains(message), "\(argv): \(result.stderr)")
+            XCTAssertFalse(result.stderr.localizedCaseInsensitiveContains("socket not found"), "\(argv): \(result.stderr)")
+        }
+    }
+
     /// Declared options reach the request with their values in every position
     /// a parser reads them: inline targets before a verb, inline options in
     /// browser text verbs, and trailing-command options. Literal text keeps

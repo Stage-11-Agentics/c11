@@ -196,6 +196,7 @@ extension CMUXCLI {
             let preflight = try preflightCommandFlags(command: command, args: commandArgs)
             commandArgs = preflight.args
             jsonOutput = jsonOutput || preflight.requestsJSON
+            if let trailingIDFormat = preflight.idFormat { idFormatArg = trailingIDFormat }
             try requireExplicitCloseTarget(command: command, args: commandArgs)
             if isTerminalCreate {
                 (createCommandText, createArgs) = parseOption(commandArgs, name: "--command")

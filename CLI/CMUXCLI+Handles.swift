@@ -477,6 +477,9 @@ extension CMUXCLI {
         /// A post-command `--json` in a flag position: the same switch as
         /// `c11 --json <command>`.
         var requestsJSON: Bool
+        /// A post-command `--id-format <value>` in a flag position: the same
+        /// value as `c11 --id-format <value> <command>`.
+        var idFormat: String? = nil
     }
 
     func preflightCommandFlags(command: String, args: [String]) throws -> CLIFlagPreflightResult {
@@ -508,6 +511,7 @@ extension CMUXCLI {
         spec.positionals = declaredPositionalArity(command: command, args: args)
         var normalized: [String] = []
         var requestsJSON = false
+        var idFormat: String?
         var positionalCount = 0
         func countPositional(_ word: String) throws {
             positionalCount += 1
@@ -576,10 +580,27 @@ extension CMUXCLI {
                 index += 2
                 continue
             }
+            // The global output switches, in a flag position of a command
+            // that does not declare them: taken out of argv so the command's
+            // own parser never sees them, exactly as the leading form
+            // (`c11 --json <command>`). In a text region `--json` stays a word.
             if argument == "--json" {
                 requestsJSON = true
-                normalized.append(argument)
+                if inText { normalized.append(argument) }
                 index += 1
+                continue
+            }
+            if name == "--id-format", !inText {
+                if let equalsIndex {
+                    idFormat = String(argument[argument.index(after: equalsIndex)...])
+                    index += 1
+                    continue
+                }
+                guard index + 1 < args.count, args[index + 1] != "--" else {
+                    throw CLIError(message: requiresValueMessage(command: command, flag: name))
+                }
+                idFormat = args[index + 1]
+                index += 2
                 continue
             }
             if inText {
@@ -597,7 +618,7 @@ extension CMUXCLI {
             positionals: positionalCount
         )
         #endif
-        return CLIFlagPreflightResult(args: normalized, requestsJSON: requestsJSON)
+        return CLIFlagPreflightResult(args: normalized, requestsJSON: requestsJSON, idFormat: idFormat)
     }
 
     /// How many positional words each command's parser reads, counting the

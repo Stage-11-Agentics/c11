@@ -293,9 +293,9 @@ final class ExplicitTargetFailClosedRouterTests: XCTestCase {
         ("area.create", "workspace_id", ["direction": "right"]),
         ("area.create", "surface_id", ["direction": "right"]),
         ("workspace.create", "window_id", [:]),
-        ("agent.launch", "workspace_id", ["agent_type": "claude"]),
-        ("agent.launch", "pane_id", ["agent_type": "claude"]),
-        ("agent.launch", "surface_id", ["agent_type": "claude"]),
+        ("agent.launch", "workspace_id", ["type": "claude-code", "by": "operator"]),
+        ("agent.launch", "pane_id", ["type": "claude-code", "by": "operator"]),
+        ("agent.launch", "surface_id", ["type": "claude-code", "by": "operator"]),
         ("panel.send_text", "surface_id", ["text": "echo stale"]),
         ("panel.send_text", "workspace_id", ["text": "echo stale"]),
         ("panel.send_key", "surface_id", ["key": "enter"]),
@@ -308,7 +308,7 @@ final class ExplicitTargetFailClosedRouterTests: XCTestCase {
         ("workspace.set_metadata", "workspace_id", ["metadata": ["k": "v"]]),
         ("workspace.rename", "workspace_id", ["title": "stale"]),
         ("panel.trigger_flash", "surface_id", [:]),
-        ("flag.raise", "surface_id", ["reason": "stale"]),
+        ("flag.raise", "surface_id", ["reason": "stale", "by": "operator"]),
         ("panel.focus", "surface_id", [:]),
     ]
 
@@ -359,7 +359,10 @@ final class ExplicitTargetFailClosedRouterTests: XCTestCase {
                 let response = try await call(controller, row.method, params)
                 let label = "\(row.method) \(row.key)=\(value): \(response)"
                 XCTAssertEqual(response["ok"] as? Bool, false, label)
-                XCTAssertEqual((response["error"] as? [String: Any])?["code"] as? String, "not_found", label)
+                // `surface_not_found` is the documented not-found code of the
+                // panel metadata and attention methods (references/metadata.md).
+                let code = (response["error"] as? [String: Any])?["code"] as? String
+                XCTAssertTrue(["not_found", "surface_not_found"].contains(code ?? ""), label)
                 XCTAssertNil(response["result"], label)
                 XCTAssertEqual(snapshot(manager), before, "mutated: \(label)")
             }

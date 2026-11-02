@@ -3436,7 +3436,10 @@ class TerminalController {
         method: String,
         params: [String: Any]
     ) -> (code: String, message: String)? {
-        guard !method.hasPrefix("debug.") else { return nil }
+        // Before session restore completes the handlers answer not_ready and no
+        // ref is minted yet; startup-independent methods take no target.
+        guard isInitialSessionRestoreReady, !Self.isStartupIndependentV2Method(method),
+              !method.hasPrefix("debug.") else { return nil }
         let known = v2KnownRefs
         guard let target = SocketPanelRefValidator.unresolvedTarget(
             params: params,

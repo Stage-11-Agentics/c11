@@ -88,10 +88,10 @@ c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 c11 set-title "watcher"
 c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to the doorbell
 # The invitation starts a turn when the agent is idle; it never includes
-# the envelope body. Pi, omp, Claude Code and OpenCode use their native route
-# when available (see "Pi native delivery", "omp native delivery", "Claude Code
-# native inbox" and "OpenCode native plugin" below). All but omp fall back to
-# the typed route; omp has none.
+# the envelope body. Pi, omp, Claude Code, OpenCode and Grok use their native
+# route when available (see "Pi native delivery", "omp native delivery", "Claude
+# Code native inbox", "OpenCode native plugin" and "Grok native leader" below).
+# All but omp fall back to the typed route; omp has none.
 c11 mailbox recv --drain                   # pull now, when stdout is a terminal
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
@@ -269,7 +269,7 @@ sequenceDiagram
     participant Agent as Recipient agent
 
     D->>Inbox: atomic write ULID.msg
-    alt mailbox.delivery contains "stdin" and a native route is registered (Pi, omp, Claude, OpenCode)
+    alt mailbox.delivery contains "stdin" and a native route is registered (Pi, omp, Claude, OpenCode, Grok)
         D->>Agent: invitation over the native stream at idle, composer never read
         Note over Inbox: file stays in the inbox root, draft untouched
         Agent->>Inbox: c11 mailbox recv --ack
@@ -447,6 +447,16 @@ After `native_inbox_write_failed` or `native_unconfirmed`, the bridge keeps watc
 The hook's five-second timeout was observed as unenforced for async hooks; if Claude starts enforcing it, the route falls back to typed delivery.
 
 For a repeatable Claude guest proof, stage `--agents claude` with `sandbox-up.sh`, then run `scripts/check-claude-native-mail.py <run-id>`. It uses real Claude sessions in isolated scratch configuration, checks native draft/repeat, `/clear`, `--resume`, hook-absent fallback, explicit inbound refusal, and unchanged default tenant files. `--disable-native-control` removes the bridge and must fail the native-with-draft assertion. The caller owns the guest and credential cleanup.
+
+### Grok native leader
+
+An interactive Grok launched by the c11 wrapper runs its agent in a private Grok leader: the wrapper adds Grok's own `--leader --leader-socket $TMPDIR/c11-grok-leader-<pid>.sock` (`/tmp` when `TMPDIR` is unusable or too long for a socket path), with no Grok configuration written. Grok itself keeps writing its usual files, including `$GROK_HOME/leader.log`. Beside it, the wrapper starts `c11 grok-mailbox`, which keeps one ACP client (`grok agent --leader --leader-socket <path> stdio`) connected to that leader and registers `grok_leader` on `mailbox.native.subscribe` once the socket exists. At idle it sends the fixed invitation to the bound session with `session/prompt`, and accepts on the leader's echo of that text (the session's prompt queue or user row) within 1.8 seconds. The turn runs in the TUI like a typed one, with its prompt row, reply text, tool rows and permission cards; Grok's permission prompts stay in the TUI, and the composer is never read or touched. The client never sends `session/load`: in Grok 1.0.70 a second client's load of a live session fails and leaves that TUI showing only "Worked for Ns" for every later turn, typed ones included. `can_queue` is false.
+
+Grok has no signal for which session its TUI shows, and a leader runs a prompt in any live session it holds. Before each offer the sidecar reads `$GROK_HOME/active_sessions.json` and refuses (`native_session_conflict`) unless that Grok process holds exactly the bound session. `/new`, `/resume` or a dashboard dispatch adds an entry, so that panel uses the typed doorbell, which types into whatever the TUI shows, until Grok relaunches. Other failures (`native_not_ready`, `native_unconfirmed`, `native_timeout`, a closed stream) also fall back to typed delivery; a confirmation within 10 seconds of an unconfirmed offer logs `native_late_accept`.
+
+The wrapper skips leader mode when the operator passes `--leader`, `--no-leader`, `--leader-socket` or `--sandbox`, sets `GROK_SANDBOX`, launches non-interactively, uses `--continue` (no bound session), or when the installed Grok rejects `--leader` (probed with `--leader --version`). Grok itself refuses leader mode under any sandbox profile and then creates no socket. The leader outlives its TUI, so the wrapper stops it when Grok exits: the PID in the lock beside the socket must hold that socket (`lsof`) before it is sent SIGTERM; it never runs `grok leader kill`, which stops every leader. Each launch also reaps `c11-grok-leader-*` leaders whose Grok is gone. To turn leader mode off and keep the typed doorbell, set `C11_GROK_NATIVE_MAIL_DISABLED=1` in the environment c11 launches Grok from; Grok then runs exactly as it would outside the wrapper's leader launch.
+
+The wrapper records the panel's route as `mailbox.native_state`: `grok_leader`, or `off:` plus the reason (`opt_out`, `sandbox`, `operator_leader`, `no_leader_flag`, `no_session`, `non_interactive`; or, from the sidecar, `no_socket` when no leader came up, `client_failed` when no ACP client connected, `subscribe_refused` when c11 refused the subscription). Every typed ring's `_dispatch.log` row for that panel carries it as `native_state`, and a refused native offer carries `native_route: grok_leader` with its `native_failure` (`native_session_conflict` when the TUI holds another session), so a Grok update that breaks the route shows up in `c11 mailbox tail`.
 
 ### OpenCode plugin compatibility
 

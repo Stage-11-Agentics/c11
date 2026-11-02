@@ -119,3 +119,101 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
         XCTAssertTrue(observed)
     }
 }
+
+final class GrokMailboxAcceptanceTests: XCTestCase {
+    private let bound = "909f490f-cdde-47ed-b8e6-2ec3274979e0"
+    private let other = "01a1992a-fd6e-77a3-82fc-f10d48225436"
+    private let birth: UInt64 = 1_793_570_764_543_966
+
+    private func registry(_ entries: [(String, Int, UInt64)]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: entries.map {
+            ["session_id": $0.0, "pid": $0.1, "pid_start": $0.2, "cwd": "/tmp/p", "opened_at": "2026-11-01T22:06:05Z"]
+        })
+    }
+
+    func testNativeRingNeedsTheTUIToHoldOnlyTheBoundSession() throws {
+        // One session, the bound one: the panel shows it.
+        XCTAssertTrue(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(bound, 44036, birth), (other, 51000, birth)]),
+            pid: 44036, birthMicros: birth + 400_000, sessionID: bound.uppercased()))
+        // After /new or /resume the TUI holds two sessions: refuse.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(bound, 44036, birth), (other, 44036, birth)]),
+            pid: 44036, birthMicros: birth, sessionID: bound))
+        // The TUI holds a different session only.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(other, 44036, birth)]), pid: 44036, birthMicros: birth, sessionID: bound))
+        // The entry belongs to an earlier process that had this PID.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([(bound, 44036, birth - 60_000_000)]), pid: 44036, birthMicros: birth, sessionID: bound))
+        // Missing or malformed registry: refuse.
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: try registry([]), pid: 44036, birthMicros: birth, sessionID: bound))
+        XCTAssertFalse(GrokMailboxAcceptance.showsOnlyBoundSession(
+            registry: Data("{".utf8), pid: 44036, birthMicros: birth, sessionID: bound))
+    }
+
+    func testTypedRingRowsCarryOnlyAShortNativeStateToken() {
+        XCTAssertEqual(MailboxDispatchLog.nativeStateToken("grok_leader"), "grok_leader")
+        XCTAssertEqual(MailboxDispatchLog.nativeStateToken("off:no_socket"), "off:no_socket")
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken(""))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken("off:Sandbox"))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken("off: sandbox"))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken("off:\"injected\""))
+        XCTAssertNil(MailboxDispatchLog.nativeStateToken(String(repeating: "a", count: 49)))
+    }
+
+    func testConfirmationIsTheInvitationEchoedInTheBoundSession() {
+        let invitation = ClaudeMailboxAcceptance.invitation
+        let queued: [String: Any] = ["jsonrpc": "2.0", "method": "_x.ai/queue/changed",
+            "params": ["sessionId": bound, "entries": [["id": "e1", "version": 0, "kind": "prompt", "text": invitation]]]]
+        XCTAssertTrue(GrokMailboxAcceptance.confirms(frame: queued, sessionID: bound))
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: queued, sessionID: other))
+        let otherText: [String: Any] = ["method": "_x.ai/queue/changed",
+            "params": ["sessionId": bound, "entries": [["kind": "prompt", "text": "operator prompt"]]]]
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: otherText, sessionID: bound))
+        let userRow: [String: Any] = ["method": "session/update", "params": ["sessionId": bound,
+            "update": ["sessionUpdate": "user_message_chunk", "content": ["type": "text", "text": invitation]]]]
+        XCTAssertTrue(GrokMailboxAcceptance.confirms(frame: userRow, sessionID: bound))
+        let agentRow: [String: Any] = ["method": "session/update", "params": ["sessionId": bound,
+            "update": ["sessionUpdate": "agent_message_chunk", "content": ["type": "text", "text": invitation]]]]
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: agentRow, sessionID: bound))
+        XCTAssertFalse(GrokMailboxAcceptance.confirms(frame: ["method": "_x.ai/sessions/changed",
+            "params": ["sessionId": bound]], sessionID: bound))
+    }
+
+    private func decoded(_ request: GrokLeaderRequest, id: Int) throws -> [String: Any] {
+        let data = try XCTUnwrap(request.frame(id: id))
+        XCTAssertEqual(data.last, 0x0A)
+        XCTAssertEqual(data.filter { $0 == 0x0A }.count, 1, "one frame per line")
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    // A second client's session/load blanks a live Grok TUI for every later
+    // turn (C11-477 round 2), so a ring must send the prompt and nothing else.
+    func testARingSendsOnlyThePromptNeverASessionLoad() throws {
+        let upper = bound.uppercased()
+        let requests = GrokLeaderRequest.delivery(sessionID: upper, text: ClaudeMailboxAcceptance.invitation)
+        XCTAssertEqual(requests.map(\.method), ["session/prompt"])
+        let frames = try requests.enumerated().map { try decoded($0.element, id: $0.offset + 2) }
+        XCTAssertFalse(frames.contains { ($0["method"] as? String)?.hasPrefix("session/load") == true })
+        let params = try XCTUnwrap(frames.first?["params"] as? [String: Any])
+        // Grok keys sessions by the exact string it was given.
+        XCTAssertEqual(params["sessionId"] as? String, upper)
+        let prompt = try XCTUnwrap(params["prompt"] as? [[String: Any]])
+        XCTAssertEqual(prompt.count, 1)
+        XCTAssertEqual(prompt.first?["type"] as? String, "text")
+        XCTAssertEqual(prompt.first?["text"] as? String, ClaudeMailboxAcceptance.invitation)
+        XCTAssertEqual(frames.first?["id"] as? Int, 2)
+    }
+
+    func testTheClientOpensWithInitializeAlone() throws {
+        let frame = try decoded(.initialize, id: 1)
+        XCTAssertEqual(frame["method"] as? String, "initialize")
+        XCTAssertEqual(frame["id"] as? Int, 1)
+        XCTAssertEqual(frame["jsonrpc"] as? String, "2.0")
+        let params = try XCTUnwrap(frame["params"] as? [String: Any])
+        XCTAssertEqual(params["protocolVersion"] as? Int, 1)
+        XCTAssertNil(params["sessionId"], "initialize must not name or load a session")
+    }
+}

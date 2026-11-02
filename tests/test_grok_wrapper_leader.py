@@ -175,7 +175,18 @@ exit 0
 
     def close(self) -> None:
         self.app_socket.close()
-        self.td.cleanup()
+        # The wrapper's disowned background jobs can still be appending to
+        # logs here, and removing the tree under them fails with "Directory
+        # not empty"; retry until they have finished.
+        deadline = time.time() + 10
+        while True:
+            try:
+                self.td.cleanup()
+                return
+            except OSError:
+                if time.time() > deadline:
+                    raise
+                time.sleep(0.2)
 
 
 def expect(condition: bool, message: str) -> None:
@@ -306,7 +317,7 @@ def test_stale_leader_of_a_dead_grok_is_reaped_and_live_one_kept() -> None:
             run = Run([], tmpdir=td)
             try:
                 expect(wait_for(lambda: not alive(stale_leader), 6), "stale leader not reaped")
-                expect(not Path(stale_sock).exists(), "stale socket left behind")
+                expect(wait_for(lambda: not Path(stale_sock).exists(), 6), "stale socket left behind")
                 expect(alive(live_leader) and Path(live_sock).exists(), "live Grok's leader was touched")
             finally:
                 run.close()

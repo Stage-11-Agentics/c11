@@ -8517,11 +8517,13 @@ struct WorkspaceSidebar: View {
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
     @AppStorage(ChromeScaleSettings.customMultiplierKey)
     private var chromeScaleCustomMultiplier = Double(ChromeScaleSettings.defaultCustomMultiplier)
-    /// Width alone picks Tiles: two columns whenever they fit at the tile scale.
-    private var compact: Bool {
-        SidebarLayoutPolicy.showsTiles(width: Double(width), scale: Double(ChromeScaleSettings.multiplier(
+    /// Tile columns at this width and chrome scale; the footer follows them.
+    private var tileColumns: Int {
+        SidebarLayoutPolicy.columns(width: Double(width), scale: Double(ChromeScaleSettings.multiplier(
             presetRaw: chromeScalePresetRaw, customMultiplier: chromeScaleCustomMultiplier)))
     }
+    /// Width alone picks Tiles: two columns whenever they fit at the tile scale.
+    private var compact: Bool { tileColumns >= 2 }
     /// C11-104 v2 — chip row is gated by the preserved
     /// `sidebarShowBranchDirectory` key (existing user prefs survive
     /// the legacy-row → chip-row migration).
@@ -8813,8 +8815,7 @@ struct WorkspaceSidebar: View {
                 // it and dissolve in its scrim instead of hard-clipping at a
                 // structural boundary.
                 SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback,
-                              columns: SidebarLayoutPolicy.columns(width: Double(width), scale: Double(ChromeScaleSettings.multiplier(
-                                  presetRaw: chromeScalePresetRaw, customMultiplier: chromeScaleCustomMultiplier))))
+                              columns: tileColumns)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         // Solid blur under the controls, fading out over the
@@ -11205,6 +11206,7 @@ private struct FlaggedAgentsRow: View {
                 ))
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
 
                 Text(verbatim: String(count))
                     .font(.system(size: 9, weight: .bold))
@@ -11242,6 +11244,10 @@ private struct FlaggedAgentsRow: View {
             defaultValue: "Jump to oldest flagged agent"
         )))
         .accessibilityValue(Text(verbatim: String(count)))
+        .safeHelp(String(
+            localized: "statusBar.flaggedAgents.accessibility",
+            defaultValue: "Jump to oldest flagged agent"
+        ))
     }
 }
 
@@ -11269,6 +11275,7 @@ private struct WaitingAgentRow: View {
                 Text(label)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 if let badge = display.badgeText {
                     Text(badge)
@@ -11291,6 +11298,8 @@ private struct WaitingAgentRow: View {
                         .font(.system(size: 13, weight: .medium))
                     Text(shortcutText)
                         .font(.system(size: 9, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .opacity(isLit ? 0.6 : 0.5)
                 }
             }

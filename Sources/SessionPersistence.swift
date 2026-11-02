@@ -34,6 +34,42 @@ enum SidebarLayoutPolicy {
     static func showsTiles(width: Double, scale: Double = 1) -> Bool {
         columns(width: width, scale: scale) >= 2
     }
+
+    /// The titlebar sidebar button steps hidden → 1 → 2 → 3 columns → hidden.
+    static let maximumColumnChoice = 3
+
+    /// Columns shown for this requested width in a window this wide.
+    static func shownColumns(requested: Double, windowWidth: Double, scale: Double) -> Int {
+        columns(width: effectiveWidth(requested, windowWidth: windowWidth), scale: scale)
+    }
+
+    /// Requested width that shows exactly `count` columns, both in this window
+    /// and uncapped, so a pick doesn't grow back when the window widens. Keeps
+    /// `current` when it already does, so an operator's dragged width survives;
+    /// nil when the window (or chrome scale) can't fit that many.
+    static func requestedWidth(forColumns count: Int, current: Double,
+                               windowWidth: Double, scale: Double) -> Double? {
+        let fits = { (width: Double) in
+            columns(width: SessionPersistencePolicy.sanitizedSidebarWidth(width), scale: scale) == count
+                && shownColumns(requested: width, windowWidth: windowWidth, scale: scale) == count
+        }
+        if fits(current) { return current }
+        let candidates: [Double]
+        if count <= 1 {
+            candidates = [SessionPersistencePolicy.defaultSidebarWidth, SessionPersistencePolicy.minimumSidebarWidth]
+        } else {
+            let tileScale = scale.isFinite && scale > 0 ? min(scale, maximumTileScale) : 1
+            candidates = [(Double(count) * tileColumnWidth * tileScale).rounded(.up)]
+        }
+        return candidates.map(SessionPersistencePolicy.sanitizedSidebarWidth).first(where: fits)
+    }
+
+    /// Next stop on the button's cycle; 0 means hidden. Choices the window
+    /// can't fit are skipped, and past the widest one the sidebar hides.
+    static func nextColumnChoice(after shown: Int, isAvailable: (Int) -> Bool) -> Int {
+        guard shown < maximumColumnChoice else { return 0 }
+        return (max(shown, 0) + 1...maximumColumnChoice).first(where: isAvailable) ?? 0
+    }
 }
 
 enum WindowGeometryPersistenceStore {

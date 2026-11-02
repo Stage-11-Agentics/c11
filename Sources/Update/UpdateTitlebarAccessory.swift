@@ -324,7 +324,6 @@ struct TitlebarControlsView: View {
     @ObservedObject var notificationStore: TerminalNotificationStore
     @ObservedObject var viewModel: TitlebarControlsViewModel
     @ObservedObject var sidebarState: SidebarState
-    let onToggleSidebar: () -> Void
     let onToggleNotifications: () -> Void
     let onNewTab: () -> Void
     let visibilityMode: TitlebarControlsVisibilityMode
@@ -440,11 +439,12 @@ struct TitlebarControlsView: View {
                 #if DEBUG
                 dlog("titlebar.toggleSidebar")
                 #endif
-                onToggleSidebar()
+                cycleSidebarColumns()
             }) {
                 iconLabel(systemName: "sidebar.left", config: config)
             }
             .foregroundStyle(controlForeground(config: config))
+            .contextMenu { sidebarColumnsMenu }
             .accessibilityIdentifier("titlebarControl.toggleSidebar")
             .accessibilityLabel(String(localized: "titlebar.sidebar.accessibilityLabel", defaultValue: "Toggle Sidebar"))
 
@@ -648,6 +648,44 @@ struct TitlebarControlsView: View {
             .background(ShortcutHintPillBackground())
     }
 
+    private var sidebarColumnScale: Double {
+        Double(ChromeScaleTokens.resolved().multiplier)
+    }
+
+    private var sidebarWindowWidth: Double {
+        AppDelegate.shared?.sidebarWindowContentWidth(for: sidebarState) ?? 0
+    }
+
+    /// Click: hidden → 1 → 2 → 3 columns → hidden, skipping what the window can't fit.
+    private func cycleSidebarColumns() {
+        sidebarState.cycleColumns(windowWidth: sidebarWindowWidth, scale: sidebarColumnScale)
+    }
+
+    /// Right-click: pick a column count directly. A count the window can't
+    /// fit falls back to the most that fit.
+    @ViewBuilder
+    private var sidebarColumnsMenu: some View {
+        let shown = sidebarState.shownColumns(windowWidth: sidebarWindowWidth, scale: sidebarColumnScale)
+        let choices: [(Int, String)] = [
+            (0, String(localized: "sidebar.columns.hide", defaultValue: "Hide Sidebar")),
+            (1, String(localized: "sidebar.columns.one", defaultValue: "1 Column")),
+            (2, String(localized: "sidebar.columns.two", defaultValue: "2 Columns")),
+            (3, String(localized: "sidebar.columns.three", defaultValue: "3 Columns")),
+        ]
+        ForEach(choices, id: \.0) { count, title in
+            // A menu Toggle renders as a native checkmark item.
+            Toggle(title, isOn: Binding(
+                get: { count == shown },
+                set: { _ in
+                    #if DEBUG
+                    dlog("titlebar.sidebarColumns count=\(count)")
+                    #endif
+                    sidebarState.show(columns: count, windowWidth: sidebarWindowWidth, scale: sidebarColumnScale)
+                }
+            ))
+        }
+    }
+
     @ViewBuilder
     private func iconLabel(systemName: String, config: TitlebarControlsStyleConfig) -> some View {
         let icon = Image(systemName: systemName)
@@ -676,7 +714,6 @@ struct HiddenTitlebarSidebarControlsView: View {
             notificationStore: notificationStore,
             viewModel: viewModel,
             sidebarState: sidebarState,
-            onToggleSidebar: { _ = AppDelegate.shared?.sidebarState?.toggle() },
             onToggleNotifications: { [viewModel] in
                 AppDelegate.shared?.toggleNotificationsPopover(
                     animated: true,
@@ -918,7 +955,6 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
 
     init(notificationStore: TerminalNotificationStore, sidebarState: SidebarState) {
         self.notificationStore = notificationStore
-        let toggleSidebar = { _ = AppDelegate.shared?.sidebarState?.toggle() }
         let toggleNotifications: () -> Void = { _ = AppDelegate.shared?.toggleNotificationsPopover(animated: true) }
         let newTab = {
             if let appDelegate = AppDelegate.shared {
@@ -933,7 +969,6 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
                 notificationStore: notificationStore,
                 viewModel: viewModel,
                 sidebarState: sidebarState,
-                onToggleSidebar: toggleSidebar,
                 onToggleNotifications: toggleNotifications,
                 onNewTab: newTab,
                 visibilityMode: .alwaysVisible,

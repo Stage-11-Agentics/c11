@@ -7441,6 +7441,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         contextForMainWindow(window)?.sidebarState
     }
 
+    /// Content width of the window that owns this sidebar state; 0 when unknown,
+    /// which `SidebarLayoutPolicy.effectiveWidth` treats as a wide window.
+    func sidebarWindowContentWidth(for state: SidebarState) -> Double {
+        guard let context = mainWindowContexts.values.first(where: { $0.sidebarState === state }),
+              let window = context.window ?? windowForMainWindowId(context.windowId) else { return 0 }
+        return Double(window.contentView?.bounds.width ?? window.contentLayoutRect.width)
+    }
+
     /// Exact window geometry snapshot; callers must already be on main.
     func sidebarLayout(for manager: WorkspaceManager) -> [String: Any]? {
         guard let context = mainWindowContexts.values.first(where: { $0.workspaceManager === manager }),

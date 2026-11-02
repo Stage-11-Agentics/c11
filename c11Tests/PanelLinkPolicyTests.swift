@@ -697,7 +697,9 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
             let prompt = try XCTUnwrap(presenter.presentedWindow)
             second.makeKeyAndOrderFront(nil)
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-            let keyBefore = NSApp.keyWindow
+            // isKeyWindow, not NSApp.keyWindow: the latter is nil while the
+            // runner is inactive, which would make this check vacuous.
+            try XCTSkipUnless(second.isKeyWindow, "the runner could not make a window key")
             if viaExpiry {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.8))
             } else {
@@ -705,8 +707,8 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
             }
             XCTAssertFalse(presenter.isPresenting)
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-            XCTAssertTrue(NSApp.keyWindow === keyBefore, "viaExpiry=\(viaExpiry)")
-            if keyBefore != nil { XCTAssertFalse(first.isKeyWindow) }
+            XCTAssertTrue(second.isKeyWindow, "viaExpiry=\(viaExpiry)")
+            XCTAssertFalse(first.isKeyWindow, "viaExpiry=\(viaExpiry)")
             RunLoop.main.run(until: Date().addingTimeInterval(2.1)) // past the cooldown
         }
     }

@@ -480,10 +480,7 @@ private final class GrokLeaderClient {
             self?.consume(data)
         }
         do { try process.run() } catch { return nil }
-        guard send("initialize", ["protocolVersion": 1,
-                                  "clientCapabilities": ["fs": ["readTextFile": false, "writeTextFile": false],
-                                                         "terminal": false],
-                                  "clientInfo": ["name": "c11-grok-mailbox", "version": "1"]]) != nil else {
+        guard send(.initialize) != nil else {
             terminate()
             return nil
         }
@@ -500,27 +497,31 @@ private final class GrokLeaderClient {
         if process.isRunning { process.terminate() }
     }
 
-    /// Arms confirmation, then writes the prompt. The leader runs it in the
-    /// bound session even though this client never loaded it. Never send
-    /// `session/load` here: in Grok 1.0.70 a second client's load of a live
-    /// session fails and leaves the TUI showing only "Worked for Ns" for every
-    /// later turn of that session, typed ones included.
+    /// Arms confirmation, then writes the delivery requests (the prompt alone).
+    /// The leader runs it in the bound session even though this client never
+    /// loaded it; `GrokLeaderRequest` says why it must never load it.
     func prompt(_ text: String) -> Bool {
         lock.lock()
         hit = false
-        armedPromptID = nextID
+        armedPromptID = nil
         lock.unlock()
-        return send("session/prompt", ["sessionId": sessionID, "prompt": [["type": "text", "text": text]]]) != nil
+        for request in GrokLeaderRequest.delivery(sessionID: sessionID, text: text) {
+            if request.method == "session/prompt" {
+                lock.lock()
+                armedPromptID = nextID
+                lock.unlock()
+            }
+            guard send(request) != nil else { return false }
+        }
+        return true
     }
 
-    private func send(_ method: String, _ params: [String: Any]) -> Int? {
+    private func send(_ request: GrokLeaderRequest) -> Int? {
         lock.lock()
         let id = nextID
         nextID += 1
         lock.unlock()
-        guard var data = try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id,
-                                                                     "method": method, "params": params]) else { return nil }
-        data.append(0x0A)
+        guard let data = request.frame(id: id) else { return nil }
         do { try input.fileHandleForWriting.write(contentsOf: data) } catch { return nil }
         return id
     }

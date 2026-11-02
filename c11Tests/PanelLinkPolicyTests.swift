@@ -620,10 +620,12 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
             let presenter = ExternalPanelLinkPresenter(
                 resolve: { ExternalPanelLinkDestination(target: $0, workspaceID: target, workspaceTitle: "W", panelTitle: "P") },
                 open: { _ in opened += 1; return true })
+            let wasActive = NSApp.isActive
             presenter.receive("c11://panel/\(target.uuidString)")
             let window = try XCTUnwrap(presenter.presentedWindow)
             XCTAssertTrue(presenter.isPresenting)
-            XCTAssertEqual(window.canBecomeKey, !NSApp.isActive)
+            // Decided once at presentation; the bare runner's activation can move after.
+            XCTAssertEqual(window.takesKeyFocus, !wasActive)
             RunLoop.main.run(until: Date().addingTimeInterval(1.0)) // past the arming delay
             for (other, otherChars) in [(UInt16(49), " "), (48, "\t")] {
                 window.sendEvent(key(.keyDown, other, otherChars, window: window))

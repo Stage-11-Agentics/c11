@@ -783,6 +783,10 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
     private var expiry: DispatchWorkItem?
     private var keyUpMonitor: Any?
     private var isReordering = false
+    /// c11's main window when a from-another-app prompt took key. keyWindow is
+    /// nil while c11 is inactive; mainWindow is not. Used only to hand key back
+    /// when the operator switches to c11 while the prompt still holds it.
+    private weak var mainWindowAtShow: NSWindow?
 
     var isPresenting: Bool { panel != nil }
     var presentedWindow: ExternalPanelLinkWindow? { panel }
@@ -871,6 +875,7 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         // app stays active and no c11 window rises. With c11 active it stays
         // click-only and the operator's typing keeps its window.
         window.takesKeyFocus = !NSApp.isActive
+        mainWindowAtShow = window.takesKeyFocus && !(NSApp.mainWindow is ExternalPanelLinkWindow) ? NSApp.mainWindow : nil
         panel = window
         if window.takesKeyFocus {
             window.makeKeyAndOrderFront(nil)
@@ -932,19 +937,26 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         return (stack, confirm, cancel)
     }
 
-    /// The operator switched to c11 (Command-Tab, Dock) while the prompt was
-    /// key: give key back to c11's own windows and keep the prompt up,
-    /// click-only, so their typing is not swallowed.
-    private func becomeClickOnly() {
+    /// The operator switched to c11 (Command-Tab, Dock) while a prompt shown
+    /// from another app was up: from now on it is click-only. If it still holds
+    /// key, key goes to c11's main window from presentation; without one, the
+    /// prompt reorders so AppKit picks a c11 window. The prompt stays up.
+    func becomeClickOnly() {
         guard let panel, panel.takesKeyFocus else { return }
         panel.takesKeyFocus = false
         if let keyUpMonitor { NSEvent.removeMonitor(keyUpMonitor) }
         keyUpMonitor = nil
+        defer { mainWindowAtShow = nil }
         guard panel.isKeyWindow else { return }
-        isReordering = true
-        panel.orderOut(nil)
-        panel.orderFrontRegardless()
-        isReordering = false
+        if let main = mainWindowAtShow, main !== panel, main.isVisible, !main.isMiniaturized, main.canBecomeKey {
+            main.makeKey()
+        }
+        if panel.isKeyWindow {
+            isReordering = true
+            panel.orderOut(nil)
+            panel.orderFrontRegardless()
+            isReordering = false
+        }
     }
 
     @objc private func cancelClicked(_ sender: ExternalPanelLinkButton) {
@@ -983,6 +995,7 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         visibilityObservers.removeAll()
         if let keyUpMonitor { NSEvent.removeMonitor(keyUpMonitor) }
         keyUpMonitor = nil
+        mainWindowAtShow = nil
         panel?.delegate = nil
         panel?.onCancelKey = nil
         // Ordering out leaves key focus to AppKit: from another app it returns

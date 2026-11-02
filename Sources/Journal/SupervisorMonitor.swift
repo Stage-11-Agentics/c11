@@ -69,7 +69,11 @@ struct SupervisorProjection {
                 || (from == .error && draft.reasonCode == .usageLimit && result.fromReason == .sessionFailure),
               draft.source != .transcript || (draft.occurredAtMs ?? 0) >= observedSince else { return nil }
         switch draft.kind {
-        case .errorReported: return draft.reasonCode == .usageLimit ? "usage_limit" : "provider_error"
+        case .errorReported:
+            // A limit kept beside an open wait has not ended the turn yet.
+            guard result.toPhase == .error else { return nil }
+            return result.changedSnapshot?.reason == .usageLimit ? "usage_limit" : "provider_error"
+        case .turnCompleted: return result.toPhase == .error ? "usage_limit" : nil
         case .turnInterrupted: return draft.reasonCode == .observation ? "unknown" : "cancelled"
         default: return nil
         }

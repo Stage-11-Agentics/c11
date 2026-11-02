@@ -1735,9 +1735,10 @@ extension AgentModelDetectionTests {
         /// Monitor start is the historical cutoff, so transcript time follows it.
         let transcriptTime = ISO8601DateFormatter().string(from: Date().addingTimeInterval(2))
 
-        init(directory: URL, session: String) throws {
+        init(directory: URL, session: String, storeClock: (() -> Int64)? = nil) throws {
             self.session = session
-            let store = try JournalStore(layout: JournalStorageLayout(directory: directory))
+            let layout = JournalStorageLayout(directory: directory)
+            let store = try storeClock.map { try JournalStore(layout: layout, clock: $0) } ?? JournalStore(layout: layout)
             coordinator = JournalCoordinator(store: store)
             coordinator.register(panelID: target.surfaceId, workspaceID: target.workspaceId)
             coordinator.setOwner(panelID: target.surfaceId, owner: JournalOwner(panelID: target.surfaceId,
@@ -1785,8 +1786,42 @@ extension AgentModelDetectionTests {
         func close() { coordinator.remove(panelID: target.surfaceId) }
     }
 
-    private func limitScenario(_ name: String) throws -> LimitScenario {
-        try LimitScenario(directory: home.appendingPathComponent("journal-\(name)-\(UUID().uuidString)"), session: claudeId)
+    private func limitScenario(_ name: String, storeClock: (() -> Int64)? = nil) throws -> LimitScenario {
+        try LimitScenario(directory: home.appendingPathComponent("journal-\(name)-\(UUID().uuidString)"),
+                          session: claudeId, storeClock: storeClock)
+    }
+
+    /// An open permission wait, exactly as it stood before any limit.
+    private func assertPermissionWait(_ scenario: LimitScenario, request: String?, turn: String = "prompt-A",
+                                      limit: JournalUsageLimitKind?, _ message: String = "",
+                                      file: StaticString = #filePath, line: UInt = #line) throws {
+        let snapshot = try XCTUnwrap(scenario.snapshot, message, file: file, line: line)
+        XCTAssertEqual(snapshot.phase, .blocked, message, file: file, line: line)
+        XCTAssertEqual(snapshot.reason, .approval, message, file: file, line: line)
+        XCTAssertEqual(snapshot.requestID, request, message, file: file, line: line)
+        XCTAssertEqual(snapshot.turnID, turn, message, file: file, line: line)
+        XCTAssertEqual(snapshot.usageLimit?.kind, limit, message, file: file, line: line)
+        XCTAssertFalse(snapshot.terminalBarrier, message, file: file, line: line)
+        XCTAssertEqual(snapshot.source, .hook, "a transcript line does not demote the wait. \(message)", file: file, line: line)
+        XCTAssertTrue(snapshot.paintsAttention, message, file: file, line: line)
+        XCTAssertEqual(FeedProjector.blockingKind(snapshot), .permission, message, file: file, line: line)
+        let row = try XCTUnwrap(FeedProjector.project(journalRows: [snapshot], attention: [], notes: [:], scope: .attention).first,
+                                message, file: file, line: line)
+        XCTAssertEqual(row.kind, .permission, message, file: file, line: line)
+        XCTAssertEqual(row.requestID, request, message, file: file, line: line)
+        XCTAssertEqual(row.jsonObject()["usage_limit"] as? String, limit?.rawValue, message, file: file, line: line)
+        XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
+            hasJournalAttention: snapshot.paintsAttention, derivedActivity: .idle, terminalType: "claude-code"),
+            .waiting, message, file: file, line: line)
+        let help = AgentActivityHelpProjection.project(state: .waiting, lastActivityAt: nil, waitingStartedAt: nil,
+            coldAfterSeconds: 60, flagReason: nil, flagRaisedAt: nil, suppressed: false, journal: snapshot)
+        XCTAssertEqual(help.usageLimited, limit != nil, message, file: file, line: line)
+        if let limit { XCTAssertTrue(help.text(at: Date()).contains(limit.label), message, file: file, line: line) }
+        XCTAssertEqual(scenario.announced, [], message, file: file, line: line)
+        let supervisor = scenario.monitor.readback(panel: scenario.target.surfaceId)
+        XCTAssertEqual(supervisor["waiting_on_permission"] as? Bool, true, message, file: file, line: line)
+        XCTAssertEqual(supervisor["wait_kind"] as? String, "permission", message, file: file, line: line)
+        XCTAssertTrue(supervisor["interruption_reason"] is NSNull, message, file: file, line: line)
     }
 
     /// The limit observation the probe reads for one scenario's transcript time.
@@ -1887,17 +1922,17 @@ extension AgentModelDetectionTests {
     }
 
     /// Root, a tool call, its result, then the 429 parented on that result.
-    private func midTurnLimit(at time: String, promptID: String = "prompt-A", resultPrompt: String? = nil) throws -> [TranscriptLifecycleObservation] {
+    private func midTurnLimit(at time: String, resultPrompt: String = "prompt-A") throws -> [TranscriptLifecycleObservation] {
         var limit = try usageLimitRecord()
         limit["timestamp"] = time
         limit["parentUuid"] = "tool-result-A"
         let records: [[String: Any]] = [
-            ["type": "user", "isSidechain": false, "sessionId": claudeId, "promptId": promptID, "uuid": "user-A",
+            ["type": "user", "isSidechain": false, "sessionId": claudeId, "promptId": "prompt-A", "uuid": "user-A",
              "timestamp": time, "message": ["role": "user", "content": "synthetic test prompt"]],
             ["type": "assistant", "isSidechain": false, "sessionId": claudeId, "uuid": "assistant-A", "parentUuid": "user-A",
              "timestamp": time, "message": ["role": "assistant", "model": "test-model", "id": "message-A",
                 "content": [["type": "tool_use", "id": "tool-A", "name": "Bash", "input": [String: Any]()]]]],
-            ["type": "user", "isSidechain": false, "sessionId": claudeId, "promptId": resultPrompt ?? promptID, "uuid": "tool-result-A",
+            ["type": "user", "isSidechain": false, "sessionId": claudeId, "promptId": resultPrompt, "uuid": "tool-result-A",
              "parentUuid": "assistant-A", "timestamp": time,
              "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "tool-A", "content": "synthetic output"]]]],
             limit,
@@ -1921,61 +1956,85 @@ extension AgentModelDetectionTests {
         try assertLimitSurfaces(scenario, kind: .monthlySpend)
     }
 
-    func testLimitAfterApprovedToolReachesTooltipAndFeed() throws {
-        let scenario = try limitScenario("approved-tool")
-        defer { scenario.close() }
-        let conversation = ref("claude-code", id: claudeId)
-        try scenario.hook("prompt-submit")
-        try scenario.hook("permission-request", tool: "Bash", toolUse: "tool-A")
-        try scenario.hook("post-tool-use", tool: "Bash", toolUse: "tool-A")
-        XCTAssertEqual(scenario.snapshot?.phase, .blocked, "no hook reports the approval")
-        XCTAssertEqual(scenario.snapshot?.reason, .approval)
+    func testLimitAfterApprovedToolShowsBesideTheWaitUntilAHookEndsIt() throws {
+        // The hook that ends the wait: a real one carries no tool id, and either hook is evidence.
+        for (ending, toolUse) in [("stop-failure", nil), ("stop-failure", "tool-A"), ("stop", nil)] as [(String, String?)] {
+            let scenario = try limitScenario("approved-\(ending)")
+            defer { scenario.close() }
+            let conversation = ref("claude-code", id: claudeId)
+            try scenario.hook("prompt-submit")
+            try scenario.hook("permission-request", tool: "Bash", toolUse: toolUse)
+            try scenario.hook("post-tool-use", tool: "Bash", toolUse: toolUse)
+            try assertPermissionWait(scenario, request: toolUse, limit: nil, "no hook reports the approval")
 
-        let observed = try XCTUnwrap(midTurnLimit(at: scenario.transcriptTime).first)
-        XCTAssertEqual(try scenario.transcript(observed, ref: conversation), .applied)
-        XCTAssertEqual(scenario.announced, ["usage_limit"])
-        XCTAssertNil(scenario.snapshot?.requestID)
-        try assertLimitSurfaces(scenario, kind: .monthlySpend)
+            let observed = try XCTUnwrap(midTurnLimit(at: scenario.transcriptTime).first)
+            XCTAssertEqual(try scenario.transcript(observed, ref: conversation), .applied)
+            try assertPermissionWait(scenario, request: toolUse, limit: .monthlySpend, ending)
+            XCTAssertEqual(try scenario.transcript(observed, ref: conversation), .duplicateEvidence)
+            try assertPermissionWait(scenario, request: toolUse, limit: .monthlySpend, ending)
 
-        try scenario.hook("stop-failure")
-        XCTAssertEqual(scenario.announced, ["usage_limit"])
-        try assertLimitSurfaces(scenario, kind: .monthlySpend)
+            try scenario.hook(ending)
+            XCTAssertEqual(scenario.announced, ["usage_limit"], ending)
+            XCTAssertEqual(scenario.snapshot?.reason, .usageLimit, ending)
+            XCTAssertNil(scenario.snapshot.flatMap(FeedProjector.blockingKind), ending)
+            XCTAssertEqual(scenario.monitor.readback(panel: scenario.target.surfaceId)["waiting_on_permission"] as? Bool, false, ending)
+            try assertLimitSurfaces(scenario, kind: .monthlySpend)
+
+            // Whatever follows for this turn is the same failure.
+            try scenario.hook("stop-failure")
+            try scenario.hook("stop")
+            XCTAssertEqual(scenario.announced, ["usage_limit"], ending)
+            try assertLimitSurfaces(scenario, kind: .monthlySpend)
+        }
+    }
+
+    func testRootLimitLeavesAChildsOpenPermissionPromptActionable() throws {
+        for toolUse in [nil, "child-tool"] as [String?] {
+            let scenario = try limitScenario("open-child-prompt")
+            defer { scenario.close() }
+            try scenario.hook("prompt-submit")
+            // Nothing answers this prompt: no tool completion, cancellation or end of turn.
+            try scenario.hook("permission-request", tool: "Bash", toolUse: toolUse)
+            let observed = try XCTUnwrap(midTurnLimit(at: scenario.transcriptTime).first)
+            XCTAssertEqual(try scenario.transcript(observed, ref: ref("claude-code", id: claudeId)), .applied)
+            try assertPermissionWait(scenario, request: toolUse, limit: .monthlySpend, "the prompt is still open")
+        }
+    }
+
+    func testLimitMustBeStrictlyLaterThanThePermissionPrompt() throws {
+        // After the monitor's historical cutoff, so only the prompt boundary can reject these.
+        // Fixed, because native time truncates to the millisecond and some seconds lose one.
+        let promptSecond: Int64 = 4_000_000_000
+        let promptAt = promptSecond * 1000
+        for (offset, retained) in [(Int64(-1), false), (0, false), (1, true)] {
+            let scenario = try limitScenario("boundary-\(offset)", storeClock: { promptAt })
+            defer { scenario.close() }
+            try scenario.hook("prompt-submit")
+            try scenario.hook("permission-request", tool: "Bash", toolUse: "tool-B")
+            XCTAssertEqual(scenario.snapshot?.sinceMs, promptAt)
+            // Written out, since a date formatter can drift a millisecond at this boundary.
+            let second = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(offset < 0 ? promptSecond - 1 : promptSecond)))
+            let time = second.dropLast() + (offset < 0 ? ".999Z" : ".00\(offset)Z")
+            let observed = try XCTUnwrap(midTurnLimit(at: String(time)).first)
+            XCTAssertEqual(JournalTranscriptProducer.makeDraft(observation: observed, target: scenario.target,
+                ref: ref("claude-code", id: claudeId), emittedAt: Date())?.occurredAtMs, promptAt + offset)
+            XCTAssertEqual(try scenario.transcript(observed, ref: ref("claude-code", id: claudeId)),
+                           retained ? .applied : .stale, "offset \(offset)")
+            try assertPermissionWait(scenario, request: "tool-B", limit: retained ? .monthlySpend : nil, "offset \(offset)")
+        }
     }
 
     func testUnansweredPermissionPromptKeepsItsWaitingMarkAgainstOlderLimits() throws {
         // A limit from an earlier turn, and one this turn recorded before the prompt opened.
-        for (name, turn, prompt) in [("earlier-turn", "prompt-B", "prompt-A"), ("before-prompt", "prompt-A", "prompt-A")] {
+        for (name, turn, time) in [("earlier-turn", "prompt-B", nil), ("before-prompt", "prompt-A", "2026-01-01T09:00:02.000Z")] as [(String, String, String?)] {
             let scenario = try limitScenario(name)
             defer { scenario.close() }
             try scenario.hook("prompt-submit", prompt: turn)
             try scenario.hook("permission-request", prompt: turn, tool: "Bash", toolUse: "tool-B")
-            let waiting = try XCTUnwrap(scenario.snapshot)
-            XCTAssertEqual(waiting.phase, .blocked, name)
-            XCTAssertEqual(FeedProjector.blockingKind(waiting), .permission, name)
-            let attentionBefore = FeedProjector.project(journalRows: [waiting], attention: [], notes: [:], scope: .attention)
-                .map { $0.kind }
-            XCTAssertEqual(attentionBefore, [.permission], name)
-
-            let time = name == "earlier-turn" ? scenario.transcriptTime : "2026-01-01T09:00:02.000Z"
-            let observed = try XCTUnwrap(midTurnLimit(at: time, promptID: prompt).first, name)
+            try assertPermissionWait(scenario, request: "tool-B", turn: turn, limit: nil, name)
+            let observed = try XCTUnwrap(midTurnLimit(at: time ?? scenario.transcriptTime).first, name)
             XCTAssertEqual(try scenario.transcript(observed, ref: ref("claude-code", id: claudeId)), .stale, name)
-
-            let snapshot = try XCTUnwrap(scenario.snapshot, name)
-            XCTAssertEqual(snapshot.phase, .blocked, name)
-            XCTAssertEqual(snapshot.reason, .approval, name)
-            XCTAssertEqual(snapshot.requestID, "tool-B", name)
-            XCTAssertEqual(snapshot.turnID, turn, name)
-            XCTAssertNil(snapshot.usageLimit, name)
-            XCTAssertTrue(snapshot.paintsAttention, name)
-            XCTAssertEqual(FeedProjector.blockingKind(snapshot), .permission, name)
-            XCTAssertEqual(FeedProjector.project(journalRows: [snapshot], attention: [], notes: [:], scope: .attention)
-                .map { $0.kind }, attentionBefore, name)
-            XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
-                hasJournalAttention: snapshot.paintsAttention, derivedActivity: .idle, terminalType: "claude-code"), .waiting, name)
-            let help = AgentActivityHelpProjection.project(state: .waiting, lastActivityAt: nil, waitingStartedAt: nil,
-                coldAfterSeconds: 60, flagReason: nil, flagRaisedAt: nil, suppressed: false, journal: snapshot)
-            XCTAssertFalse(help.usageLimited, name)
-            XCTAssertEqual(scenario.announced, [], name)
+            try assertPermissionWait(scenario, request: "tool-B", turn: turn, limit: nil, name)
         }
     }
 

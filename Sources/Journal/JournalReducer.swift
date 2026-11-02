@@ -180,6 +180,16 @@ enum JournalReducer {
             let resolvesClaudeApproval = d.kind == .turnCompleted && d.adapter == .claudeHook
                 && d.source == .hook && d.source.rank >= s.rank && s.reason == .approval
                 && d.turnID != nil && d.turnID == s.turnID
+            if resolvesClaudeApproval, let limit = s.usageLimit, limit.turnID == s.turnID {
+                // Stop ends the wait, not the failure recorded beside it.
+                s.phase = .error
+                s.reason = .usageLimit
+                s.requestID = nil
+                s.turnOutcome = "interrupted"
+                s.terminalBarrier = true
+                s.terminalRank = d.source.rank
+                break
+            }
             if let limit = s.usageLimit {
                 // Idle/duplicate Stop for the failed turn is not recovery.
                 guard d.kind == .turnCompleted, s.phase == .working || resolvesClaudeApproval,
@@ -221,29 +231,34 @@ enum JournalReducer {
             }
         case .errorReported:
             guard caps.contains("error"), [.sessionFailure, .usageLimit].contains(d.reasonCode) else { return unchanged(.observation, "tool_or_unsupported_error") }
-            // An approved tool leaves the turn blocked until Stop, because no hook
-            // reports the answer. The main loop's own API error, recorded after the
-            // prompt opened, proves it was given. An older limit proves nothing.
-            let answeredApproval = d.reasonCode == .usageLimit && s.phase == .blocked && s.reason == .approval
-                && (d.occurredAtMs ?? 0) >= s.sinceMs
             if d.reasonCode == .usageLimit {
+                // An approved tool leaves the turn blocked until it ends, because no
+                // hook reports the answer. A limit recorded after the prompt opened
+                // is shown beside the wait: it cannot prove the prompt was answered,
+                // since a background child's prompt can still be open.
+                let beside = s.phase == .blocked && s.reason == .approval && (d.occurredAtMs ?? 0) > s.sinceMs
                 guard let kind = d.usageLimit, let turnID = d.turnID, turnID == s.turnID,
                       d.adapter == .claudeTranscript, context.verifiedNativeClock,
-                      [.working, .error].contains(s.phase) || answeredApproval else {
+                      [.working, .error].contains(s.phase) || beside else {
                     return unchanged(.stale, "limit_not_correlated")
                 }
                 if s.usageLimit?.turnID == turnID, s.usageLimit?.kind == kind {
                     return duplicate("limit_already_observed")
                 }
                 s.usageLimit = JournalUsageLimit(kind: kind, turnID: turnID, sinceMs: now)
-                if answeredApproval { s.requestID = nil }
+                if beside {
+                    preserveEvidence = true
+                    reason = "limit_beside_wait"
+                    break
+                }
             } else if s.phase == .error {
                 return duplicate("error_already_observed")
             }
-            if s.phase == .blocked && d.source.rank < s.rank && !answeredApproval { return unchanged(.advisory, "lower_confidence") }
+            if s.phase == .blocked && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
             s.phase = .error
-            s.reason = d.reasonCode
-            if d.reasonCode == .usageLimit { s.turnOutcome = "interrupted" }
+            // A session failure that ends a wait is the limit already seen on this turn.
+            s.reason = s.usageLimit.map { $0.turnID == s.turnID } == true ? .usageLimit : d.reasonCode
+            if s.reason == .usageLimit { s.turnOutcome = "interrupted" }
             s.terminalBarrier = true
             s.terminalRank = d.source.rank
         case .stateChanged:

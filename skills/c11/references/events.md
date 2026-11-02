@@ -146,8 +146,9 @@ Claude PermissionRequest/Notification and question/plan hooks, and OpenCode
 correlated Esc marker and Grok primary `turn_ended` cancellation/interruption
 records supply transcript interruptions. Recorded Claude monthly-spend and
 session-usage failures supply `usage_limit`, once per turn. When StopFailure arrives
-first, that turn reports `provider_error` and then `usage_limit`. Unsupported limit
-shapes and other provider outcomes remain unknown. See `docs/agent-usage-limits.md` in the repo
+first, that turn reports `provider_error` and then `usage_limit`. During an open
+permission wait, it is reported when StopFailure or Stop ends the wait. Unsupported
+limit shapes and other provider outcomes remain unknown. See `docs/agent-usage-limits.md` in the repo
 for the recorded shapes and root binding contract.
 
 | Harness | Permission / choice detection | Resolution / limitations |

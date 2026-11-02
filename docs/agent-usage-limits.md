@@ -56,12 +56,16 @@ not distinguish transient rate throttling from quota exhaustion, so they do not
 produce `rate_limit`.
 
 A turn with an approved tool stays `blocked` until it ends, because no hook
-reports the approval. A limit for that same turn, recorded after the prompt
-opened, still applies. A limit from another turn or from before the prompt leaves
-the panel waiting. A limit is also rejected while the turn waits on a question
-or plan review, since the main loop cannot be sending requests then. c11 cannot
-tell a background subagent's open prompt from an answered one, so a root limit on
-that same turn replaces its waiting mark with the error mark.
+reports the approval, and a background child's prompt looks the same. A limit for
+that turn recorded strictly after the prompt opened is therefore kept beside the
+wait: the phase, reason and request stay, Feed keeps its permission row with
+`usage_limit`, the tooltip shows the limit, and nothing is announced. `StopFailure`
+or `Stop` for the turn ends the wait, moves the panel to `error` with reason
+`usage_limit`, and announces `usage_limit` once. A limit from another turn, or not
+strictly later than the prompt, is rejected and leaves the wait alone. So is a
+limit during a question or plan review, since the main loop cannot be sending
+requests then. A root `StopFailure` already ends any wait on the panel, including
+a child's open prompt.
 
 Mail delivery to a limited recipient adds `recipient_usage_limit` to its
 `copied` dispatch trace row. The envelope still lands in the inbox, unread.

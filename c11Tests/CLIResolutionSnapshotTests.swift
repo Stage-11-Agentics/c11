@@ -2133,13 +2133,14 @@ extension CLIResolutionSnapshotTests {
         XCTAssertFalse(tmux.stdout.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), tmux.stdout)
     }
 
-    /// `ssh <dest> <cmd>`: a `--json` in the remote command line is part of
-    /// that command and does not switch the output.
+    /// `ssh <dest> -- <cmd>`: a `--json` in the remote command line is part of
+    /// that command and does not switch the output. (The ssh parser takes a
+    /// flag-shaped remote word only after `--`.)
     func testSSHRemoteCommandKeepsLiteralJSONWord() throws {
         let tmp = temporaryHome()
         guard let socket = try? CapturedCLISocket(),
               let result = runCLI(
-                  ["ssh", "example.invalid", "echo", "--json"],
+                  ["ssh", "example.invalid", "--", "echo", "--json"],
                   socketPath: socket.path,
                   environmentOverrides: ["HOME": tmp, "TMPDIR": tmp + "/"]
               )

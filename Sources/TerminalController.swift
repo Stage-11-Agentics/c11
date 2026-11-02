@@ -3205,8 +3205,7 @@ class TerminalController {
     }
 
     /// Every short ref minted this process, by kind, for the C11-568 relaunch
-    /// record. Refs are never freed within a process, so any earlier copy is
-    /// a correct subset of a later one.
+    /// record. Sorted, so two snapshots compare equal when nothing changed.
     func relaunchRefSnapshot() -> [String: [RelaunchRecord.RefEntry]] {
         let kinds: [(String, V2HandleKind)] = [
             ("window", .window), ("workspace", .workspace), ("area", .pane), ("panel", .surface),
@@ -3218,11 +3217,6 @@ class TerminalController {
                 .sorted { $0.ref.localizedStandardCompare($1.ref) == .orderedAscending }
         }
         return out
-    }
-
-    /// Total minted refs; grows whenever a new object is numbered.
-    var relaunchRefCount: Int {
-        v2RefByUUID.values.reduce(0) { $0 + $1.count }
     }
 
     /// The integer N of a surface's `surface:N` handle, minting the ref if the

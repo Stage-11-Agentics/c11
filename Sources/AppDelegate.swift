@@ -2501,10 +2501,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var priorRelaunchRecord: RelaunchRecord?
     private var relaunchNoticeLedger = RelaunchNotice.Ledger()
     private var didEmitRelaunchedEvent = false
-    /// Ref total at the last autosave copy; a new ref means a new copy.
-    private var lastPersistedRelaunchRefCount = -1
-    /// Serializes relaunch record writes and notice delivery off main.
-    private let relaunchQueue = DispatchQueue(label: "c11.relaunch", qos: .utility)
+    /// Refs at the last autosave copy; any change means a new copy.
+    private var lastPersistedRelaunchRefs: [String: [RelaunchRecord.RefEntry]]?
+    /// Serializes relaunch record writes off main. Notice delivery has its
+    /// own queue so quit never waits behind inbox scans.
+    private let relaunchQueue = DispatchQueue(label: "c11.relaunch.record", qos: .utility)
+    private let relaunchNoticeQueue = DispatchQueue(label: "c11.relaunch.notice", qos: .utility)
     private var didAttemptStartupSessionRestore = false
     /// Option was held while c11 started: show the resume picker for this
     /// launch only. Sampled at launch, kept in memory, never persisted.
@@ -2897,17 +2899,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Autosave: keep a refs-only copy current, so a crash still leaves the
     /// next launch the old refs. Written only when a new ref was minted.
     private func persistRelaunchRefsIfChanged() {
-        let refCount = TerminalController.shared.relaunchRefCount
-        guard refCount != lastPersistedRelaunchRefCount,
+        let refs = TerminalController.shared.relaunchRefSnapshot()
+        guard refs != lastPersistedRelaunchRefs,
               let url = RelaunchRecordStore.url(
                   bundleId: Bundle.main.bundleIdentifier ?? "com.stage11.c11"
               ) else { return }
-        lastPersistedRelaunchRefCount = refCount
+        lastPersistedRelaunchRefs = refs
         let record = RelaunchRecord(
             runLaunchedAt: relaunchRunLaunchedAt.timeIntervalSince1970,
             writtenAt: Date().timeIntervalSince1970,
             reason: .autosave,
-            refs: TerminalController.shared.relaunchRefSnapshot()
+            refs: refs
         )
         relaunchQueue.async {
             _ = RelaunchRecordStore.write(record, to: url)
@@ -2917,10 +2919,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Called when this launch types a resume into `panelId`: one mailbox
     /// notice, at most once per panel per launch, delivered off main.
     func sendRelaunchNoticeIfNeeded(workspaceId: UUID, panelId: UUID) {
+        // Only a launch that followed an earlier run restarted anything.
+        if case .missing = priorShutdownAtLaunch, priorRelaunchRecord == nil { return }
         guard relaunchNoticeLedger.claim(panelId) else { return }
         let count = priorRelaunchRecord?.backgroundProcessCount(panelId: panelId)
         let restartedAt = relaunchRunLaunchedAt
-        relaunchQueue.async {
+        relaunchNoticeQueue.async {
             do {
                 let stateURL = try MailboxLayout.defaultStateURL()
                 _ = try RelaunchNotice.deliver(

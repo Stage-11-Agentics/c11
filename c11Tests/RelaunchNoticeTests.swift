@@ -79,6 +79,16 @@ final class RelaunchNoticeTests: XCTestCase {
         XCTAssertNil(RelaunchRecordStore.consume(url: url, priorShutdown: .dirty(launchedAt: nil)))
     }
 
+    /// After a clean shutdown the record must have been written moments
+    /// before the clean marker; a stale one, or one with no prior marker, is
+    /// refused.
+    func testCleanShutdownAcceptsOnlyARecordWrittenAtThatQuit() {
+        let fresh = record(runLaunchedAt: 1_000, reason: .quit) // written at 1_060
+        XCTAssertTrue(RelaunchRecordStore.accepts(fresh, priorShutdown: .clean(at: Date(timeIntervalSince1970: 1_061))))
+        XCTAssertFalse(RelaunchRecordStore.accepts(fresh, priorShutdown: .clean(at: Date(timeIntervalSince1970: 9_000))))
+        XCTAssertFalse(RelaunchRecordStore.accepts(fresh, priorShutdown: .missing))
+    }
+
     func testAutosaveRecordNeverStatesCount() {
         let panel = UUID()
         let autosave = record(runLaunchedAt: 1, reason: .autosave, counts: [panel.uuidString: 3])
@@ -217,6 +227,31 @@ final class RelaunchNoticeTests: XCTestCase {
         XCTAssertTrue(remaining.contains(MailboxLayout.envelopeFilename(id: other.id)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: MailboxLayout.readURL(inbox: inbox)
             .appendingPathComponent(MailboxLayout.envelopeFilename(id: readNotice.id)).path))
+    }
+
+    /// Quit A ended 5 jobs; B resumed and quit before the agent read its
+    /// notice, measuring 1. The replacement states 6, not 1.
+    func testReplacementAddsJobsFromUnreadNotice() throws {
+        let workspace = UUID(), panel = UUID()
+        let first = try RelaunchNotice.deliver(
+            workspaceId: workspace, panelId: panel, restartedAt: Date(),
+            backgroundProcesses: 5, stateURL: tempRoot
+        )
+        // The dispatcher moves it from the outbox into the unread inbox.
+        let outbox = MailboxLayout.outboxURL(state: tempRoot, workspaceId: workspace)
+        let inbox = MailboxLayout.inboxURL(state: tempRoot, workspaceId: workspace, panelId: panel)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let name = MailboxLayout.envelopeFilename(id: first)
+        try FileManager.default.moveItem(at: outbox.appendingPathComponent(name), to: inbox.appendingPathComponent(name))
+
+        let second = try RelaunchNotice.deliver(
+            workspaceId: workspace, panelId: panel, restartedAt: Date(),
+            backgroundProcesses: 1, stateURL: tempRoot
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inbox.appendingPathComponent(name).path))
+        let data = try Data(contentsOf: outbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: second)))
+        XCTAssertTrue(try MailboxEnvelope.validate(data: data).body.contains("6 background jobs ended"))
+        XCTAssertNil(RelaunchNotice.statedJobs(measured: nil, superseded: 5))
     }
 
     func testLedgerNoticesEachPanelOncePerLaunch() {

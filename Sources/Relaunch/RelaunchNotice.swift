@@ -109,16 +109,27 @@ enum RelaunchRecordStore {
         return accepts(record, priorShutdown: priorShutdown) ? record : nil
     }
 
+    /// How long before the clean marker the previous run's last record may
+    /// have been written: the quit record lands just before it, an autosave
+    /// copy (when the quit write failed) within one autosave interval.
+    static let cleanMarkerWindow: TimeInterval = 120
+
     /// A crashed run left its dirty marker with its launch stamp; only that
-    /// run's record belongs to this relaunch. An older record that survived a
-    /// failed delete carries a different stamp and is refused.
+    /// run's record belongs to this relaunch. A clean run's record was written
+    /// moments before its clean marker. An older record that survived a failed
+    /// delete, or an older build that wrote none, fails both checks.
     static func accepts(_ record: RelaunchRecord, priorShutdown: ShutdownSentinel.PriorShutdown) -> Bool {
         guard record.schema == RelaunchRecord.schemaVersion else { return false }
-        if case .dirty(let launchedAt) = priorShutdown {
+        switch priorShutdown {
+        case .dirty(let launchedAt):
             guard let launchedAt else { return false }
             return abs(launchedAt.timeIntervalSince1970 - record.runLaunchedAt) < 0.001
+        case .clean(let at):
+            let gap = at.timeIntervalSince1970 - record.writtenAt
+            return gap >= -1 && gap <= cleanMarkerWindow
+        case .missing, .unreadable, .invalid:
+            return false
         }
-        return true
     }
 }
 
@@ -159,15 +170,35 @@ enum RelaunchProcessCount {
     /// no counts.
     static let quitTimeout: TimeInterval = 0.2
 
+    /// The process table indexed once for every agent's walk.
+    struct Table {
+        let byPid: [pid_t: ProcessEntry]
+        let children: [pid_t: [ProcessEntry]]
+
+        init(_ processes: [ProcessEntry]) {
+            var byPid: [pid_t: ProcessEntry] = [:]
+            var children: [pid_t: [ProcessEntry]] = [:]
+            for entry in processes {
+                byPid[entry.pid] = entry
+                if entry.pid != entry.parentPid {
+                    children[entry.parentPid, default: []].append(entry)
+                }
+            }
+            self.byPid = byPid
+            self.children = children
+        }
+    }
+
     static func count(agent: Agent, in processes: [ProcessEntry]) -> Count? {
+        count(agent: agent, in: Table(processes))
+    }
+
+    static func count(agent: Agent, in table: Table) -> Count? {
         guard let expectedStart = agent.startTime,
-              let root = processes.first(where: { $0.pid == agent.pid }),
+              let root = table.byPid[agent.pid],
               !root.isZombie,
               root.startTime == expectedStart else { return nil }
-        var children: [pid_t: [ProcessEntry]] = [:]
-        for entry in processes where entry.pid != entry.parentPid {
-            children[entry.parentPid, default: []].append(entry)
-        }
+        let children = table.children
         var groups = Set<pid_t>()
         var descendants = 0
         var visited: Set<pid_t> = [root.pid]
@@ -186,9 +217,10 @@ enum RelaunchProcessCount {
     }
 
     static func counts(agents: [Agent], in processes: [ProcessEntry]) -> [UUID: Count] {
+        let table = Table(processes)
         var out: [UUID: Count] = [:]
         for agent in agents {
-            if let count = count(agent: agent, in: processes) { out[agent.panelId] = count }
+            if let count = count(agent: agent, in: table) { out[agent.panelId] = count }
         }
         return out
     }
@@ -287,19 +319,40 @@ enum RelaunchNotice {
     /// Remove unread notices from an earlier relaunch still sitting in the
     /// inbox, so two quick relaunches leave one notice, never a stack. Mail
     /// already read (moved out of the inbox root) and other mail are kept.
-    @discardableResult
-    static func supersedeUnread(inbox: URL, fileManager: FileManager = .default) -> Int {
-        guard let names = try? fileManager.contentsOfDirectory(atPath: inbox.path) else { return 0 }
+    /// `ext` key carrying the notice's job count, so a replacement can add
+    /// in jobs from a notice the agent never read.
+    static let jobsExtKey = "c11_relaunch_jobs"
+
+    struct Superseded: Equatable {
         var removed = 0
+        /// Jobs stated by the removed notices; nil when none stated a count.
+        var jobs: Int?
+    }
+
+    @discardableResult
+    static func supersedeUnread(inbox: URL, fileManager: FileManager = .default) -> Superseded {
+        var result = Superseded()
+        guard let names = try? fileManager.contentsOfDirectory(atPath: inbox.path) else { return result }
         for name in names.prefix(supersedeScanLimit)
         where name.hasSuffix(".\(MailboxLayout.envelopeExtension)") && !name.hasPrefix(".") {
             let url = inbox.appendingPathComponent(name, isDirectory: false)
             guard let data = try? Data(contentsOf: url),
                   let envelope = try? MailboxEnvelope.validate(data: data),
                   envelope.topic == topic, envelope.from == sender else { continue }
-            if (try? fileManager.removeItem(at: url)) != nil { removed += 1 }
+            guard (try? fileManager.removeItem(at: url)) != nil else { continue }
+            result.removed += 1
+            if let jobs = (envelope.ext?[jobsExtKey] as? NSNumber)?.intValue {
+                result.jobs = (result.jobs ?? 0) + jobs
+            }
         }
-        return removed
+        return result
+    }
+
+    /// Jobs the new notice states: this relaunch's measured count plus any an
+    /// unread earlier notice stated. Unmeasured (a crash) stays unstated.
+    static func statedJobs(measured: Int?, superseded: Int?) -> Int? {
+        guard let measured else { return nil }
+        return measured + (superseded ?? 0)
     }
 
     /// Supersede any older unread notice, then hand one envelope to the
@@ -314,15 +367,17 @@ enum RelaunchNotice {
         stateURL: URL,
         fileManager: FileManager = .default
     ) throws -> String {
-        supersedeUnread(
+        let superseded = supersedeUnread(
             inbox: MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: panelId),
             fileManager: fileManager
         )
+        let jobs = statedJobs(measured: backgroundProcesses, superseded: superseded.jobs)
         let envelope = try MailboxEnvelope.build(
             from: sender,
             to: MailboxAddress.idPrefix + panelId.uuidString,
             topic: topic,
-            body: body(restartedAt: restartedAt, backgroundProcesses: backgroundProcesses)
+            body: body(restartedAt: restartedAt, backgroundProcesses: jobs),
+            ext: jobs.map { [jobsExtKey: $0] }
         )
         let outbox = MailboxLayout.outboxURL(state: stateURL, workspaceId: workspaceId)
         try fileManager.createDirectory(

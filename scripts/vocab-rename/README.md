@@ -83,7 +83,7 @@ names, wrapper lifecycle names, readiness flags.
 Table directives: `@taint ... <region regex> <exclude regex> <opts>` (opts `props`, `keep`, `funcs`, `bindonly`,
 `onehop`, `noextra`, `noleaftype`, `relabel`, `ev:<class>`), `@regionrename`, `@novendor`, `@callee name keep:label`,
 `@fixall`; flags `memberonly`, `nomember`, `noprop`, `nolabel`. Colliding locals take the row's fallback name
-consistently within a member. `sync-docs.py` brings the paths and type names in CLAUDE.md and the developer docs
+consistently within a member. `sync-docs.py` brings the paths and type names in AGENTS.md and the developer docs
 along.
 
 ## Pass 3 (PR C): Pane -> Area

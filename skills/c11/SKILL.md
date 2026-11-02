@@ -469,7 +469,7 @@ The bar under the panels shows the panel's description (`c11 set-description`) a
 
 ## Editing this skill
 
-It installs as a **one-time copy** into each agent harness's skills folder (`~/.claude/skills/c11/`, `~/.codex/skills/c11/`, …); the app does not track the repo source after install. After any source edit, run `scripts/sync-installed-skills.sh c11` or the live copy agents load stays stale (until 1.0 is installed, follow the sync hold in the repo's CLAUDE.md). This is the skill-editing equivalent of `reload.sh` after a code change.
+It installs as a **one-time copy** into each agent harness's skills folder (`~/.claude/skills/c11/`, `~/.codex/skills/c11/`, …); the app does not track the repo source after install. After any source edit, run `scripts/sync-installed-skills.sh c11` or the live copy agents load stays stale (until 1.0 is installed, follow the sync hold in the repo's AGENTS.md). This is the skill-editing equivalent of `reload.sh` after a code change.
 
 ## Troubleshooting
 

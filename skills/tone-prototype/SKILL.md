@@ -45,7 +45,7 @@ Present the takes side by side — in c11, one browser panel each, tiled for sin
 The stage is done when the client has **used** the converged prototype — clicked through it, driven its flows — and loves it. Then:
 
 - The converged take in `prototypes/` becomes the build's **binding visual contract**, reproduced one-to-one: every designed control present, even if it only toasts "not yet implemented (AC-x)" — never a loose reference to approximate.
-- `DESIGN.md` at the repo root records the converged design language — voice, aesthetic, the chosen direction and why — referenced by `CLAUDE.md` (a pointer, never a copy) so every later agent inherits it.
+- `DESIGN.md` at the repo root records the converged design language — voice, aesthetic, the chosen direction and why — referenced by `AGENTS.md` (a pointer, never a copy) so every later agent inherits it.
 - Every prototype carries an unmistakable, persistent on-screen `PROTOTYPE` badge ("not wired to real data" where it helps) — part of the artifact itself, never a caption supplied verbally. A high-fidelity mockup must never be mistakable for the shipped product.
 - `sequence/run-state.md` updated: takes produced, direction chosen, rounds iterated, stats.
 

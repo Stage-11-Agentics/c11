@@ -84,7 +84,7 @@ The app is ~50 top-level Swift files plus subdirs. Entry points and the most-tou
 
 ### Find / search overlay
 
-`Sources/Find/PanelSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../CLAUDE.md`](../CLAUDE.md) before moving it.
+`Sources/Find/PanelSearchOverlay.swift` is the terminal find UI. **It must be mounted from `GhosttySurfaceScrollView` in `GhosttyTerminalView.swift`** (the AppKit portal layer), not from SwiftUI panel containers — portal-hosted terminal views can sit above SwiftUI during split churn. See the note in [`../AGENTS.md`](../AGENTS.md) before moving it.
 
 ## The CLI and socket
 
@@ -98,7 +98,7 @@ The socket protocol it speaks is documented in [`socket-api-reference.md`](socke
 
 ## Latency-sensitive paths — read before editing
 
-A small number of code paths are called on every keystroke. Work added here shows up as visible typing lag. Full detail in [`../CLAUDE.md`](../CLAUDE.md); the short version:
+A small number of code paths are called on every keystroke. Work added here shows up as visible typing lag. Full detail in [`../AGENTS.md`](../AGENTS.md); the short version:
 
 - **`WindowTerminalHostView.hitTest()`** in `TerminalWindowPortal.swift` — all divider/sidebar/drag routing is gated to pointer events only. Don't add work outside the `isPointerEvent` guard.
 - **`WorkspaceRowView` in `ContentView.swift`** — uses `Equatable` + `.equatable()` to skip body re-evaluation during typing. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `workspace`), or `@Binding` without updating `==`. Don't remove `.equatable()` from the `ForEach`.
@@ -106,7 +106,7 @@ A small number of code paths are called on every keystroke. Work added here show
 
 ## Socket threading — read before adding a socket command
 
-Default new socket commands to **off-main** handling. Only commands that directly mutate AppKit / Ghostty UI state (focus, open/close, send-key, synchronous snapshot queries) should run on main. Telemetry hot paths (`report_*`, status/progress updates) must not use `DispatchQueue.main.sync`. See the "Socket command threading policy" in [`../CLAUDE.md`](../CLAUDE.md).
+Default new socket commands to **off-main** handling. Only commands that directly mutate AppKit / Ghostty UI state (focus, open/close, send-key, synchronous snapshot queries) should run on main. Telemetry hot paths (`report_*`, status/progress updates) must not use `DispatchQueue.main.sync`. See the "Socket command threading policy" in [`../AGENTS.md`](../AGENTS.md).
 
 ## Tests
 
@@ -119,7 +119,7 @@ c11 has four test surfaces, roughly in order of how often you'll touch them:
 | Python socket v1 | `tests/` (~90 files, shell + python) | `./scripts/run-tests-v1.sh` | Older coverage; generally don't add new tests here, prefer v2 |
 | Swift UI | `c11UITests/` (~16 files) | `gh workflow run test-e2e.yml`, or Xcode (slow, flaky on low-RAM) | Full app flows — menu routing, dialogs, drag/drop, keybind regressions |
 
-**Test quality rule** ([`../CLAUDE.md`](../CLAUDE.md#testing)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
+**Test quality rule** ([`../AGENTS.md`](../AGENTS.md#testing)): tests must verify observable runtime behavior. Tests that grep source text, assert on `Info.plist` shape, or check AST fragments get rejected. If a behavior isn't exercisable end-to-end yet, add a runtime seam first and test through it.
 
 ## Build & reload
 
@@ -139,12 +139,12 @@ The `ghostty/` submodule tracks [`manaflow-ai/ghostty`](https://github.com/manaf
 
 ## Where the upstream lineage shows
 
-c11 is a fork of [`manaflow-ai/cmux`](https://github.com/manaflow-ai/cmux). Lots of code paths still carry the upstream shape — file names, module names, socket protocol. If you touch code that clearly came from upstream and your fix isn't c11-specific, flag it in the PR description so we can decide whether to also float the change back upstream. Shared improvements should flow both ways; silent divergence on shared code makes future merges painful and costs both projects wins they'd otherwise share. See the "cmux ↔ c11 relationship" section in [`../CLAUDE.md`](../CLAUDE.md).
+c11 is a fork of [`manaflow-ai/cmux`](https://github.com/manaflow-ai/cmux). Lots of code paths still carry the upstream shape — file names, module names, socket protocol. If you touch code that clearly came from upstream and your fix isn't c11-specific, flag it in the PR description so we can decide whether to also float the change back upstream. Shared improvements should flow both ways; silent divergence on shared code makes future merges painful and costs both projects wins they'd otherwise share. See the "cmux ↔ c11 relationship" section in [`../AGENTS.md`](../AGENTS.md).
 
 ## Further reading
 
 - [`../PHILOSOPHY.md`](../PHILOSOPHY.md) — the worldview
-- [`../CLAUDE.md`](../CLAUDE.md) — operational guardrails (testing, threading, latency, submodules)
+- [`../AGENTS.md`](../AGENTS.md) — operational guardrails (testing, threading, latency, submodules)
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — human contributor workflow
 - [`contributing-with-your-agent.md`](contributing-with-your-agent.md) — agent-operator supplement
 - [`socket-api-reference.md`](socket-api-reference.md) — socket protocol reference

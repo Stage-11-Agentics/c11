@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import AppKit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -453,20 +454,16 @@ final class ExternalPanelLinkButtonRowTests: XCTestCase {
         XCTAssertTrue(row.cancel.isEnabled)
     }
 
-    /// C11-562 review: Escape cancels through a hidden twin; the visible row
-    /// and Cancel's Return stay as they are.
-    func testEscapeCancelsThroughAHiddenTwin() {
+    /// C11-565: Return and Escape go through the window's key gate, so no
+    /// button holds Escape and no hidden twin remains in the row.
+    func testNoButtonHoldsEscape() {
         for hasDestination in [true, false] {
             let row = ExternalPanelLinkPresenter.makeButtonRow(requestID: UUID(), hasDestination: hasDestination, target: nil)
-            XCTAssertEqual(row.escape.keyEquivalent, "\u{1b}")
-            XCTAssertEqual(row.escape.action.map(NSStringFromSelector), "cancelClicked:")
-            XCTAssertEqual(row.escape.requestID, row.cancel.requestID)
-            XCTAssertTrue(row.escape.superview === row.stack)
-            XCTAssertFalse(row.stack.arrangedSubviews.contains(row.escape))
-            XCTAssertFalse(row.escape.isAccessibilityElement())
-            XCTAssertEqual(row.escape.frame.size, .zero)
-            XCTAssertEqual(row.cancel.keyEquivalent, "\r")
-            XCTAssertEqual(row.stack.subviews.filter { ($0 as? NSButton)?.keyEquivalent == "\u{1b}" }.count, 1)
+            XCTAssertEqual(row.stack.subviews.filter { ($0 as? NSButton)?.keyEquivalent == "\u{1b}" }.count, 0)
+            XCTAssertEqual(row.stack.subviews.count, row.stack.arrangedSubviews.count)
+            for case let button as NSButton in row.stack.subviews {
+                XCTAssertTrue(button.refusesFirstResponder)
+            }
         }
     }
 
@@ -475,5 +472,299 @@ final class ExternalPanelLinkButtonRowTests: XCTestCase {
         XCTAssertNil(row.confirm)
         XCTAssertEqual(row.stack.arrangedSubviews.map { $0.accessibilityIdentifier() }, ["c11.external-link.cancel"])
         XCTAssertEqual(row.cancel.keyEquivalent, "\r")
+    }
+}
+
+final class ExternalPanelLinkKeyGateTests: XCTestCase {
+    private func cancels(_ code: UInt16, _ chars: String, _ flags: NSEvent.ModifierFlags = []) -> Bool {
+        ExternalPanelLinkKeyGate.isCancelPress(keyCode: code, characters: chars, flags: flags)
+    }
+
+    func testFreshCancelPressCancelsOnKeyUpOnly() {
+        for code: UInt16 in [36, 76, 53, 13] {
+            var gate = ExternalPanelLinkKeyGate()
+            gate.keyDown(keyCode: code, isRepeat: false, cancels: true)
+            XCTAssertTrue(gate.keyUp(keyCode: code))
+            XCTAssertFalse(gate.keyUp(keyCode: code))
+        }
+    }
+
+    func testHeldKeyFromBeforeThePromptDoesNothing() {
+        var gate = ExternalPanelLinkKeyGate()
+        gate.keyDown(keyCode: 36, isRepeat: true, cancels: true)
+        gate.keyDown(keyCode: 36, isRepeat: true, cancels: true)
+        XCTAssertFalse(gate.keyUp(keyCode: 36))
+        XCTAssertFalse(gate.keyUp(keyCode: 53))
+    }
+
+    func testHoldingReturnCancelsOnceOnRelease() {
+        var gate = ExternalPanelLinkKeyGate()
+        gate.keyDown(keyCode: 36, isRepeat: false, cancels: true)
+        for _ in 0..<30 { gate.keyDown(keyCode: 36, isRepeat: true, cancels: true) }
+        XCTAssertTrue(gate.keyUp(keyCode: 36))
+        XCTAssertFalse(gate.keyUp(keyCode: 36))
+    }
+
+    func testOtherAndInterleavedKeysDoNotCancel() {
+        var gate = ExternalPanelLinkKeyGate()
+        for code: UInt16 in [49, 48, 0] { // Space, Tab, A
+            gate.keyDown(keyCode: code, isRepeat: false, cancels: false)
+            XCTAssertFalse(gate.keyUp(keyCode: code))
+        }
+        gate.keyDown(keyCode: 53, isRepeat: false, cancels: true)
+        gate.keyDown(keyCode: 0, isRepeat: false, cancels: false)
+        XCTAssertFalse(gate.keyUp(keyCode: 53))
+    }
+
+    func testWhichPressesCancel() {
+        XCTAssertTrue(cancels(36, "\r"))
+        XCTAssertTrue(cancels(76, "\u{3}"))
+        XCTAssertTrue(cancels(53, "\u{1b}"))
+        XCTAssertTrue(cancels(36, "\r", [.shift]))
+        XCTAssertTrue(cancels(13, "w", [.command]))
+        XCTAssertTrue(cancels(47, ".", [.command]))
+        XCTAssertTrue(cancels(99, "W", [.command, .shift]))   // by character, any layout
+        XCTAssertFalse(cancels(36, "\r", [.command]))
+        XCTAssertFalse(cancels(53, "\u{1b}", [.option]))
+        XCTAssertFalse(cancels(36, "\r", [.control]))
+        XCTAssertFalse(cancels(13, "w", [.command, .option]))
+        XCTAssertFalse(cancels(12, "q", [.command]))
+        XCTAssertFalse(cancels(4, "h", [.command]))
+        XCTAssertFalse(cancels(13, "w"))
+        XCTAssertFalse(cancels(49, " "))
+        XCTAssertFalse(cancels(48, "\t"))
+    }
+}
+
+@MainActor
+final class ExternalPanelLinkWindowKeyTests: XCTestCase {
+    // c11LogicTests has no host app; windows need the shared application.
+    override func setUp() {
+        super.setUp()
+        _ = NSApplication.shared
+    }
+
+    private func key(_ type: NSEvent.EventType, _ code: UInt16, _ chars: String,
+                     repeating: Bool = false, flags: NSEvent.ModifierFlags = [], window: NSWindow) -> NSEvent {
+        NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                         windowNumber: window.windowNumber, context: nil, characters: chars,
+                         charactersIgnoringModifiers: chars, isARepeat: repeating, keyCode: code)!
+    }
+
+    private func makeWindow() -> ExternalPanelLinkWindow {
+        let window = ExternalPanelLinkWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+                                             styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.takesKeyFocus = true
+        return window
+    }
+
+    /// Key only for a prompt shown while another app was active; never main.
+    func testPromptBecomesKeyOnlyWhenShownFromAnotherApp() {
+        let window = makeWindow()
+        XCTAssertTrue(window.canBecomeKey)
+        window.takesKeyFocus = false
+        XCTAssertFalse(window.canBecomeKey)
+        XCTAssertFalse(window.canBecomeMain)
+        XCTAssertTrue(window.styleMask.contains(.nonactivatingPanel))
+    }
+
+    func testReturnAndEscapeCancelOnKeyUpThroughSendEvent() {
+        for (code, chars) in [(UInt16(36), "\r"), (53, "\u{1b}"), (76, "\u{3}")] {
+            let window = makeWindow()
+            var cancels = 0
+            window.onCancelKey = { cancels += 1 }
+            window.sendEvent(key(.keyDown, code, chars, window: window))
+            XCTAssertEqual(cancels, 0, "key-down alone must not cancel")
+            window.sendEvent(key(.keyDown, code, chars, repeating: true, window: window))
+            window.sendEvent(key(.keyUp, code, chars, window: window))
+            XCTAssertEqual(cancels, 1)
+            window.sendEvent(key(.keyUp, code, chars, window: window))
+            XCTAssertEqual(cancels, 1)
+        }
+    }
+
+    /// Command-W and Command-period cancel; the key-up may arrive only through
+    /// the presenter's monitor, which calls noteKeyUp. Other chords never do.
+    func testCommandWAndPeriodCancelOtherChordsDoNot() {
+        for (code, chars, expected) in [(UInt16(13), "w", 1), (47, ".", 1), (12, "q", 0), (4, "h", 0), (17, "t", 0)] {
+            let window = makeWindow()
+            var cancels = 0
+            window.onCancelKey = { cancels += 1 }
+            window.sendEvent(key(.keyDown, code, chars, flags: [.command], window: window))
+            window.noteKeyUp(key(.keyUp, code, chars, flags: [.command], window: window))
+            window.sendEvent(key(.keyUp, code, chars, flags: [.command], window: window))
+            XCTAssertEqual(cancels, expected, chars)
+        }
+    }
+
+    /// Grok review: the key-equivalent path while the prompt is key. Command-W
+    /// and Command-period cancel once on key-up; Return through
+    /// performKeyEquivalent never fires the default button; other chords are
+    /// claimed and do nothing.
+    func testWhileKeyChordsAreClaimedAndOnlyCancelChordsCancel() throws {
+        final class Recorder: NSObject { var fired = 0; @objc func fire(_ sender: Any?) { fired += 1 } }
+        let window = makeWindow()
+        let recorder = Recorder()
+        let button = NSButton(title: "Cancel", target: recorder, action: #selector(Recorder.fire(_:)))
+        button.keyEquivalent = "\r"
+        window.contentView?.addSubview(button)
+        window.defaultButtonCell = button.cell as? NSButtonCell
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        try XCTSkipUnless(window.isKeyWindow, "the runner could not make the prompt key")
+        var cancels = 0
+        window.onCancelKey = { cancels += 1 }
+        XCTAssertTrue(window.performKeyEquivalent(with: key(.keyDown, 36, "\r", window: window)))
+        XCTAssertEqual(recorder.fired, 0)
+        for (code, chars) in [(UInt16(12), "q"), (4, "h"), (17, "t")] {
+            XCTAssertTrue(window.performKeyEquivalent(with: key(.keyDown, code, chars, flags: [.command], window: window)))
+            window.noteKeyUp(key(.keyUp, code, chars, flags: [.command], window: window))
+        }
+        XCTAssertEqual(cancels, 0)
+        for (code, chars) in [(UInt16(13), "w"), (47, ".")] {
+            XCTAssertTrue(window.performKeyEquivalent(with: key(.keyDown, code, chars, flags: [.command], window: window)))
+            XCTAssertTrue(window.performKeyEquivalent(with: key(.keyDown, code, chars, repeating: true, flags: [.command], window: window)))
+            window.noteKeyUp(key(.keyUp, code, chars, flags: [.command], window: window))
+            window.sendEvent(key(.keyUp, code, chars, flags: [.command], window: window))
+        }
+        XCTAssertEqual(cancels, 2)
+        XCTAssertEqual(recorder.fired, 0)
+    }
+
+    func testRepeatOrReleaseWithoutFreshPressDoesNotCancel() {
+        let window = makeWindow()
+        var cancels = 0
+        window.onCancelKey = { cancels += 1 }
+        window.sendEvent(key(.keyDown, 36, "\r", repeating: true, window: window))
+        window.sendEvent(key(.keyUp, 36, "\r", window: window))
+        window.sendEvent(key(.keyDown, 36, "\r", flags: [.command], window: window))
+        window.sendEvent(key(.keyUp, 36, "\r", window: window))
+        XCTAssertEqual(cancels, 0)
+    }
+
+    /// The default button's Return must never fire on key-down: that path would
+    /// close the prompt mid-press and hand autorepeat to the window behind.
+    func testKeyEquivalentsNeverReachTheDefaultButton() {
+        final class Recorder: NSObject { var fired = 0; @objc func fire(_ sender: Any?) { fired += 1 } }
+        let window = makeWindow()
+        let recorder = Recorder()
+        let button = NSButton(title: "Cancel", target: recorder, action: #selector(Recorder.fire(_:)))
+        button.keyEquivalent = "\r"
+        window.contentView?.addSubview(button)
+        window.defaultButtonCell = button.cell as? NSButtonCell
+        // Not key: the prompt claims nothing, so a terminal's key equivalents pass by.
+        XCTAssertFalse(window.performKeyEquivalent(with: key(.keyDown, 36, "\r", window: window)))
+        window.sendEvent(key(.keyDown, 36, "\r", window: window))
+        window.sendEvent(key(.keyDown, 49, " ", window: window))
+        window.sendEvent(key(.keyDown, 48, "\t", window: window))
+        XCTAssertEqual(recorder.fired, 0)
+    }
+}
+
+@MainActor
+final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
+    // c11LogicTests has no host app; windows need the shared application.
+    override func setUp() {
+        super.setUp()
+        _ = NSApplication.shared
+    }
+
+    private func key(_ type: NSEvent.EventType, _ code: UInt16, _ chars: String, window: NSWindow) -> NSEvent {
+        NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                         windowNumber: window.windowNumber, context: nil, characters: chars,
+                         charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+    }
+
+    /// C11-565 review: dismissing never moves key focus. With the operator in
+    /// another window while the prompt is up, cancel and expiry leave key there.
+    func testDismissalLeavesKeyWhereTheOperatorPutIt() throws {
+        let target = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+        // Nonactivating panels can take key in the inactive bare runner, where
+        // an ordinary NSWindow cannot; the restore bug is the same either way.
+        func window() -> NSWindow {
+            let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+                            styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
+            (w as? NSPanel)?.becomesKeyOnlyIfNeeded = false
+            w.isReleasedWhenClosed = false
+            return w
+        }
+        let first = window(), second = window()
+        defer { first.orderOut(nil); second.orderOut(nil) }
+        for viaExpiry in [false, true] {
+            first.makeKeyAndOrderFront(nil)
+            let presenter = ExternalPanelLinkPresenter(
+                resolve: { ExternalPanelLinkDestination(target: $0, workspaceID: target, workspaceTitle: "W", panelTitle: "P") },
+                open: { _ in XCTFail("nothing opens"); return true })
+            presenter.receive("c11://panel/\(target.uuidString)", expiresAt: viaExpiry ? ProcessInfo.processInfo.systemUptime + 0.5 : nil)
+            let prompt = try XCTUnwrap(presenter.presentedWindow)
+            second.makeKeyAndOrderFront(nil)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            // isKeyWindow, not NSApp.keyWindow: the latter is nil while the
+            // runner is inactive, which would make this check vacuous.
+            try XCTSkipUnless(second.isKeyWindow, "the runner could not make a window key")
+            if viaExpiry {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+            } else {
+                prompt.performClose(nil)
+            }
+            XCTAssertFalse(presenter.isPresenting)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            XCTAssertTrue(second.isKeyWindow, "viaExpiry=\(viaExpiry)")
+            XCTAssertFalse(first.isKeyWindow, "viaExpiry=\(viaExpiry)")
+            RunLoop.main.run(until: Date().addingTimeInterval(2.1)) // past the cooldown
+        }
+    }
+
+    /// Grok review: switching to c11 while a from-another-app prompt is up
+    /// makes it click-only and takes key off it; the prompt stays up.
+    func testActivationMakesThePromptClickOnly() throws {
+        let target = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+        let presenter = ExternalPanelLinkPresenter(
+            resolve: { ExternalPanelLinkDestination(target: $0, workspaceID: target, workspaceTitle: "W", panelTitle: "P") },
+            open: { _ in XCTFail("nothing opens"); return true })
+        presenter.receive("c11://panel/\(target.uuidString)")
+        let prompt = try XCTUnwrap(presenter.presentedWindow)
+        defer { prompt.performClose(nil) }
+        // Force the from-another-app shape regardless of the runner's activation.
+        prompt.takesKeyFocus = true
+        prompt.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertFalse(prompt.takesKeyFocus)
+        XCTAssertFalse(prompt.canBecomeKey)
+        XCTAssertFalse(prompt.isKeyWindow)
+        XCTAssertTrue(presenter.isPresenting)
+        XCTAssertTrue(prompt.isVisible)
+    }
+
+    /// C11-565 acceptance 1 and 2: Return and Escape cancel a live prompt;
+    /// no key, including Return, Space and Tab after arming, confirms it.
+    func testKeysCancelThePromptAndNeverConfirm() throws {
+        let target = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+        for (code, chars) in [(UInt16(36), "\r"), (53, "\u{1b}")] {
+            var opened = 0
+            let presenter = ExternalPanelLinkPresenter(
+                resolve: { ExternalPanelLinkDestination(target: $0, workspaceID: target, workspaceTitle: "W", panelTitle: "P") },
+                open: { _ in opened += 1; return true })
+            let wasActive = NSApp.isActive
+            presenter.receive("c11://panel/\(target.uuidString)")
+            let window = try XCTUnwrap(presenter.presentedWindow)
+            XCTAssertTrue(presenter.isPresenting)
+            // Decided once at presentation; the bare runner's activation can move after.
+            XCTAssertEqual(window.takesKeyFocus, !wasActive)
+            RunLoop.main.run(until: Date().addingTimeInterval(1.0)) // past the arming delay
+            for (other, otherChars) in [(UInt16(49), " "), (48, "\t")] {
+                window.sendEvent(key(.keyDown, other, otherChars, window: window))
+                window.sendEvent(key(.keyUp, other, otherChars, window: window))
+            }
+            XCTAssertTrue(presenter.isPresenting)
+            window.sendEvent(key(.keyDown, code, chars, window: window))
+            XCTAssertTrue(presenter.isPresenting, "cancel waits for key-up")
+            window.sendEvent(key(.keyUp, code, chars, window: window))
+            XCTAssertFalse(presenter.isPresenting)
+            XCTAssertFalse(window.isVisible)
+            XCTAssertEqual(opened, 0)
+        }
     }
 }

@@ -42,7 +42,11 @@ requires Atin to decide the repository, trigger, and network boundary.
 
 For landing, the Merge Captain gates the exact PR head with fresh review, the
 cheap PR checks, and an Atlas exact-head remote build for every Swift or native
-change after the branch includes current `origin/main`. A docs-only change is
+change after the branch includes current `origin/main`. Worktrees share refs,
+so a fetch from any worktree moves `origin/main` under a gate in progress:
+after the gate, run `git merge-base --is-ancestor origin/main HEAD` again before
+reporting the head as current. *(1.7.8 run: a lesson of the mailbox-pickup
+seat.)* A docs-only change is
 exempt only when the diff is limited to documentation or prose and contains no
 Swift, native workflow, script, project, submodule, test, or build-input change.
 The main backstop result is the post-merge authority; red main is fixed forward.
@@ -67,6 +71,8 @@ admission; `test_args` records the effective selectors and automatic skips.
 In the c11 1.0 run, packaged-app validation and computer use run on Atlas only. The laptop receives the app but does not launch it. On Atlas, launch the retained tagged app using its source checkout's `launch-tagged-automation.sh`. Never launch an untagged c11 DEV app.
 
 Tagged builds can run behind production during socket work: c11 holds a user-initiated activity while a socket client is connected and for 60 seconds after the last disconnect. Shell telemetry sends a socket report every 45 seconds, so an open shell keeps the activity held and the idle release rarely fires; the activity still allows system idle sleep.
+
+A command for Atlas that is more than one step goes in a file, run as `ssh atlas bash -s < file`. A quoted multi-command string (`ssh atlas "cd … && rm … && python3 …"`) cannot be checked by the permission prompt, so the seat stalls on a prompt nobody answers. *(1.7.8 run: a seat sat blocked on a quoted remote `sh -c`.)* Guest commands follow the same rule through the shared folder; see Guest hygiene in the `c11-computer-use` skill.
 
 Live proofs that need real agent panels (Claude Code, Codex, Grok receiving mail or running hooks) run in an Atlas sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained Atlas copy of a remote build is under `~/c11-builds/<tag>/artifacts/<invocation>/`; running the sandbox scripts on Atlas with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
 

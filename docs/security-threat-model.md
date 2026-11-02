@@ -120,11 +120,14 @@ and bidirectional override characters removed. **Cancel is the default**;
 Confirm has no keyboard shortcut. Since 1.7.8 (C11-562) the row reads Confirm
 then Cancel, so Cancel is the rightmost button, where a habitual "proceed"
 click lands. Since 1.7.9 (C11-565), for a prompt shown from another app,
-Return, keypad Enter or Escape cancels on the key-up of a press that began in
-the prompt; a key already held when the prompt appeared, and its autorepeat, do
+Return, keypad Enter, Escape, Command-W or Command-period cancels on the
+key-up of a press that began in the prompt; a key already held when the prompt appeared, and its autorepeat, do
 nothing, so a held Return never reaches the window behind. While the prompt
-is key it drops every other key, including Space, Tab and Command chords, and
-c11's shortcut monitor stands aside for it. Its buttons refuse keyboard focus.
+is key it drops every other key, including Space, Tab and every other Command
+chord (Command-Q and Command-H included, so nothing reaches c11's main menu),
+and c11's shortcut monitor stands aside for it. If the operator switches to
+c11 (Command-Tab, the Dock) while the prompt is key, the prompt gives up key
+and stays up click-only, so typing goes to c11's own window. Its buttons refuse keyboard focus.
 Keyboard users and VoiceOver AXPress cannot
 confirm because the gate requires a fresh mouse-down/up sequence. It stays disabled for at least the system
 double-click interval or 0.75 seconds, whichever is longer, after presentation and requires a new plain mouse-down/up
@@ -134,10 +137,9 @@ the prompt or changing Spaces cancels it, so a stale action cannot authorize
 a different presentation. This mitigates surprise-overlay consent, not arbitrary
 hostile desktop overlays or already-authorized OS input automation. The window never becomes main
 and never calls `runModal` or starts a sheet. It can become key only when it
-was shown while another app was active, and only while shown. Every dismissal
-that does not navigate leaves key focus where the operator had it: the OS
-returns key to the frontmost app, and if c11 became active meanwhile, the c11
-window that was key gets it back when still visible on the active Space. Only an explicit Confirm click can select the destination. Cancel,
+was shown while another app was active, and only while shown. Dismissal never
+moves key focus itself: when the prompt was key, the OS returns key to the
+frontmost app; otherwise key stays wherever the operator put it. Only an explicit Confirm click can select the destination. Cancel,
 close and the confirmation's 60-second expiry select nothing. Notices expire
 after five seconds. Confirm resolves the exact
 UUID again; a closed target is refused, and a panel moved to another workspace

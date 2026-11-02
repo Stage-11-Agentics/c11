@@ -550,8 +550,8 @@ final class ExternalPanelLinkRequest {
     }
 }
 
-/// Return, keypad Enter or Escape cancels on the key-up of a press that began
-/// in the prompt. Acting on key-up keeps autorepeat of a held key from reaching
+/// Return, keypad Enter or Escape, or Command-W or Command-period, cancels on
+/// the key-up of a press that began in the prompt. Acting on key-up keeps autorepeat of a held key from reaching
 /// the window that regains focus; a repeat or key-up with no fresh key-down here
 /// (a key already held when the prompt appeared) does nothing. No key confirms.
 struct ExternalPanelLinkKeyGate {
@@ -559,13 +559,18 @@ struct ExternalPanelLinkKeyGate {
     static let cancelKeyCodes: Set<UInt16> = [36, 76, 53]
     private var pressed: UInt16?
 
-    static func isPlain(_ flags: NSEvent.ModifierFlags) -> Bool {
-        flags.intersection([.command, .control, .option]).isEmpty
+    /// Unmodified (Shift allowed) Return, keypad Enter or Escape; or Command
+    /// with W or period by character, so any keyboard layout works.
+    static func isCancelPress(keyCode: UInt16, characters: String?, flags: NSEvent.ModifierFlags) -> Bool {
+        let modifiers = flags.intersection([.command, .control, .option])
+        if modifiers.isEmpty { return cancelKeyCodes.contains(keyCode) }
+        guard modifiers == .command else { return false }
+        return ["w", "."].contains((characters ?? "").lowercased())
     }
 
-    mutating func keyDown(keyCode: UInt16, isRepeat: Bool, plain: Bool) {
+    mutating func keyDown(keyCode: UInt16, isRepeat: Bool, cancels: Bool) {
         guard !isRepeat else { return }
-        pressed = plain && Self.cancelKeyCodes.contains(keyCode) ? keyCode : nil
+        pressed = cancels ? keyCode : nil
     }
 
     /// True when this key-up ends a fresh cancel press.
@@ -581,11 +586,12 @@ struct ExternalPanelLinkKeyGate {
 /// so Return and Escape reach it. Shown while c11 is active, it is click-only and
 /// never key, so an agent's `open c11://` cannot take the operator's typing.
 /// While key it owns every key event: cancel keys go through the key gate, every
-/// other key (Space, Tab, Command chords) is dropped, and nothing reaches
+/// other key (Space, Tab, other Command chords) is dropped, and nothing reaches
 /// Confirm, the main menu or the window behind it.
 final class ExternalPanelLinkWindow: NSPanel {
     var onCancelKey: (() -> Void)?
-    /// Set once at presentation from whether c11 was active.
+    /// Set at presentation from whether c11 was active; cleared when c11
+    /// becomes active while the prompt is key.
     var takesKeyFocus = false
     private var keyGate = ExternalPanelLinkKeyGate()
 
@@ -597,10 +603,17 @@ final class ExternalPanelLinkWindow: NSPanel {
         case .keyDown:
             noteKeyDown(event)
         case .keyUp:
-            if keyGate.keyUp(keyCode: event.keyCode) { onCancelKey?() }
+            noteKeyUp(event)
         default:
             super.sendEvent(event)
         }
+    }
+
+    /// AppKit does not dispatch a key-up to the window while Command is held,
+    /// so the presenter's local monitor also forwards key-ups here. A second
+    /// delivery of the same key-up is a no-op.
+    func noteKeyUp(_ event: NSEvent) {
+        if keyGate.keyUp(keyCode: event.keyCode) { onCancelKey?() }
     }
 
     /// Never super: Cancel's Return default-button match would fire on key-down
@@ -613,7 +626,9 @@ final class ExternalPanelLinkWindow: NSPanel {
 
     private func noteKeyDown(_ event: NSEvent) {
         keyGate.keyDown(keyCode: event.keyCode, isRepeat: event.isARepeat,
-                        plain: ExternalPanelLinkKeyGate.isPlain(event.modifierFlags))
+                        cancels: ExternalPanelLinkKeyGate.isCancelPress(
+                            keyCode: event.keyCode, characters: event.charactersIgnoringModifiers,
+                            flags: event.modifierFlags))
     }
 }
 
@@ -765,10 +780,9 @@ final class ExternalPanelLinkButton: NSButton {
 final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
     private let request: ExternalPanelLinkRequest
     private var panel: ExternalPanelLinkWindow?
-    /// The window that was key when the prompt took focus; it gets key back on
-    /// every dismissal that does not navigate.
-    private weak var restoreKeyWindow: NSWindow?
     private var expiry: DispatchWorkItem?
+    private var keyUpMonitor: Any?
+    private var isReordering = false
 
     var isPresenting: Bool { panel != nil }
     var presentedWindow: ExternalPanelLinkWindow? { panel }
@@ -857,15 +871,24 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         // app stays active and no c11 window rises. With c11 active it stays
         // click-only and the operator's typing keeps its window.
         window.takesKeyFocus = !NSApp.isActive
-        if let key = NSApp.keyWindow, !(key is ExternalPanelLinkWindow) { restoreKeyWindow = key }
         panel = window
         if window.takesKeyFocus {
             window.makeKeyAndOrderFront(nil)
+            keyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak window] event in
+                guard let window, event.window === window else { return event }
+                window.noteKeyUp(event)
+                return nil
+            }
         } else {
             window.orderFrontRegardless()
         }
         content.layoutSubtreeIfNeeded()
         confirmationButton?.armConfirmation()
+        let activation = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.becomeClickOnly() }
+        }
+        visibilityObservers.append((NotificationCenter.default, activation))
         for (center, name) in [
             (NotificationCenter.default, NSApplication.didHideNotification),
             (NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification)
@@ -909,11 +932,19 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         return (stack, confirm, cancel)
     }
 
-    private func restoreKeyFocus() {
-        defer { restoreKeyWindow = nil }
-        guard NSApp.isActive, let window = restoreKeyWindow, window.isVisible, !window.isMiniaturized,
-              window.isOnActiveSpace, window.canBecomeKey, NSApp.keyWindow !== window else { return }
-        window.makeKey()
+    /// The operator switched to c11 (Command-Tab, Dock) while the prompt was
+    /// key: give key back to c11's own windows and keep the prompt up,
+    /// click-only, so their typing is not swallowed.
+    private func becomeClickOnly() {
+        guard let panel, panel.takesKeyFocus else { return }
+        panel.takesKeyFocus = false
+        if let keyUpMonitor { NSEvent.removeMonitor(keyUpMonitor) }
+        keyUpMonitor = nil
+        guard panel.isKeyWindow else { return }
+        isReordering = true
+        panel.orderOut(nil)
+        panel.orderFrontRegardless()
+        isReordering = false
     }
 
     @objc private func cancelClicked(_ sender: ExternalPanelLinkButton) {
@@ -939,7 +970,7 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
-        guard let changed = notification.object as? NSWindow, changed === panel else { return }
+        guard !isReordering, let changed = notification.object as? NSWindow, changed === panel else { return }
         if !changed.isVisible { cancelPending() }
     }
 
@@ -950,17 +981,17 @@ final class ExternalPanelLinkPresenter: NSObject, NSWindowDelegate {
         expiry = nil
         for (center, token) in visibilityObservers { center.removeObserver(token) }
         visibilityObservers.removeAll()
+        if let keyUpMonitor { NSEvent.removeMonitor(keyUpMonitor) }
+        keyUpMonitor = nil
         panel?.delegate = nil
         panel?.onCancelKey = nil
+        // Ordering out leaves key focus to AppKit: from another app it returns
+        // to that app; c11 makes no window key.
         panel?.orderOut(nil)
         panel = nil
         let result = request.finish(id: id, confirm: confirm, isSocketCommand: SocketCommandContext.current != nil)
         PanelLinkActivation.log(target: prompt.destination?.url ?? "", origin: "external",
                                 activation: confirm ? "confirm" : "cancel", result: result)
-        // A confirmed open hands focus to its destination. Otherwise the window
-        // that was key gets it back; with c11 inactive the OS returns key to
-        // the active app, and c11 makes no window key.
-        if result != "opened" { restoreKeyFocus() }
         if confirm && result != "opened" {
             // Keep the same admission occupied by a notice; never substitute a
             // different target or open another app after a stale confirmation.

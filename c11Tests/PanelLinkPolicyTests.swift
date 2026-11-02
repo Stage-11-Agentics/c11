@@ -476,10 +476,14 @@ final class ExternalPanelLinkButtonRowTests: XCTestCase {
 }
 
 final class ExternalPanelLinkKeyGateTests: XCTestCase {
-    func testFreshPlainPressCancelsOnKeyUpOnly() {
-        for code: UInt16 in [36, 76, 53] {
+    private func cancels(_ code: UInt16, _ chars: String, _ flags: NSEvent.ModifierFlags = []) -> Bool {
+        ExternalPanelLinkKeyGate.isCancelPress(keyCode: code, characters: chars, flags: flags)
+    }
+
+    func testFreshCancelPressCancelsOnKeyUpOnly() {
+        for code: UInt16 in [36, 76, 53, 13] {
             var gate = ExternalPanelLinkKeyGate()
-            gate.keyDown(keyCode: code, isRepeat: false, plain: true)
+            gate.keyDown(keyCode: code, isRepeat: false, cancels: true)
             XCTAssertTrue(gate.keyUp(keyCode: code))
             XCTAssertFalse(gate.keyUp(keyCode: code))
         }
@@ -487,35 +491,48 @@ final class ExternalPanelLinkKeyGateTests: XCTestCase {
 
     func testHeldKeyFromBeforeThePromptDoesNothing() {
         var gate = ExternalPanelLinkKeyGate()
-        gate.keyDown(keyCode: 36, isRepeat: true, plain: true)
-        gate.keyDown(keyCode: 36, isRepeat: true, plain: true)
+        gate.keyDown(keyCode: 36, isRepeat: true, cancels: true)
+        gate.keyDown(keyCode: 36, isRepeat: true, cancels: true)
         XCTAssertFalse(gate.keyUp(keyCode: 36))
         XCTAssertFalse(gate.keyUp(keyCode: 53))
     }
 
     func testHoldingReturnCancelsOnceOnRelease() {
         var gate = ExternalPanelLinkKeyGate()
-        gate.keyDown(keyCode: 36, isRepeat: false, plain: true)
-        for _ in 0..<30 { gate.keyDown(keyCode: 36, isRepeat: true, plain: true) }
+        gate.keyDown(keyCode: 36, isRepeat: false, cancels: true)
+        for _ in 0..<30 { gate.keyDown(keyCode: 36, isRepeat: true, cancels: true) }
         XCTAssertTrue(gate.keyUp(keyCode: 36))
         XCTAssertFalse(gate.keyUp(keyCode: 36))
     }
 
-    func testModifiedOtherAndInterleavedKeysDoNotCancel() {
+    func testOtherAndInterleavedKeysDoNotCancel() {
         var gate = ExternalPanelLinkKeyGate()
-        gate.keyDown(keyCode: 36, isRepeat: false, plain: false)
-        XCTAssertFalse(gate.keyUp(keyCode: 36))
         for code: UInt16 in [49, 48, 0] { // Space, Tab, A
-            gate.keyDown(keyCode: code, isRepeat: false, plain: true)
+            gate.keyDown(keyCode: code, isRepeat: false, cancels: false)
             XCTAssertFalse(gate.keyUp(keyCode: code))
         }
-        gate.keyDown(keyCode: 53, isRepeat: false, plain: true)
-        gate.keyDown(keyCode: 0, isRepeat: false, plain: true)
+        gate.keyDown(keyCode: 53, isRepeat: false, cancels: true)
+        gate.keyDown(keyCode: 0, isRepeat: false, cancels: false)
         XCTAssertFalse(gate.keyUp(keyCode: 53))
-        XCTAssertTrue(ExternalPanelLinkKeyGate.isPlain([.shift]))
-        XCTAssertFalse(ExternalPanelLinkKeyGate.isPlain([.command]))
-        XCTAssertFalse(ExternalPanelLinkKeyGate.isPlain([.option]))
-        XCTAssertFalse(ExternalPanelLinkKeyGate.isPlain([.control]))
+    }
+
+    func testWhichPressesCancel() {
+        XCTAssertTrue(cancels(36, "\r"))
+        XCTAssertTrue(cancels(76, "\u{3}"))
+        XCTAssertTrue(cancels(53, "\u{1b}"))
+        XCTAssertTrue(cancels(36, "\r", [.shift]))
+        XCTAssertTrue(cancels(13, "w", [.command]))
+        XCTAssertTrue(cancels(47, ".", [.command]))
+        XCTAssertTrue(cancels(99, "W", [.command, .shift]))   // by character, any layout
+        XCTAssertFalse(cancels(36, "\r", [.command]))
+        XCTAssertFalse(cancels(53, "\u{1b}", [.option]))
+        XCTAssertFalse(cancels(36, "\r", [.control]))
+        XCTAssertFalse(cancels(13, "w", [.command, .option]))
+        XCTAssertFalse(cancels(12, "q", [.command]))
+        XCTAssertFalse(cancels(4, "h", [.command]))
+        XCTAssertFalse(cancels(13, "w"))
+        XCTAssertFalse(cancels(49, " "))
+        XCTAssertFalse(cancels(48, "\t"))
     }
 }
 
@@ -567,6 +584,20 @@ final class ExternalPanelLinkWindowKeyTests: XCTestCase {
         }
     }
 
+    /// Command-W and Command-period cancel; the key-up may arrive only through
+    /// the presenter's monitor, which calls noteKeyUp. Other chords never do.
+    func testCommandWAndPeriodCancelOtherChordsDoNot() {
+        for (code, chars, expected) in [(UInt16(13), "w", 1), (47, ".", 1), (12, "q", 0), (4, "h", 0), (17, "t", 0)] {
+            let window = makeWindow()
+            var cancels = 0
+            window.onCancelKey = { cancels += 1 }
+            window.sendEvent(key(.keyDown, code, chars, flags: [.command], window: window))
+            window.noteKeyUp(key(.keyUp, code, chars, flags: [.command], window: window))
+            window.sendEvent(key(.keyUp, code, chars, flags: [.command], window: window))
+            XCTAssertEqual(cancels, expected, chars)
+        }
+    }
+
     func testRepeatOrReleaseWithoutFreshPressDoesNotCancel() {
         let window = makeWindow()
         var cancels = 0
@@ -609,6 +640,41 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
         NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                          windowNumber: window.windowNumber, context: nil, characters: chars,
                          charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+    }
+
+    /// C11-565 review: dismissing never moves key focus. With the operator in
+    /// another window while the prompt is up, cancel and expiry leave key there.
+    func testDismissalLeavesKeyWhereTheOperatorPutIt() throws {
+        let target = UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")!
+        func window() -> NSWindow {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            w.isReleasedWhenClosed = false
+            return w
+        }
+        let first = window(), second = window()
+        defer { first.orderOut(nil); second.orderOut(nil) }
+        for viaExpiry in [false, true] {
+            first.makeKeyAndOrderFront(nil)
+            let presenter = ExternalPanelLinkPresenter(
+                resolve: { ExternalPanelLinkDestination(target: $0, workspaceID: target, workspaceTitle: "W", panelTitle: "P") },
+                open: { _ in XCTFail("nothing opens"); return true })
+            presenter.receive("c11://panel/\(target.uuidString)", expiresAt: viaExpiry ? ProcessInfo.processInfo.systemUptime + 0.5 : nil)
+            let prompt = try XCTUnwrap(presenter.presentedWindow)
+            second.makeKeyAndOrderFront(nil)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            let keyBefore = NSApp.keyWindow
+            if viaExpiry {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+            } else {
+                prompt.performClose(nil)
+            }
+            XCTAssertFalse(presenter.isPresenting)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            XCTAssertTrue(NSApp.keyWindow === keyBefore, "viaExpiry=\(viaExpiry)")
+            if keyBefore != nil { XCTAssertFalse(first.isKeyWindow) }
+            RunLoop.main.run(until: Date().addingTimeInterval(2.1)) // past the cooldown
+        }
     }
 
     /// C11-565 acceptance 1 and 2: Return and Escape cancel a live prompt;

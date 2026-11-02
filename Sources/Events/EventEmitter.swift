@@ -372,6 +372,34 @@ final class EventEmitter {
         ])
     }
 
+    /// C11-527: an area split in two. Frames are window points, origin top-left
+    /// (Bonsplit's global layout space), so a stray divider's x in a field capture
+    /// can be matched to the split that drew it.
+    func emitAreaSplit(
+        workspace: UUID,
+        area: UUID,
+        originalArea: UUID,
+        orientation: String,
+        containerFrame: [String: Double]?,
+        frame: [String: Double]?,
+        originalFrame: [String: Double]?
+    ) {
+        var payload: [String: Any] = [
+            "original_area_id": originalArea.uuidString,
+            "orientation": orientation,
+        ]
+        payload["container_frame"] = containerFrame ?? NSNull()
+        payload["frame"] = frame ?? NSNull()
+        payload["original_frame"] = originalFrame ?? NSNull()
+        emit(.areaSplit, workspace: workspace, pane: area, payload: payload)
+    }
+
+    /// C11-527: an area closed. `last_frame` is its last known frame in window
+    /// points (null when no layout was ever reported for it).
+    func emitAreaClosed(workspace: UUID, area: UUID, lastFrame: [String: Double]?) {
+        emit(.areaClosed, workspace: workspace, pane: area, payload: ["last_frame": lastFrame ?? NSNull()])
+    }
+
     func emitWorkspaceReordered(windowId: UUID?, workspaceIds: [UUID]) {
         var payload: [String: Any] = ["final_workspace_ids": workspaceIds.map(\.uuidString)]
         if let windowId { payload["window_id"] = windowId.uuidString }

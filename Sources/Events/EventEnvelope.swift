@@ -90,6 +90,8 @@ struct EventEnvelope {
         case workspaceSelected = "workspace.selected"
         case workspaceSwitchBlocked = "workspace.switch_blocked"
         case workspaceReordered = "workspace.reordered"
+        case areaSplit = "area.split"
+        case areaClosed = "area.closed"
         case flashRequested = "flash.requested"
         case flashDrawn = "flash.drawn"
         case metadataChanged = "metadata.changed"

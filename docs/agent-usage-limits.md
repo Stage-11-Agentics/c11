@@ -29,7 +29,8 @@ classification is used.
 Recorded meta-only records that introduce a different prompt ID without a typed
 root, and errors whose parent is a system record, remain unsupported. Binding
 those shapes requires matching hook evidence; a meta record alone cannot start
-a root turn. Attachments over the one-MiB parse budget are ignored.
+a root turn. Attachments and tool results over the one-MiB parse budget register
+no context, so an error parented directly on one does not bind.
 
 A future adapter needs a recorded harness/version and terminal error record,
 its root session and turn binding, the successful recovery edge, and an ordinary
@@ -46,9 +47,21 @@ metadata holds the finite current limit, or null; the journal phase remains
 `working` during a retry. Feed exposes `kind=error` and the same `usage_limit`
 value in both scopes. A limit row is informational, not a permission request.
 The existing `supervisor.turn_interrupted` event uses reason `usage_limit` for
-an applied current-turn limit failure. Duplicates and errors predating the
-supervisor are not announced again. These samples do not distinguish transient rate throttling from
-quota exhaustion, so they do not produce `rate_limit`.
+an applied current-turn limit failure, once per turn in either arrival order.
+`StopFailure` usually arrives first and announces `provider_error`; the limit
+the sweep reads afterward refines that to `usage_limit`. When the limit is read
+first, the later `StopFailure` is a duplicate and announces nothing. Duplicates
+and errors predating the supervisor are not announced again. These samples do
+not distinguish transient rate throttling from quota exhaustion, so they do not
+produce `rate_limit`.
+
+A turn with an approved tool stays `blocked` until it ends, because no hook
+reports the approval. A limit for that same turn, recorded after the prompt
+opened, still applies. A limit from another turn or from before the prompt leaves
+the panel waiting. A limit is also rejected while the turn waits on a question
+or plan review, since the main loop cannot be sending requests then. c11 cannot
+tell a background subagent's open prompt from an answered one, so a root limit on
+that same turn replaces its waiting mark with the error mark.
 
 Mail delivery to a limited recipient adds `recipient_usage_limit` to its
 `copied` dispatch trace row. The envelope still lands in the inbox, unread.

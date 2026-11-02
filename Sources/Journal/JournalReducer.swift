@@ -6,6 +6,7 @@ struct JournalFoldResult {
     let reason: String
     let fromPhase: JournalPhase?
     let fromSinceMs: Int64?
+    var fromReason: JournalReason? = nil
 }
 
 enum JournalReducer {
@@ -53,6 +54,7 @@ enum JournalReducer {
         let transcript = d.source == .transcript
         let fromPhase = s.phase
         let fromSince = s.sinceMs
+        let fromReason = s.reason
         var reason = "state_transition"
         var preserveEvidence = false
         var evidenceOnly = false
@@ -219,20 +221,26 @@ enum JournalReducer {
             }
         case .errorReported:
             guard caps.contains("error"), [.sessionFailure, .usageLimit].contains(d.reasonCode) else { return unchanged(.observation, "tool_or_unsupported_error") }
+            // An approved tool leaves the turn blocked until Stop, because no hook
+            // reports the answer. The main loop's own API error, recorded after the
+            // prompt opened, proves it was given. An older limit proves nothing.
+            let answeredApproval = d.reasonCode == .usageLimit && s.phase == .blocked && s.reason == .approval
+                && (d.occurredAtMs ?? 0) >= s.sinceMs
             if d.reasonCode == .usageLimit {
                 guard let kind = d.usageLimit, let turnID = d.turnID, turnID == s.turnID,
                       d.adapter == .claudeTranscript, context.verifiedNativeClock,
-                      [.working, .error].contains(s.phase) else {
+                      [.working, .error].contains(s.phase) || answeredApproval else {
                     return unchanged(.stale, "limit_not_correlated")
                 }
                 if s.usageLimit?.turnID == turnID, s.usageLimit?.kind == kind {
                     return duplicate("limit_already_observed")
                 }
                 s.usageLimit = JournalUsageLimit(kind: kind, turnID: turnID, sinceMs: now)
+                if answeredApproval { s.requestID = nil }
             } else if s.phase == .error {
                 return duplicate("error_already_observed")
             }
-            if s.phase == .blocked && d.source.rank < s.rank { return unchanged(.advisory, "lower_confidence") }
+            if s.phase == .blocked && d.source.rank < s.rank && !answeredApproval { return unchanged(.advisory, "lower_confidence") }
             s.phase = .error
             s.reason = d.reasonCode
             if d.reasonCode == .usageLimit { s.turnOutcome = "interrupted" }
@@ -293,6 +301,7 @@ enum JournalReducer {
         s.modelID = context.modelID
         if !context.historical { s.lastLiveSequence = sequence; s.lastLiveEmittedAtMs = d.emittedAtMs }
         return JournalFoldResult(snapshot: s, effect: .applied, reason: reason,
-                                 fromPhase: previous == nil ? nil : fromPhase, fromSinceMs: previous == nil ? nil : fromSince)
+                                 fromPhase: previous == nil ? nil : fromPhase, fromSinceMs: previous == nil ? nil : fromSince,
+                                 fromReason: previous == nil ? nil : fromReason)
     }
 }

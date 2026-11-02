@@ -1723,4 +1723,282 @@ extension AgentModelDetectionTests {
         }
     }
 
+    /// A real store, coordinator and monitor, with transcript lines read by the real probe.
+    private final class LimitScenario {
+        let target = AgentModelDetector.Target(workspaceId: JournalTestData.workspace,
+                                               surfaceId: JournalTestData.panel, kind: "claude-code")
+        let coordinator: JournalCoordinator
+        private(set) var monitor: SupervisorMonitor!
+        private let reasonLock = NSLock()
+        private var edges: [String] = []
+        let session: String
+        /// Monitor start is the historical cutoff, so transcript time follows it.
+        let transcriptTime = ISO8601DateFormatter().string(from: Date().addingTimeInterval(2))
+
+        init(directory: URL, session: String) throws {
+            self.session = session
+            let store = try JournalStore(layout: JournalStorageLayout(directory: directory))
+            coordinator = JournalCoordinator(store: store)
+            coordinator.register(panelID: target.surfaceId, workspaceID: target.workspaceId)
+            coordinator.setOwner(panelID: target.surfaceId, owner: JournalOwner(panelID: target.surfaceId,
+                agentKind: "claude-code", sessionID: session))
+            let coordinator = self.coordinator
+            monitor = SupervisorMonitor(latestSnapshot: { coordinator.snapshot(panelID: $0) }) { [weak self] edge, _ in
+                guard edge.type == .supervisorTurnInterrupted, let reason = edge.payload["reason"] as? String else { return }
+                self?.reasonLock.lock(); self?.edges.append(reason); self?.reasonLock.unlock()
+            }
+        }
+
+        var snapshot: JournalSnapshot? { coordinator.snapshot(panelID: target.surfaceId) }
+
+        var announced: [String] {
+            monitor.drainForTesting()
+            reasonLock.lock(); defer { reasonLock.unlock() }
+            return edges
+        }
+
+        private func deliver(_ draft: JournalDraft, _ result: JournalAppendResult) {
+            if let changed = result.changedSnapshot { monitor.observe(changed) }
+            monitor.applied(draft, result: result)
+            monitor.drainForTesting()
+        }
+
+        /// A hook payload through the real Claude mapping.
+        func hook(_ subcommand: String, prompt: String = "prompt-A", tool: String? = nil, toolUse: String? = nil) throws {
+            var object: [String: Any] = ["session_id": session, "prompt_id": prompt]
+            object["tool_name"] = tool; object["tool_use_id"] = toolUse
+            var draft = try XCTUnwrap(ClaudeHookMapping.map(subcommand: subcommand, object: object))
+            draft.panelID = target.surfaceId; draft.workspaceID = target.workspaceId
+            deliver(draft, try coordinator.append(draft))
+        }
+
+        @discardableResult
+        func transcript(_ observation: TranscriptLifecycleObservation, ref: ConversationRef) throws -> JournalEffect {
+            var draft = try XCTUnwrap(JournalTranscriptProducer.makeDraft(observation: observation, target: target,
+                ref: ref, emittedAt: Date()))
+            draft.eventID = UUID()
+            let result = try coordinator.appendTranscript(draft)
+            deliver(draft, result)
+            return result.receipt.projectionEffect
+        }
+
+        func close() { coordinator.remove(panelID: target.surfaceId) }
+    }
+
+    private func limitScenario(_ name: String) throws -> LimitScenario {
+        try LimitScenario(directory: home.appendingPathComponent("journal-\(name)-\(UUID().uuidString)"), session: claudeId)
+    }
+
+    /// The limit observation the probe reads for one scenario's transcript time.
+    private func limitObservation(_ fixtureName: String = "claude-monthly-spend.json", at time: String) throws -> TranscriptLifecycleObservation {
+        var record = try usageLimitRecord(fixtureName)
+        record["timestamp"] = time
+        try place(limitLines(record), at: claudePath())
+        var state = ModelTailState()
+        return try XCTUnwrap(probe.detectWithObservations(kind: "claude-code",
+            ref: ref("claude-code", id: claudeId), state: &state).lifecycle.first)
+    }
+
+    /// The mark, Feed row and readback one limit produces, in every arrival order.
+    private func assertLimitSurfaces(_ scenario: LimitScenario, kind: JournalUsageLimitKind,
+                                     file: StaticString = #filePath, line: UInt = #line) throws {
+        let snapshot = try XCTUnwrap(scenario.snapshot, file: file, line: line)
+        XCTAssertEqual(snapshot.phase, .error, file: file, line: line)
+        XCTAssertEqual(snapshot.usageLimit?.kind, kind, file: file, line: line)
+        let row = try XCTUnwrap(FeedProjector.project(journalRows: [snapshot], attention: [], notes: [:], scope: .attention).first,
+                                file: file, line: line)
+        XCTAssertEqual(row.kind, .error, file: file, line: line)
+        XCTAssertEqual(row.jsonObject()["usage_limit"] as? String, kind.rawValue, file: file, line: line)
+        let help = AgentActivityHelpProjection.project(state: .waiting, lastActivityAt: nil, waitingStartedAt: nil,
+            coldAfterSeconds: 60, flagReason: nil, flagRaisedAt: nil, suppressed: false, journal: snapshot)
+        XCTAssertTrue(help.usageLimited, file: file, line: line)
+        XCTAssertTrue(help.text(at: Date()).contains(kind.label), file: file, line: line)
+        XCTAssertEqual(scenario.coordinator.readback(panelID: scenario.target.surfaceId)["usage_limit"] as? String,
+                       kind.rawValue, file: file, line: line)
+    }
+
+    func testStopFailureThenTranscriptLimitAnnouncesUsageLimitOnce() throws {
+        for (fixtureName, kind) in [("claude-monthly-spend.json", JournalUsageLimitKind.monthlySpend),
+                                    ("claude-session-limit.json", .sessionUsage)] {
+            let scenario = try limitScenario("stopfailure-first")
+            defer { scenario.close() }
+            let conversation = ref("claude-code", id: claudeId)
+            try scenario.hook("prompt-submit")
+            try scenario.hook("stop-failure")
+            XCTAssertEqual(scenario.announced, ["provider_error"])
+            XCTAssertEqual(scenario.snapshot?.reason, .sessionFailure)
+
+            let limit = try limitObservation(fixtureName, at: scenario.transcriptTime)
+            XCTAssertEqual(try scenario.transcript(limit, ref: conversation), .applied)
+            XCTAssertEqual(scenario.announced, ["provider_error", "usage_limit"])
+            XCTAssertEqual(scenario.snapshot?.reason, .usageLimit)
+            XCTAssertEqual(scenario.monitor.readback(panel: scenario.target.surfaceId)["interruption_reason"] as? String, "usage_limit")
+            try assertLimitSurfaces(scenario, kind: kind)
+
+            // The same limit read again, or a repeated hook, says nothing new.
+            XCTAssertEqual(try scenario.transcript(limit, ref: conversation), .duplicateEvidence)
+            try scenario.hook("stop-failure")
+            XCTAssertEqual(scenario.announced, ["provider_error", "usage_limit"])
+            try assertLimitSurfaces(scenario, kind: kind)
+        }
+    }
+
+    func testTranscriptLimitThenStopFailureAnnouncesUsageLimitOnce() throws {
+        for (fixtureName, kind) in [("claude-monthly-spend.json", JournalUsageLimitKind.monthlySpend),
+                                    ("claude-session-limit.json", .sessionUsage)] {
+            let scenario = try limitScenario("transcript-first")
+            defer { scenario.close() }
+            let conversation = ref("claude-code", id: claudeId)
+            try scenario.hook("prompt-submit")
+            let limit = try limitObservation(fixtureName, at: scenario.transcriptTime)
+            XCTAssertEqual(try scenario.transcript(limit, ref: conversation), .applied)
+            XCTAssertEqual(scenario.announced, ["usage_limit"])
+
+            try scenario.hook("stop-failure")
+            XCTAssertEqual(try scenario.transcript(limit, ref: conversation), .duplicateEvidence)
+            XCTAssertEqual(scenario.announced, ["usage_limit"], "the later hook is the same failure")
+            XCTAssertEqual(scenario.snapshot?.reason, .usageLimit)
+            try assertLimitSurfaces(scenario, kind: kind)
+        }
+    }
+
+    func testSecondLimitKindInOneTurnIsNotASecondAnnouncement() throws {
+        let scenario = try limitScenario("two-kinds")
+        defer { scenario.close() }
+        let conversation = ref("claude-code", id: claudeId)
+        try scenario.hook("prompt-submit")
+        XCTAssertEqual(try scenario.transcript(limitObservation(at: scenario.transcriptTime), ref: conversation), .applied)
+        XCTAssertEqual(try scenario.transcript(limitObservation("claude-session-limit.json", at: scenario.transcriptTime),
+                                               ref: conversation), .applied)
+        XCTAssertEqual(scenario.announced, ["usage_limit"], "only a session failure can be refined")
+        XCTAssertEqual(scenario.snapshot?.usageLimit?.kind, .sessionUsage)
+    }
+
+    func testStopFailureRefinementNeedsAFreshLimitOnThatTurn() throws {
+        let scenario = try limitScenario("refine-history")
+        defer { scenario.close() }
+        let conversation = ref("claude-code", id: claudeId)
+        try scenario.hook("prompt-submit")
+        try scenario.hook("stop-failure")
+        // Read from before the supervisor started: applied, never announced.
+        let historical = try limitObservation(at: "2026-01-01T09:00:02.000Z")
+        XCTAssertEqual(try scenario.transcript(historical, ref: conversation), .applied)
+        XCTAssertEqual(scenario.announced, ["provider_error"])
+    }
+
+    /// Root, a tool call, its result, then the 429 parented on that result.
+    private func midTurnLimit(at time: String, promptID: String = "prompt-A", resultPrompt: String? = nil) throws -> [TranscriptLifecycleObservation] {
+        var limit = try usageLimitRecord()
+        limit["timestamp"] = time
+        limit["parentUuid"] = "tool-result-A"
+        let records: [[String: Any]] = [
+            ["type": "user", "isSidechain": false, "sessionId": claudeId, "promptId": promptID, "uuid": "user-A",
+             "timestamp": time, "message": ["role": "user", "content": "synthetic test prompt"]],
+            ["type": "assistant", "isSidechain": false, "sessionId": claudeId, "uuid": "assistant-A", "parentUuid": "user-A",
+             "timestamp": time, "message": ["role": "assistant", "model": "test-model", "id": "message-A",
+                "content": [["type": "tool_use", "id": "tool-A", "name": "Bash", "input": [String: Any]()]]]],
+            ["type": "user", "isSidechain": false, "sessionId": claudeId, "promptId": resultPrompt ?? promptID, "uuid": "tool-result-A",
+             "parentUuid": "assistant-A", "timestamp": time,
+             "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "tool-A", "content": "synthetic output"]]]],
+            limit,
+        ]
+        return try observeLimitSequence(records)
+    }
+
+    func testLimitAfterToolCallReachesTooltipAndFeed() throws {
+        let scenario = try limitScenario("mid-turn")
+        defer { scenario.close() }
+        try scenario.hook("prompt-submit")
+        try scenario.hook("pre-tool-use", tool: "Bash", toolUse: "tool-A")
+        try scenario.hook("post-tool-use", tool: "Bash", toolUse: "tool-A")
+        XCTAssertEqual(scenario.snapshot?.phase, .working)
+
+        let observed = try midTurnLimit(at: scenario.transcriptTime)
+        XCTAssertEqual(observed.count, 1)
+        XCTAssertEqual(observed.first?.turnID, "prompt-A")
+        XCTAssertEqual(try scenario.transcript(XCTUnwrap(observed.first), ref: ref("claude-code", id: claudeId)), .applied)
+        XCTAssertEqual(scenario.announced, ["usage_limit"])
+        try assertLimitSurfaces(scenario, kind: .monthlySpend)
+    }
+
+    func testLimitAfterApprovedToolReachesTooltipAndFeed() throws {
+        let scenario = try limitScenario("approved-tool")
+        defer { scenario.close() }
+        let conversation = ref("claude-code", id: claudeId)
+        try scenario.hook("prompt-submit")
+        try scenario.hook("permission-request", tool: "Bash", toolUse: "tool-A")
+        try scenario.hook("post-tool-use", tool: "Bash", toolUse: "tool-A")
+        XCTAssertEqual(scenario.snapshot?.phase, .blocked, "no hook reports the approval")
+        XCTAssertEqual(scenario.snapshot?.reason, .approval)
+
+        let observed = try XCTUnwrap(midTurnLimit(at: scenario.transcriptTime).first)
+        XCTAssertEqual(try scenario.transcript(observed, ref: conversation), .applied)
+        XCTAssertEqual(scenario.announced, ["usage_limit"])
+        XCTAssertNil(scenario.snapshot?.requestID)
+        try assertLimitSurfaces(scenario, kind: .monthlySpend)
+
+        try scenario.hook("stop-failure")
+        XCTAssertEqual(scenario.announced, ["usage_limit"])
+        try assertLimitSurfaces(scenario, kind: .monthlySpend)
+    }
+
+    func testUnansweredPermissionPromptKeepsItsWaitingMarkAgainstOlderLimits() throws {
+        // A limit from an earlier turn, and one this turn recorded before the prompt opened.
+        for (name, turn, prompt) in [("earlier-turn", "prompt-B", "prompt-A"), ("before-prompt", "prompt-A", "prompt-A")] {
+            let scenario = try limitScenario(name)
+            defer { scenario.close() }
+            try scenario.hook("prompt-submit", prompt: turn)
+            try scenario.hook("permission-request", prompt: turn, tool: "Bash", toolUse: "tool-B")
+            let waiting = try XCTUnwrap(scenario.snapshot)
+            XCTAssertEqual(waiting.phase, .blocked, name)
+            XCTAssertEqual(FeedProjector.blockingKind(waiting), .permission, name)
+            let attentionBefore = FeedProjector.project(journalRows: [waiting], attention: [], notes: [:], scope: .attention)
+                .map { $0.kind }
+            XCTAssertEqual(attentionBefore, [.permission], name)
+
+            let time = name == "earlier-turn" ? scenario.transcriptTime : "2026-01-01T09:00:02.000Z"
+            let observed = try XCTUnwrap(midTurnLimit(at: time, promptID: prompt).first, name)
+            XCTAssertEqual(try scenario.transcript(observed, ref: ref("claude-code", id: claudeId)), .stale, name)
+
+            let snapshot = try XCTUnwrap(scenario.snapshot, name)
+            XCTAssertEqual(snapshot.phase, .blocked, name)
+            XCTAssertEqual(snapshot.reason, .approval, name)
+            XCTAssertEqual(snapshot.requestID, "tool-B", name)
+            XCTAssertEqual(snapshot.turnID, turn, name)
+            XCTAssertNil(snapshot.usageLimit, name)
+            XCTAssertTrue(snapshot.paintsAttention, name)
+            XCTAssertEqual(FeedProjector.blockingKind(snapshot), .permission, name)
+            XCTAssertEqual(FeedProjector.project(journalRows: [snapshot], attention: [], notes: [:], scope: .attention)
+                .map { $0.kind }, attentionBefore, name)
+            XCTAssertEqual(PanelActivityResolver.resolve(hasExactSurfaceNotification: false,
+                hasJournalAttention: snapshot.paintsAttention, derivedActivity: .idle, terminalType: "claude-code"), .waiting, name)
+            let help = AgentActivityHelpProjection.project(state: .waiting, lastActivityAt: nil, waitingStartedAt: nil,
+                coldAfterSeconds: 60, flagReason: nil, flagRaisedAt: nil, suppressed: false, journal: snapshot)
+            XCTAssertFalse(help.usageLimited, name)
+            XCTAssertEqual(scenario.announced, [], name)
+        }
+    }
+
+    func testLimitDoesNotBindAcrossTurnsOrWhileAQuestionIsOpen() throws {
+        XCTAssertTrue(try midTurnLimit(at: "2026-01-01T09:00:02.000Z", resultPrompt: "older-prompt").isEmpty,
+                      "a tool result from another prompt is not this turn's context")
+
+        let later = try limitScenario("stale-turn")
+        defer { later.close() }
+        let observed = try XCTUnwrap(midTurnLimit(at: later.transcriptTime).first)
+        let conversation = ref("claude-code", id: claudeId)
+        try later.hook("prompt-submit", prompt: "prompt-B")
+        XCTAssertEqual(try later.transcript(observed, ref: conversation), .stale)
+        XCTAssertEqual(later.snapshot?.phase, .working)
+        XCTAssertNil(later.snapshot?.usageLimit)
+
+        let question = try limitScenario("open-question")
+        defer { question.close() }
+        try question.hook("prompt-submit")
+        try question.hook("pre-tool-use", tool: "AskUserQuestion", toolUse: "ask-A")
+        XCTAssertEqual(question.snapshot?.reason, .question)
+        XCTAssertEqual(try question.transcript(observed, ref: conversation), .stale)
+        XCTAssertEqual(question.snapshot?.phase, .blocked)
+        XCTAssertEqual(question.announced, [])
+    }
 }

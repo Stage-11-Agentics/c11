@@ -145,8 +145,9 @@ Claude PermissionRequest/Notification and question/plan hooks, and OpenCode
 `session.error` supply session failures. The existing Codex `turn_aborted`, Claude
 correlated Esc marker and Grok primary `turn_ended` cancellation/interruption
 records supply transcript interruptions. Recorded Claude monthly-spend and
-session-usage failures supply `usage_limit`; unsupported limit shapes and other
-provider outcomes remain unknown. See `docs/agent-usage-limits.md` in the repo
+session-usage failures supply `usage_limit`, once per turn. When StopFailure arrives
+first, that turn reports `provider_error` and then `usage_limit`. Unsupported limit
+shapes and other provider outcomes remain unknown. See `docs/agent-usage-limits.md` in the repo
 for the recorded shapes and root binding contract.
 
 | Harness | Permission / choice detection | Resolution / limitations |

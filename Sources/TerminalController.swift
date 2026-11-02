@@ -3204,6 +3204,21 @@ class TerminalController {
         v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
     }
 
+    /// Every short ref minted this process, by kind, for the C11-568 relaunch
+    /// record. Sorted, so two snapshots compare equal when nothing changed.
+    func relaunchRefSnapshot() -> [String: [RelaunchRecord.RefEntry]] {
+        let kinds: [(String, V2HandleKind)] = [
+            ("window", .window), ("workspace", .workspace), ("area", .pane), ("panel", .surface),
+        ]
+        var out: [String: [RelaunchRecord.RefEntry]] = [:]
+        for (name, kind) in kinds {
+            out[name] = (v2RefByUUID[kind] ?? [:])
+                .map { RelaunchRecord.RefEntry(ref: $0.value, id: $0.key.uuidString) }
+                .sorted { $0.ref.localizedStandardCompare($1.ref) == .orderedAscending }
+        }
+        return out
+    }
+
     /// The integer N of a surface's `surface:N` handle, minting the ref if the
     /// surface doesn't have one yet. Called at tab creation so every surface is
     /// numbered the moment it exists (the tab-bar ordinal display and

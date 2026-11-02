@@ -6,6 +6,9 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Added
+- After a relaunch, each resumed agent gets one c11 mailbox notice at its first idle prompt saying c11 restarted, how many of its background jobs ended (measured at quit, omitted after a crash), and that it must re-arm its watchers and use UUIDs. A second relaunch replaces an unread notice. A new `app.relaunched` event lists the previous run's short refs with their UUIDs. (C11-568)
+
 ## [1.7.8] - 2026-11-01
 
 Headline: **c11 1.7.8. The mailbox drawer shows how long mail waited before an agent took it and jumps from a sender's name to that conversation, the workspace menu is shorter, and Markdown panels keep their place inside lists, callouts and footnotes.**

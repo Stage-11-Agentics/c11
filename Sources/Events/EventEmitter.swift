@@ -645,6 +645,51 @@ final class EventEmitter {
         emit(.conversationResumeMode, payload: ["mode": mode.rawValue])
     }
 
+    /// C11-568: once per launch that followed an earlier run. Carries that
+    /// run's short refs (`old_ref` to `id`) so a watcher holding a short ref
+    /// across the restart can find the same object by UUID.
+    @discardableResult
+    func emitRelaunched(
+        priorShutdown: ShutdownSentinel.PriorShutdown,
+        restartedAt: Date,
+        record: RelaunchRecord?
+    ) -> Bool {
+        emit(.appRelaunched, payload: Self.relaunchedPayload(
+            priorShutdown: priorShutdown,
+            restartedAt: restartedAt,
+            record: record
+        ))
+    }
+
+    static func relaunchedPayload(
+        priorShutdown: ShutdownSentinel.PriorShutdown,
+        restartedAt: Date,
+        record: RelaunchRecord?
+    ) -> [String: Any] {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let prior: String
+        switch priorShutdown {
+        case .clean: prior = "clean"
+        case .dirty: prior = "dirty"
+        case .missing, .unreadable, .invalid: prior = "unknown"
+        }
+        var refs: [String: Any] = [:]
+        for kind in RelaunchRecord.refKinds {
+            refs[kind] = (record?.refs[kind] ?? []).map { ["old_ref": $0.ref, "id": $0.id] }
+        }
+        let priorLaunchedAt: Any = record.map {
+            iso.string(from: Date(timeIntervalSince1970: $0.runLaunchedAt)) as Any
+        } ?? NSNull()
+        return [
+            "prior_shutdown": prior,
+            "prior_launched_at": priorLaunchedAt,
+            "restarted_at": iso.string(from: restartedAt),
+            "record": record?.reason.rawValue ?? NSNull(),
+            "refs": refs,
+        ]
+    }
+
     /// One durable outcome for each restored agent candidate. The command
     /// itself is intentionally excluded: the kind + exact conversation id
     /// identify the target without duplicating shell text in diagnostics.

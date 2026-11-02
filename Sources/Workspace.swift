@@ -938,6 +938,9 @@ extension Workspace {
             } else {
                 terminalPanel.surface.sendText(text)
             }
+            // C11-568: the agent this resumes lost its background work with
+            // the previous process; tell it once, by mail, at its next idle.
+            AppDelegate.shared?.sendRelaunchNoticeIfNeeded(workspaceId: id, panelId: panelId)
         case .skip(let reason):
             if launchResumeOutcomes[panelId] != .resumed {
                 launchResumeOutcomes[panelId] = .skipped(code: .panelInUse, reason: reason)
@@ -7793,6 +7796,16 @@ final class Workspace: Identifiable, ObservableObject {
         dlog("mailbox.noop_return.retracted surface=\(surfaceId.uuidString.prefix(8))")
 #endif
         ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+    }
+
+    /// C11-568: the interactive agent registered behind each terminal panel,
+    /// pinned by start time, for the quit-time process count.
+    func relaunchAgentProcesses() -> [RelaunchProcessCount.Agent] {
+        panels.keys.compactMap { surfaceId in
+            guard panels[surfaceId] is TerminalPanel,
+                  let process = mailboxStdinState.buffer.agentProcess(surfaceId: surfaceId) else { return nil }
+            return RelaunchProcessCount.Agent(panelId: surfaceId, pid: process.pid, startTime: process.startTime)
+        }
     }
 
     /// A session started or re-attached in this panel (C11-398). The turn is

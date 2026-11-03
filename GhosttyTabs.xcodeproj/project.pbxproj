@@ -626,6 +626,8 @@
 		D252E149B5F6DE9AB8BC31EF /* CreateWorkspacePickerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB77D5E834FDE5657127E81B /* CreateWorkspacePickerLogicTests.swift */; };
 		D25700000000000000000001 /* MessagesPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25710000000000000000001 /* MessagesPage.swift */; };
 		D25700000000000000000002 /* MessagesPageWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25710000000000000000002 /* MessagesPageWriter.swift */; };
+		D25700000000000000000004 /* MessagesPageDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25710000000000000000004 /* MessagesPageDirectory.swift */; };
+		D25700000000000000000005 /* MessagesPageWeb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25710000000000000000005 /* MessagesPageWeb.swift */; };
 		D25700000000000000000003 /* MessagesPageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25710000000000000000003 /* MessagesPageTests.swift */; };
 		D315C25B997B06679DD201C1 /* SnapshotHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01822B693A5DD01EFE28F75F /* SnapshotHandlers.swift */; };
 		D3A97DA994E2DA451F6020CF /* DefaultAgentConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B62D2ECDC52E5244D9C6E3 /* DefaultAgentConfig.swift */; };
@@ -1335,6 +1337,8 @@
 		D1BEF00001A1B2C3D4E5F719 /* open */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/open; sourceTree = SOURCE_ROOT; };
 		D25710000000000000000001 /* MessagesPage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessagesPage.swift; path = Messages/MessagesPage.swift; sourceTree = "<group>"; };
 		D25710000000000000000002 /* MessagesPageWriter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessagesPageWriter.swift; path = Messages/MessagesPageWriter.swift; sourceTree = "<group>"; };
+		D25710000000000000000004 /* MessagesPageDirectory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessagesPageDirectory.swift; path = Messages/MessagesPageDirectory.swift; sourceTree = "<group>"; };
+		D25710000000000000000005 /* MessagesPageWeb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessagesPageWeb.swift; path = Messages/MessagesPageWeb.swift; sourceTree = "<group>"; };
 		D25710000000000000000003 /* MessagesPageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesPageTests.swift; sourceTree = "<group>"; };
 		D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAndMenuBarTests.swift; sourceTree = "<group>"; };
 		D4C7E212A580905DBF388D79 /* ConfigCommandCoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigCommandCoreTests.swift; sourceTree = "<group>"; };
@@ -1875,6 +1879,8 @@
 				00B9399C201ED734873E67B9 /* EventEmitter.swift */,
 				D25710000000000000000001 /* MessagesPage.swift */,
 				D25710000000000000000002 /* MessagesPageWriter.swift */,
+				D25710000000000000000004 /* MessagesPageDirectory.swift */,
+				D25710000000000000000005 /* MessagesPageWeb.swift */,
 				06DBF89CEAC123699A1BCDB6 /* AgentLaunchStats.swift */,
 				28C6DD21C072B005162E855C /* ModelCostCatalog.swift */,
 				C1120300000000000000F001 /* ModelCatalog.swift */,
@@ -3014,6 +3020,8 @@
 				88A8E702E9D54BBCAD7025C7 /* EventEmitter.swift in Sources */,
 				D25700000000000000000001 /* MessagesPage.swift in Sources */,
 				D25700000000000000000002 /* MessagesPageWriter.swift in Sources */,
+				D25700000000000000000004 /* MessagesPageDirectory.swift in Sources */,
+				D25700000000000000000005 /* MessagesPageWeb.swift in Sources */,
 				9CFE781967963703AEA37DB8 /* AgentLaunchStats.swift in Sources */,
 				139D042B6811CF51F88ECA87 /* ModelCostCatalog.swift in Sources */,
 				C1120300000000000000F002 /* ModelCatalog.swift in Sources */,

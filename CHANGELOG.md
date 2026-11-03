@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Added
+
+- **The conversation web shows who talks to whom across all of c11.** The messages page (`c11 messages view`) now opens on a Web view: every panel that sent or received a message is a node, grouped by workspace, and each direction of a conversation is an edge, solid for mail, dashed for `c11 send`, orange for the last 15 minutes. Scope it to the whole c11, one workspace, or one panel and its peers; click an edge to read the thread, or a panel to see its peers and jump to it. The timeline moved to the page's Traffic view. Each panel's mailbox drawer has a **Global Conversation View** link that opens the web centred on that panel.
+
 ## [1.8.0] - 2026-11-02
 
 Headline: **c11 1.8.0. Claude Code agents read their mail in the turn it arrives, and switching workspaces from the sidebar can no longer freeze c11.**

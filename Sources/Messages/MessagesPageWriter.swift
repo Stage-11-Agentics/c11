@@ -11,6 +11,11 @@ final class MessagesPageWriter {
     private let queue: DispatchQueue
     private let lock = NSLock()
     private let fixedStateURL: URL?
+    /// The session snapshot the page reads panel names from. Nil with a fixed
+    /// state URL (tests) unless one is passed, so tests never read the
+    /// operator's live session.
+    private let fixedSessionURL: URL?
+    private var sessionURL: URL?
     private let debounceInterval: TimeInterval
     private let maxWaitInterval: TimeInterval
     private let observeEvents: Bool
@@ -31,9 +36,13 @@ final class MessagesPageWriter {
     /// event-log rotation via `_read/`, inbox, and `_rejected/`.
     private var mailboxArtifactsCache: [MessagesPageMailboxArtifact]?
     private var mailboxRefreshRequested = true
+    /// Queue-confined: the last decoded panel directory and the session file
+    /// state it came from, so an unchanged session is not decoded again.
+    private var directoryCache: (key: String, directory: MessagesPageDirectory)?
 
     init(
         stateURL: URL? = nil,
+        sessionURL: URL? = nil,
         debounceInterval: TimeInterval = 1.0,
         maxWaitInterval: TimeInterval = 5.0,
         observeEvents: Bool = true,
@@ -41,6 +50,7 @@ final class MessagesPageWriter {
         label: String = "com.stage11.c11.messages-page-writer"
     ) {
         self.fixedStateURL = stateURL
+        self.fixedSessionURL = sessionURL
         self.debounceInterval = max(0, debounceInterval)
         self.maxWaitInterval = max(self.debounceInterval, maxWaitInterval)
         self.observeEvents = observeEvents
@@ -66,6 +76,8 @@ final class MessagesPageWriter {
             return
         }
         stateURL = resolvedStateURL
+        sessionURL = fixedSessionURL
+            ?? (fixedStateURL == nil ? SessionPersistenceStore.defaultSnapshotFileURL() : nil)
         started = true
         mailboxRefreshRequested = true
         if observeEvents {
@@ -99,6 +111,7 @@ final class MessagesPageWriter {
         pendingSince = nil
         eventLogCache = MessagesPageEventLogCache()
         mailboxArtifactsCache = nil
+        directoryCache = nil
         lock.unlock()
         if let observer {
             NotificationCenter.default.removeObserver(observer)
@@ -251,6 +264,7 @@ final class MessagesPageWriter {
         lock.lock()
         let refreshMailbox = forceMailboxRefresh || mailboxRefreshRequested || mailboxArtifactsCache == nil
         mailboxRefreshRequested = false
+        let resolvedSessionURL = sessionURL ?? fixedSessionURL
         lock.unlock()
 
         let source = MessagesPageSource.load(
@@ -259,12 +273,23 @@ final class MessagesPageWriter {
             mailboxArtifacts: refreshMailbox ? nil : mailboxArtifactsCache
         )
         mailboxArtifactsCache = source.mailboxArtifacts
-        let snapshot = MessagesPageBuilder.build(
+        var snapshot = MessagesPageBuilder.build(
             events: source.events,
             mailboxArtifacts: source.mailboxArtifacts
         )
+        snapshot.directory = cachedDirectory(sessionURL: resolvedSessionURL)
         let html = MessagesPageRenderer.render(snapshot: snapshot)
         try writeAtomically(html: html, stateURL: stateURL)
+    }
+
+    private func cachedDirectory(sessionURL: URL?) -> MessagesPageDirectory {
+        guard let sessionURL else { return .empty }
+        let values = try? sessionURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let key = "\(sessionURL.path)|\(values?.contentModificationDate?.timeIntervalSince1970 ?? -1)|\(values?.fileSize ?? -1)"
+        if let directoryCache, directoryCache.key == key { return directoryCache.directory }
+        let directory = MessagesPageDirectory.load(sessionURL: sessionURL)
+        directoryCache = (key, directory)
+        return directory
     }
 
     private func writeAtomically(html: String, stateURL: URL) throws {

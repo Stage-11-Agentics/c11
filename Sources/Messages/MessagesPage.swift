@@ -179,6 +179,9 @@ struct MessagesPageSnapshot: Equatable {
     let messageByteLimit: Int
     let estimatedMessageBytes: Int
     let messages: [MessagesPageRecord]
+    /// Names and liveness of the panels behind the messages, for the
+    /// conversation web. Empty when the session file is unavailable.
+    var directory: MessagesPageDirectory = .empty
 
     var wasBounded: Bool {
         totalObserved > messages.count || estimatedMessageBytes > messageByteLimit
@@ -221,6 +224,7 @@ struct MessagesPageSnapshot: Equatable {
                 "edges": edges,
             ],
             "messages": messages.map(\.jsonObject),
+            "directory": directory.jsonObject,
         ]
     }
 
@@ -231,7 +235,8 @@ struct MessagesPageSnapshot: Equatable {
             messageLimit: messageLimit,
             messageByteLimit: messageByteLimit,
             estimatedMessageBytes: MessagesPageBuilder.estimatedPageBytes(for: messages),
-            messages: messages
+            messages: messages,
+            directory: directory
         )
     }
 }
@@ -254,6 +259,9 @@ struct MessagesPageMailboxArtifact {
     let lifecycle: [MessagesPageLifecycle]
     var textRecorded = true
     var recordedBytes: Int? = nil
+    /// The dispatcher's stamp of the sending panel (`ext.c11_sender_panel_id`),
+    /// when it recorded one. Senders cannot forge it.
+    var senderPanelID: String? = nil
 }
 
 struct MessagesPageSourceData {
@@ -449,7 +457,7 @@ enum MessagesPageBuilder {
             workspace: artifact.workspace,
             surface: nil,
             sender: artifact.from,
-            senderID: nil,
+            senderID: artifact.senderPanelID,
             callerTitle: nil,
             recipient: artifact.to,
             targetTitle: artifact.to,
@@ -471,6 +479,7 @@ enum MessagesPageBuilder {
         if record.timestamp.isEmpty { record.timestamp = artifact.timestamp ?? "" }
         if record.workspace == nil { record.workspace = artifact.workspace }
         if record.sender == nil { record.sender = artifact.from }
+        if record.senderID == nil { record.senderID = artifact.senderPanelID }
         if record.recipient == nil { record.recipient = artifact.to }
         if record.targetTitle == nil { record.targetTitle = artifact.to }
         if record.topic == nil { record.topic = artifact.topic }
@@ -915,7 +924,9 @@ enum MessagesPageSource {
             fileState: state,
             lifecycle: dispatch?.lifecycle ?? [],
             textRecorded: textRecorded,
-            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0)
+            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0),
+            senderPanelID: MessagesPageJSON.string(ext[MailboxEnvelope.senderPanelKey])
+                .flatMap(UUID.init(uuidString:))?.uuidString
         )
     }
 
@@ -1112,9 +1123,11 @@ enum MessagesPageRenderer {
             .empty { padding: 18px 0; }
             details { margin: 8px 0; }
             summary { cursor: pointer; }
+        \(MessagesPageWeb.style)
           </style>
         </head>
-        <body>
+        <body class="view-traffic">
+        \(MessagesPageWeb.markup)
           <main>
             <header>
               <div><h1>c11 messages</h1><div id="generated" class="muted"></div></div>
@@ -1340,6 +1353,9 @@ enum MessagesPageRenderer {
             renderTimeline();
             if (state.scrollY) window.scrollTo(0, state.scrollY);
           })();
+          </script>
+          <script>
+        \(MessagesPageWeb.script)
           </script>
         </body>
         </html>

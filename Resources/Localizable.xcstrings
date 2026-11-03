@@ -2910,6 +2910,30 @@
         "ru": {"stringUnit": {"state": "translated", "value": "от"}}
       }
     },
+    "mailbox.drawer.globalView": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Global Conversation View"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "全会話ビュー"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Усі розмови"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "전체 대화 보기"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "全部对话视图"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "全部對話檢視"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Все диалоги"}}
+      }
+    },
+    "mailbox.drawer.globalView.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Show every conversation in this c11, centred on this panel"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この c11 のすべての会話を、このパネルを中心に表示"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "Показати всі розмови в цьому c11 з центром на цій панелі"}},
+        "ko": {"stringUnit": {"state": "translated", "value": "이 c11의 모든 대화를 이 패널 중심으로 표시"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "显示此 c11 中的所有对话，以此面板为中心"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示此 c11 中的所有對話，以此面板為中心"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Показать все диалоги в этом c11, с центром на этой панели"}}
+      }
+    },
     "mailbox.drawer.loading": {
       "extractionState": "manual",
       "localizations": {

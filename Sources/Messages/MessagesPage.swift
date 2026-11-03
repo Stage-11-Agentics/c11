@@ -136,6 +136,9 @@ struct MessagesPageRecord: Equatable {
     var lifecycle: [MessagesPageLifecycle]
     var textRecorded = true
     var recordedBytes: Int? = nil
+    /// Every recipient panel a mailbox copy landed in, in delivery order.
+    /// `surface` keeps the first; a role or broadcast address reaches more.
+    var recipientPanelIDs: [String] = []
 
     var jsonObject: [String: Any] {
         var result: [String: Any] = [
@@ -168,6 +171,7 @@ struct MessagesPageRecord: Equatable {
         if let urgent { result["urgent"] = urgent }
         if let submitted { result["submitted"] = submitted }
         if let queued { result["queued"] = queued }
+        if !recipientPanelIDs.isEmpty { result["recipient_panel_ids"] = recipientPanelIDs }
         return result
     }
 }
@@ -179,6 +183,9 @@ struct MessagesPageSnapshot: Equatable {
     let messageByteLimit: Int
     let estimatedMessageBytes: Int
     let messages: [MessagesPageRecord]
+    /// Names and liveness of the panels behind the messages, for the
+    /// conversation web. Empty when the session file is unavailable.
+    var directory: MessagesPageDirectory = .empty
 
     var wasBounded: Bool {
         totalObserved > messages.count || estimatedMessageBytes > messageByteLimit
@@ -221,6 +228,7 @@ struct MessagesPageSnapshot: Equatable {
                 "edges": edges,
             ],
             "messages": messages.map(\.jsonObject),
+            "directory": directory.jsonObject,
         ]
     }
 
@@ -231,7 +239,8 @@ struct MessagesPageSnapshot: Equatable {
             messageLimit: messageLimit,
             messageByteLimit: messageByteLimit,
             estimatedMessageBytes: MessagesPageBuilder.estimatedPageBytes(for: messages),
-            messages: messages
+            messages: messages,
+            directory: directory
         )
     }
 }
@@ -254,6 +263,11 @@ struct MessagesPageMailboxArtifact {
     let lifecycle: [MessagesPageLifecycle]
     var textRecorded = true
     var recordedBytes: Int? = nil
+    /// The dispatcher's stamp of the sending panel (`ext.c11_sender_panel_id`),
+    /// when it recorded one. Senders cannot forge it.
+    var senderPanelID: String? = nil
+    /// The recipient panel whose inbox held this copy, from the inbox path.
+    var recipientPanelID: String? = nil
 }
 
 struct MessagesPageSourceData {
@@ -449,7 +463,7 @@ enum MessagesPageBuilder {
             workspace: artifact.workspace,
             surface: nil,
             sender: artifact.from,
-            senderID: nil,
+            senderID: artifact.senderPanelID,
             callerTitle: nil,
             recipient: artifact.to,
             targetTitle: artifact.to,
@@ -471,6 +485,10 @@ enum MessagesPageBuilder {
         if record.timestamp.isEmpty { record.timestamp = artifact.timestamp ?? "" }
         if record.workspace == nil { record.workspace = artifact.workspace }
         if record.sender == nil { record.sender = artifact.from }
+        if record.senderID == nil { record.senderID = artifact.senderPanelID }
+        if let panel = artifact.recipientPanelID, !record.recipientPanelIDs.contains(panel) {
+            record.recipientPanelIDs.append(panel)
+        }
         if record.recipient == nil { record.recipient = artifact.to }
         if record.targetTitle == nil { record.targetTitle = artifact.to }
         if record.topic == nil { record.topic = artifact.topic }
@@ -569,6 +587,14 @@ enum MessagesPageBuilder {
                 to: &record
             )
         case "delivered":
+            if record.senderID == nil,
+               let stamp = MessagesPageJSON.string(payload["sender_panel_id"]).flatMap(UUID.init(uuidString:)) {
+                record.senderID = stamp.uuidString
+            }
+            if let panel = event.surface.flatMap(UUID.init(uuidString:))?.uuidString,
+               !record.recipientPanelIDs.contains(panel) {
+                record.recipientPanelIDs.append(panel)
+            }
             record.recipient = record.recipient ?? MessagesPageJSON.string(payload["recipient"])
             record.targetTitle = record.targetTitle ?? MessagesPageJSON.string(payload["recipient"])
             record.status = mergedStatus(record.status, "delivered")
@@ -842,7 +868,7 @@ enum MessagesPageSource {
                         continue
                     }
                     let state = fileState(for: url)
-                    let artifact = mailboxArtifact(
+                    var artifact = mailboxArtifact(
                         object: object,
                         workspace: workspaceURL.lastPathComponent,
                         id: id,
@@ -850,6 +876,10 @@ enum MessagesPageSource {
                         dispatch: dispatch[id],
                         keepRejectedText: keepRejectedText
                     )
+                    // `<mailboxes>/<panel-uuid>/…`: the first path component under
+                    // the mailbox root names the recipient for an inbox copy.
+                    let relative = url.path.dropFirst(mailboxRoot.path.count).split(separator: "/")
+                    artifact.recipientPanelID = relative.first.flatMap { UUID(uuidString: String($0)) }?.uuidString
                     artifacts.append(artifact)
                     seenIDs.insert(id)
                 }
@@ -915,7 +945,9 @@ enum MessagesPageSource {
             fileState: state,
             lifecycle: dispatch?.lifecycle ?? [],
             textRecorded: textRecorded,
-            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0)
+            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0),
+            senderPanelID: MessagesPageJSON.string(ext[MailboxEnvelope.senderPanelKey])
+                .flatMap(UUID.init(uuidString:))?.uuidString
         )
     }
 
@@ -1112,9 +1144,11 @@ enum MessagesPageRenderer {
             .empty { padding: 18px 0; }
             details { margin: 8px 0; }
             summary { cursor: pointer; }
+        \(MessagesPageWeb.style)
           </style>
         </head>
-        <body>
+        <body class="view-traffic">
+        \(MessagesPageWeb.markup)
           <main>
             <header>
               <div><h1>c11 messages</h1><div id="generated" class="muted"></div></div>
@@ -1340,6 +1374,9 @@ enum MessagesPageRenderer {
             renderTimeline();
             if (state.scrollY) window.scrollTo(0, state.scrollY);
           })();
+          </script>
+          <script>
+        \(MessagesPageWeb.script)
           </script>
         </body>
         </html>

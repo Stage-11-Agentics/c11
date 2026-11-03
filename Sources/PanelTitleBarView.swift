@@ -239,7 +239,14 @@ struct PanelTitleBarView: View {
                 presenter?.onDismiss = nil
                 presenter?.dismissAnimated()
             },
-            resolvePanels: { ids in Self.resolvePanels(ids) }
+            resolvePanels: { ids in Self.resolvePanels(ids) },
+            onOpenGlobalView: { [weak presenter = drawerPresenter, weak workspace, open = $isDrawerOpen] in
+                open.wrappedValue = false
+                presenter?.onDismiss = nil
+                presenter?.dismissAnimated()
+                guard let workspace else { return }
+                MessagesPageWeb.open(centredOn: panelId, in: workspace)
+            }
         )
         // Capture the binding, not the view: the view holds the presenter and
         // the workspace, and the presenter holds this closure.

@@ -554,7 +554,8 @@ final class MailboxDispatcher {
                 id: envelope.id,
                 recipient: recipient.displayName,
                 surface: recipient.surfaceId,
-                via: "inbox"
+                via: "inbox",
+                senderPanel: envelope.senderPanelId
             )
             return true
         } catch {

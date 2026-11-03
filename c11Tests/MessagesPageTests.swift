@@ -929,3 +929,418 @@ extension MessagesPageTests {
         XCTAssertEqual(mailbox.status, "delivered")
     }
 }
+
+// MARK: - Conversation web: panel directory, sender stamp, deep links
+
+extension MessagesPageTests {
+    private func makeDirectorySession(
+        livePanel: UUID,
+        liveWorkspace: UUID,
+        closedPanel: UUID,
+        closedWorkspace: UUID
+    ) throws -> Data {
+        let panel = SessionPanelSnapshot(
+            id: livePanel,
+            type: .terminal,
+            title: "zsh",
+            customTitle: "Fleet Lead",
+            directory: "/tmp",
+            isPinned: false,
+            isManuallyUnread: false,
+            gitBranch: nil,
+            listeningPorts: [],
+            ttyName: nil,
+            terminal: nil,
+            browser: nil,
+            markdown: nil,
+            metadata: [
+                "mailbox.address": .string("fleet-lead"),
+                MetadataKey.terminalType: .string("claude-code"),
+            ],
+            metadataSources: nil
+        )
+        let workspace = SessionWorkspaceSnapshot(
+            id: liveWorkspace,
+            processTitle: "zsh",
+            customTitle: "Fleet",
+            customColor: nil,
+            isPinned: false,
+            currentDirectory: "/tmp",
+            focusedPanelId: livePanel,
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: [livePanel], selectedPanelId: livePanel)),
+            panels: [panel],
+            statusEntries: [],
+            logEntries: [],
+            progress: nil,
+            gitBranch: nil
+        )
+        let window = SessionWindowSnapshot(
+            frame: nil,
+            display: nil,
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: 0, workspaces: [workspace]),
+            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 240)
+        )
+        let snapshot = AppSessionSnapshot(
+            version: SessionSnapshotSchema.currentVersion,
+            createdAt: 0,
+            windows: [window]
+        )
+        // Lineage nodes are added as JSON: this test target compiles its own
+        // copy of PanelLineageNode, which is not the app's type.
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any]
+        )
+        object["panelLineageNodes"] = [
+            [
+                "id": livePanel.uuidString, "workspace_id": liveWorkspace.uuidString,
+                "workspace_title": "Fleet", "last_title": "Fleet Lead", "panel_type": "terminal",
+                "agent_type": "claude-code",
+            ],
+            [
+                "id": closedPanel.uuidString, "parent_panel_id": livePanel.uuidString,
+                "workspace_id": closedWorkspace.uuidString, "workspace_title": "Old Run",
+                "last_title": "T-7 Owner", "panel_type": "terminal", "agent_type": "codex",
+                "closed_at": 1.0,
+            ],
+        ]
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+
+    func testDirectoryNamesOpenAndClosedPanelsFromTheSessionFile() throws {
+        let live = UUID(), liveWorkspace = UUID(), closed = UUID(), closedWorkspace = UUID()
+        let sessionURL = tempDir.appendingPathComponent("session.json")
+        try makeDirectorySession(
+            livePanel: live, liveWorkspace: liveWorkspace, closedPanel: closed, closedWorkspace: closedWorkspace
+        ).write(to: sessionURL)
+
+        let directory = MessagesPageDirectory.load(sessionURL: sessionURL)
+
+        let lead = try XCTUnwrap(directory.panels.first(where: { $0.id == live.uuidString }))
+        XCTAssertEqual(lead.title, "Fleet Lead")
+        XCTAssertEqual(lead.address, "fleet-lead")
+        XCTAssertEqual(lead.agent, "claude-code")
+        XCTAssertEqual(lead.workspace, liveWorkspace.uuidString)
+        XCTAssertTrue(lead.live)
+
+        let owner = try XCTUnwrap(directory.panels.first(where: { $0.id == closed.uuidString }))
+        XCTAssertEqual(owner.title, "T-7 Owner")
+        XCTAssertEqual(owner.parent, live.uuidString)
+        XCTAssertEqual(owner.workspace, closedWorkspace.uuidString)
+        XCTAssertFalse(owner.live)
+
+        XCTAssertEqual(
+            directory.workspaces.map { [$0.id, $0.title ?? "", $0.live ? "live" : "closed"] },
+            [[liveWorkspace.uuidString, "Fleet", "live"], [closedWorkspace.uuidString, "Old Run", "closed"]]
+        )
+    }
+
+    func testMissingOrUnreadableSessionFileGivesAnEmptyDirectory() throws {
+        XCTAssertEqual(MessagesPageDirectory.load(sessionURL: nil), .empty)
+        XCTAssertEqual(MessagesPageDirectory.load(sessionURL: tempDir.appendingPathComponent("absent.json")), .empty)
+        let garbage = tempDir.appendingPathComponent("garbage.json")
+        try Data("not json".utf8).write(to: garbage)
+        XCTAssertEqual(MessagesPageDirectory.load(sessionURL: garbage), .empty)
+    }
+
+    func testDispatcherSenderStampNamesTheSendingPanel() throws {
+        let inbox = tempDir
+            .appendingPathComponent("workspaces", isDirectory: true)
+            .appendingPathComponent("workspace-stamp", isDirectory: true)
+            .appendingPathComponent("mailboxes", isDirectory: true)
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let sender = UUID()
+        let stamped: [String: Any] = [
+            "version": 1, "id": "01K3A2B7X8PQRTVWYZ0123456S", "from": "fleet-lead", "to": "t-7",
+            "ts": "2026-10-01T23:00:00.000Z", "body": "STAMPED",
+            "ext": [MailboxEnvelope.senderPanelKey: sender.uuidString.lowercased()],
+        ]
+        let forged: [String: Any] = [
+            "version": 1, "id": "01K3A2B7X8PQRTVWYZ0123456T", "from": "fleet-lead", "to": "t-7",
+            "ts": "2026-10-01T23:01:00.000Z", "body": "NOT_A_UUID",
+            "ext": [MailboxEnvelope.senderPanelKey: "not-a-panel"],
+        ]
+        for envelope in [stamped, forged] {
+            try JSONSerialization.data(withJSONObject: envelope)
+                .write(to: inbox.appendingPathComponent("\(envelope["id"]!).msg"))
+        }
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+
+        let record = try XCTUnwrap(snapshot.messages.first(where: { $0.body == "STAMPED" }))
+        XCTAssertEqual(record.senderID, sender.uuidString)
+        XCTAssertEqual(record.jsonObject["sender_id"] as? String, sender.uuidString)
+        let unstamped = try XCTUnwrap(snapshot.messages.first(where: { $0.body == "NOT_A_UUID" }))
+        XCTAssertNil(unstamped.senderID)
+    }
+
+    func testWriterEmbedsTheDirectoryAndTheWebView() throws {
+        let live = UUID(), liveWorkspace = UUID()
+        let sessionURL = tempDir.appendingPathComponent("session.json")
+        try makeDirectorySession(
+            livePanel: live, liveWorkspace: liveWorkspace, closedPanel: UUID(), closedWorkspace: UUID()
+        ).write(to: sessionURL)
+        let eventsDirectory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)
+        try (c1Line + "\n").write(
+            to: eventsDirectory.appendingPathComponent("events-fixture.ndjson"), atomically: true, encoding: .utf8
+        )
+
+        let writer = MessagesPageWriter(
+            stateURL: tempDir,
+            sessionURL: sessionURL,
+            debounceInterval: 0,
+            observeEvents: false,
+            label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)"
+        )
+        writer.start()
+        try writer.rebuildNowForTesting()
+        writer.stopForTesting()
+
+        let html = try String(contentsOf: MessagesPageLayout.pageURL(state: tempDir), encoding: .utf8)
+        XCTAssertTrue(html.contains(#""directory":{"#))
+        XCTAssertTrue(html.contains("Fleet Lead"))
+        XCTAssertTrue(html.contains("fleet-lead"))
+        XCTAssertTrue(html.contains(#"id="cw""#))
+        XCTAssertTrue(html.contains(#"data-view="traffic""#))
+        // The traffic view stays the page's fallback until the web script runs.
+        XCTAssertTrue(html.contains(#"<body class="view-traffic">"#))
+        XCTAssertFalse(html.contains("http://"))
+        XCTAssertFalse(html.contains("https://"))
+    }
+
+    func testWriterWithAFixedStateDirectoryNeverReadsTheLiveSession() throws {
+        let writer = MessagesPageWriter(
+            stateURL: tempDir,
+            debounceInterval: 0,
+            observeEvents: false,
+            label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)"
+        )
+        writer.start()
+        try writer.rebuildNowForTesting()
+        writer.stopForTesting()
+
+        let html = try String(contentsOf: MessagesPageLayout.pageURL(state: tempDir), encoding: .utf8)
+        XCTAssertTrue(html.contains(#""directory":{"link_scheme":"c11","panels":[],"workspaces":[]}"#))
+    }
+
+    func testDeepLinkTargetsThePanelAndStaysTheMessagesPage() throws {
+        let panel = try XCTUnwrap(UUID(uuidString: "6E1E3B2A-1111-4222-8333-944455556666"))
+        let page = MessagesPageLayout.pageURL(state: tempDir)
+        let fragment = MessagesPageWeb.deepLinkFragment(panelID: panel, nonce: 42)
+        XCTAssertEqual(fragment, "web:panel=6E1E3B2A-1111-4222-8333-944455556666&n=42")
+        let url = MessagesPageWeb.url(page: page, fragment: fragment)
+        XCTAssertEqual(url.fragment, fragment)
+        XCTAssertEqual(url.standardizedFileURL.path, page.standardizedFileURL.path)
+        XCTAssertTrue(MessagesPageLayout.isMessagesPageURL(url))
+        XCTAssertEqual(
+            MessagesPageWeb.deepLinkFragment(workspaceID: panel),
+            "web:workspace=6E1E3B2A-1111-4222-8333-944455556666"
+        )
+    }
+}
+
+// MARK: - Conversation web: live stamps, every recipient, a fresh directory
+
+extension MessagesPageTests {
+    private func deliveredLine(id: String, panel: UUID, sender: UUID?, seq: Int) -> String {
+        var payload: [String: Any] = ["id": id, "recipient": "role-review", "via": "inbox"]
+        if let sender { payload["sender_panel_id"] = sender.uuidString }
+        let object: [String: Any] = [
+            "instance": "fixture", "payload": payload, "seq": seq, "surface": panel.uuidString,
+            "ts": "2026-10-02T00:35:5\(seq % 10).000Z", "type": "mailbox.delivered", "v": 1,
+            "workspace": "63916DB4-C544-4057-8755-F290FDCA0B12",
+        ]
+        return String(data: try! JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+    }
+
+    func testDeliveredEventsNameTheSenderPanelAndEveryRecipient() throws {
+        let id = "01K3A2B7X8PQRTVWYZ0123456J"
+        let sender = UUID(), first = UUID(), second = UUID()
+        let lines = [
+            acceptedLine,
+            deliveredLine(id: id, panel: first, sender: sender, seq: 3),
+            deliveredLine(id: id, panel: second, sender: sender, seq: 4),
+            // A drain receipt for the first copy repeats its panel and carries no stamp.
+            deliveredLine(id: id, panel: first, sender: nil, seq: 5),
+        ]
+        let snapshot = MessagesPageBuilder.build(events: try lines.map { try XCTUnwrap(MessagesPageEvent(line: $0)) })
+
+        let record = try XCTUnwrap(snapshot.messages.first(where: { $0.id == id }))
+        XCTAssertEqual(record.senderID, sender.uuidString)
+        XCTAssertEqual(record.recipientPanelIDs, [first.uuidString, second.uuidString])
+        XCTAssertEqual(record.jsonObject["recipient_panel_ids"] as? [String], [first.uuidString, second.uuidString])
+    }
+
+    func testWriterSeesARenamedPanelAfterTheSessionFileChanges() throws {
+        let live = UUID(), liveWorkspace = UUID()
+        let sessionURL = tempDir.appendingPathComponent("session.json")
+        let original = try makeDirectorySession(
+            livePanel: live, liveWorkspace: liveWorkspace, closedPanel: UUID(), closedWorkspace: UUID()
+        )
+        try original.write(to: sessionURL)
+        let writer = MessagesPageWriter(
+            stateURL: tempDir,
+            sessionURL: sessionURL,
+            debounceInterval: 0,
+            observeEvents: false,
+            label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)"
+        )
+        writer.start()
+        defer { writer.stopForTesting() }
+        try writer.rebuildNowForTesting()
+        let page = MessagesPageLayout.pageURL(state: tempDir)
+        XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("Fleet Lead"))
+
+        let renamed = String(decoding: original, as: UTF8.self)
+            .replacingOccurrences(of: "Fleet Lead", with: "Fleet Captain, Renamed")
+        try Data(renamed.utf8).write(to: sessionURL)
+        try writer.rebuildNowForTesting()
+
+        let html = try String(contentsOf: page, encoding: .utf8)
+        XCTAssertTrue(html.contains("Fleet Captain, Renamed"))
+        XCTAssertFalse(html.contains("Fleet Lead"))
+    }
+
+    func testDirectoryKeepsOpenAndReferencedPanelsAndTheirAncestors() {
+        func panel(_ id: String, live: Bool, address: String? = nil, parent: String? = nil) -> MessagesPageDirectory.Panel {
+            .init(id: id, title: id, workspace: "W-\(id)", live: live, type: "terminal", agent: nil, address: address, parent: parent)
+        }
+        let grandparent = UUID().uuidString, parent = UUID().uuidString, referenced = UUID().uuidString
+        let open = UUID().uuidString, addressed = UUID().uuidString, forgotten = UUID().uuidString
+        let directory = MessagesPageDirectory(
+            panels: [
+                panel(grandparent, live: false),
+                panel(parent, live: false, parent: grandparent),
+                panel(referenced, live: false, parent: parent),
+                panel(open, live: true),
+                panel(addressed, live: false, address: "lead"),
+                panel(forgotten, live: false),
+            ],
+            workspaces: [.init(id: "W-\(forgotten)", title: "gone", live: false), .init(id: "W-\(open)", title: "here", live: true)]
+        )
+        let message = MessagesPageRecord(
+            id: "m", channel: "mailbox", timestamp: "2026-10-02T00:00:00.000Z", sequence: nil, workspace: nil,
+            surface: referenced.lowercased(), sender: "lead", senderID: nil, callerTitle: nil, recipient: "x",
+            targetTitle: nil, kind: nil, topic: nil, body: "", bodyRef: nil, replyTo: nil, inReplyTo: nil,
+            urgent: nil, submitted: nil, queued: nil, truncated: false, status: "delivered", lifecycle: []
+        )
+
+        let kept = directory.relevant(to: [message])
+
+        // A closed panel with only a remembered address is dropped: senders are
+        // matched by address against open panels alone.
+        XCTAssertEqual(Set(kept.panels.map(\.id)), [grandparent, parent, referenced, open])
+        XCTAssertEqual(kept.workspaces.map(\.title), ["here"])
+    }
+}
+
+// MARK: - Conversation web: live overlay, id: addresses, inbox recipients
+
+extension MessagesPageTests {
+    private func directoryPanel(_ id: String, title: String?, live: Bool, address: String? = nil) -> MessagesPageDirectory.Panel {
+        .init(id: id, title: title, workspace: "W", live: live, type: "terminal", agent: "codex", address: address, parent: nil)
+    }
+
+    func testLiveOverlayRenamesClosesAndAddsPanels() {
+        let renamed = UUID().uuidString, gone = UUID().uuidString, new = UUID().uuidString
+        let saved = MessagesPageDirectory(
+            panels: [directoryPanel(renamed, title: "~", live: true), directoryPanel(gone, title: "Old", live: true)],
+            workspaces: [.init(id: "W", title: "Fleet", live: true)]
+        )
+        let merged = saved.overlaying(live: [
+            directoryPanel(renamed, title: "Beta", live: true, address: "beta"),
+            .init(id: new, title: "Fresh", workspace: "W2", live: true, type: nil, agent: nil, address: nil, parent: nil),
+        ])
+        let byID = Dictionary(uniqueKeysWithValues: merged.panels.map { ($0.id, $0) })
+        XCTAssertEqual(byID[renamed]?.title, "Beta")
+        XCTAssertEqual(byID[renamed]?.address, "beta")
+        XCTAssertEqual(byID[renamed]?.agent, "codex", "facts the overlay lacks are kept")
+        XCTAssertEqual(byID[gone]?.live, false)
+        XCTAssertEqual(byID[new]?.title, "Fresh")
+        XCTAssertEqual(merged.workspaces.map(\.id), ["W", "W2"])
+    }
+
+    func testDirectoryKeepsAClosedPanelNamedOnlyByAnIdAddress() {
+        let closed = UUID()
+        let directory = MessagesPageDirectory(
+            panels: [directoryPanel(closed.uuidString, title: "Closed Owner", live: false)],
+            workspaces: []
+        )
+        let rejected = MessagesPageRecord(
+            id: "r", channel: "mailbox", timestamp: "2026-10-02T00:00:00.000Z", sequence: nil, workspace: nil,
+            surface: nil, sender: "lead", senderID: nil, callerTitle: nil, recipient: "id:\(closed.uuidString.lowercased())",
+            targetTitle: nil, kind: nil, topic: nil, body: "", bodyRef: nil, replyTo: nil, inReplyTo: nil,
+            urgent: nil, submitted: nil, queued: nil, truncated: false, status: "rejected", lifecycle: []
+        )
+        XCTAssertEqual(directory.relevant(to: [rejected]).panels.map(\.title), ["Closed Owner"])
+    }
+
+    func testInboxCopiesNameEveryRecipientPanel() throws {
+        let mailboxes = tempDir
+            .appendingPathComponent("workspaces", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("mailboxes", isDirectory: true)
+        let one = UUID(), two = UUID()
+        let envelope: [String: Any] = [
+            "version": 1, "id": "01K3A2B7X8PQRTVWYZ0123456W", "from": "lead", "to": "reviewers",
+            "ts": "2026-10-01T23:00:00.000Z", "body": "BROADCAST",
+        ]
+        for (panel, folder) in [(one, ""), (two, "_read")] {
+            var inbox = mailboxes.appendingPathComponent(panel.uuidString.lowercased(), isDirectory: true)
+            if !folder.isEmpty { inbox = inbox.appendingPathComponent(folder, isDirectory: true) }
+            try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: envelope)
+                .write(to: inbox.appendingPathComponent("01K3A2B7X8PQRTVWYZ0123456W.msg"))
+        }
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+
+        let record = try XCTUnwrap(snapshot.messages.first(where: { $0.body == "BROADCAST" }))
+        XCTAssertEqual(Set(record.recipientPanelIDs), [one.uuidString, two.uuidString])
+    }
+
+    func testFreshPageUsesLivePanelsUntilTheSessionFileCatchesUp() throws {
+        let live = UUID(), liveWorkspace = UUID()
+        let sessionURL = tempDir.appendingPathComponent("session.json")
+        let saved = try makeDirectorySession(
+            livePanel: live, liveWorkspace: liveWorkspace, closedPanel: UUID(), closedWorkspace: UUID()
+        )
+        try saved.write(to: sessionURL)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: sessionURL.path
+        )
+        let writer = MessagesPageWriter(
+            stateURL: tempDir,
+            sessionURL: sessionURL,
+            debounceInterval: 0,
+            observeEvents: false,
+            allowStartUnderXCTest: true,
+            label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)"
+        )
+        writer.start()
+        defer { writer.stopForTesting() }
+        let page = MessagesPageLayout.pageURL(state: tempDir)
+        let done = expectation(description: "fresh page")
+        writer.ensureFreshPage(livePanels: [
+            .init(id: live.uuidString, title: "Renamed Live", workspace: liveWorkspace.uuidString,
+                  live: true, type: nil, agent: nil, address: "fleet-lead", parent: nil),
+        ]) { _ in done.fulfill() }
+        wait(for: [done], timeout: 10)
+        XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("Renamed Live"))
+
+        // A later rebuild before the session is saved keeps the live name...
+        try writer.rebuildNowForTesting()
+        XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("Renamed Live"))
+
+        // ...and once the session file is newer, it is the source again.
+        let resaved = String(decoding: saved, as: UTF8.self).replacingOccurrences(of: "Fleet Lead", with: "Saved Name")
+        try Data(resaved.utf8).write(to: sessionURL)
+        try writer.rebuildNowForTesting()
+        let html = try String(contentsOf: page, encoding: .utf8)
+        XCTAssertTrue(html.contains("Saved Name"))
+        XCTAssertFalse(html.contains("Renamed Live"))
+    }
+}

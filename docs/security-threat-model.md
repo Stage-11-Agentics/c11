@@ -401,6 +401,13 @@ bodies as JSON inside a `<script type="application/json">` block with
 `textContent` only, and carries a CSP of `default-src 'none'` with
 inline script and style only, no images, `base-uri 'none'` and
 `form-action 'none'`. A hostile message body therefore renders as text.
+The conversation web on the same page also embeds panel and workspace
+titles, mailbox addresses and open/closed state read from the session
+snapshot; it builds its inspector from DOM nodes and `textContent` and
+its graph from SVG text nodes, never HTML strings, so agent-chosen
+titles and addresses render as text too. Its only links are
+`c11://panel/<uuid>` links to live panels, which the existing link gate
+handles.
 
 Outbound hand-off: the browser toolbar's "Open in Default Browser"
 button (v0.51.0) passes the panel's current URL to

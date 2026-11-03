@@ -639,16 +639,21 @@ final class EventEmitter {
         id: String,
         recipient: String,
         surface: UUID?,
-        via: String = "inbox"
+        via: String = "inbox",
+        senderPanel: UUID? = nil
     ) {
         // C11-397: every delivery, push and drain passes here; the subtitle
         // bar's mailbox cell recounts the recipient's inbox.
         MailboxBadgeStore.inboxChanged(workspaceId: workspace, panelId: surface)
+        var payload: [String: Any] = ["id": id, "recipient": recipient, "via": via]
+        // The dispatcher's sender stamp, decided before the copy; the
+        // messages page names the sending panel from it.
+        if let senderPanel { payload["sender_panel_id"] = senderPanel.uuidString }
         emit(
             .mailboxDelivered,
             workspace: workspace,
             surface: surface,
-            payload: ["id": id, "recipient": recipient, "via": via]
+            payload: payload
         )
     }
 

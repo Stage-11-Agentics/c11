@@ -4332,7 +4332,18 @@ enum TelemetrySettings {
     }
 
     // Freeze telemetry enablement once per launch. Settings changes apply on next restart.
-    static let enabledForCurrentLaunch = isEnabled()
+    /// The user's setting as read at launch. The Settings page compares against this.
+    static let userEnabledForCurrentLaunch = isEnabled()
+
+    /// The user's setting gated on the running bundle's identity (C11-575).
+    static let launchDecision = TelemetryIdentityGate.decide(
+        bundleIdentifier: Bundle.main.bundleIdentifier,
+        userEnabled: userEnabledForCurrentLaunch
+    )
+
+    /// True only for a released channel with the user's consent. Every
+    /// Sentry and PostHog path reads this.
+    static let enabledForCurrentLaunch = launchDecision.isEnabled
 }
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
@@ -4589,7 +4600,7 @@ struct SettingsView: View {
     @State private var notificationCustomSoundStatusIsError = false
     @State private var showNotificationCustomSoundErrorAlert = false
     @State private var notificationCustomSoundErrorAlertMessage = ""
-    @State private var telemetryValueAtLaunch = TelemetrySettings.enabledForCurrentLaunch
+    @State private var telemetryValueAtLaunch = TelemetrySettings.userEnabledForCurrentLaunch
     @State private var showLanguageRestartAlert = false
     @State private var isResettingSettings = false
     @State private var workspaceDefaultEntries = WorkspaceColorSettings.defaultPaletteWithOverrides()

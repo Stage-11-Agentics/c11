@@ -62,10 +62,18 @@ struct SupervisorProjection {
 
     static func interruptionReason(_ draft: JournalDraft, result: JournalAppendResult, observedSince: Int64) -> String? {
         guard result.receipt.projectionEffect == .applied,
-              let from = result.fromPhase, [.working, .blocked].contains(from),
+              let from = result.fromPhase,
+              // StopFailure beats the transcript sweep by up to 10 s. The limit that
+              // follows names the same failure, so it refines the reason once.
+              [.working, .blocked].contains(from)
+                || (from == .error && draft.reasonCode == .usageLimit && result.fromReason == .sessionFailure),
               draft.source != .transcript || (draft.occurredAtMs ?? 0) >= observedSince else { return nil }
         switch draft.kind {
-        case .errorReported: return draft.reasonCode == .usageLimit ? "usage_limit" : "provider_error"
+        case .errorReported:
+            // A limit kept beside an open wait has not ended the turn yet.
+            guard result.toPhase == .error else { return nil }
+            return result.changedSnapshot?.reason == .usageLimit ? "usage_limit" : "provider_error"
+        case .turnCompleted: return result.toPhase == .error ? "usage_limit" : nil
         case .turnInterrupted: return draft.reasonCode == .observation ? "unknown" : "cancelled"
         default: return nil
         }

@@ -8,6 +8,7 @@ struct JournalAppendResult {
     let changedSnapshot: JournalSnapshot?
     var fromPhase: JournalPhase? = nil
     var toPhase: JournalPhase? = nil
+    var fromReason: JournalReason? = nil
 }
 
 /// All disk work, folding and maintenance run on this utility queue. Receipts never wait for UI.
@@ -216,7 +217,8 @@ final class JournalStore {
                 committedAtMs: now, replayed: false, projectionEffect: folded.effect),
                 changedSnapshot: folded.snapshot == prior ? nil : folded.snapshot,
                 fromPhase: applied ? folded.fromPhase : nil,
-                toPhase: applied ? folded.snapshot?.phase : nil)
+                toPhase: applied ? folded.snapshot?.phase : nil,
+                fromReason: applied ? folded.fromReason : nil)
         } catch { try? execute("ROLLBACK"); throw error }
     }
 

@@ -148,3 +148,73 @@ enum MailboxFraming {
         return result
     }
 }
+
+/// One turn's worth of waiting mail for a native route that can carry text:
+/// the envelopes themselves, oldest first, under one line. Claude Code takes it
+/// as a peer turn; any harness that can accept a message can take the same text.
+/// Off-main only: it reads inbox and `body_ref` files. It never claims. The
+/// claim follows the harness's confirmation (`claim`), so mail a harness did not
+/// take stays in the inbox for the typed doorbell and `recv`.
+struct MailboxInlineBatch: Equatable {
+    struct Source: Equatable {
+        let id: String
+        let inbox: URL
+    }
+
+    /// Well under Claude's 1 MiB inbox line. The first message always goes, so
+    /// one large message can never stall the inbox; mail past the budget waits
+    /// for the next idle, oldest first, as a Stop drain would leave it.
+    static let budget = 32 * 1024
+
+    let text: String
+    let ids: [String]
+
+    /// Nil when none of the sources is still readable: another consumer took
+    /// them, and the ring falls through to its ordinary invitation.
+    static func compose(sources: [Source], budget: Int = MailboxInlineBatch.budget) -> MailboxInlineBatch? {
+        var blocks: [String] = []
+        var ids: [String] = []
+        var used = 0
+        for source in sources.sorted(by: { $0.id < $1.id }) {
+            let entry = source.inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: source.id))
+            guard let data = try? Data(contentsOf: entry) else { continue }
+            let block = MailboxDrain.framedBlock(data: data, fallbackId: source.id)
+            let size = block.utf8.count
+            if !blocks.isEmpty, used + size > budget { break }
+            blocks.append(block)
+            ids.append(source.id)
+            used += size
+        }
+        guard !ids.isEmpty else { return nil }
+        return MailboxInlineBatch(text: header(count: ids.count) + "\n" + blocks.joined(), ids: ids)
+    }
+
+    private static func header(count: Int) -> String {
+        let noun = count == 1 ? "1 new message" : "\(count) new messages"
+        return "c11 mailbox: \(noun) for this panel, already marked read; no recv needed. "
+            + "Reply with `c11 mailbox send --to <from> \"<text>\"` when a reply is wanted."
+    }
+
+    /// Claims what the harness confirmed and records it as the recipient's own
+    /// read, the same two records a Stop drain leaves. A rename that loses to
+    /// another consumer records nothing: that consumer holds the claim, and the
+    /// recipient saw the same id twice. Off-main only.
+    @discardableResult
+    static func claim(sources: [Source], panelId: UUID, recipient: (String) -> String,
+                      fileManager: FileManager = .default) -> [String] {
+        var claimed: [String] = []
+        for (inbox, group) in Dictionary(grouping: sources, by: { $0.inbox.standardizedFileURL }) {
+            let ids = group.compactMap { source -> String? in
+                let entry = inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: source.id))
+                return MailboxDrain.claim(entry, fileManager: fileManager) == nil ? nil : source.id
+            }
+            guard !ids.isEmpty else { continue }
+            let root = inbox.deletingLastPathComponent()
+            MailboxDeliveryReceipt(panelId: panelId, deliveries: ids.map { .init(id: $0, recipient: recipient($0)) })
+                .writeAll(mailboxesRoot: root, fileManager: fileManager)
+            MailboxClaimLog.append(ids: ids, recipientPanel: panelId, byPanel: panelId, via: "native", mailboxesRoot: root)
+            claimed += ids
+        }
+        return claimed
+    }
+}

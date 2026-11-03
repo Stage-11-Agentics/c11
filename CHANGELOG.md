@@ -6,6 +6,14 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Changed
+
+- **Claude Code agents read their mail in the turn it arrives.** A waiting agent's next turn now holds the message itself, with sender, topic and body, already marked read, so it no longer spends a request running `c11 mailbox recv`. Several waiting messages arrive together in one turn, oldest first. Other harnesses keep their doorbell line. (C11-581)
+
+### Fixed
+
+- **Mail to a resumed Claude Code session no longer rings twice.** A session resumed from another folder took its mail, but c11 did not see that and typed the doorbell as well. A message that reaches a running turn is now recognized the same way. (C11-581)
+
 ## [1.7.9] - 2026-11-01
 
 Headline: **c11 1.7.9. The sidebar button steps through one, two and three columns, resumed agents learn that c11 restarted, the outside-link prompt takes Return and Escape from another app, and commands refuse a target that no longer exists.**

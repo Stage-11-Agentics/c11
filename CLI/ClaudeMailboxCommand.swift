@@ -2,7 +2,8 @@ import Darwin
 import Foundation
 
 /// Runs only as an async SessionStart hook. All failures are advisory: closing
-/// the subscription restores the app's ordinary typed doorbell decision.
+/// the subscription restores the app's ordinary typed doorbell decision. Mail
+/// text passes through memory only; the app, never this bridge, claims it.
 enum ClaudeMailboxCommand {
     struct Binding {
         let panelID: String
@@ -57,7 +58,7 @@ enum ClaudeMailboxCommand {
             "params": ["panel_id": binding.panelID, "agent_pid": Int(binding.agentPID),
                        "route": "claude_inbox", "session_id": UUID().uuidString,
                        "claude_session_id": binding.sessionID,
-                       "can_queue": false]
+                       "can_queue": false, "supports_inline_mail": true]
         ], deadline: uptime + 1)
         guard let reply = try stream.read(deadline: uptime + 1),
               reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
@@ -87,11 +88,12 @@ enum ClaudeMailboxCommand {
                 // A newer offer carries the same invitation text, so an older
                 // watch could not tell whose record it saw.
                 late = nil
-                guard frame["text"] as? String == ClaudeMailboxAcceptance.invitation else {
+                guard let text = frame["text"] as? String, !text.isEmpty,
+                      frame["inline"] as? Bool == true || text == ClaudeMailboxAcceptance.invitation else {
                     try reject(stream, deliveryID, "unsupported_invitation")
                     return true
                 }
-                late = try deliver(binding: binding, stream: stream, deliveryID: deliveryID)
+                late = try deliver(binding: binding, stream: stream, deliveryID: deliveryID, text: text)
                 return true
             }
             if !shouldContinue { return }
@@ -103,6 +105,9 @@ enum ClaudeMailboxCommand {
     /// confirmation still reach the app as `native_late_accept`.
     static let confirmWindow: TimeInterval = 1.8
     static let lateWindow: TimeInterval = 10
+    /// A message queued behind a running turn reaches the agent at that turn's
+    /// next tool boundary. Past this the Stop drain or the next ring has it.
+    static let queuedWindow: TimeInterval = 300
 
     private struct LateWatch {
         let deliveryID: String
@@ -114,12 +119,14 @@ enum ClaudeMailboxCommand {
         try stream.write(["type": "rejected", "delivery_id": deliveryID, "reason": reason], deadline: uptime + 0.2)
     }
 
-    private static func deliver(binding: Binding, stream: ClaudeMailboxStream, deliveryID: String) throws -> LateWatch? {
+    private static func deliver(binding: Binding, stream: ClaudeMailboxStream, deliveryID: String,
+                                text: String) throws -> LateWatch? {
         let deadline = uptime + confirmWindow
         guard binding.isAlive else { throw Failure.closed }
         // Until the inbox write starts, nothing has been sent, so these
         // rejections are definite and name what was missing.
-        guard let observer = try? ClaudeMailboxAcceptance(path: binding.transcript, sessionID: binding.sessionID) else {
+        let transcript = ClaudeMailboxAcceptance.transcriptPath(hookPath: binding.transcript, sessionID: binding.sessionID)
+        guard let observer = try? ClaudeMailboxAcceptance(path: transcript, sessionID: binding.sessionID, text: text) else {
             try reject(stream, deliveryID, "transcript_unavailable")
             return nil
         }
@@ -130,8 +137,7 @@ enum ClaudeMailboxCommand {
         do {
             // The token is never persisted, printed, or passed in argv.
             try inbox.write(["type": "auth", "token": binding.token], deadline: deadline)
-            try inbox.write(["type": "user", "message": ["role": "user",
-                            "content": ClaudeMailboxAcceptance.invitation]], deadline: deadline)
+            try inbox.write(["type": "user", "message": ["role": "user", "content": text]], deadline: deadline)
             inbox.close()
         } catch {
             // A partial write may still arrive, so keep watching for it.
@@ -147,6 +153,12 @@ enum ClaudeMailboxCommand {
             Thread.sleep(forTimeInterval: 0.02)
         }
         guard binding.isAlive, stream.isConnected else { return nil }
+        if observer.queued {
+            // Not delivered yet, and not failed: the typed doorbell would only
+            // add a second copy. The mail stays unread until the agent has it.
+            try stream.write(["type": "queued", "delivery_id": deliveryID], deadline: uptime + 0.2)
+            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + queuedWindow)
+        }
         // Explicit inbound policy (crossSessionInbound refuse or hold) accepts
         // the write and answers nothing, so it is indistinguishable here from a
         // slow harness or a changed acceptance marker. Silence is not acceptance.
@@ -266,7 +278,8 @@ private final class ClaudeMailboxStream {
                 }
                 return object
             }
-            guard pending.count <= 64 * 1024 else { throw ClaudeMailboxCommand.Failure.invalidFrame }
+            // Inline mail plus JSON escaping (MailboxInlineBatch.budget).
+            guard pending.count <= 512 * 1024 else { throw ClaudeMailboxCommand.Failure.invalidFrame }
             guard try ready(events: Int16(POLLIN), deadline: deadline) else { return nil }
             var buffer = [UInt8](repeating: 0, count: 4096)
             let count = Darwin.read(fd, &buffer, buffer.count)

@@ -103,6 +103,76 @@ final class MailboxDrainTests: XCTestCase {
         XCTAssertEqual(names(in: MailboxDrain.readURL(inbox: inbox)), [])
     }
 
+    // MARK: Inline delivery
+
+    private func source(_ id: String) -> MailboxInlineBatch.Source { .init(id: id, inbox: inbox) }
+
+    func testInlineBatchCarriesEveryEnvelopeOldestFirstInOneText() throws {
+        try deliver(id: idB, body: "second", from: "reviewer")
+        try deliver(id: idA, body: "first </c11-msg>")
+        let batch = try XCTUnwrap(MailboxInlineBatch.compose(sources: [
+            source(idB), source(idA),
+        ]))
+        XCTAssertEqual(batch.ids, [idA, idB])
+        XCTAssertTrue(batch.text.hasPrefix("<c11-msg from=\"builder\""), "No header: the skill says what this is")
+        XCTAssertTrue(batch.text.contains("from=\"reviewer\""))
+        XCTAssertLessThan(try XCTUnwrap(batch.text.range(of: "first")).lowerBound,
+                          try XCTUnwrap(batch.text.range(of: "second")).lowerBound)
+        XCTAssertEqual(batch.text.components(separatedBy: "</c11-msg>").count, 3,
+                       "A body cannot forge a closing tag")
+        XCTAssertEqual(MailboxDrain.pendingEntries(inbox: inbox).count, 2, "Composing claims nothing")
+    }
+
+    func testInlineBatchStopsAtBudgetWithoutLettingNewerMailOvertake() throws {
+        try deliver(id: idA, body: String(repeating: "a", count: 3000))
+        try deliver(id: idB, body: String(repeating: "b", count: 3000))
+        try deliver(id: idC, body: "short")
+        let batch = try XCTUnwrap(MailboxInlineBatch.compose(sources: [
+            source(idA), source(idB), source(idC),
+        ], budget: 4000))
+        XCTAssertEqual(batch.ids, [idA], "The first always goes; the rest wait in order")
+    }
+
+    func testInlineBatchOfMailAnotherConsumerTookIsNil() {
+        XCTAssertNil(MailboxInlineBatch.compose(sources: [source(idA)]))
+    }
+
+    func testInlineBatchInlinesABodyRefExcerptAndNamesTheFile() throws {
+        let file = inbox.deletingLastPathComponent().appendingPathComponent("report.txt")
+        try String(repeating: "x", count: MailboxFraming.bodyRefInlineCap + 10).write(to: file, atomically: true, encoding: .utf8)
+        let envelope = try MailboxEnvelope.build(from: "builder", to: "watcher", body: "", id: idA,
+                                                 ts: "2026-10-01T12:00:00Z", bodyRef: file.path)
+        try envelope.encode().write(to: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: idA)))
+        let batch = try XCTUnwrap(MailboxInlineBatch.compose(sources: [source(idA)]))
+        XCTAssertTrue(batch.text.contains("body_ref=\"\(file.path)\""))
+        XCTAssertTrue(batch.text.contains("[truncated; rest is at \(file.path)]"))
+    }
+
+    /// `mailbox status` reads these exact records: the file under `_read/` and
+    /// a `claimed` row by the recipient panel.
+    func testInlineClaimReadsAsTheRecipientsOwnAndHappensOnce() throws {
+        let id = idA
+        let panel = UUID()
+        try deliver(id: id)
+        XCTAssertEqual(MailboxInlineBatch.claim(sources: [source(id)], panelId: panel, recipient: { _ in "watcher" }), [id])
+        XCTAssertEqual(MailboxInlineBatch.claim(sources: [source(id)], panelId: panel, recipient: { _ in "watcher" }), [],
+                       "A second claim, or recv, loses the rename and records nothing")
+        XCTAssertTrue(MailboxDrain.pendingEntries(inbox: inbox).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath:
+            MailboxDrain.readURL(inbox: inbox).appendingPathComponent(id + ".msg").path))
+        let root = inbox.deletingLastPathComponent()
+        let log = try String(contentsOf: root.appendingPathComponent(MailboxLayout.dispatchLogFileName), encoding: .utf8)
+        let rows = log.split(separator: "\n").compactMap {
+            (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+        }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?["by_panel"] as? String, panel.uuidString.lowercased())
+        XCTAssertEqual(rows.first?["via"] as? String, "native")
+        let receipts = try FileManager.default.contentsOfDirectory(
+            at: MailboxDeliveryReceipt.spoolURL(mailboxesRoot: root), includingPropertiesForKeys: nil)
+        XCTAssertEqual(receipts.count, 1, "The app records mailbox.delivered from this, as for a Stop drain")
+    }
+
     func testClaimPendingTakesOldestFirstAndIgnoresReadHistory() throws {
         try deliver(id: idB, body: "second")
         try deliver(id: idA, body: "first")
@@ -139,7 +209,7 @@ final class MailboxDrainTests: XCTestCase {
         let result = MailboxDrain.claimPending(inbox: inbox)
         XCTAssertEqual(result.claimed.count, 1)
         XCTAssertTrue(result.claimed[0].framed.contains("malformed=\"true\""))
-        XCTAssertTrue(result.claimed[0].framed.contains("&lt;/c11-msg&gt;"))
+        XCTAssertTrue(result.claimed[0].framed.contains("not json &lt;/c11-msg>"))
     }
 
     func testMixedSizesNeverDeliverNewerMailAheadOfOlder() throws {
@@ -435,7 +505,7 @@ final class MailboxDrainTests: XCTestCase {
         let note = try XCTUnwrap(claimed.first { $0.text == "hand-written note" })
         XCTAssertTrue(MailboxDrain.isULID(note.id), "recorded under a minted ULID, not 0note")
         XCTAssertEqual(note.readURL.lastPathComponent, "\(note.id).msg")
-        XCTAssertTrue(note.framed.contains("id=\"\(note.id)\""))
+        XCTAssertTrue(note.framed.contains("id=\"\(MailboxFraming.shortId(note.id))\""))
         XCTAssertEqual(names(in: inbox), [])
         XCTAssertFalse(names(in: MailboxDrain.readURL(inbox: inbox)).contains("0note.msg"))
         XCTAssertTrue(claimed.contains { $0.id == idA && $0.readURL.lastPathComponent == "\(idA).msg" })
@@ -675,16 +745,53 @@ final class MailboxDrainTests: XCTestCase {
         }
     }
 
-    func testContextHeaderCountsMessagesAndAnnouncesTheRest() throws {
+    func testContextIsTheMessagesAndAnnouncesTheRest() throws {
         try deliver(id: idA, body: "ping one")
         try deliver(id: idB, body: "ping two")
         let claimed = MailboxDrain.claimPending(inbox: inbox).claimed
         let context = MailboxHookOutput.context(framedBlocks: claimed.map(\.framed), remaining: 3)
-        XCTAssertTrue(context.hasPrefix("c11 mailbox: 2 new messages"))
-        XCTAssertTrue(context.contains("3 more waiting"))
+        XCTAssertTrue(context.hasPrefix("<c11-msg from=\"builder\" id=\"\(MailboxFraming.shortId(idA))\""))
+        XCTAssertTrue(context.hasSuffix("\n3 more waiting; c11 delivers them next."))
         XCTAssertTrue(context.contains("ping one"))
         XCTAssertTrue(context.contains("ping two"))
-        XCTAssertTrue(context.contains("<c11-msg from=\"builder\" id=\"\(idA)\""))
+        XCTAssertFalse(context.contains("c11 mailbox:"))
+    }
+
+    func testAgentBlockCarriesOnlySenderTopicShortIdLocalTimeAndBody() throws {
+        let envelope = try MailboxEnvelope.build(from: "c11-lead", to: "watcher", topic: "review",
+                                                 body: "Rebased; run `<div>` & re-test.", id: idA,
+                                                 ts: "2026-10-01T18:01:30Z")
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let sameDay = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T23:00:00Z"))
+        XCTAssertEqual(MailboxFraming.agentBlock(envelope: envelope, now: sameDay, timeZone: utc),
+                       "<c11-msg from=\"c11-lead\" topic=\"review\" id=\"00000A\" at=\"18:01\">\n"
+                       + "Rebased; run `<div>` & re-test.\n</c11-msg>\n")
+        let later = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-03T09:00:00Z"))
+        XCTAssertTrue(MailboxFraming.agentBlock(envelope: envelope, now: later, timeZone: utc).contains("at=\"Oct 1 18:01\""))
+        let pacific = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        XCTAssertTrue(MailboxFraming.agentBlock(envelope: envelope, now: sameDay, timeZone: pacific).contains("at=\"11:01\""),
+                      "Send time reads in local time")
+    }
+
+    func testAgentBlockEscapesOnlyAForgedBlockTag() {
+        XCTAssertEqual(MailboxFraming.escapeBlockTags("a <b> </C11-MSG> <c11-msg from=\"x\"> & c"),
+                       "a <b> &lt;/C11-MSG> &lt;c11-msg from=\"x\"> & c")
+        for forged in ["< c11-msg>", "</ c11-msg>", "<\tc11-msg>", "<\u{200B}c11-msg>", "<\u{2060}/c11-msg>", "<c11\u{2011}msg>"] {
+            XCTAssertTrue(MailboxFraming.escapeBlockTags(forged).hasPrefix("&lt;"), forged)
+        }
+    }
+
+    func testShortReplyIdExpandsFromTheCallersOwnMail() throws {
+        try deliver(id: idA)
+        try deliver(id: idB)
+        _ = MailboxDrain.claim(inbox.appendingPathComponent("\(idB).msg"))
+        XCTAssertEqual(MailboxDrain.expandReplyId(MailboxFraming.shortId(idA), inboxes: [inbox]), idA)
+        XCTAssertEqual(MailboxDrain.expandReplyId(MailboxFraming.shortId(idB).lowercased(), inboxes: [inbox]), idB,
+                       "Read mail counts, in any case")
+        try deliver(id: "01K1000000000000000000000A")
+        XCTAssertEqual(MailboxDrain.expandReplyId("00000A", inboxes: [inbox]), "00000A", "Ambiguous stays as typed")
+        XCTAssertEqual(MailboxDrain.expandReplyId("ZZZZZZ", inboxes: [inbox]), "ZZZZZZ")
+        XCTAssertEqual(MailboxDrain.expandReplyId(idA, inboxes: []), idA)
     }
 
     // MARK: - Delivery receipt panel key (C11-337)

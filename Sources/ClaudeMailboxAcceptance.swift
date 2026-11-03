@@ -6,15 +6,20 @@ final class ClaudeMailboxAcceptance {
     static let invitation = "c11 mail waiting: run c11 mailbox recv --ack"
     private let path: String
     private let sessionID: String
+    private let text: String
     private let earliestNewFileRecord: Date?
     private var handle: FileHandle?
     private var pending = Data()
     private var discardingLine = false
     private static let lineLimit = 1024 * 1024
+    /// Claude queued the text and has not shown it to the agent yet.
+    private(set) var queued = false
 
-    init(path: String, sessionID: String) throws {
+    /// `text` is the offer being watched for: the invitation, or inline mail.
+    init(path: String, sessionID: String, text: String = invitation) throws {
         self.path = path
         self.sessionID = sessionID
+        self.text = text
         let existed = FileManager.default.fileExists(atPath: path)
         // Claude records milliseconds. A file that appears after this offer
         // may contain restored history, so byte zero alone is not freshness.
@@ -29,6 +34,26 @@ final class ClaudeMailboxAcceptance {
 
     deinit { try? handle?.close() }
 
+    /// Claude derives the hook's `transcript_path` from the session's current
+    /// folder, but a session resumed from another folder keeps writing the file
+    /// where it began. Watching the named path would then miss every record, so
+    /// when it does not exist, the session's file under any sibling project wins.
+    static func transcriptPath(hookPath: String, sessionID: String, fileManager: FileManager = .default) -> String {
+        guard !fileManager.fileExists(atPath: hookPath) else { return hookPath }
+        let projects = URL(fileURLWithPath: hookPath).deletingLastPathComponent().deletingLastPathComponent()
+        let name = sessionID + ".jsonl"
+        let found = ((try? fileManager.contentsOfDirectory(atPath: projects.path)) ?? [])
+            .map { projects.appendingPathComponent($0).appendingPathComponent(name).path }
+            .filter { fileManager.fileExists(atPath: $0) }
+        let newest = found.max { first, second in
+            func modified(_ path: String) -> Date {
+                (try? fileManager.attributesOfItem(atPath: path))?[.modificationDate] as? Date ?? .distantPast
+            }
+            return modified(first) < modified(second)
+        }
+        return newest ?? hookPath
+    }
+
     /// Called only while one offered invitation awaits confirmation. Reading
     /// is bounded per call; a partial JSON line is retained until its newline.
     func observe() throws -> Bool {
@@ -41,7 +66,8 @@ final class ClaudeMailboxAcceptance {
             let line = Data(pending[..<newline])
             pending.removeSubrange(...newline)
             if discardingLine { discardingLine = false; continue }
-            if Self.confirms(line, sessionID: sessionID, notBefore: earliestNewFileRecord) { return true }
+            if Self.confirms(line, sessionID: sessionID, text: text, notBefore: earliestNewFileRecord) { return true }
+            if Self.queues(line, sessionID: sessionID, text: text) { queued = true }
         }
         if pending.count > Self.lineLimit {
             pending.removeAll(keepingCapacity: false)
@@ -50,10 +76,37 @@ final class ClaudeMailboxAcceptance {
         return false
     }
 
-    static func confirms(_ line: Data, sessionID: String, notBefore: Date? = nil) -> Bool {
-        guard let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              record["type"] as? String == "user",
+    /// The queue holds a message only in Claude's memory: an exit, or a cancel
+    /// that clears it, drops the message before the agent reads it. So a queued
+    /// record alone must never claim mail. Only inline mail can use these
+    /// records: a typed invitation queues the same text.
+    private static let consumedFromQueue: Set<String> = ["absorbed_mid_turn", "delivered_to_agent"]
+
+    private static func queueRecord(_ line: Data, sessionID: String, text offered: String) -> [String: Any]? {
+        guard offered != invitation,
+              let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              record["type"] as? String == "queue-operation",
               record["sessionId"] as? String == sessionID,
+              record["content"] as? String == offered else { return nil }
+        return record
+    }
+
+    /// Claude took the text into its queue behind a running turn.
+    static func queues(_ line: Data, sessionID: String, text offered: String) -> Bool {
+        queueRecord(line, sessionID: sessionID, text: offered)?["operation"] as? String == "enqueue"
+    }
+
+    /// The agent received the text: the peer turn, or its queue entry folded
+    /// into a running turn, which writes no user record of its own.
+    static func confirms(_ line: Data, sessionID: String, text offered: String = invitation, notBefore: Date? = nil) -> Bool {
+        if let queue = queueRecord(line, sessionID: sessionID, text: offered),
+           queue["operation"] as? String == "remove",
+           let reason = queue["reason"] as? String {
+            return consumedFromQueue.contains(reason)
+        }
+        guard let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              record["sessionId"] as? String == sessionID,
+              record["type"] as? String == "user",
               let message = record["message"] as? [String: Any],
               message["role"] as? String == "user" else { return false }
         if let notBefore {
@@ -70,9 +123,11 @@ final class ClaudeMailboxAcceptance {
                   let content = blocks[0]["text"] as? String {
             text = content
         } else { return false }
-        // Claude wraps inbox input as a peer message. A typed invitation, an
-        // assistant quote, or a larger message mentioning it is not evidence.
-        return text.hasPrefix("Another Claude session sent a message:\n\(invitation)\n\n")
+        // Claude wraps inbox input as a peer message, worded by whether a turn
+        // was running. A typed invitation, an assistant quote, or a larger
+        // message mentioning it is not evidence.
+        return ["Another Claude session sent a message:", "Another Claude session sent a message while you were working:"]
+            .contains { text.hasPrefix("\($0)\n\(offered)\n\n") }
     }
 }
 

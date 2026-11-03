@@ -4,8 +4,9 @@ import Foundation
 ///
 /// The dispatcher copies each envelope into the recipient's inbox before this
 /// queue sees it. The ring types one invitation line. It does not paste a
-/// `<c11-msg>` block and it does not claim the file. `c11 mailbox recv --ack`
-/// and Claude's Stop hook are what move the file to `_read/`.
+/// `<c11-msg>` block and it does not claim the file. `c11 mailbox recv --ack`,
+/// Claude's Stop hook and a harness-confirmed inline delivery are what move the
+/// file to `_read/`.
 ///
 /// **Agent panels.** The shell stays `.commandRunning` for the life of the
 /// TUI, so the gate is the agent's own turn edge (`report_agent_activity`,
@@ -400,6 +401,15 @@ enum MailboxStdinDelivery {
                 workspaceId: entry.inboxWorkspaceId ?? workspaceId, panelId: panelId)
             return MailboxIO.isPending(id: entry.id, inbox: inbox) ? entry.id : nil
         })
+    }
+
+    /// Where each entry's envelope sits, for a native route that carries text.
+    static func inlineSources(_ entries: [MailboxStdinBuffer.Entry], stateURL: URL,
+                              workspaceId: UUID, panelId: UUID) -> [MailboxInlineBatch.Source] {
+        entries.map { entry in
+            MailboxInlineBatch.Source(id: entry.id, inbox: MailboxLayout.inboxURL(
+                state: stateURL, workspaceId: entry.inboxWorkspaceId ?? workspaceId, panelId: panelId))
+        }
     }
 
     struct Gate: Equatable {

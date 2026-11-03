@@ -1563,6 +1563,60 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         wait(for: [settledFrame], timeout: 1)
     }
 
+    private func inlineRegistration(inline: Bool = true) -> MailboxNativeDoorbell.Registration {
+        .init(id: UUID(), panelID: UUID(), agentPID: 42, processStart: 1, sessionID: "session",
+              route: .claudeInbox, canQueue: false, supportsInlineMail: inline)
+    }
+
+    /// A queued offer settles the deadline without failing, so no typed
+    /// doorbell follows it, and the agent's receipt still arrives afterwards.
+    func testQueuedMailStaysUndeliveredUntilItsLateAcceptance() throws {
+        let broker = MailboxNativeDoorbell(), reg = inlineRegistration()
+        let sent = expectation(description: "inline frame sent")
+        let queued = expectation(description: "queued")
+        let accepted = expectation(description: "accepted late")
+        let lock = NSLock()
+        var results: [MailboxNativeDoorbell.Result] = []
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" {
+                XCTAssertEqual(frame["text"] as? String, "the mail")
+                XCTAssertEqual(frame["inline"] as? Bool, true)
+                sent.fulfill()
+            }
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+        let request = broker.deliver(reg, timeout: 0.1, inlineText: "the mail") { result, _ in
+            lock.lock(); results.append(result); lock.unlock()
+            if result == .queued { queued.fulfill() }
+            if result == .accepted(late: true) { accepted.fulfill() }
+        }
+        wait(for: [sent], timeout: 1)
+        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "queued", "delivery_id": request.uuidString]),
+                       registration: reg)
+        wait(for: [queued], timeout: 1)
+        Thread.sleep(forTimeInterval: 0.2)
+        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "accepted", "delivery_id": request.uuidString]),
+                       registration: reg)
+        wait(for: [accepted], timeout: 1)
+        lock.lock(); defer { lock.unlock() }
+        XCTAssertEqual(results, [.queued, .accepted(late: true)], "The deadline must not fail a queued offer")
+    }
+
+    func testQueuedFrameMeansNothingToARouteWithoutInlineMail() throws {
+        let broker = MailboxNativeDoorbell(), reg = inlineRegistration(inline: false)
+        let failed = expectation(description: "deadline still applies")
+        broker.register(reg, write: { _ in true }, close: {})
+        defer { broker.disconnect(reg) }
+        let request = broker.deliver(reg, timeout: 0.1) { result in
+            XCTAssertEqual(result, .failed("native_timeout"))
+            failed.fulfill()
+        }
+        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "queued", "delivery_id": request.uuidString]),
+                       registration: reg)
+        wait(for: [failed], timeout: 1)
+    }
+
     func testReplacementWritesRetirementFrameBeforeClosingOldStream() {
         let broker = MailboxNativeDoorbell(), old = registration()
         let retired = expectation(description: "old stream retired")
@@ -1865,6 +1919,7 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                 XCTAssertEqual(outcome, .buffered(bytes: 4)); failed.fulfill()
             case .accepted(let late): XCTAssertTrue(late); accepted.fulfill()
             case .alreadyAdmitted: XCTFail("timeout attempt cannot replay as already admitted")
+            case .queued: XCTFail("this route has no inline mail to queue")
             }
         }
         wait(for: [dispatched, failed], timeout: 2)
@@ -2077,6 +2132,8 @@ final class MailboxNativeDoorbellTests: XCTestCase {
                     }
                 case .alreadyAdmitted:
                     XCTFail("this test does not send a replayed acceptance")
+                case .queued:
+                    XCTFail("this test does not queue inline mail")
                 }
             }
         }

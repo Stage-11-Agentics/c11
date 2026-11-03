@@ -3012,7 +3012,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let env = ProcessInfo.processInfo.environment
         let isRunningUnderXCTest = isRunningUnderXCTest(env)
-        let telemetryEnabled = TelemetrySettings.enabledForCurrentLaunch
+        // C11-575: telemetry starts only in the production and nightly
+        // identities with the user's consent, and never under XCTest.
+        let telemetryStartup = TelemetryStartup(
+            decision: TelemetrySettings.launchDecision,
+            isRunningUnderXCTest: isRunningUnderXCTest
+        )
+        telemetryStartup.logIfOff { NSLog("%@", $0) }
         AppPresentationPolicy.apply(isRunningUnderXCTest: isRunningUnderXCTest)
 
         DistributedNotificationCenter.default().addObserver(
@@ -3056,7 +3062,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Stage 11 project. `Index out of range` in `ContiguousArrayBuffer` — 24
         // events across 5 "users" — was entirely `c11Tests` under XCTestCore.
         // PostHog and MainThreadHangMonitor already opt out the same way.
-        if telemetryEnabled && !isRunningUnderXCTest {
+        telemetryStartup.startSentryIfAllowed { channel in
             // Pre-warm locale before Sentry to avoid a startup data race.
             // Locale initialization (os.locale.ensureLocale / NSLocale._preferredLanguages)
             // on the main thread can race with Sentry's background init thread
@@ -3072,7 +3078,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 options.environment = "development"
                 options.debug = true
                 #else
-                options.environment = "production"
+                options.environment = channel.sentryEnvironment
                 options.debug = false
                 #endif
                 options.sendDefaultPii = false
@@ -3113,7 +3119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // telemetry consent. Opt out with C11_HANG_MONITOR=0.
         MainThreadHangMonitor.shared.installIfNeeded()
 
-        if telemetryEnabled && !isRunningUnderXCTest {
+        telemetryStartup.startPostHogIfAllowed { _ in
             PostHogAnalytics.shared.startIfNeeded()
         }
 

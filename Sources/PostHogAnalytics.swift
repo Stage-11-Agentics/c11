@@ -2,8 +2,32 @@ import AppKit
 import Foundation
 import PostHog
 
+/// What `PostHogAnalytics` asks the SDK to set up. Kept SDK-free so tests can
+/// observe a start without linking PostHog or creating a client.
+struct PostHogSetupRequest {
+    let apiKey: String
+    let host: String
+    let debug: Bool
+    let superProperties: [String: Any]
+}
+
 final class PostHogAnalytics {
     static let shared = PostHogAnalytics()
+
+    /// The only place the PostHog SDK is configured and its client created.
+    static let setUpRealSDK: (PostHogSetupRequest) -> Void = { request in
+        let config = PostHogConfig(apiKey: request.apiKey, host: request.host)
+        config.captureApplicationLifecycleEvents = false
+        config.captureScreenViews = false
+        config.debug = request.debug
+        PostHogSDK.shared.setup(config)
+
+        // Tag every event so PostHog can distinguish desktop from web and
+        // break events down by released app version/build.
+        PostHogSDK.shared.register(request.superProperties)
+
+        // The SDK automatically generates and persists an anonymous distinct ID.
+    }
 
     // The PostHog project API key is intentionally embedded in the app (it's a public key).
     // Project: `stage11-c11` under the Stage 11 PostHog org (us.posthog.com).
@@ -26,7 +50,19 @@ final class PostHogAnalytics {
     private var didStart = false
     private var activeCheckTimer: Timer?
 
-    private init() {
+    private let decision: TelemetryLaunchDecision
+    private let environment: [String: String]
+    private let setUpSDK: (PostHogSetupRequest) -> Void
+
+    /// Tests pass a decision, an environment and a recording `setUpSDK`.
+    init(
+        decision: TelemetryLaunchDecision = TelemetrySettings.launchDecision,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        setUpSDK: @escaping (PostHogSetupRequest) -> Void = PostHogAnalytics.setUpRealSDK
+    ) {
+        self.decision = decision
+        self.environment = environment
+        self.setUpSDK = setUpSDK
         workQueue = DispatchQueue(label: "com.stage11.c11.posthog.analytics", qos: .utility)
         utcHourFormatter = Self.makeUTCFormatter("yyyy-MM-dd'T'HH")
         utcDayFormatter = Self.makeUTCFormatter("yyyy-MM-dd")
@@ -34,13 +70,21 @@ final class PostHogAnalytics {
     }
 
     private var isEnabled: Bool {
-        guard TelemetrySettings.enabledForCurrentLaunch else { return false }
+        // C11-575: only a released identity with the user's consent.
+        guard decision.isEnabled else { return false }
 #if DEBUG
         // Avoid polluting production analytics while iterating locally.
-        return ProcessInfo.processInfo.environment["C11_POSTHOG_ENABLE"] == "1"
+        return environment["C11_POSTHOG_ENABLE"] == "1"
 #else
         return !apiKey.isEmpty && apiKey != "REPLACE_WITH_POSTHOG_PUBLIC_KEY"
 #endif
+    }
+
+    /// Whether the SDK was set up by this instance. Read on the work queue.
+    var hasStarted: Bool {
+        var started = false
+        dispatchSyncOnWorkQueue { started = didStart }
+        return started
     }
 
     func startIfNeeded() {
@@ -100,22 +144,16 @@ final class PostHogAnalytics {
 
     private func startIfNeededOnWorkQueue() {
         guard !didStart else { return }
-        guard isEnabled else { return }
+        guard isEnabled, let channel = decision.channel else { return }
 
-        let config = PostHogConfig(apiKey: apiKey, host: host)
-        config.captureApplicationLifecycleEvents = false
-        config.captureScreenViews = false
 #if DEBUG
-        config.debug = ProcessInfo.processInfo.environment["C11_POSTHOG_DEBUG"] == "1"
+        let debug = environment["C11_POSTHOG_DEBUG"] == "1"
+#else
+        let debug = false
 #endif
-
-        PostHogSDK.shared.setup(config)
-
-        // Tag every event so PostHog can distinguish desktop from web and
-        // break events down by released app version/build.
-        PostHogSDK.shared.register(Self.superProperties(infoDictionary: Bundle.main.infoDictionary ?? [:]))
-
-        // The SDK automatically generates and persists an anonymous distinct ID.
+        var properties = Self.superProperties(infoDictionary: Bundle.main.infoDictionary ?? [:])
+        properties.merge(channel.postHogSuperProperties) { _, new in new }
+        setUpSDK(PostHogSetupRequest(apiKey: apiKey, host: host, debug: debug, superProperties: properties))
 
         didStart = true
 

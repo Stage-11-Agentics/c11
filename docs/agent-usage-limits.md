@@ -29,7 +29,8 @@ classification is used.
 Recorded meta-only records that introduce a different prompt ID without a typed
 root, and errors whose parent is a system record, remain unsupported. Binding
 those shapes requires matching hook evidence; a meta record alone cannot start
-a root turn. Attachments over the one-MiB parse budget are ignored.
+a root turn. Attachments and tool results over the one-MiB parse budget register
+no context, so an error parented directly on one does not bind.
 
 A future adapter needs a recorded harness/version and terminal error record,
 its root session and turn binding, the successful recovery edge, and an ordinary
@@ -46,9 +47,25 @@ metadata holds the finite current limit, or null; the journal phase remains
 `working` during a retry. Feed exposes `kind=error` and the same `usage_limit`
 value in both scopes. A limit row is informational, not a permission request.
 The existing `supervisor.turn_interrupted` event uses reason `usage_limit` for
-an applied current-turn limit failure. Duplicates and errors predating the
-supervisor are not announced again. These samples do not distinguish transient rate throttling from
-quota exhaustion, so they do not produce `rate_limit`.
+an applied current-turn limit failure, once per turn in either arrival order.
+`StopFailure` usually arrives first and announces `provider_error`; the limit
+the sweep reads afterward refines that to `usage_limit`. When the limit is read
+first, the later `StopFailure` is a duplicate and announces nothing. Duplicates
+and errors predating the supervisor are not announced again. These samples do
+not distinguish transient rate throttling from quota exhaustion, so they do not
+produce `rate_limit`.
+
+A turn with an approved tool stays `blocked` until it ends, because no hook
+reports the approval, and a background child's prompt looks the same. A limit for
+that turn recorded strictly after the prompt opened is therefore kept beside the
+wait: the phase, reason and request stay, Feed keeps its permission row with
+`usage_limit`, the tooltip shows the limit, and nothing is announced. `StopFailure`
+or `Stop` for the turn ends the wait, moves the panel to `error` with reason
+`usage_limit`, and announces `usage_limit` once. A limit from another turn, or not
+strictly later than the prompt, is rejected and leaves the wait alone. So is a
+limit during a question or plan review, since the main loop cannot be sending
+requests then. A root `StopFailure` already ends any wait on the panel, including
+a child's open prompt.
 
 Mail delivery to a limited recipient adds `recipient_usage_limit` to its
 `copied` dispatch trace row. The envelope still lands in the inbox, unread.

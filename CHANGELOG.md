@@ -12,7 +12,7 @@ Headline: **c11 1.8.0. Claude Code agents read their mail in the turn it arrives
 
 ### Changed
 
-- **Claude Code agents read their mail in the turn it arrives.** A waiting agent's next turn now holds the message itself, with sender, topic and body, already marked read, so it no longer spends a request running `c11 mailbox recv`. Several waiting messages arrive together in one turn, oldest first. Other harnesses keep their doorbell line. ([#908](https://github.com/Stage-11-Agentics/c11/pull/908))
+- **Claude Code agents read their mail in the turn it arrives.** A waiting agent's next turn now holds the message itself, with sender, topic and body, already marked read, so it no longer spends a request running `c11 mailbox recv`. Each message is a short block with the sender, the topic, a six-character id that `--in-reply-to` accepts, and the local time it was sent. Several waiting messages arrive together in one turn, oldest first, and Claude's turn-end mail uses the same blocks. Other harnesses keep their doorbell line. ([#908](https://github.com/Stage-11-Agentics/c11/pull/908), [#911](https://github.com/Stage-11-Agentics/c11/pull/911))
 - **The workspace frame's corners are square beside the sidebar and titlebar.** The gold workspace frame now rounds only the corners that sit on a window corner, so its curve no longer cuts across the selected tab. ([#896](https://github.com/Stage-11-Agentics/c11/pull/896))
 
 ### Fixed

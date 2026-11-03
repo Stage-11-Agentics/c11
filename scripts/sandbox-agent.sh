@@ -717,6 +717,13 @@ cmd_launch() {
     *) type="$kind" ;;
   esac
   local -a la=(launch-agent --type "$type" --title "$title" --json)
+  if [[ "$kind" == opencode-live ]]; then
+    # The c11 wrapper records these for session recovery before the shim runs,
+    # so they belong in the launch environment, not only in the shim.
+    local oc=/Users/admin/c11-sandbox/agents/opencode-home
+    la+=(--env "XDG_CONFIG_HOME=$oc/config" --env "XDG_DATA_HOME=$oc/data" --env "XDG_STATE_HOME=$oc/state"
+         --env "XDG_CACHE_HOME=$oc/cache")
+  fi
   [[ -n "$model" ]] && la+=(--model "$model")
   [[ -n "$effort" ]] && la+=(--effort "$effort")
   [[ -n "$workspace" ]] && la+=(--workspace "$workspace")

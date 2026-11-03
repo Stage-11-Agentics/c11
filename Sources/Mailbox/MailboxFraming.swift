@@ -77,10 +77,12 @@ enum MailboxFraming {
         return formatter.string(from: date)
     }
 
-    /// Only an opening or closing `c11-msg` tag inside a body could forge a
-    /// block, so only that `<` is escaped; code and markup stay readable.
+    /// Only something a reader could take for an opening or closing block tag
+    /// can forge a block, so only a `<` that leads to `c11` is escaped, across
+    /// spaces, invisible format characters and a `/`; code stays readable.
     static func escapeBlockTags(_ body: String) -> String {
-        guard let pattern = try? NSRegularExpression(pattern: "<(?=/?c11-msg)", options: [.caseInsensitive]) else { return body }
+        guard let pattern = try? NSRegularExpression(pattern: "<(?=[\\s\\p{Cf}]*/?[\\s\\p{Cf}]*c11)",
+                                                     options: [.caseInsensitive]) else { return body }
         return pattern.stringByReplacingMatches(in: body, range: NSRange(body.startIndex..., in: body), withTemplate: "&lt;")
     }
 

@@ -67,8 +67,8 @@ for kind, rows in json.loads(sys.argv[2]).items():
 
     brief = ('This is an isolated c11 mailbox test (run %s). Reply exactly MATRIX_READY and wait for '
              'instructions. Later, when a line says "c11 mail waiting", run exactly `c11 mailbox recv --ack` '
-             'once, then reply MATRIX_GOT. When a turn arrives that already holds <c11-msg> blocks, reply '
-             'MATRIX_GOT without running anything. Never edit files or change configuration.') % nonce
+             'once, then reply MATRIX_GOT. When other c11 mail reaches you, reply MATRIX_GOT. '
+             'Never edit files or change configuration.') % nonce
     targets = {}
     with tempfile.NamedTemporaryFile('w', suffix='.md', delete=False) as handle:
         handle.write(brief + '\n')
@@ -145,6 +145,13 @@ print(json.dumps(out))''', root))
             except Exception:
                 pass
 
+    # A ring uses the recipient's own route, never the typed fallback where a
+    # native route exists. No route means the recipient claimed the mail without
+    # a ring (a Stop drain, or a recv already running).
+    expected = {'claude': 'claude_inbox', 'grok': 'grok_leader', 'pi-live': 'pi_extension',
+                'opencode-live': 'opencode_plugin', 'omp-live': 'omp_extension', 'codex': 'typed'}
+    wrong = {k: v['route'] for k, v in rows.items() if v['route'] not in (None, expected.get(k[1]))}
+    assert not wrong, 'unexpected delivery routes: %s' % wrong
     print('%-15s %-15s %-10s %-17s %s' % ('from', 'to', 'delivery', 'route', 'read'))
     for (sender, recipient), row in sorted(rows.items()):
         print('%-15s %-15s %-10s %-17s %s' % (sender, recipient, row['delivery'], row['route'], row['read_state']))

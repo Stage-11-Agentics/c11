@@ -8702,9 +8702,21 @@ struct WorkspaceSidebar: View {
 
                             groupControls
 
+                            // Eager stacks, never LazyVStack. Cards differ widely in
+                            // height, and a lazy stack estimates the unbuilt ones:
+                            // building a card corrects the estimate, the content
+                            // height changes, the scroll view clamps its offset, a
+                            // different set of cards becomes visible, and the
+                            // estimates move again. When the cards nearly fill the
+                            // sidebar that cycle never settles and the main thread
+                            // spins inside one SwiftUI transaction (2026-11-02,
+                            // 14 workspaces in a 1410 pt window). Eager stacks
+                            // measure every card exactly. `.equatable()` skips the
+                            // row bodies, but `workspaceRow`'s input work now runs
+                            // for every card on each sidebar evaluation.
                             Group {
                                 if compact {
-                                    LazyVStack(spacing: tabRowSpacing) {
+                                    VStack(spacing: tabRowSpacing) {
                                         let columns = SidebarLayoutPolicy.columns(width: Double(proxy.size.width),
                                                                                   scale: Double(chromeTokens.multiplier))
                                         ForEach(WorkspaceSidebarTileRun.pack(groupCoordinator.projection.rows)) { run in
@@ -8730,7 +8742,7 @@ struct WorkspaceSidebar: View {
                                         }
                                     }
                                 } else {
-                            LazyVStack(spacing: tabRowSpacing) {
+                            VStack(spacing: tabRowSpacing) {
                                 ForEach(groupCoordinator.projection.rows) { row in
                                     switch row {
                                     case .group(let header):
@@ -8765,6 +8777,11 @@ struct WorkspaceSidebar: View {
                             }
                                 }
                             }
+                            // Natural height only. The column below has a minimum
+                            // height of the viewport, and an eager stack would hand
+                            // that spare height to the cards (each holds a Spacer)
+                            // instead of leaving it to SidebarEmptyArea.
+                            .fixedSize(horizontal: false, vertical: true)
                             .overlayPreferenceValue(SidebarWorkspaceRowAnchorKey.self) { anchors in
                                 panelDropOverlay(rowAnchors: anchors)
                             }

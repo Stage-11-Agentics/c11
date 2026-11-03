@@ -65,7 +65,7 @@ for kind, rows in json.loads(sys.argv[2]).items():
     (root / ("send-%s.sh" % kind)).write_text("\\n".join(lines) + "\\n")
 ''', root, json.dumps({k: [[p, address(p)] for p in peers[k]] for k in kinds}), nonce)
 
-    brief = ('This is an isolated c11 mailbox test (run %s). Reply exactly MATRIX_READY and wait for '
+    brief = ('This is an isolated c11 mailbox test (run %s). Reply briefly and wait for '
              'instructions. Later, when a line says "c11 mail waiting", run exactly `c11 mailbox recv --ack` '
              'once, then reply MATRIX_GOT. When other c11 mail reaches you, reply MATRIX_GOT. '
              'Never edit files or change configuration.') % nonce
@@ -94,9 +94,6 @@ for kind, rows in json.loads(sys.argv[2]).items():
                 return value
             time.sleep(2)
         raise AssertionError('Timed out: ' + label)
-
-    for kind in kinds:
-        wait('ready: ' + kind, lambda k=kind: 'MATRIX_READY' in screen(k), 180)
 
     for kind in kinds:
         c11('send', '--workspace', targets[kind]['workspace'], '--panel', targets[kind]['tab'],

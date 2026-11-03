@@ -777,7 +777,8 @@ case "\$kind" in
     fail='Failed to load extension|Model .* not found|No models available|Cannot find module|Setup step'
     ;;
   pi-live)
-    ready='gpt-4o-mini'
+    # A narrow panel cuts the status line to `openai/g…`.
+    ready='gpt-4o-mini|openai/'
     fail='Failed to load extension|No API key found|No model found|Cannot find module'
     ;;
   omp-live)

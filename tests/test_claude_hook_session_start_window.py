@@ -16,6 +16,7 @@ import socket_guard
 socket_guard.install()
 import json
 from pathlib import Path
+import socket
 import socketserver
 import subprocess
 import tempfile
@@ -24,6 +25,8 @@ import time
 import uuid
 
 STALL_SECONDS = 0.6
+# The 2 s SessionStart window plus process start and teardown.
+WORST_CASE_SECONDS = 3.0
 
 
 def main():
@@ -44,7 +47,11 @@ def main():
                     line = raw.decode().strip()
                     if not line.startswith('{'):
                         seen.append(line.split(' ', 1)[0])
-                        self.wfile.write(b'OK\n'); self.wfile.flush(); continue
+                        try:
+                            self.wfile.write(b'OK\n'); self.wfile.flush()
+                        except BrokenPipeError:
+                            return
+                        continue
                     message = json.loads(line)
                     method = message['method']
                     seen.append(method)
@@ -57,7 +64,10 @@ def main():
                     else:
                         result = {}
                     response = {'id': message.get('id'), 'ok': True, 'result': result}
-                    self.wfile.write((json.dumps(response) + '\n').encode()); self.wfile.flush()
+                    try:
+                        self.wfile.write((json.dumps(response) + '\n').encode()); self.wfile.flush()
+                    except BrokenPipeError:
+                        return  # the hook already gave up on this request
 
         server = socketserver.ThreadingUnixStreamServer(address, Handler)
         server.daemon_threads = True
@@ -98,6 +108,44 @@ def main():
             assert elapsed < STALL_SECONDS + 0.4, f'ordinary hook took {elapsed:.2f} s'
             assert list(spool.glob('*.ready')), 'ordinary hook did not spool its event'
             print(f'PASS ordinary hook keeps its short window ({elapsed:.2f} s)')
+
+            # Worst case: c11 accepts the connection and never answers.
+            hung_address = str(root / 'hung.sock')
+            hung_conns = []
+            hung = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            hung.bind(hung_address); hung.listen(8)
+            def accept_forever():
+                while True:
+                    try:
+                        conn, _ = hung.accept()
+                    except OSError:
+                        return
+                    hung_conns.append(conn)
+            threading.Thread(target=accept_forever, daemon=True).start()
+            start = time.monotonic()
+            result = subprocess.run(
+                [cli, '--socket', hung_address, 'claude-hook', 'session-start'],
+                input=json.dumps({'session_id': session, 'cwd': str(root), 'source': 'startup'}),
+                text=True, capture_output=True, env=env, timeout=10)
+            elapsed = time.monotonic() - start
+            assert result.returncode == 0, result.stderr
+            assert elapsed < WORST_CASE_SECONDS, f'hung c11 held session-start {elapsed:.2f} s'
+            print(f'PASS hung c11 holds session-start at most {elapsed:.2f} s (bound {WORST_CASE_SECONDS} s)')
+            hung.close()
+
+            # A socket file with no listener refuses at once.
+            dead_address = str(root / 'dead.sock')
+            dead = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            dead.bind(dead_address); dead.close()
+            start = time.monotonic()
+            result = subprocess.run(
+                [cli, '--socket', dead_address, 'claude-hook', 'session-start'],
+                input=json.dumps({'session_id': session, 'cwd': str(root), 'source': 'startup'}),
+                text=True, capture_output=True, env=env, timeout=10)
+            elapsed = time.monotonic() - start
+            assert result.returncode == 0, result.stderr
+            assert elapsed < 1.0, f'dead socket held session-start {elapsed:.2f} s'
+            print(f'PASS dead socket returns at once ({elapsed:.2f} s)')
         finally:
             server.shutdown()
             server.server_close()

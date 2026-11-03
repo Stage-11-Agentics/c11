@@ -12,6 +12,8 @@ final class JournalCoordinator: @unchecked Sendable {
     private var turnStartedMs: [UUID: Int64] = [:]
     private var lastTurnEnds: [UUID: (sequence: Int64, ms: Int64)] = [:]
     private var openAsks: [UUID: JournalOpenAsk] = [:]
+    /// The session id each ownerless panel last tried to recover (C11-580).
+    private var ownerRecoveryAttempts: [UUID: String] = [:]
     private var responseGate = OperatorResponseGate()
     private var store: JournalStore?
     private var storageError: JournalError?
@@ -53,6 +55,7 @@ final class JournalCoordinator: @unchecked Sendable {
         turnStartedMs.removeValue(forKey: panelID)
         lastTurnEnds.removeValue(forKey: panelID)
         openAsks.removeValue(forKey: panelID)
+        ownerRecoveryAttempts.removeValue(forKey: panelID)
         responseGate.clear(panel: panelID)
         let callback = sink
         lock.unlock()
@@ -116,6 +119,16 @@ final class JournalCoordinator: @unchecked Sendable {
             }
         }
     }
+    /// True the first time this owner's session tries to recover a lost owner
+    /// for its panel. A hook's adoption is tried once per session id, so a
+    /// refused one costs nothing on later hooks.
+    func beginOwnerRecovery(_ owner: JournalOwner) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard ownerRecoveryAttempts[owner.panelID] != owner.sessionID else { return false }
+        ownerRecoveryAttempts[owner.panelID] = owner.sessionID
+        return true
+    }
+
     func snapshot(panelID: UUID) -> JournalSnapshot? {
         lock.lock(); defer { lock.unlock() }; return snapshots[panelID]
     }

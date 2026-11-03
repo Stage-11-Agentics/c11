@@ -101,13 +101,16 @@ final class JournalOwnerRecoveryTests: XCTestCase {
         await assertRecovered(phase: "working", turnOpen: true)
     }
 
-    func testToolHookRecoversAWorkingTurnThatHoldsTheDoorbell() async throws {
+    /// A tool observation alone recovers the owner but does not invent a turn
+    /// state; the session's next turn edge connects it.
+    func testToolHookRecoversTheOwnerAndTheNextEdgeConnects() async throws {
         await claimPlaceholder()
         try await append("pre-tool-use")
-        XCTAssertEqual(readback["connection"] as? String, "live")
         XCTAssertEqual(JournalCoordinator.shared.exactOwner(panelID: panelID)?.sessionID, sessionID)
         // Evidence of a running tool must never read as an idle prompt.
         XCTAssertNotEqual(readback["phase"] as? String, "idle")
+        try await append("stop")
+        await assertRecovered(phase: "idle", turnOpen: false)
     }
 
     func testPermissionRequestRecoversABlockedTurnThatHoldsTheDoorbell() async throws {
@@ -151,6 +154,18 @@ final class JournalOwnerRecoveryTests: XCTestCase {
         await claimPlaceholder()
         try await append("session-end")
         await assertNoOwner()
+    }
+
+    func testRecoveryIsTriedOncePerSession() async throws {
+        await claimPlaceholder()
+        let owner = JournalOwner(panelID: panelID, agentKind: "claude-code", sessionID: sessionID)
+        XCTAssertTrue(JournalCoordinator.shared.beginOwnerRecovery(owner))
+        XCTAssertFalse(JournalCoordinator.shared.beginOwnerRecovery(owner), "a second hook must not hop again")
+        // The memo holds this session, so the append below does not adopt.
+        try await append("prompt-submit")
+        await assertNoOwner()
+        let next = JournalOwner(panelID: panelID, agentKind: "claude-code", sessionID: UUID().uuidString.lowercased())
+        XCTAssertTrue(JournalCoordinator.shared.beginOwnerRecovery(next), "a new session tries again")
     }
 
     func testRealRefIsNeverDisplaced() async throws {

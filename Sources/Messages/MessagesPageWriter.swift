@@ -39,6 +39,9 @@ final class MessagesPageWriter {
     /// Queue-confined: the last decoded panel directory and the session file
     /// state it came from, so an unchanged session is not decoded again.
     private var directoryCache: (key: String, directory: MessagesPageDirectory)?
+    /// Queue-confined: live panel facts from the operator's last request,
+    /// applied until the session file is written after they were captured.
+    private var liveOverlay: (capturedAt: Date, panels: [MessagesPageDirectory.Panel])?
 
     init(
         stateURL: URL? = nil,
@@ -112,6 +115,7 @@ final class MessagesPageWriter {
         eventLogCache = MessagesPageEventLogCache()
         mailboxArtifactsCache = nil
         directoryCache = nil
+        liveOverlay = nil
         lock.unlock()
         if let observer {
             NotificationCenter.default.removeObserver(observer)
@@ -187,7 +191,10 @@ final class MessagesPageWriter {
     /// operator opening the conversation web: the page names panels as of
     /// this moment, not as of the last message. Falls back to the existing
     /// page if the rebuild fails.
-    func ensureFreshPage(onReady: @escaping (Result<URL, Swift.Error>) -> Void) {
+    func ensureFreshPage(
+        livePanels: [MessagesPageDirectory.Panel]? = nil,
+        onReady: @escaping (Result<URL, Swift.Error>) -> Void
+    ) {
         lock.lock()
         let resolvedStateURL = stateURL ?? fixedStateURL
         let isStarted = started
@@ -197,8 +204,10 @@ final class MessagesPageWriter {
             return
         }
         let pageURL = MessagesPageLayout.pageURL(state: resolvedStateURL)
+        let capturedAt = Date()
         queue.async { [weak self] in
             guard let self else { return }
+            if let livePanels { self.liveOverlay = (capturedAt, livePanels) }
             do {
                 try self.rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
                 onReady(.success(pageURL))
@@ -303,10 +312,22 @@ final class MessagesPageWriter {
             events: source.events,
             mailboxArtifacts: source.mailboxArtifacts
         )
-        snapshot.directory = cachedDirectory(sessionURL: resolvedSessionURL)
-            .relevant(to: snapshot.messages)
+        var directory = cachedDirectory(sessionURL: resolvedSessionURL)
+        if let overlay = liveOverlay {
+            if sessionModifiedAt(resolvedSessionURL).map({ $0 > overlay.capturedAt }) == true {
+                liveOverlay = nil
+            } else {
+                directory = directory.overlaying(live: overlay.panels)
+            }
+        }
+        snapshot.directory = directory.relevant(to: snapshot.messages)
         let html = MessagesPageRenderer.render(snapshot: snapshot)
         try writeAtomically(html: html, stateURL: stateURL)
+    }
+
+    private func sessionModifiedAt(_ sessionURL: URL?) -> Date? {
+        guard let sessionURL else { return nil }
+        return (try? FileManager.default.attributesOfItem(atPath: sessionURL.path))?[.modificationDate] as? Date
     }
 
     private func cachedDirectory(sessionURL: URL?) -> MessagesPageDirectory {

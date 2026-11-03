@@ -33,14 +33,23 @@ enum MessagesPageWeb {
     @MainActor
     static func open(centredOn panelID: UUID, in workspace: Workspace) {
         MessagesPageWriter.shared.start()
-        // Write the session now so the page names panels as they are this
-        // moment (a rename is otherwise up to one autosave behind).
-        _ = AppDelegate.shared?.forceSessionSave(includeScrollback: false, outPath: nil)
+        // The open panels' titles and addresses as they are now, from memory:
+        // the session file can be one autosave behind a rename.
+        let livePanels = (AppDelegate.shared?.mailboxAddressableSurfaces() ?? []).map { record in
+            MessagesPageDirectory.Panel(
+                id: record.surfaceId.uuidString,
+                title: record.name.isEmpty ? nil : record.name,
+                workspace: record.workspaceId.uuidString,
+                live: true, type: nil, agent: nil,
+                address: record.address.flatMap { $0.isEmpty ? nil : $0 },
+                parent: nil
+            )
+        }
         let fragment = deepLinkFragment(
             panelID: panelID,
             nonce: UInt64(Date().timeIntervalSince1970 * 1000)
         )
-        MessagesPageWriter.shared.ensureFreshPage { [weak workspace] result in
+        MessagesPageWriter.shared.ensureFreshPage(livePanels: livePanels) { [weak workspace] result in
             guard case let .success(pageURL) = result else { return }
             DispatchQueue.main.async {
                 guard let workspace else { return }
@@ -231,6 +240,8 @@ enum MessagesPageWeb {
     static let script = #"""
     (() => {
       "use strict";
+      // Set when the web could not be drawn; every later callback stands down.
+      let broken = false;
       try {
       const raw = JSON.parse(document.getElementById("messages-data").textContent || "{}");
       const directory = raw.directory || {};
@@ -268,6 +279,8 @@ enum MessagesPageWeb {
       const rows = Array.isArray(raw.messages) ? raw.messages : [];
       rows.forEach((m) => {
         if (m.channel !== "mailbox" || !m.surface || !m.recipient || /^id:/i.test(m.recipient)) return;
+        // A role or broadcast address reaches several panels; it names none of them.
+        if (Array.isArray(m.recipient_panel_ids) && m.recipient_panel_ids.length > 1) return;
         if (!addressToPanel.has(m.recipient)) addressToPanel.set(m.recipient, up(m.surface));
       });
       const resolveAddress = (address) => {
@@ -291,8 +304,9 @@ enum MessagesPageWeb {
         } else if (m.channel === "mailbox") {
           from = isUUID(m.sender_id) ? panel(up(m.sender_id)).id : resolveAddress(m.sender || "unknown sender");
           const panels = (Array.isArray(m.recipient_panel_ids) ? m.recipient_panel_ids : []).filter(isUUID);
-          if (panels.length > 1) to = panels.map((id) => panel(up(id)).id);
+          if (panels.length) to = panels.map((id) => panel(up(id)).id);
           else to = isUUID(m.surface) ? panel(up(m.surface)).id : resolveAddress(m.recipient);
+          if (Array.isArray(to) && to.length === 1) to = to[0];
           if (typeof to === "string" && m.recipient && !/^id:/i.test(m.recipient)) P.get(to).address = P.get(to).address || m.recipient;
         }
         if (!from || !to) return;
@@ -473,7 +487,7 @@ enum MessagesPageWeb {
       const NS = $("cw-svg").namespaceURI;
       const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
       const svg = $("cw-svg"), view = $("cw-view"), gClusters = $("cw-clusters"), gEdges = $("cw-edges"), gNodes = $("cw-nodes");
-      let current = null, pendingFit = false;
+      let current = null, pendingFit = false, dragging = false;
       [["ink", "var(--cw-ink)"], ["hot", "var(--cw-accent)"]].forEach(([id, c]) => {
         const m = el("marker", { id: "cw-arrow-" + id, viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: "auto", markerUnits: "userSpaceOnUse" }, $("cw-defs"));
         el("path", { d: "M0,0 L8,4 L0,8 Z", fill: c }, m);
@@ -537,12 +551,13 @@ enum MessagesPageWeb {
           g.addEventListener("mousedown", (e) => {
             e.stopPropagation();
             const down = { x: e.clientX, y: e.clientY, px: p.x, py: p.y, moved: false };
+            dragging = true;
             const move = (ev) => {
               const dx = (ev.clientX - down.x) / VIEW.k, dy = (ev.clientY - down.y) / VIEW.k;
               if (Math.abs(dx) + Math.abs(dy) > 3) down.moved = true;
               if (down.moved) { p.x = down.px + dx; p.y = down.py + dy; g.setAttribute("transform", `translate(${p.x},${p.y})`); drawEdges(); drawClusters(); }
             };
-            const release = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", release); if (!down.moved) select({ kind: "node", id: n.id }); };
+            const release = () => { dragging = false; window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", release); if (!down.moved) select({ kind: "node", id: n.id }); };
             window.addEventListener("mousemove", move); window.addEventListener("mouseup", release);
           });
           g.addEventListener("dblclick", (e) => { e.stopPropagation(); focusPanel(n.id); });
@@ -616,7 +631,7 @@ enum MessagesPageWeb {
       const inspectScope = () => {
         const { agg } = current;
         const pairs = [...agg.pairs.values()].sort((a, b) => b.last - a.last);
-        const count = pairs.reduce((s, p) => s + p.count, 0);
+        const count = new Set(pairs.flatMap((p) => p.msgs.map((m) => m.id))).size;
         const title = state.scope === "instance" ? "Whole c11 instance"
           : state.scope === "workspace" ? (W.has(state.ws) ? W.get(state.ws).title : "No workspace has messages yet")
           : state.panel ? titleOf(state.panel) : "No panel has messages yet";
@@ -690,7 +705,9 @@ enum MessagesPageWeb {
         const pick = $("cw-picker");
         if (state.scope === "workspace") {
           pick.disabled = false;
-          pick.replaceChildren(...wsOrder.filter((id) => id !== NO_WS).map((id) => option(id, `${letterOf(id)} · ${W.get(id).title} (${wsTraffic.get(id) || 0})`, id === state.ws)));
+          const wsIds = wsOrder.filter((id) => id !== NO_WS);
+          if (state.ws && W.has(state.ws) && !wsIds.includes(state.ws)) wsIds.unshift(state.ws);
+          pick.replaceChildren(...wsIds.map((id) => option(id, `${letterOf(id)} · ${W.get(id).title} (${wsTraffic.get(id) || 0})`, id === state.ws)));
         } else if (state.scope === "panel") {
           pick.disabled = false;
           const ids = [...involved].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0));
@@ -735,18 +752,18 @@ enum MessagesPageWeb {
         const k = Math.min(4, Math.max(0.15, VIEW.k * Math.exp(-e.deltaY * 0.0015)));
         VIEW.x = mx - (mx - VIEW.x) * k / VIEW.k; VIEW.y = my - (my - VIEW.y) * k / VIEW.k; VIEW.k = k; userMoved = true; applyView(); save();
       }, { passive: false });
-      window.addEventListener("keydown", (e) => { if (e.key === "Escape" && viewName === "web") select(null); });
+      window.addEventListener("keydown", (e) => { if (!broken && e.key === "Escape" && viewName === "web") select(null); });
       // The stage's own size, not the window's: a browser panel is often
       // created at one size and laid out at another, with no window resize.
       // A resize re-fits only a view the operator has not panned or zoomed.
-      const refitOnResize = () => { if (viewName === "web" && current && (!userMoved || pendingFit)) { fit(); applyView(); save(); } };
+      const refitOnResize = () => { if (!broken && viewName === "web" && current && (!userMoved || pendingFit)) { fit(); applyView(); save(); } };
       if (window.ResizeObserver) new ResizeObserver(refitOnResize).observe($("cw-stage"));
       else window.addEventListener("resize", refitOnResize);
       // The page reloads only on new traffic, so "last 15 min" and "ago" advance on a clock.
       // Only the marks move; the inspector is left alone so a thread being read does not jump.
       setInterval(() => {
         NOW = Date.now();
-        if (viewName !== "web" || !current) return;
+        if (broken || dragging || viewName !== "web" || !current) return;
         current.agg.nodes.forEach((n) => { n.hot = NOW - n.last < HOT_MS; });
         drawEdges(); drawNodes();
       }, 60000);
@@ -767,12 +784,16 @@ enum MessagesPageWeb {
         if (viewName === "web" && wasTraffic) render(pendingFit);
       }));
       window.addEventListener("hashchange", () => {
-        if (location.hash.startsWith("#web") && applyLink(location.hash)) { showView("web"); render(true); fitted = true; }
+        if (broken || !location.hash.startsWith("#web") || !applyLink(location.hash)) return;
+        showView("web"); render(true); fitted = true;
+        // c11 rewrote the page just before this link; reload so it shows that
+        // rebuild even if the fragment navigation pre-empted c11's own reload.
+        setTimeout(() => location.reload(), 0);
       });
 
       const gen = new Date(raw.generated_at || NOW);
       const live = [...involved].filter(isLive).length;
-      $("cw-lede").textContent = `Who talks to whom, by mailbox and by c11 send. ${messages.length} messages between ${involved.size} panels (${live} open) in ${wsOrder.filter((id) => id !== NO_WS).length} workspaces.`;
+      $("cw-lede").textContent = `Who talks to whom, by mailbox and by c11 send. ${new Set(messages.map((m) => m.id)).size} messages between ${involved.size} panels (${live} open) in ${wsOrder.filter((id) => id !== NO_WS).length} workspaces.`;
       const zoneName = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").split("/").pop().replace(/_/g, " ");
       $("cw-stamp").replaceChildren(...[["Built", gen.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " " + zoneName],
         ["Source", raw.bounded ? "newest " + rows.length : "all recorded"]].flatMap(([k, v]) => [h("div", {}, k), h("div", {}, v)]));
@@ -782,6 +803,7 @@ enum MessagesPageWeb {
       fitted = true;
       save();
       } catch (error) {
+        broken = true;
         // The Traffic view never depends on this script: show it, and say why the Web view is missing.
         document.body.classList.remove("view-web");
         document.body.classList.add("view-traffic");

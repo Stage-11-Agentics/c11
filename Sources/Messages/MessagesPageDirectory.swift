@@ -147,18 +147,23 @@ struct MessagesPageDirectory: Equatable {
 
     /// The part of the directory the page can use: open panels (any of them
     /// may be the one the operator centres on), panels the messages name by
-    /// id, panels with a mailbox address (a sender may name only that), and
-    /// the ancestors of those. Closed panels nothing refers to are dropped,
-    /// so a long session's lineage does not grow the page.
+    /// id or by an `id:<uuid>` address, and the ancestors of those. Closed
+    /// panels nothing refers to are dropped, so a long session's lineage does
+    /// not grow the page.
     func relevant(to messages: [MessagesPageRecord]) -> MessagesPageDirectory {
         var referenced = Set<String>()
+        func idAddress(_ value: String?) -> String? {
+            guard let value, value.lowercased().hasPrefix("id:") else { return nil }
+            return String(value.dropFirst(3))
+        }
         for message in messages {
-            for id in [message.surface, message.senderID].compactMap({ $0 }) + message.recipientPanelIDs {
+            let named = [message.surface, message.senderID, idAddress(message.sender), idAddress(message.recipient)]
+            for id in named.compactMap({ $0 }) + message.recipientPanelIDs {
                 if let uuid = UUID(uuidString: id) { referenced.insert(uuid.uuidString) }
             }
         }
         let byID = Dictionary(panels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var keep = Set(panels.filter { $0.live || $0.address != nil || referenced.contains($0.id) }.map(\.id))
+        var keep = Set(panels.filter { $0.live || referenced.contains($0.id) }.map(\.id))
         var frontier = Array(keep)
         while let id = frontier.popLast() {
             if let parent = byID[id]?.parent, !keep.contains(parent), byID[parent] != nil {
@@ -172,6 +177,33 @@ struct MessagesPageDirectory: Equatable {
             panels: keptPanels,
             workspaces: workspaces.filter { $0.live || keptWorkspaces.contains($0.id) }
         )
+    }
+
+    /// The directory with live panel facts laid over it: titles, addresses
+    /// and workspaces read from the running app at one moment. The overlay
+    /// is the whole set of open panels, so any panel it omits is closed.
+    func overlaying(live: [Panel]) -> MessagesPageDirectory {
+        let liveByID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var merged = panels.map { panel -> Panel in
+            var panel = panel
+            if let fresh = liveByID[panel.id] {
+                panel.title = fresh.title ?? panel.title
+                panel.address = fresh.address
+                panel.workspace = fresh.workspace ?? panel.workspace
+                panel.live = true
+            } else {
+                panel.live = false
+            }
+            return panel
+        }
+        let known = Set(panels.map(\.id))
+        merged.append(contentsOf: live.filter { !known.contains($0.id) })
+        var result = workspaces
+        let knownWorkspaces = Set(workspaces.map(\.id))
+        for id in Set(live.compactMap(\.workspace)) where !knownWorkspaces.contains(id) {
+            result.append(Workspace(id: id, title: nil, live: true))
+        }
+        return MessagesPageDirectory(panels: merged, workspaces: result)
     }
 
     private static func nonEmpty(_ value: String?) -> String? {

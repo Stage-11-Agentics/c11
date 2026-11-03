@@ -266,6 +266,8 @@ struct MessagesPageMailboxArtifact {
     /// The dispatcher's stamp of the sending panel (`ext.c11_sender_panel_id`),
     /// when it recorded one. Senders cannot forge it.
     var senderPanelID: String? = nil
+    /// The recipient panel whose inbox held this copy, from the inbox path.
+    var recipientPanelID: String? = nil
 }
 
 struct MessagesPageSourceData {
@@ -484,6 +486,9 @@ enum MessagesPageBuilder {
         if record.workspace == nil { record.workspace = artifact.workspace }
         if record.sender == nil { record.sender = artifact.from }
         if record.senderID == nil { record.senderID = artifact.senderPanelID }
+        if let panel = artifact.recipientPanelID, !record.recipientPanelIDs.contains(panel) {
+            record.recipientPanelIDs.append(panel)
+        }
         if record.recipient == nil { record.recipient = artifact.to }
         if record.targetTitle == nil { record.targetTitle = artifact.to }
         if record.topic == nil { record.topic = artifact.topic }
@@ -863,7 +868,7 @@ enum MessagesPageSource {
                         continue
                     }
                     let state = fileState(for: url)
-                    let artifact = mailboxArtifact(
+                    var artifact = mailboxArtifact(
                         object: object,
                         workspace: workspaceURL.lastPathComponent,
                         id: id,
@@ -871,6 +876,10 @@ enum MessagesPageSource {
                         dispatch: dispatch[id],
                         keepRejectedText: keepRejectedText
                     )
+                    // `<mailboxes>/<panel-uuid>/…`: the first path component under
+                    // the mailbox root names the recipient for an inbox copy.
+                    let relative = url.path.dropFirst(mailboxRoot.path.count).split(separator: "/")
+                    artifact.recipientPanelID = relative.first.flatMap { UUID(uuidString: String($0)) }?.uuidString
                     artifacts.append(artifact)
                     seenIDs.insert(id)
                 }

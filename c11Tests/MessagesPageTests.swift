@@ -1203,7 +1203,7 @@ extension MessagesPageTests {
         XCTAssertFalse(html.contains("Fleet Lead"))
     }
 
-    func testDirectoryKeepsOpenAddressedReferencedPanelsAndTheirAncestors() {
+    func testDirectoryKeepsOpenAndReferencedPanelsAndTheirAncestors() {
         func panel(_ id: String, live: Bool, address: String? = nil, parent: String? = nil) -> MessagesPageDirectory.Panel {
             .init(id: id, title: id, workspace: "W-\(id)", live: live, type: "terminal", agent: nil, address: address, parent: parent)
         }
@@ -1229,7 +1229,118 @@ extension MessagesPageTests {
 
         let kept = directory.relevant(to: [message])
 
-        XCTAssertEqual(Set(kept.panels.map(\.id)), [grandparent, parent, referenced, open, addressed])
+        // A closed panel with only a remembered address is dropped: senders are
+        // matched by address against open panels alone.
+        XCTAssertEqual(Set(kept.panels.map(\.id)), [grandparent, parent, referenced, open])
         XCTAssertEqual(kept.workspaces.map(\.title), ["here"])
+    }
+}
+
+// MARK: - Conversation web: live overlay, id: addresses, inbox recipients
+
+extension MessagesPageTests {
+    private func directoryPanel(_ id: String, title: String?, live: Bool, address: String? = nil) -> MessagesPageDirectory.Panel {
+        .init(id: id, title: title, workspace: "W", live: live, type: "terminal", agent: "codex", address: address, parent: nil)
+    }
+
+    func testLiveOverlayRenamesClosesAndAddsPanels() {
+        let renamed = UUID().uuidString, gone = UUID().uuidString, new = UUID().uuidString
+        let saved = MessagesPageDirectory(
+            panels: [directoryPanel(renamed, title: "~", live: true), directoryPanel(gone, title: "Old", live: true)],
+            workspaces: [.init(id: "W", title: "Fleet", live: true)]
+        )
+        let merged = saved.overlaying(live: [
+            directoryPanel(renamed, title: "Beta", live: true, address: "beta"),
+            .init(id: new, title: "Fresh", workspace: "W2", live: true, type: nil, agent: nil, address: nil, parent: nil),
+        ])
+        let byID = Dictionary(uniqueKeysWithValues: merged.panels.map { ($0.id, $0) })
+        XCTAssertEqual(byID[renamed]?.title, "Beta")
+        XCTAssertEqual(byID[renamed]?.address, "beta")
+        XCTAssertEqual(byID[renamed]?.agent, "codex", "facts the overlay lacks are kept")
+        XCTAssertEqual(byID[gone]?.live, false)
+        XCTAssertEqual(byID[new]?.title, "Fresh")
+        XCTAssertEqual(merged.workspaces.map(\.id), ["W", "W2"])
+    }
+
+    func testDirectoryKeepsAClosedPanelNamedOnlyByAnIdAddress() {
+        let closed = UUID()
+        let directory = MessagesPageDirectory(
+            panels: [directoryPanel(closed.uuidString, title: "Closed Owner", live: false)],
+            workspaces: []
+        )
+        let rejected = MessagesPageRecord(
+            id: "r", channel: "mailbox", timestamp: "2026-10-02T00:00:00.000Z", sequence: nil, workspace: nil,
+            surface: nil, sender: "lead", senderID: nil, callerTitle: nil, recipient: "id:\(closed.uuidString.lowercased())",
+            targetTitle: nil, kind: nil, topic: nil, body: "", bodyRef: nil, replyTo: nil, inReplyTo: nil,
+            urgent: nil, submitted: nil, queued: nil, truncated: false, status: "rejected", lifecycle: []
+        )
+        XCTAssertEqual(directory.relevant(to: [rejected]).panels.map(\.title), ["Closed Owner"])
+    }
+
+    func testInboxCopiesNameEveryRecipientPanel() throws {
+        let mailboxes = tempDir
+            .appendingPathComponent("workspaces", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("mailboxes", isDirectory: true)
+        let one = UUID(), two = UUID()
+        let envelope: [String: Any] = [
+            "version": 1, "id": "01K3A2B7X8PQRTVWYZ0123456W", "from": "lead", "to": "reviewers",
+            "ts": "2026-10-01T23:00:00.000Z", "body": "BROADCAST",
+        ]
+        for (panel, folder) in [(one, ""), (two, "_read")] {
+            var inbox = mailboxes.appendingPathComponent(panel.uuidString.lowercased(), isDirectory: true)
+            if !folder.isEmpty { inbox = inbox.appendingPathComponent(folder, isDirectory: true) }
+            try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: envelope)
+                .write(to: inbox.appendingPathComponent("01K3A2B7X8PQRTVWYZ0123456W.msg"))
+        }
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        let snapshot = MessagesPageBuilder.build(events: source.events, mailboxArtifacts: source.mailboxArtifacts)
+
+        let record = try XCTUnwrap(snapshot.messages.first(where: { $0.body == "BROADCAST" }))
+        XCTAssertEqual(Set(record.recipientPanelIDs), [one.uuidString, two.uuidString])
+    }
+
+    func testFreshPageUsesLivePanelsUntilTheSessionFileCatchesUp() throws {
+        let live = UUID(), liveWorkspace = UUID()
+        let sessionURL = tempDir.appendingPathComponent("session.json")
+        let saved = try makeDirectorySession(
+            livePanel: live, liveWorkspace: liveWorkspace, closedPanel: UUID(), closedWorkspace: UUID()
+        )
+        try saved.write(to: sessionURL)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: sessionURL.path
+        )
+        let writer = MessagesPageWriter(
+            stateURL: tempDir,
+            sessionURL: sessionURL,
+            debounceInterval: 0,
+            observeEvents: false,
+            allowStartUnderXCTest: true,
+            label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)"
+        )
+        writer.start()
+        defer { writer.stopForTesting() }
+        let page = MessagesPageLayout.pageURL(state: tempDir)
+        let done = expectation(description: "fresh page")
+        writer.ensureFreshPage(livePanels: [
+            .init(id: live.uuidString, title: "Renamed Live", workspace: liveWorkspace.uuidString,
+                  live: true, type: nil, agent: nil, address: "fleet-lead", parent: nil),
+        ]) { _ in done.fulfill() }
+        wait(for: [done], timeout: 10)
+        XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("Renamed Live"))
+
+        // A later rebuild before the session is saved keeps the live name...
+        try writer.rebuildNowForTesting()
+        XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains("Renamed Live"))
+
+        // ...and once the session file is newer, it is the source again.
+        let resaved = String(decoding: saved, as: UTF8.self).replacingOccurrences(of: "Fleet Lead", with: "Saved Name")
+        try Data(resaved.utf8).write(to: sessionURL)
+        try writer.rebuildNowForTesting()
+        let html = try String(contentsOf: page, encoding: .utf8)
+        XCTAssertTrue(html.contains("Saved Name"))
+        XCTAssertFalse(html.contains("Renamed Live"))
     }
 }

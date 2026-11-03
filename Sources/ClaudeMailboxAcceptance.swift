@@ -12,6 +12,8 @@ final class ClaudeMailboxAcceptance {
     private var pending = Data()
     private var discardingLine = false
     private static let lineLimit = 1024 * 1024
+    /// Claude queued the text and has not shown it to the agent yet.
+    private(set) var queued = false
 
     /// `text` is the offer being watched for: the invitation, or inline mail.
     init(path: String, sessionID: String, text: String = invitation) throws {
@@ -65,6 +67,7 @@ final class ClaudeMailboxAcceptance {
             pending.removeSubrange(...newline)
             if discardingLine { discardingLine = false; continue }
             if Self.confirms(line, sessionID: sessionID, text: text, notBefore: earliestNewFileRecord) { return true }
+            if Self.queues(line, sessionID: sessionID, text: text) { queued = true }
         }
         if pending.count > Self.lineLimit {
             pending.removeAll(keepingCapacity: false)
@@ -73,17 +76,37 @@ final class ClaudeMailboxAcceptance {
         return false
     }
 
+    /// The queue holds a message only in Claude's memory: an exit, or a cancel
+    /// that clears it, drops the message before the agent reads it. So a queued
+    /// record alone must never claim mail. Only inline mail can use these
+    /// records: a typed invitation queues the same text.
+    private static let consumedFromQueue: Set<String> = ["absorbed_mid_turn", "delivered_to_agent"]
+
+    private static func queueRecord(_ line: Data, sessionID: String, text offered: String) -> [String: Any]? {
+        guard offered != invitation,
+              let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              record["type"] as? String == "queue-operation",
+              record["sessionId"] as? String == sessionID,
+              record["content"] as? String == offered else { return nil }
+        return record
+    }
+
+    /// Claude took the text into its queue behind a running turn.
+    static func queues(_ line: Data, sessionID: String, text offered: String) -> Bool {
+        queueRecord(line, sessionID: sessionID, text: offered)?["operation"] as? String == "enqueue"
+    }
+
+    /// The agent received the text: the peer turn, or its queue entry folded
+    /// into a running turn, which writes no user record of its own.
     static func confirms(_ line: Data, sessionID: String, text offered: String = invitation, notBefore: Date? = nil) -> Bool {
-        guard let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              record["sessionId"] as? String == sessionID else { return false }
-        // Claude queues every inbox message first, and a queued message reaches
-        // a running turn with no user record of its own. Only inline mail can
-        // use this record: a typed invitation queues the same text.
-        if record["type"] as? String == "queue-operation" {
-            return offered != invitation && record["operation"] as? String == "enqueue"
-                && record["content"] as? String == offered
+        if let queue = queueRecord(line, sessionID: sessionID, text: offered),
+           queue["operation"] as? String == "remove",
+           let reason = queue["reason"] as? String {
+            return consumedFromQueue.contains(reason)
         }
-        guard record["type"] as? String == "user",
+        guard let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              record["sessionId"] as? String == sessionID,
+              record["type"] as? String == "user",
               let message = record["message"] as? [String: Any],
               message["role"] as? String == "user" else { return false }
         if let notBefore {

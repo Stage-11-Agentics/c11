@@ -7219,6 +7219,13 @@ final class Workspace: Identifiable, ObservableObject {
                         }
                     case .alreadyAdmitted:
                         recordAcceptance(false, true)
+                    case .queued:
+                        guard ownsAttempt else { return }
+                        // A turn the gate had not seen is running. The next
+                        // idle looks again if a Stop drain has not claimed it.
+                        workspace.mailboxStdinState.buffer.noteNativeTurnStarted(surfaceId: surfaceId, at: startedAt)
+                        workspace.logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "native_queued",
+                                                            bytes: bytes, route: registration.route)
                     case .failed(let reason):
                         guard ownsAttempt else { return }
                         if reason == "native_not_ready" || reason == "native_session_conflict",

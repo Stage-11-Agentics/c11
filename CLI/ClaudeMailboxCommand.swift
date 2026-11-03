@@ -105,6 +105,9 @@ enum ClaudeMailboxCommand {
     /// confirmation still reach the app as `native_late_accept`.
     static let confirmWindow: TimeInterval = 1.8
     static let lateWindow: TimeInterval = 10
+    /// A message queued behind a running turn reaches the agent at that turn's
+    /// next tool boundary. Past this the Stop drain or the next ring has it.
+    static let queuedWindow: TimeInterval = 300
 
     private struct LateWatch {
         let deliveryID: String
@@ -150,6 +153,12 @@ enum ClaudeMailboxCommand {
             Thread.sleep(forTimeInterval: 0.02)
         }
         guard binding.isAlive, stream.isConnected else { return nil }
+        if observer.queued {
+            // Not delivered yet, and not failed: the typed doorbell would only
+            // add a second copy. The mail stays unread until the agent has it.
+            try stream.write(["type": "queued", "delivery_id": deliveryID], deadline: uptime + 0.2)
+            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + queuedWindow)
+        }
         // Explicit inbound policy (crossSessionInbound refuse or hold) accepts
         // the write and answers nothing, so it is indistinguishable here from a
         // slow harness or a changed acceptance marker. Silence is not acceptance.

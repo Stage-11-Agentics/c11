@@ -210,6 +210,19 @@ print(pids[0])''', args.run_id))
         assert turn.count('<c11-msg ') == 4, turn
         assert [turn.index(i) for i in batch + [last]] == sorted(turn.index(i) for i in batch + [last]), turn
         observations['batch'] = data
+        # Past the budget: nothing is lost or reordered, and every id is read once.
+        c11('set-metadata', '--workspace', workspace, '--panel', native['panel'], '--key', 'mailbox.doorbell', '--value', 'off', '--type', 'string')
+        large = [mail(native, body=str(n) + '-C11_OVER_' + nonce + '-' + 'b' * 4000) for n in range(11)]
+        c11('set-metadata', '--workspace', workspace, '--panel', native['panel'], '--key', 'mailbox.doorbell', '--value', 'on', '--type', 'string')
+        large.append(mail(native, body='11-C11_OVER_' + nonce))
+        wait('over-budget mail all read', lambda: set(large) <= set(inspect(native)['read']), seconds=90)
+        data = inspect(native)
+        seen = [i for m in data['messages'] if m['role'] == 'user' for i in large if 'id="' + i + '"' in m['text']]
+        hooks = [r for r in data['dispatch'] if r.get('event') == 'claimed' and r.get('id') in large]
+        assert len(hooks) == len(large), hooks
+        first = next(m['text'] for m in data['messages'] if m['role'] == 'user' and large[0] in m['text'])
+        assert first.count('<c11-msg ') < len(large), 'The budget did not split this batch'
+        observations['over_budget'] = dict(inline_ids=seen, claimed=[(r.get('id'), r.get('via')) for r in hooks])
         c11('send-key', '--workspace', workspace, '--panel', native['panel'], 'ctrl+u')
         before = {m['session'] for m in inspect(native)['messages']}
         c11('send', '--workspace', workspace, '--panel', native['panel'], '/clear')

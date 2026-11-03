@@ -52,7 +52,10 @@ final class MailboxNativeDoorbell {
             }
         }
     }
-    enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, failed(String) }
+    /// `queued`: the harness holds the text behind a running turn. Neither
+    /// delivered nor failed, so nothing is covered, claimed or typed; a later
+    /// acceptance arrives as `accepted(late: true)`.
+    enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, queued, failed(String) }
 
     /// Attempt-level observability, not a claim that Claude held or refused
     /// input: its silent inbound-policy decisions remain `unconfirmed`.
@@ -450,6 +453,11 @@ final class MailboxNativeDoorbell {
         case .alreadyAdmitted:
             resolved = .alreadyAdmitted
             listener.pending.removeValue(forKey: requestID)
+        case .queued:
+            guard !pending.failed else { lock.unlock(); return }
+            pending.failed = true // Settles the deadline; a later acceptance is late.
+            listener.pending[requestID] = pending
+            resolved = .queued
         case .failed(let reason):
             guard !pending.failed else { lock.unlock(); return }
             pending.failed = true
@@ -469,7 +477,7 @@ final class MailboxNativeDoorbell {
         let confirmsCoverage: Bool
         switch resolved {
         case .accepted, .alreadyAdmitted: confirmsCoverage = true
-        case .failed: confirmsCoverage = false
+        case .queued, .failed: confirmsCoverage = false
         }
         if confirmsCoverage {
             settled = { [weak self] in
@@ -509,6 +517,8 @@ final class MailboxNativeDoorbell {
             } else {
                 resolve(registration, requestID: requestID, result: .accepted(late: false))
             }
+        case "queued" where registration.supportsInlineMail:
+            resolve(registration, requestID: requestID, result: .queued)
         case "rejected":
             let reason = (frame["reason"] as? String).flatMap {
                 Self.namedRejections.contains($0) || ($0 == "refused" && registration.route == .claudeInbox)

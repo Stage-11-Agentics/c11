@@ -51,11 +51,14 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
 
     private let inline = "c11 mailbox: 1 new message for this panel\n\n<c11-msg from=\"a\" id=\"01\">\nbody\n</c11-msg>\n"
 
-    private func queueRecord(_ content: String, operation: String = "enqueue", sessionID: String? = nil) throws -> Data {
-        var data = try JSONSerialization.data(withJSONObject: [
+    private func queueRecord(_ content: String, operation: String = "enqueue", reason: String? = nil,
+                             sessionID: String? = nil) throws -> Data {
+        var fields: [String: Any] = [
             "type": "queue-operation", "operation": operation, "sessionId": sessionID ?? session,
             "timestamp": "2026-11-02T18:00:00.000Z", "content": content,
-        ])
+        ]
+        if let reason { fields["reason"] = reason }
+        var data = try JSONSerialization.data(withJSONObject: fields)
         data.append(0x0A)
         return data
     }
@@ -69,20 +72,36 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
                        "Mail text is not the invitation")
     }
 
-    func testInlineMailConfirmsWhenClaudeQueuesItBehindARunningTurn() throws {
+    /// The queue lives in Claude's memory, so a queued message is not yet read:
+    /// only its arrival in a turn confirms it.
+    func testQueuedMailIsConfirmedOnlyWhenItReachesTheTurn() throws {
         try append(record())
         let observer = try ClaudeMailboxAcceptance(path: transcript.path, sessionID: session, text: inline)
         try append(queueRecord(inline + "other"))
-        try append(queueRecord(inline, operation: "remove"))
         try append(queueRecord(inline, sessionID: UUID().uuidString.lowercased()))
         XCTAssertFalse(try observer.observe())
+        XCTAssertFalse(observer.queued)
         try append(queueRecord(inline))
+        XCTAssertFalse(try observer.observe())
+        XCTAssertTrue(observer.queued)
+        try append(queueRecord(inline, operation: "remove", reason: "cleared_on_cancel"))
+        try append(queueRecord(inline, operation: "popAll"))
+        XCTAssertFalse(try observer.observe(), "A cleared queue dropped the mail before the agent read it")
+        try append(queueRecord(inline, operation: "remove", reason: "absorbed_mid_turn"))
         XCTAssertTrue(try observer.observe())
+    }
+
+    func testQueueDeliveredToAgentConfirms() throws {
+        XCTAssertTrue(ClaudeMailboxAcceptance.confirms(
+            try queueRecord(inline, operation: "remove", reason: "delivered_to_agent"), sessionID: session, text: inline))
     }
 
     /// A typed doorbell queues this same text, so the queue proves nothing.
     func testQueuedInvitationIsNotEvidence() throws {
-        XCTAssertFalse(ClaudeMailboxAcceptance.confirms(try queueRecord(ClaudeMailboxAcceptance.invitation), sessionID: session))
+        let invitation = ClaudeMailboxAcceptance.invitation
+        XCTAssertFalse(ClaudeMailboxAcceptance.queues(try queueRecord(invitation), sessionID: session, text: invitation))
+        XCTAssertFalse(ClaudeMailboxAcceptance.confirms(
+            try queueRecord(invitation, operation: "remove", reason: "absorbed_mid_turn"), sessionID: session))
     }
 
     func testResumedSessionFindsItsTranscriptInTheProjectWhereItBegan() throws {

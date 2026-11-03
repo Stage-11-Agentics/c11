@@ -424,7 +424,7 @@ The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, 
 
 **The message is the turn.** One peer turn carries one line and every waiting envelope as a `<c11-msg>` block, oldest first, with sender, topic and body, up to 32 KiB. The first message always goes; mail past the budget waits in order for the next idle or Stop drain. A `body_ref` message carries the path plus the same leading excerpt `recv` prints. The agent spends no request on `recv`, so a push-enabled agent never polls its own inbox.
 
-**Claim.** The app, not the bridge, claims each envelope when the bridge confirms Claude took the text, and records the recipient's own read (`claimed` row with `via: native`, plus the usual `mailbox.delivered`). `c11 mailbox status <id>` then shows it read. Nothing is claimed before that confirmation, so mail Claude did not take stays in the inbox for the typed doorbell. Two consumers cannot both claim: the rename decides, and the loser records nothing. The text can still reach the agent twice when a confirmation arrives after the typed fallback, so `id` stays the dedupe key.
+**Claim.** The app, not the bridge, claims each envelope when the bridge confirms the agent has the text, and records the recipient's own read (`claimed` row with `via: native`, plus the usual `mailbox.delivered`). `c11 mailbox status <id>` then shows it read. Nothing is claimed before that confirmation, so mail Claude did not take stays in the inbox for the typed doorbell. If the ring raced a turn c11 had not seen, Claude queues the text in memory, where an exit or cancel can drop it. c11 logs `doorbell` with `reason` `native_queued`, types nothing and claims nothing; the bridge watches for up to five minutes for the text to reach the agent, and otherwise the Stop drain or the next ring has the mail. Two consumers cannot both claim: the rename decides, and the loser records nothing. The text can still reach the agent twice when a confirmation arrives after the typed fallback, so `id` stays the dedupe key.
 
 A bridge from before this route subscribes without `supports_inline_mail` and keeps receiving the invitation. Any native route can adopt the same text by subscribing with that flag and confirming from its own harness.
 
@@ -445,7 +445,7 @@ The bridge reports why an offer failed, and `native_failure` names it:
 | `native_transcript_unavailable` | The session transcript could not be opened; nothing was sent. |
 | `native_inbox_unavailable` | Claude's inbox socket could not be reached; nothing was sent. |
 | `native_inbox_write_failed` | The write stalled or broke partway. |
-| `native_unconfirmed` | The write succeeded, but no matching record appeared within 1.8 seconds. `crossSessionInbound` `refuse` or `hold` lands here, because Claude accepts the write and answers nothing; so does a changed acceptance marker. A matching record is Claude's queue entry for the exact text, or the peer turn in either wording (idle, or `while you were working`). |
+| `native_unconfirmed` | The write succeeded, but no matching record appeared within 1.8 seconds. `crossSessionInbound` `refuse` or `hold` lands here, because Claude accepts the write and answers nothing; so does a changed acceptance marker. A matching record is the peer turn in either wording (idle, or `while you were working`), Claude's queue entry for the exact text, or that entry reaching a running turn. |
 | `native_timeout` | The bridge itself said nothing within two seconds. |
 | `native_unsupported_invitation` | c11 offered text that is neither marked inline nor the fixed invitation, so the bridge refused it and sent nothing. |
 
@@ -612,7 +612,7 @@ Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows 
 
 **Bounds.** Each panel buffers up to 64 envelopes (oldest evicted past that, logged `evicted`). Buffered mail waits for the agent's next prompt edge, or until its working state goes unknown (2 minutes with no journal turn behind it; c11 looks again at that moment), and drops from the queue when the panel returns to a shell prompt. Evicted envelopes and mail dropped at a shell prompt remain in the filesystem inbox; `recv --drain` is their floor.
 
-**Why you still pull.** The inbox copy is written before the ring. The ring is only the invitation. `c11 mailbox recv` (or the hook drain) is how the body arrives.
+**Why you still pull.** The inbox copy is written before the ring. On every route but Claude Code's, the ring is only the invitation, and `c11 mailbox recv` (or the hook drain) is how the body arrives.
 
 ### Doorbell
 

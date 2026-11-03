@@ -1,8 +1,10 @@
 import Foundation
 import Darwin
 
-/// One event-driven stream per interactive harness. No inbox contents travel
-/// over it. Socket IO and deadlines run on workers; Workspace owns ring policy.
+/// One event-driven stream per interactive harness. Inbox contents travel over
+/// it only to a route that asked for them (`supportsInlineMail`), and the app
+/// keeps the claim. Socket IO and deadlines run on workers; Workspace owns ring
+/// policy.
 final class MailboxNativeDoorbell {
     static let shared = MailboxNativeDoorbell()
     enum Route: String {
@@ -20,9 +22,11 @@ final class MailboxNativeDoorbell {
         let route: Route
         let canQueue: Bool
         let supportsAttemptReplay: Bool
+        let supportsInlineMail: Bool
 
         init(id: UUID, panelID: UUID, agentPID: pid_t, processStart: UInt64, sessionID: String,
-             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false, claudeSessionID: UUID? = nil) {
+             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false, claudeSessionID: UUID? = nil,
+             supportsInlineMail: Bool = false) {
             self.id = id
             self.panelID = panelID
             self.agentPID = agentPID
@@ -32,6 +36,7 @@ final class MailboxNativeDoorbell {
             self.route = route
             self.canQueue = canQueue
             self.supportsAttemptReplay = supportsAttemptReplay
+            self.supportsInlineMail = supportsInlineMail
         }
 
         func matches(process: MailboxStdinBuffer.AgentProcess?, kind: String) -> Bool {
@@ -47,7 +52,10 @@ final class MailboxNativeDoorbell {
             }
         }
     }
-    enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, failed(String) }
+    /// `queued`: the harness holds the text behind a running turn. Neither
+    /// delivered nor failed, so nothing is covered, claimed or typed; a later
+    /// acceptance arrives as `accepted(late: true)`.
+    enum Result: Equatable { case accepted(late: Bool), alreadyAdmitted, queued, failed(String) }
 
     /// Attempt-level observability, not a claim that Claude held or refused
     /// input: its silent inbound-policy decisions remain `unconfirmed`.
@@ -399,7 +407,7 @@ final class MailboxNativeDoorbell {
     /// registration cannot race ahead of accepted-ID coverage.
     @discardableResult
     func deliver(_ registration: Registration, timeout: TimeInterval = 2, attemptID: UUID? = nil,
-                 diagnostic: ((FailureDiagnostic) -> Void)? = nil,
+                 inlineText: String? = nil, diagnostic: ((FailureDiagnostic) -> Void)? = nil,
                  reply: @escaping (Result, @escaping () -> Void) -> Void) -> UUID {
         let requestID = UUID()
         lock.lock()
@@ -422,7 +430,9 @@ final class MailboxNativeDoorbell {
                 && current?.pending[requestID]?.failed == false
             lock.unlock()
             guard shouldSend else { return }
-            var frame: [String: Any] = ["type": "deliver", "delivery_id": requestID.uuidString, "text": MailboxDoorbell.text]
+            var frame: [String: Any] = ["type": "deliver", "delivery_id": requestID.uuidString,
+                                        "text": inlineText ?? MailboxDoorbell.text]
+            if inlineText != nil { frame["inline"] = true }
             if let attemptID { frame["attempt_id"] = attemptID.uuidString }
             if !listener.write(frame) {
                 resolve(registration, requestID: requestID, result: .failed("native_write_failed"))
@@ -443,6 +453,11 @@ final class MailboxNativeDoorbell {
         case .alreadyAdmitted:
             resolved = .alreadyAdmitted
             listener.pending.removeValue(forKey: requestID)
+        case .queued:
+            guard !pending.failed else { lock.unlock(); return }
+            pending.failed = true // Settles the deadline; a later acceptance is late.
+            listener.pending[requestID] = pending
+            resolved = .queued
         case .failed(let reason):
             guard !pending.failed else { lock.unlock(); return }
             pending.failed = true
@@ -462,7 +477,7 @@ final class MailboxNativeDoorbell {
         let confirmsCoverage: Bool
         switch resolved {
         case .accepted, .alreadyAdmitted: confirmsCoverage = true
-        case .failed: confirmsCoverage = false
+        case .queued, .failed: confirmsCoverage = false
         }
         if confirmsCoverage {
             settled = { [weak self] in
@@ -502,6 +517,8 @@ final class MailboxNativeDoorbell {
             } else {
                 resolve(registration, requestID: requestID, result: .accepted(late: false))
             }
+        case "queued" where registration.supportsInlineMail:
+            resolve(registration, requestID: requestID, result: .queued)
         case "rejected":
             let reason = (frame["reason"] as? String).flatMap {
                 Self.namedRejections.contains($0) || ($0 == "refused" && registration.route == .claudeInbox)
@@ -554,9 +571,11 @@ extension TerminalController {
         } else {
             claudeSessionID = nil // Older bridges did not report the Claude session.
         }
+        let supportsInlineMail = params["supports_inline_mail"] as? Bool ?? false
         let registration = MailboxNativeDoorbell.Registration(id: UUID(), panelID: panelID, agentPID: pidNumber.int32Value,
             processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false,
-            supportsAttemptReplay: supportsAttemptReplay, claudeSessionID: claudeSessionID)
+            supportsAttemptReplay: supportsAttemptReplay, claudeSessionID: claudeSessionID,
+            supportsInlineMail: supportsInlineMail)
         // A slow/dead peer cannot occupy the shared writer indefinitely.
         var timeout = timeval(tv_sec: 1, tv_usec: 0)
         _ = setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))

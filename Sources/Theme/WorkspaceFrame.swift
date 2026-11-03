@@ -36,9 +36,13 @@ public enum WorkspaceFrameState: Sendable, Equatable {
     case mirroring(peer: WindowId? = nil)
 }
 
-/// Outer content-area frame. Renders a hairline `RoundedRectangle` stroke
-/// coloured from `theme.chrome.windowFrame.color` with opacity modulated by
-/// workspace/window focus state. Attaches as a SwiftUI `.overlay` and is
+/// Outer content-area frame. Renders a hairline stroke coloured from
+/// `theme.chrome.windowFrame.color` with opacity modulated by
+/// workspace/window focus state. A corner is rounded only where it sits on
+/// one of the window's own rounded corners; every other corner (beside the
+/// sidebar, under the titlebar) is square, so it agrees with the square tab
+/// strip and panel edges it frames. Same policy as the portal's copy of the
+/// frame (`PortalWorkspaceFrameOverlay`). Attaches as a SwiftUI `.overlay` and is
 /// always `allowsHitTesting(false)` — terminal typing-latency paths don't see
 /// it, portal-hosted terminals stay above it in z-order, and divider drags
 /// route through untouched.
@@ -59,6 +63,10 @@ struct WorkspaceFrame: View {
     private var workspaceFrameEnabled: Bool = true
 
     @Environment(\.colorScheme) private var colorScheme
+
+    /// Which corners meet the hosting window's rounded corners, measured in
+    /// AppKit by `WorkspaceFrameCornerProbe`. Square until the first report.
+    @State private var corners: WorkspaceFrameCorners = .square
 
     var body: some View {
         if workspaceFrameEnabled && themeManager.isEnabled {
@@ -87,13 +95,24 @@ struct WorkspaceFrame: View {
         let strokeColor = resolveStrokeColor(context: context)
         let thickness = resolveThickness(context: context)
         let opacity = resolveOpacity(context: context)
-        let cornerRadius = hostingWindowCornerRadius()
+        let corners = self.corners
 
         // Circular, like the window's own corner mask: a continuous curve of
         // the same radius bulges past the mask at the diagonal.
-        RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
+        UnevenRoundedRectangle(
+            topLeadingRadius: corners.topLeadingRadius,
+            bottomLeadingRadius: corners.bottomLeadingRadius,
+            bottomTrailingRadius: corners.bottomTrailingRadius,
+            topTrailingRadius: corners.topTrailingRadius,
+            style: .circular
+        )
             .strokeBorder(Color(nsColor: strokeColor), lineWidth: thickness)
             .opacity(opacity)
+            .background(
+                WorkspaceFrameCornerProbe { reported in
+                    if self.corners != reported { self.corners = reported }
+                }
+            )
             // v1 ships the decorative baseline with no motion on `state`; M5
             // flips animation on per-case to drive pulse / drop-zone brightening.
             .animation(nil, value: state)
@@ -120,10 +139,142 @@ struct WorkspaceFrame: View {
         return 1.0
     }
 
-    /// Matches the hosting window's rounded-corner radius so the stroke sits
-    /// flush inside the window's corner mask instead of being shaved by it.
-    private func hostingWindowCornerRadius() -> CGFloat {
-        WindowCornerRadius.resolve(for: NSApp.mainWindow ?? NSApp.keyWindow)
+}
+
+/// The corners of the workspace frame that follow the window's rounded
+/// corner mask. A corner is rounded, with the window's radius, only when it
+/// coincides with a window corner; elsewhere a curve would cut across the
+/// square tab strip and leave a wedge of tab fill outside it (C11-578).
+struct WorkspaceFrameCorners: Equatable {
+    var radius: CGFloat
+    var topLeading: Bool
+    var topTrailing: Bool
+    var bottomLeading: Bool
+    var bottomTrailing: Bool
+
+    static let square = WorkspaceFrameCorners(
+        radius: 0,
+        topLeading: false,
+        topTrailing: false,
+        bottomLeading: false,
+        bottomTrailing: false
+    )
+
+    var topLeadingRadius: CGFloat { topLeading ? radius : 0 }
+    var topTrailingRadius: CGFloat { topTrailing ? radius : 0 }
+    var bottomLeadingRadius: CGFloat { bottomLeading ? radius : 0 }
+    var bottomTrailingRadius: CGFloat { bottomTrailing ? radius : 0 }
+
+    /// `frame` and `windowBounds` are in window coordinates (AppKit, y up).
+    static func resolve(
+        frame: NSRect,
+        windowBounds: NSRect,
+        windowRadius: CGFloat
+    ) -> WorkspaceFrameCorners {
+        let radius = min(windowRadius, frame.width / 2, frame.height / 2)
+        guard radius > 0 else { return .square }
+        func onWindowCorner(_ corner: PortalWorkspaceFrameOverlay.Corner) -> Bool {
+            PortalWorkspaceFrameOverlay.cornerMatchesWindow(
+                corner,
+                frame: frame,
+                windowBounds: windowBounds
+            )
+        }
+        let resolved = WorkspaceFrameCorners(
+            radius: radius,
+            topLeading: onWindowCorner(.minXMaxY),
+            topTrailing: onWindowCorner(.maxXMaxY),
+            bottomLeading: onWindowCorner(.minXMinY),
+            bottomTrailing: onWindowCorner(.maxXMinY)
+        )
+        guard resolved.topLeading || resolved.topTrailing
+            || resolved.bottomLeading || resolved.bottomTrailing else {
+            return .square
+        }
+        return resolved
+    }
+}
+
+/// Invisible AppKit view behind the workspace frame that measures the frame
+/// against its own window (not `NSApp.mainWindow`) and reports which corners
+/// sit on the window's rounded corners. Reports only on change, after the
+/// current SwiftUI update, so it never mutates state mid-render.
+private struct WorkspaceFrameCornerProbe: NSViewRepresentable {
+    let onChange: (WorkspaceFrameCorners) -> Void
+
+    func makeNSView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ nsView: ProbeView, context: Context) {
+        nsView.onChange = onChange
+        nsView.report()
+    }
+
+    final class ProbeView: NSView {
+        var onChange: ((WorkspaceFrameCorners) -> Void)?
+        private var lastReported: WorkspaceFrameCorners?
+        private var windowObservers: [NSObjectProtocol] = []
+
+        override var isOpaque: Bool { false }
+        override var acceptsFirstResponder: Bool { false }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override var frame: NSRect {
+            didSet { report() }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            removeWindowObservers()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            lastReported = nil
+            if let window {
+                let center = NotificationCenter.default
+                windowObservers = [
+                    NSWindow.didResizeNotification,
+                    NSWindow.didEnterFullScreenNotification,
+                    NSWindow.didExitFullScreenNotification,
+                ].map { name in
+                    center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        self?.report()
+                    }
+                }
+            }
+            report()
+        }
+
+        override func viewDidEndLiveResize() {
+            super.viewDidEndLiveResize()
+            report()
+        }
+
+        deinit {
+            removeWindowObservers()
+        }
+
+        private func removeWindowObservers() {
+            windowObservers.forEach(NotificationCenter.default.removeObserver)
+            windowObservers.removeAll()
+        }
+
+        func report() {
+            guard let window, let contentView = window.contentView else { return }
+            let corners = WorkspaceFrameCorners.resolve(
+                frame: convert(bounds, to: nil),
+                windowBounds: contentView.convert(contentView.bounds, to: nil),
+                windowRadius: WindowCornerRadius.resolve(for: window)
+            )
+            guard corners != lastReported else { return }
+            lastReported = corners
+            guard let onChange else { return }
+            DispatchQueue.main.async { onChange(corners) }
+        }
     }
 }
 

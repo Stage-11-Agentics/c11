@@ -8,7 +8,8 @@ import Combine
 /// leave receipts. Each of those reports `inboxChanged`, which recounts that
 /// panel with two directory listings on a utility queue. A doorbell ring does
 /// not claim and does not report a change; the envelope is already unread
-/// from the delivery. `recv --ack` claims it and the receipt recounts.
+/// from the delivery. `recv --ack` or a confirmed inline delivery claims it and
+/// the receipt recounts.
 /// A reconcile recounts the panels whose cell is on screen every minute, and
 /// every panel the store knows every five minutes, which catches hand-dropped
 /// files.

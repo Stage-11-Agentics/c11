@@ -55,7 +55,7 @@ Amendments to the *shared* core apply to all candidates simultaneously or none, 
 ├── PHILOSOPHY.md             # singular, shared by reference
 ├── candidates/<X>/           # per candidate: stories (X/AC-n), ECONOMICS.md, prototypes/ …
 │                             # (own repo spawns at build; this is the pre-build home)
-└── CLAUDE.md                 # pointers to every root artifact, never copies
+└── AGENTS.md                 # pointers to every root artifact, never copies
 ```
 
 ## Handoff

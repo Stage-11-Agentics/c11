@@ -726,7 +726,7 @@ enum PortalWorkspaceFrameOverlay {
         case maxXMaxY
     }
 
-    private static func cornerMatchesWindow(
+    static func cornerMatchesWindow(
         _ corner: Corner,
         frame: NSRect,
         windowBounds: NSRect,

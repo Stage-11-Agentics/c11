@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.7.10] - 2026-11-02
+
+Headline: **c11 1.7.10. Switching workspaces from the sidebar can no longer freeze c11.**
+
+### Fixed
+
+- **Switching workspaces from the sidebar no longer freezes c11.** When the workspace cards nearly filled the sidebar, clicking a card could leave c11 spinning with a beach ball until it was force-quit, because the sidebar kept re-measuring cards it had not drawn yet. The sidebar now measures every card exactly, in both the one-column list and Tiles, and cards keep their natural height when only a few workspaces are open. ([#909](https://github.com/Stage-11-Agentics/c11/pull/909))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.7.9] - 2026-11-01
 
 Headline: **c11 1.7.9. The sidebar button steps through one, two and three columns, resumed agents learn that c11 restarted, the outside-link prompt takes Return and Escape from another app, and commands refuse a target that no longer exists.**

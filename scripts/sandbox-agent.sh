@@ -15,7 +15,7 @@ Agents run inside the guest that sandbox-up.sh started. Every command below
 reaches the guest over SSH through the Tart host. Nothing runs on, or takes
 focus on, the machine where this script is invoked.
 
-  stage [claude,codex,grok,pi,omp,pi-live,omp-live]
+  stage [claude,codex,grok,pi,omp,pi-live,omp-live,opencode-live]
       Copy the Tart host's installed agent CLIs into the guest and stage one
       access credential per kind, exported on the Tart host by the Overwatch
       seat launcher (seat.sh export-cred). Default: all three. Run it again to
@@ -27,13 +27,14 @@ focus on, the machine where this script is invoked.
       omp does the same with the host's omp package (built into a
       self-contained install on the host) and a Bun runtime new enough for it.
       pi-live and omp-live run the same agents against OpenRouter with a real
-      model. They stage one credential: the OpenRouter key, read from
+      model, and opencode-live runs the host's OpenCode the same way (from
+      ~/.opencode/bin, Homebrew or PATH on the Tart host). They stage one credential: the OpenRouter key, read from
       C11_SANDBOX_OPENROUTER_KEY in the caller's environment, sent on SSH
       stdin, written in the guest as a mode 600 file. Set the variable for
       stage and again for verify-clean, which searches for it. The key is
       never put in an argument, a file on this machine, or output.
 
-  launch <claude|codex|grok|pi|omp|pi-live|omp-live> <brief-file> [--title T] [--model M] [--effort E]
+  launch <claude|codex|grok|pi|omp|pi-live|omp-live|opencode-live> <brief-file> [--title T] [--model M] [--effort E]
          [--workspace REF] [--address A] [--no-push] [--no-wait] [--timeout S]
       Copy the brief into the guest and launch a typed agent tab in the guest
       c11 with `c11 launch-agent --prompt-file`, so the agent is told to read
@@ -81,8 +82,8 @@ sandbox_validate_kinds() {
   local IFS=,
   for k in $list; do
     case "$k" in
-      claude|codex|grok|pi|omp|pi-live|omp-live) ;;
-      *) sandbox_die "unknown agent kind '$k'. Kinds: claude, codex, grok, pi, omp, pi-live, omp-live." ;;
+      claude|codex|grok|pi|omp|pi-live|omp-live|opencode-live) ;;
+      *) sandbox_die "unknown agent kind '$k'. Kinds: claude, codex, grok, pi, omp, pi-live, omp-live, opencode-live." ;;
     esac
   done
 }
@@ -108,7 +109,7 @@ export_cred() {
     print -r -- '{"agent":"'"$kind"'","env":{},"account":"controlled-provider"}'
     return
   fi
-  if [[ "$kind" == pi-live || "$kind" == omp-live ]]; then
+  if [[ "$kind" == pi-live || "$kind" == omp-live || "$kind" == opencode-live ]]; then
     [[ -n "$openrouter_key" ]] || die "$kind needs the OpenRouter key: set C11_SANDBOX_OPENROUTER_KEY for this command"
     OPENROUTER_API_KEY="$openrouter_key" /usr/bin/python3 -c 'import json, os, sys; print(json.dumps({"agent": sys.argv[1], "env": {"OPENROUTER_API_KEY": os.environ["OPENROUTER_API_KEY"]}, "account": "openrouter"}))' "$kind"
     return
@@ -249,7 +250,7 @@ for line in sys.stdin:
         vals = [json.loads(env["GROK_ACCESS_TOKEN_JSON"])["access_token"]]
     elif kind in ("pi", "omp"):
         vals = []  # Controlled provider; no credential is staged.
-    elif kind in ("pi-live", "omp-live"):
+    elif kind in ("pi-live", "omp-live", "opencode-live"):
         vals = [env["OPENROUTER_API_KEY"]]
     else:
         sys.exit("unknown kind " + kind)
@@ -362,6 +363,21 @@ mkdir -p "$HOME/.omp/agent"
 exec /usr/local/libexec/c11-sandbox/omp/runtime /usr/local/libexec/c11-sandbox/omp/package/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js \
   --model openrouter/openai/gpt-4o-mini --no-session --no-skills --no-rules --no-lsp --no-title --no-pty "$@"
 SH
+cat > "$tmp/opencode-live" <<'SH'
+#!/bin/sh
+# A real model through OpenRouter, from a mode 600 key file. Config, data and state stay under a
+# private XDG tree seeded by stage, so the guest's own ~/.config/opencode is never written.
+f="$HOME/.c11-sandbox-secrets/openrouter-key"
+if [ "${1:-}" != "--version" ]; then
+  [ -r "$f" ] || { echo "opencode: $f missing; run scripts/sandbox-agent.sh <run-id> stage opencode-live" >&2; exit 1; }
+  OPENROUTER_API_KEY="$(cat "$f")"
+  export OPENROUTER_API_KEY
+fi
+base="$HOME/c11-sandbox/agents/opencode-home"
+export XDG_CONFIG_HOME="$base/config" XDG_DATA_HOME="$base/data" XDG_STATE_HOME="$base/state" XDG_CACHE_HOME="$base/cache"
+export OPENCODE_DISABLE_AUTOUPDATE=1
+exec /usr/local/libexec/c11-sandbox/opencode/opencode "$@"
+SH
 cat > "$tmp/stage.py" <<'PY'
 # c11 sandbox credential stager. stdin: one JSON line per kind from seat.sh export-cred.
 # Writes each secret as a mode 600 file and seeds first-run state. Prints paths, never values.
@@ -435,6 +451,11 @@ for line in sys.stdin:
                      json.dumps({"openrouter": {"type": "api_key", "key": env["OPENROUTER_API_KEY"]}}).encode())
     elif kind == "omp-live":
         write_secret(os.path.join(secrets, "openrouter-key"), env["OPENROUTER_API_KEY"].encode())
+    elif kind == "opencode-live":
+        write_secret(os.path.join(secrets, "openrouter-key"), env["OPENROUTER_API_KEY"].encode())
+        write_text(os.path.join(home, "c11-sandbox", "agents", "opencode-home", "config", "opencode", "opencode.json"),
+                   json.dumps({"model": "openrouter/openai/gpt-4o-mini", "autoupdate": False, "share": "disabled",
+                               "permission": {"bash": "allow", "edit": "allow", "webfetch": "allow"}}))
     elif kind == "grok":
         write_secret(os.path.join(secrets, "grok-token"), env["GROK_ACCESS_TOKEN_JSON"].encode())
         write_text(os.path.join(home, ".grok", "config.toml"), "\n".join([
@@ -476,6 +497,7 @@ PY
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/pi-live" "$lib/pi-live-shim"
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/omp" "$lib/omp-shim"
 /usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/omp-live" "$lib/omp-live-shim"
+/usr/bin/sudo -n /usr/bin/install -m 755 "$tmp/opencode-live" "$lib/opencode-live-shim"
 mkdir -p "$HOME/c11-sandbox/agents"
 /usr/bin/install -m 644 "$tmp/stage.py" "$HOME/c11-sandbox/agents/stage.py"
 rm -rf "$tmp"
@@ -488,6 +510,7 @@ for k in ${=kinds}; do
     pi-live) /usr/bin/sudo -n /bin/ln -sfn "$lib/pi-live-shim" /usr/local/bin/pi ;;
     omp) /usr/bin/sudo -n /bin/ln -sfn "$lib/omp-shim" /usr/local/bin/omp ;;
     omp-live) /usr/bin/sudo -n /bin/ln -sfn "$lib/omp-live-shim" /usr/local/bin/omp ;;
+    opencode-live) /usr/bin/sudo -n /bin/ln -sfn "$lib/opencode-live-shim" /usr/local/bin/opencode ;;
   esac
   v="$(/usr/local/bin/${k%-live} --version </dev/null 2>/dev/null | head -n 1 || true)"
   [[ -n "$v" ]] || { print -u2 -- "$k does not run in the guest"; exit 1 }
@@ -532,6 +555,7 @@ for k in \$bases; do
     codex) b="\$(command -v codex)" ;;
     grok) b="\$HOME/.local/bin/grok"; [[ -e "\$b" ]] || b="\$(command -v grok)" ;;
     pi) b="\$HOME/.local/bin/pi"; [[ -e "\$b" ]] || b="\$(command -v pi)" ;;
+    opencode) b="\$HOME/.opencode/bin/opencode"; [[ -e "\$b" ]] || b="/opt/homebrew/bin/opencode"; [[ -e "\$b" ]] || b="\$(command -v opencode)" ;;
   esac
   b="\${b:A}"
   [[ "\$k" == pi || "\$k" == omp ]] || /usr/bin/file -b "\$b" | grep -q 'Mach-O' || die "\$k on this host is not a native binary (\$b)"
@@ -539,7 +563,7 @@ for k in \$bases; do
   [[ -n "\${versions[\$k]}" ]] || die "\$k --version did not answer on this host (\$b)"
   payload[\$k]="\$b"
 done
-guest_has="\$(print -r -- 'for k in claude codex grok pi omp; do print -r -- "\$k=\$(cat /usr/local/libexec/c11-sandbox/\$k/VERSION 2>/dev/null)"; done' | guest_ssh "\$ip")"
+guest_has="\$(print -r -- 'for k in claude codex grok pi omp opencode; do print -r -- "\$k=\$(cat /usr/local/libexec/c11-sandbox/\$k/VERSION 2>/dev/null)"; done' | guest_ssh "\$ip")"
 copied=()
 for k in \$bases; do
   have="\$(print -r -- "\$guest_has" | sed -n "s/^\$k=//p")"
@@ -663,7 +687,7 @@ EOF
 
 cmd_launch() {
   local kind="${1:-}" brief="${2:-}"
-  [[ -n "$kind" && -n "$brief" ]] || sandbox_die "launch needs <claude|codex|grok|pi|omp|pi-live|omp-live> <brief-file>"
+  [[ -n "$kind" && -n "$brief" ]] || sandbox_die "launch needs <claude|codex|grok|pi|omp|pi-live|omp-live|opencode-live> <brief-file>"
   shift 2
   sandbox_validate_kinds "$kind"
   [[ -f "$brief" ]] || sandbox_die "brief not found: $brief"
@@ -689,9 +713,17 @@ cmd_launch() {
     claude) type=claude-code ;;
     pi-live) type=pi ;;
     omp-live) type=omp ;;
+    opencode-live) type=opencode ;;
     *) type="$kind" ;;
   esac
   local -a la=(launch-agent --type "$type" --title "$title" --json)
+  if [[ "$kind" == opencode-live ]]; then
+    # The c11 wrapper records these for session recovery before the shim runs,
+    # so they belong in the launch environment, not only in the shim.
+    local oc=/Users/admin/c11-sandbox/agents/opencode-home
+    la+=(--env "XDG_CONFIG_HOME=$oc/config" --env "XDG_DATA_HOME=$oc/data" --env "XDG_STATE_HOME=$oc/state"
+         --env "XDG_CACHE_HOME=$oc/cache")
+  fi
   [[ -n "$model" ]] && la+=(--model "$model")
   [[ -n "$effort" ]] && la+=(--effort "$effort")
   [[ -n "$workspace" ]] && la+=(--workspace "$workspace")
@@ -751,6 +783,10 @@ case "\$kind" in
   omp-live)
     ready='gpt-4o-mini'
     fail='Failed to load extension|Model .* not found|No models available|Cannot find module|Setup step'
+    ;;
+  opencode-live)
+    ready='gpt-4o-mini|GPT-4o-mini|GPT-4o mini'
+    fail='ProviderModelNotFound|API key|Cannot find module'
     ;;
   claude)
     ready='bypass permissions on'

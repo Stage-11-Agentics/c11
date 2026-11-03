@@ -302,7 +302,7 @@ def cycle(root, publish=False, force=False):
             str(Path(__file__).resolve()), "child", "--root", str(root), "--attempt", str(attempt)]
     with (attempt / "admission.log").open("w") as log:
         process = subprocess.Popen(argv, env=env, stdout=log, stderr=log, start_new_session=True)
-        poller.write_running(root, {"pgid": process.pid})
+        poller.write_running(root, {"pgid": process.pid, "attempt_id": attempt.name})
         started = time.monotonic()
         interruption = None
         priority_check = time.monotonic()
@@ -340,6 +340,14 @@ def cycle(root, publish=False, force=False):
     return result["state"]
 
 
+def sweep_results(root, last):
+    """Between attempts, at most hourly; running.json names one a failed recovery left alive."""
+    def live_attempts():
+        return {(poller.read_running(root) or {}).get("attempt_id")}
+    return poller.sweep_results_if_due(root / "state/results", time.time(), last, live_attempts,
+                                       lambda **outcome: record(root, "results-sweep", **outcome))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("once", "supervise", "child", "recover"))
@@ -371,7 +379,9 @@ def main():
             parser.error("publishing requires the installed, enabled backstop root")
         # launchctl bootout must unwind the running tree before releasing admission.
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+        last_sweep = None
         while True:
+            last_sweep = sweep_results(root, last_sweep)
             try:
                 outcome = cycle(root, args.publish, args.force)
             except Deferred as error:

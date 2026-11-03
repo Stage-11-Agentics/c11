@@ -2,6 +2,7 @@
 """Executable backstop acceptance: real git history, slot contention and gate subprocesses."""
 import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-SCRIPT = Path(__file__).with_name("c11-main-backstop.py")
+SCRIPT = Path(__file__).resolve().with_name("c11-main-backstop.py")
 spec = importlib.util.spec_from_file_location("backstop", SCRIPT)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -288,6 +289,63 @@ sys.exit(m.main())
             self.assertEqual(m.cycle(self.root), "success")
             post.assert_not_called()
         self.assertTrue((self.root / "started").exists())
+
+    def age_results(self):
+        results = self.root / "state/results"
+        stamp = time.time() - m.poller.RESULT_RETENTION_S - 60
+        for name, days_old in (("oldattempt", True), ("runningattempt", True), ("recentattempt", False)):
+            (results / name).mkdir(parents=True)
+            (results / name / "gate.log").write_text("log")
+            if days_old:
+                os.utime(results / name, (stamp, stamp))
+        return results
+
+    def test_supervise_loop_sweeps_old_results_hourly_with_the_poller_rule(self):
+        results = self.age_results()
+        (self.root / "state/running.json").write_text(json.dumps({"pgid": 2 ** 22 - 1, "attempt_id": "runningattempt"}))
+        with patch.object(m.sys, "argv", ["backstop", "once", "--root", str(self.root)]), \
+                patch.object(m.poller, "recover", return_value="ready"), \
+                patch.object(m, "cycle", return_value="unchanged") as cycle, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(m.main(), 0)
+        cycle.assert_called_once()
+        self.assertEqual(sorted(path.name for path in results.iterdir()), ["recentattempt", "runningattempt"])
+        rows = [json.loads(line) for line in (self.root / "state/events.jsonl").read_text().splitlines()]
+        sweep, = [row for row in rows if row["event"] == "results-sweep"]
+        self.assertEqual((sweep["removed"], sweep["kept"], sweep["failed"]), (1, 2, 0))
+
+        last = time.time()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(m.sweep_results(self.root, last), last)
+        self.assertEqual(len([line for line in (self.root / "state/events.jsonl").read_text().splitlines()
+                              if "results-sweep" in line]), 1)
+
+    def test_a_failed_sweep_never_stops_the_supervise_loop(self):
+        results = self.age_results()
+        with patch.object(m.sys, "argv", ["backstop", "once", "--root", str(self.root)]), \
+                patch.object(m.poller, "recover", return_value="ready"), \
+                patch.object(m.poller.shutil, "rmtree", side_effect=PermissionError("nope")), \
+                patch.object(m, "cycle", return_value="success") as cycle, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(m.main(), 0)
+        cycle.assert_called_once()
+        self.assertTrue((results / "oldattempt").exists())
+        rows = [json.loads(line) for line in (self.root / "state/events.jsonl").read_text().splitlines()]
+        sweep, = [row for row in rows if row["event"] == "results-sweep"]
+        self.assertEqual(sweep["failed"], 2)
+
+    def test_running_record_names_the_attempt_the_sweep_must_keep(self):
+        slots = self.cycle_fixture()
+        slots.mkdir()
+        recorded = []
+        real = m.poller.write_running
+        def write(root, payload):
+            recorded.append(payload)
+            return real(root, payload)
+        with patch.object(m, "pr_work_pending", return_value=False), patch.object(m.poller, "write_running", side_effect=write):
+            self.assertEqual(m.cycle(self.root), "success")
+        attempt, = [path.name for path in (self.root / "state/results").iterdir()]
+        self.assertEqual(recorded[0]["attempt_id"], attempt)
 
     def test_running_backstop_yields_to_pr_demand(self):
         self.cycle_fixture()

@@ -42,10 +42,64 @@ final class ClaudeMailboxAcceptanceTests: XCTestCase {
         try file.write(contentsOf: data)
     }
 
-    /// The app's native deliver frame carries `MailboxDoorbell.text`; the
-    /// Claude bridge rejects any other text as `unsupported_invitation`.
+    /// The app's native deliver frame carries `MailboxDoorbell.text` unless it
+    /// marks the frame inline; the Claude bridge rejects any other text as
+    /// `unsupported_invitation`.
     func testInvitationIsTheAppDoorbell() {
         XCTAssertEqual(ClaudeMailboxAcceptance.invitation, MailboxDoorbell.text)
+    }
+
+    private let inline = "c11 mailbox: 1 new message for this panel\n\n<c11-msg from=\"a\" id=\"01\">\nbody\n</c11-msg>\n"
+
+    private func queueRecord(_ content: String, operation: String = "enqueue", sessionID: String? = nil) throws -> Data {
+        var data = try JSONSerialization.data(withJSONObject: [
+            "type": "queue-operation", "operation": operation, "sessionId": sessionID ?? session,
+            "timestamp": "2026-11-02T18:00:00.000Z", "content": content,
+        ])
+        data.append(0x0A)
+        return data
+    }
+
+    func testInlineMailConfirmsFromEitherPeerWording() throws {
+        let idle = try record(text: "Another Claude session sent a message:\n\(inline)\n\nPeer boundary.")
+        let working = try record(text: "Another Claude session sent a message while you were working:\n\(inline)\n\nPeer boundary.")
+        XCTAssertTrue(ClaudeMailboxAcceptance.confirms(idle, sessionID: session, text: inline))
+        XCTAssertTrue(ClaudeMailboxAcceptance.confirms(working, sessionID: session, text: inline))
+        XCTAssertFalse(ClaudeMailboxAcceptance.confirms(idle, sessionID: session),
+                       "Mail text is not the invitation")
+    }
+
+    func testInlineMailConfirmsWhenClaudeQueuesItBehindARunningTurn() throws {
+        try append(record())
+        let observer = try ClaudeMailboxAcceptance(path: transcript.path, sessionID: session, text: inline)
+        try append(queueRecord(inline + "other"))
+        try append(queueRecord(inline, operation: "remove"))
+        try append(queueRecord(inline, sessionID: UUID().uuidString.lowercased()))
+        XCTAssertFalse(try observer.observe())
+        try append(queueRecord(inline))
+        XCTAssertTrue(try observer.observe())
+    }
+
+    /// A typed doorbell queues this same text, so the queue proves nothing.
+    func testQueuedInvitationIsNotEvidence() throws {
+        XCTAssertFalse(ClaudeMailboxAcceptance.confirms(try queueRecord(ClaudeMailboxAcceptance.invitation), sessionID: session))
+    }
+
+    func testResumedSessionFindsItsTranscriptInTheProjectWhereItBegan() throws {
+        let projects = directory.appendingPathComponent("projects")
+        let began = projects.appendingPathComponent("-began")
+        let resumed = projects.appendingPathComponent("-resumed")
+        for folder in [began, resumed] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        let named = resumed.appendingPathComponent(session + ".jsonl")
+        let real = began.appendingPathComponent(session + ".jsonl")
+        XCTAssertEqual(ClaudeMailboxAcceptance.transcriptPath(hookPath: named.path, sessionID: session), named.path,
+                       "A session with no file yet keeps the named path")
+        try Data().write(to: real)
+        XCTAssertEqual(ClaudeMailboxAcceptance.transcriptPath(hookPath: named.path, sessionID: session), real.path)
+        try Data().write(to: named)
+        XCTAssertEqual(ClaudeMailboxAcceptance.transcriptPath(hookPath: named.path, sessionID: session), named.path)
     }
 
     func testOnlyNewRecordConfirmsOffer() throws {

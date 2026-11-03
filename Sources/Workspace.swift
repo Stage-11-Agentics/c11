@@ -6997,6 +6997,9 @@ final class Workspace: Identifiable, ObservableObject {
         Self.mailboxPushIOQueue.async {
             let live = MailboxStdinDelivery.pendingIDs(queued, stateURL: dispatcher.stateURL,
                                                        workspaceId: origin, panelId: surfaceId)
+            let sources = MailboxStdinDelivery.inlineSources(queued.filter { live.contains($0.id) }, stateURL: dispatcher.stateURL,
+                                                             workspaceId: origin, panelId: surfaceId)
+            let inline = nativeRoute?.supportsInlineMail == true ? MailboxInlineBatch.compose(sources: sources) : nil
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let workspace = owner.workspace else { return }
@@ -7004,7 +7007,9 @@ final class Workspace: Identifiable, ObservableObject {
                         surfaceId: surfaceId,
                         queued: queued,
                         liveIds: live,
-                        nativeRoute: nativeRoute
+                        nativeRoute: nativeRoute,
+                        inline: inline,
+                        inlineSources: sources
                     )
                 }
             }
@@ -7015,7 +7020,9 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceId: UUID,
         queued: [MailboxStdinBuffer.Entry],
         liveIds: Set<String>,
-        nativeRoute: MailboxNativeDoorbell.Registration?
+        nativeRoute: MailboxNativeDoorbell.Registration?,
+        inline: MailboxInlineBatch?,
+        inlineSources: [MailboxInlineBatch.Source]
     ) {
         let goneIds = Set(MailboxDoorbellSequence.droppedIds(
             snapshot: queued.map(\.id),
@@ -7035,7 +7042,8 @@ final class Workspace: Identifiable, ObservableObject {
             return
         }
         if let nativeRoute {
-            deliverNativeMailbox(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live, registration: nativeRoute)
+            deliverNativeMailbox(surfaceId: surfaceId, terminalPanel: terminalPanel, queued: live, registration: nativeRoute,
+                                 inline: inline, inlineSources: inlineSources)
         } else {
             if let failed = mailboxNativeFallback[surfaceId],
                failed.holdTypedLook(
@@ -7116,7 +7124,8 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func deliverNativeMailbox(surfaceId: UUID, terminalPanel: TerminalPanel,
-                                      queued: [MailboxStdinBuffer.Entry], registration: MailboxNativeDoorbell.Registration) {
+                                      queued: [MailboxStdinBuffer.Entry], registration: MailboxNativeDoorbell.Registration,
+                                      inline: MailboxInlineBatch? = nil, inlineSources: [MailboxInlineBatch.Source] = []) {
         var input = mailboxDoorbellInput(surfaceId: surfaceId, terminalPanel: terminalPanel, capturePrompt: false)
         input.inFlight = false // This invocation owns the inbox-stat reservation.
         let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
@@ -7149,14 +7158,21 @@ final class Workspace: Identifiable, ObservableObject {
             ids = attempt.ids
             entries = queued.filter { attempt.ids.contains($0.id) }
         }
+        // Mail past the batch budget stays queued, outside this attempt's
+        // coverage, and rings at the next idle.
+        if let inline {
+            ids = Set(inline.ids)
+            entries = queued.filter { ids.contains($0.id) }
+        }
+        let bytes = inline?.text.utf8.count ?? MailboxDoorbell.text.utf8.count
         let epoch = input.epoch
         let token = UUID()
         mailboxNativeInFlight[surfaceId] = token
         let startedAt = Date()
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.beginAttempt(at: startedAt, epoch: epoch) }
-        logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "started", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+        logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "started", bytes: bytes, route: registration.route)
         let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
-        MailboxNativeDoorbell.shared.deliver(registration, attemptID: attemptID,
+        MailboxNativeDoorbell.shared.deliver(registration, attemptID: attemptID, inlineText: inline?.text,
             diagnostic: { [log = mailboxDispatcher?.log, workspaceID = id] diagnostic in
                 log?.recordNativeFailure(diagnostic, workspaceID: workspaceID)
             }
@@ -7185,11 +7201,11 @@ final class Workspace: Identifiable, ObservableObject {
                         guard isCurrent else { settled(); return }
                         if alreadyAdmitted {
                             workspace.logMailboxDoorbellEntries(entries, outcome: .doorbell,
-                                reason: "native_already_admitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+                                reason: "native_already_admitted", bytes: bytes, route: registration.route)
                         } else {
                             workspace.mailboxStdinState.buffer.noteNativeTurnStarted(surfaceId: surfaceId, at: startedAt)
                             workspace.logMailboxDoorbellEntries(entries, outcome: .doorbell,
-                                reason: late ? "native_late_accept" : "submitted", bytes: MailboxDoorbell.text.utf8.count, route: registration.route)
+                                reason: late ? "native_late_accept" : "submitted", bytes: bytes, route: registration.route)
                         }
                         settled()
                         if late { return }
@@ -7197,6 +7213,10 @@ final class Workspace: Identifiable, ObservableObject {
                     switch result {
                     case .accepted(let late):
                         recordAcceptance(late, false)
+                        if inline != nil {
+                            workspace.claimInlineMailbox(surfaceId: surfaceId, entries: entries,
+                                                         sources: inlineSources.filter { ids.contains($0.id) })
+                        }
                     case .alreadyAdmitted:
                         recordAcceptance(false, true)
                     case .failed(let reason):
@@ -7216,6 +7236,24 @@ final class Workspace: Identifiable, ObservableObject {
                     // This runs the same typed turn/composer checks after failure,
                     // and sees mail that arrived during a successful native request.
                     workspace.ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+                }
+            }
+        }
+    }
+
+    /// The harness took the text, so the envelopes are read. This runs for a
+    /// late confirmation too, after the typed doorbell may have rung: `recv`
+    /// and this claim race on one rename, and the loser records nothing.
+    private func claimInlineMailbox(surfaceId: UUID, entries: [MailboxStdinBuffer.Entry],
+                                    sources: [MailboxInlineBatch.Source]) {
+        let names = Dictionary(entries.map { ($0.id, $0.recipientName) }, uniquingKeysWith: { first, _ in first })
+        let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
+        Self.mailboxPushIOQueue.async {
+            MailboxInlineBatch.claim(sources: sources, panelId: surfaceId,
+                                     recipient: { names[$0] ?? surfaceId.uuidString.lowercased() })
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    owner.workspace?.removeReadMailboxDoorbellEntries(surfaceId: surfaceId, ids: sources.map(\.id))
                 }
             }
         }

@@ -87,8 +87,9 @@ c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 # In panel "watcher":
 c11 set-title "watcher"
 c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to the doorbell
-# The invitation starts a turn when the agent is idle; it never includes
-# the envelope body. Pi, omp, Claude Code, OpenCode and Grok use their native
+# The ring starts a turn when the agent is idle. Claude Code's native route
+# carries the envelopes in that turn; every other route carries an invitation
+# without the body. Pi, omp, Claude Code, OpenCode and Grok use their native
 # route when available (see "Pi native delivery", "omp native delivery", "Claude
 # Code native inbox", "OpenCode native plugin" and "Grok native leader" below).
 # All but omp fall back to the typed route; omp has none.
@@ -417,13 +418,21 @@ against OpenRouter's `openai/gpt-4o-mini`.
 
 ### Claude Code native inbox
 
-The interactive c11 wrapper adds an async SessionStart hook to its existing per-launch settings file. When Claude exports a messaging socket and session token, the bundled bridge registers `claude_inbox` on `mailbox.native.subscribe`. It sends only the invitation, at idle, and confirms a new matching peer-message record in that same session's transcript within two seconds. It never types into or reads the composer, so an operator draft stays intact. The token stays in memory; no MCP configuration, channel flag, consent prompt, or tenant settings write is involved.
+The interactive c11 wrapper adds an async SessionStart hook to its existing per-launch settings file. When Claude exports a messaging socket and session token, the bundled bridge registers `claude_inbox` on `mailbox.native.subscribe`. At idle it sends the waiting envelopes themselves, and confirms a matching record in that same session's transcript within two seconds. It never types into or reads the composer, so an operator draft stays intact. The token and the mail text stay in memory; no MCP configuration, channel flag, consent prompt, or tenant settings write is involved.
 
-The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. The envelope remains unread until `recv --ack` or the existing Stop hook claims it. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
+The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
+
+**The message is the turn.** One peer turn carries one line and every waiting envelope as a `<c11-msg>` block, oldest first, with sender, topic and body, up to 32 KiB. The first message always goes; mail past the budget waits in order for the next idle or Stop drain. A `body_ref` message carries the path plus the same leading excerpt `recv` prints. The agent spends no request on `recv`, so a push-enabled agent never polls its own inbox.
+
+**Claim.** The app, not the bridge, claims each envelope when the bridge confirms Claude took the text, and records the recipient's own read (`claimed` row with `via: native`, plus the usual `mailbox.delivered`). `c11 mailbox status <id>` then shows it read. Nothing is claimed before that confirmation, so mail Claude did not take stays in the inbox for the typed doorbell. Two consumers cannot both claim: the rename decides, and the loser records nothing. The text can still reach the agent twice when a confirmation arrives after the typed fallback, so `id` stays the dedupe key.
+
+A bridge from before this route subscribes without `supports_inline_mail` and keeps receiving the invitation. Any native route can adopt the same text by subscribing with that flag and confirming from its own harness.
+
+Claude Code adds its own peer-message notice to each turn, about 120 tokens. c11 cannot remove it. One turn pays it once however many envelopes it carries, which is why waiting mail goes in one batch.
 
 Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt.
 
-If Claude holds an “unidentified session” message whose complete body is exactly `c11 mail waiting: run c11 mailbox recv --ack`, the operator can safely choose **Deliver**: the invitation only asks the agent to read its own c11 inbox. The typed fallback cannot clear that chooser. The mail remains queued until `c11 mailbox recv --ack` or the Stop hook claims it, whether or not the invitation is delivered.
+If Claude holds an “unidentified session” message that starts `c11 mailbox:` or is exactly `c11 mail waiting: run c11 mailbox recv --ack`, it came from the panel's own c11 mailbox and the operator can choose **Deliver**. Read it first: it is ordinary mail from another agent. The typed fallback cannot clear that chooser. The envelopes stay unread until `c11 mailbox recv --ack` or the Stop hook claims them, so choosing Deliver after that shows the same `id` a second time.
 
 An unconfirmed Claude native attempt records one `mailbox.native_unconfirmed` event and one `native_unconfirmed` row in the workspace's `_dispatch.log`, independent of the number of queued envelopes. Both carry `delivery_id`, `panel_id`, `claude_session_id`, `route` and `reason`. The reason is `unconfirmed` or `timeout`; `refused` is reserved for an explicit Claude bridge refusal, which the current bridge does not send. Claude's silent `hold` and `refuse` policy decisions cannot be distinguished from missing confirmation and remain `unconfirmed`. Older bridges that do not report the bound Claude session leave `claude_session_id` null; c11 never substitutes the registration epoch. Duplicate replies, the later timeout, and late acceptance do not add another diagnostic for the same attempt. The event counts misses of the first confirmation window, not lost mail: a later acceptance can still produce `native_late_accept`. It contains no token, message body, or transcript text and does not change delivery mode.
 
@@ -435,12 +444,14 @@ The bridge reports why an offer failed, and `native_failure` names it:
 |---|---|
 | `native_transcript_unavailable` | The session transcript could not be opened; nothing was sent. |
 | `native_inbox_unavailable` | Claude's inbox socket could not be reached; nothing was sent. |
-| `native_inbox_write_failed` | The invitation write stalled or broke partway. |
-| `native_unconfirmed` | The write succeeded, but no matching record appeared within 1.8 seconds. `crossSessionInbound` `refuse` or `hold` lands here, because Claude accepts the write and answers nothing; so does a changed acceptance marker. |
+| `native_inbox_write_failed` | The write stalled or broke partway. |
+| `native_unconfirmed` | The write succeeded, but no matching record appeared within 1.8 seconds. `crossSessionInbound` `refuse` or `hold` lands here, because Claude accepts the write and answers nothing; so does a changed acceptance marker. A matching record is Claude's queue entry for the exact text, or the peer turn in either wording (idle, or `while you were working`). |
 | `native_timeout` | The bridge itself said nothing within two seconds. |
-| `native_unsupported_invitation` | c11 offered text other than the fixed invitation, so the bridge refused it and sent nothing. |
+| `native_unsupported_invitation` | c11 offered text that is neither marked inline nor the fixed invitation, so the bridge refused it and sent nothing. |
 
-After `native_inbox_write_failed` or `native_unconfirmed`, the bridge keeps watching the transcript for up to 10 seconds; a newer offer ends that watch. A confirmation in that window is logged as `native_late_accept` and covers the dispatched IDs. c11 logs any confirmation that follows a reported failure or the two-second deadline the same way. Delivery is at-least-once, so a duplicate invitation is possible.
+Claude names the hook's `transcript_path` from the session's current folder, but a session resumed from another folder keeps writing the file where it began. When the named file does not exist, the bridge watches the session's file under any sibling project.
+
+After `native_inbox_write_failed` or `native_unconfirmed`, the bridge keeps watching the transcript for up to 10 seconds; a newer offer ends that watch. A confirmation in that window is logged as `native_late_accept` and covers the dispatched IDs. c11 logs any confirmation that follows a reported failure or the two-second deadline the same way. Delivery is at-least-once, so a duplicate is possible.
 
 `--resume` and `/clear` create a fresh subscription bound to that launch's session transcript. The bridge stays armed across repeated wakes and long idle, and exits when its Claude process exits or its c11 connection closes. If c11 restarts while Claude stays running, that session uses typed fallback until its next SessionStart. Print, background, and passthrough commands do not gain the bridge. Other MCP flags remain the operator's own. For a typed-route comparison, launch with `C11_CLAUDE_NATIVE_MAIL_DISABLED=1`; lifecycle and Stop-drain hooks remain active.
 
@@ -525,6 +536,10 @@ If your `mailbox.delivery` includes `stdin` and c11 recognizes your composer, yo
 `c11 mail waiting: run c11 mailbox recv --ack`
 
 That line is not the message. Run the command. The body comes back on stdout, and the envelope moves to `_read/`. Claude's Stop hook can also print the message into hook context. That hook is not typed input.
+
+On Claude Code's native route the turn opens with `c11 mailbox:` and holds the `<c11-msg>` blocks themselves. They are already marked read, so there is nothing to run.
+
+**With push on, never poll your own inbox.** No watcher script, no `sleep` loop, no `recv` on a timer: each wake costs a model request at full context, and the mail arrives as your next turn anyway.
 
 Receive protocol:
 

@@ -136,6 +136,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(request["params"]["route"], "claude_inbox")
         self.assertFalse(request["params"]["can_queue"])
         self.assertEqual(request["params"]["agent_pid"], self.harness.pid)
+        self.assertTrue(request["params"]["supports_inline_mail"])
         self.app.send({"id": request["id"], "ok": True, "result": {"connection_id": str(uuid.uuid4())}})
 
     def append(self, session=None, peer=True):
@@ -182,6 +183,57 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(socket.timeout):
             connection, _ = self.app.server.accept()
             connection.close()
+
+    def test_inline_mail_reaches_the_inbox_verbatim_and_confirms_from_either_record(self):
+        text = "c11 mailbox: 1 new message\n<c11-msg from=\"a\" id=\"01\">\n" + "body\n" * 800 + "</c11-msg>\n"
+        self.launch()
+        self.subscribe()
+        for record in [
+            {"type": "queue-operation", "operation": "enqueue", "content": text},
+            {"type": "user", "message": {"role": "user",
+             "content": "Another Claude session sent a message while you were working:\n" + text + "\n\nPeer."}},
+        ]:
+            def work():
+                try:
+                    self.inbox.accept()
+                    connection = self.inbox.connection
+                    self.assertEqual(self.inbox.read(), {"type": "auth", "token": "test-only-inbox-token"})
+                    self.assertEqual(self.inbox.read(), {"type": "user", "message": {"role": "user", "content": text}})
+                    with self.transcript.open("a") as file:
+                        file.write(json.dumps({**record, "sessionId": self.session,
+                                               "timestamp": "2026-11-02T18:00:00.000Z"}) + "\n")
+                    connection.close()
+                except Exception as error:
+                    self.errors.append(repr(error))
+            worker = threading.Thread(target=work)
+            worker.start()
+            self.workers.append(worker)
+            delivery = str(uuid.uuid4())
+            self.app.send({"type": "deliver", "delivery_id": delivery, "text": text, "inline": True})
+            self.assertEqual(self.app.read(), {"type": "accepted", "delivery_id": delivery})
+            worker.join(timeout=3)
+
+    def test_unmarked_text_is_not_mail(self):
+        self.launch()
+        self.subscribe()
+        delivery = str(uuid.uuid4())
+        self.app.send({"type": "deliver", "delivery_id": delivery, "text": "something else"})
+        self.assertEqual(self.app.read(), {"type": "rejected", "delivery_id": delivery, "reason": "unsupported_invitation"})
+
+    def test_resumed_session_confirms_from_the_transcript_where_it_began(self):
+        began = self.transcript.parent / "began"
+        began.mkdir()
+        real = began / self.transcript.name
+        real.write_text("")
+        self.transcript.unlink()
+        named = self.transcript
+        self.transcript = self.transcript.parent / "resumed" / named.name
+        self.launch()
+        self.subscribe()
+        self.transcript = real
+        self.receive_invitation()
+        delivery = self.offer()
+        self.assertEqual(self.app.read(), {"type": "accepted", "delivery_id": delivery})
 
     def test_repeat_acceptance_and_listener_retirement(self):
         self.launch()

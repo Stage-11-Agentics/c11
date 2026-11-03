@@ -3,12 +3,15 @@ import Foundation
 enum JournalCommand {
     enum Delivery { case committed([String: Any]), spooled, unsupported, lost, rejected(String) }
 
+    static let defaultDeliveryWindow: TimeInterval = 0.250
+
     static func deliver(_ draft: JournalDraft, socketPath: String,
-                        authenticatedClient: SocketClient? = nil, explicitPassword: String? = nil) -> Delivery {
+                        authenticatedClient: SocketClient? = nil, explicitPassword: String? = nil,
+                        window: TimeInterval = defaultDeliveryWindow) -> Delivery {
         guard let data = try? draft.canonicalData(),
               let params = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .lost }
         let previousDeadline = SocketClient.processDeadline
-        SocketClient.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(0.250))
+        SocketClient.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(window))
         defer { SocketClient.processDeadline = previousDeadline }
         let client = authenticatedClient ?? SocketClient(path: socketPath)
         let previousLineMode = client.usesSingleLineResponses
@@ -39,7 +42,7 @@ enum JournalCommand {
             if let raw = ProcessInfo.processInfo.environment["C11_AGENT_INTERACTIVE_PID"], let pid = Int32(raw), pid > 1 {
                 envelope["interactive_pid"] = pid
             }
-            return .committed(try client.sendV2(method: "agent.event.append", params: envelope, deadline: .custom(0.250)))
+            return .committed(try client.sendV2(method: "agent.event.append", params: envelope, deadline: .custom(window)))
         } catch let error as CLIError where error.message.hasPrefix("method_not_found:") {
             return .unsupported
         } catch let error as CLIError where [JournalError.invalidEvent, .conflict, .expired, .unsupportedVersion]

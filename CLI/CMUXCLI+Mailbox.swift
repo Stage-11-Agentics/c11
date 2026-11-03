@@ -938,6 +938,19 @@ extension CMUXCLI {
     /// before the hook gives up on c11 and exits neutral.
     static let claudeHookSocketWindowSeconds: TimeInterval = 0.250
 
+    /// SessionStart's window. It reports the session id, the first journal
+    /// event and the agent PID, so a miss costs far more than one lost
+    /// observation (C11-580). It fires once per session under a 10 s hook
+    /// timeout, and only a stalled c11 makes Claude wait this long.
+    static let claudeHookSessionStartWindowSeconds: TimeInterval = 2.0
+
+    static func claudeHookSocketWindow(subcommand: String?) -> TimeInterval {
+        switch subcommand {
+        case "session-start", "active": return claudeHookSessionStartWindowSeconds
+        default: return claudeHookSocketWindowSeconds
+        }
+    }
+
     /// Caps every socket request this hook process makes at the claim
     /// cutoff (`MailboxHookOutput.claimDeadlineSeconds` of process age), write
     /// and read alike. Requests after the cutoff fail at once, and the cutoff

@@ -606,6 +606,8 @@ A permission prompt, an `AskUserQuestion` prompt or any other notification never
 
   If any check fails, nothing is typed. The mail stays in the inbox for a drain.
 
+  Without a registered process no screen read can open this guard. Claude's SessionStart gets a 2 second socket window; if even that misses, the session's next hook registers the session and the process, and queued mail rings at the next prompt edge.
+
 **The panel's agent kind picks the reader and the native route.** c11 reads it from the foreground process, falling back to the declared `terminal_type`. While c11's own bash wrapper (`Contents/Resources/bin/opencode`, `claude`, and the rest) runs before it execs the real agent, the declared type stays in force, and the wrapper's type declaration makes c11 look at the foreground process again at once, so a fresh or restored launch is not mistaken for the shell that started it. A script with an agent's name anywhere else is still a shell. When the kind changes, c11 runs the ring decision again for unread mail, so a native registration or idle edge refused under the old kind is retried at once instead of waiting for the next recheck.
 
 **Plain shells are never typed into.** A line plus Return at a shell prompt runs as a shell command, and a busy shell's foreground program (`vim`, a REPL, a build) would take it as input. So a panel with no interactive agent never receives a ring, and an agent that exits returns its panel to the shell prompt, which drops anything buffered for it (logged `doorbell_skipped` with `reason` `shell_prompt`). All of it stays in the inbox for `recv --drain`.
@@ -849,6 +851,7 @@ The log is opened `O_APPEND`, so the dispatcher's rows and a drain's `claimed` r
 | **sent** | the `copied` row. `rejected` means no inbox got it; an envelope still in an outbox is `queued` |
 | **delivered** | a stdin `doorbell` row for this id with reason `submitted`, `stranded_return`, `native_late_accept` or `native_already_admitted` (a ring logs one row for each envelope it covers), or the recipient's own claim when no ring ran. A later hold row never undoes it |
 | **held** | the latest stdin row is a hold: a draft, a question, an unreadable prompt, a stranded line, the rate cap, or an unconfirmed native invitation (Claude's chooser). Held is never delivered |
+| **cannot ring** | `delivery` is `not_rung` with reason `agent_not_foreground`: no interactive agent is connected to that panel, so no idle edge is coming. The mail stays in the inbox. It rings if an agent connects; otherwise reach the recipient another way (`c11 send`) |
 | **read** | the copy is in the recipient's `_read/` and the drain's `claimed` row has `by_panel` equal to the recipient panel. An authenticated shared OpenCode view claims on behalf of each inbox owner. A claim by an unrelated panel (`recv --drain --panel <other>`) shows `taken by panel <uuid>`; a claim with no row (an older CLI) shows `claimed, by a panel c11 did not record` |
 
 Human output prints one block per recipient with local times; `--json` carries the same fields (see `skills/c11/references/api.md`) and never the body. It reads files only, so it works with c11 down.

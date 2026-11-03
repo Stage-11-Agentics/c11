@@ -551,6 +551,7 @@
 		C11550000000000000000002 /* MailboxReceiptStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11550000000000000000001 /* MailboxReceiptStatus.swift */; };
 		C11550000000000000000003 /* MailboxReceiptStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11550000000000000000001 /* MailboxReceiptStatus.swift */; };
 		C11550000000000000000005 /* MailboxReceiptStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11550000000000000000004 /* MailboxReceiptStatusTests.swift */; };
+		C11580000000000000000001 /* JournalOwnerRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11580000000000000000002 /* JournalOwnerRecoveryTests.swift */; };
 		C11559000000000000000002 /* LaunchResumePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11559000000000000000001 /* LaunchResumePolicyTests.swift */; };
 		C11562A001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11562F001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift */; };
 		C116000100A1B2C3D4E5F010 /* ChromeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = C116000200A1B2C3D4E5F010 /* ChromeScale.swift */; };
@@ -1260,6 +1261,7 @@
 		C11549000000000000000003 /* FleetSnapshotHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSnapshotHostTests.swift; sourceTree = "<group>"; };
 		C11550000000000000000001 /* MailboxReceiptStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxReceiptStatus.swift; sourceTree = "<group>"; };
 		C11550000000000000000004 /* MailboxReceiptStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxReceiptStatusTests.swift; sourceTree = "<group>"; };
+		C11580000000000000000002 /* JournalOwnerRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalOwnerRecoveryTests.swift; sourceTree = "<group>"; };
 		C11559000000000000000001 /* LaunchResumePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchResumePolicyTests.swift; sourceTree = "<group>"; };
 		C11562F001B2C3D4E5F60718 /* BrowserExternalSchemeAllowlistDraftTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserExternalSchemeAllowlistDraftTests.swift; sourceTree = "<group>"; };
 		C116000200A1B2C3D4E5F010 /* ChromeScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome/ChromeScale.swift; sourceTree = "<group>"; };
@@ -2175,6 +2177,7 @@
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				C2570003A1B2C3D4E5F60718 /* MailboxDrainTests.swift */,
 				C11550000000000000000004 /* MailboxReceiptStatusTests.swift */,
+				C11580000000000000000002 /* JournalOwnerRecoveryTests.swift */,
 				C2570005A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift */,
 				D7104BF1A1B2C3D4E5F60718 /* MailboxIOTests.swift */,
 				D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */,
@@ -2581,6 +2584,7 @@
 				3D7DB8FD9FE7DECBA43949B6 /* MailboxLayoutTests.swift in Sources */,
 				C2570031A1B2C3D4E5F60718 /* MailboxDrainTests.swift in Sources */,
 				C11550000000000000000005 /* MailboxReceiptStatusTests.swift in Sources */,
+				C11580000000000000000001 /* JournalOwnerRecoveryTests.swift in Sources */,
 				C2570032A1B2C3D4E5F60718 /* MailboxReceiptRecorderTests.swift in Sources */,
 				176BB8C7A69033D4F4671809 /* MailboxOutboxWatcherTests.swift in Sources */,
 				39AF4F57C52E593EC8CF0680 /* MailboxPanelResolverTests.swift in Sources */,

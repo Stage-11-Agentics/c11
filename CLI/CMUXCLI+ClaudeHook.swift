@@ -146,7 +146,9 @@ extension CMUXCLI {
             guard var draft = journalDraft else { return true }
             draft.panelID = UUID(uuidString: surfaceId)
             draft.workspaceID = UUID(uuidString: workspaceId)
-            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client)
+            let window = draft.kind == .sessionStarted
+                ? Self.claudeHookSessionStartWindowSeconds : JournalCommand.defaultDeliveryWindow
+            let delivery = JournalCommand.deliver(draft, socketPath: client.socketPath, authenticatedClient: client, window: window)
             journalDelivery = delivery
             return managedJournalDelivery(delivery)
         }

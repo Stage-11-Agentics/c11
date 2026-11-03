@@ -423,6 +423,7 @@ jobs:
           launch_cli_test moved-panel-caller env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_moved_panel_caller.py
           launch_cli_test read-selection env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_read_selection.py
           launch_cli_test response-framing env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_response_framing.py
+          launch_cli_test session-start-window env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_claude_hook_session_start_window.py
           launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline
           launch_cli_test claude-mailbox-bridge env C11_TEST_CLI="$CLI_BINARY" python3 tests/test_claude_mailbox_bridge.py
           failures=0

@@ -30,6 +30,7 @@ extension TerminalController {
                 }
                 pid = number.int32Value
             } else { pid = nil }
+            adoptLostJournalOwner(draft, interactivePID: pid)
             let result = try JournalCoordinator.shared.append(draft, interactivePID: pid)
             let bytes = try JSONEncoder().encode(result.receipt)
             let receipt = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
@@ -38,6 +39,38 @@ extension TerminalController {
             let code = (error as? JournalError)?.rawValue ?? JournalError.unavailable.rawValue
             return .err(code: code, message: code, data: nil)
         }
+    }
+
+    /// SessionStart's `conversation.push` can miss its socket window while c11
+    /// is busy. Nothing else reports the id, so the panel would keep its
+    /// wrapper placeholder for life: no owner, no snapshot, no agent PID, and
+    /// mail that never rings (C11-580). A later hook from the same interactive
+    /// session names the id, so it recovers the owner before its own append.
+    /// A panel whose owner is known pays two lock reads and nothing else. On
+    /// an ownerless panel the hook's process must still be the panel's live
+    /// interactive agent, and the store refuses an observation older than the
+    /// panel's newest wrapper claim, so a late hook from an exited Claude
+    /// cannot claim the next launch. A session a real ref refused is not
+    /// tried again.
+    private nonisolated func adoptLostJournalOwner(_ draft: JournalDraft, interactivePID: Int32?) {
+        guard let owner = draft.adoptableOwner(interactivePID: interactivePID), let pid = interactivePID,
+              JournalCoordinator.shared.target(panelID: owner.panelID) != nil,
+              JournalCoordinator.shared.exactOwner(panelID: owner.panelID) == nil,
+              !JournalCoordinator.shared.ownerRecoveryRefused(owner),
+              JournalOwnerRecovery.isLiveSource(JournalOwnerRecovery.processInfo(pid: pid), emittedAtMs: draft.emittedAtMs),
+              !ConversationStorePolicy.isDisabled,
+              ConversationStrategyRegistry.v1.strategy(forKind: owner.agentKind)?.isValidId(owner.sessionID) != false
+        else { return }
+        let observedAtMs = draft.emittedAtMs
+        let outcome = conversationStoreSync { store in
+            await store.adoptHookSession(
+                surfaceId: owner.panelID.uuidString,
+                kind: owner.agentKind,
+                id: owner.sessionID,
+                observedAtMs: observedAtMs
+            )
+        }
+        if outcome == .refusedByRealRef { JournalCoordinator.shared.noteOwnerRecoveryRefused(owner) }
     }
 
     nonisolated func v2JournalClear(params: [String: Any]) -> V2CallResult {

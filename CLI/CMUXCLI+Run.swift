@@ -517,6 +517,7 @@ extension CMUXCLI {
         // fallback path; resetting it after connect lets a silent peer or a
         // credential lookup consume the hook's entire timeout. The one reset
         // is Stop's, after its mailbox lookup and drain (`runClaudeHook`).
+        // SessionStart's budget is longer (`claudeHookSocketWindow`).
         let priorProcessDeadline = SocketClient.processDeadline
         if command == "claude-hook" {
             // Hook auth and compatibility commands each return one line. Do
@@ -524,7 +525,7 @@ extension CMUXCLI {
             client.usesSingleLineResponses = true
             SocketClient.processDeadline = min(
                 priorProcessDeadline ?? .distantFuture,
-                Date().addingTimeInterval(Self.claudeHookSocketWindowSeconds)
+                Date().addingTimeInterval(Self.claudeHookSocketWindow(subcommand: commandArgs.first?.lowercased()))
             )
         }
         defer {

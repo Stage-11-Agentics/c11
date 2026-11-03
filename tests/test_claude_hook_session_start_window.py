@@ -39,7 +39,10 @@ def main():
 
         class Handler(socketserver.StreamRequestHandler):
             def handle(self):
-                for raw in self.rfile:
+                while True:
+                    raw = self.rfile.readline()
+                    if not raw:
+                        return
                     # c11 is busy: the first request of a run waits.
                     if stalled['pending']:
                         stalled['pending'] = False

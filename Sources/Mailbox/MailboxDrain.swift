@@ -178,6 +178,21 @@ enum MailboxDrain {
         return MailboxLayout.envelopeFilename(id: MailboxULID.make())
     }
 
+    /// `--in-reply-to` accepts the short id an agent saw in a `<c11-msg>`
+    /// block. A unique match among the caller's own messages, read or unread,
+    /// expands to the full ULID; anything else comes back unchanged for the
+    /// envelope's ULID check to accept or refuse.
+    static func expandReplyId(_ value: String, inboxes: [URL], fileManager: FileManager = .default) -> String {
+        guard !isULID(value), (4..<26).contains(value.count) else { return value }
+        let suffix = value.uppercased()
+        let matches = Set(inboxes.flatMap { [$0, readURL(inbox: $0)] }.flatMap { directory in
+            ((try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [])
+                .filter { $0.hasSuffix("." + MailboxLayout.envelopeExtension) }
+                .map { String($0.dropLast(MailboxLayout.envelopeExtension.count + 1)) }
+        }.filter { isULID($0) && $0.hasSuffix(suffix) })
+        return matches.count == 1 ? matches.first! : value
+    }
+
     static func isULID(_ value: String) -> Bool {
         value.range(of: MailboxEnvelope.ulidPattern, options: .regularExpression) != nil
     }
@@ -243,7 +258,7 @@ enum MailboxDrain {
             // rather than being claimed and then handed back. Unreadable means
             // another consumer renamed it away.
             guard let peeked = try? Data(contentsOf: entry) else { continue }
-            let preview = framedBlock(data: peeked, fallbackId: idFromFilename(entry))
+            let preview = agentBlock(data: peeked, fallbackId: idFromFilename(entry))
             if !claimed.isEmpty, used + preview.count > budget {
                 return (claimed, entries.count - index)
             }
@@ -253,7 +268,7 @@ enum MailboxDrain {
             let message = ClaimedMessage(
                 id: id,
                 text: String(data: data, encoding: .utf8) ?? "",
-                framed: framedBlock(data: data, fallbackId: id),
+                framed: agentBlock(data: data, fallbackId: id),
                 readURL: readURL,
                 recipient: (try? MailboxEnvelope.validate(data: data))?.to
             )
@@ -269,6 +284,17 @@ enum MailboxDrain {
 
     static func idFromFilename(_ url: URL) -> String {
         url.deletingPathExtension().lastPathComponent
+    }
+
+    /// An inbox file as the short block a pushed agent reads
+    /// (`MailboxFraming.agentBlock`). A malformed file is still delivered.
+    static func agentBlock(data: Data, fallbackId: String) -> String {
+        if let envelope = try? MailboxEnvelope.validate(data: data) {
+            return MailboxFraming.agentBlock(envelope: envelope)
+        }
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        return "<c11-msg id=\"\(MailboxFraming.shortId(fallbackId))\" malformed=\"true\">\n"
+            + MailboxFraming.escapeBlockTags(raw) + "\n</c11-msg>\n"
     }
 
     /// Frames an inbox file as a `<c11-msg>` block. A file that fails envelope
@@ -760,17 +786,13 @@ enum MailboxHookOutput {
         }
     }
 
-    /// The text the agent reads: a one-line header, then the framed messages.
+    /// The text the agent reads: the messages, and a line for any still waiting.
     static func context(framedBlocks: [String], remaining: Int) -> String {
-        let count = framedBlocks.count
-        var header = count == 1
-            ? "c11 mailbox: 1 new message for this panel, delivered at a turn boundary."
-            : "c11 mailbox: \(count) new messages for this panel, delivered at a turn boundary."
+        var text = framedBlocks.joined(separator: "\n")
         if remaining > 0 {
-            header += " \(remaining) more waiting: run `c11 mailbox recv` to read them."
+            text += "\n\(remaining) more waiting; c11 delivers them next."
         }
-        header += " Reply with `c11 mailbox send --to <from> --body ...` when a reply is wanted."
-        return header + "\n" + framedBlocks.joined()
+        return text
     }
 
     /// Hook stdout JSON for a Stop that delivered mail. Claude's documented

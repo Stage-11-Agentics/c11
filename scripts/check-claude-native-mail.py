@@ -146,12 +146,15 @@ if sys.argv[2]=='1':settings['crossSessionInbound']='refuse'
             assert rows[-1].get('native_route') == 'claude_inbox' and rows[-1].get('native_failure') == native_failure, rows
         return data
 
+    def short(mail_id):
+        return 'id="' + mail_id[-6:] + '"'
+
     def inline(target, mail_id, *needles):
         """The transcript shows the message as its turn, with no recv, and status says read."""
         data = wait('inline delivery of ' + mail_id, lambda: delivered(target, mail_id, 'claude_inbox'))
         wait('inline claim of ' + mail_id, lambda: mail_id in inspect(target)['read'])
         data = inspect(target)
-        assert any(m['role'] == 'user' and m['text'].startswith(PEER + 'c11 mailbox:') and mail_id in m['text']
+        assert any(m['role'] == 'user' and m['text'].startswith(PEER + '<c11-msg ') and short(mail_id) in m['text']
                    and all(needle in m['text'] for needle in needles) for m in data['messages']), data['messages']
         assert not any('mailbox recv' in tool for tool in data['tools']), data['tools']
         claimed = [r for r in data['dispatch'] if r.get('event') == 'claimed' and r.get('id') == mail_id]
@@ -205,10 +208,11 @@ print(pids[0])''', args.run_id))
         c11('set-metadata', '--workspace', workspace, '--panel', native['panel'], '--key', 'mailbox.doorbell', '--value', 'on', '--type', 'string')
         last = mail(native, body='C11_LAST_' + nonce)
         data = inline(native, last, 'C11_LAST_' + nonce, 'C11_FIRST_' + nonce, 'topic="c11-proof-topic"',
-                      'C11_REPORT_HEAD_' + nonce, 'rest is at ' + report, '&lt;tag&gt; &amp; C11_LARGE_' + nonce, *batch)
-        turn = next(m['text'] for m in data['messages'] if m['role'] == 'user' and last in m['text'])
+                      'C11_REPORT_HEAD_' + nonce, 'rest is at ' + report, '<tag> & C11_LARGE_' + nonce, *map(short, batch))
+        turn = next(m['text'] for m in data['messages'] if m['role'] == 'user' and short(last) in m['text'])
         assert turn.count('<c11-msg ') == 4, turn
-        assert [turn.index(i) for i in batch + [last]] == sorted(turn.index(i) for i in batch + [last]), turn
+        order = [turn.index(short(i)) for i in batch + [last]]
+        assert order == sorted(order), turn
         observations['batch'] = data
         # Past the budget: nothing is lost or reordered, and every id is read once.
         c11('set-metadata', '--workspace', workspace, '--panel', native['panel'], '--key', 'mailbox.doorbell', '--value', 'off', '--type', 'string')
@@ -217,10 +221,10 @@ print(pids[0])''', args.run_id))
         large.append(mail(native, body='11-C11_OVER_' + nonce))
         wait('over-budget mail all read', lambda: set(large) <= set(inspect(native)['read']), seconds=90)
         data = inspect(native)
-        seen = [i for m in data['messages'] if m['role'] == 'user' for i in large if 'id="' + i + '"' in m['text']]
+        seen = [i for m in data['messages'] if m['role'] == 'user' for i in large if short(i) in m['text']]
         hooks = [r for r in data['dispatch'] if r.get('event') == 'claimed' and r.get('id') in large]
         assert len(hooks) == len(large), hooks
-        first = next(m['text'] for m in data['messages'] if m['role'] == 'user' and large[0] in m['text'])
+        first = next(m['text'] for m in data['messages'] if m['role'] == 'user' and short(large[0]) in m['text'])
         assert first.count('<c11-msg ') < len(large), 'The budget did not split this batch'
         observations['over_budget'] = dict(inline_ids=seen, claimed=[(r.get('id'), r.get('via')) for r in hooks])
         c11('send-key', '--workspace', workspace, '--panel', native['panel'], 'ctrl+u')

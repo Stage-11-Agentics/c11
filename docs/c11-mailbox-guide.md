@@ -422,7 +422,15 @@ The interactive c11 wrapper adds an async SessionStart hook to its existing per-
 
 The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
 
-**The message is the turn.** One peer turn carries one line and every waiting envelope as a `<c11-msg>` block, oldest first, with sender, topic and body, up to 32 KiB. The first message always goes; mail past the budget waits in order for the next idle or Stop drain. A `body_ref` message carries the path plus the same leading excerpt `recv` prints. The agent spends no request on `recv`, so a push-enabled agent never polls its own inbox.
+**The message is the turn.** One peer turn carries every waiting envelope as a short `<c11-msg>` block, oldest first, up to 32 KiB, and nothing else:
+
+```
+<c11-msg from="c11-lead" topic="review" id="J5ZEPW" at="18:01">
+Rebased; re-run the gate.
+</c11-msg>
+```
+
+`from` is the address to reply to (`reply_to` appears only when it differs), `id` is the envelope ULID's last six characters, which `mailbox send --in-reply-to` accepts, and `at` is local send time (with the date when it is not today). Only a `<c11-msg` or `</c11-msg` inside a body is escaped. A Stop drain delivers the same blocks. The first message always goes; mail past the budget waits in order for the next idle or Stop drain. A `body_ref` message carries the path plus the same leading excerpt `recv` prints. The agent spends no request on `recv`, so a push-enabled agent never polls its own inbox.
 
 **Claim.** The app, not the bridge, claims each envelope when the bridge confirms the agent has the text, and records the recipient's own read (`claimed` row with `via: native`, plus the usual `mailbox.delivered`). `c11 mailbox status <id>` then shows it read. Nothing is claimed before that confirmation, so mail Claude did not take stays in the inbox for the typed doorbell. If the ring raced a turn c11 had not seen, Claude queues the text in memory, where an exit or cancel can drop it. c11 logs `doorbell` with `reason` `native_queued`, types nothing and claims nothing; the bridge watches for up to five minutes for the text to reach the agent, and otherwise the Stop drain or the next ring has the mail. Two consumers cannot both claim: the rename decides, and the loser records nothing. The text can still reach the agent twice when a confirmation arrives after the typed fallback, so `id` stays the dedupe key.
 
@@ -432,7 +440,7 @@ Claude Code adds its own peer-message notice to each turn, about 120 tokens. c11
 
 Missing hook support, a closed listener, or no positive confirmation uses the ordinary typed decision with all its input protections. Claude's explicit `crossSessionInbound` policy is respected; a successful socket write alone is not delivery. Dispatch records use `route: claude_inbox`; typed fallback records use `route: typed` and include `native_route` and `native_failure` after a failed native attempt.
 
-If Claude holds an “unidentified session” message that starts `c11 mailbox:` or is exactly `c11 mail waiting: run c11 mailbox recv --ack`, it came from the panel's own c11 mailbox and the operator can choose **Deliver**. Read it first: it is ordinary mail from another agent. The typed fallback cannot clear that chooser. The envelopes stay unread until `c11 mailbox recv --ack` or the Stop hook claims them, so choosing Deliver after that shows the same `id` a second time.
+If Claude holds an “unidentified session” message that starts `<c11-msg` or is exactly `c11 mail waiting: run c11 mailbox recv --ack`, it came from the panel's own c11 mailbox and the operator can choose **Deliver**. Read it first: it is ordinary mail from another agent. The typed fallback cannot clear that chooser. The envelopes stay unread until `c11 mailbox recv --ack` or the Stop hook claims them, so choosing Deliver after that shows the same `id` a second time.
 
 An unconfirmed Claude native attempt records one `mailbox.native_unconfirmed` event and one `native_unconfirmed` row in the workspace's `_dispatch.log`, independent of the number of queued envelopes. Both carry `delivery_id`, `panel_id`, `claude_session_id`, `route` and `reason`. The reason is `unconfirmed` or `timeout`; `refused` is reserved for an explicit Claude bridge refusal, which the current bridge does not send. Claude's silent `hold` and `refuse` policy decisions cannot be distinguished from missing confirmation and remain `unconfirmed`. Older bridges that do not report the bound Claude session leave `claude_session_id` null; c11 never substitutes the registration epoch. Duplicate replies, the later timeout, and late acceptance do not add another diagnostic for the same attempt. The event counts misses of the first confirmation window, not lost mail: a later acceptance can still produce `native_late_accept`. It contains no token, message body, or transcript text and does not change delivery mode.
 
@@ -539,7 +547,9 @@ If your `mailbox.delivery` includes `stdin` and c11 recognizes your composer, yo
 
 That line is not the message. Run the command. The body comes back on stdout, and the envelope moves to `_read/`. Claude's Stop hook can also print the message into hook context. That hook is not typed input.
 
-On Claude Code's native route the turn opens with `c11 mailbox:` and holds the `<c11-msg>` blocks themselves. They are already marked read, so there is nothing to run.
+On Claude Code's native route the turn is the `<c11-msg>` blocks themselves. They are already marked read, so there is nothing to run.
+
+**Keep mail short.** A sentence or two: what changed, what you need, where to look. Put detail in a file and point to it, or send it with `--body-ref`. Every message lands in the reader's context and stays there.
 
 **With push on, never poll your own inbox.** No watcher script, no `sleep` loop, no `recv` on a timer: each wake costs a model request at full context, and the mail arrives as your next turn anyway.
 

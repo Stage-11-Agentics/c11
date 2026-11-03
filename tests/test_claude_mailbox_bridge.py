@@ -225,7 +225,7 @@ class BridgeTests(unittest.TestCase):
         began.mkdir()
         real = began / self.transcript.name
         real.write_text("")
-        self.transcript.unlink()
+        self.transcript.unlink(missing_ok=True)
         named = self.transcript
         self.transcript = self.transcript.parent / "resumed" / named.name
         self.launch()

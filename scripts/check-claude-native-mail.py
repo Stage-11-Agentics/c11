@@ -102,7 +102,8 @@ print(json.dumps(dict(dispatch=rows(mail/'_dispatch.log'),messages=messages,tool
 import json,sys
 state=Path(sys.argv[1]);state.mkdir(parents=True,exist_ok=True)
 work=Path.home()/'c11-sandbox/work';work.mkdir(parents=True,exist_ok=True)
-(state/'.claude.json').write_text(json.dumps({'hasCompletedOnboarding':True,'projects':{str(work):{'hasTrustDialogAccepted':True}}}))
+elsewhere=work.parent/'elsewhere';elsewhere.mkdir(parents=True,exist_ok=True)
+(state/'.claude.json').write_text(json.dumps({'hasCompletedOnboarding':True,'projects':{str(p):{'hasTrustDialogAccepted':True} for p in (work,elsewhere)}}))
 settings={'skipDangerousModePermissionPrompt':True}
 if sys.argv[2]=='1':settings['crossSessionInbound']='refuse'
 (state/'settings.json').write_text(json.dumps(settings))''', state, '1' if refuse else '0')
@@ -222,7 +223,7 @@ print(pids[0])''', args.run_id))
         c11('send', '--workspace', workspace, '--panel', native['panel'], '/exit')
         wait('Claude exited', lambda: 'Resume this session' in c11('read-screen', '--workspace', workspace, '--panel', native['panel'], '--lines', '12'))
         # From another folder: the hook then names a transcript that does not exist.
-        resume = ('mkdir -p /Users/admin/c11-sandbox/elsewhere && cd /Users/admin/c11-sandbox/elsewhere && env CLAUDE_CONFIG_DIR=' +
+        resume = ('cd /Users/admin/c11-sandbox/elsewhere && env CLAUDE_CONFIG_DIR=' +
                   shlex.quote(native['state']) + ' DISABLE_AUTOUPDATER=1 claude --resume ' + shlex.quote(session))
         c11('send', '--workspace', workspace, '--panel', native['panel'], resume)
         wait('resume composer', lambda: 'shift+tab' in c11('read-screen', '--workspace', workspace, '--panel', native['panel'], '--lines', '8'))

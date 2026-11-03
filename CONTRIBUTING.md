@@ -7,7 +7,7 @@ This doc is the practical onramp. Skim the links at the end for depth.
 ## Before you start
 
 - **Read [PHILOSOPHY.md](PHILOSOPHY.md)** if your change touches product shape or primitives. c11 has strong opinions about staying unopinionated; knowing where those opinions live saves review rounds.
-- **Glance at [CLAUDE.md](CLAUDE.md)** for the operational guardrails — testing policy, submodule etiquette, latency-sensitive code paths, socket threading rules. It's written for agents, but it's terse, accurate, and useful to humans too.
+- **Glance at [AGENTS.md](AGENTS.md)** for the operational guardrails — testing policy, submodule etiquette, latency-sensitive code paths, socket threading rules. It's written for agents, but it's terse, accurate, and useful to humans too.
 - **Check open issues and `TODO.md` / `C11_TODO.md`** before opening a feature PR. Some ideas are intentionally parked.
 - **File an issue first for anything non-trivial.** A two-line sketch of the approach is much cheaper than a rejected 800-line PR.
 
@@ -64,7 +64,7 @@ c11 has three test suites. In order of escalation:
    The suite is plain `python3` scripts, not pytest. `scripts/run-tests-v2.sh` is the older runner that builds with xcodebuild inside a VM; it is not the entry point on the operator's machine.
 3. **E2E / UI tests** (`c11UITests/`) — heavyweight; prefer CI via `gh workflow run test-e2e.yml`. You can run them locally, but they're slow and occasionally flaky on low-RAM machines.
 
-> **Note for agent contributors working inside a live c11 session:** `CLAUDE.md` says "never run tests locally." That rule exists because an agent launching an untagged debug build will hijack the operator's running socket. It does *not* apply to a human running their own tests on their own machine. When in doubt, use `--tag`.
+> **Note for agent contributors working inside a live c11 session:** `AGENTS.md` says "never run tests locally." That rule exists because an agent launching an untagged debug build will hijack the operator's running socket. It does *not* apply to a human running their own tests on their own machine. When in doubt, use `--tag`.
 
 ## Opening a pull request
 
@@ -73,7 +73,7 @@ c11 has three test suites. In order of escalation:
 - **New commits, not amends.** If a pre-commit hook fails, fix the issue and push a new commit — don't rewrite history the reviewer may have already pulled.
 - Write messages that explain *why*, not *what*. The diff already shows the *what*.
 - Sign off as the git author; use `Co-Authored-By` trailers for agents when they did meaningful work on the change. Honest attribution helps us calibrate review depth and normalizes the practice.
-- If your PR touches code that clearly came from upstream [cmux](https://github.com/manaflow-ai/cmux), flag it in the description so we can decide whether to also float the fix upstream. See the "cmux ↔ c11 relationship" section in [CLAUDE.md](CLAUDE.md).
+- If your PR touches code that clearly came from upstream [cmux](https://github.com/manaflow-ai/cmux), flag it in the description so we can decide whether to also float the fix upstream. See the "cmux ↔ c11 relationship" section in [AGENTS.md](AGENTS.md).
 
 ### The PR template and review bots
 
@@ -95,7 +95,7 @@ c11 ships in English plus six translations (ja, uk, ko, zh-Hans, zh-Hant, ru). A
 
 ### Code quality guardrails
 
-A few areas carry strict rules. If you're editing near any of these, read the full note in [`CLAUDE.md`](CLAUDE.md):
+A few areas carry strict rules. If you're editing near any of these, read the full note in [`AGENTS.md`](AGENTS.md):
 
 - **Typing-latency-sensitive paths** (`WindowTerminalHostView.hitTest()`, `TabItemView`, `TerminalSurface.forceRefresh()`). Extra allocations or main-thread work here is visible as typing lag.
 - **Socket command threading.** Telemetry hot paths (`report_*`, status / progress updates) must not hop `DispatchQueue.main.sync`. Default new socket commands to off-main unless you have a concrete reason otherwise.
@@ -146,7 +146,7 @@ By contributing, you agree that your changes are licensed under the project's GN
 ## Where to go next
 
 - [`PHILOSOPHY.md`](PHILOSOPHY.md) — why c11 is shaped the way it is
-- [`CLAUDE.md`](CLAUDE.md) — operational notes, latency-sensitive paths, testing policy
+- [`AGENTS.md`](AGENTS.md) — operational notes, latency-sensitive paths, testing policy
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — architecture tour, where things live in `Sources/`
 - [`docs/socket-api-reference.md`](docs/socket-api-reference.md) — the socket API every c11 panel speaks
 - [`skills/c11/SKILL.md`](skills/c11/SKILL.md) — the agent-facing guide to driving c11 (useful for humans too)

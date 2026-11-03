@@ -22,7 +22,7 @@ Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code i
 **On invoke, skim the sibling stage skills** (`~/.claude/skills/tone-*/SKILL.md`) so you hold the whole arc: what you produce here is what they consume, and a contract you don't know you owe is a contract you'll break.
 
 - **Inputs:** a raw idea and a client. Optionally an existing repo and prior artifacts — `sequence/run-state.md` decides where to resume.
-- **Outputs:** the project repo with `CLAUDE.md` root references; `PHILOSOPHY.md`; `sequence/USER_STORIES.md` with stable AC IDs; `ECONOMICS.md` where economics are load-bearing; the `sequence/research/` dossier; `sequence/run-state.md`.
+- **Outputs:** the project repo with `AGENTS.md` root references; `PHILOSOPHY.md`; `sequence/USER_STORIES.md` with stable AC IDs; `ECONOMICS.md` where economics are load-bearing; the `sequence/research/` dossier; `sequence/run-state.md`.
 - **Consumed by:** `tone-prototype` (philosophy + stories drive design discovery) and `tone-architect` (the whole corpus feeds evaluation and spec).
 
 ## Pipeline norms (all four stages)
@@ -55,10 +55,10 @@ Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code i
 ├── ECONOMICS.md            # initiation — where economics are load-bearing
 ├── DESIGN.md               # tone-prototype — the converged design language
 ├── SPEC.md  EVALUATION.md  BUILDPLAN.md   # tone-architect — the build contract
-└── CLAUDE.md               # references every root artifact (pointers, never copies)
+└── AGENTS.md               # references every root artifact (pointers, never copies)
 ```
 
-The root set is the minimum, not the ceiling — add durable root artifacts where the project warrants them. `CLAUDE.md` references each (a pointer, never a copy), so every later agent — the build fleet included — loads them automatically on every session and they stay current as they evolve.
+The root set is the minimum, not the ceiling — add durable root artifacts where the project warrants them. `AGENTS.md` references each (a pointer, never a copy), so every later agent — the build fleet included — loads them automatically on every session and they stay current as they evolve.
 
 ## The phases
 
@@ -74,7 +74,7 @@ Stop at saturation — when new searches stop changing the picture — not when 
 
 **Phase 2 — Refine.** Fold the research back into the idea: positioning, scope, differentiation, and the smallest version that delivers value. Where economics apply, hold an explicit **economic-model dialogue** with the client: how it makes money, what it costs to run, which model and price to test first. Economic-model choices are client calls — always surfaced, never silently decided; where the economics are load-bearing, write them down as an economic plan (`ECONOMICS.md` at the repo root) rather than leaving them buried in the dossier. A defensible Phase-2 outcome is *don't build this* or *build something else*: escalate it as a hard fork.
 
-**Phase 3 — Philosophy & stories.** Write `PHILOSOPHY.md` — the one thing someone should remember, the principles, the taste — at the **repo root**, referenced by `CLAUDE.md`. Then `USER_STORIES.md`: each story born with pass/fail acceptance criteria, each criterion minted with its stable AC ID. Where a criterion is inherently experiential — how it looks, how it feels, whether a seam makes sense in use — note it as a candidate for `felt` verification; the prototype stage will validate it and the architect stage will schedule its human-use checkpoints.
+**Phase 3 — Philosophy & stories.** Write `PHILOSOPHY.md` — the one thing someone should remember, the principles, the taste — at the **repo root**, referenced by `AGENTS.md`. Then `USER_STORIES.md`: each story born with pass/fail acceptance criteria, each criterion minted with its stable AC ID. Where a criterion is inherently experiential — how it looks, how it feels, whether a seam makes sense in use — note it as a candidate for `felt` verification; the prototype stage will validate it and the architect stage will schedule its human-use checkpoints.
 
 **Phase 4 — Stories review (touchpoint).** Signal the client for review. Iterate on their feedback, and proactively propose the stories they didn't think of.
 

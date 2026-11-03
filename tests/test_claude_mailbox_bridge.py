@@ -136,6 +136,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(request["params"]["route"], "claude_inbox")
         self.assertFalse(request["params"]["can_queue"])
         self.assertEqual(request["params"]["agent_pid"], self.harness.pid)
+        self.assertTrue(request["params"]["supports_inline_mail"])
         self.app.send({"id": request["id"], "ok": True, "result": {"connection_id": str(uuid.uuid4())}})
 
     def append(self, session=None, peer=True):
@@ -182,6 +183,81 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(socket.timeout):
             connection, _ = self.app.server.accept()
             connection.close()
+
+    INLINE = "c11 mailbox: 1 new message\n<c11-msg from=\"a\" id=\"01\">\n" + "body\n" * 800 + "</c11-msg>\n"
+
+    def record(self, **fields):
+        with self.transcript.open("a") as file:
+            file.write(json.dumps({**fields, "sessionId": self.session,
+                                   "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}) + "\n")
+
+    def offer_inline(self, *records):
+        def work():
+            try:
+                self.inbox.accept()
+                connection = self.inbox.connection
+                self.assertEqual(self.inbox.read(), {"type": "auth", "token": "test-only-inbox-token"})
+                self.assertEqual(self.inbox.read(), {"type": "user", "message": {"role": "user", "content": self.INLINE}})
+                for record in records:
+                    self.record(**record)
+                connection.close()
+            except Exception as error:
+                self.errors.append(repr(error))
+        worker = threading.Thread(target=work)
+        worker.start()
+        self.workers.append(worker)
+        delivery = str(uuid.uuid4())
+        self.app.send({"type": "deliver", "delivery_id": delivery, "text": self.INLINE, "inline": True})
+        return delivery, worker
+
+    def test_inline_mail_reaches_the_inbox_verbatim_and_confirms_from_the_peer_turn(self):
+        self.launch()
+        self.subscribe()
+        delivery, worker = self.offer_inline({"type": "user", "message": {"role": "user",
+            "content": "Another Claude session sent a message:\n" + self.INLINE + "\n\nPeer."}})
+        self.assertEqual(self.app.read(), {"type": "accepted", "delivery_id": delivery})
+        worker.join(timeout=3)
+
+    def test_queued_mail_is_reported_queued_then_accepted_when_it_reaches_the_turn(self):
+        self.launch()
+        self.subscribe()
+        delivery, worker = self.offer_inline({"type": "queue-operation", "operation": "enqueue", "content": self.INLINE})
+        self.assertEqual(self.app.read(), {"type": "queued", "delivery_id": delivery})
+        worker.join(timeout=3)
+        self.record(type="queue-operation", operation="remove", reason="absorbed_mid_turn", content=self.INLINE)
+        self.assertEqual(self.app.read(timeout=3), {"type": "accepted", "delivery_id": delivery})
+
+    def test_cleared_queue_is_never_accepted(self):
+        self.launch()
+        self.subscribe()
+        delivery, worker = self.offer_inline({"type": "queue-operation", "operation": "enqueue", "content": self.INLINE})
+        self.assertEqual(self.app.read(), {"type": "queued", "delivery_id": delivery})
+        worker.join(timeout=3)
+        self.record(type="queue-operation", operation="remove", reason="cleared_on_cancel", content=self.INLINE)
+        with self.assertRaises(socket.timeout):
+            self.app.read(timeout=.5)
+
+    def test_unmarked_text_is_not_mail(self):
+        self.launch()
+        self.subscribe()
+        delivery = str(uuid.uuid4())
+        self.app.send({"type": "deliver", "delivery_id": delivery, "text": "something else"})
+        self.assertEqual(self.app.read(), {"type": "rejected", "delivery_id": delivery, "reason": "unsupported_invitation"})
+
+    def test_resumed_session_confirms_from_the_transcript_where_it_began(self):
+        began = self.transcript.parent / "began"
+        began.mkdir()
+        real = began / self.transcript.name
+        real.write_text("")
+        self.transcript.unlink(missing_ok=True)
+        named = self.transcript
+        self.transcript = self.transcript.parent / "resumed" / named.name
+        self.launch()
+        self.subscribe()
+        self.transcript = real
+        self.receive_invitation()
+        delivery = self.offer()
+        self.assertEqual(self.app.read(), {"type": "accepted", "delivery_id": delivery})
 
     def test_repeat_acceptance_and_listener_retirement(self):
         self.launch()

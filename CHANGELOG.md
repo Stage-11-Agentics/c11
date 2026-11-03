@@ -6,6 +6,25 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-02
+
+Headline: **c11 1.8.0. Claude Code agents read their mail in the turn it arrives, and switching workspaces from the sidebar can no longer freeze c11.**
+
+### Changed
+
+- **Claude Code agents read their mail in the turn it arrives.** A waiting agent's next turn now holds the message itself, with sender, topic and body, already marked read, so it no longer spends a request running `c11 mailbox recv`. Each message is a short block with the sender, the topic, a six-character id that `--in-reply-to` accepts, and the local time it was sent. Several waiting messages arrive together in one turn, oldest first, and Claude's turn-end mail uses the same blocks. Other harnesses keep their doorbell line. ([#908](https://github.com/Stage-11-Agentics/c11/pull/908), [#911](https://github.com/Stage-11-Agentics/c11/pull/911))
+- **The c11 skill asks agents to send mail only when it is needed.** Every message wakes its reader for a full-context model request, so agents now skip acknowledgements, progress pings and replies to reports that ask nothing, and send one short message instead of several. ([#914](https://github.com/Stage-11-Agentics/c11/pull/914))
+- **The workspace frame's corners are square beside the sidebar and titlebar.** The gold workspace frame now rounds only the corners that sit on a window corner, so its curve no longer cuts across the selected tab. ([#896](https://github.com/Stage-11-Agentics/c11/pull/896))
+
+### Fixed
+
+- **Switching workspaces from the sidebar no longer freezes c11.** When the workspace cards nearly filled the sidebar, clicking a card could leave c11 spinning with a beach ball until it was force-quit, because the sidebar kept re-measuring cards it had not drawn yet. The sidebar now measures every card exactly, in both the one-column list and Tiles, and cards keep their natural height when only a few workspaces are open. ([#909](https://github.com/Stage-11-Agentics/c11/pull/909))
+- **Mail to a resumed Claude Code session no longer rings twice.** A session resumed from another folder took its mail, but c11 did not see that and typed the doorbell as well. A message that reaches a running turn is now recognized the same way. ([#908](https://github.com/Stage-11-Agentics/c11/pull/908))
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [1.7.9] - 2026-11-01
 
 Headline: **c11 1.7.9. The sidebar button steps through one, two and three columns, resumed agents learn that c11 restarted, the outside-link prompt takes Return and Escape from another app, and commands refuse a target that no longer exists.**

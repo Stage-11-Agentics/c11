@@ -16,7 +16,7 @@ Assumes c11 (load the c11 skill; the `lattice` skill owns Lattice CLI footguns b
 
 ## Contract
 
-- **Inputs:** `SPEC.md` (numbered acceptance criteria with stable IDs), `EVALUATION.md` (criteria tagged `autonomous` / `operator-assisted` / `external-oracle` / `felt`, harness commands, human-use checkpoints), `BUILDPLAN.md` (decided architecture, ticket breakdown with dependencies, checkpoint-shaped sequence), project `CLAUDE.md`; where the build has a designed surface, the binding prototype in `prototypes/` and `DESIGN.md`. Read them cold; `sequence/run-state.md`, if present, says where the arc stands.
+- **Inputs:** `SPEC.md` (numbered acceptance criteria with stable IDs), `EVALUATION.md` (criteria tagged `autonomous` / `operator-assisted` / `external-oracle` / `felt`, harness commands, human-use checkpoints), `BUILDPLAN.md` (decided architecture, ticket breakdown with dependencies, checkpoint-shaped sequence), project `AGENTS.md`; where the build has a designed surface, the binding prototype in `prototypes/` and `DESIGN.md`. Read them cold; `sequence/run-state.md`, if present, says where the arc stands.
 - **Outputs:** one PR per ticket (merged or open per policy), the validation report at `.lattice/orchestration/validation-report.md`, an operator smoke-pass checklist, and a closeout audit routed to the project's lessons files.
 - **Missing inputs:** name the gap and route upstream — this skill never authors the contract it will be audited against.
 
@@ -57,11 +57,11 @@ A general principle for briefs and boot prompts: where a step's success has a co
 
 A fresh session with no prior context, on purpose: it reads SPEC, BUILDPLAN, and the validation plan cold, walks every `pre-merge-static` and `pre-merge-runtime` row exactly as written (the plan is the contract — no substituting faster methods, no inventing rows, no silently skipping), and writes the validation report: per-criterion results, drift from the build plan, gaps, recommendations, and the operator's post-merge smoke checklist verbatim. Skip it only for trivial runs (1–2 tickets); otherwise it's cheap insurance against the Orchestrator's self-congratulatory bias. Playbook: `references/result-validator.md`.
 
-After the report, the **closeout audit**: read the run's comments, commits, and archived-agent notes; extract *timeless* findings (failure mode → why it matters → fix); route them to the project's `LESSONS.md`, its `CLAUDE.md`, this skill, or new Lattice tickets. War stories go to `runs-ledger.md` beside this skill; only the principle enters the skill.
+After the report, the **closeout audit**: read the run's comments, commits, and archived-agent notes; extract *timeless* findings (failure mode → why it matters → fix); route them to the project's `LESSONS.md`, its `AGENTS.md`, this skill, or new Lattice tickets. War stories go to `runs-ledger.md` beside this skill; only the principle enters the skill.
 
 ## Autonomy levels
 
-Set at Phase 0 (the project `CLAUDE.md` may declare a default; otherwise Moderate):
+Set at Phase 0 (the project `AGENTS.md` may declare a default; otherwise Moderate):
 
 - **Fully Autonomous** — architectural choices, scope expansions, dependency loosening: the Orchestrator decides, logs to run-state, proceeds. Escalate only destructive or irreversible actions.
 - **Moderate** *(default)* — decide-and-log routine calls; surface non-trivial architectural choices, scope expansions, and mild irreversibility for approval.

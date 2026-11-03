@@ -1,4 +1,4 @@
-<!-- README.md is Atin's voiced document. Agents: fix facts and add lines in this voice, but never rewrite, restructure, or replace sections without Atin's explicit sign-off on the exact diff. See CLAUDE.md. -->
+<!-- README.md is Atin's voiced document. Agents: fix facts and add lines in this voice, but never rewrite, restructure, or replace sections without Atin's explicit sign-off on the exact diff. See AGENTS.md. -->
 # c11
 
 <p align="center"><b><i>Agent-native Terminal Multiplexing for 10,000x hyperengineers</i></b></p>

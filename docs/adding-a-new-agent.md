@@ -40,7 +40,7 @@ All paths are relative to `code/c11/`. Order doesn't matter — the changes are 
 
 ### Required (without these the agent does not work as a c11 agent)
 
-1. **`Sources/DefaultAgentConfig.swift` — `AgentType` enum.** Add a new `case` with kebab-case raw value. Extend the three switch statements (`displayName`, `factoryCommand`, `factoryInitialPrompt`). `displayName` uses `String(localized:)` — write English only; spawn a localization sub-agent after (see `CLAUDE.md` → Localization).
+1. **`Sources/DefaultAgentConfig.swift` — `AgentType` enum.** Add a new `case` with kebab-case raw value. Extend the three switch statements (`displayName`, `factoryCommand`, `factoryInitialPrompt`). `displayName` uses `String(localized:)` — write English only; spawn a localization sub-agent after (see `AGENTS.md` → Localization).
 
 2. **`Sources/PanelMetadataStore.swift` — `canonicalTerminalTypes`.** Add the kebab-case string. Without this, the sidebar treats the new agent as `unknown` even when explicitly declared.
 
@@ -82,7 +82,7 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug
   -destination "platform=macOS" test
 ```
 
-`c11-logic` is host-free and safe to run locally even when prod c11 is running (see `CLAUDE.md` → "Testing policy"). Wall time ~30s warm.
+`c11-logic` is host-free and safe to run locally even when prod c11 is running (see `AGENTS.md` → "Testing policy"). Wall time ~30s warm.
 
 If you also touched `AgentRestartRegistry.swift`, run `c11-unit` via `scripts/test-unit-local.sh` — `AgentRestartRegistryTests` lives there.
 
@@ -97,7 +97,7 @@ The clean local path is to build, launch a *tagged* DEV build, and exercise the 
 
 In the tagged build: Settings → Agents & Automation → Agent Launcher Button → pick the new agent, then click the A button on a fresh panel. The agent should launch with its auto-approve flag baked in. Sidebar chip should show the new icon (SF Symbol fallback if no asset shipped).
 
-Do not `open` an untagged `c11 DEV.app` from DerivedData while prod c11 is running — they fight for sockets. See `CLAUDE.md` → "Testing policy" for the why.
+Do not `open` an untagged `c11 DEV.app` from DerivedData while prod c11 is running — they fight for sockets. See `AGENTS.md` → "Testing policy" for the why.
 
 ## A note on runtime extensibility
 

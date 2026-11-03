@@ -158,7 +158,8 @@ extension CMUXCLI {
           <text>                  one trailing argument, the body, when --body is absent
           --body-ref <path>       absolute path to external body (body must be empty)
           --reply-to <panel>      panel that should receive the reply
-          --in-reply-to <ulid>    envelope id this is replying to
+          --in-reply-to <id>      envelope id this is replying to; the short id
+                                  from a <c11-msg> block works
           --urgent                sender hint (handlers may ignore)
           --ttl-seconds <n>       advisory expiry
           --from <value>          override the envelope's sender value
@@ -336,7 +337,18 @@ extension CMUXCLI {
         let body = parsed.body
         let bodyRef = parsed.bodyRef
         let replyTo = parsed.replyTo
-        let inReplyTo = parsed.inReplyTo
+        let inReplyTo = parsed.inReplyTo.map { value -> String in
+            guard !MailboxDrain.isULID(value), let stateURL = try? MailboxLayout.defaultStateURL(),
+                  let panel = Self.callerPanelEnv(ProcessInfo.processInfo.environment).flatMap(UUID.init(uuidString:)) else { return value }
+            let env = ProcessInfo.processInfo.environment
+            let inboxes = MailboxDrain.panelInboxURLs(
+                workspacesRoot: stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true),
+                preferredWorkspaceId: (env["C11_WORKSPACE_ID"] ?? env["CMUX_WORKSPACE_ID"]).flatMap(UUID.init(uuidString:)),
+                scanWhenOwnerUnknown: true,
+                panelId: panel
+            )
+            return MailboxDrain.expandReplyId(value, inboxes: inboxes)
+        }
         let urgent = parsed.urgent
         let ttlSeconds = parsed.ttlSeconds.flatMap(Int.init)
         let idOverride = parsed.id

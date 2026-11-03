@@ -37,7 +37,7 @@ enum MessagesPageWeb {
             panelID: panelID,
             nonce: UInt64(Date().timeIntervalSince1970 * 1000)
         )
-        MessagesPageWriter.shared.ensurePage { [weak workspace] result in
+        MessagesPageWriter.shared.ensureFreshPage { [weak workspace] result in
             guard case let .success(pageURL) = result else { return }
             DispatchQueue.main.async {
                 guard let workspace else { return }
@@ -218,10 +218,11 @@ enum MessagesPageWeb {
     static let script = #"""
     (() => {
       "use strict";
+      try {
       const raw = JSON.parse(document.getElementById("messages-data").textContent || "{}");
       const directory = raw.directory || {};
       const scheme = directory.link_scheme || "c11";
-      const NOW = Date.now();
+      let NOW = Date.now();
       const HOT_MS = 15 * 60 * 1000;
       const WINDOWS = { "1h": 3600e3, "6h": 6 * 3600e3, "24h": 86400e3, "7d": 7 * 86400e3, all: Infinity };
       const GENERIC = new Set(["Terminal", "Shell", "zsh", "bash", "Browser", "Markdown"]);
@@ -276,19 +277,23 @@ enum MessagesPageWeb {
           if (to && m.target_title) P.get(to).title = P.get(to).title || m.target_title;
         } else if (m.channel === "mailbox") {
           from = isUUID(m.sender_id) ? panel(up(m.sender_id)).id : resolveAddress(m.sender || "unknown sender");
-          to = isUUID(m.surface) ? panel(up(m.surface)).id : resolveAddress(m.recipient);
-          if (to && m.recipient && !/^id:/i.test(m.recipient)) P.get(to).address = P.get(to).address || m.recipient;
+          const panels = (Array.isArray(m.recipient_panel_ids) ? m.recipient_panel_ids : []).filter(isUUID);
+          if (panels.length > 1) to = panels.map((id) => panel(up(id)).id);
+          else to = isUUID(m.surface) ? panel(up(m.surface)).id : resolveAddress(m.recipient);
+          if (typeof to === "string" && m.recipient && !/^id:/i.test(m.recipient)) P.get(to).address = P.get(to).address || m.recipient;
         }
         if (!from || !to) return;
-        if (m.workspace && isUUID(m.workspace)) {
-          workspace(up(m.workspace));
-          const target = P.get(to);
-          if (!target.workspace && target.type !== "address") target.workspace = up(m.workspace);
-        }
         const ms = Date.parse(m.timestamp);
         if (!Number.isFinite(ms)) return;
-        messages.push({ id: m.id, ch: m.channel, from, to, ms, status: m.status, topic: m.topic || null,
-          body: m.text_recorded === false ? "" : (m.body || (m.body_ref ? "body_ref: " + m.body_ref : "")), cut: !!m.truncated });
+        (Array.isArray(to) ? to : [to]).forEach((target) => {
+          if (m.workspace && isUUID(m.workspace) && !Array.isArray(to)) {
+            workspace(up(m.workspace));
+            const t = P.get(target);
+            if (!t.workspace && t.type !== "address") t.workspace = up(m.workspace);
+          }
+          messages.push({ id: m.id, ch: m.channel, from, to: target, ms, status: m.status, topic: m.topic || null,
+            body: m.text_recorded === false ? "" : (m.body || (m.body_ref ? "body_ref: " + m.body_ref : "")), cut: !!m.truncated });
+        });
       });
       messages.sort((a, b) => a.ms - b.ms);
       P.forEach((p) => {
@@ -297,9 +302,9 @@ enum MessagesPageWeb {
         if (GENERIC.has(p.title)) p.title = p.title + " " + p.id.slice(0, 4);
       });
       W.forEach((w) => { if (!w.title) w.title = "Workspace " + w.id.slice(0, 6); });
-      W.set(NO_WS, { id: NO_WS, title: "Unresolved senders", live: false });
+      W.set(NO_WS, { id: NO_WS, title: "Unplaced", live: false });
       const wsOf = (id) => (P.get(id) && P.get(id).workspace && W.has(P.get(id).workspace) ? P.get(id).workspace : NO_WS);
-      const titleOf = (id) => (P.get(id) ? P.get(id).title : id);
+      const titleOf = (id) => (P.get(id) && P.get(id).title) || "panel " + String(id).slice(0, 8);
       const isLive = (id) => !!(P.get(id) && P.get(id).live);
       const involved = new Set(messages.flatMap((m) => [m.from, m.to]));
       const wsTraffic = new Map();
@@ -359,7 +364,9 @@ enum MessagesPageWeb {
         }
         return ms;
       };
-      const pairKey = (a, b) => (a < b ? a + "|" + b : b + "|" + a);
+      // Endpoints are kept as fields; ids can hold any character an address can.
+      const pairKey = (a, b) => JSON.stringify(a < b ? [a, b] : [b, a]);
+      const dirOf = (p, from) => (from === p.a ? p.ab : p.ba);
       const aggregate = (ms) => {
         const nodes = new Map(), pairs = new Map();
         const node = (id) => { if (!nodes.has(id)) nodes.set(id, { id, sent: 0, recv: 0, last: 0 }); return nodes.get(id); };
@@ -368,10 +375,10 @@ enum MessagesPageWeb {
           a.sent++; b.recv++; a.last = Math.max(a.last, m.ms); b.last = Math.max(b.last, m.ms);
           const k = pairKey(m.from, m.to);
           if (!pairs.has(k)) {
-            const [x, y] = k.split("|");
-            pairs.set(k, { key: k, a: x, b: y, dirs: { [x + ">" + y]: { mailbox: 0, send: 0, last: 0 }, [y + ">" + x]: { mailbox: 0, send: 0, last: 0 } }, count: 0, last: 0, msgs: [] });
+            const [x, y] = m.from < m.to ? [m.from, m.to] : [m.to, m.from];
+            pairs.set(k, { key: k, a: x, b: y, ab: { mailbox: 0, send: 0, last: 0 }, ba: { mailbox: 0, send: 0, last: 0 }, count: 0, last: 0, msgs: [] });
           }
-          const p = pairs.get(k), d = p.dirs[m.from + ">" + m.to];
+          const p = pairs.get(k), d = dirOf(p, m.from);
           d[m.ch]++; d.last = Math.max(d.last, m.ms); p.count++; p.last = Math.max(p.last, m.ms); p.msgs.push(m);
         }
         nodes.forEach((n) => { n.total = n.sent + n.recv; n.hot = NOW - n.last < HOT_MS; });
@@ -453,25 +460,28 @@ enum MessagesPageWeb {
       const NS = $("cw-svg").namespaceURI;
       const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
       const svg = $("cw-svg"), view = $("cw-view"), gClusters = $("cw-clusters"), gEdges = $("cw-edges"), gNodes = $("cw-nodes");
-      let current = null, pendingFit = false;
+      let current = null, pendingFit = false, userMoved = false;
       [["ink", "var(--cw-ink)"], ["hot", "var(--cw-accent)"]].forEach(([id, c]) => {
         const m = el("marker", { id: "cw-arrow-" + id, viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: "auto", markerUnits: "userSpaceOnUse" }, $("cw-defs"));
         el("path", { d: "M0,0 L8,4 L0,8 Z", fill: c }, m);
       });
       const edgeLit = (p) => { const s = state.sel; if (!s) return true; return s.kind === "node" ? p.a === s.id || p.b === s.id : p.key === s.key; };
-      const nodeLit = (id) => { const s = state.sel; if (!s) return true; return s.kind === "node" ? id === s.id || current.agg.pairs.has(pairKey(id, s.id)) : s.key.split("|").includes(id); };
+      const nodeLit = (id) => {
+        const s = state.sel; if (!s) return true;
+        if (s.kind === "node") return id === s.id || current.agg.pairs.has(pairKey(id, s.id));
+        const p = current.agg.pairs.get(s.key); return !!p && (p.a === id || p.b === id);
+      };
 
       const drawEdges = () => {
         gEdges.textContent = "";
         const { agg, lay } = current;
         let max = 1;
-        agg.pairs.forEach((p) => Object.values(p.dirs).forEach((d) => { max = Math.max(max, d.mailbox + d.send); }));
+        agg.pairs.forEach((p) => [p.ab, p.ba].forEach((d) => { max = Math.max(max, d.mailbox + d.send); }));
         agg.pairs.forEach((p) => {
           const lit = edgeLit(p);
-          Object.entries(p.dirs).forEach(([dk, d]) => {
+          [[p.a, p.b, p.ab], [p.b, p.a, p.ba]].forEach(([from, to, d]) => {
             const n = d.mailbox + d.send;
             if (!n) return;
-            const [from, to] = dk.split(">");
             const a = lay.pos.get(from), b = lay.pos.get(to);
             if (!a || !b || from === to) return;
             const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
@@ -550,7 +560,7 @@ enum MessagesPageWeb {
         if (box.width === 0) { pendingFit = true; return; }
         pendingFit = false;
         if (!Number.isFinite(x0)) { Object.assign(VIEW, { k: 1, x: box.width / 2, y: box.height / 2 }); return; }
-        const k = Math.min(1.6, (box.width - 40) / (x1 - x0), (box.height - 90) / (y1 - y0));
+        const k = Math.max(0.15, Math.min(1.6, (box.width - 40) / (x1 - x0), (box.height - 90) / (y1 - y0)));
         Object.assign(VIEW, { k, x: (box.width - (x1 - x0) * k) / 2 - x0 * k, y: 20 + (box.height - 90 - (y1 - y0) * k) / 2 - y0 * k });
       };
       const applyView = () => view.setAttribute("transform", `translate(${VIEW.x},${VIEW.y}) scale(${VIEW.k})`);
@@ -581,8 +591,8 @@ enum MessagesPageWeb {
         return table([[perspective ? "Peer" : "Conversation"], [perspective ? "Out" : "→", "cw-num"], [perspective ? "In" : "←", "cw-num"], ["Last", "cw-when"]],
           pairs.map((p) => {
             const other = perspective ? (p.a === perspective ? p.b : p.a) : null;
-            const out = perspective ? p.dirs[perspective + ">" + other] : p.dirs[p.a + ">" + p.b];
-            const back = perspective ? p.dirs[other + ">" + perspective] : p.dirs[p.b + ">" + p.a];
+            const out = perspective ? dirOf(p, perspective) : p.ab;
+            const back = perspective ? dirOf(p, other) : p.ba;
             const on = perspective ? isLive(other) : isLive(p.a) && isLive(p.b);
             const name = perspective ? [titleOf(other)] : [titleOf(p.a), h("span", { class: "cw-sub" }, "⇄ " + titleOf(p.b))];
             return row(() => select({ kind: "pair", key: p.key }), [mark(NOW - p.last < HOT_MS, on), ...name],
@@ -594,7 +604,9 @@ enum MessagesPageWeb {
         const { agg } = current;
         const pairs = [...agg.pairs.values()].sort((a, b) => b.last - a.last);
         const count = pairs.reduce((s, p) => s + p.count, 0);
-        const title = state.scope === "instance" ? "Whole c11 instance" : state.scope === "workspace" ? W.get(state.ws).title : titleOf(state.panel);
+        const title = state.scope === "instance" ? "Whole c11 instance"
+          : state.scope === "workspace" ? (W.has(state.ws) ? W.get(state.ws).title : "No workspace has messages yet")
+          : state.panel ? titleOf(state.panel) : "No panel has messages yet";
         const busiest = [...agg.nodes.values()].sort((a, b) => b.total - a.total).slice(0, 8);
         show(zone("01", "Scope"), h("div", { class: "cw-title2" }, title),
           facts([["Messages", count], ["Panels", agg.nodes.size], ["Conversations", agg.pairs.size], ["Window", state.win === "all" ? "all recorded" : "last " + state.win]]),
@@ -623,7 +635,7 @@ enum MessagesPageWeb {
           facts(rows), actions, zone("02", "Conversations"), pairTable(pairs, n.id));
       };
       const inspectPair = (p) => {
-        const ab = p.dirs[p.a + ">" + p.b], ba = p.dirs[p.b + ">" + p.a];
+        const ab = p.ab, ba = p.ba;
         const msgs = [...p.msgs].sort((x, y) => x.ms - y.ms), shown = msgs.slice(-200);
         const thread = shown.map((m) => {
           const body = h("div", { class: "cw-body" }, m.body ? m.body + (m.cut ? "\n…" : "") : h("span", { class: "cw-empty" }, "(text not recorded)"));
@@ -686,7 +698,7 @@ enum MessagesPageWeb {
         if (state.sel && state.sel.kind === "node" && !agg.nodes.has(state.sel.id)) state.sel = null;
         if (state.sel && state.sel.kind === "pair" && !agg.pairs.has(state.sel.key)) state.sel = null;
         $("cw-empty").hidden = agg.nodes.size > 0;
-        if (refit) fit();
+        if (refit) { fit(); userMoved = false; }
         applyView(); drawClusters(); drawEdges(); drawNodes(); inspect(); save();
       };
       const bindSeg = (id, fn) => document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener("click", () => fn(b.dataset.v)));
@@ -702,16 +714,25 @@ enum MessagesPageWeb {
 
       let pan = null;
       svg.addEventListener("mousedown", (e) => { pan = { x: e.clientX, y: e.clientY, vx: VIEW.x, vy: VIEW.y, moved: false }; $("cw-stage").classList.add("cw-panning"); });
-      window.addEventListener("mousemove", (e) => { if (!pan) return; const dx = e.clientX - pan.x, dy = e.clientY - pan.y; if (Math.abs(dx) + Math.abs(dy) > 3) pan.moved = true; VIEW.x = pan.vx + dx; VIEW.y = pan.vy + dy; applyView(); });
+      window.addEventListener("mousemove", (e) => { if (!pan) return; const dx = e.clientX - pan.x, dy = e.clientY - pan.y; if (Math.abs(dx) + Math.abs(dy) > 3) { pan.moved = true; userMoved = true; } VIEW.x = pan.vx + dx; VIEW.y = pan.vy + dy; applyView(); });
       window.addEventListener("mouseup", () => { if (pan && !pan.moved) select(null); if (pan) save(); pan = null; $("cw-stage").classList.remove("cw-panning"); });
       svg.addEventListener("wheel", (e) => {
         e.preventDefault();
         const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         const k = Math.min(4, Math.max(0.15, VIEW.k * Math.exp(-e.deltaY * 0.0015)));
-        VIEW.x = mx - (mx - VIEW.x) * k / VIEW.k; VIEW.y = my - (my - VIEW.y) * k / VIEW.k; VIEW.k = k; applyView(); save();
+        VIEW.x = mx - (mx - VIEW.x) * k / VIEW.k; VIEW.y = my - (my - VIEW.y) * k / VIEW.k; VIEW.k = k; userMoved = true; applyView(); save();
       }, { passive: false });
       window.addEventListener("keydown", (e) => { if (e.key === "Escape" && viewName === "web") select(null); });
-      window.addEventListener("resize", () => { if (viewName === "web" && current) { fit(); applyView(); save(); } });
+      // A resize re-fits only a view the operator has not panned or zoomed.
+      window.addEventListener("resize", () => { if (viewName === "web" && current && !userMoved) { fit(); applyView(); save(); } });
+      // The page reloads only on new traffic, so "last 15 min" and "ago" advance on a clock.
+      // Only the marks move; the inspector is left alone so a thread being read does not jump.
+      setInterval(() => {
+        NOW = Date.now();
+        if (viewName !== "web" || !current) return;
+        current.agg.nodes.forEach((n) => { n.hot = NOW - n.last < HOT_MS; });
+        drawEdges(); drawNodes();
+      }, 60000);
 
       // ---------- Web | Traffic ----------
       const views = $("cw-views");
@@ -743,6 +764,18 @@ enum MessagesPageWeb {
       render(!fitted);
       fitted = true;
       save();
+      } catch (error) {
+        // The Traffic view never depends on this script: show it, and say why the Web view is missing.
+        document.body.classList.remove("view-web");
+        document.body.classList.add("view-traffic");
+        const views = document.getElementById("cw-views");
+        if (views) {
+          document.body.insertBefore(views, document.body.firstChild);
+          views.querySelectorAll("button").forEach((b) => { b.disabled = b.dataset.view === "web"; b.setAttribute("aria-pressed", String(b.dataset.view === "traffic")); });
+          views.title = "The conversation web could not be drawn: " + String(error && error.message || error);
+        }
+        console.error("conversation web failed", error);
+      }
     })();
     """#
 }

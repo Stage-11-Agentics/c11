@@ -136,6 +136,9 @@ struct MessagesPageRecord: Equatable {
     var lifecycle: [MessagesPageLifecycle]
     var textRecorded = true
     var recordedBytes: Int? = nil
+    /// Every recipient panel a mailbox copy landed in, in delivery order.
+    /// `surface` keeps the first; a role or broadcast address reaches more.
+    var recipientPanelIDs: [String] = []
 
     var jsonObject: [String: Any] {
         var result: [String: Any] = [
@@ -168,6 +171,7 @@ struct MessagesPageRecord: Equatable {
         if let urgent { result["urgent"] = urgent }
         if let submitted { result["submitted"] = submitted }
         if let queued { result["queued"] = queued }
+        if !recipientPanelIDs.isEmpty { result["recipient_panel_ids"] = recipientPanelIDs }
         return result
     }
 }
@@ -578,6 +582,14 @@ enum MessagesPageBuilder {
                 to: &record
             )
         case "delivered":
+            if record.senderID == nil,
+               let stamp = MessagesPageJSON.string(payload["sender_panel_id"]).flatMap(UUID.init(uuidString:)) {
+                record.senderID = stamp.uuidString
+            }
+            if let panel = event.surface.flatMap(UUID.init(uuidString:))?.uuidString,
+               !record.recipientPanelIDs.contains(panel) {
+                record.recipientPanelIDs.append(panel)
+            }
             record.recipient = record.recipient ?? MessagesPageJSON.string(payload["recipient"])
             record.targetTitle = record.targetTitle ?? MessagesPageJSON.string(payload["recipient"])
             record.status = mergedStatus(record.status, "delivered")

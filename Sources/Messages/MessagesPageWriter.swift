@@ -183,6 +183,32 @@ final class MessagesPageWriter {
         }
     }
 
+    /// Rebuild now on the writer queue, then hand back the page. For an
+    /// operator opening the conversation web: the page names panels as of
+    /// this moment, not as of the last message. Falls back to the existing
+    /// page if the rebuild fails.
+    func ensureFreshPage(onReady: @escaping (Result<URL, Swift.Error>) -> Void) {
+        lock.lock()
+        let resolvedStateURL = stateURL ?? fixedStateURL
+        let isStarted = started
+        lock.unlock()
+        guard isStarted, let resolvedStateURL else {
+            onReady(.failure(EventLogLayout.Error.stateDirectoryUnavailable))
+            return
+        }
+        let pageURL = MessagesPageLayout.pageURL(state: resolvedStateURL)
+        queue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
+                onReady(.success(pageURL))
+            } catch {
+                Self.logRebuildFailure(error: error, stateURL: resolvedStateURL, phase: "fresh")
+                onReady(FileManager.default.fileExists(atPath: pageURL.path) ? .success(pageURL) : .failure(error))
+            }
+        }
+    }
+
     private func scheduleRebuild(refreshMailbox: Bool) {
         let now = DispatchTime.now()
         lock.lock()
@@ -278,14 +304,19 @@ final class MessagesPageWriter {
             mailboxArtifacts: source.mailboxArtifacts
         )
         snapshot.directory = cachedDirectory(sessionURL: resolvedSessionURL)
+            .relevant(to: snapshot.messages)
         let html = MessagesPageRenderer.render(snapshot: snapshot)
         try writeAtomically(html: html, stateURL: stateURL)
     }
 
     private func cachedDirectory(sessionURL: URL?) -> MessagesPageDirectory {
         guard let sessionURL else { return .empty }
-        let values = try? sessionURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let key = "\(sessionURL.path)|\(values?.contentModificationDate?.timeIntervalSince1970 ?? -1)|\(values?.fileSize ?? -1)"
+        // File attributes, not URL resource values: Foundation caches those on
+        // the URL and clears them per run-loop pass, and this queue has none.
+        let attributes = try? FileManager.default.attributesOfItem(atPath: sessionURL.path)
+        let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
+        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? -1
+        let key = "\(sessionURL.path)|\(modified)|\(size)"
         if let directoryCache, directoryCache.key == key { return directoryCache.directory }
         let directory = MessagesPageDirectory.load(sessionURL: sessionURL)
         directoryCache = (key, directory)

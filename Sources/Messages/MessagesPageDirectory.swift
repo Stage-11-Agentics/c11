@@ -145,6 +145,35 @@ struct MessagesPageDirectory: Equatable {
         )
     }
 
+    /// The part of the directory the page can use: open panels (any of them
+    /// may be the one the operator centres on), panels the messages name by
+    /// id, panels with a mailbox address (a sender may name only that), and
+    /// the ancestors of those. Closed panels nothing refers to are dropped,
+    /// so a long session's lineage does not grow the page.
+    func relevant(to messages: [MessagesPageRecord]) -> MessagesPageDirectory {
+        var referenced = Set<String>()
+        for message in messages {
+            for id in [message.surface, message.senderID].compactMap({ $0 }) + message.recipientPanelIDs {
+                if let uuid = UUID(uuidString: id) { referenced.insert(uuid.uuidString) }
+            }
+        }
+        let byID = Dictionary(panels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var keep = Set(panels.filter { $0.live || $0.address != nil || referenced.contains($0.id) }.map(\.id))
+        var frontier = Array(keep)
+        while let id = frontier.popLast() {
+            if let parent = byID[id]?.parent, !keep.contains(parent), byID[parent] != nil {
+                keep.insert(parent)
+                frontier.append(parent)
+            }
+        }
+        let keptPanels = panels.filter { keep.contains($0.id) }
+        let keptWorkspaces = Set(keptPanels.compactMap(\.workspace))
+        return MessagesPageDirectory(
+            panels: keptPanels,
+            workspaces: workspaces.filter { $0.live || keptWorkspaces.contains($0.id) }
+        )
+    }
+
     private static func nonEmpty(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
             return nil

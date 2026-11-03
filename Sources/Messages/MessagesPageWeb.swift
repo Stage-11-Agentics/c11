@@ -218,6 +218,7 @@ enum MessagesPageWeb {
         <div class="cw-group"><span class="cw-label">Closed panels</span>
           <div class="cw-seg cw-narrow" id="cw-closed"><button type="button" class="cw-bk" data-v="show" style="width:64px">Show</button><button type="button" class="cw-bk" data-v="hide" style="width:64px">Hide</button></div>
         </div>
+        <div class="cw-group"><button type="button" class="cw-bk" id="cw-relayout" title="Forget where panels sit in this scope and lay them out again">Re-lay out</button></div>
       </div>
       <div class="cw-main">
         <div id="cw-stage">
@@ -337,7 +338,21 @@ enum MessagesPageWeb {
       const wsTraffic = new Map();
       messages.forEach((m) => [m.from, m.to].forEach((id) => wsTraffic.set(wsOf(id), (wsTraffic.get(wsOf(id)) || 0) + 1)));
       const wsOrder = [...new Set([...involved].map(wsOf))].sort((a, b) => (b !== NO_WS) - (a !== NO_WS) || (wsTraffic.get(b) || 0) - (wsTraffic.get(a) || 0));
-      const LETTER = new Map(wsOrder.map((id, i) => [id, i < 26 ? String.fromCharCode(65 + i) : String(i + 1)]));
+      // Letters are kept for the session, so a burst of traffic never relabels a cluster.
+      const LETTER_STORE = "c11.messages.web.letters.v1";
+      let storedLetters = {};
+      try { const parsed = JSON.parse(sessionStorage.getItem(LETTER_STORE) || "{}"); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) storedLetters = parsed; } catch (_) {}
+      const labelFor = (i) => (i < 26 ? String.fromCharCode(65 + i) : String(i + 1));
+      const LETTER = new Map();
+      const usedLetters = new Set();
+      wsOrder.forEach((id) => { if (typeof storedLetters[id] === "string") { LETTER.set(id, storedLetters[id]); usedLetters.add(storedLetters[id]); } });
+      let nextLetter = 0;
+      wsOrder.forEach((id) => {
+        if (LETTER.has(id)) return;
+        while (usedLetters.has(labelFor(nextLetter))) nextLetter++;
+        LETTER.set(id, labelFor(nextLetter)); usedLetters.add(labelFor(nextLetter));
+      });
+      try { sessionStorage.setItem(LETTER_STORE, JSON.stringify(Object.assign({}, storedLetters, Object.fromEntries(LETTER)))); } catch (_) {}
       const letterOf = (id) => LETTER.get(id) || "?";
 
       // ---------- state, kept per browser panel across the page's live reloads ----------
@@ -417,6 +432,45 @@ enum MessagesPageWeb {
       const rng = (seed) => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
       const nodeSize = (n) => Math.round(8 + 3.2 * Math.log2(n.total + 1));
       const labelW = (id) => Math.min(titleOf(id).length, 30) * 6.4 + 8;
+      // ---------- position memory: what is drawn stays where it is ----------
+      // c11 rewrites and reloads this page on every burst of traffic. Each
+      // panel's place is remembered per scope, so a reload moves nothing that
+      // is already drawn; only new panels are placed.
+      const POS_STORE = "c11.messages.web.positions.v1";
+      let positionMemory = {};
+      try { positionMemory = JSON.parse(sessionStorage.getItem(POS_STORE) || "{}"); } catch (_) { positionMemory = {}; }
+      if (!positionMemory || typeof positionMemory !== "object" || Array.isArray(positionMemory)) positionMemory = {};
+      const MAX_REMEMBERED = 3000;
+      const writePositions = () => {
+        try { sessionStorage.setItem(POS_STORE, JSON.stringify(positionMemory)); return; } catch (_) {}
+        // Full: keep only the current scope, then try once more.
+        const key = scopeKey();
+        positionMemory = { [key]: positionMemory[key] || {} };
+        try { sessionStorage.setItem(POS_STORE, JSON.stringify(positionMemory)); }
+        catch (error) { console.warn("conversation web: panel positions not saved", error); }
+      };
+      const scopeKey = () => state.scope + ":" + (state.scope === "workspace" ? state.ws : state.scope === "panel" ? state.panel : "");
+      // Merged, not replaced: a panel hidden by a filter or aged out of the
+      // time window keeps its place for when it comes back.
+      const rememberPositions = () => {
+        if (!current || current.lay.pos.size === 0) return;
+        const key = scopeKey();
+        const entry = Object.assign({}, positionMemory[key] || {});
+        const seen = Date.now();
+        current.lay.pos.forEach((p, id) => { entry[id] = [p.x, p.y, p.g, seen]; });
+        const ids = Object.keys(entry);
+        if (ids.length > MAX_REMEMBERED) {
+          ids.sort((a, b) => (entry[a][3] || 0) - (entry[b][3] || 0))
+            .slice(0, ids.length - MAX_REMEMBERED).forEach((id) => delete entry[id]);
+        }
+        delete positionMemory[key];
+        positionMemory[key] = entry;
+        const keys = Object.keys(positionMemory);
+        keys.slice(0, Math.max(0, keys.length - 8)).forEach((k) => delete positionMemory[k]);
+        writePositions();
+      };
+      const forgetPositions = () => { delete positionMemory[scopeKey()]; writePositions(); };
+
       const layout = (agg) => {
         const home = state.scope === "workspace" ? state.ws : state.scope === "panel" ? wsOf(state.panel) : null;
         const groups = new Map();
@@ -439,31 +493,68 @@ enum MessagesPageWeb {
             centers.set(g, { x: x + d / 2, y: y + d / 2 }); x += d; rowH = Math.max(rowH, d);
           });
         }
+        // Remembered panels keep their place. A workspace with remembered
+        // panels is centred where they are; a workspace that is new to this
+        // scope goes in a row below everything already drawn.
+        const remembered = positionMemory[scopeKey()] || {};
+        const fixedByGroup = new Map();
+        agg.nodes.forEach((n) => {
+          const r = remembered[n.id], g = wsOf(n.id);
+          if (!r || r[2] !== g || !Number.isFinite(r[0]) || !Number.isFinite(r[1])) return;
+          if (!fixedByGroup.has(g)) fixedByGroup.set(g, []);
+          fixedByGroup.get(g).push([r[0], r[1]]);
+        });
+        if (fixedByGroup.size) {
+          let minX = Infinity, maxY = -Infinity;
+          fixedByGroup.forEach((points, g) => {
+            const cx = points.reduce((s, q) => s + q[0], 0) / points.length, cy = points.reduce((s, q) => s + q[1], 0) / points.length;
+            centers.set(g, { x: cx, y: cy });
+            points.forEach((q) => { minX = Math.min(minX, q[0]); maxY = Math.max(maxY, q[1]); });
+          });
+          let maxX = -Infinity;
+          fixedByGroup.forEach((points) => points.forEach((q) => { maxX = Math.max(maxX, q[0]); }));
+          const rowW = Math.max(900, maxX - minX);
+          let x = minX, y = maxY + 160, rowH = 0;
+          order.filter((g) => !fixedByGroup.has(g)).forEach((g) => {
+            const d = 2 * radius(g) + 140;
+            if (x > minX && x + d > minX + rowW) { x = minX; y += rowH; rowH = 0; }
+            centers.set(g, { x: x + d / 2, y: y + d / 2 }); x += d; rowH = Math.max(rowH, d);
+          });
+        }
         const pos = new Map();
         agg.nodes.forEach((n) => {
-          const c = centers.get(wsOf(n.id)), r = rng(hash32(n.id));
-          pos.set(n.id, { x: c.x + (r() - 0.5) * 120, y: c.y + (r() - 0.5) * 120, vx: 0, vy: 0, g: wsOf(n.id), s: nodeSize(n) });
+          const g = wsOf(n.id), c = centers.get(g), r = rng(hash32(n.id)), m = remembered[n.id];
+          const keep = m && m[2] === g && Number.isFinite(m[0]) && Number.isFinite(m[1]);
+          pos.set(n.id, keep
+            ? { x: m[0], y: m[1], vx: 0, vy: 0, g, s: nodeSize(n), fixed: true }
+            : { x: c.x + (r() - 0.5) * 120, y: c.y + (r() - 0.5) * 120, vx: 0, vy: 0, g, s: nodeSize(n) });
         });
-        if (state.scope === "panel" && pos.has(state.panel)) Object.assign(pos.get(state.panel), { x: centers.get(home).x, y: centers.get(home).y, pinned: true });
+        if (state.scope === "panel" && pos.has(state.panel) && !fixedByGroup.size) Object.assign(pos.get(state.panel), { x: centers.get(home).x, y: centers.get(home).y, pinned: true });
         const springs = [];
         agg.pairs.forEach((p) => { if (wsOf(p.a) === wsOf(p.b)) springs.push([p.a, p.b, p.count]); });
         const ids = [...pos.keys()];
-        const steps = ids.length > 400 ? 160 : 320;
+        // Nothing new to place: draw exactly what was drawn before.
+        const steps = ids.every((id) => pos.get(id).fixed) ? 0 : ids.length > 400 ? 160 : 320;
+        // Only panels that can move are simulated: each against the others in
+        // its workspace. Remembered panels push but are never pushed.
+        const byGroup = new Map();
+        ids.forEach((id) => { const g = pos.get(id).g; if (!byGroup.has(g)) byGroup.set(g, []); byGroup.get(g).push(id); });
+        const movable = ids.filter((id) => !pos.get(id).fixed && !pos.get(id).pinned);
+        const liveSprings = springs.filter(([x, y]) => !pos.get(x).fixed || !pos.get(y).fixed);
         for (let it = 0; it < steps; it++) {
           const cool = 1 - it / steps;
-          for (let i = 0; i < ids.length; i++) {
-            const a = pos.get(ids[i]);
-            for (let j = i + 1; j < ids.length; j++) {
-              const b = pos.get(ids[j]);
-              if (a.g !== b.g) continue;
+          for (const ia of movable) {
+            const a = pos.get(ia);
+            for (const ib of byGroup.get(a.g)) {
+              if (ib === ia) continue;
+              const b = pos.get(ib);
               let dx = a.x - b.x, dy = a.y - b.y;
               const d2 = dx * dx + dy * dy + 0.01, d = Math.sqrt(d2);
               const f = 5200 / d2 + (d < 46 ? (46 - d) * 0.5 : 0);
-              dx /= d; dy /= d;
-              a.vx += dx * f; a.vy += dy * f * 1.6; b.vx -= dx * f; b.vy -= dy * f * 1.6;
+              a.vx += dx / d * f; a.vy += dy / d * f * 1.6;
             }
           }
-          springs.forEach(([x, y, c]) => {
+          liveSprings.forEach(([x, y, c]) => {
             const a = pos.get(x), b = pos.get(y);
             const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) + 0.01;
             const f = (d - 90) * 0.02 * Math.min(3, 1 + Math.log2(c) / 3);
@@ -472,12 +563,15 @@ enum MessagesPageWeb {
           pos.forEach((p) => {
             const c = centers.get(p.g);
             p.vx += (c.x - p.x) * 0.012; p.vy += (c.y - p.y) * 0.012;
-            if (p.pinned) { p.vx = 0; p.vy = 0; return; }
+            if (p.pinned || p.fixed) { p.vx = 0; p.vy = 0; return; }
             const v = Math.hypot(p.vx, p.vy), cap = 30 * cool + 1;
             if (v > cap) { p.vx *= cap / v; p.vy *= cap / v; }
             p.x += p.vx; p.y += p.vy; p.vx *= 0.6; p.vy *= 0.6;
           });
         }
+        // Positions are kept to a tenth of a point, the precision they are
+        // remembered at, so a reload draws exactly what was drawn.
+        pos.forEach((p) => { p.x = Math.round(p.x * 10) / 10; p.y = Math.round(p.y * 10) / 10; });
         return { pos, groups, home };
       };
 
@@ -537,7 +631,7 @@ enum MessagesPageWeb {
         agg.nodes.forEach((n) => {
           const p = lay.pos.get(n.id), s = p.s, live = isLive(n.id), info = P.get(n.id) || {};
           const selected = state.sel && state.sel.kind === "node" && state.sel.id === n.id;
-          const g = el("g", { class: "cw-node" + (live ? "" : " closed"), transform: `translate(${p.x},${p.y})`, opacity: nodeLit(n.id) ? 1 : 0.22 }, gNodes);
+          const g = el("g", { class: "cw-node" + (live ? "" : " closed"), "data-id": n.id, transform: `translate(${p.x},${p.y})`, opacity: nodeLit(n.id) ? 1 : 0.22 }, gNodes);
           el("rect", { x: -s / 2, y: -s / 2, width: s, height: s,
             fill: n.hot ? "var(--cw-accent)" : live ? "var(--cw-ink)" : "var(--cw-surface)",
             stroke: n.hot ? "var(--cw-accent)" : "var(--cw-ink)", "stroke-width": live ? 0 : 1,
@@ -557,7 +651,16 @@ enum MessagesPageWeb {
               if (Math.abs(dx) + Math.abs(dy) > 3) down.moved = true;
               if (down.moved) { p.x = down.px + dx; p.y = down.py + dy; g.setAttribute("transform", `translate(${p.x},${p.y})`); drawEdges(); drawClusters(); }
             };
-            const release = () => { dragging = false; window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", release); if (!down.moved) select({ kind: "node", id: n.id }); };
+            const release = () => {
+              dragging = false;
+              window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", release);
+              if (down.moved) {
+                p.x = Math.round(p.x * 10) / 10; p.y = Math.round(p.y * 10) / 10;
+                g.setAttribute("transform", `translate(${p.x},${p.y})`);
+                userMoved = true;
+                rememberPositions(); save();
+              } else select({ kind: "node", id: n.id });
+            };
             window.addEventListener("mousemove", move); window.addEventListener("mouseup", release);
           });
           g.addEventListener("dblclick", (e) => { e.stopPropagation(); focusPanel(n.id); });
@@ -628,6 +731,11 @@ enum MessagesPageWeb {
           }));
       };
       const show = (...nodes) => { insp.replaceChildren(...nodes.flat().filter(Boolean)); };
+      const isOpen = (id) => Array.isArray(state.open) && state.open.includes(id);
+      const markOpen = (id) => {
+        state.open = (Array.isArray(state.open) ? state.open : []).filter((x) => x !== id).concat(id).slice(-300);
+        save();
+      };
       const inspectScope = () => {
         const { agg } = current;
         const pairs = [...agg.pairs.values()].sort((a, b) => b.last - a.last);
@@ -666,8 +774,8 @@ enum MessagesPageWeb {
         const ab = p.ab, ba = p.ba;
         const msgs = [...p.msgs].sort((x, y) => x.ms - y.ms), shown = msgs.slice(-200);
         const thread = shown.map((m) => {
-          const body = h("div", { class: "cw-body" }, m.body ? m.body + (m.cut ? "\n…" : "") : h("span", { class: "cw-empty" }, "(text not recorded)"));
-          body.addEventListener("click", () => body.classList.add("open"));
+          const body = h("div", { class: "cw-body" + (isOpen(m.id) ? " open" : "") }, m.body ? m.body + (m.cut ? "\n…" : "") : h("span", { class: "cw-empty" }, "(text not recorded)"));
+          body.addEventListener("click", () => { body.classList.add("open"); markOpen(m.id); });
           return h("div", { class: "cw-msg" + (NOW - m.ms < HOT_MS ? " hot" : "") },
             h("div", { class: "cw-mhead" },
               h("span", { class: "cw-who" }, h("span", { class: "cw-tag" }, m.ch === "mailbox" ? "Mail" : "Send"),
@@ -681,14 +789,27 @@ enum MessagesPageWeb {
           h("div", { class: "cw-actions" }, button("Centre on " + trunc(titleOf(p.a), 14), () => focusPanel(p.a)),
             button("Centre on " + trunc(titleOf(p.b), 14), () => focusPanel(p.b)), button("Clear", () => select(null))),
           zone("02", "Thread" + (msgs.length > shown.length ? `, newest 200 of ${msgs.length}` : "")), thread);
-        insp.scrollTop = insp.scrollHeight;
       };
+      // Re-drawing the same thing (a reload, a filter, the minute tick) keeps
+      // the reader's scroll; something new opens at its start, a thread at its end.
       const inspect = () => {
         const s = state.sel, { agg } = current;
-        if (s && s.kind === "node" && agg.nodes.has(s.id)) return inspectNode(agg.nodes.get(s.id));
-        if (s && s.kind === "pair" && agg.pairs.has(s.key)) return inspectPair(agg.pairs.get(s.key));
-        inspectScope();
+        let shown = "scope:" + scopeKey(), pair = false;
+        if (s && s.kind === "node" && agg.nodes.has(s.id)) { inspectNode(agg.nodes.get(s.id)); shown = "node:" + s.id; }
+        else if (s && s.kind === "pair" && agg.pairs.has(s.key)) { inspectPair(agg.pairs.get(s.key)); shown = "pair:" + s.key; pair = true; }
+        else inspectScope();
+        if (state.insKey === shown && state.insAtEnd) insp.scrollTop = insp.scrollHeight;
+        else if (state.insKey === shown && Number.isFinite(state.insScroll)) insp.scrollTop = state.insScroll;
+        else { insp.scrollTop = pair ? insp.scrollHeight : 0; state.insKey = shown; state.insScroll = insp.scrollTop; state.insAtEnd = pair; }
       };
+      let scrollSaveQueued = false;
+      insp.addEventListener("scroll", () => {
+        state.insScroll = insp.scrollTop;
+        state.insAtEnd = insp.scrollHeight - insp.scrollTop - insp.clientHeight < 4;
+        if (scrollSaveQueued) return;
+        scrollSaveQueued = true;
+        requestAnimationFrame(() => { scrollSaveQueued = false; save(); });
+      }, { passive: true });
 
       // ---------- controls ----------
       const select = (sel) => { state.sel = sel; drawEdges(); drawNodes(); inspect(); save(); };
@@ -728,6 +849,7 @@ enum MessagesPageWeb {
         if (state.sel && state.sel.kind === "node" && !agg.nodes.has(state.sel.id)) state.sel = null;
         if (state.sel && state.sel.kind === "pair" && !agg.pairs.has(state.sel.key)) state.sel = null;
         $("cw-empty").hidden = agg.nodes.size > 0;
+        rememberPositions();
         if (refit) { fit(); userMoved = false; }
         applyView(); drawClusters(); drawEdges(); drawNodes(); inspect(); save();
       };
@@ -736,6 +858,7 @@ enum MessagesPageWeb {
       bindSeg("cw-channels", (v) => { state.ch = state.ch.includes(v) ? state.ch.filter((c) => c !== v) : [...state.ch, v]; if (!state.ch.length) state.ch = [v === "send" ? "mailbox" : "send"]; render(true); });
       bindSeg("cw-window", (v) => { state.win = v; render(true); });
       bindSeg("cw-closed", (v) => { state.closed = v; render(true); });
+      $("cw-relayout").addEventListener("click", () => { forgetPositions(); render(true); });
       $("cw-picker").addEventListener("change", (e) => {
         if (state.scope === "workspace") { state.ws = e.target.value; state.sel = null; }
         else { state.panel = e.target.value; state.sel = { kind: "node", id: state.panel }; }
@@ -756,7 +879,28 @@ enum MessagesPageWeb {
       // The stage's own size, not the window's: a browser panel is often
       // created at one size and laid out at another, with no window resize.
       // A resize re-fits only a view the operator has not panned or zoomed.
-      const refitOnResize = () => { if (!broken && viewName === "web" && current && (!userMoved || pendingFit)) { fit(); applyView(); save(); } };
+      // Only panels placed by this load count: a remembered panel that sits
+      // outside the view was already there.
+      const newOutOfView = () => {
+        const s = $("cw-stage").getBoundingClientRect();
+        return [...gNodes.querySelectorAll(".cw-node")].some((g) => {
+          const p = current.lay.pos.get(g.dataset.id);
+          if (!p || p.fixed) return false;
+          const b = g.querySelector("rect").getBoundingClientRect();
+          return b.width > 0 && (b.left < s.left || b.right > s.right || b.top < s.top || b.bottom > s.bottom);
+        });
+      };
+      const refitOnResize = () => {
+        if (broken || viewName !== "web" || !current) return;
+        const box = $("cw-stage").getBoundingClientRect();
+        const changed = !state.stage || Math.abs(state.stage[0] - box.width) > 1 || Math.abs(state.stage[1] - box.height) > 1;
+        state.stage = [Math.round(box.width), Math.round(box.height)];
+        // A reload at the same size keeps the operator's view unless a new
+        // panel landed outside it; a real resize re-fits an unmoved view.
+        // At the zoom floor a re-fit cannot show more; it would only move the view.
+        if (pendingFit || (!userMoved && (changed || (VIEW.k > 0.151 && newOutOfView())))) { fit(); applyView(); }
+        save();
+      };
       if (window.ResizeObserver) new ResizeObserver(refitOnResize).observe($("cw-stage"));
       else window.addEventListener("resize", refitOnResize);
       // The page reloads only on new traffic, so "last 15 min" and "ago" advance on a clock.

@@ -29,6 +29,7 @@ final class MessagesPageWebScriptTests: XCTestCase {
     // MARK: Fixtures
 
     private let alpha = UUID(), bravo = UUID(), charlie = UUID()
+    private let fixtureWorkspace = UUID().uuidString
 
     private func record(
         id: String,
@@ -51,15 +52,19 @@ final class MessagesPageWebScriptTests: XCTestCase {
         return result
     }
 
-    private func snapshot(_ messages: [MessagesPageRecord], titles: [UUID: String] = [:]) -> MessagesPageSnapshot {
-        let workspace = UUID().uuidString
+    private func snapshot(
+        _ messages: [MessagesPageRecord],
+        titles: [UUID: String] = [:],
+        panels: [UUID]? = nil
+    ) -> MessagesPageSnapshot {
+        let workspace = fixtureWorkspace
         var result = MessagesPageSnapshot(
             generatedAt: "2026-10-02T00:00:10.000Z", totalObserved: messages.count,
             messageLimit: 10_000, messageByteLimit: 16 * 1024 * 1024,
             estimatedMessageBytes: 0, messages: messages
         )
         result.directory = MessagesPageDirectory(
-            panels: [alpha, bravo].map {
+            panels: (panels ?? [alpha, bravo]).map {
                 .init(id: $0.uuidString, title: titles[$0] ?? "Panel \($0.uuidString.prefix(4))", workspace: workspace,
                       live: true, type: "terminal", agent: nil, address: $0 == alpha ? "alpha" : nil, parent: nil)
             },
@@ -92,16 +97,28 @@ final class MessagesPageWebScriptTests: XCTestCase {
         webView = view
         let target = fragment.map { MessagesPageWeb.url(page: page, fragment: $0) } ?? page
         view.loadFileURL(target, allowingReadAccessTo: directory)
+        try await waitForLoad(view)
+        return view
+    }
 
+    /// What c11 does on new traffic: rewrite the page, then reload the panel.
+    private func rewriteAndReload(_ view: WKWebView, _ snapshot: MessagesPageSnapshot) async throws {
+        let page = directory.appendingPathComponent("messages.html")
+        try MessagesPageRenderer.render(snapshot: snapshot).write(to: page, atomically: true, encoding: .utf8)
+        view.reload()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        try await waitForLoad(view)
+    }
+
+    private func waitForLoad(_ view: WKWebView) async throws {
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             try await Task.sleep(nanoseconds: 50_000_000)
             if !view.isLoading, (try? await view.evaluateJavaScript("document.readyState")) as? String == "complete" {
-                return view
+                return
             }
         }
         XCTFail("the messages page did not finish loading")
-        return view
     }
 
     private func value(_ view: WKWebView, _ script: String) async throws -> Any? {
@@ -200,5 +217,119 @@ final class MessagesPageWebScriptTests: XCTestCase {
         XCTAssertTrue(thread?.hasPrefix(hostile) == true)
         let heading = try await value(view, "document.querySelector('.cw-title2').textContent") as? String
         XCTAssertTrue(heading?.contains(hostile) == true)
+    }
+
+    private func nodePositions(_ view: WKWebView) async throws -> [String: String] {
+        let json = try await value(view, """
+            JSON.stringify(Object.fromEntries([...document.querySelectorAll(".cw-node")]
+              .map((g) => [g.dataset.id, g.getAttribute("transform")])))
+            """) as? String
+        return try JSONDecoder().decode([String: String].self, from: Data((json ?? "{}").utf8))
+    }
+
+    func testReloadWithNewTrafficLeavesEveryDrawnPanelInPlace() async throws {
+        let first = [
+            record(id: "e1", sender: "id:\(alpha.uuidString)", surface: bravo),
+            record(id: "e2", sender: "id:\(bravo.uuidString)", surface: alpha),
+        ]
+        let view = try await load(snapshot(first))
+        let before = try await nodePositions(view)
+        XCTAssertEqual(before.count, 2)
+
+        // A new panel joins the same workspace, and a larger group of
+        // newcomers arrives: both used to re-lay-out the existing cluster.
+        try await rewriteAndReload(view, snapshot(first + [
+            record(id: "e3", sender: "id:\(alpha.uuidString)", surface: charlie),
+            record(id: "e4", sender: "newcomer-1", surface: bravo),
+            record(id: "e5", sender: "newcomer-2", surface: bravo),
+            record(id: "e6", sender: "newcomer-3", surface: alpha),
+        ], panels: [alpha, bravo, charlie]))
+
+        try await assertNoScriptErrors(view)
+        let after = try await nodePositions(view)
+        XCTAssertEqual(after.count, 6)
+        for (id, transform) in before {
+            XCTAssertEqual(after[id], transform, "panel \(id) moved on reload")
+        }
+    }
+
+    func testAnOpenedMessageStaysOpenAcrossAReload() async throws {
+        let long = (1...40).map { "line \($0)" }.joined(separator: "\n")
+        let messages = [record(id: "f1", sender: "id:\(alpha.uuidString)", surface: bravo, body: long)]
+        let view = try await load(snapshot(messages))
+        _ = try await value(view, "document.querySelector('#cw-inspector tr.cw-row').click(); 0")
+        _ = try await value(view, "document.querySelector('.cw-msg .cw-body').click(); 0")
+        let opened = try await value(view, "document.querySelectorAll('.cw-body.open').length") as? Int
+        XCTAssertEqual(opened, 1)
+
+        try await rewriteAndReload(view, snapshot(messages + [record(id: "f2", sender: "gamma", surface: alpha)]))
+
+        try await assertNoScriptErrors(view)
+        let title = try await value(view, "document.querySelector('.cw-title2').textContent") as? String
+        XCTAssertTrue(title?.contains("⇄") == true, "the thread is still selected")
+        let stillOpen = try await value(view, "document.querySelectorAll('.cw-body.open').length") as? Int
+        XCTAssertEqual(stillOpen, 1)
+    }
+
+    private func viewTransform(_ view: WKWebView) async throws -> String? {
+        try await value(view, "document.getElementById('cw-view').getAttribute('transform')") as? String
+    }
+
+    func testNewTrafficBetweenDrawnPanelsMovesNeitherPanelsNorTheView() async throws {
+        let first = [
+            record(id: "g1", sender: "id:\(alpha.uuidString)", surface: bravo),
+            record(id: "g2", sender: "id:\(bravo.uuidString)", surface: charlie),
+        ]
+        let view = try await load(snapshot(first, panels: [alpha, bravo, charlie]))
+        let positions = try await nodePositions(view)
+        let frame = try await viewTransform(view)
+
+        // More traffic on the same edges, and a new edge between drawn panels.
+        try await rewriteAndReload(view, snapshot(first + [
+            record(id: "g3", sender: "id:\(alpha.uuidString)", surface: bravo),
+            record(id: "g4", sender: "id:\(charlie.uuidString)", surface: alpha),
+        ], panels: [alpha, bravo, charlie]))
+
+        try await assertNoScriptErrors(view)
+        let after = try await nodePositions(view)
+        XCTAssertEqual(after, positions)
+        let frameAfter = try await viewTransform(view)
+        XCTAssertEqual(frameAfter, frame, "the view moved on a reload with nothing new to place")
+    }
+
+    func testAFilterTurnedOffAndOnAgainKeepsEveryPanelInPlace() async throws {
+        let view = try await load(snapshot([
+            record(id: "h1", sender: "id:\(alpha.uuidString)", surface: bravo),
+            record(id: "h2", channel: "send", sender: nil, senderID: charlie.uuidString, surface: alpha),
+        ], panels: [alpha, bravo, charlie]))
+        let positions = try await nodePositions(view)
+        XCTAssertEqual(positions.count, 3)
+
+        _ = try await value(view, "document.querySelector('#cw-channels [data-v=send]').click(); 0")
+        let hidden = try await nodePositions(view)
+        XCTAssertEqual(hidden.count, 2, "send traffic is filtered out")
+        _ = try await value(view, "document.querySelector('#cw-channels [data-v=send]').click(); 0")
+
+        try await assertNoScriptErrors(view)
+        let after = try await nodePositions(view)
+        XCTAssertEqual(after, positions)
+    }
+
+    func testAThreadReadAtItsEndFollowsNewMessagesAcrossAReload() async throws {
+        let long = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        let thread = (1...30).map { record(id: "t\($0)", sender: "id:\(alpha.uuidString)", surface: bravo, body: long) }
+        let view = try await load(snapshot(thread))
+        _ = try await value(view, "document.querySelector('#cw-inspector tr.cw-row').click(); 0")
+        let atEnd = "(() => { const i = document.getElementById('cw-inspector'); return i.scrollHeight > i.clientHeight + 50 && i.scrollHeight - i.scrollTop - i.clientHeight < 4; })()"
+        let startsAtEnd = try await value(view, atEnd) as? Bool
+        XCTAssertEqual(startsAtEnd, true)
+
+        try await rewriteAndReload(view, snapshot(thread + [
+            record(id: "t31", sender: "id:\(bravo.uuidString)", surface: alpha, body: long),
+        ]))
+
+        try await assertNoScriptErrors(view)
+        let stillAtEnd = try await value(view, atEnd) as? Bool
+        XCTAssertEqual(stillAtEnd, true, "the thread stopped following its newest message")
     }
 }

@@ -160,6 +160,29 @@ final class MessagesPageWebScriptTests: XCTestCase {
         XCTAssertEqual(observed7, false)
     }
 
+    func testWebViewRefitsWhenItsPanelIsLaidOutNarrower() async throws {
+        // A browser panel is often created at one width and laid out at another.
+        let view = try await load(snapshot([
+            record(id: "d1", sender: "alpha", surface: bravo),
+            record(id: "d2", sender: "id:\(bravo.uuidString)", surface: alpha),
+        ]))
+        view.frame = NSRect(x: 0, y: 0, width: 320, height: 900)
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        try await assertNoScriptErrors(view)
+        let box = try await value(view, """
+            (() => { const s = document.getElementById("cw-stage").getBoundingClientRect();
+              return [...document.querySelectorAll(".cw-node rect")].every((r) => {
+                const b = r.getBoundingClientRect();
+                return b.width > 0 && b.left >= s.left - 1 && b.right <= s.right + 1; }); })()
+            """) as? Bool
+        XCTAssertEqual(box, true, "every node sits inside the narrowed stage")
+        let stageFits = try await value(
+            view, "document.getElementById('cw-stage').getBoundingClientRect().right <= window.innerWidth + 1"
+        ) as? Bool
+        XCTAssertEqual(stageFits, true, "the stage is no wider than the panel")
+    }
+
     func testAgentChosenTitlesAndBodiesRenderAsText() async throws {
         let hostile = #"<img src=x onerror="document.title='owned'">"#
         let view = try await load(snapshot(

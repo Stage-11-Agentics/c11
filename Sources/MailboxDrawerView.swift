@@ -304,20 +304,37 @@ struct MailboxDrawerView: View {
         }
     }
 
+    private var tabPicker: some View {
+        Picker("", selection: $tab) {
+            Text(String(localized: "mailbox.drawer.tab.received", defaultValue: "Received")).tag(Tab.received)
+            Text(String(localized: "mailbox.drawer.tab.sent", defaultValue: "Sent")).tag(Tab.sent)
+            Text(String(localized: "mailbox.drawer.tab.conversations", defaultValue: "Conversations")).tag(Tab.conversations)
+            Text(String(localized: "mailbox.drawer.tab.insights", defaultValue: "Insights")).tag(Tab.insights)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    /// The tabs, and the conversation-web link beside them when the drawer is
+    /// wide enough, else on its own line under them, so the link is never cut.
+    @ViewBuilder
     private var tabBar: some View {
-        HStack(spacing: 8) {
-            Picker("", selection: $tab) {
-                Text(String(localized: "mailbox.drawer.tab.received", defaultValue: "Received")).tag(Tab.received)
-                Text(String(localized: "mailbox.drawer.tab.sent", defaultValue: "Sent")).tag(Tab.sent)
-                Text(String(localized: "mailbox.drawer.tab.conversations", defaultValue: "Conversations")).tag(Tab.conversations)
-                Text(String(localized: "mailbox.drawer.tab.insights", defaultValue: "Insights")).tag(Tab.insights)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            Spacer(minLength: 0)
+        Group {
             if let onOpenGlobalView {
-                MailboxGlobalViewButton(style: style, action: onOpenGlobalView)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        tabPicker
+                        Spacer(minLength: 8)
+                        MailboxGlobalViewButton(style: style, action: onOpenGlobalView)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        tabPicker
+                        MailboxGlobalViewButton(style: style, action: onOpenGlobalView)
+                    }
+                }
+            } else {
+                tabPicker
             }
         }
         .padding(.horizontal, 12)
@@ -694,18 +711,13 @@ private struct MailboxGlobalViewButton: View {
 
     var body: some View {
         Button(action: action) {
-            // The full label when the drawer has room beside the tabs, the
-            // icon alone when it does not; the tooltip names it either way.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
-                    icon
-                    Text(String(localized: "mailbox.drawer.globalView", defaultValue: "Global Conversation View"))
-                        .font(.system(size: 11 * style.scale))
-                        .underline(hovering)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
+            HStack(spacing: 4) {
                 icon
+                Text(String(localized: "mailbox.drawer.globalView", defaultValue: "Global Conversation View"))
+                    .font(.system(size: 11 * style.scale))
+                    .underline(hovering)
+                    .lineLimit(1)
+                    .fixedSize()
             }
             .foregroundColor(hovering ? style.foreground : style.secondary)
             .contentShape(Rectangle())

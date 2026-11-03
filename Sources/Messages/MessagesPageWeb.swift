@@ -33,6 +33,9 @@ enum MessagesPageWeb {
     @MainActor
     static func open(centredOn panelID: UUID, in workspace: Workspace) {
         MessagesPageWriter.shared.start()
+        // Write the session now so the page names panels as they are this
+        // moment (a rename is otherwise up to one autosave behind).
+        _ = AppDelegate.shared?.forceSessionSave(includeScrollback: false, outPath: nil)
         let fragment = deepLinkFragment(
             panelID: panelID,
             nonce: UInt64(Date().timeIntervalSince1970 * 1000)
@@ -80,7 +83,7 @@ enum MessagesPageWeb {
     body.view-web { background: var(--cw-surface-body, #111214); }
     @media (prefers-color-scheme: light) { body.view-web { background: #FFFFFF; } }
     .cw *, #cw-views * { box-sizing: border-box; border-radius: 0; }
-    #cw { position: fixed; inset: 0; display: grid; grid-template-rows: auto auto 1fr; background: var(--cw-surface);
+    #cw { position: fixed; inset: 0; display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); overflow: hidden; background: var(--cw-surface);
       color: var(--cw-text); font: 13px/18px var(--cw-sans); font-variant-numeric: tabular-nums; }
     .cw-label { font: 500 10px/14px var(--cw-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--cw-text-2); }
     .cw-head { display: grid; grid-template-columns: 1fr auto; gap: 2px 24px; padding: 14px 20px 10px; border-bottom: 1px solid var(--cw-edge); }
@@ -112,7 +115,8 @@ enum MessagesPageWeb {
         linear-gradient(var(--c),var(--c)) bottom right / var(--l) var(--w), linear-gradient(var(--c),var(--c)) bottom right / var(--w) var(--l);
       background-repeat: no-repeat; }
     .cw-bk:hover::after, #cw-views button:hover::after { opacity: .78; }
-    .cw-main { display: grid; grid-template-columns: 1fr 440px; min-height: 0; }
+    .cw-main { display: grid; grid-template-columns: minmax(0, 1fr) 440px; min-height: 0; min-width: 0; }
+    .cw-main > * { min-width: 0; }
     #cw-stage { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--cw-edge); overflow: hidden;
       background-image: radial-gradient(var(--cw-rule-soft) 1px, transparent 1px); background-size: 16px 16px; cursor: grab; }
     #cw-stage.cw-panning { cursor: grabbing; }
@@ -169,6 +173,15 @@ enum MessagesPageWeb {
     .cw-cluster.home rect.cw-box { stroke-dasharray: none; }
     .cw-cluster text { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; fill: var(--cw-text-2); }
     .cw-cluster .cw-letter { fill: var(--cw-text); font-weight: 600; }
+    @media (max-width: 900px) {
+      .cw-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 1fr) minmax(180px, 42%); }
+      #cw-stage { border-right: 0; border-bottom: 1px solid var(--cw-edge); }
+      #cw-inspector { padding: 12px 14px 24px; }
+      .cw-head { grid-template-columns: 1fr; padding: 10px 14px 8px; }
+      .cw-stamp, .cw-legend { display: none; }
+      .cw-controls { padding: 8px 14px; gap: 8px 14px; }
+      .cw select { width: 220px; }
+    }
     @media (prefers-reduced-motion: reduce) { .cw *, #cw-views * { transition: none !important; } }
     """#
 
@@ -317,12 +330,12 @@ enum MessagesPageWeb {
       const STORE = "c11.messages.web.v1";
       const state = { scope: "instance", ws: null, panel: null, ch: ["mailbox", "send"], win: "all", closed: "show", sel: null };
       const VIEW = { k: 1, x: 0, y: 0 };
-      let consumed = null, viewName = "web", fitted = false;
+      let consumed = null, viewName = "web", fitted = false, userMoved = false;
       try {
         const saved = JSON.parse(sessionStorage.getItem(STORE) || "null");
-        if (saved) { Object.assign(state, saved.state || {}); Object.assign(VIEW, saved.view || {}); consumed = saved.consumed || null; viewName = saved.viewName || "web"; fitted = !!saved.view; }
+        if (saved) { Object.assign(state, saved.state || {}); Object.assign(VIEW, saved.view || {}); consumed = saved.consumed || null; viewName = saved.viewName || "web"; fitted = !!saved.view; userMoved = !!saved.userMoved; }
       } catch (_) {}
-      const save = () => { try { sessionStorage.setItem(STORE, JSON.stringify({ state, view: VIEW, consumed, viewName })); } catch (_) {} };
+      const save = () => { try { sessionStorage.setItem(STORE, JSON.stringify({ state, view: VIEW, consumed, viewName, userMoved })); } catch (_) {} };
       const applyLink = (hash) => {
         const match = /^#web(?::(panel|workspace)=([0-9A-Fa-f-]{36}))?(?:&n=\d+)?$/.exec(hash || "");
         if (!match) return false;
@@ -460,7 +473,7 @@ enum MessagesPageWeb {
       const NS = $("cw-svg").namespaceURI;
       const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
       const svg = $("cw-svg"), view = $("cw-view"), gClusters = $("cw-clusters"), gEdges = $("cw-edges"), gNodes = $("cw-nodes");
-      let current = null, pendingFit = false, userMoved = false;
+      let current = null, pendingFit = false;
       [["ink", "var(--cw-ink)"], ["hot", "var(--cw-accent)"]].forEach(([id, c]) => {
         const m = el("marker", { id: "cw-arrow-" + id, viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: "auto", markerUnits: "userSpaceOnUse" }, $("cw-defs"));
         el("path", { d: "M0,0 L8,4 L0,8 Z", fill: c }, m);
@@ -723,8 +736,12 @@ enum MessagesPageWeb {
         VIEW.x = mx - (mx - VIEW.x) * k / VIEW.k; VIEW.y = my - (my - VIEW.y) * k / VIEW.k; VIEW.k = k; userMoved = true; applyView(); save();
       }, { passive: false });
       window.addEventListener("keydown", (e) => { if (e.key === "Escape" && viewName === "web") select(null); });
+      // The stage's own size, not the window's: a browser panel is often
+      // created at one size and laid out at another, with no window resize.
       // A resize re-fits only a view the operator has not panned or zoomed.
-      window.addEventListener("resize", () => { if (viewName === "web" && current && !userMoved) { fit(); applyView(); save(); } });
+      const refitOnResize = () => { if (viewName === "web" && current && (!userMoved || pendingFit)) { fit(); applyView(); save(); } };
+      if (window.ResizeObserver) new ResizeObserver(refitOnResize).observe($("cw-stage"));
+      else window.addEventListener("resize", refitOnResize);
       // The page reloads only on new traffic, so "last 15 min" and "ago" advance on a clock.
       // Only the marks move; the inspector is left alone so a thread being read does not jump.
       setInterval(() => {

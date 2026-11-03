@@ -12,8 +12,8 @@ final class JournalCoordinator: @unchecked Sendable {
     private var turnStartedMs: [UUID: Int64] = [:]
     private var lastTurnEnds: [UUID: (sequence: Int64, ms: Int64)] = [:]
     private var openAsks: [UUID: JournalOpenAsk] = [:]
-    /// The session id each ownerless panel last tried to recover (C11-580).
-    private var ownerRecoveryAttempts: [UUID: String] = [:]
+    /// Sessions whose owner recovery a real ref refused, per panel (C11-580).
+    private var ownerRecoveryRefusals: [UUID: Set<String>] = [:]
     private var responseGate = OperatorResponseGate()
     private var store: JournalStore?
     private var storageError: JournalError?
@@ -55,7 +55,7 @@ final class JournalCoordinator: @unchecked Sendable {
         turnStartedMs.removeValue(forKey: panelID)
         lastTurnEnds.removeValue(forKey: panelID)
         openAsks.removeValue(forKey: panelID)
-        ownerRecoveryAttempts.removeValue(forKey: panelID)
+        ownerRecoveryRefusals.removeValue(forKey: panelID)
         responseGate.clear(panel: panelID)
         let callback = sink
         lock.unlock()
@@ -119,14 +119,22 @@ final class JournalCoordinator: @unchecked Sendable {
             }
         }
     }
-    /// True the first time this owner's session tries to recover a lost owner
-    /// for its panel. A hook's adoption is tried once per session id, so a
-    /// refused one costs nothing on later hooks.
-    func beginOwnerRecovery(_ owner: JournalOwner) -> Bool {
+    /// A session a real ref refused stays refused for the panel's life, so its
+    /// later hooks skip the actor hop. A stale or dead-process rejection is
+    /// not recorded: the panel's current session must stay free to recover.
+    static let ownerRecoveryRefusalLimit = 16
+
+    func ownerRecoveryRefused(_ owner: JournalOwner) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        guard ownerRecoveryAttempts[owner.panelID] != owner.sessionID else { return false }
-        ownerRecoveryAttempts[owner.panelID] = owner.sessionID
-        return true
+        return ownerRecoveryRefusals[owner.panelID]?.contains(owner.sessionID) == true
+    }
+
+    func noteOwnerRecoveryRefused(_ owner: JournalOwner) {
+        lock.lock(); defer { lock.unlock() }
+        var refused = ownerRecoveryRefusals[owner.panelID] ?? []
+        guard refused.count < Self.ownerRecoveryRefusalLimit else { return }
+        refused.insert(owner.sessionID)
+        ownerRecoveryRefusals[owner.panelID] = refused
     }
 
     func snapshot(panelID: UUID) -> JournalSnapshot? {
@@ -539,6 +547,45 @@ struct JournalOpenAsk: Sendable {
 /// A live session start that leaves the session `unknown` (a fresh launch, or
 /// a resumed session re-attaching) is an `attached` edge: it names the
 /// interactive process and says nothing about the turn (C11-398).
+/// Whether a hook may recover its panel's lost owner (C11-580). A positive
+/// interactive PID is not provenance: a hook request can be processed after
+/// its Claude exited and the next one started in the same panel.
+enum JournalOwnerRecovery {
+    /// The hook's interactive process is alive, owns its terminal's
+    /// foreground, and started no later than the event: a dead, suspended,
+    /// backgrounded or PID-reusing process fails. The same kernel facts the
+    /// doorbell's terminal-ownership check reads.
+    static func isLiveSource(_ info: MailboxAgentForeground.ProcessTerminalInfo?, emittedAtMs: Int64) -> Bool {
+        guard let info, !info.isZombie,
+              info.terminalDevice != -1,  // NODEV: no controlling terminal
+              info.processGroup == info.terminalForegroundGroup,
+              info.startTime > 0 else { return false }
+        return Int64(info.startTime / 1_000) <= emittedAtMs
+    }
+
+    private static let probeLock = NSLock()
+    nonisolated(unsafe) private static var probe: (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? =
+        MailboxAgentForeground.processTerminalInfo(pid:)
+
+    static func processInfo(pid: pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? {
+        probeLock.lock(); let current = probe; probeLock.unlock()
+        return current(pid)
+    }
+
+    #if DEBUG
+    /// Tests stand in for the kernel; returns the previous probe.
+    @discardableResult
+    static func replaceProcessProbeForTesting(
+        _ replacement: @escaping (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo?
+    ) -> (pid_t) -> MailboxAgentForeground.ProcessTerminalInfo? {
+        probeLock.lock(); defer { probeLock.unlock() }
+        let previous = probe
+        probe = replacement
+        return previous
+    }
+    #endif
+}
+
 struct JournalMailboxBoundary: Sendable {
     let working: Bool
     let pid: Int32?

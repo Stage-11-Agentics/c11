@@ -853,16 +853,32 @@ extension ConversationStore {
         return bySurface[surfaceId]?.active ?? ref
     }
 
+    enum HookSessionAdoption: Equatable, Sendable {
+        case adopted
+        /// A real ref holds the panel. Later hooks of this session cannot change that.
+        case refusedByRealRef
+        /// The hook was observed before the panel's newest wrapper claim: it
+        /// belongs to an earlier launch.
+        case staleObservation
+    }
+
     /// A later hook recovering the session id a lost SessionStart would have
     /// pushed (C11-580). Fills only an empty slot or this kind's wrapper
+    /// placeholder, and only with an observation no older than that
     /// placeholder; a real ref of any source stays.
     @discardableResult
-    func adoptHookSession(surfaceId: String, kind: String, id: String) -> ConversationRef? {
+    func adoptHookSession(surfaceId: String, kind: String, id: String, observedAtMs: Int64) -> HookSessionAdoption {
         let current = bySurface[surfaceId]?.active
-        if let current, !(current.placeholder && current.capturedVia == .wrapperClaim && current.kind == kind) {
-            return nil
+        if let current {
+            guard current.placeholder, current.capturedVia == .wrapperClaim, current.kind == kind else {
+                return .refusedByRealRef
+            }
+            // Millisecond grain on both sides: the hook's clock is a whole ms.
+            let claimedAtMs = Int64((current.capturedAt.timeIntervalSince1970 * 1_000).rounded(.down))
+            guard observedAtMs >= claimedAtMs else { return .staleObservation }
         }
-        return push(surfaceId: surfaceId, kind: kind, id: id, source: .hook, cwd: current?.cwd)
+        _ = push(surfaceId: surfaceId, kind: kind, id: id, source: .hook, cwd: current?.cwd)
+        return .adopted
     }
 
     /// Capture the root displayed by one OpenCode TUI. The check and write

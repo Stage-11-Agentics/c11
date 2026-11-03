@@ -549,7 +549,7 @@ That line is not the message. Run the command. The body comes back on stdout, an
 
 On Claude Code's native route the turn is the `<c11-msg>` blocks themselves. They are already marked read, so there is nothing to run.
 
-**Keep mail short.** A sentence or two: what changed, what you need, where to look. Put detail in a file and point to it, or send it with `--body-ref`. Every message lands in the reader's context and stays there.
+**Send mail only when it is needed, and keep it short.** Every message wakes its reader for a model request at full context, and the message stays in that context. Send only what the recipient must act on or would otherwise get wrong: no acknowledgements, thanks, "on it", progress pings, or status the reader can see for itself (the sidebar, a PR, `c11 mailbox status`). Don't reply to a report unless it asks you something. A delegate sends one report, when it finishes or is blocked. Fold what you have into one message rather than several. A sentence or two is enough: what changed, what you need, where to look. Put detail in a file and point to it, or send it with `--body-ref`.
 
 **With push on, never poll your own inbox.** No watcher script, no `sleep` loop, no `recv` on a timer: each wake costs a model request at full context, and the mail arrives as your next turn anyway.
 

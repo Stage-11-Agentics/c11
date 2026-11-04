@@ -5,9 +5,10 @@ import Bonsplit
 // M7 — Surface title bar.
 //
 // Renders above every terminal surface (and, when mounted, browser/markdown).
-// Shows only the live description (the surface's `description` metadata key):
-// the tab already carries the title, so the bar never repeats it, and with no
-// description the bar takes no height at all. Collapsed it is one truncated
+// Shows the live description (the surface's `description` metadata key) and
+// the mailbox cell: the tab already carries the title, so the bar never
+// repeats it. A terminal always has the bar (its mailbox cell is permanent);
+// another panel with no description and no mail takes no height. Collapsed it is one truncated
 // line; expanded it is the full description (Markdown subset), capped and
 // scrollable. Title and description editing live on the tab (context menu and
 // the metadata CLI), not in this bar.
@@ -21,7 +22,7 @@ struct PanelTitleBarState: Equatable {
     var collapsed: Bool = true
     /// The panel's `mailbox.address`, shown in the mailbox drawer's header.
     var mailboxAddress: String?
-    /// The panel has received mail, so it shows the mailbox cell (C11-397).
+    /// The bar shows the mailbox cell (C11-397); see `showsMailbox(panelType:hasMail:)`.
     var showsMailbox: Bool = false
 
     var hasDescription: Bool {
@@ -33,6 +34,14 @@ struct PanelTitleBarState: Equatable {
     /// bar (the portal's top frame edge included) keys off this.
     var rendersBar: Bool {
         visible && (hasDescription || showsMailbox)
+    }
+
+    /// Every terminal panel shows the mailbox cell from the start, mail or
+    /// not, so a new agent's mailbox is reachable and the bar never appears
+    /// when an agent is detected or its first mail lands. A browser or
+    /// markdown panel shows it once it has received or sent mail.
+    static func showsMailbox(panelType: PanelType?, hasMail: Bool) -> Bool {
+        panelType == .terminal || hasMail
     }
 }
 
@@ -438,7 +447,7 @@ struct PanelTitleBarView: View {
     }
 
     private var collapsedDescription: some View {
-        // A mail-only bar reads a dim placeholder in the same font, so a real
+        // A bar with no description (every terminal shows its mailbox cell) reads a dim placeholder in the same font, so a real
         // description takes its place on the same line without a jump.
         let line = Self.collapsedLine(descriptionText)
         return Text(line.text)
@@ -450,7 +459,7 @@ struct PanelTitleBarView: View {
     }
 
     /// The collapsed line: the description on one line, or the placeholder
-    /// when the bar shows only because the panel has mail.
+    /// when the bar shows only for its mailbox cell.
     static func collapsedLine(_ description: String) -> (text: String, isPlaceholder: Bool) {
         let line = singleLine(description)
         if line.isEmpty {

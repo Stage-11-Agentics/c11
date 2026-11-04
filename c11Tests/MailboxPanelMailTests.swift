@@ -79,9 +79,9 @@ final class MailboxPanelMailTests: XCTestCase {
     }
 
     func testEmptyInboxHasNoMailAndReadMailStillCounts() throws {
-        // An inbox that exists but never received anything shows no cell.
+        // An inbox that exists but never received anything has no mail.
         XCTAssertFalse(MailboxPanelMail.summary(inbox: inbox).hasMail)
-        // Once mail has landed the cell stays, even after all of it is read.
+        // Once mail has landed it keeps having mail, even after all of it is read.
         try write([:], id: ulid(Date()), read: true)
         let summary = MailboxPanelMail.summary(inbox: inbox)
         XCTAssertEqual(summary.unread, 0)
@@ -1679,6 +1679,62 @@ final class MailboxBadgeStoreTests: XCTestCase {
         store.inboxChanged(workspaceId: after, panelId: panel)
         waitForUnread(1, panelId: panel)
         XCTAssertTrue(store.isTracking(panelId: panel))
+    }
+
+    /// Every terminal shows the mailbox cell before it has any mail, so its bar
+    /// is there from the start; other panel kinds still wait for mail.
+    func testEveryTerminalShowsTheMailboxCellWithoutMail() {
+        XCTAssertTrue(PanelTitleBarState.showsMailbox(panelType: .terminal, hasMail: false))
+        XCTAssertTrue(PanelTitleBarState.showsMailbox(panelType: .terminal, hasMail: true))
+        for kind in [PanelType.browser, .markdown] {
+            XCTAssertFalse(PanelTitleBarState.showsMailbox(panelType: kind, hasMail: false))
+            XCTAssertTrue(PanelTitleBarState.showsMailbox(panelType: kind, hasMail: true))
+        }
+        XCTAssertFalse(PanelTitleBarState.showsMailbox(panelType: nil, hasMail: false))
+
+        // A terminal with no description and no mail still has its bar.
+        let fresh = PanelTitleBarState(
+            title: nil,
+            description: nil,
+            showsMailbox: PanelTitleBarState.showsMailbox(panelType: .terminal, hasMail: false)
+        )
+        XCTAssertTrue(fresh.rendersBar)
+        var hidden = fresh
+        hidden.visible = false
+        XCTAssertFalse(hidden.rendersBar)
+    }
+
+    /// A brand-new panel whose inbox does not exist yet gets a 0 / 0 model and
+    /// an inbox URL, and every read the drawer makes comes back empty without
+    /// creating the inbox.
+    func testPanelWithNoInboxYetGetsEmptyModelAndCreatesNothing() throws {
+        let workspace = UUID(), panel = UUID()
+        let inbox = try XCTUnwrap(store.inboxURL(workspaceId: workspace, panelId: panel))
+        let mailboxesRoot = inbox.deletingLastPathComponent()
+        store.track(panelId: panel, workspaceId: workspace)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        store.inboxChanged(workspaceId: workspace, panelId: panel)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+
+        XCTAssertTrue(store.isTracking(panelId: panel))
+        XCTAssertEqual(store.cachedSummary(panelId: panel), .empty)
+        let model = store.modelForPanel(panel)
+        XCTAssertEqual(model.summary.unread, 0)
+        XCTAssertEqual(model.summary.received, 0)
+        XCTAssertFalse(model.isFresh)
+
+        XCTAssertTrue(MailboxPanelMail.listing(inbox: inbox).messages.isEmpty)
+        let sent = MailboxPanelMail.sentListing(senderInbox: inbox, mailboxesRoot: mailboxesRoot)
+        XCTAssertTrue(sent.messages.isEmpty)
+        XCTAssertEqual(sent.total, 0)
+        let insights = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: mailboxesRoot, cache: nil, claimLog: nil)
+        XCTAssertEqual(insights.received, 0)
+        XCTAssertEqual(insights.unread, 0)
+        let conversations = MailboxPanelMail.conversationIndex(inbox: inbox, mailboxesRoot: mailboxesRoot, cache: nil)
+        XCTAssertTrue(conversations.conversations.isEmpty)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inbox.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mailboxesRoot.path))
     }
 }
 

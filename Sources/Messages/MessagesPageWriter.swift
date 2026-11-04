@@ -11,6 +11,11 @@ final class MessagesPageWriter {
     private let queue: DispatchQueue
     private let lock = NSLock()
     private let fixedStateURL: URL?
+    /// The session snapshot the page reads panel names from. Nil with a fixed
+    /// state URL (tests) unless one is passed, so tests never read the
+    /// operator's live session.
+    private let fixedSessionURL: URL?
+    private var sessionURL: URL?
     private let debounceInterval: TimeInterval
     private let maxWaitInterval: TimeInterval
     private let observeEvents: Bool
@@ -31,9 +36,16 @@ final class MessagesPageWriter {
     /// event-log rotation via `_read/`, inbox, and `_rejected/`.
     private var mailboxArtifactsCache: [MessagesPageMailboxArtifact]?
     private var mailboxRefreshRequested = true
+    /// Queue-confined: the last decoded panel directory and the session file
+    /// state it came from, so an unchanged session is not decoded again.
+    private var directoryCache: (key: String, directory: MessagesPageDirectory)?
+    /// Queue-confined: live panel facts from the operator's last request,
+    /// applied until the session file is written after they were captured.
+    private var liveOverlay: (capturedAt: Date, panels: [MessagesPageDirectory.Panel])?
 
     init(
         stateURL: URL? = nil,
+        sessionURL: URL? = nil,
         debounceInterval: TimeInterval = 1.0,
         maxWaitInterval: TimeInterval = 5.0,
         observeEvents: Bool = true,
@@ -41,6 +53,7 @@ final class MessagesPageWriter {
         label: String = "com.stage11.c11.messages-page-writer"
     ) {
         self.fixedStateURL = stateURL
+        self.fixedSessionURL = sessionURL
         self.debounceInterval = max(0, debounceInterval)
         self.maxWaitInterval = max(self.debounceInterval, maxWaitInterval)
         self.observeEvents = observeEvents
@@ -66,6 +79,8 @@ final class MessagesPageWriter {
             return
         }
         stateURL = resolvedStateURL
+        sessionURL = fixedSessionURL
+            ?? (fixedStateURL == nil ? SessionPersistenceStore.defaultSnapshotFileURL() : nil)
         started = true
         mailboxRefreshRequested = true
         if observeEvents {
@@ -99,6 +114,8 @@ final class MessagesPageWriter {
         pendingSince = nil
         eventLogCache = MessagesPageEventLogCache()
         mailboxArtifactsCache = nil
+        directoryCache = nil
+        liveOverlay = nil
         lock.unlock()
         if let observer {
             NotificationCenter.default.removeObserver(observer)
@@ -166,6 +183,37 @@ final class MessagesPageWriter {
             } catch {
                 Self.logRebuildFailure(error: error, stateURL: resolvedStateURL, phase: "ensure")
                 onReady(.failure(error))
+            }
+        }
+    }
+
+    /// Rebuild now on the writer queue, then hand back the page. For an
+    /// operator opening the conversation web: the page names panels as of
+    /// this moment, not as of the last message. Falls back to the existing
+    /// page if the rebuild fails.
+    func ensureFreshPage(
+        livePanels: [MessagesPageDirectory.Panel]? = nil,
+        onReady: @escaping (Result<URL, Swift.Error>) -> Void
+    ) {
+        lock.lock()
+        let resolvedStateURL = stateURL ?? fixedStateURL
+        let isStarted = started
+        lock.unlock()
+        guard isStarted, let resolvedStateURL else {
+            onReady(.failure(EventLogLayout.Error.stateDirectoryUnavailable))
+            return
+        }
+        let pageURL = MessagesPageLayout.pageURL(state: resolvedStateURL)
+        let capturedAt = Date()
+        queue.async { [weak self] in
+            guard let self else { return }
+            if let livePanels { self.liveOverlay = (capturedAt, livePanels) }
+            do {
+                try self.rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
+                onReady(.success(pageURL))
+            } catch {
+                Self.logRebuildFailure(error: error, stateURL: resolvedStateURL, phase: "fresh")
+                onReady(FileManager.default.fileExists(atPath: pageURL.path) ? .success(pageURL) : .failure(error))
             }
         }
     }
@@ -251,6 +299,7 @@ final class MessagesPageWriter {
         lock.lock()
         let refreshMailbox = forceMailboxRefresh || mailboxRefreshRequested || mailboxArtifactsCache == nil
         mailboxRefreshRequested = false
+        let resolvedSessionURL = sessionURL ?? fixedSessionURL
         lock.unlock()
 
         let source = MessagesPageSource.load(
@@ -259,12 +308,41 @@ final class MessagesPageWriter {
             mailboxArtifacts: refreshMailbox ? nil : mailboxArtifactsCache
         )
         mailboxArtifactsCache = source.mailboxArtifacts
-        let snapshot = MessagesPageBuilder.build(
+        var snapshot = MessagesPageBuilder.build(
             events: source.events,
             mailboxArtifacts: source.mailboxArtifacts
         )
+        var directory = cachedDirectory(sessionURL: resolvedSessionURL)
+        if let overlay = liveOverlay {
+            if sessionModifiedAt(resolvedSessionURL).map({ $0 > overlay.capturedAt }) == true {
+                liveOverlay = nil
+            } else {
+                directory = directory.overlaying(live: overlay.panels)
+            }
+        }
+        directory = directory.adding(history: MessagesPagePanelHistory.build(events: source.events))
+        snapshot.directory = directory.relevant(to: snapshot.messages)
         let html = MessagesPageRenderer.render(snapshot: snapshot)
         try writeAtomically(html: html, stateURL: stateURL)
+    }
+
+    private func sessionModifiedAt(_ sessionURL: URL?) -> Date? {
+        guard let sessionURL else { return nil }
+        return (try? FileManager.default.attributesOfItem(atPath: sessionURL.path))?[.modificationDate] as? Date
+    }
+
+    private func cachedDirectory(sessionURL: URL?) -> MessagesPageDirectory {
+        guard let sessionURL else { return .empty }
+        // File attributes, not URL resource values: Foundation caches those on
+        // the URL and clears them per run-loop pass, and this queue has none.
+        let attributes = try? FileManager.default.attributesOfItem(atPath: sessionURL.path)
+        let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
+        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? -1
+        let key = "\(sessionURL.path)|\(modified)|\(size)"
+        if let directoryCache, directoryCache.key == key { return directoryCache.directory }
+        let directory = MessagesPageDirectory.load(sessionURL: sessionURL)
+        directoryCache = (key, directory)
+        return directory
     }
 
     private func writeAtomically(html: String, stateURL: URL) throws {

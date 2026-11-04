@@ -6,18 +6,23 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
-## [1.8.1] - 2026-11-03
+## [1.8.1] - 2026-11-04
 
-Headline: **c11 1.8.1. Mail reaches Claude Code agents that started while c11 was busy, usage limits show on the panel in every order they arrive, and only release builds send telemetry.**
+Headline: **c11 1.8.1. The conversation web draws who talks to whom across c11, every terminal panel has its mailbox, mail reaches Claude Code agents that started while c11 was busy, and only release builds send telemetry.**
+
+### Added
+
+- **The conversation web shows who talks to whom across all of c11.** The messages page (`c11 messages view`) now opens on a Web view: every panel that sent or received a message is a node, grouped by workspace, and each direction of a conversation is an edge, solid for mail, dashed for `c11 send`, orange for the last 15 minutes. Scope it to the whole c11, one workspace, or one panel and its peers; click an edge to read the thread, or a panel to see its peers and jump to it. A Since slider reaches back from 10 minutes to 30 days, Open now draws every open terminal, hovering a panel shows its title, subtitle and peers, and plain-English summaries say what each panel and conversation did. Panels keep their names after they close and stay where they are drawn when the page refreshes. The timeline moved to the page's Traffic view. Each panel's mailbox drawer has a **Global Conversation View** link that opens the web centred on that panel. ([#918](https://github.com/Stage-11-Agentics/c11/pull/918), [#919](https://github.com/Stage-11-Agentics/c11/pull/919), [#920](https://github.com/Stage-11-Agentics/c11/pull/920), [#922](https://github.com/Stage-11-Agentics/c11/pull/922))
+
+### Changed
+
+- **Every terminal panel shows its mailbox.** The mailbox cell in the bar under each terminal panel now shows from the start, before any mail arrives and whether or not an agent is running, so a new agent's mailbox drawer and its Global Conversation View link are always reachable. The bar no longer appears or shifts the terminal when the first mail lands. Browser and markdown panels show the cell once they have mail. ([#921](https://github.com/Stage-11-Agentics/c11/pull/921))
+- **Only release builds send crash reports and analytics.** Sentry and PostHog now start only in the production app and the nightly build, which reports as its own environment. Staging, tagged Debug and every other build of c11 start neither, whatever the setting says, and log one line saying telemetry is off. Turning telemetry off in Settings still wins everywhere. ([#897](https://github.com/Stage-11-Agentics/c11/pull/897))
 
 ### Fixed
 
 - **Mail reaches a Claude Code agent that started while c11 was busy.** When c11 was slow to answer at launch, a Claude Code panel could miss its start-up hook and stay unconnected for its whole session, so mail to it waited forever for an idle prompt c11 never saw. The start-up hook now waits up to 2 seconds for c11, and a panel that still misses it connects from Claude's next hook. When no agent is connected, `c11 mailbox status` now says c11 cannot ring the panel and the mail stays in its inbox, instead of waiting without end. ([#915](https://github.com/Stage-11-Agentics/c11/pull/915))
 - **A usage limit shows on the panel whichever way it arrives.** When Claude Code's StopFailure arrived before the limit was read from the transcript, the panel showed a generic provider error; it now shows the usage limit, announced once. A limit hit right after you approved a tool no longer replaces the permission prompt: the limit shows beside it, and the panel moves to the limit when the turn ends. ([#898](https://github.com/Stage-11-Agentics/c11/pull/898))
-
-### Changed
-
-- **Only release builds send crash reports and analytics.** Sentry and PostHog now start only in the production app and the nightly build, which reports as its own environment. Staging, tagged Debug and every other build of c11 start neither, whatever the setting says, and log one line saying telemetry is off. Turning telemetry off in Settings still wins everywhere. ([#897](https://github.com/Stage-11-Agentics/c11/pull/897))
 
 ### Thanks to 1 contributor!
 

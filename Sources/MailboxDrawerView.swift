@@ -191,6 +191,9 @@ struct MailboxDrawerView: View {
     var onClose: () -> Void = {}
     /// Open panels by id, for Conversations: a stamp names a panel exactly.
     var resolvePanels: ([UUID]) -> [UUID: MailboxDrawerSender] = { _ in [:] }
+    /// Opens the conversation web for the whole c11, centred on this panel.
+    /// Nil hides the link.
+    var onOpenGlobalView: (() -> Void)? = nil
 
     /// C11-399: the drawer reads what the panel received, or what it sent.
     /// Conversations pairs both by peer; Insights summarizes both.
@@ -301,7 +304,7 @@ struct MailboxDrawerView: View {
         }
     }
 
-    private var tabBar: some View {
+    private var tabPicker: some View {
         Picker("", selection: $tab) {
             Text(String(localized: "mailbox.drawer.tab.received", defaultValue: "Received")).tag(Tab.received)
             Text(String(localized: "mailbox.drawer.tab.sent", defaultValue: "Sent")).tag(Tab.sent)
@@ -311,6 +314,29 @@ struct MailboxDrawerView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
+    }
+
+    /// The tabs, and the conversation-web link beside them when the drawer is
+    /// wide enough, else on its own line under them, so the link is never cut.
+    @ViewBuilder
+    private var tabBar: some View {
+        Group {
+            if let onOpenGlobalView {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        tabPicker
+                        Spacer(minLength: 8)
+                        MailboxGlobalViewButton(style: style, action: onOpenGlobalView)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        tabPicker
+                        MailboxGlobalViewButton(style: style, action: onOpenGlobalView)
+                    }
+                }
+            } else {
+                tabPicker
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
     }
@@ -672,6 +698,44 @@ private struct MailboxDrawerCloseButton: View {
         .help(String(localized: "mailbox.drawer.close.help", defaultValue: "Close (or click the envelope again)"))
         .accessibilityLabel(Text(String(localized: "mailbox.drawer.close", defaultValue: "Close mailbox")))
         .accessibilityIdentifier("mailbox-drawer-close")
+    }
+}
+
+/// Opens the conversation web (the messages page's Web view) centred on this
+/// panel. A link-styled label, so it reads as a way out of the drawer.
+private struct MailboxGlobalViewButton: View {
+    let style: MailboxDrawerStyle
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                icon
+                Text(String(localized: "mailbox.drawer.globalView", defaultValue: "Global Conversation View"))
+                    .font(.system(size: 11 * style.scale))
+                    .underline(hovering)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .foregroundColor(hovering ? style.foreground : style.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(String(
+            localized: "mailbox.drawer.globalView.help",
+            defaultValue: "Show every conversation in this c11, centred on this panel"
+        ))
+        .accessibilityLabel(Text(String(localized: "mailbox.drawer.globalView", defaultValue: "Global Conversation View")))
+        .accessibilityIdentifier("mailbox-drawer-global-view")
+    }
+
+    private var icon: some View {
+        Image(systemName: "point.3.connected.trianglepath.dotted")
+            .font(.system(size: 10 * style.scale, weight: .semibold))
+            .frame(height: 20 * style.scale)
     }
 }
 

@@ -621,6 +621,29 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(events, ["received", "resolved", "copied", "handler", "cleaned"])
     }
 
+    /// The messages page names a live message's sending panel from this
+    /// field; without it the sender waits for a relaunch's file scan.
+    func testDeliveredEventCarriesTheDispatchersSenderStamp() throws {
+        let instance = "dispatcher-delivered-sender-stamp"
+        let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)
+        EventEmitter.shared.startForTesting(log: eventLog, instance: instance)
+        defer { EventEmitter.shared.resetForTesting() }
+        let sender = seedSurface(name: "stamped-sender")
+        let recipient = seedSurface(name: "stamped-recipient")
+        let dispatcher = makeDispatcher(surfaces: [sender, recipient])
+        let envelope = try MailboxEnvelope.build(
+            from: "stamped-sender", to: "stamped-recipient", body: "hello", ext: claim(sender)
+        )
+        try dispatch(envelope, with: dispatcher)
+        dispatcher.log.flush()
+        eventLog.flush()
+
+        let delivered = try XCTUnwrap(MessagesPageSource.load(stateURL: tempState).events.first {
+            $0.type == "mailbox.delivered" && $0.payload["id"] as? String == envelope.id
+        })
+        XCTAssertEqual(delivered.payload["sender_panel_id"] as? String, sender.uuidString)
+    }
+
     func testUntitledPanelDeliveryUsesPanelIdInEventRecipient() throws {
         let instance = "dispatcher-untitled-recipient"
         let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)

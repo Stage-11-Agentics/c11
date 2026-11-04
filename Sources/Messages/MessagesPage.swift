@@ -136,6 +136,9 @@ struct MessagesPageRecord: Equatable {
     var lifecycle: [MessagesPageLifecycle]
     var textRecorded = true
     var recordedBytes: Int? = nil
+    /// Every recipient panel a mailbox copy landed in, in delivery order.
+    /// `surface` keeps the first; a role or broadcast address reaches more.
+    var recipientPanelIDs: [String] = []
 
     var jsonObject: [String: Any] {
         var result: [String: Any] = [
@@ -168,6 +171,7 @@ struct MessagesPageRecord: Equatable {
         if let urgent { result["urgent"] = urgent }
         if let submitted { result["submitted"] = submitted }
         if let queued { result["queued"] = queued }
+        if !recipientPanelIDs.isEmpty { result["recipient_panel_ids"] = recipientPanelIDs }
         return result
     }
 }
@@ -179,6 +183,9 @@ struct MessagesPageSnapshot: Equatable {
     let messageByteLimit: Int
     let estimatedMessageBytes: Int
     let messages: [MessagesPageRecord]
+    /// Names and liveness of the panels behind the messages, for the
+    /// conversation web. Empty when the session file is unavailable.
+    var directory: MessagesPageDirectory = .empty
 
     var wasBounded: Bool {
         totalObserved > messages.count || estimatedMessageBytes > messageByteLimit
@@ -221,6 +228,7 @@ struct MessagesPageSnapshot: Equatable {
                 "edges": edges,
             ],
             "messages": messages.map(\.jsonObject),
+            "directory": directory.jsonObject,
         ]
     }
 
@@ -231,7 +239,8 @@ struct MessagesPageSnapshot: Equatable {
             messageLimit: messageLimit,
             messageByteLimit: messageByteLimit,
             estimatedMessageBytes: MessagesPageBuilder.estimatedPageBytes(for: messages),
-            messages: messages
+            messages: messages,
+            directory: directory
         )
     }
 }
@@ -254,6 +263,11 @@ struct MessagesPageMailboxArtifact {
     let lifecycle: [MessagesPageLifecycle]
     var textRecorded = true
     var recordedBytes: Int? = nil
+    /// The dispatcher's stamp of the sending panel (`ext.c11_sender_panel_id`),
+    /// when it recorded one. Senders cannot forge it.
+    var senderPanelID: String? = nil
+    /// The recipient panel whose inbox held this copy, from the inbox path.
+    var recipientPanelID: String? = nil
 }
 
 struct MessagesPageSourceData {
@@ -449,7 +463,7 @@ enum MessagesPageBuilder {
             workspace: artifact.workspace,
             surface: nil,
             sender: artifact.from,
-            senderID: nil,
+            senderID: artifact.senderPanelID,
             callerTitle: nil,
             recipient: artifact.to,
             targetTitle: artifact.to,
@@ -471,6 +485,10 @@ enum MessagesPageBuilder {
         if record.timestamp.isEmpty { record.timestamp = artifact.timestamp ?? "" }
         if record.workspace == nil { record.workspace = artifact.workspace }
         if record.sender == nil { record.sender = artifact.from }
+        if record.senderID == nil { record.senderID = artifact.senderPanelID }
+        if let panel = artifact.recipientPanelID, !record.recipientPanelIDs.contains(panel) {
+            record.recipientPanelIDs.append(panel)
+        }
         if record.recipient == nil { record.recipient = artifact.to }
         if record.targetTitle == nil { record.targetTitle = artifact.to }
         if record.topic == nil { record.topic = artifact.topic }
@@ -569,6 +587,14 @@ enum MessagesPageBuilder {
                 to: &record
             )
         case "delivered":
+            if record.senderID == nil,
+               let stamp = MessagesPageJSON.string(payload["sender_panel_id"]).flatMap(UUID.init(uuidString:)) {
+                record.senderID = stamp.uuidString
+            }
+            if let panel = event.surface.flatMap(UUID.init(uuidString:))?.uuidString,
+               !record.recipientPanelIDs.contains(panel) {
+                record.recipientPanelIDs.append(panel)
+            }
             record.recipient = record.recipient ?? MessagesPageJSON.string(payload["recipient"])
             record.targetTitle = record.targetTitle ?? MessagesPageJSON.string(payload["recipient"])
             record.status = mergedStatus(record.status, "delivered")
@@ -660,6 +686,18 @@ enum MessagesPageSource {
         Data(#""type":"tab.input_sent""#.utf8),
     ]
     private static let mailboxEventMarker = Data(#""type":"mailbox."#.utf8)
+    /// Panel and workspace history the conversation web names panels from:
+    /// creation, closing, renames and subtitles. The session file forgets a
+    /// closed panel once its lineage is pruned; the event log still has it.
+    private static let historyEventMarkers = [
+        Data(#""type":"metadata.changed""#.utf8),
+        Data(#""type":"panel.created""#.utf8),
+        Data(#""type":"panel.closed""#.utf8),
+        Data(#""type":"surface.created""#.utf8),
+        Data(#""type":"surface.closed""#.utf8),
+        Data(#""type":"workspace.created""#.utf8),
+        Data(#""type":"workspace.renamed""#.utf8),
+    ]
     private static let dispatchEventKeyMarker = Data(#""event""#.utf8)
 
     private struct DispatchHistory {
@@ -747,7 +785,8 @@ enum MessagesPageSource {
 
             var parsedEvents: [MessagesPageEvent] = []
             guard let data = try? readEventData(url),
-                  containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil else {
+                  containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil
+                    || containsHistoryMarker(data) else {
                 eventLogCache.signatures[identity] = signature
                 eventLogCache.eventsByIdentity[identity] = []
                 continue
@@ -758,10 +797,16 @@ enum MessagesPageSource {
             // events. This keeps a qualifying 8 MiB log from turning into a
             // retained dictionary for every unrelated event.
             forEachLine(in: data) { line in
-                guard containsSendMarker(line)
+                let history = containsHistoryMarker(line)
+                if history && !isWantedHistoryLine(line) { return }
+                guard history || containsSendMarker(line)
                         || line.range(of: mailboxEventMarker) != nil else { return }
                 autoreleasepool {
                     guard let event = MessagesPageEvent(data: Data(line)) else { return }
+                    if history {
+                        if MessagesPagePanelHistory.consumes(event) { parsedEvents.append(event) }
+                        return
+                    }
                     guard event.type == EventEnvelope.EventType.panelInputSent.rawValue
                             || event.type.hasPrefix("mailbox.") else {
                         return
@@ -780,6 +825,22 @@ enum MessagesPageSource {
 
     private static func containsSendMarker(_ bytes: Data) -> Bool {
         sendEventMarkers.contains { bytes.range(of: $0) != nil }
+    }
+
+    private static func containsHistoryMarker(_ bytes: Data) -> Bool {
+        historyEventMarkers.contains { bytes.range(of: $0) != nil }
+    }
+
+    private static let metadataChangedMarker = Data(#""type":"metadata.changed""#.utf8)
+    private static let wantedMetadataKeys = [Data(#""key":"title""#.utf8), Data(#""key":"description""#.utf8)]
+    private static let oscSourceMarker = Data(#""source":"osc""#.utf8)
+
+    /// Most `metadata.changed` lines are status, activity or OSC titles the
+    /// web never uses. The log writes keys sorted and unspaced, so the raw
+    /// bytes say whether a line is worth decoding.
+    private static func isWantedHistoryLine(_ line: Data) -> Bool {
+        guard line.range(of: metadataChangedMarker) != nil else { return true }
+        return line.range(of: oscSourceMarker) == nil && wantedMetadataKeys.contains { line.range(of: $0) != nil }
     }
 
     /// Walks newline-delimited records without first materializing an array of
@@ -842,7 +903,7 @@ enum MessagesPageSource {
                         continue
                     }
                     let state = fileState(for: url)
-                    let artifact = mailboxArtifact(
+                    var artifact = mailboxArtifact(
                         object: object,
                         workspace: workspaceURL.lastPathComponent,
                         id: id,
@@ -850,6 +911,10 @@ enum MessagesPageSource {
                         dispatch: dispatch[id],
                         keepRejectedText: keepRejectedText
                     )
+                    // `<mailboxes>/<panel-uuid>/…`: the first path component under
+                    // the mailbox root names the recipient for an inbox copy.
+                    let relative = url.path.dropFirst(mailboxRoot.path.count).split(separator: "/")
+                    artifact.recipientPanelID = relative.first.flatMap { UUID(uuidString: String($0)) }?.uuidString
                     artifacts.append(artifact)
                     seenIDs.insert(id)
                 }
@@ -915,7 +980,9 @@ enum MessagesPageSource {
             fileState: state,
             lifecycle: dispatch?.lifecycle ?? [],
             textRecorded: textRecorded,
-            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0)
+            recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0),
+            senderPanelID: MessagesPageJSON.string(ext[MailboxEnvelope.senderPanelKey])
+                .flatMap(UUID.init(uuidString:))?.uuidString
         )
     }
 
@@ -1112,9 +1179,11 @@ enum MessagesPageRenderer {
             .empty { padding: 18px 0; }
             details { margin: 8px 0; }
             summary { cursor: pointer; }
+        \(MessagesPageWeb.style)
           </style>
         </head>
-        <body>
+        <body class="view-traffic">
+        \(MessagesPageWeb.markup)
           <main>
             <header>
               <div><h1>c11 messages</h1><div id="generated" class="muted"></div></div>
@@ -1340,6 +1409,9 @@ enum MessagesPageRenderer {
             renderTimeline();
             if (state.scrollY) window.scrollTo(0, state.scrollY);
           })();
+          </script>
+          <script>
+        \(MessagesPageWeb.script)
           </script>
         </body>
         </html>

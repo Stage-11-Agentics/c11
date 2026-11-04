@@ -4815,17 +4815,33 @@ final class PortalDiagnosticSnapshotTests: XCTestCase {
 @MainActor
 final class PortalOverlayRepaintTests: XCTestCase {
     private var tempDir: URL!
+    private var savedWelcomeShown: Any?
+    private var savedDefaultGridEnabled: Any?
 
     override func setUpWithError() throws {
         tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("c11-527-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         PortalOverlayRepaint.requestsForTesting.removeAll()
+        // A new window must open one workspace with one area. On a host whose
+        // defaults never saw c11 (a fresh CI runner), new workspaces get the
+        // first-run welcome quad or the default grid: three split views before
+        // the test splits anything.
+        let defaults = UserDefaults.standard
+        savedWelcomeShown = defaults.object(forKey: WelcomeSettings.shownKey)
+        savedDefaultGridEnabled = defaults.object(forKey: DefaultGridSettings.enabledKey)
+        defaults.set(true, forKey: WelcomeSettings.shownKey)
+        defaults.set(false, forKey: DefaultGridSettings.enabledKey)
     }
 
     override func tearDownWithError() throws {
         EventEmitter.shared.resetForTesting()
         if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+        let defaults = UserDefaults.standard
+        for (key, value) in [(WelcomeSettings.shownKey, savedWelcomeShown),
+                             (DefaultGridSettings.enabledKey, savedDefaultGridEnabled)] {
+            if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+        }
     }
 
     private static func splitViewCount(in view: NSView?) -> Int {
@@ -4895,6 +4911,8 @@ final class PortalOverlayRepaintTests: XCTestCase {
         XCTAssertTrue(ready)
         let source = try XCTUnwrap(workspace.focusedPanelId)
         let originalArea = try XCTUnwrap(workspace.paneIdForPanel(source))
+        XCTAssertEqual(Self.splitViewCount(in: window.contentView), 0,
+                       "Fixture: the new window must open with one area and no split view")
 
         let split = try XCTUnwrap(workspace.newTerminalSplit(from: source, orientation: .horizontal, focus: false))
         let newArea = try XCTUnwrap(workspace.paneIdForPanel(split.id))

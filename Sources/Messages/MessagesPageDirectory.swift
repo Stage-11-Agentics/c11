@@ -232,7 +232,9 @@ struct MessagesPageDirectory: Equatable {
             if panel.title == nil || (!panel.live && MessagesPagePanelHistory.isGeneric(panel.title)) {
                 panel.title = entry.title ?? panel.title
             }
-            panel.description = panel.description ?? entry.notes.last?.text
+            // A live panel's subtitle is what the session says, even empty:
+            // a cleared subtitle must not come back from history.
+            if !panel.live { panel.description = panel.description ?? entry.description }
             panel.workspace = panel.workspace ?? entry.workspace
             panel.type = panel.type ?? entry.kind
             panel.notes = entry.notes
@@ -246,7 +248,7 @@ struct MessagesPageDirectory: Equatable {
             merged.append(Panel(
                 id: id, title: entry.title, workspace: entry.workspace, live: false,
                 type: entry.kind, agent: nil, address: nil, parent: entry.parent,
-                description: entry.notes.last?.text, notes: entry.notes,
+                description: entry.description, notes: entry.notes,
                 created: entry.created, closed: entry.closed
             ))
         }
@@ -289,6 +291,8 @@ struct MessagesPagePanelHistory: Equatable {
 
     struct Entry: Equatable {
         var title: String?
+        /// The subtitle as it last stood: nil once it was cleared.
+        var description: String?
         var notes: [Note] = []
         var kind: String?
         var workspace: String?
@@ -318,8 +322,9 @@ struct MessagesPagePanelHistory: Equatable {
     static func consumes(_ event: MessagesPageEvent) -> Bool {
         switch event.type {
         case EventEnvelope.EventType.metadataChanged.rawValue:
+            // v1 logs spell the panel scope "surface".
             guard event.surface != nil,
-                  event.payload["scope"] as? String == "panel",
+                  ["panel", "surface"].contains(event.payload["scope"] as? String ?? ""),
                   let key = event.payload["key"] as? String else { return false }
             if key == MetadataKey.description { return true }
             return key == MetadataKey.title && event.payload["source"] as? String != "osc"
@@ -361,9 +366,8 @@ struct MessagesPagePanelHistory: Equatable {
                 entry.created = entry.created ?? event.timestamp
                 entry.kind = entry.kind ?? trimmed(event.payload["kind"] as? String)
                 entry.parent = entry.parent ?? canonical(event.payload["parent_panel_id"] as? String)
-                if entry.title == nil, let title = trimmed(event.payload["title"] as? String), !isGeneric(title) {
-                    entry.title = title
-                }
+                // The creation title is not used: after a relaunch it can be a
+                // restored OSC title (the last command run), not a chosen name.
                 entry.closed = nil
             case EventEnvelope.EventType.surfaceClosed.rawValue:
                 entry.closed = event.timestamp
@@ -374,10 +378,13 @@ struct MessagesPagePanelHistory: Equatable {
                     if let value { entry.title = value }
                 } else if let value {
                     let text = value.count > maxNoteLength ? String(value.prefix(maxNoteLength - 1)) + "…" : value
+                    entry.description = text
                     if entry.notes.last?.text != text {
                         entry.notes.append(Note(at: event.timestamp, text: text))
                         if entry.notes.count > maxNotes { entry.notes.removeFirst(entry.notes.count - maxNotes) }
                     }
+                } else {
+                    entry.description = nil
                 }
             }
             result.panels[id] = entry

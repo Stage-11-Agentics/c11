@@ -375,7 +375,9 @@ final class MessagesPageWebScriptTests: XCTestCase {
         let snapped = try await value(view, """
             (() => {
               const s = document.getElementById('cw-scrub'), six = Number([...document.querySelectorAll('.cw-tick')].find(b => b.textContent === '6H').style.left.replace('%', '')) * 10;
+              s.dispatchEvent(new PointerEvent('pointerdown'));
               s.value = String(Math.round(six) + 9); s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change'));
+              window.dispatchEvent(new PointerEvent('pointerup'));
               return document.getElementById('cw-scrub-val').textContent;
             })()
             """) as? String
@@ -383,6 +385,33 @@ final class MessagesPageWebScriptTests: XCTestCase {
         _ = try await value(view, "[...document.querySelectorAll('.cw-tick')].find(b => b.textContent === '7D').click(); 0")
         let week = try await value(view, "document.querySelectorAll('.cw-node').length") as? Int
         XCTAssertEqual(week, 3)
+        try await assertNoScriptErrors(view)
+    }
+
+    func testHoveringAQuietPanelAndClickingAnInspectorRowLeaveNoStrayState() async throws {
+        let view = try await load(snapshot([
+            record(id: "q1", sender: "id:\(alpha.uuidString)", surface: bravo),
+        ], panels: [alpha, bravo, charlie]))
+        _ = try await value(view, "document.querySelector('#cw-closed [data-v=hide]').click(); 0")
+        let quietCard = try await value(view, """
+            (() => {
+              const g = [...document.querySelectorAll('.cw-node')].find(n => n.querySelector('.cw-lbl').textContent.startsWith('Panel \(charlie.uuidString.prefix(4))'));
+              g.dispatchEvent(new MouseEvent('mouseenter', { clientX: 200, clientY: 200 }));
+              const text = document.getElementById('cw-card').textContent;
+              g.dispatchEvent(new MouseEvent('mouseleave'));
+              return text;
+            })()
+            """) as? String
+        XCTAssertFalse(quietCard?.contains("null") == true, quietCard ?? "no card")
+        let dimmed = try await value(view, """
+            (() => {
+              const row = document.querySelector('#cw-inspector tr.cw-row');
+              row.dispatchEvent(new MouseEvent('mouseenter'));
+              row.click();
+              return document.getElementById('cw-svg').classList.contains('cw-hovering');
+            })()
+            """) as? Bool
+        XCTAssertEqual(dimmed, false, "a click in the inspector left the web dimmed")
         try await assertNoScriptErrors(view)
     }
 

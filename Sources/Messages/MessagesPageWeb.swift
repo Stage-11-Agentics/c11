@@ -857,21 +857,21 @@ enum MessagesPageWeb {
       const nodeCard = (n, e) => {
         const p = P.get(n.id) || {}, said = sayLines(p.desc), wid = wsOf(n.id);
         const peers = [...current.agg.pairs.values()].filter((x) => x.a === n.id || x.b === n.id).sort((a, b) => b.count - a.count);
-        card.replaceChildren(
+        card.replaceChildren(...[
           h("div", { class: "cw-ct" }, titleOf(n.id)),
           h("div", { class: "cw-cd" + (said ? "" : " none") }, said || "No subtitle set"),
           h("div", { class: "cw-cm" }, `${letterOf(wid)} · ${W.get(wid).title} · ${stateWord(n)}`),
           h("div", { class: "cw-cm" }, n.total ? `${n.sent} sent · ${n.recv} received · last ${ago(n.last)}` : "No messages in this window"),
-          peers.length ? h("div", { class: "cw-cm" }, "Talks with " + peers.slice(0, 3).map((x) => clip(titleOf(x.a === n.id ? x.b : x.a), 24)).join(", ") + (peers.length > 3 ? ` +${peers.length - 3}` : "")) : null);
+          peers.length ? h("div", { class: "cw-cm" }, "Talks with " + peers.slice(0, 3).map((x) => clip(titleOf(x.a === n.id ? x.b : x.a), 24)).join(", ") + (peers.length > 3 ? ` +${peers.length - 3}` : "")) : null].filter(Boolean));
         card.hidden = false; placeCard(e.clientX, e.clientY);
       };
       const edgeCard = (p, from, to, d, e) => {
         const last = [...p.msgs].reverse().find((m) => m.from === from);
         const text = last && last.body ? clip(firstLine(last.body) || last.body, 220) : "";
-        card.replaceChildren(
+        card.replaceChildren(...[
           h("div", { class: "cw-ct" }, `${titleOf(from)} → ${titleOf(to)}`),
           h("div", { class: "cw-cm" }, `${d.mailbox} mail · ${d.send} send · last ${ago(d.last)}`),
-          text ? h("div", { class: "cw-cd" }, text) : null);
+          text ? h("div", { class: "cw-cd" }, text) : null].filter(Boolean));
         card.hidden = false; placeCard(e.clientX, e.clientY);
       };
 
@@ -911,7 +911,7 @@ enum MessagesPageWeb {
         const open = talkers.filter((n) => isLive(n.id)).length;
         const lead = windowWords().replace(/^./, (c) => c.toUpperCase());
         if (!count) return `${lead}, no messages here. ${quiet ? plural(quiet, "open panel") + " shown, all quiet." : ""}`.trim();
-        const parts = [`${lead}, ${plural(talkers.length, "panel")} exchanged ${plural(count, "message")} in ${plural(ws.size || 1, "workspace")}; ${open} of them still open.`];
+        const parts = [`${lead}, ${plural(talkers.length, "panel")} exchanged ${plural(count, "message")}${ws.size ? " in " + plural(ws.size, "workspace") : ""}; ${open} of them still open.`];
         if (quiet) parts.push(`${plural(quiet, "more open panel")} said nothing.`);
         const top = [...agg.pairs.values()].sort((a, b) => b.count - a.count)[0];
         if (top) parts.push(`The busiest conversation is ${titleOf(top.a)} ⇄ ${titleOf(top.b)} (${top.count}).`);
@@ -922,8 +922,11 @@ enum MessagesPageWeb {
         return parts.join(" ");
       };
       const pairStory = (p, msgs) => {
-        const nab = p.ab.mailbox + p.ab.send, nba = p.ba.mailbox + p.ba.send;
-        const parts = [`${titleOf(p.a)} sent ${titleOf(p.b)} ${plural(nab, "message")}` + (nba ? `, and ${titleOf(p.b)} sent ${nba} back.` : `; ${titleOf(p.b)} never wrote back here.`)];
+        // Told from whoever wrote first.
+        const [x, y] = msgs[0].from === p.a ? [p.a, p.b] : [p.b, p.a];
+        const nx = x === p.a ? p.ab.mailbox + p.ab.send : p.ba.mailbox + p.ba.send;
+        const ny = x === p.a ? p.ba.mailbox + p.ba.send : p.ab.mailbox + p.ab.send;
+        const parts = [`${titleOf(x)} sent ${titleOf(y)} ${plural(nx, "message")}` + (ny ? `, and ${titleOf(y)} sent ${ny} back.` : `; ${titleOf(y)} never wrote back here.`)];
         parts.push(msgs.length > 1 ? `From ${when(msgs[0].ms)} to ${when(msgs[msgs.length - 1].ms)}.` : `On ${when(msgs[0].ms)}.`);
         const topics = tally(msgs.map((m) => m.topic).filter(Boolean));
         if (topics.length) parts.push(`Topics: ${topics.slice(0, 4).map(([t]) => t).join(", ")}.`);
@@ -1033,7 +1036,7 @@ enum MessagesPageWeb {
       }, { passive: true });
 
       // ---------- controls ----------
-      const select = (sel) => { state.sel = sel; drawEdges(); drawNodes(); inspect(); save(); };
+      const select = (sel) => { unhover(); state.sel = sel; drawEdges(); drawNodes(); inspect(); save(); };
       const focusPanel = (id) => { state.scope = "panel"; state.panel = id; state.sel = { kind: "node", id }; render(true); };
       const counts = new Map();
       messages.forEach((m) => [m.from, m.to].forEach((id) => counts.set(id, (counts.get(id) || 0) + 1)));
@@ -1062,6 +1065,7 @@ enum MessagesPageWeb {
         }
       };
       const render = (refit) => {
+        unhover();
         if (state.scope === "workspace" && !W.has(state.ws)) state.ws = wsOrder[0] || null;
         if (state.scope === "panel" && !state.panel) state.panel = [...involved][0] || null;
         if (state.scope === "panel" && state.panel) panel(state.panel);
@@ -1097,9 +1101,12 @@ enum MessagesPageWeb {
         ticks.querySelectorAll(".cw-tick").forEach((b) => b.classList.toggle("on", Number(b.dataset.span) === span));
       };
       const setSpan = (span) => { state.win = Number.isFinite(span) ? Math.round(span) : "all"; };
-      let scrubQueued = false;
+      let scrubQueued = false, scrubDragging = false;
+      scrub.addEventListener("pointerdown", () => { scrubDragging = true; });
+      window.addEventListener("pointerup", () => { scrubDragging = false; });
       scrub.addEventListener("input", () => {
-        const v = snapPos(Number(scrub.value));
+        // Detents pull only a dragged thumb; arrow keys step through them.
+        const v = scrubDragging ? snapPos(Number(scrub.value)) : Number(scrub.value);
         if (String(v) !== scrub.value) scrub.value = String(v);
         setSpan(spanAt(v));
         scrubVal.textContent = spanText(spanOf());

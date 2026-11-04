@@ -1390,6 +1390,7 @@ extension MessagesPageTests {
         XCTAssertFalse(gone.live)
         XCTAssertEqual(byID[live.uuidString]?.title, "Fleet Lead", "what the session says wins")
         XCTAssertEqual(byID[live.uuidString]?.notes.map(\.text), ["Leading the fleet"])
+        XCTAssertNil(byID[live.uuidString]?.description, "a live panel's subtitle is the session's, never an old note")
         XCTAssertEqual(directory.workspaces.first(where: { $0.id == workspace })?.title, "Fleet")
         XCTAssertEqual(gone.jsonObject["notes"] as? [[String: String]], [
             ["at": "2026-11-01T10:00:04.000Z", "text": "Auditing retries"],

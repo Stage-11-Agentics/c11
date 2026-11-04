@@ -693,6 +693,8 @@ enum MessagesPageSource {
         Data(#""type":"metadata.changed""#.utf8),
         Data(#""type":"panel.created""#.utf8),
         Data(#""type":"panel.closed""#.utf8),
+        Data(#""type":"surface.created""#.utf8),
+        Data(#""type":"surface.closed""#.utf8),
         Data(#""type":"workspace.created""#.utf8),
         Data(#""type":"workspace.renamed""#.utf8),
     ]
@@ -796,6 +798,7 @@ enum MessagesPageSource {
             // retained dictionary for every unrelated event.
             forEachLine(in: data) { line in
                 let history = containsHistoryMarker(line)
+                if history && !isWantedHistoryLine(line) { return }
                 guard history || containsSendMarker(line)
                         || line.range(of: mailboxEventMarker) != nil else { return }
                 autoreleasepool {
@@ -826,6 +829,18 @@ enum MessagesPageSource {
 
     private static func containsHistoryMarker(_ bytes: Data) -> Bool {
         historyEventMarkers.contains { bytes.range(of: $0) != nil }
+    }
+
+    private static let metadataChangedMarker = Data(#""type":"metadata.changed""#.utf8)
+    private static let wantedMetadataKeys = [Data(#""key":"title""#.utf8), Data(#""key":"description""#.utf8)]
+    private static let oscSourceMarker = Data(#""source":"osc""#.utf8)
+
+    /// Most `metadata.changed` lines are status, activity or OSC titles the
+    /// web never uses. The log writes keys sorted and unspaced, so the raw
+    /// bytes say whether a line is worth decoding.
+    private static func isWantedHistoryLine(_ line: Data) -> Bool {
+        guard line.range(of: metadataChangedMarker) != nil else { return true }
+        return line.range(of: oscSourceMarker) == nil && wantedMetadataKeys.contains { line.range(of: $0) != nil }
     }
 
     /// Walks newline-delimited records without first materializing an array of

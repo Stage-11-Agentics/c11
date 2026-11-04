@@ -39,10 +39,16 @@ final class MessagesPageWebScriptTests: XCTestCase {
         surface: UUID?,
         recipient: String? = "role",
         recipients: [UUID] = [],
-        body: String = "hello"
+        body: String = "hello",
+        at: Date? = nil
     ) -> MessagesPageRecord {
+        let stamp = at.map { date -> String in
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: date)
+        } ?? "2026-10-02T00:00:0\(id.count % 10).000Z"
         var result = MessagesPageRecord(
-            id: id, channel: channel, timestamp: "2026-10-02T00:00:0\(id.count % 10).000Z", sequence: nil,
+            id: id, channel: channel, timestamp: stamp, sequence: nil,
             workspace: nil, surface: surface?.uuidString, sender: sender, senderID: senderID,
             callerTitle: channel == "send" ? "Alpha caller" : nil, recipient: recipient, targetTitle: nil,
             kind: nil, topic: nil, body: body, bodyRef: nil, replyTo: nil, inReplyTo: nil, urgent: nil,
@@ -55,7 +61,8 @@ final class MessagesPageWebScriptTests: XCTestCase {
     private func snapshot(
         _ messages: [MessagesPageRecord],
         titles: [UUID: String] = [:],
-        panels: [UUID]? = nil
+        panels: [UUID]? = nil,
+        descriptions: [UUID: String] = [:]
     ) -> MessagesPageSnapshot {
         let workspace = fixtureWorkspace
         var result = MessagesPageSnapshot(
@@ -66,7 +73,8 @@ final class MessagesPageWebScriptTests: XCTestCase {
         result.directory = MessagesPageDirectory(
             panels: (panels ?? [alpha, bravo]).map {
                 .init(id: $0.uuidString, title: titles[$0] ?? "Panel \($0.uuidString.prefix(4))", workspace: workspace,
-                      live: true, type: "terminal", agent: nil, address: $0 == alpha ? "alpha" : nil, parent: nil)
+                      live: true, type: "terminal", agent: nil, address: $0 == alpha ? "alpha" : nil, parent: nil,
+                      description: descriptions[$0])
             },
             workspaces: [.init(id: workspace, title: "Fixture", live: true)]
         )
@@ -163,7 +171,7 @@ final class MessagesPageWebScriptTests: XCTestCase {
         let observed5 = try await value(view, "document.querySelector('#cw-scope [aria-pressed=true]').dataset.v") as? String
         XCTAssertEqual(observed5, "panel")
         let title = try await value(view, "document.querySelector('.cw-title2').textContent") as? String
-        XCTAssertEqual(title, "panel \(unseen.uuidString.prefix(8))")
+        XCTAssertEqual(title, "Unnamed panel \(unseen.uuidString.prefix(4))")
     }
 
     func testWorkspaceScopeWithNoMessagesDoesNotThrow() async throws {
@@ -345,5 +353,84 @@ final class MessagesPageWebScriptTests: XCTestCase {
             })()
             """) as? String
         XCTAssertEqual(result, "ok")
+    }
+
+    // MARK: Scrubber, Open now, hover, names
+
+    func testScrubberDetentsNarrowTheWebToTheChosenWindow() async throws {
+        let view = try await load(snapshot([
+            record(id: "s1", sender: "id:\(alpha.uuidString)", surface: bravo, at: Date().addingTimeInterval(-20 * 60)),
+            record(id: "s2", sender: "id:\(charlie.uuidString)", surface: alpha, at: Date().addingTimeInterval(-3 * 86400)),
+        ], panels: [alpha, bravo, charlie]))
+        let all = try await value(view, "document.querySelectorAll('.cw-node').length") as? Int
+        XCTAssertEqual(all, 3)
+
+        _ = try await value(view, "[...document.querySelectorAll('.cw-tick')].find(b => b.textContent === '1H').click(); 0")
+        let lastHour = try await value(view, "document.querySelectorAll('.cw-node').length") as? Int
+        XCTAssertEqual(lastHour, 2, "the three-day-old message left the window")
+        let label = try await value(view, "document.getElementById('cw-scrub-val').textContent") as? String
+        XCTAssertEqual(label, "Last hour")
+
+        // Dragged near a detent, the scrubber lands on it and means exactly that span.
+        let snapped = try await value(view, """
+            (() => {
+              const s = document.getElementById('cw-scrub'), six = Number([...document.querySelectorAll('.cw-tick')].find(b => b.textContent === '6H').style.left.replace('%', '')) * 10;
+              s.value = String(Math.round(six) + 9); s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change'));
+              return document.getElementById('cw-scrub-val').textContent;
+            })()
+            """) as? String
+        XCTAssertEqual(snapped, "Last 6 hours")
+        _ = try await value(view, "[...document.querySelectorAll('.cw-tick')].find(b => b.textContent === '7D').click(); 0")
+        let week = try await value(view, "document.querySelectorAll('.cw-node').length") as? Int
+        XCTAssertEqual(week, 3)
+        try await assertNoScriptErrors(view)
+    }
+
+    func testOpenNowDrawsQuietOpenPanelsAndHistoryDoesNot() async throws {
+        let view = try await load(snapshot([
+            record(id: "o1", sender: "id:\(alpha.uuidString)", surface: bravo),
+        ], panels: [alpha, bravo, charlie]))
+        let history = try await value(view, "document.querySelectorAll('.cw-node').length") as? Int
+        XCTAssertEqual(history, 2)
+
+        _ = try await value(view, "document.querySelector('#cw-closed [data-v=hide]').click(); 0")
+        let openNow = try await value(view, "document.querySelectorAll('.cw-node').length") as? Int
+        XCTAssertEqual(openNow, 3, "the quiet open panel is drawn")
+        let story = try await value(view, "document.querySelector('.cw-story').textContent") as? String
+        XCTAssertTrue(story?.contains("1 more open panel said nothing") == true, story ?? "no story")
+        try await assertNoScriptErrors(view)
+    }
+
+    func testHoverCardShowsTitleAndSubtitleWithoutItsLineage() async throws {
+        let view = try await load(snapshot(
+            [record(id: "h1", sender: "id:\(alpha.uuidString)", surface: bravo)],
+            titles: [bravo: "Review Owner"],
+            descriptions: [bravo: "Auditing the retry path; next, cancellation.\nLineage: Lead → Review Owner"]
+        ))
+        let card = try await value(view, """
+            (() => {
+              const g = [...document.querySelectorAll('.cw-node')].find(n => n.querySelector('.cw-lbl').textContent === 'Review Owner');
+              g.dispatchEvent(new MouseEvent('mouseenter', { clientX: 200, clientY: 200 }));
+              const c = document.getElementById('cw-card');
+              return (c.hidden ? 'hidden' : 'shown') + '|' + c.textContent + '|' + document.querySelectorAll('.cw-node.near').length;
+            })()
+            """) as? String
+        XCTAssertTrue(card?.hasPrefix("shown|Review OwnerAuditing the retry path; next, cancellation.") == true, card ?? "no card")
+        XCTAssertFalse(card?.contains("Lineage") == true)
+        XCTAssertTrue(card?.hasSuffix("|2") == true, "the panel and its peer light up")
+        try await assertNoScriptErrors(view)
+    }
+
+    func testAPanelWithAGenericTitleIsNamedByWhatItSaysItIsDoing() async throws {
+        let view = try await load(snapshot(
+            // Addressed by id, so the panel has no mailbox address to be named by.
+            [record(id: "n1", sender: "id:\(alpha.uuidString)", surface: bravo, recipient: "id:\(bravo.uuidString)")],
+            titles: [bravo: "Terminal"],
+            descriptions: [bravo: "Fixing the relay handshake"]
+        ))
+        let labels = try await value(view, "[...document.querySelectorAll('.cw-lbl')].map(t => t.textContent).join('|')") as? String
+        XCTAssertTrue(labels?.contains("Fixing the relay handshake") == true, labels ?? "no labels")
+        XCTAssertFalse(labels?.contains("Terminal") == true)
+        try await assertNoScriptErrors(view)
     }
 }

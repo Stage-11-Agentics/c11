@@ -320,6 +320,7 @@ final class MessagesPageWriter {
                 directory = directory.overlaying(live: overlay.panels)
             }
         }
+        directory = directory.adding(history: MessagesPagePanelHistory.build(events: source.events))
         snapshot.directory = directory.relevant(to: snapshot.messages)
         let html = MessagesPageRenderer.render(snapshot: snapshot)
         try writeAtomically(html: html, stateURL: stateURL)

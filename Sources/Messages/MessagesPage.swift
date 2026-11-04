@@ -686,6 +686,16 @@ enum MessagesPageSource {
         Data(#""type":"tab.input_sent""#.utf8),
     ]
     private static let mailboxEventMarker = Data(#""type":"mailbox."#.utf8)
+    /// Panel and workspace history the conversation web names panels from:
+    /// creation, closing, renames and subtitles. The session file forgets a
+    /// closed panel once its lineage is pruned; the event log still has it.
+    private static let historyEventMarkers = [
+        Data(#""type":"metadata.changed""#.utf8),
+        Data(#""type":"panel.created""#.utf8),
+        Data(#""type":"panel.closed""#.utf8),
+        Data(#""type":"workspace.created""#.utf8),
+        Data(#""type":"workspace.renamed""#.utf8),
+    ]
     private static let dispatchEventKeyMarker = Data(#""event""#.utf8)
 
     private struct DispatchHistory {
@@ -773,7 +783,8 @@ enum MessagesPageSource {
 
             var parsedEvents: [MessagesPageEvent] = []
             guard let data = try? readEventData(url),
-                  containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil else {
+                  containsSendMarker(data) || data.range(of: mailboxEventMarker) != nil
+                    || containsHistoryMarker(data) else {
                 eventLogCache.signatures[identity] = signature
                 eventLogCache.eventsByIdentity[identity] = []
                 continue
@@ -784,10 +795,15 @@ enum MessagesPageSource {
             // events. This keeps a qualifying 8 MiB log from turning into a
             // retained dictionary for every unrelated event.
             forEachLine(in: data) { line in
-                guard containsSendMarker(line)
+                let history = containsHistoryMarker(line)
+                guard history || containsSendMarker(line)
                         || line.range(of: mailboxEventMarker) != nil else { return }
                 autoreleasepool {
                     guard let event = MessagesPageEvent(data: Data(line)) else { return }
+                    if history {
+                        if MessagesPagePanelHistory.consumes(event) { parsedEvents.append(event) }
+                        return
+                    }
                     guard event.type == EventEnvelope.EventType.panelInputSent.rawValue
                             || event.type.hasPrefix("mailbox.") else {
                         return
@@ -806,6 +822,10 @@ enum MessagesPageSource {
 
     private static func containsSendMarker(_ bytes: Data) -> Bool {
         sendEventMarkers.contains { bytes.range(of: $0) != nil }
+    }
+
+    private static func containsHistoryMarker(_ bytes: Data) -> Bool {
+        historyEventMarkers.contains { bytes.range(of: $0) != nil }
     }
 
     /// Walks newline-delimited records without first materializing an array of

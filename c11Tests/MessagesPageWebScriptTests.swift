@@ -332,4 +332,18 @@ final class MessagesPageWebScriptTests: XCTestCase {
         let stillAtEnd = try await value(view, atEnd) as? Bool
         XCTAssertEqual(stillAtEnd, true, "the thread stopped following its newest message")
     }
+
+    func testBuiltTimeNamesTheTimeZoneNotACity() async throws {
+        let view = try await load(snapshot([record(id: "z1", sender: "alpha", surface: bravo)]))
+        try await assertNoScriptErrors(view)
+        let result = try await value(view, """
+            (() => {
+              const stamp = document.getElementById("cw-stamp").textContent;
+              const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+              const city = zone.includes("/") ? zone.split("/").pop().replace(/_/g, " ") : "";
+              return city && stamp.includes(city) ? "names the city " + city + ": " + stamp : "ok";
+            })()
+            """) as? String
+        XCTAssertEqual(result, "ok")
+    }
 }

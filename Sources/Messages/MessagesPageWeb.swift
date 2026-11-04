@@ -938,7 +938,17 @@ enum MessagesPageWeb {
       const gen = new Date(raw.generated_at || NOW);
       const live = [...involved].filter(isLive).length;
       $("cw-lede").textContent = `Who talks to whom, by mailbox and by c11 send. ${new Set(messages.map((m) => m.id)).size} messages between ${involved.size} panels (${live} open) in ${wsOrder.filter((id) => id !== NO_WS).length} workspaces.`;
-      const zoneName = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").split("/").pop().replace(/_/g, " ");
+      // The zone's own name ("Pacific Time"), never the city in its IANA id:
+      // America/Los_Angeles says nothing about where the operator is.
+      const zoneName = (() => {
+        for (const style of ["longGeneric", "long", "short"]) {
+          try {
+            const part = new Intl.DateTimeFormat([], { timeZoneName: style }).formatToParts(gen).find((p) => p.type === "timeZoneName");
+            if (part && part.value) return part.value;
+          } catch (_) {}
+        }
+        return "";
+      })();
       $("cw-stamp").replaceChildren(...[["Built", gen.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " " + zoneName],
         ["Source", raw.bounded ? "newest " + rows.length : "all recorded"]].flatMap(([k, v]) => [h("div", {}, k), h("div", {}, v)]));
 

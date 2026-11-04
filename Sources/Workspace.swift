@@ -9679,9 +9679,12 @@ final class Workspace: Identifiable, ObservableObject {
         let description = snapshot.metadata[MetadataKey.description] as? String
         let mailboxAddress = (snapshot.metadata[MetadataKey.mailboxAddress] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        // C11-397: the mailbox cell appears once the panel has received any
-        // mail, read or unread. An address alone does not show it.
-        let hasMail = MailboxBadgeStore.shared.summary(workspace: self, panelId: panelId).hasMail
+        // C11-397: every terminal shows the mailbox cell; another panel kind
+        // shows it once it has mail. The summary read also starts tracking.
+        let showsMailbox = PanelTitleBarState.showsMailbox(
+            panelType: panels[panelId]?.panelType,
+            hasMail: MailboxBadgeStore.shared.summary(workspace: self, panelId: panelId).hasMail
+        )
         return PanelTitleBarState(
             title: title,
             description: description,
@@ -9690,7 +9693,7 @@ final class Workspace: Identifiable, ObservableObject {
             visible: titleBarVisible,
             collapsed: titleBarCollapsed[panelId] ?? true,
             mailboxAddress: (mailboxAddress?.isEmpty ?? true) ? nil : mailboxAddress,
-            showsMailbox: hasMail
+            showsMailbox: showsMailbox
         )
     }
 

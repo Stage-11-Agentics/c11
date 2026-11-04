@@ -43,7 +43,8 @@ enum MailboxPanelMail {
 
         static let empty = Summary()
 
-        /// The mailbox cell shows once the panel has received or sent mail.
+        /// The panel has received or sent mail. A terminal's mailbox cell
+        /// shows regardless; another panel kind's shows once this holds.
         var hasMail: Bool { received > 0 || hasSent }
 
         /// The newest unread message landed within `freshWindow` of `now`.

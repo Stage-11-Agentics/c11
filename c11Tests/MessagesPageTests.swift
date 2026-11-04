@@ -919,8 +919,9 @@ extension MessagesPageTests {
         )
 
         let source = MessagesPageSource.load(stateURL: tempDir)
-        XCTAssertEqual(source.events.count, 3, "two sends and one mailbox event; panel.created is not a message")
-        XCTAssertFalse(source.events.contains { $0.type == "panel.created" })
+        // panel.created is kept for the conversation web's panel history, never as a message.
+        XCTAssertEqual(source.events.filter { $0.type != "panel.created" }.count, 3, "two sends and one mailbox event")
+        XCTAssertEqual(source.events.filter { $0.type == "panel.created" }.count, 1)
 
         let snapshot = MessagesPageBuilder.build(events: source.events, generatedAt: "now")
         XCTAssertEqual(Set(snapshot.messages.filter { $0.channel == "send" }.map(\.body)), ["V1_BODY", "V2_BODY"])
@@ -1342,5 +1343,72 @@ extension MessagesPageTests {
         let html = try String(contentsOf: page, encoding: .utf8)
         XCTAssertTrue(html.contains("Saved Name"))
         XCTAssertFalse(html.contains("Renamed Live"))
+    }
+}
+
+// MARK: - Conversation web: names and subtitles from the event log
+
+extension MessagesPageTests {
+    private func historyEvent(_ type: String, panel: UUID?, workspace: String, ts: String, payload: [String: Any]) throws -> MessagesPageEvent {
+        var object: [String: Any] = ["v": 2, "type": type, "instance": "fixture", "ts": ts, "workspace": workspace, "payload": payload]
+        if let panel { object["panel"] = panel.uuidString }
+        return try XCTUnwrap(MessagesPageEvent(object: object))
+    }
+
+    func testEventLogNamesAClosedPanelTheSessionForgot() throws {
+        let closed = UUID(), live = UUID(), workspace = UUID().uuidString
+        let events = [
+            try historyEvent("workspace.created", panel: nil, workspace: workspace, ts: "2026-11-01T10:00:00.000Z", payload: ["title": "Fleet"]),
+            try historyEvent("panel.created", panel: closed, workspace: workspace, ts: "2026-11-01T10:00:01.000Z",
+                             payload: ["kind": "terminal", "title": "Terminal", "parent_panel_id": live.uuidString]),
+            try historyEvent("metadata.changed", panel: closed, workspace: workspace, ts: "2026-11-01T10:00:02.000Z",
+                             payload: ["scope": "panel", "key": "title", "source": "osc", "value": "bash /tmp/run.sh"]),
+            try historyEvent("metadata.changed", panel: closed, workspace: workspace, ts: "2026-11-01T10:00:03.000Z",
+                             payload: ["scope": "panel", "key": "title", "source": "explicit", "value": "Review Owner"]),
+            try historyEvent("metadata.changed", panel: closed, workspace: workspace, ts: "2026-11-01T10:00:04.000Z",
+                             payload: ["scope": "panel", "key": "description", "source": "explicit", "value": "Auditing retries"]),
+            try historyEvent("metadata.changed", panel: closed, workspace: workspace, ts: "2026-11-01T10:00:05.000Z",
+                             payload: ["scope": "panel", "key": "description", "source": "explicit", "value": "Done: PR 12 merged"]),
+            try historyEvent("panel.closed", panel: closed, workspace: workspace, ts: "2026-11-01T10:00:06.000Z", payload: [:]),
+            try historyEvent("metadata.changed", panel: live, workspace: workspace, ts: "2026-11-01T10:00:07.000Z",
+                             payload: ["scope": "panel", "key": "description", "source": "explicit", "value": "Leading the fleet"]),
+        ]
+        let history = MessagesPagePanelHistory.build(events: events.reversed())
+        let directory = MessagesPageDirectory(
+            panels: [.init(id: live.uuidString, title: "Fleet Lead", workspace: workspace, live: true, type: "terminal",
+                           agent: nil, address: nil, parent: nil)],
+            workspaces: []
+        ).adding(history: history)
+
+        let byID = Dictionary(uniqueKeysWithValues: directory.panels.map { ($0.id, $0) })
+        let gone = try XCTUnwrap(byID[closed.uuidString])
+        XCTAssertEqual(gone.title, "Review Owner", "the chosen title, never the command the terminal ran")
+        XCTAssertEqual(gone.description, "Done: PR 12 merged")
+        XCTAssertEqual(gone.notes.map(\.text), ["Auditing retries", "Done: PR 12 merged"])
+        XCTAssertEqual(gone.closed, "2026-11-01T10:00:06.000Z")
+        XCTAssertEqual(gone.parent, live.uuidString)
+        XCTAssertFalse(gone.live)
+        XCTAssertEqual(byID[live.uuidString]?.title, "Fleet Lead", "what the session says wins")
+        XCTAssertEqual(byID[live.uuidString]?.notes.map(\.text), ["Leading the fleet"])
+        XCTAssertNil(byID[live.uuidString]?.description, "a live panel's subtitle is the session's, never an old note")
+        XCTAssertEqual(directory.workspaces.first(where: { $0.id == workspace })?.title, "Fleet")
+        XCTAssertEqual(gone.jsonObject["notes"] as? [[String: String]], [
+            ["at": "2026-11-01T10:00:04.000Z", "text": "Auditing retries"],
+            ["at": "2026-11-01T10:00:05.000Z", "text": "Done: PR 12 merged"],
+        ])
+    }
+
+    func testEventLogWithOnlyPanelHistoryIsRead() throws {
+        let panel = UUID()
+        let directory = EventLogLayout.eventsDirectoryURL(state: tempDir)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let line = #"{"instance":"fixture","panel":"\#(panel.uuidString)","payload":{"key":"title","prior":"~","scope":"panel","source":"explicit","value":"Named From Log"},"seq":3,"ts":"2026-11-01T10:00:00.000Z","type":"metadata.changed","v":2,"workspace":"63916DB4-C544-4057-8755-F290FDCA0B12"}"#
+        let unrelated = #"{"instance":"fixture","panel":"\#(panel.uuidString)","payload":{"key":"activity","scope":"panel","source":"explicit","value":"working"},"seq":4,"ts":"2026-11-01T10:00:01.000Z","type":"metadata.changed","v":2,"workspace":"63916DB4-C544-4057-8755-F290FDCA0B12"}"#
+        try [line, unrelated].joined(separator: "\n").write(to: directory.appendingPathComponent("events-history.ndjson"), atomically: true, encoding: .utf8)
+
+        let source = MessagesPageSource.load(stateURL: tempDir)
+        XCTAssertEqual(source.events.count, 1, "only the title change is kept")
+        XCTAssertTrue(MessagesPageBuilder.build(events: source.events).messages.isEmpty, "history is not a message")
+        XCTAssertEqual(MessagesPagePanelHistory.build(events: source.events).panels[panel.uuidString]?.title, "Named From Log")
     }
 }

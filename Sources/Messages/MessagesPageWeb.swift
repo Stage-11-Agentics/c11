@@ -180,8 +180,42 @@ enum MessagesPageWeb {
     .cw-hit { fill: none; stroke: transparent; stroke-width: 12px; cursor: pointer; }
     .cw-cluster rect.cw-box { fill: none; stroke: var(--cw-edge); stroke-dasharray: 2 3; }
     .cw-cluster.home rect.cw-box { stroke-dasharray: none; }
-    .cw-cluster text { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; fill: var(--cw-text-2); }
-    .cw-cluster .cw-letter { fill: var(--cw-text); font-weight: 600; }
+    .cw-cluster text { font-family: var(--cw-sans); font-weight: 600; letter-spacing: .01em; fill: var(--cw-text); paint-order: stroke; stroke: var(--cw-halo); }
+    .cw-cluster .cw-wsmeta { font-family: var(--cw-mono); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; fill: var(--cw-text-2); }
+    .cw-cluster .cw-letter { font-family: var(--cw-mono); font-weight: 600; fill: var(--cw-text); stroke-width: 0; }
+    .cw-scrub-box { position: relative; width: 320px; height: 36px; }
+    .cw #cw-scrub { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 20px; min-height: 0; margin: 0; padding: 0;
+      background: transparent; border: 0; border-radius: 0; box-shadow: none; outline: 0; cursor: pointer; }
+    #cw-scrub::-webkit-slider-runnable-track { height: 2px; background: var(--cw-edge); }
+    #cw-scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 18px; margin-top: -8px; background: var(--cw-ink); border: 0; }
+    .cw #cw-scrub:focus-visible { outline: 1px solid var(--cw-ink); outline-offset: 2px; }
+    .cw-ticks { position: absolute; left: 6px; right: 6px; top: 18px; height: 18px; }
+    .cw .cw-tick { position: absolute; transform: translateX(-50%); padding: 4px 3px 0; background: none; border: 0; height: auto; min-height: 0;
+      font: 500 9.5px/12px var(--cw-mono); letter-spacing: .06em; color: var(--cw-text-2); cursor: pointer; }
+    .cw-tick::before { content: ""; position: absolute; left: 50%; top: -4px; width: 1px; height: 6px; background: var(--cw-text-2); }
+    .cw .cw-tick.on { color: var(--cw-ink); font-weight: 600; }
+    .cw-scrub-val { display: inline-block; width: 124px; font: 600 12px/18px var(--cw-mono); white-space: nowrap; }
+    .cw-card { position: absolute; z-index: 5; width: 320px; background: var(--cw-surface); border: 1px solid var(--cw-ink); padding: 9px 11px 8px; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+    .cw-card[hidden] { display: none; }
+    .cw-card .cw-ct { font: 600 14px/18px var(--cw-sans); overflow-wrap: anywhere; }
+    .cw-card .cw-cd { margin-top: 4px; font: 12.5px/17px var(--cw-sans); color: var(--cw-text); white-space: pre-wrap; overflow-wrap: anywhere;
+      display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+    .cw-card .cw-cd.none { color: var(--cw-text-dim); }
+    .cw-card .cw-cm { margin-top: 6px; font: 500 10px/14px var(--cw-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--cw-text-2); }
+    .cw-desc { margin: 0 0 8px; font: 13px/18px var(--cw-sans); color: var(--cw-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .cw-desc.none { color: var(--cw-text-dim); }
+    .cw-story { margin: 8px 0 12px; padding: 8px 10px; border-left: 2px solid var(--cw-accent); background: var(--cw-chip); font: 13px/19px var(--cw-sans); color: var(--cw-text); overflow-wrap: anywhere; }
+    .cw-quote { display: block; margin-top: 6px; color: var(--cw-text-2); font: 12px/17px var(--cw-mono); overflow-wrap: anywhere; }
+    .cw-note { display: grid; grid-template-columns: 84px 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--cw-rule-soft); font: 12.5px/17px var(--cw-sans); }
+    .cw-note .cw-t { font: 11px/17px var(--cw-mono); color: var(--cw-text-2); text-align: right; white-space: nowrap; }
+    .cw-note div:last-child { overflow-wrap: anywhere; white-space: pre-wrap; }
+    .cw-node .cw-sqr { transition: transform 90ms ease-out; transform-box: fill-box; transform-origin: center; }
+    .cw-node:hover .cw-sqr, .cw-node.near-self .cw-sqr { transform: scale(1.4); }
+    .cw-node:hover .cw-lbl, .cw-node.near-self .cw-lbl { font-weight: 600; }
+    #cw-svg .cw-node, #cw-svg .cw-edge-g { transition: opacity 80ms linear; }
+    #cw-svg.cw-hovering .cw-node:not(.near) { opacity: .14; }
+    #cw-svg.cw-hovering .cw-edge-g:not(.near) { opacity: .06; }
+    #cw-svg.cw-hovering .cw-edge-g.near .cw-edge { stroke-opacity: 1; }
     @media (max-width: 900px) {
       .cw-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 1fr) minmax(180px, 42%); }
       #cw-stage { border-right: 0; border-bottom: 1px solid var(--cw-edge); }
@@ -212,11 +246,12 @@ enum MessagesPageWeb {
         <div class="cw-group"><span class="cw-label">Channel</span>
           <div class="cw-seg" id="cw-channels"><button type="button" class="cw-bk" data-v="mailbox" style="width:72px">Mail</button><button type="button" class="cw-bk" data-v="send" style="width:72px">Send</button></div>
         </div>
-        <div class="cw-group"><span class="cw-label">Window</span>
-          <div class="cw-seg cw-narrow" id="cw-window"><button type="button" class="cw-bk" data-v="1h">1H</button><button type="button" class="cw-bk" data-v="6h">6H</button><button type="button" class="cw-bk" data-v="24h">24H</button><button type="button" class="cw-bk" data-v="7d">7D</button><button type="button" class="cw-bk" data-v="all">All</button></div>
+        <div class="cw-group"><span class="cw-label">Panels</span>
+          <div class="cw-seg" id="cw-closed"><button type="button" class="cw-bk" data-v="hide" title="Every open panel, quiet ones included; conversations between open panels only">Open now</button><button type="button" class="cw-bk" data-v="show" title="Every panel that has talked, open or closed">History</button></div>
         </div>
-        <div class="cw-group"><span class="cw-label">Closed panels</span>
-          <div class="cw-seg cw-narrow" id="cw-closed"><button type="button" class="cw-bk" data-v="show" style="width:64px">Show</button><button type="button" class="cw-bk" data-v="hide" style="width:64px">Hide</button></div>
+        <div class="cw-group"><span class="cw-label">Since</span>
+          <div class="cw-scrub-box"><input type="range" id="cw-scrub" min="0" max="1000" step="1" aria-label="How far back to show"><div class="cw-ticks" id="cw-ticks"></div></div>
+          <span class="cw-scrub-val" id="cw-scrub-val"></span>
         </div>
         <div class="cw-group"><button type="button" class="cw-bk" id="cw-relayout" title="Forget where panels sit in this scope and lay them out again">Re-lay out</button></div>
       </div>
@@ -224,14 +259,16 @@ enum MessagesPageWeb {
         <div id="cw-stage">
           <svg id="cw-svg"><defs id="cw-defs"></defs><g id="cw-view"><g id="cw-clusters"></g><g id="cw-edges"></g><g id="cw-nodes"></g></g></svg>
           <div class="cw-empty-stage cw-label" id="cw-empty" hidden>No conversations in this scope and window</div>
+          <div class="cw-card" id="cw-card" hidden></div>
           <div class="cw-legend cw-label">
             <svg viewBox="0 0 26 12"><rect x="9" y="2" width="8" height="8" fill="var(--cw-ink)"/></svg><span>Open panel</span>
+            <svg viewBox="0 0 26 12"><rect x="10" y="3" width="6" height="6" fill="var(--cw-text-dim)"/></svg><span>Open, quiet in window</span>
             <svg viewBox="0 0 26 12"><rect x="9.5" y="2.5" width="7" height="7" fill="var(--cw-surface)" stroke="var(--cw-ink)"/></svg><span>Closed panel</span>
             <svg viewBox="0 0 26 12"><rect x="9" y="2" width="8" height="8" fill="var(--cw-accent)"/></svg><span>Traffic, last 15 min</span>
             <svg viewBox="0 0 26 12"><line x1="1" y1="6" x2="25" y2="6" stroke="var(--cw-ink)" stroke-width="1.5"/></svg><span>Mailbox</span>
             <svg viewBox="0 0 26 12"><line x1="1" y1="6" x2="25" y2="6" stroke="var(--cw-ink)" stroke-width="1.5" stroke-dasharray="4 3"/></svg><span>c11 send (typed)</span>
           </div>
-          <div class="cw-hint cw-label">Click to inspect · double-click a panel to centre on it · drag to pan · scroll to zoom</div>
+          <div class="cw-hint cw-label">Hover to preview · click to inspect · double-click to centre · drag to pan · scroll to zoom</div>
         </div>
         <aside id="cw-inspector"></aside>
       </div>
@@ -250,7 +287,13 @@ enum MessagesPageWeb {
       let NOW = Date.now();
       const HOT_MS = 15 * 60 * 1000;
       const WINDOWS = { "1h": 3600e3, "6h": 6 * 3600e3, "24h": 86400e3, "7d": 7 * 86400e3, all: Infinity };
-      const GENERIC = new Set(["Terminal", "Shell", "zsh", "bash", "Browser", "Markdown"]);
+      const GENERIC = new Set(["Terminal", "Shell", "zsh", "bash", "Browser", "Markdown", "~"]);
+      const AGENTS = { "claude-code": "Claude Code", claude: "Claude Code", codex: "Codex", opencode: "OpenCode", grok: "Grok", pi: "Pi", omp: "omp", kimi: "Kimi", copilot: "Copilot" };
+      const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+      // A subtitle's first line that says something: never its Lineage line.
+      const noLineage = (l) => l.replace(/\s*Lineage:.*$/i, "").trim();
+      const firstLine = (s) => (typeof s === "string" ? s.split("\n").map(noLineage).find(Boolean) || "" : "");
+      const sayLines = (s) => (typeof s === "string" ? s.split("\n").map(noLineage).filter(Boolean).join("\n") : "");
       const NO_WS = "__none__";
       const up = (v) => (typeof v === "string" ? v.toUpperCase() : null);
       const isUUID = (v) => typeof v === "string" && /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(v);
@@ -259,7 +302,7 @@ enum MessagesPageWeb {
       const P = new Map();
       const W = new Map();
       const panel = (id) => {
-        if (!P.has(id)) P.set(id, { id, title: null, workspace: null, live: false, type: null, agent: null, address: null, parent: null });
+        if (!P.has(id)) P.set(id, { id, title: null, workspace: null, live: false, type: null, agent: null, address: null, parent: null, desc: null, notes: [], closedAt: null });
         return P.get(id);
       };
       const workspace = (id, title, live) => {
@@ -274,7 +317,9 @@ enum MessagesPageWeb {
       (directory.panels || []).forEach((d) => {
         const p = panel(up(d.id));
         Object.assign(p, { title: d.title || null, workspace: up(d.workspace), live: !!d.live, type: d.type || null,
-          agent: d.agent || null, address: d.address || null, parent: up(d.parent) });
+          agent: d.agent || null, address: d.address || null, parent: up(d.parent), desc: typeof d.description === "string" ? d.description : null,
+          notes: Array.isArray(d.notes) ? d.notes.filter((n) => n && typeof n.text === "string" && Number.isFinite(Date.parse(n.at))) : [],
+          closedAt: Number.isFinite(Date.parse(d.closed)) ? Date.parse(d.closed) : null });
         if (d.address && d.live) addressToPanel.set(d.address, p.id);
       });
       const rows = Array.isArray(raw.messages) ? raw.messages : [];
@@ -324,15 +369,21 @@ enum MessagesPageWeb {
         });
       });
       messages.sort((a, b) => a.ms - b.ms);
+      // A panel is named by its title; a panel without a real one by its
+      // mailbox address, then by what its subtitle says it is doing. A short
+      // id is the last resort, kept only to tell two unnamed panels apart.
       P.forEach((p) => {
         if (p.workspace) workspace(p.workspace);
-        if (!p.title) p.title = p.address || ("panel " + p.id.slice(0, 8));
-        if (GENERIC.has(p.title)) p.title = p.title + " " + p.id.slice(0, 4);
+        if (p.title && !GENERIC.has(p.title)) return;
+        const said = firstLine(p.desc);
+        const kind = p.agent ? AGENTS[p.agent] || p.agent : p.title === "Browser" || p.title === "Markdown" ? p.title
+          : p.title || p.type === "terminal" ? "Terminal" : "Unnamed panel";
+        p.title = p.address || (said ? clip(said, 44) : kind + " " + p.id.slice(0, 4));
       });
       W.forEach((w) => { if (!w.title) w.title = "Workspace " + w.id.slice(0, 6); });
       W.set(NO_WS, { id: NO_WS, title: "Unplaced", live: false });
       const wsOf = (id) => (P.get(id) && P.get(id).workspace && W.has(P.get(id).workspace) ? P.get(id).workspace : NO_WS);
-      const titleOf = (id) => (P.get(id) && P.get(id).title) || "panel " + String(id).slice(0, 8);
+      const titleOf = (id) => (P.get(id) && P.get(id).title) || "Unnamed panel " + String(id).slice(0, 4);
       const isLive = (id) => !!(P.get(id) && P.get(id).live);
       const involved = new Set(messages.flatMap((m) => [m.from, m.to]));
       const wsTraffic = new Map();
@@ -353,11 +404,21 @@ enum MessagesPageWeb {
         LETTER.set(id, labelFor(nextLetter)); usedLetters.add(labelFor(nextLetter));
       });
       try { sessionStorage.setItem(LETTER_STORE, JSON.stringify(Object.assign({}, storedLetters, Object.fromEntries(LETTER)))); } catch (_) {}
-      const letterOf = (id) => LETTER.get(id) || "?";
+      // A workspace drawn only for its quiet open panels gets the next free letter on first use.
+      const letterOf = (id) => {
+        if (!LETTER.has(id)) {
+          while (usedLetters.has(labelFor(nextLetter))) nextLetter++;
+          LETTER.set(id, labelFor(nextLetter)); usedLetters.add(labelFor(nextLetter));
+          try { sessionStorage.setItem(LETTER_STORE, JSON.stringify(Object.assign({}, storedLetters, Object.fromEntries(LETTER)))); } catch (_) {}
+        }
+        return LETTER.get(id);
+      };
 
       // ---------- state, kept per browser panel across the page's live reloads ----------
       const STORE = "c11.messages.web.v1";
       const state = { scope: "instance", ws: null, panel: null, ch: ["mailbox", "send"], win: "all", closed: "show", sel: null };
+      // The window is a span in ms, or "all". Older pages saved "1h" and friends.
+      const spanOf = () => (typeof state.win === "number" && state.win > 0 ? state.win : WINDOWS[state.win] || Infinity);
       const VIEW = { k: 1, x: 0, y: 0 };
       let consumed = null, viewName = "web", fitted = false, userMoved = false;
       try {
@@ -391,10 +452,21 @@ enum MessagesPageWeb {
         return Math.floor(s / 86400) + "d ago";
       };
       const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+      const spanText = (ms) => {
+        if (!Number.isFinite(ms)) return "All recorded";
+        const m = Math.round(ms / 60e3);
+        if (m < 60) return `Last ${m} min`;
+        const hr = Math.floor(m / 60), mm = m % 60;
+        if (m <= 1440) { if (mm && hr < 10) return `Last ${hr}h ${mm}m`; const n = Math.round(m / 60); return n === 1 ? "Last hour" : `Last ${n} hours`; }
+        const d = Math.floor(m / 1440), dh = Math.round((m - d * 1440) / 60);
+        if (dh && d < 7) return `Last ${d}d ${dh}h`;
+        const n = Math.round(m / 1440);
+        return n === 1 ? "Last day" : `Last ${n} days`;
+      };
 
       // ---------- shaping ----------
       const filtered = () => {
-        const span = WINDOWS[state.win] || Infinity;
+        const span = spanOf();
         return messages.filter((m) => state.ch.includes(m.ch) && NOW - m.ms <= span && (state.closed === "show" || (isLive(m.from) && isLive(m.to))));
       };
       const scoped = (ms) => {
@@ -409,9 +481,10 @@ enum MessagesPageWeb {
       // Endpoints are kept as fields; ids can hold any character an address can.
       const pairKey = (a, b) => JSON.stringify(a < b ? [a, b] : [b, a]);
       const dirOf = (p, from) => (from === p.a ? p.ab : p.ba);
-      const aggregate = (ms) => {
+      const aggregate = (ms, quiet) => {
         const nodes = new Map(), pairs = new Map();
         const node = (id) => { if (!nodes.has(id)) nodes.set(id, { id, sent: 0, recv: 0, last: 0 }); return nodes.get(id); };
+        (quiet || []).forEach(node);
         for (const m of ms) {
           const a = node(m.from), b = node(m.to);
           a.sent++; b.recv++; a.last = Math.max(a.last, m.ms); b.last = Math.max(b.last, m.ms);
@@ -423,7 +496,7 @@ enum MessagesPageWeb {
           const p = pairs.get(k), d = dirOf(p, m.from);
           d[m.ch]++; d.last = Math.max(d.last, m.ms); p.count++; p.last = Math.max(p.last, m.ms); p.msgs.push(m);
         }
-        nodes.forEach((n) => { n.total = n.sent + n.recv; n.hot = NOW - n.last < HOT_MS; });
+        nodes.forEach((n) => { n.total = n.sent + n.recv; n.hot = n.total > 0 && NOW - n.last < HOT_MS; n.quiet = n.total === 0; });
         return { nodes, pairs };
       };
 
@@ -432,6 +505,12 @@ enum MessagesPageWeb {
       const rng = (seed) => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
       const nodeSize = (n) => Math.round(8 + 3.2 * Math.log2(n.total + 1));
       const labelW = (id) => Math.min(titleOf(id).length, 30) * 6.4 + 8;
+      // "Open now" draws every open terminal in scope, quiet ones included.
+      const openTerminal = (p) => p.live && p.type !== "browser" && p.type !== "markdown" && p.type !== "address" && isUUID(p.id);
+      const quietOpen = () => {
+        if (state.closed !== "hide" || state.scope === "panel") return [];
+        return [...P.values()].filter((p) => openTerminal(p) && (state.scope !== "workspace" || wsOf(p.id) === state.ws)).map((p) => p.id);
+      };
       // ---------- position memory: what is drawn stays where it is ----------
       // c11 rewrites and reloads this page on every burst of traffic. Each
       // panel's place is remembered per scope, so a reload moves nothing that
@@ -613,14 +692,17 @@ enum MessagesPageWeb {
             const ex = b.x - (b.x - cx) / t2 * (b.s / 2 + 5), ey = b.y - (b.y - cy) / t2 * (b.s / 2 + 5);
             const path = `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`;
             const hot = NOW - d.last < HOT_MS;
-            const g = el("g", {}, gEdges);
+            const g = el("g", { class: "cw-edge-g", "data-a": from, "data-b": to }, gEdges);
             const hit = el("path", { d: path, class: "cw-hit" }, g);
             el("path", { d: path, class: "cw-edge", stroke: hot ? "var(--cw-accent)" : "var(--cw-ink)",
               "stroke-width": (1 + 3 * Math.log2(1 + n) / Math.log2(1 + max)).toFixed(2),
               "stroke-dasharray": d.mailbox ? "" : "5 4", "stroke-opacity": lit ? (hot ? 1 : 0.55) : 0.08,
               "marker-end": `url(#cw-arrow-${hot ? "hot" : "ink"})` }, g);
-            el("title", {}, hit).textContent = `${titleOf(from)} → ${titleOf(to)}: ${d.mailbox} mail, ${d.send} send · last ${when(d.last)}`;
+            hit.setAttribute("aria-label", `${titleOf(from)} to ${titleOf(to)}: ${d.mailbox} mail, ${d.send} send`);
             hit.addEventListener("click", (e) => { e.stopPropagation(); select({ kind: "pair", key: p.key }); });
+            hit.addEventListener("mouseenter", (e) => { if (!busy()) { hoverEdge(from, to); edgeCard(p, from, to, d, e); } });
+            hit.addEventListener("mousemove", (e) => { if (!card.hidden) placeCard(e.clientX, e.clientY); });
+            hit.addEventListener("mouseleave", unhover);
           });
         });
       };
@@ -632,8 +714,8 @@ enum MessagesPageWeb {
           const p = lay.pos.get(n.id), s = p.s, live = isLive(n.id), info = P.get(n.id) || {};
           const selected = state.sel && state.sel.kind === "node" && state.sel.id === n.id;
           const g = el("g", { class: "cw-node" + (live ? "" : " closed"), "data-id": n.id, transform: `translate(${p.x},${p.y})`, opacity: nodeLit(n.id) ? 1 : 0.22 }, gNodes);
-          el("rect", { x: -s / 2, y: -s / 2, width: s, height: s,
-            fill: n.hot ? "var(--cw-accent)" : live ? "var(--cw-ink)" : "var(--cw-surface)",
+          el("rect", { class: "cw-sqr", x: -s / 2, y: -s / 2, width: s, height: s,
+            fill: n.hot ? "var(--cw-accent)" : n.quiet ? "var(--cw-text-dim)" : live ? "var(--cw-ink)" : "var(--cw-surface)",
             stroke: n.hot ? "var(--cw-accent)" : "var(--cw-ink)", "stroke-width": live ? 0 : 1,
             "stroke-dasharray": info.type === "address" ? "2 2" : "" }, g);
           if (selected) el("rect", { x: -s / 2 - 4, y: -s / 2 - 4, width: s + 8, height: s + 8, fill: "none", stroke: "var(--cw-ink)", "stroke-width": 1.5 }, g);
@@ -641,9 +723,13 @@ enum MessagesPageWeb {
           el("path", { class: "cw-bkt", fill: "none", stroke: "var(--cw-ink)", "stroke-width": 1.5,
             d: `M${-o},${-o + l}V${-o}H${-o + l} M${o - l},${-o}H${o}V${-o + l} M${o},${o - l}V${o}H${o - l} M${-o + l},${o}H${-o}V${o - l}` }, g);
           el("text", { class: "cw-lbl", x: s / 2 + 7, y: 4 }, g).textContent = trunc(titleOf(n.id), 30);
-          el("title", {}, g).textContent = `${titleOf(n.id)}\n${W.get(wsOf(n.id)).title}\n${n.sent} sent · ${n.recv} received · last ${when(n.last)}`;
+          g.setAttribute("aria-label", titleOf(n.id));
+          g.addEventListener("mouseenter", (e) => { if (!busy()) { hoverNode(n.id); nodeCard(n, e); } });
+          g.addEventListener("mousemove", (e) => { if (!card.hidden) placeCard(e.clientX, e.clientY); });
+          g.addEventListener("mouseleave", unhover);
           g.addEventListener("mousedown", (e) => {
             e.stopPropagation();
+            unhover();
             const down = { x: e.clientX, y: e.clientY, px: p.x, py: p.y, moved: false };
             dragging = true;
             const move = (ev) => {
@@ -669,6 +755,7 @@ enum MessagesPageWeb {
 
       const drawClusters = () => {
         gClusters.textContent = "";
+        clustersAtK = VIEW.k;
         const { lay } = current;
         lay.groups.forEach((members, gid) => {
           let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -677,9 +764,20 @@ enum MessagesPageWeb {
           const w = W.get(gid);
           const g = el("g", { class: "cw-cluster" + (gid === lay.home ? " home" : "") }, gClusters);
           el("rect", { class: "cw-box", x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, g);
-          el("rect", { x: x0, y: y0 - 18, width: 16, height: 16, fill: "var(--cw-surface)", stroke: "var(--cw-edge)" }, g);
-          el("text", { class: "cw-letter", x: x0 + 8, y: y0 - 6.5, "text-anchor": "middle" }, g).textContent = letterOf(gid);
-          el("text", { x: x0 + 22, y: y0 - 6 }, g).textContent = `${trunc(w.title, 34)}  ·  ${members.length} panels${w.live || gid === NO_WS ? "" : "  ·  closed"}`;
+          // Workspace names are read at one on-screen size whatever the zoom.
+          const z = Math.max(0.5, Math.min(5, 1 / VIEW.k));
+          el("rect", { x: x0, y: y0 - 26 * z, width: 22 * z, height: 22 * z, fill: "var(--cw-surface)", stroke: "var(--cw-ink)", "stroke-width": 1.25 * z }, g);
+          el("text", { class: "cw-letter", x: x0 + 11 * z, y: y0 - 10.5 * z, "text-anchor": "middle", "font-size": 13 * z }, g).textContent = letterOf(gid);
+          // A label never runs past its own box: the name is cut to the box's
+          // on-screen width (mono, about 9.7px a character at 16px), and the
+          // panel count shows only where it fits beside the name.
+          const fullRoom = Math.floor((x1 - x0 - 30 * z) / (9.7 * z));
+          const nameText = trunc(w.title, Math.min(40, Math.max(4, fullRoom)));
+          const meta = `${members.length} ${members.length === 1 ? "panel" : "panels"}${w.live || gid === NO_WS ? "" : " · closed"}`;
+          const name = el("text", { x: x0 + 30 * z, y: y0 - 10 * z, "font-size": 16 * z, "stroke-width": 4 * z }, g);
+          name.textContent = nameText;
+          if (nameText.length + 1 + meta.length * 0.7 <= fullRoom) el("tspan", { class: "cw-wsmeta", dx: 10 * z, "font-size": 11 * z }, name).textContent = meta;
+          el("title", {}, g).textContent = `${w.title} · ${meta}`;
         });
       };
 
@@ -687,14 +785,18 @@ enum MessagesPageWeb {
         const { lay } = current;
         const box = svg.getBoundingClientRect();
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        lay.pos.forEach((p, id) => { x0 = Math.min(x0, p.x - 40); y0 = Math.min(y0, p.y - 60); x1 = Math.max(x1, p.x + labelW(id) + 40); y1 = Math.max(y1, p.y + 40); });
+        lay.pos.forEach((p, id) => { x0 = Math.min(x0, p.x - 40); y0 = Math.min(y0, p.y - 70); x1 = Math.max(x1, p.x + labelW(id) + 40); y1 = Math.max(y1, p.y + 40); });
         if (box.width === 0) { pendingFit = true; return; }
         pendingFit = false;
         if (!Number.isFinite(x0)) { Object.assign(VIEW, { k: 1, x: box.width / 2, y: box.height / 2 }); return; }
         const k = Math.max(0.15, Math.min(1.6, (box.width - 40) / (x1 - x0), (box.height - 90) / (y1 - y0)));
         Object.assign(VIEW, { k, x: (box.width - (x1 - x0) * k) / 2 - x0 * k, y: 20 + (box.height - 90 - (y1 - y0) * k) / 2 - y0 * k });
       };
-      const applyView = () => view.setAttribute("transform", `translate(${VIEW.x},${VIEW.y}) scale(${VIEW.k})`);
+      let clustersAtK = null;
+      const applyView = () => {
+        view.setAttribute("transform", `translate(${VIEW.x},${VIEW.y}) scale(${VIEW.k})`);
+        if (current && clustersAtK !== VIEW.k) drawClusters();
+      };
 
       // ---------- inspector (DOM nodes and textContent only: agent text is never parsed as HTML) ----------
       const insp = $("cw-inspector");
@@ -715,8 +817,122 @@ enum MessagesPageWeb {
       const table = (heads, rows) => h("table", {},
         h("thead", {}, h("tr", {}, heads.map(([label, cls]) => h("th", cls ? { class: cls } : {}, label)))),
         h("tbody", {}, rows));
-      const row = (onClick, first, cells) => h("tr", { class: "cw-row cw-bk", on: onClick }, h("td", {}, first),
-        cells.map(([value, cls]) => h("td", { class: cls }, value)));
+      const row = (onClick, first, cells, preview) => {
+        const tr = h("tr", { class: "cw-row cw-bk", on: onClick }, h("td", {}, first), cells.map(([value, cls]) => h("td", { class: cls }, value)));
+        if (preview) { tr.addEventListener("mouseenter", () => { if (!busy()) preview(); }); tr.addEventListener("mouseleave", unhover); }
+        return tr;
+      };
+      const subOf = (id) => { const said = firstLine((P.get(id) || {}).desc); return said ? h("span", { class: "cw-sub" }, said) : null; };
+
+      // ---------- hover: a panel or a conversation lights up its neighbourhood ----------
+      const card = $("cw-card");
+      const busy = () => dragging || !!pan;
+      const light = (ids, self, edgeTest) => {
+        svg.classList.add("cw-hovering");
+        gNodes.querySelectorAll(".cw-node").forEach((g) => { g.classList.toggle("near", ids.has(g.dataset.id)); g.classList.toggle("near-self", g.dataset.id === self); });
+        gEdges.querySelectorAll(".cw-edge-g").forEach((g) => g.classList.toggle("near", edgeTest(g.dataset.a, g.dataset.b)));
+      };
+      const hoverNode = (id) => {
+        if (!current) return;
+        const ids = new Set([id]);
+        current.agg.pairs.forEach((x) => { if (x.a === id) ids.add(x.b); if (x.b === id) ids.add(x.a); });
+        light(ids, id, (a, b) => a === id || b === id);
+      };
+      const hoverEdge = (from, to) => light(new Set([from, to]), null, (a, b) => a === from && b === to);
+      const hoverPair = (key) => { const x = current && current.agg.pairs.get(key); if (x) light(new Set([x.a, x.b]), null, (a, b) => (a === x.a && b === x.b) || (a === x.b && b === x.a)); };
+      const unhover = () => {
+        svg.classList.remove("cw-hovering");
+        gNodes.querySelectorAll(".near, .near-self").forEach((g) => g.classList.remove("near", "near-self"));
+        gEdges.querySelectorAll(".near").forEach((g) => g.classList.remove("near"));
+        card.hidden = true;
+      };
+      const placeCard = (cx, cy) => {
+        const r = $("cw-stage").getBoundingClientRect(), w = card.offsetWidth || 320, hgt = card.offsetHeight || 120;
+        let x = cx - r.left + 18, y = cy - r.top + 16;
+        if (x + w > r.width - 8) x = cx - r.left - 18 - w;
+        if (y + hgt > r.height - 8) y = r.height - 8 - hgt;
+        card.style.left = Math.max(8, x) + "px"; card.style.top = Math.max(8, y) + "px";
+      };
+      const stateWord = (n) => (n.hot ? "active now" : n.quiet ? "open, quiet" : isLive(n.id) ? "open" : "closed");
+      const nodeCard = (n, e) => {
+        const p = P.get(n.id) || {}, said = sayLines(p.desc), wid = wsOf(n.id);
+        const peers = [...current.agg.pairs.values()].filter((x) => x.a === n.id || x.b === n.id).sort((a, b) => b.count - a.count);
+        card.replaceChildren(...[
+          h("div", { class: "cw-ct" }, titleOf(n.id)),
+          h("div", { class: "cw-cd" + (said ? "" : " none") }, said || "No subtitle set"),
+          h("div", { class: "cw-cm" }, `${letterOf(wid)} · ${W.get(wid).title} · ${stateWord(n)}`),
+          h("div", { class: "cw-cm" }, n.total ? `${n.sent} sent · ${n.recv} received · last ${ago(n.last)}` : "No messages in this window"),
+          peers.length ? h("div", { class: "cw-cm" }, "Talks with " + peers.slice(0, 3).map((x) => clip(titleOf(x.a === n.id ? x.b : x.a), 24)).join(", ") + (peers.length > 3 ? ` +${peers.length - 3}` : "")) : null].filter(Boolean));
+        card.hidden = false; placeCard(e.clientX, e.clientY);
+      };
+      const edgeCard = (p, from, to, d, e) => {
+        const last = [...p.msgs].reverse().find((m) => m.from === from);
+        const text = last && last.body ? clip(firstLine(last.body) || last.body, 220) : "";
+        card.replaceChildren(...[
+          h("div", { class: "cw-ct" }, `${titleOf(from)} → ${titleOf(to)}`),
+          h("div", { class: "cw-cm" }, `${d.mailbox} mail · ${d.send} send · last ${ago(d.last)}`),
+          text ? h("div", { class: "cw-cd" }, text) : null].filter(Boolean));
+        card.hidden = false; placeCard(e.clientX, e.clientY);
+      };
+
+      // ---------- plain-English summaries ----------
+      const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
+      const tally = (items) => { const m = new Map(); items.forEach((k) => m.set(k, (m.get(k) || 0) + 1)); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+      const names = (entries, max) => {
+        const shown = entries.slice(0, max).map(([id, c]) => `${titleOf(id)} (${c})`), rest = entries.length - shown.length;
+        return shown.join(", ") + (rest > 0 ? ` and ${plural(rest, "other")}` : "");
+      };
+      const kindOf = (id) => {
+        const p = P.get(id) || {};
+        if (p.type === "address") return "mailbox address no open panel holds";
+        const what = p.agent ? (AGENTS[p.agent] || p.agent) + " agent" : p.type === "browser" ? "browser panel" : p.type === "markdown" ? "markdown panel" : "terminal";
+        return (isLive(id) ? "open " : "closed ") + what;
+      };
+      const article = (word) => (/^[aeiou]/i.test(word) ? "An " : "A ");
+      const windowWords = () => (Number.isFinite(spanOf()) ? spanText(spanOf()).replace(/^Last/, "in the last") : "across everything recorded");
+      const nodeStory = (n) => {
+        const mine = [];
+        current.agg.pairs.forEach((x) => { if (x.a === n.id || x.b === n.id) mine.push(...x.msgs); });
+        const kind = kindOf(n.id);
+        const parts = [`${article(kind)}${kind} in ${W.get(wsOf(n.id)).title}.`];
+        if (!n.total) parts.push(`No messages ${windowWords()}.`);
+        if (n.sent) parts.push(`Sent ${plural(n.sent, "message")} to ${names(tally(mine.filter((m) => m.from === n.id).map((m) => m.to)), 3)}.`);
+        if (n.recv) parts.push(`Received ${plural(n.recv, "message")} from ${names(tally(mine.filter((m) => m.to === n.id).map((m) => m.from)), 3)}.`);
+        if (mine.length) parts.push(`Talking from ${when(Math.min(...mine.map((m) => m.ms)))} to ${when(n.last)}.`);
+        const topics = tally(mine.map((m) => m.topic).filter(Boolean));
+        if (topics.length) parts.push(`Topics: ${topics.slice(0, 4).map(([t]) => t).join(", ")}.`);
+        const p = P.get(n.id) || {};
+        if (p.closedAt) parts.push(`Closed ${when(p.closedAt)}.`);
+        return parts.join(" ");
+      };
+      const scopeStory = (agg, count) => {
+        const talkers = [...agg.nodes.values()].filter((n) => n.total), quiet = agg.nodes.size - talkers.length;
+        const ws = new Set(talkers.map((n) => wsOf(n.id))); ws.delete(NO_WS);
+        const open = talkers.filter((n) => isLive(n.id)).length;
+        const lead = windowWords().replace(/^./, (c) => c.toUpperCase());
+        if (!count) return `${lead}, no messages here. ${quiet ? plural(quiet, "open panel") + " shown, all quiet." : ""}`.trim();
+        const parts = [`${lead}, ${plural(talkers.length, "panel")} exchanged ${plural(count, "message")}${ws.size ? " in " + plural(ws.size, "workspace") : ""}; ${open} of them still open.`];
+        if (quiet) parts.push(`${plural(quiet, "more open panel")} said nothing.`);
+        const top = [...agg.pairs.values()].sort((a, b) => b.count - a.count)[0];
+        if (top) parts.push(`The busiest conversation is ${titleOf(top.a)} ⇄ ${titleOf(top.b)} (${top.count}).`);
+        const busiest = [...agg.nodes.values()].sort((a, b) => b.total - a.total)[0];
+        if (busiest && busiest.total) parts.push(`${titleOf(busiest.id)} talked the most: ${busiest.sent} sent, ${busiest.recv} received.`);
+        const hot = [...agg.nodes.values()].filter((n) => n.hot).length;
+        if (hot) parts.push(`${plural(hot, "panel")} talked in the last 15 minutes.`);
+        return parts.join(" ");
+      };
+      const pairStory = (p, msgs) => {
+        // Told from whoever wrote first.
+        const [x, y] = msgs[0].from === p.a ? [p.a, p.b] : [p.b, p.a];
+        const nx = x === p.a ? p.ab.mailbox + p.ab.send : p.ba.mailbox + p.ba.send;
+        const ny = x === p.a ? p.ba.mailbox + p.ba.send : p.ab.mailbox + p.ab.send;
+        const parts = [`${titleOf(x)} sent ${titleOf(y)} ${plural(nx, "message")}` + (ny ? `, and ${titleOf(y)} sent ${ny} back.` : `; ${titleOf(y)} never wrote back here.`)];
+        parts.push(msgs.length > 1 ? `From ${when(msgs[0].ms)} to ${when(msgs[msgs.length - 1].ms)}.` : `On ${when(msgs[0].ms)}.`);
+        const topics = tally(msgs.map((m) => m.topic).filter(Boolean));
+        if (topics.length) parts.push(`Topics: ${topics.slice(0, 4).map(([t]) => t).join(", ")}.`);
+        return parts.join(" ");
+      };
+      const quote = (label, m) => (m && m.body ? h("span", { class: "cw-quote" }, `${label} (${clip(titleOf(m.from), 22)}): ${clip(firstLine(m.body) || m.body, 180)}`) : null);
       const pairTable = (pairs, perspective) => {
         if (!pairs.length) return h("div", { class: "cw-empty" }, "No traffic in this window.");
         return table([[perspective ? "Peer" : "Conversation"], [perspective ? "Out" : "→", "cw-num"], [perspective ? "In" : "←", "cw-num"], ["Last", "cw-when"]],
@@ -725,9 +941,9 @@ enum MessagesPageWeb {
             const out = perspective ? dirOf(p, perspective) : p.ab;
             const back = perspective ? dirOf(p, other) : p.ba;
             const on = perspective ? isLive(other) : isLive(p.a) && isLive(p.b);
-            const name = perspective ? [titleOf(other)] : [titleOf(p.a), h("span", { class: "cw-sub" }, "⇄ " + titleOf(p.b))];
+            const name = perspective ? [titleOf(other), subOf(other)] : [titleOf(p.a), h("span", { class: "cw-sub" }, "⇄ " + titleOf(p.b))];
             return row(() => select({ kind: "pair", key: p.key }), [mark(NOW - p.last < HOT_MS, on), ...name],
-              [[out.mailbox + out.send, "cw-num"], [back.mailbox + back.send, "cw-num"], [ago(p.last), "cw-when"]]);
+              [[out.mailbox + out.send, "cw-num"], [back.mailbox + back.send, "cw-num"], [ago(p.last), "cw-when"]], () => hoverPair(p.key));
           }));
       };
       const show = (...nodes) => { insp.replaceChildren(...nodes.flat().filter(Boolean)); };
@@ -744,19 +960,20 @@ enum MessagesPageWeb {
           : state.scope === "workspace" ? (W.has(state.ws) ? W.get(state.ws).title : "No workspace has messages yet")
           : state.panel ? titleOf(state.panel) : "No panel has messages yet";
         const busiest = [...agg.nodes.values()].sort((a, b) => b.total - a.total).slice(0, 8);
-        show(zone("01", "Scope"), h("div", { class: "cw-title2" }, title),
-          facts([["Messages", count], ["Panels", agg.nodes.size], ["Conversations", agg.pairs.size], ["Window", state.win === "all" ? "all recorded" : "last " + state.win]]),
+        const busiestTalkers = busiest.filter((n) => n.total);
+        show(zone("01", "Scope"), h("div", { class: "cw-title2" }, title), h("div", { class: "cw-story" }, scopeStory(agg, count)),
+          facts([["Messages", count], ["Panels", agg.nodes.size], ["Conversations", agg.pairs.size], ["Window", spanText(spanOf())]]),
           zone("02", "Conversations, most recent first"), pairTable(pairs, null), zone("03", "Busiest panels"),
-          busiest.length
+          busiestTalkers.length
             ? table([["Panel"], ["Out", "cw-num"], ["In", "cw-num"], ["Last", "cw-when"]],
-                busiest.map((n) => row(() => select({ kind: "node", id: n.id }), [mark(n.hot, isLive(n.id)), titleOf(n.id)],
-                  [[n.sent, "cw-num"], [n.recv, "cw-num"], [ago(n.last), "cw-when"]])))
-            : h("div", { class: "cw-empty" }, "No panels."));
+                busiestTalkers.map((n) => row(() => select({ kind: "node", id: n.id }), [mark(n.hot, isLive(n.id)), titleOf(n.id), subOf(n.id)],
+                  [[n.sent, "cw-num"], [n.recv, "cw-num"], [ago(n.last), "cw-when"]], () => hoverNode(n.id))))
+            : h("div", { class: "cw-empty" }, "No panels talked in this window."));
       };
       const inspectNode = (n) => {
         const p = P.get(n.id) || {}, wid = wsOf(n.id);
         const pairs = [...current.agg.pairs.values()].filter((x) => x.a === n.id || x.b === n.id).sort((a, b) => b.last - a.last);
-        const status = n.hot ? [mark(true), "ACTIVE"] : isLive(n.id) ? [mark(false, true), "OPEN"] : [mark(false, false), "CLOSED"];
+        const status = n.hot ? [mark(true), "ACTIVE"] : isLive(n.id) ? [mark(false, true), n.quiet ? "OPEN · QUIET" : "OPEN"] : [mark(false, false), "CLOSED"];
         const rows = [["State", status], ["Workspace", letterOf(wid) + " · " + W.get(wid).title]];
         if (p.address) rows.push(["Address", p.address]);
         if (p.agent) rows.push(["Agent", p.agent]);
@@ -767,8 +984,14 @@ enum MessagesPageWeb {
           wid !== NO_WS && !(state.scope === "workspace" && state.ws === wid) ? button("Its workspace", () => { state.scope = "workspace"; state.ws = wid; state.sel = null; render(true); }) : null,
           isLive(n.id) && isUUID(n.id) ? h("a", { class: "cw-bk", href: scheme + "://panel/" + n.id.toLowerCase() }, "Open panel") : null,
           button("Clear", () => select(null)));
+        const said = sayLines(p.desc);
+        const notes = (p.notes || []).slice().reverse();
         show(zone("01", p.type === "address" ? "Unresolved address" : "Panel"), h("div", { class: "cw-title2" }, titleOf(n.id)),
-          facts(rows), actions, zone("02", "Conversations"), pairTable(pairs, n.id));
+          h("div", { class: "cw-desc" + (said ? "" : " none") }, said || "No subtitle set"),
+          h("div", { class: "cw-story" }, nodeStory(n)),
+          facts(rows), actions, zone("02", "Conversations"), pairTable(pairs, n.id),
+          notes.length > 1 || (notes.length === 1 && sayLines(notes[0].text) !== said) ? [zone("03", "What it said it was doing"),
+            notes.map((x) => h("div", { class: "cw-note" }, h("span", { class: "cw-t" }, when(Date.parse(x.at))), h("div", {}, sayLines(x.text) || x.text)))] : null);
       };
       const inspectPair = (p) => {
         const ab = p.ab, ba = p.ba;
@@ -784,6 +1007,7 @@ enum MessagesPageWeb {
             body);
         });
         show(zone("01", "Conversation"), h("div", { class: "cw-title2" }, titleOf(p.a) + " ⇄ " + titleOf(p.b)),
+          h("div", { class: "cw-story" }, pairStory(p, msgs), quote("Opened with", msgs[0]), msgs.length > 1 ? quote("Latest", msgs[msgs.length - 1]) : null),
           facts([[trunc(titleOf(p.a), 12) + " →", ab.mailbox + " mail · " + ab.send + " send"], [trunc(titleOf(p.b), 12) + " →", ba.mailbox + " mail · " + ba.send + " send"],
             ["Span", when(msgs[0].ms) + " – " + when(msgs[msgs.length - 1].ms)]]),
           h("div", { class: "cw-actions" }, button("Centre on " + trunc(titleOf(p.a), 14), () => focusPanel(p.a)),
@@ -812,7 +1036,7 @@ enum MessagesPageWeb {
       }, { passive: true });
 
       // ---------- controls ----------
-      const select = (sel) => { state.sel = sel; drawEdges(); drawNodes(); inspect(); save(); };
+      const select = (sel) => { unhover(); state.sel = sel; drawEdges(); drawNodes(); inspect(); save(); };
       const focusPanel = (id) => { state.scope = "panel"; state.panel = id; state.sel = { kind: "node", id }; render(true); };
       const counts = new Map();
       messages.forEach((m) => [m.from, m.to].forEach((id) => counts.set(id, (counts.get(id) || 0) + 1)));
@@ -821,12 +1045,13 @@ enum MessagesPageWeb {
         const pressed = (sel, test) => document.querySelectorAll(sel).forEach((b) => b.setAttribute("aria-pressed", String(test(b.dataset.v))));
         pressed("#cw-scope button", (v) => v === state.scope);
         pressed("#cw-channels button", (v) => state.ch.includes(v));
-        pressed("#cw-window button", (v) => v === state.win);
         pressed("#cw-closed button", (v) => v === state.closed);
+        syncScrub();
         const pick = $("cw-picker");
         if (state.scope === "workspace") {
           pick.disabled = false;
           const wsIds = wsOrder.filter((id) => id !== NO_WS);
+          W.forEach((w, id) => { if (w.live && id !== NO_WS && !wsIds.includes(id)) wsIds.push(id); });
           if (state.ws && W.has(state.ws) && !wsIds.includes(state.ws)) wsIds.unshift(state.ws);
           pick.replaceChildren(...wsIds.map((id) => option(id, `${letterOf(id)} · ${W.get(id).title} (${wsTraffic.get(id) || 0})`, id === state.ws)));
         } else if (state.scope === "panel") {
@@ -840,11 +1065,12 @@ enum MessagesPageWeb {
         }
       };
       const render = (refit) => {
+        unhover();
         if (state.scope === "workspace" && !W.has(state.ws)) state.ws = wsOrder[0] || null;
         if (state.scope === "panel" && !state.panel) state.panel = [...involved][0] || null;
         if (state.scope === "panel" && state.panel) panel(state.panel);
         syncControls();
-        const agg = aggregate(scoped(filtered()));
+        const agg = aggregate(scoped(filtered()), quietOpen());
         current = { agg, lay: layout(agg) };
         if (state.sel && state.sel.kind === "node" && !agg.nodes.has(state.sel.id)) state.sel = null;
         if (state.sel && state.sel.kind === "pair" && !agg.pairs.has(state.sel.key)) state.sel = null;
@@ -853,10 +1079,47 @@ enum MessagesPageWeb {
         if (refit) { fit(); userMoved = false; }
         applyView(); drawClusters(); drawEdges(); drawNodes(); inspect(); save();
       };
+      // ---------- the time scrubber: how far back, on a log scale, with detents ----------
+      // 0..900 runs from 10 minutes to 30 days; the far end is everything recorded.
+      const SCRUB = { min: 10 * 60e3, max: 30 * 86400e3, end: 900, all: 1000, pull: 22 };
+      const DETENTS = [["1H", 3600e3], ["6H", 6 * 3600e3], ["24H", 86400e3], ["7D", 7 * 86400e3], ["ALL", Infinity]];
+      const toSpan = (v) => (v > (SCRUB.end + SCRUB.all) / 2 ? Infinity : SCRUB.min * Math.pow(SCRUB.max / SCRUB.min, Math.min(v, SCRUB.end) / SCRUB.end));
+      const toPos = (span) => (!Number.isFinite(span) ? SCRUB.all : Math.max(0, Math.min(SCRUB.end, Math.round(SCRUB.end * Math.log(span / SCRUB.min) / Math.log(SCRUB.max / SCRUB.min)))));
+      const snapPos = (v) => { for (const [, span] of DETENTS) { const at = toPos(span); if (Math.abs(v - at) <= SCRUB.pull) return at; } return v; };
+      // A detent stands for its exact span, not the nearest the scale can draw.
+      const spanAt = (v) => { const d = DETENTS.find(([, span]) => toPos(span) === v); return d ? d[1] : toSpan(v); };
+      const scrub = $("cw-scrub"), scrubVal = $("cw-scrub-val"), ticks = $("cw-ticks");
+      DETENTS.forEach(([label, span]) => {
+        const b = h("button", { type: "button", class: "cw-tick", "data-span": String(span), "aria-label": label === "ALL" ? "Everything recorded" : "Last " + label, style: `left: ${toPos(span) / 10}%` }, label);
+        b.addEventListener("click", () => { setSpan(span); finishScrub(); });
+        ticks.appendChild(b);
+      });
+      const syncScrub = () => {
+        const span = spanOf();
+        scrub.value = String(toPos(span));
+        scrubVal.textContent = spanText(span);
+        ticks.querySelectorAll(".cw-tick").forEach((b) => b.classList.toggle("on", Number(b.dataset.span) === span));
+      };
+      const setSpan = (span) => { state.win = Number.isFinite(span) ? Math.round(span) : "all"; };
+      let scrubQueued = false, scrubDragging = false;
+      scrub.addEventListener("pointerdown", () => { scrubDragging = true; });
+      window.addEventListener("pointerup", () => { scrubDragging = false; });
+      scrub.addEventListener("input", () => {
+        // Detents pull only a dragged thumb; arrow keys step through them.
+        const v = scrubDragging ? snapPos(Number(scrub.value)) : Number(scrub.value);
+        if (String(v) !== scrub.value) scrub.value = String(v);
+        setSpan(spanAt(v));
+        scrubVal.textContent = spanText(spanOf());
+        if (scrubQueued) return;
+        scrubQueued = true;
+        requestAnimationFrame(() => { scrubQueued = false; if (!broken) render(false); });
+      });
+      // Let go: show what the new window brought in, unless the operator has framed the view themselves.
+      const finishScrub = () => { render(false); if (!userMoved && current && current.agg.nodes.size) { fit(); applyView(); } save(); };
+      scrub.addEventListener("change", finishScrub);
       const bindSeg = (id, fn) => document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener("click", () => fn(b.dataset.v)));
       bindSeg("cw-scope", (v) => { state.scope = v; state.sel = null; render(true); });
       bindSeg("cw-channels", (v) => { state.ch = state.ch.includes(v) ? state.ch.filter((c) => c !== v) : [...state.ch, v]; if (!state.ch.length) state.ch = [v === "send" ? "mailbox" : "send"]; render(true); });
-      bindSeg("cw-window", (v) => { state.win = v; render(true); });
       bindSeg("cw-closed", (v) => { state.closed = v; render(true); });
       $("cw-relayout").addEventListener("click", () => { forgetPositions(); render(true); });
       $("cw-picker").addEventListener("change", (e) => {
@@ -866,11 +1129,12 @@ enum MessagesPageWeb {
       });
 
       let pan = null;
-      svg.addEventListener("mousedown", (e) => { pan = { x: e.clientX, y: e.clientY, vx: VIEW.x, vy: VIEW.y, moved: false }; $("cw-stage").classList.add("cw-panning"); });
+      svg.addEventListener("mousedown", (e) => { unhover(); pan = { x: e.clientX, y: e.clientY, vx: VIEW.x, vy: VIEW.y, moved: false }; $("cw-stage").classList.add("cw-panning"); });
       window.addEventListener("mousemove", (e) => { if (!pan) return; const dx = e.clientX - pan.x, dy = e.clientY - pan.y; if (Math.abs(dx) + Math.abs(dy) > 3) { pan.moved = true; userMoved = true; } VIEW.x = pan.vx + dx; VIEW.y = pan.vy + dy; applyView(); });
       window.addEventListener("mouseup", () => { if (pan && !pan.moved) select(null); if (pan) save(); pan = null; $("cw-stage").classList.remove("cw-panning"); });
       svg.addEventListener("wheel", (e) => {
         e.preventDefault();
+        if (!card.hidden) unhover();
         const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         const k = Math.min(4, Math.max(0.15, VIEW.k * Math.exp(-e.deltaY * 0.0015)));
         VIEW.x = mx - (mx - VIEW.x) * k / VIEW.k; VIEW.y = my - (my - VIEW.y) * k / VIEW.k; VIEW.k = k; userMoved = true; applyView(); save();

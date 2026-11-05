@@ -149,13 +149,11 @@ final class C11TwinKeyTests: XCTestCase {
 }
 
 /// `c11EnvAliasOverrides` reads the 11mux input aliases (`MUX11_*`,
-/// `ELEVENMUX_*`, `MUXELEVEN_*`) into the exported `C11_*` / `CMUX_*` names.
+/// `ELEVENMUX_*`, `MUXELEVEN_*`) as fill-only fallbacks for `C11_*` / `CMUX_*`.
 final class C11EnvAliasOverrideTests: XCTestCase {
-    func testAliasSetsBothCanonicalNames() {
+    func testAliasFillsBothCanonicalNames() {
         let result = c11EnvAliasOverrides(in: ["MUX11_SOCKET_PATH": "/tmp/a.sock"])
-        XCTAssertEqual(result.values["C11_SOCKET_PATH"], "/tmp/a.sock")
-        XCTAssertEqual(result.values["CMUX_SOCKET_PATH"], "/tmp/a.sock")
-        XCTAssertEqual(result.values.count, 2)
+        XCTAssertEqual(result.values, ["C11_SOCKET_PATH": "/tmp/a.sock", "CMUX_SOCKET_PATH": "/tmp/a.sock"])
         XCTAssertEqual(result.conflicts, [])
     }
 
@@ -168,15 +166,26 @@ final class C11EnvAliasOverrideTests: XCTestCase {
         XCTAssertEqual(result.values["C11_WORKSPACE_ID"], "w1")
     }
 
-    func testAliasWinsOverExportedValue() {
-        // The app never exports an alias, so a set alias is an explicit override.
-        let result = c11EnvAliasOverrides(in: [
-            "C11_SOCKET_PATH": "/exported.sock",
-            "CMUX_SOCKET_PATH": "/exported.sock",
-            "MUX11_SOCKET_PATH": "/override.sock",
-        ])
-        XCTAssertEqual(result.values["C11_SOCKET_PATH"], "/override.sock")
-        XCTAssertEqual(result.values["CMUX_SOCKET_PATH"], "/override.sock")
+    func testSetCanonicalValueWinsOverAlias() {
+        // Launchers and panels set C11_* / CMUX_* explicitly; a stray exported
+        // alias must not redirect them (C11-155 inheritance hazard).
+        XCTAssertEqual(c11EnvAliasOverrides(in: [
+            "C11_SOCKET_PATH": "/launcher.sock",
+            "MUX11_SOCKET_PATH": "/stray.sock",
+        ]).values, [:])
+        XCTAssertEqual(c11EnvAliasOverrides(in: [
+            "CMUX_SOCKET_PATH": "/legacy.sock",
+            "MUX11_SOCKET_PATH": "/stray.sock",
+        ]).values, [:])
+    }
+
+    func testEmptyValuesAreUnset() {
+        XCTAssertEqual(c11EnvAliasOverrides(in: ["MUX11_SOCKET_PATH": "  "]).values, [:])
+        // An empty canonical value does not block the alias.
+        XCTAssertEqual(c11EnvAliasOverrides(in: [
+            "C11_SOCKET_PATH": "",
+            "MUX11_SOCKET_PATH": "/a.sock",
+        ]).values["C11_SOCKET_PATH"], "/a.sock")
     }
 
     func testPrecedenceAndConflictNotice() {
@@ -193,10 +202,7 @@ final class C11EnvAliasOverrideTests: XCTestCase {
     }
 
     func testAgreeingAliasesRaiseNoNotice() {
-        let result = c11EnvAliasOverrides(in: [
-            "MUX11_TAG": "x",
-            "ELEVENMUX_TAG": "x",
-        ])
+        let result = c11EnvAliasOverrides(in: ["MUX11_TAG": "x", "ELEVENMUX_TAG": "x"])
         XCTAssertEqual(result.values["C11_TAG"], "x")
         XCTAssertEqual(result.conflicts, [])
     }
@@ -204,7 +210,6 @@ final class C11EnvAliasOverrideTests: XCTestCase {
     func testIgnoresBarePrefixesAndUnrelatedKeys() {
         let result = c11EnvAliasOverrides(in: [
             "MUX11_": "bare",
-            "C11_SURFACE_ID": "s",
             "MUX11": "no-underscore",
             "PATH": "/usr/bin",
         ])
@@ -212,8 +217,35 @@ final class C11EnvAliasOverrideTests: XCTestCase {
         XCTAssertEqual(result.conflicts, [])
     }
 
-    func testCommandNamesCoverEveryAlias() {
-        XCTAssertEqual(c11CLICommandNames, ["c11", "cmux", "11mux", "elevenmux", "mux11", "muxeleven"])
-        XCTAssertTrue(c11CLICommandNames.allSatisfy { RelaunchProcessCount.sidecarCommands.contains($0) })
+    private func repoFile(_ relative: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relative), encoding: .utf8)
+    }
+
+    private func aliasBlock(_ source: String) -> String? {
+        guard let start = source.range(of: "/// Input-only aliases for the `C11_*` environment namespace"),
+              let end = source.range(of: "// Mirrors CMUX_* ↔ C11_* env vars", range: start.upperBound..<source.endIndex)
+        else { return nil }
+        return String(source[start.lowerBound..<end.lowerBound])
+    }
+
+    func testCLICopyMatchesAppCopy() throws {
+        // The CLI target compiles its own copy; only the app copy is unit tested.
+        let app = try XCTUnwrap(aliasBlock(repoFile("Sources/AppDelegate.swift")))
+        let cli = try XCTUnwrap(aliasBlock(repoFile("CLI/c11.swift")))
+        XCTAssertEqual(cli, app)
+    }
+
+    func testBuildPhaseLinksEveryAliasName() throws {
+        // The app bundle's symlinks are made by a shell build phase; keep its
+        // list equal to c11CLICommandNames minus the real binary and cmux.
+        let project = try repoFile("GhosttyTabs.xcodeproj/project.pbxproj")
+        let marker = "for alias_name in "
+        let line = try XCTUnwrap(project.components(separatedBy: "\\n").first { $0.hasPrefix(marker) })
+        let names = line.dropFirst(marker.count).replacingOccurrences(of: "; do", with: "")
+            .split(separator: " ").map(String.init)
+        XCTAssertEqual(names, c11CLICommandNames.filter { $0 != "c11" && $0 != "cmux" })
     }
 }

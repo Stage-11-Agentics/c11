@@ -24,24 +24,28 @@ struct CLIError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
-/// Input-only aliases for the `C11_*` environment namespace (the 11mux rename,
-/// `docs/11mux-rename-plan.md`, D3). The app exports `C11_*` and `CMUX_*` only;
-/// `MUX11_*`, `ELEVENMUX_*` and `MUXELEVEN_*` are read as overrides. `11MUX_*`
-/// cannot exist: a shell variable name cannot start with a digit.
-/// Order is precedence: an earlier prefix wins when two aliases disagree.
+/// Input-only aliases for the `C11_*` environment namespace, from the 11mux
+/// rename: the app exports `C11_*` and `CMUX_*` only, and reads `MUX11_*`,
+/// `ELEVENMUX_*` and `MUXELEVEN_*` as fallbacks. `11MUX_*` cannot exist: a shell
+/// variable name cannot start with a digit. Order is precedence when two
+/// aliases disagree.
 let c11EnvAliasPrefixes = ["MUX11_", "ELEVENMUX_", "MUXELEVEN_"]
 
 /// The `C11_*` and `CMUX_*` values that alias-prefixed variables in `environment`
-/// ask for, and one notice per name whose aliases disagree.
+/// fill in, and one notice per name whose aliases disagree.
 ///
-/// A set alias always wins over an existing `C11_*`/`CMUX_*` value: the app never
-/// exports an alias, so one can only come from a person or script asking for an
-/// override. Pure; the caller applies the result.
+/// Fill-only, like `CMUX_*` is for `C11_*`: an alias never replaces a set
+/// `C11_*` or `CMUX_*` value. Launchers and every panel set those explicitly,
+/// so a stray exported alias must not redirect them (the C11-155 inheritance
+/// hazard). Empty alias values are ignored. Pure; the caller applies the result.
 func c11EnvAliasOverrides(in environment: [String: String]) -> (values: [String: String], conflicts: [String]) {
+    func isSet(_ key: String) -> Bool {
+        !(environment[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     var chosen: [String: (key: String, value: String)] = [:]
     var conflicts: [String] = []
     for prefix in c11EnvAliasPrefixes {
-        for key in environment.keys.sorted() where key.hasPrefix(prefix) && key.count > prefix.count {
+        for key in environment.keys.sorted() where key.hasPrefix(prefix) && key.count > prefix.count && isSet(key) {
             let value = environment[key] ?? ""
             let suffix = String(key.dropFirst(prefix.count))
             if let earlier = chosen[suffix] {
@@ -54,21 +58,28 @@ func c11EnvAliasOverrides(in environment: [String: String]) -> (values: [String:
         }
     }
     var values: [String: String] = [:]
-    for (suffix, pick) in chosen {
+    for (suffix, pick) in chosen where !isSet("C11_" + suffix) && !isSet("CMUX_" + suffix) {
         values["C11_" + suffix] = pick.value
         values["CMUX_" + suffix] = pick.value
     }
     return (values, conflicts)
 }
 
-/// Applies `c11EnvAliasOverrides` to this process's environment.
+/// Applies `c11EnvAliasOverrides` to this process's environment, then unsets
+/// the aliases so child processes inherit only the canonical names. Running it
+/// again is a no-op.
 func applyC11EnvAliasOverrides() {
-    let overrides = c11EnvAliasOverrides(in: ProcessInfo.processInfo.environment)
+    let environment = ProcessInfo.processInfo.environment
+    let overrides = c11EnvAliasOverrides(in: environment)
     for (key, value) in overrides.values {
         setenv(key, value, 1)
     }
+    for key in environment.keys where c11EnvAliasPrefixes.contains(where: { key.hasPrefix($0) }) {
+        unsetenv(key)
+    }
     for notice in overrides.conflicts {
-        FileHandle.standardError.write(Data("c11: \(notice)\n".utf8))
+        // fputs, not FileHandle: a closed stderr must not raise an ObjC exception.
+        fputs("c11: \(notice)\n", stderr)
     }
 }
 

@@ -202,6 +202,8 @@ struct cmuxApp: App {
     }
 
     init() {
+        // First, so every launch-time read below sees MUX11_* fallbacks as C11_*.
+        applyC11EnvAliasOverrides()
         UITestLaunchManifest.applyIfPresent()
 
         if SocketControlSettings.shouldBlockUntaggedDebugLaunch() {

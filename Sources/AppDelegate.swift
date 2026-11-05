@@ -39,7 +39,7 @@ enum SingleInstancePolicy {
         // Launch Services can attribute an embedded CLI/helper to the app's
         // registration. Even incomplete or misleading bundle metadata must
         // not let the shipped CLI participate as a main application.
-        let embeddedCLISuffixes = ["/Contents/Resources/bin/c11", "/Contents/Resources/bin/cmux"]
+        let embeddedCLISuffixes = c11CLICommandNames.map { "/Contents/Resources/bin/" + $0 }
         guard !embeddedCLISuffixes.contains(where: { actual.path.hasSuffix($0) || canonicalActual.path.hasSuffix($0) }) else {
             return false
         }
@@ -82,9 +82,74 @@ enum SingleInstancePolicy {
     }
 }
 
-// Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
+/// Every name the bundled CLI answers to: `c11`, the `cmux` compat alias, and the
+/// four 11mux names, which ship as symlinks to `c11` in `Contents/Resources/bin`.
+let c11CLICommandNames = ["c11", "cmux", "11mux", "elevenmux", "mux11", "muxeleven"]
+
+/// Input-only aliases for the `C11_*` environment namespace, from the 11mux
+/// rename: the app exports `C11_*` and `CMUX_*` only, and reads `MUX11_*`,
+/// `ELEVENMUX_*` and `MUXELEVEN_*` as fallbacks. `11MUX_*` cannot exist: a shell
+/// variable name cannot start with a digit. Order is precedence when two
+/// aliases disagree.
+let c11EnvAliasPrefixes = ["MUX11_", "ELEVENMUX_", "MUXELEVEN_"]
+
+/// The `C11_*` and `CMUX_*` values that alias-prefixed variables in `environment`
+/// fill in, and one notice per name whose aliases disagree.
+///
+/// Fill-only, like `CMUX_*` is for `C11_*`: an alias never replaces a set
+/// `C11_*` or `CMUX_*` value. Launchers and every panel set those explicitly,
+/// so a stray exported alias must not redirect them (the C11-155 inheritance
+/// hazard). Empty alias values are ignored. Pure; the caller applies the result.
+func c11EnvAliasOverrides(in environment: [String: String]) -> (values: [String: String], conflicts: [String]) {
+    func isSet(_ key: String) -> Bool {
+        !(environment[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var chosen: [String: (key: String, value: String)] = [:]
+    var conflicts: [String] = []
+    for prefix in c11EnvAliasPrefixes {
+        for key in environment.keys.sorted() where key.hasPrefix(prefix) && key.count > prefix.count && isSet(key) {
+            let value = environment[key] ?? ""
+            let suffix = String(key.dropFirst(prefix.count))
+            if let earlier = chosen[suffix] {
+                if earlier.value != value {
+                    conflicts.append("\(earlier.key) and \(key) disagree; using \(earlier.key)")
+                }
+            } else {
+                chosen[suffix] = (key, value)
+            }
+        }
+    }
+    var values: [String: String] = [:]
+    for (suffix, pick) in chosen where !isSet("C11_" + suffix) && !isSet("CMUX_" + suffix) {
+        values["C11_" + suffix] = pick.value
+        values["CMUX_" + suffix] = pick.value
+    }
+    return (values, conflicts)
+}
+
+/// Applies `c11EnvAliasOverrides` to this process's environment, then unsets
+/// the aliases so child processes inherit only the canonical names. Running it
+/// again is a no-op.
+func applyC11EnvAliasOverrides() {
+    let environment = ProcessInfo.processInfo.environment
+    let overrides = c11EnvAliasOverrides(in: environment)
+    for (key, value) in overrides.values {
+        setenv(key, value, 1)
+    }
+    for key in environment.keys where c11EnvAliasPrefixes.contains(where: { key.hasPrefix($0) }) {
+        unsetenv(key)
+    }
+    for notice in overrides.conflicts {
+        // fputs, not FileHandle: a closed stderr must not raise an ObjC exception.
+        fputs("c11: \(notice)\n", stderr)
+    }
+}
+
+// Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix, after
+// applying any MUX11_* / ELEVENMUX_* / MUXELEVEN_* input aliases.
 // Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
 func mirrorC11CmuxEnv() {
+    applyC11EnvAliasOverrides()
     let env = ProcessInfo.processInfo.environment
     for (key, value) in env {
         if key.hasPrefix("CMUX_") {

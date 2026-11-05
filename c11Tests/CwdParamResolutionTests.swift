@@ -147,3 +147,73 @@ final class C11TwinKeyTests: XCTestCase {
         XCTAssertEqual(c11TwinKey(forCmuxKey: "CMUX_"), "C11_")
     }
 }
+
+/// `c11EnvAliasOverrides` reads the 11mux input aliases (`MUX11_*`,
+/// `ELEVENMUX_*`, `MUXELEVEN_*`) into the exported `C11_*` / `CMUX_*` names.
+final class C11EnvAliasOverrideTests: XCTestCase {
+    func testAliasSetsBothCanonicalNames() {
+        let result = c11EnvAliasOverrides(in: ["MUX11_SOCKET_PATH": "/tmp/a.sock"])
+        XCTAssertEqual(result.values["C11_SOCKET_PATH"], "/tmp/a.sock")
+        XCTAssertEqual(result.values["CMUX_SOCKET_PATH"], "/tmp/a.sock")
+        XCTAssertEqual(result.values.count, 2)
+        XCTAssertEqual(result.conflicts, [])
+    }
+
+    func testEachAliasPrefixIsRead() {
+        let result = c11EnvAliasOverrides(in: [
+            "ELEVENMUX_PANEL_ID": "p1",
+            "MUXELEVEN_WORKSPACE_ID": "w1",
+        ])
+        XCTAssertEqual(result.values["C11_PANEL_ID"], "p1")
+        XCTAssertEqual(result.values["C11_WORKSPACE_ID"], "w1")
+    }
+
+    func testAliasWinsOverExportedValue() {
+        // The app never exports an alias, so a set alias is an explicit override.
+        let result = c11EnvAliasOverrides(in: [
+            "C11_SOCKET_PATH": "/exported.sock",
+            "CMUX_SOCKET_PATH": "/exported.sock",
+            "MUX11_SOCKET_PATH": "/override.sock",
+        ])
+        XCTAssertEqual(result.values["C11_SOCKET_PATH"], "/override.sock")
+        XCTAssertEqual(result.values["CMUX_SOCKET_PATH"], "/override.sock")
+    }
+
+    func testPrecedenceAndConflictNotice() {
+        let result = c11EnvAliasOverrides(in: [
+            "MUXELEVEN_SOCKET_PATH": "/c.sock",
+            "ELEVENMUX_SOCKET_PATH": "/b.sock",
+            "MUX11_SOCKET_PATH": "/a.sock",
+        ])
+        XCTAssertEqual(result.values["C11_SOCKET_PATH"], "/a.sock")
+        XCTAssertEqual(result.conflicts, [
+            "MUX11_SOCKET_PATH and ELEVENMUX_SOCKET_PATH disagree; using MUX11_SOCKET_PATH",
+            "MUX11_SOCKET_PATH and MUXELEVEN_SOCKET_PATH disagree; using MUX11_SOCKET_PATH",
+        ])
+    }
+
+    func testAgreeingAliasesRaiseNoNotice() {
+        let result = c11EnvAliasOverrides(in: [
+            "MUX11_TAG": "x",
+            "ELEVENMUX_TAG": "x",
+        ])
+        XCTAssertEqual(result.values["C11_TAG"], "x")
+        XCTAssertEqual(result.conflicts, [])
+    }
+
+    func testIgnoresBarePrefixesAndUnrelatedKeys() {
+        let result = c11EnvAliasOverrides(in: [
+            "MUX11_": "bare",
+            "C11_SURFACE_ID": "s",
+            "MUX11": "no-underscore",
+            "PATH": "/usr/bin",
+        ])
+        XCTAssertEqual(result.values, [:])
+        XCTAssertEqual(result.conflicts, [])
+    }
+
+    func testCommandNamesCoverEveryAlias() {
+        XCTAssertEqual(c11CLICommandNames, ["c11", "cmux", "11mux", "elevenmux", "mux11", "muxeleven"])
+        XCTAssertTrue(c11CLICommandNames.allSatisfy { RelaunchProcessCount.sidecarCommands.contains($0) })
+    }
+}

@@ -39,7 +39,7 @@ enum SingleInstancePolicy {
         // Launch Services can attribute an embedded CLI/helper to the app's
         // registration. Even incomplete or misleading bundle metadata must
         // not let the shipped CLI participate as a main application.
-        let embeddedCLISuffixes = ["/Contents/Resources/bin/c11", "/Contents/Resources/bin/cmux"]
+        let embeddedCLISuffixes = c11CLICommandNames.map { "/Contents/Resources/bin/" + $0 }
         guard !embeddedCLISuffixes.contains(where: { actual.path.hasSuffix($0) || canonicalActual.path.hasSuffix($0) }) else {
             return false
         }
@@ -82,9 +82,63 @@ enum SingleInstancePolicy {
     }
 }
 
-// Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
+/// Every name the bundled CLI answers to: `c11`, the `cmux` compat alias, and the
+/// four 11mux names, which ship as symlinks to `c11` in `Contents/Resources/bin`.
+let c11CLICommandNames = ["c11", "cmux", "11mux", "elevenmux", "mux11", "muxeleven"]
+
+/// Input-only aliases for the `C11_*` environment namespace (the 11mux rename,
+/// `docs/11mux-rename-plan.md`, D3). The app exports `C11_*` and `CMUX_*` only;
+/// `MUX11_*`, `ELEVENMUX_*` and `MUXELEVEN_*` are read as overrides. `11MUX_*`
+/// cannot exist: a shell variable name cannot start with a digit.
+/// Order is precedence: an earlier prefix wins when two aliases disagree.
+let c11EnvAliasPrefixes = ["MUX11_", "ELEVENMUX_", "MUXELEVEN_"]
+
+/// The `C11_*` and `CMUX_*` values that alias-prefixed variables in `environment`
+/// ask for, and one notice per name whose aliases disagree.
+///
+/// A set alias always wins over an existing `C11_*`/`CMUX_*` value: the app never
+/// exports an alias, so one can only come from a person or script asking for an
+/// override. Pure; the caller applies the result.
+func c11EnvAliasOverrides(in environment: [String: String]) -> (values: [String: String], conflicts: [String]) {
+    var chosen: [String: (key: String, value: String)] = [:]
+    var conflicts: [String] = []
+    for prefix in c11EnvAliasPrefixes {
+        for key in environment.keys.sorted() where key.hasPrefix(prefix) && key.count > prefix.count {
+            let value = environment[key] ?? ""
+            let suffix = String(key.dropFirst(prefix.count))
+            if let earlier = chosen[suffix] {
+                if earlier.value != value {
+                    conflicts.append("\(earlier.key) and \(key) disagree; using \(earlier.key)")
+                }
+            } else {
+                chosen[suffix] = (key, value)
+            }
+        }
+    }
+    var values: [String: String] = [:]
+    for (suffix, pick) in chosen {
+        values["C11_" + suffix] = pick.value
+        values["CMUX_" + suffix] = pick.value
+    }
+    return (values, conflicts)
+}
+
+/// Applies `c11EnvAliasOverrides` to this process's environment.
+func applyC11EnvAliasOverrides() {
+    let overrides = c11EnvAliasOverrides(in: ProcessInfo.processInfo.environment)
+    for (key, value) in overrides.values {
+        setenv(key, value, 1)
+    }
+    for notice in overrides.conflicts {
+        FileHandle.standardError.write(Data("c11: \(notice)\n".utf8))
+    }
+}
+
+// Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix, after
+// applying any MUX11_* / ELEVENMUX_* / MUXELEVEN_* input aliases.
 // Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
 func mirrorC11CmuxEnv() {
+    applyC11EnvAliasOverrides()
     let env = ProcessInfo.processInfo.environment
     for (key, value) in env {
         if key.hasPrefix("CMUX_") {

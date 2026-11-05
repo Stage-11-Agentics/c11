@@ -164,7 +164,7 @@ enum RelaunchProcessCount {
 
     /// c11's own CLI (the Claude mailbox bridge, an in-flight `c11` command)
     /// is not the agent's work.
-    static let sidecarCommands: Set<String> = ["c11", "cmux"]
+    static let sidecarCommands = Set(c11CLICommandNames)
 
     /// Upper bound on the quit-time measurement; past it the record carries
     /// no counts.

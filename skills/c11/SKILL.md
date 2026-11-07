@@ -409,6 +409,17 @@ A few cross-cutting rules worth knowing before you reach for those:
 
 - **Agents never change the operator's visible workspace.** Socket selection, workspace cycling and cross-workspace browser focus return `workspace_switch_blocked`; there is no setting or override. Raise a flag when the operator needs to look. Background panels support send, browser eval/click/snapshot, creation, agent launch and metadata. `focus-panel` and `focus-area` change focus inside their target workspace without selecting it. Hidden browsers can pause timers/video; ask the operator to view them when visible playback is essential.
 
+- **Stop a process you started by its PID.** Every agent in every c11 terminal is a process on the same Mac, so a stop that matches by name can end them all. Save the PID when you start the process, and stop exactly that PID:
+
+  ```bash
+  npx tsx server.ts > "$LOG" 2>&1 &
+  PID=$!
+  # ... use it ...
+  kill "$PID"; wait "$PID" 2>/dev/null
+  ```
+
+  For a server you only know by its port, stop the listener's PID: `P=$(lsof -t -nP -iTCP:$PORT -sTCP:LISTEN); [ -n "$P" ] && kill $P`. When only a pattern will do, run `pgrep -lf -- '<exact command line>'` first, read the list, then run `pkill -f -- '<the same pattern>'` with the same arguments. Put every option before `--` and the pattern: macOS pkill and pgrep read anything after the first pattern as another pattern, so `pkill -f "server.ts" -n` also matches every process with `-n` in its command line, every c11 terminal's login shell included.
+
 - **There is no `c11 list`.** Enumeration is scoped: `c11 tree --all` (every window — the one to reach for when asking "is any agent working on X?"), `c11 tree --all --json` to script against, or `list-workspaces` / `list-areas` / `list-area-panels`. `c11 list` is *not* a command — it errors and prints usage, so `c11 list | grep <x>` greps the **error text**, comes back empty, and reads exactly like a clean "nothing found." Don't let a command that never ran become a confident answer: if an enumeration is empty and it matters, run it bare and confirm you got a tree.
 - **Per-panel `prompt_cache` says whether an agent's next message re-caches its context.** Every panel in `c11 tree --json` / `panel.list` carries `prompt_cache`: `null` without cache evidence, `{state: unknown}` when a reporter cannot tell, else `{state: warm|cold, basis: ttl|estimate, lifetime_seconds, requested_at, cold_at, prompt_tokens, source: transcript|report|statusline, misses}`. Prefer a warm agent, or message one before its `cold_at`, when the choice is free. Plugins, extensions and custom kinds report a request's cache use with `c11 rpc agent.prompt_cache.report`; the operator can paste a statusline snippet that reports Claude Code's exact cache (c11 never writes it). Details: [references/api.md](references/api.md#prompt-cache-reports).
 - **Per-panel `last_seen_at` says when the operator last looked at a panel.** Every panel in `c11 tree --json` / `panel.list` carries `last_seen_at` (ISO-8601, second precision, `null` = never seen) and `being_seen`. A panel is seen while it is the selected panel of the focused area in the selected workspace of the key c11 window, with c11 frontmost, the window on the active Space and visible, and the screen unlocked. Because it follows what is on screen, a socket focus change while c11 is in the background stamps nothing; while c11 is frontmost it stamps the panel that left and marks the new one `being_seen`. Details: [references/api.md](references/api.md).

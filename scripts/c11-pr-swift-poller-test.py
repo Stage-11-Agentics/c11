@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -1323,6 +1324,257 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
                 world.pull(7)
 
 
+class ResultSweepTests(unittest.TestCase):
+    """C11-579: old result entries go; live attempts, recent entries and everything outside stay."""
+
+    DAY = 24 * 60 * 60
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.results = self.root / "state" / "results"
+        self.results.mkdir(parents=True)
+        self.world = World(body=[])
+        self.now = self.world.now
+
+    def tearDown(self):
+        for path in self.results.rglob("*"):
+            if path.is_dir() and not path.is_symlink():
+                path.chmod(0o700)
+        self.results.chmod(0o700)
+        self.tmp.cleanup()
+
+    def aged(self, path, days):
+        stamp = self.world.now - days * self.DAY
+        os.utime(path, (stamp, stamp), follow_symlinks=False)
+        return path
+
+    def attempt(self, attempt, days):
+        """The layout on Atlas: a bundle, its log, and a link from the bare name to the bundle."""
+        bundle = self.results / (attempt + "-1.xcresult")
+        (bundle / "Data").mkdir(parents=True)
+        (bundle / "Data" / "data.0").write_text("bundle")
+        log = self.results / (attempt + "-1.log")
+        log.write_text("log")
+        link = self.results / (attempt + "-1")
+        link.symlink_to(bundle)
+        for path in (bundle / "Data", bundle, log, link):
+            self.aged(path, days)
+        return [bundle, log, link]
+
+    def names(self):
+        return sorted(path.name for path in self.results.iterdir())
+
+    def sweeps(self):
+        return [row for row in _decisions(self.root) if row.get("decision") == "results-sweep"]
+
+    def supervisor(self):
+        return poller.Supervisor(self.root, self.world)
+
+    def test_old_entries_go_recent_and_queued_or_running_attempts_stay(self):
+        old = self.attempt("old", 8)
+        recent = self.attempt("recent", 6)
+        queued = self.attempt("queued", 30)
+        running = self.attempt("running", 30)
+        poller.write_running(self.root, {"pgid": 999_999, "attempt_id": "running"})
+        supervisor = self.supervisor()
+        supervisor.queue.append({"pr": 7, "sha": SHA_A, "ref": "feature", "attempt_id": "queued"})
+
+        supervisor._sweep_results()
+
+        for path in old:
+            self.assertFalse(os.path.lexists(path), path)
+        for path in recent + queued + running:
+            self.assertTrue(os.path.lexists(path), path)
+        sweep, = self.sweeps()
+        self.assertEqual((sweep["removed"], sweep["kept"], sweep["failed"]), (3, 9, 0))
+        self.assertIsNone(sweep["error"])
+
+    def test_an_attempt_prefix_protects_only_that_attempt(self):
+        self.attempt("abc", 8)
+        self.attempt("abcd", 8)
+        outcome = poller.sweep_results(self.results, self.now, {"abc", None, ""})
+        self.assertEqual(self.names(), ["abc-1", "abc-1.log", "abc-1.xcresult"])
+        self.assertEqual(outcome["removed"], 3)
+
+    def test_the_seven_day_boundary_is_older_than_not_equal(self):
+        (self.results / "edge.log").write_text("x")
+        self.aged(self.results / "edge.log", 7)
+        (self.results / "past.log").write_text("x")
+        self.aged(self.results / "past.log", 7 + 1 / self.DAY)
+        poller.sweep_results(self.results, self.now)
+        self.assertEqual(self.names(), ["edge.log"])
+
+    def test_symlinks_go_as_links_and_nothing_outside_is_touched(self):
+        outside = self.root / "outside"
+        (outside / "tree").mkdir(parents=True)
+        keep = outside / "tree" / "keep.txt"
+        keep.write_text("keep")
+        self.aged(outside, 30)
+        self.aged(outside / "tree", 30)
+        self.aged(keep, 30)
+        before = (outside.stat().st_mtime, (outside / "tree").stat().st_mtime, keep.stat().st_mtime)
+        self.aged(self._link("to-dir", outside / "tree"), 8)
+        self.aged(self._link("to-file", keep), 8)
+        self.aged(self._link("dangling", self.root / "absent"), 8)
+        self.aged(self._link("recent-link-to-old-target", outside), 1)
+        bundle = self.results / "bundle"
+        bundle.mkdir()
+        (bundle / "inner").symlink_to(outside)
+        self.aged(bundle, 8)
+
+        outcome = poller.sweep_results(self.results, self.now)
+
+        self.assertEqual(self.names(), ["recent-link-to-old-target"])
+        self.assertEqual(outcome["removed"], 4)
+        self.assertEqual(keep.read_text(), "keep")
+        self.assertEqual(before, (outside.stat().st_mtime, (outside / "tree").stat().st_mtime, keep.stat().st_mtime))
+
+    def _link(self, name, target):
+        link = self.results / name
+        link.symlink_to(target)
+        return link
+
+    def test_a_symlinked_results_root_is_refused(self):
+        real = self.root / "real-results"
+        real.mkdir()
+        (real / "old.log").write_text("x")
+        self.aged(real / "old.log", 8)
+        alias = self.root / "alias"
+        alias.symlink_to(real)
+        outcome = poller.sweep_results(alias, self.now)
+        self.assertTrue((real / "old.log").exists())
+        self.assertEqual(outcome["failed"], 1)
+        self.assertEqual(outcome["removed"], 0)
+
+    def test_a_missing_results_directory_is_a_clean_zero(self):
+        self.assertEqual(poller.sweep_results(self.root / "absent", self.now),
+                         {"removed": 0, "kept": 0, "failed": 0, "error": None})
+
+    def test_cycle_sweeps_at_most_hourly(self):
+        supervisor = self.supervisor()
+        self.attempt("first", 8)
+        supervisor.cycle()
+        self.assertEqual(self.names(), [])
+        self.assertEqual([row["removed"] for row in self.sweeps()], [3])
+
+        self.attempt("second", 8)
+        self.world.now += poller.SWEEP_INTERVAL_S - 1
+        supervisor.not_before = 0
+        supervisor.cycle()
+        self.assertEqual(len(self.names()), 3)
+        self.assertEqual(len(self.sweeps()), 1)
+
+        self.world.now += 1
+        supervisor.not_before = 0
+        supervisor.cycle()
+        self.assertEqual(self.names(), [])
+        self.assertEqual([row["removed"] for row in self.sweeps()], [3, 3])
+
+    def test_a_build_in_progress_is_never_swept_under_itself(self):
+        self.world.body = [pr()]
+        self.attempt("old", 8)
+        inside = []
+        spawn = self.world.spawn
+
+        def spawned(command, log_path=None):
+            # Everything the build wrote looks ancient, and the sweep still has not touched it.
+            self.attempt("during-the-build", 30)
+            inside.append(self.names())
+            return spawn(command, log_path)
+
+        self.world.spawn = spawned
+        supervisor = self.supervisor()
+        supervisor.cycle()
+
+        self.assertEqual(len(inside), 1)
+        self.assertNotIn("old-1", inside[0])
+        self.assertIn("during-the-build-1.log", self.names())
+        self.assertEqual(self.world.posts[-1]["state"], "success")
+        self.assertEqual(len(self.sweeps()), 1)
+
+    def test_a_stuck_recovery_sweeps_nothing(self):
+        old = self.attempt("old", 8)
+        (self.root / "state" / "running.lock").touch()
+        with (self.root / "state" / "running.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.assertEqual(self.supervisor().cycle(), "stuck")
+        for path in old:
+            self.assertTrue(os.path.lexists(path))
+        self.assertEqual(self.sweeps(), [])
+
+    def test_a_permission_error_is_one_line_and_the_build_still_posts(self):
+        if os.geteuid() == 0:
+            self.skipTest("root ignores directory modes")
+        locked = self.results / "locked"
+        (locked / "inner").mkdir(parents=True)
+        (locked / "inner" / "file").write_text("x")
+        (locked / "inner").chmod(0o500)
+        self.aged(locked, 8)
+        self.attempt("old", 8)
+        self.world.body = [pr()]
+
+        self.supervisor().cycle()
+
+        sweep, = self.sweeps()
+        self.assertEqual((sweep["removed"], sweep["failed"]), (3, 1))
+        self.assertEqual(sweep["error"], "locked: PermissionError")
+        self.assertEqual(self.world.posts[-1]["state"], "success")
+        self.assertEqual(self.world.posts[-1]["context"], poller.STATUS_CONTEXT)
+
+    def test_an_unreadable_results_directory_is_one_line_and_the_cycle_continues(self):
+        if os.geteuid() == 0:
+            self.skipTest("root ignores directory modes")
+        self.attempt("old", 8)
+        self.results.chmod(0o000)
+        try:
+            outcome = self.supervisor().cycle()
+        finally:
+            self.results.chmod(0o700)
+        sweep, = self.sweeps()
+        self.assertEqual((sweep["removed"], sweep["failed"]), (0, 1))
+        self.assertEqual(sweep["error"], "results: PermissionError")
+        self.assertEqual(outcome, "idle")
+        self.assertEqual(len(self.names()), 3)
+
+    def test_an_entry_that_vanishes_mid_sweep_is_one_line(self):
+        self.attempt("old", 8)
+        real_unlink = os.unlink
+
+        def racing(path, *args, **kwargs):
+            real_unlink(path, *args, **kwargs)
+            if str(path).endswith(".log"):
+                raise FileNotFoundError(path)
+
+        supervisor = self.supervisor()
+        with unittest.mock.patch.object(poller.os, "unlink", side_effect=racing):
+            supervisor._sweep_results()
+        sweep, = self.sweeps()
+        self.assertEqual(sweep["failed"], 1)
+        self.assertEqual(sweep["error"], "old-1.log: FileNotFoundError")
+        self.assertEqual(self.names(), [])
+
+    def test_a_failed_attempt_read_or_log_write_never_raises(self):
+        self.attempt("old", 8)
+        rows = []
+
+        def no_attempts():
+            raise OSError("unreadable")
+
+        self.assertEqual(
+            poller.sweep_results_if_due(self.results, self.now, None, no_attempts, lambda **row: rows.append(row)),
+            self.now,
+        )
+        self.assertEqual(rows, [{"removed": 0, "kept": 0, "failed": 1, "error": "sweep: OSError"}])
+        self.assertEqual(len(self.names()), 3)
+
+        def no_log(**_row):
+            raise OSError("disk full")
+
+        self.assertEqual(poller.sweep_results_if_due(self.results, self.now, None, set, no_log), self.now)
+        self.assertEqual(self.names(), [])
+
+
 class WorkspaceTests(unittest.TestCase):
     def test_submodule_residue_skips_and_clean_removes_it(self):
         tmp = tempfile.TemporaryDirectory()
@@ -2586,6 +2838,26 @@ class RuntimeIntegrationTests(RuntimeHarness):
         decided = self._results()[-1]
         self.assertEqual(decided["state"], "error")
         self.assertEqual(decided["description"], "quarantine unreadable")
+
+    def test_real_supervise_sweeps_old_results_and_still_posts_the_build(self):
+        self._enable()
+        results = self.root / "state" / "results"
+        results.mkdir(parents=True, exist_ok=True)
+        old = results / "oldattempt-1.log"
+        old.write_text("old")
+        recent = results / "recentattempt-1.log"
+        recent.write_text("recent")
+        stamp = time.time() - poller.RESULT_RETENTION_S - 60
+        os.utime(old, (stamp, stamp))
+
+        result = self._supervise()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue(recent.exists())
+        sweep, = [row for row in _decisions(self.root) if row.get("decision") == "results-sweep"]
+        self.assertEqual(sweep["removed"], 1)
+        self.assertEqual(self.github.statuses()[-1][0], "success")
 
     def test_disabled_file_still_exits_2(self):
         state = self.root / "state"

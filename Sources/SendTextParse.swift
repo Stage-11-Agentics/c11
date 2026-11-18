@@ -122,10 +122,15 @@ struct SendTextDelivery {
         self.wantsReturn = submit || body != text
     }
 
-    static func summary(queued: Bool, submitted: Bool) -> String {
+    /// `confirmed`: the agent's own evidence (its turn, or its composer emptying) shows it took the line
+    /// (C11H-298). Without it, "return scheduled" means only that the Return was written.
+    static func summary(queued: Bool, submitted: Bool, confirmed: Bool = false) -> String {
         if queued {
             return String(localized: "cli.send.queued",
                           defaultValue: "queued, not delivered (panel not attached; the agent has not seen it)")
+        }
+        if submitted && confirmed {
+            return String(localized: "cli.send.delivered_confirmed", defaultValue: "delivered, submitted (the agent took it)")
         }
         return submitted
             ? String(localized: "cli.send.delivered_submitted", defaultValue: "delivered, return scheduled")

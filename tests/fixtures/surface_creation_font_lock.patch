@@ -1,0 +1,56 @@
+--- a/src/Surface.zig
++++ b/src/Surface.zig
+@@ -457,6 +457,33 @@
+     }
+ };
+ 
++
++// C11H-248 deterministic fixture only. Applied by a local probe patch; not shipped.
++var creation_font_lock_probe_count: usize = 0;
++const CreationFontLockProbe = struct {
++    alloc: Allocator,
++    set: *font.SharedGridSet,
++    key: font.SharedGridSet.Key,
++    grid: *font.SharedGrid,
++    ready: std.Thread.ResetEvent = .{},
++    references: std.atomic.Value(u32) = .init(2),
++
++    fn release(self: *CreationFontLockProbe) void {
++        if (self.references.fetchSub(1, .acq_rel) == 1) self.alloc.destroy(self);
++    }
++
++    fn run(self: *CreationFontLockProbe) void {
++        defer self.release();
++        self.grid.lock.lock();
++        std.debug.print("C11_248_FONT_LOCK_HELD\n", .{});
++        self.ready.set();
++        std.Thread.sleep(1000 * std.time.ns_per_ms);
++        self.grid.lock.unlock();
++        std.debug.print("C11_248_FONT_LOCK_RELEASED\n", .{});
++        self.set.deref(self.key);
++    }
++};
++
+ /// Create a new surface. This must be called from the main thread. The
+ /// pointer to the memory for the surface must be provided and must be
+ /// stable due to interfacing with various callbacks.
+@@ -520,6 +547,19 @@
+         &derived_config.font,
+         font_size,
+     );
++
++    // Hold the actual shared font-grid writer lock during the second real creation.
++    // The extra set reference keeps the grid alive independently of that surface.
++    creation_font_lock_probe_count += 1;
++    if (creation_font_lock_probe_count == 2 and std.posix.getenv("C11_TEST_CREATION_FONT_LOCK") != null) {
++        const held_key, const held_grid = try app.font_grid_set.ref(&derived_config.font, font_size);
++        const probe = try alloc.create(CreationFontLockProbe);
++        probe.* = .{ .alloc = alloc, .set = &app.font_grid_set, .key = held_key, .grid = held_grid };
++        const holder = try std.Thread.spawn(.{}, CreationFontLockProbe.run, .{probe});
++        holder.detach();
++        probe.ready.wait();
++        probe.release();
++    }
+ 
+     // Build our size struct which has all the sizes we need.
+     const size: rendererpkg.Size = size: {

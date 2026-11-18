@@ -72,4 +72,4 @@ Each finding above has been re-checked against the diff and the surrounding file
 **Approve and merge.** This is a correct, minimal, well-commented fix to a real bug that ships in production Claude Code as of 2026-05-11. The comment block alone makes it worth landing — future maintainers (human or agent) hitting the same class of problem with a new subcommand will have an exemplar to follow. The same bug is tracked upstream (manaflow-ai/cmux#4005); per c11's cmux-relationship policy (CLAUDE.md: "c11 → upstream (suggest)"), this fix is a strong candidate to surface upstream after landing here — the comment block ports cleanly and the underlying bug is identical.
 
 **Files touched (absolute paths):**
-- `/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude`
+- `~/src/c11/Resources/bin/claude`

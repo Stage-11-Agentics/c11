@@ -1,8 +1,8 @@
-# Atlas c11 performance lane
+# Build-host c11 performance lane
 
-The lane measures two command-search tests from `c11LogicTests` and one Markdown corpus bridge test from `c11Tests` on the current `main` tip once an hour, and skips a head already measured successfully. After three failed attempts at one head, it skips that head until a manual `--force` run. It runs on Atlas under the existing user, uses the shared fleet build slot, writes one JSONL record per benchmark, and posts no GitHub status. A failed or unavailable measurement never blocks `main`.
+The lane measures two command-search tests from `c11LogicTests` and one Markdown corpus bridge test from `c11Tests` on the current `main` tip once an hour, and skips a head already measured successfully. After three failed attempts at one head, it skips that head until a manual `--force` run. It runs on the build host under the existing user, uses the shared fleet build slot, writes one JSONL record per benchmark, and posts no GitHub status. A failed or unavailable measurement never blocks `main`.
 
-The script runs from the staged, SHA-verified copy at `~/c11-perf-lane/bin/c11-perf-lane.py`; its source checkout is at `~/c11-perf-lane/worktree` with a separate DerivedData directory. It fetches the requested ref, refuses a dirty checkout, updates the pinned submodules, and invokes `xcodebuild` only through `~/c11-poller/bin/atlas_build_slots.py`. It sets `C11_PERF_LANE=1` and runs these selectors serially:
+The script runs from the staged, SHA-verified copy at `~/c11-perf-lane/bin/c11-perf-lane.py`; its source checkout is at `~/c11-perf-lane/worktree` with a separate DerivedData directory. It fetches the requested ref, refuses a dirty checkout, updates the pinned submodules, and invokes `xcodebuild` only through `<poller-root>/bin/atlas_build_slots.py`. It sets `C11_PERF_LANE=1` and runs these selectors serially:
 
 - `CommandPaletteSearchEngineTests/testCommandSearchBenchmarkBeatsLegacyPipeline`
 - `CommandPaletteSearchEngineTests/testSwitcherSearchBenchmarkBeatsLegacyPipeline`
@@ -10,7 +10,7 @@ The script runs from the staged, SHA-verified copy at `~/c11-perf-lane/bin/c11-p
 
 ## Install after merge
 
-Run these commands on Atlas as `atinwoodard` after this lane is merged:
+Run these commands on the build host as the build host's user after this lane is merged:
 
 ```sh
 mkdir -p "$HOME/c11-perf-lane/bin" "$HOME/c11-perf-lane/logs" "$HOME/c11-perf-lane/records" "$HOME/Library/LaunchAgents"

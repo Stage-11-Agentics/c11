@@ -139,7 +139,28 @@ extension CMUXCLI {
         throw CLIError(message: "Unknown terminal theme '\(trimmed)'. Run 'c11 terminal-theme' to list available Ghostty terminal themes.")
     }
 
+    /// QA and tagged launches may point the terminal-theme override at another file
+    /// (`C11_QA_TERMINAL_THEME_CONFIG`), so a test never writes this machine's real one.
+    /// That file is then the only config read for the current selection, and no running
+    /// app is asked to reload.
+    func qaTerminalThemeConfigURL() -> URL? {
+        let environment = ProcessInfo.processInfo.environment
+        let taggedOrQA = ["C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"].contains { key in
+            guard let value = environment[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard taggedOrQA,
+              let raw = environment["C11_QA_TERMINAL_THEME_CONFIG"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: (raw as NSString).expandingTildeInPath, isDirectory: false).standardizedFileURL
+    }
+
     func themeConfigSearchURLs() -> [URL] {
+        if let qaConfig = qaTerminalThemeConfigURL() {
+            return [qaConfig]
+        }
         let rawPaths = [
             "~/.config/ghostty/config",
             "~/.config/ghostty/config.ghostty",
@@ -179,31 +200,21 @@ extension CMUXCLI {
     }
 
     func cmuxThemeOverrideConfigURL() throws -> URL {
-        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        if let qaConfig = qaTerminalThemeConfigURL() {
+            return qaConfig
+        }
+        // The file of the app this CLI belongs to, as Settings writes it: a test build's CLI
+        // never writes the installed app's config.
+        let bundleIdentifier = currentCmuxAppBundleIdentifier() ?? Self.cmuxThemeOverrideBundleIdentifier
+        guard let url = TerminalThemeOverride.appConfigURL(bundleIdentifier: bundleIdentifier) else {
             throw CLIError(message: "Unable to resolve Application Support directory")
         }
-        return appSupport
-            .appendingPathComponent(Self.cmuxThemeOverrideBundleIdentifier, isDirectory: true)
-            .appendingPathComponent("config.ghostty", isDirectory: false)
+        return url
     }
 
     func writeManagedThemeOverride(rawThemeValue: String) throws -> URL {
-        let fileManager = FileManager.default
         let configURL = try cmuxThemeOverrideConfigURL()
-        let directoryURL = configURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-
-        let existingContents = try readOptionalThemeOverrideContents(at: configURL) ?? ""
-        let strippedContents = removingManagedThemeOverride(from: existingContents)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let block = """
-        \(Self.cmuxThemesBlockStart)
-        theme = \(rawThemeValue)
-        \(Self.cmuxThemesBlockEnd)
-        """
-
-        let nextContents = strippedContents.isEmpty ? "\(block)\n" : "\(strippedContents)\n\n\(block)\n"
-        try nextContents.write(to: configURL, atomically: true, encoding: .utf8)
+        try TerminalThemeOverride.write(settingTheme: rawThemeValue, to: configURL)
         return configURL
     }
 
@@ -256,22 +267,24 @@ extension CMUXCLI {
     }
 
     func removingManagedThemeOverride(from contents: String) -> String {
-        let pattern = #"(?ms)\n?# cmux themes start\n.*?\n# cmux themes end\n?"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return contents
-        }
-        let fullRange = NSRange(contents.startIndex..<contents.endIndex, in: contents)
-        return regex.stringByReplacingMatches(in: contents, options: [], range: fullRange, withTemplate: "")
+        TerminalThemeOverride.removingBlock(from: contents)
     }
 
     func reloadThemesIfPossible() -> ThemeReloadStatus {
         let bundleIdentifier = currentCmuxAppBundleIdentifier() ?? Self.cmuxThemeOverrideBundleIdentifier
+        if qaTerminalThemeConfigURL() != nil {
+            return ThemeReloadStatus(requested: false, targetBundleIdentifier: bundleIdentifier)
+        }
+        #if os(macOS)
         DistributedNotificationCenter.default().post(
             name: Notification.Name(Self.cmuxThemesReloadNotificationName),
             object: nil,
             userInfo: ["bundleIdentifier": bundleIdentifier]
         )
         return ThemeReloadStatus(requested: true, targetBundleIdentifier: bundleIdentifier)
+        #else
+        return ThemeReloadStatus(requested: false, targetBundleIdentifier: bundleIdentifier)
+        #endif
     }
 
     func currentCmuxAppBundleIdentifier() -> String? {

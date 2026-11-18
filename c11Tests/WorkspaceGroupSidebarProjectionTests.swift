@@ -217,6 +217,133 @@ final class WorkspaceGroupSidebarProjectionTests: XCTestCase {
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.waitingCount, 0)
     }
 
+    /// C11H-296: a description write publishes only its workspace; the agent
+    /// rows must still rebuild, at once when nothing published lately.
+    @MainActor
+    func testCoordinatorRepublishesWhenOnlyACardContextChanges() {
+        let fixture = ObservationFixture()
+        let member = ObservedMember(groupId: nil)
+        fixture.members = [member]
+        let scheduler = ManualScheduler(), clock = ManualClock()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule,
+            scheduleAfter: clock.scheduleAfter, now: { clock.now })
+        coordinator.attach(source: fixture.source())
+        var publications = 0
+        let subscription = coordinator.$projection.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        let revision = coordinator.projection.pulseRevision
+
+        clock.advance(by: 5)
+        member.changes.send()
+        member.cardContextRevision = 7
+        scheduler.drain()
+        XCTAssertEqual(publications, 1, "a description change alone rebuilds the rows")
+        XCTAssertEqual(coordinator.projection.pulseRevision, revision + 1)
+        XCTAssertTrue(clock.delayed.isEmpty, "a lone write waits for nothing")
+
+        clock.advance(by: 5)
+        member.changes.send() // The same text again leaves the revision where it was.
+        scheduler.drain()
+        clock.advance(by: 1)
+        XCTAssertEqual(publications, 1)
+    }
+
+    /// A burst of description writes across panels and workspaces costs at
+    /// most two list rebuilds per window: the first at once, the rest at the
+    /// window's end.
+    @MainActor
+    func testCoordinatorCoalescesABurstOfCardContextChanges() {
+        let fixture = ObservationFixture()
+        let members = (0..<5).map { _ in ObservedMember(groupId: nil) }
+        fixture.members = members
+        let scheduler = ManualScheduler(), clock = ManualClock()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule,
+            scheduleAfter: clock.scheduleAfter, now: { clock.now })
+        coordinator.attach(source: fixture.source())
+        var publications = 0
+        let subscription = coordinator.$projection.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        clock.advance(by: 5)
+
+        var revision: UInt64 = 0
+        for write in 0..<20 { // 20 writes, 10 ms apart, each in its own main turn.
+            let member = members[write % members.count]
+            member.changes.send()
+            revision += 1
+            member.cardContextRevision = revision
+            scheduler.drain()
+            clock.advance(by: 0.01)
+        }
+        XCTAssertEqual(publications, 1, "the first write shows at once; the rest wait for the window")
+        XCTAssertEqual(clock.delayed.count, 1, "one trailing publication for the whole burst")
+        clock.advance(by: WorkspaceGroupSidebarCoordinator.cardContextWindow)
+        XCTAssertEqual(publications, 2)
+        clock.advance(by: 1)
+        XCTAssertEqual(publications, 2)
+    }
+
+    /// Any other publication rebuilds the rows, so it carries a pending card
+    /// context change and the trailing one then publishes nothing.
+    @MainActor
+    func testCoordinatorLifecyclePublicationCarriesAPendingCardContextChange() {
+        let fixture = ObservationFixture()
+        let member = ObservedMember(groupId: nil)
+        fixture.members = [member]
+        let scheduler = ManualScheduler(), clock = ManualClock()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule,
+            scheduleAfter: clock.scheduleAfter, now: { clock.now })
+        coordinator.attach(source: fixture.source())
+        var publications = 0
+        let subscription = coordinator.$projection.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        clock.advance(by: 5)
+
+        member.changes.send(); member.cardContextRevision = 1; scheduler.drain()
+        XCTAssertEqual(publications, 1)
+        clock.advance(by: 0.05)
+        member.changes.send(); member.cardContextRevision = 2; scheduler.drain()
+        XCTAssertEqual(publications, 1, "inside the window: pending")
+        clock.advance(by: 0.05)
+        member.changes.send(); member.lifecycle = [UUID(): .init(state: .running, promptCacheExpired: false)]
+        scheduler.drain()
+        XCTAssertEqual(publications, 2, "a lifecycle edge publishes at once and carries the description")
+        clock.advance(by: 1)
+        XCTAssertEqual(publications, 2, "nothing left for the trailing publication")
+    }
+
+    /// A trailing card-context publication queued for one window's sources
+    /// never fires into the next attachment, so it cannot publish that one's
+    /// pending change before its own window ends.
+    @MainActor
+    func testCoordinatorReattachDropsAQueuedCardContextPublication() {
+        let old = ObservationFixture(), new = ObservationFixture()
+        let oldMember = ObservedMember(groupId: nil), newMember = ObservedMember(groupId: nil)
+        old.members = [oldMember]; new.members = [newMember]
+        let scheduler = ManualScheduler(), clock = ManualClock()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule,
+            scheduleAfter: clock.scheduleAfter, now: { clock.now })
+        coordinator.attach(source: old.source())
+        clock.advance(by: 5)
+        oldMember.changes.send(); oldMember.cardContextRevision = 1; scheduler.drain()
+        clock.advance(by: 0.05)
+        oldMember.changes.send(); oldMember.cardContextRevision = 2; scheduler.drain()
+        XCTAssertEqual(clock.delayed.count, 1, "the old window queued its trailing publication")
+
+        coordinator.detach()
+        coordinator.attach(source: new.source())
+        var publications = 0
+        let subscription = coordinator.$projection.dropFirst().sink { _ in publications += 1 }
+        defer { subscription.cancel() }
+        clock.advance(by: 0.1)
+        newMember.changes.send(); newMember.cardContextRevision = 1; scheduler.drain()
+        XCTAssertEqual(publications, 0, "inside the new window: pending")
+
+        clock.advance(by: 0.12) // The old trailing time passes.
+        XCTAssertEqual(publications, 0, "the old window's publication does not fire into the new one")
+        clock.advance(by: 0.1) // The new window ends.
+        XCTAssertEqual(publications, 1)
+    }
+
     @MainActor
     func testCoordinatorNotificationInvalidationReadsUpdatedIndexesAndCoalescesWithMemberChange() {
         let fixture = ObservationFixture()
@@ -364,6 +491,23 @@ private final class ManualScheduler {
     }
 }
 
+/// A clock and delayed work the test advances by hand.
+@MainActor
+private final class ManualClock {
+    var now: TimeInterval = 100
+    var delayed: [(at: TimeInterval, work: @MainActor () -> Void)] = []
+    func scheduleAfter(_ delay: TimeInterval, _ work: @escaping @MainActor () -> Void) {
+        delayed.append((now + delay, work))
+    }
+    /// Moves the clock and runs the delayed work now due, in order.
+    func advance(by seconds: TimeInterval) {
+        now += seconds
+        let due = delayed.filter { $0.at <= now + 1e-9 }.sorted { $0.at < $1.at }
+        delayed.removeAll { $0.at <= now + 1e-9 }
+        for item in due { item.work() }
+    }
+}
+
 @MainActor
 private final class ObservedMember {
     let id: UUID
@@ -373,6 +517,7 @@ private final class ObservedMember {
     var panels: [WorkspaceGroupPanelAttention] = []
     var unread = 0
     var lifecycle: [UUID: WorkspaceGroupPanelLifecycle] = [:]
+    var cardContextRevision: UInt64 = 0
     var captures = 0
 
     init(id: UUID = UUID(), groupId: UUID?) { self.id = id; self.groupId = groupId }
@@ -383,7 +528,8 @@ private final class ObservedMember {
             orderEntry: { .init(id: self.id, isPinned: self.isPinned, groupId: self.groupId) },
             attention: {
                 self.captures += 1
-                return .init(panels: self.panels, unreadCount: self.unread, lifecycleByPanel: self.lifecycle)
+                return .init(panels: self.panels, unreadCount: self.unread, lifecycleByPanel: self.lifecycle,
+                             cardContextRevision: self.cardContextRevision)
             })
     }
 }
@@ -396,11 +542,14 @@ private final class ObservationFixture {
     var groups: [WorkspaceGroup] = []
     var members: [ObservedMember] = []
     var selected: UUID?
+    var captains: [UUID: WorkspaceCaptainSummary] = [:]
+    var rootOrder: [UUID]?
 
     func source() -> WorkspaceGroupSidebarObservationSource {
         .init(structureChanges: structure.eraseToAnyPublisher(), selectionChanges: selection.eraseToAnyPublisher(),
               notificationChanges: notifications.eraseToAnyPublisher(), groups: { self.groups },
-              workspaces: { self.members.map { $0.observation() } }, selectedWorkspaceId: { self.selected })
+              workspaces: { self.members.map { $0.observation() } }, selectedWorkspaceId: { self.selected },
+              groupCaptains: { self.captains }, rootOrder: { self.rootOrder })
     }
 }
 
@@ -435,5 +584,108 @@ extension WorkspaceGroupSidebarProjectionTests {
         XCTAssertEqual(rows[2].moveUpTarget, a)
         XCTAssertNil(rows[2].moveDownTarget)
         XCTAssertEqual(rows.filter(\.isLastGroupMember).map(\.workspaceId), [c])
+    }
+}
+
+/// C11H-299: the group's Captain is drawn once, on its header.
+extension WorkspaceGroupSidebarProjectionTests {
+    func testHeaderCarriesItsGroupCaptainAndMembersDoNot() {
+        let group = WorkspaceGroup(name: "Acme")
+        let member = UUID()
+        let captain = WorkspaceCaptainSummary(address: "acme-captain", holders: [], scope: .workspaceGroup, groupID: group.id)
+        let projection = WorkspaceGroupSidebarProjection.make(groups: [group],
+            workspaces: [.init(id: member, isPinned: false, groupId: group.id)], captainByGroup: [group.id: captain])
+        XCTAssertEqual(projection.headersById[group.id]?.captain, captain)
+        let plain = WorkspaceGroupSidebarProjection.make(groups: [group],
+            workspaces: [.init(id: member, isPinned: false, groupId: group.id)])
+        XCTAssertEqual(plain.headersById[group.id]?.captain, .unset)
+        XCTAssertNotEqual(projection, plain, "a Captain change republishes the header")
+        XCTAssertEqual(projection.rows.count, plain.rows.count, "the mark adds no row")
+    }
+
+    @MainActor
+    func testCoordinatorRepublishesHeaderWhenOnlyTheGroupCaptainChanges() {
+        let fixture = ObservationFixture()
+        let group = WorkspaceGroup(name: "Acme")
+        let member = ObservedMember(groupId: group.id)
+        fixture.groups = [group]; fixture.members = [member]
+        let scheduler = ManualScheduler()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule)
+        coordinator.attach(source: fixture.source())
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.captain, .unset)
+        let held = WorkspaceCaptainSummary(address: "acme-captain",
+            holders: [.init(panelID: UUID(), workspaceID: UUID(), address: "acme-captain", title: "Acme Captain")],
+            scope: .workspaceGroup, groupID: group.id)
+        fixture.captains = [group.id: held]
+        fixture.structure.send()
+        scheduler.drain()
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.captain, held)
+        // Attention updates rebuild headers incrementally and must keep the mark.
+        member.changes.send()
+        member.panels = [.init(isFlagged: true, isWaiting: false, isSuppressed: false)]
+        scheduler.drain()
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary.flaggedCount, 1)
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.captain, held)
+        fixture.selected = member.id
+        fixture.selection.send()
+        scheduler.drain()
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.captain, held)
+        fixture.captains = [:]
+        fixture.structure.send()
+        scheduler.drain()
+        XCTAssertEqual(coordinator.projection.headersById[group.id]?.captain, .unset)
+    }
+
+    func testHeaderRedrawsWhenOnlyItsCaptainChanges() {
+        let group = WorkspaceGroup(name: "Acme")
+        func header(_ captain: WorkspaceCaptainSummary) -> WorkspaceGroupHeaderView {
+            WorkspaceGroupHeaderView(group: group, summary: .zero, isActive: false, captain: captain,
+                onToggleCollapse: { _ in }, onFocus: { _ in }, onRename: { _, _ in }, onSetColor: { _, _ in },
+                onSetIcon: { _, _ in }, onTogglePin: { _ in }, onUngroup: { _ in }, onDelete: { _ in })
+        }
+        let unheld = WorkspaceCaptainSummary(address: "acme-captain", holders: [], scope: .workspaceGroup, groupID: group.id)
+        XCTAssertFalse(header(.unset) == header(unheld), "the header redraws when its Captain changes")
+        XCTAssertTrue(header(unheld) == header(unheld))
+    }
+}
+
+/// C11H-342: the sidebar draws groups and ungrouped workspaces in one root order.
+extension WorkspaceGroupSidebarProjectionTests {
+    func testRowsFollowTheRootOrderAndUngroupedMovesStepPastGroups() {
+        let group = WorkspaceGroup(name: "Group")
+        let flagship = UUID(), member = UUID(), other = UUID()
+        let workspaces = [WorkspaceOrderEntry(id: flagship, isPinned: false),
+                          WorkspaceOrderEntry(id: member, isPinned: false, groupId: group.id),
+                          WorkspaceOrderEntry(id: other, isPinned: false)]
+        let legacy = WorkspaceGroupSidebarProjection.make(groups: [group], workspaces: workspaces)
+        XCTAssertEqual(legacy.rows.map(\.id), [.group(group.id), .workspace(member), .workspace(flagship), .workspace(other)])
+        let projection = WorkspaceGroupSidebarProjection.make(groups: [group], workspaces: workspaces,
+                                                             rootOrder: [flagship, group.id, other])
+        XCTAssertEqual(projection.rows.map(\.id),
+                       [.workspace(flagship), .group(group.id), .workspace(member), .workspace(other)])
+        XCTAssertEqual(projection.visibleWorkspaceIds, [flagship, member, other])
+        let rows = projection.rows.compactMap { row -> WorkspaceGroupSidebarWorkspaceRow? in
+            if case .workspace(let value) = row { return value }; return nil
+        }
+        XCTAssertNil(rows[0].moveUpTarget)
+        XCTAssertEqual(rows[0].moveDownTarget, group.id, "one step down passes the group")
+        XCTAssertEqual(rows[2].moveUpTarget, group.id)
+        XCTAssertEqual(WorkspaceSidebarTileRun.pack(projection.rows).map(\.rows.count), [1, 1, 1, 1])
+    }
+
+    @MainActor
+    func testCoordinatorRepublishesWhenOnlyTheRootOrderChanges() {
+        let fixture = ObservationFixture()
+        let group = WorkspaceGroup(name: "Group")
+        let flagship = ObservedMember(groupId: nil)
+        fixture.groups = [group]; fixture.members = [flagship]
+        let scheduler = ManualScheduler()
+        let coordinator = WorkspaceGroupSidebarCoordinator(scheduleRefresh: scheduler.schedule)
+        coordinator.attach(source: fixture.source())
+        XCTAssertEqual(coordinator.projection.rows.map(\.id), [.group(group.id), .workspace(flagship.id)])
+        fixture.rootOrder = [flagship.id, group.id]
+        fixture.structure.send()
+        scheduler.drain()
+        XCTAssertEqual(coordinator.projection.rows.map(\.id), [.workspace(flagship.id), .group(group.id)])
     }
 }

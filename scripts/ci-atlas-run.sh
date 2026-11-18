@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one CI command through Atlas's two-slot admission and c11 build lock.
+# Run one CI command through the build host's two-slot admission and c11 build lock.
 #
 # This wrapper is intentionally process-scoped. It does not install tools,
 # change xcode-select, or modify a tenant's configuration.
@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAW_SLUG="${C11_ATLAS_BUILD_SLUG:-ci-${GITHUB_WORKFLOW:-local}-${GITHUB_JOB:-job}}"
 SLUG="$(printf '%s' "$RAW_SLUG" | tr '[:upper:]_/' '[:lower:]--' | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-//; s/-$//')"
 if [[ -z "$SLUG" ]]; then
-  echo "invalid empty Atlas build slug from '$RAW_SLUG'" >&2
+  echo "invalid empty build-host build slug from '$RAW_SLUG'" >&2
   exit 2
 fi
 

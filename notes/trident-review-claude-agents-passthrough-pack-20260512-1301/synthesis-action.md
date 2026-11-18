@@ -16,7 +16,7 @@ No reviewer flagged a true blocker. The `CLAUDECODE` issue below is rated "Impor
 ### Important (land in same PR)
 
 **I1. Unset `CLAUDECODE` before the Agent View passthrough arm.**
-- Location: `/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:125-133`
+- Location: `~/src/c11/Resources/bin/claude:125-133`
 - Problem: The new `case` arm at line 125-128 `exec`s the real Claude binary before `unset CLAUDECODE` runs at line 133. When a c11 terminal inherits `CLAUDECODE=1` from a parent Claude Code session (common operator pattern), running `claude agents` or `claude attach <id>` from that terminal hands the nested-session marker through to the real binary. The TUI may emit nested-session warnings or alter behavior. `claude attach <id>` is the sharpest case: the user is explicitly entering an interactive Claude session and the wrapper's own protection rail is being skipped.
 - Fix: Move the `unset CLAUDECODE` line from its current position (line 133) to immediately above the passthrough `case` block (currently line 125, after the `# Pass through subcommands...` comment block). The five pre-existing passthrough verbs (`mcp|config|api-key|rc|remote-control`) will then also get the cleanup, which matches the rest of the wrapper's intent. Verify by reading lines 96-135 of the post-edit file to confirm `unset CLAUDECODE` runs before the `exec` in the passthrough arm.
 - Sources: standard-claude (Potential #1), standard-codex (Important #1), critical-claude (Important #2), critical-codex (Important #1), evolutionary-codex (Suggestion #3). 5 of 6 reviewers.
@@ -36,7 +36,7 @@ No evolutionary item is both clearly beneficial, low-risk, and in scope for this
 ## Surface to user (do not apply silently)
 
 **S1. Behavioral test coverage for wrapper passthrough.**
-- Why deferred: Two reviewers (standard-codex Important #2, evolutionary-codex Suggestion #1) want a test that drives `claude agents` / `claude attach <id>` through the existing fake-real-Claude harness and asserts the real binary receives the original argv with no `--session-id` or `--settings`. The harness already exists at `/Users/atin/Projects/Stage11/code/c11/tests/test_claude_wrapper_hooks.py:38` and is well-shaped for this addition. This is genuinely useful and would catch the "forgot to add `respawn`" class of bug, but it is a separate piece of work — not a one-line edit — and the operator may want to choose whether to expand it now or in a follow-up alongside the verb-taxonomy work below.
+- Why deferred: Two reviewers (standard-codex Important #2, evolutionary-codex Suggestion #1) want a test that drives `claude agents` / `claude attach <id>` through the existing fake-real-Claude harness and asserts the real binary receives the original argv with no `--session-id` or `--settings`. The harness already exists at `~/src/c11/tests/test_claude_wrapper_hooks.py:38` and is well-shaped for this addition. This is genuinely useful and would catch the "forgot to add `respawn`" class of bug, but it is a separate piece of work — not a one-line edit — and the operator may want to choose whether to expand it now or in a follow-up alongside the verb-taxonomy work below.
 - Summary: Extend `tests/test_claude_wrapper_hooks.py` with a live-socket test case for each of the seven new commands, asserting the fake real binary receives exactly the original argv (no `--session-id`, no `--settings`) and the bounded c11 ping still occurs.
 - Sources: standard-codex (Important #2), evolutionary-codex (Suggestion #1).
 

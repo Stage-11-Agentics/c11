@@ -53,6 +53,15 @@ final class StartupConversationAudit: @unchecked Sendable {
         /// `C11_DEBUG_STARTUP_SCRAPE_DELAY_SECONDS` / `_FAIL`).
         var injectedScrapeDelay: TimeInterval = 0
         var injectedScrapeFailure: String?
+        /// Seeded before restored panels or wrapper reports can reach the
+        /// store. An unresolved persistent identity must return false.
+        var permitsDeadProcessRecovery: @Sendable (String) -> Bool = { _ in true }
+        /// Whether a late audit result for the old conversation may commit.
+        /// Nil means the same as `permitsDeadProcessRecovery`.
+        var permitsRecoveryCommit: (@Sendable (String) -> Bool)?
+        /// Resolve saved hc identities off-main before applying crash policy.
+        /// Failure leaves them unresolved; it never authorizes recovery.
+        var reconcilePersistentTerminals: @Sendable () async -> Void = {}
     }
 
     static let shared = StartupConversationAudit()
@@ -74,10 +83,18 @@ final class StartupConversationAudit: @unchecked Sendable {
 
     /// A launch with nothing to audit (restore off, no snapshot, or the store
     /// kill switch). Every await returns at once with no scrape dependents.
-    func beginWithoutAudit(mode: ResumeRecoveryMode) {
+    func beginWithoutAudit(
+        mode: ResumeRecoveryMode,
+        store: ConversationStore = .shared,
+        permitsDeadProcessRecovery: @escaping @Sendable (String) -> Bool = { _ in true },
+        permitsRecoveryCommit: (@Sendable (String) -> Bool)? = nil
+    ) {
+        let seeded = Task.detached {
+            await store.setDeadProcessRecoveryPolicy(permitsDeadProcessRecovery, recoveryCommit: permitsRecoveryCommit)
+        }
         lock.lock()
         currentMode = mode
-        seededTask = nil
+        seededTask = seeded
         classifiedTask = nil
         completedTask = nil
         mainSeedWaitMs = nil
@@ -103,13 +120,16 @@ final class StartupConversationAudit: @unchecked Sendable {
         // In memory only: launch blocks main on this phase.
         let seeded = Task.detached(priority: .userInitiated) { () -> Int in
             let seedStart = DispatchTime.now().uptimeNanoseconds
-            _ = await env.store.seed(from: records)
+            _ = await env.store.seed(from: records,
+                permitsDeadProcessRecovery: env.permitsDeadProcessRecovery,
+                permitsRecoveryCommit: env.permitsRecoveryCommit)
             env.refreshOwners()
             return Self.elapsedMs(since: seedStart)
         }
 
         let classified = Task.detached(priority: .userInitiated) { () -> (Classification, markersMs: Int, classifyMs: Int, tiers: [String: Int]) in
             _ = await seeded.value
+            await env.reconcilePersistentTerminals()
             let markersStart = DispatchTime.now().uptimeNanoseconds
             let markers = env.loadLaunchBoundaries(scope.markerSurfaceIds)
             _ = await env.store.applyCodexLaunchBoundaries(markers)
@@ -121,7 +141,8 @@ final class StartupConversationAudit: @unchecked Sendable {
             let scoped = mode == .noResume
                 ? [:]
                 : ScrapeCaptureContext.scoped(scope.scrapeContexts, to: seededConversations)
-                    .filter { env.pipeline.scrapers.contains(kind: $0.key) }
+                    .mapValues { $0.filter { (env.permitsRecoveryCommit ?? env.permitsDeadProcessRecovery)($0.surfaceId) } }
+                    .filter { !$0.value.isEmpty && env.pipeline.scrapers.contains(kind: $0.key) }
             var scrapeKindBySurface: [String: String] = [:]
             for (kind, contexts) in scoped {
                 for context in contexts
@@ -272,7 +293,7 @@ final class StartupConversationAudit: @unchecked Sendable {
         let collectMs = elapsedMs(since: collectStart)
         let commitStart = DispatchTime.now().uptimeNanoseconds
         if let batch {
-            _ = await env.store.applyScrapeBatch(batch, pipeline: env.pipeline)
+            _ = await env.store.applyScrapeBatch(batch, pipeline: env.pipeline, isStartupRecovery: true)
         }
         if mode == .dirty, !dependents.isEmpty {
             await verifyTranscripts(env: env, surfaceIds: dependents)

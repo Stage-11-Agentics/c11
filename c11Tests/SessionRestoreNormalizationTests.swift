@@ -43,6 +43,123 @@ final class SessionRestoreNormalizationTests: XCTestCase {
         ])
     }
 
+    // MARK: C11H-46: hc twins across workspaces and windows
+
+    private func atlasKey(_ address: String) -> HCTerminalKey { HCTerminalKey(owningCoreID: "atlas-core", localAddress: address) }
+
+    private func terminal(_ id: UUID, _ key: HCTerminalKey?) -> SessionPanelSnapshot {
+        SessionPanelSnapshot(
+            id: id, type: .terminal, title: "Terminal", customTitle: nil,
+            directory: nil, isPinned: false, isManuallyUnread: false,
+            gitBranch: nil, listeningPorts: [], ttyName: nil,
+            terminal: SessionTerminalPanelSnapshot(workingDirectory: nil, scrollback: nil,
+                hcIdentity: key.map { HCPanelIdentity(panelID: id, key: $0) }, hcRemoteTarget: HCRemoteTarget(machine: "studio")),
+            browser: nil, markdown: nil, metadata: nil, metadataSources: nil
+        )
+    }
+
+    private func workspace(_ panels: [SessionPanelSnapshot], recovered: Bool = false) -> SessionWorkspaceSnapshot {
+        var snapshot = SessionWorkspaceSnapshot(
+            id: UUID(), processTitle: "W", customTitle: recovered ? "Recovered" : nil, customColor: nil,
+            isPinned: false, currentDirectory: "/tmp", focusedPanelId: panels.last?.id,
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: panels.map(\.id), selectedPanelId: panels.last?.id)),
+            panels: panels, statusEntries: [], logEntries: [], progress: nil, gitBranch: nil
+        )
+        if recovered { snapshot.metadata = ["c11h.recovered": "true"] }
+        return snapshot
+    }
+
+    private func window(_ workspaces: [SessionWorkspaceSnapshot], selected: Int = 0) -> SessionWindowSnapshot {
+        SessionWindowSnapshot(frame: nil, display: nil,
+            workspaceManager: SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: selected, workspaces: workspaces),
+            sidebar: SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: 200))
+    }
+
+    private func app(_ windows: [SessionWindowSnapshot]) -> AppSessionSnapshot {
+        AppSessionSnapshot(version: SessionSnapshotSchema.currentVersion, createdAt: 1, windows: windows)
+    }
+
+    private func panelIDs(_ snapshot: AppSessionSnapshot) -> [[[UUID]]] {
+        snapshot.windows.map { $0.workspaceManager.workspaces.map { $0.panels.map(\.id) } }
+    }
+
+    private func layoutIDs(_ node: SessionWorkspaceLayoutSnapshot) -> [UUID] {
+        switch node {
+        case .pane(let pane): return pane.panelIds
+        case .split(let split): return layoutIDs(split.first) + layoutIDs(split.second)
+        }
+    }
+
+    /// sol review 1, item 2: the original in window A, its Recovered twin the
+    /// only panel of window B. The twin and its now-empty window are gone
+    /// before any panel exists; the original is untouched.
+    func testATwinAloneInItsWindowIsRemovedWithThatWindow() throws {
+        let ticker = UUID(), other = UUID()
+        let original = window([workspace([terminal(other, atlasKey("t2")), terminal(ticker, atlasKey("t1"))])])
+        let twin = window([workspace([terminal(ticker, atlasKey("t1"))], recovered: true)])
+        var diagnostics: [String] = []
+        let decoded = try JSONDecoder().decode(AppSessionSnapshot.self, from: encoded(app([twin, original])))
+        let prepared = SessionRestoreNormalization.prepareStartupSnapshot(decoded) { diagnostics.append($0) }
+        XCTAssertEqual(panelIDs(prepared), [[[other, ticker]]])
+        XCTAssertEqual(diagnostics.count, 1)
+        XCTAssertTrue(diagnostics[0].hasPrefix("hc.duplicate_binding.dropped panel=\(ticker)"), diagnostics[0])
+        XCTAssertTrue(diagnostics[0].hasSuffix("terminals=atlas-core/t1"), diagnostics[0])
+    }
+
+    /// The laptop's shape: Workspace 1 holds the ticker and shell beside
+    /// other panels; Recovered holds their twins and an unrelated orphan.
+    /// The twins leave Recovered's panels and layout; the rest stay.
+    func testRecoveredTwinsLeaveTheirWorkspaceAndLayoutAndTheOriginalsStay() {
+        let ticker = UUID(), shell = UUID(), cat = UUID(), orphan = UUID()
+        let one = workspace([terminal(cat, atlasKey("t2")), terminal(ticker, atlasKey("t1")), terminal(shell, atlasKey("t5"))])
+        var recovered = workspace([terminal(shell, atlasKey("t5")), terminal(orphan, atlasKey("t9")),
+                                   terminal(ticker, atlasKey("t1"))], recovered: true)
+        recovered.focusedPanelId = ticker
+        let prepared = SessionRestoreNormalization.dropHCTwins(app([window([recovered, one], selected: 1)])) { _ in }
+        XCTAssertEqual(panelIDs(prepared), [[[orphan], [cat, ticker, shell]]])
+        let kept = prepared.windows[0].workspaceManager.workspaces
+        XCTAssertEqual(layoutIDs(kept[0].layout), [orphan])
+        XCTAssertEqual(kept[0].focusedPanelId, orphan)
+        XCTAssertEqual(layoutIDs(kept[1].layout), [cat, ticker, shell])
+        XCTAssertEqual(prepared.windows[0].workspaceManager.selectedWorkspaceIndex, 1, "the selection follows its workspace")
+    }
+
+    /// One terminal saved under two UUIDs keeps the first; an emptied
+    /// workspace goes, and the window's selection moves to what remains.
+    func testOneTerminalUnderTwoUUIDsKeepsTheFirstAndDropsTheEmptiedWorkspace() {
+        let first = UUID(), second = UUID(), local = UUID()
+        let prepared = SessionRestoreNormalization.dropHCTwins(app([window([
+            workspace([terminal(first, atlasKey("t1")), terminal(local, nil)]),
+            workspace([terminal(second, atlasKey("t1"))]),
+        ], selected: 1)])) { _ in }
+        XCTAssertEqual(panelIDs(prepared), [[[first, local]]])
+        XCTAssertEqual(prepared.windows[0].workspaceManager.selectedWorkspaceIndex, 0)
+    }
+
+    /// A split side left empty collapses into its sibling.
+    func testAnEmptiedSplitSideCollapses() {
+        let ticker = UUID(), keep = UUID()
+        let one = workspace([terminal(ticker, atlasKey("t1"))])
+        var two = workspace([terminal(keep, atlasKey("t3")), terminal(ticker, atlasKey("t1"))], recovered: true)
+        two.layout = .split(SessionSplitLayoutSnapshot(orientation: .vertical, dividerPosition: 0.5,
+            first: .pane(SessionAreaLayoutSnapshot(panelIds: [keep], selectedPanelId: keep)),
+            second: .pane(SessionAreaLayoutSnapshot(panelIds: [ticker], selectedPanelId: ticker))))
+        let prepared = SessionRestoreNormalization.dropHCTwins(app([window([one, two])])) { _ in }
+        guard case .pane(let pane) = prepared.windows[0].workspaceManager.workspaces[1].layout else {
+            return XCTFail("the split should collapse to its remaining pane")
+        }
+        XCTAssertEqual(pane.panelIds, [keep])
+    }
+
+    func testNoTwinsLeavesTheSnapshotAsIs() {
+        let input = app([window([workspace([terminal(UUID(), atlasKey("t1")), terminal(UUID(), nil), terminal(UUID(), nil)])]),
+                         window([workspace([terminal(UUID(), atlasKey("t2"))])])])
+        var diagnostics: [String] = []
+        let prepared = SessionRestoreNormalization.dropHCTwins(input) { diagnostics.append($0) }
+        XCTAssertEqual(panelIDs(prepared), panelIDs(input))
+        XCTAssertTrue(diagnostics.isEmpty)
+    }
+
     private struct EmptyCodexScraper: ConversationScraper {
         let kind = "codex"
         func candidates(cwd: String?) -> [ScrapeCandidate] { [] }
@@ -213,5 +330,201 @@ final class SessionRestoreNormalizationTests: XCTestCase {
         let second = SessionRestoreNormalization.normalize(decoded)
         XCTAssertTrue(second.drops.isEmpty)
         XCTAssertEqual(try encoded(second.snapshot), try encoded(first.snapshot))
+    }
+
+    // MARK: C11H-171 explicit metadata title
+
+    /// The h4→h5 panel: metadata title source explicit, no customTitle.
+    /// The restored tab shows that title, and it is not a custom title.
+    @MainActor
+    func testExplicitMetadataTitleRestoresWithoutCustomTitle() throws {
+        let workspace = try restoreTitlePanel(Self.explicitTitleFixture(source: "explicit"))
+        defer { retire(workspace) }
+        let panelId = try panelId()
+        XCTAssertNil(workspace.panelCustomTitles[panelId])
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Glideslope · Chrono")
+        XCTAssertEqual(
+            workspace.resolvedPanelTitle(panelId: panelId, fallback: workspace.panelTitles[panelId] ?? ""),
+            "Glideslope · Chrono"
+        )
+    }
+
+    /// set-title writes metadata and syncs the tab. It does not write a custom
+    /// title, so the tab changes. A later OSC title loses to the explicit one.
+    @MainActor
+    func testSetTitleAfterRestoreChangesDisplayedTitle() throws {
+        let workspace = try restoreTitlePanel(Self.explicitTitleFixture(source: "explicit"))
+        defer { retire(workspace) }
+        let panelId = try panelId()
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Glideslope · Chrono")
+        XCTAssertTrue(workspace.applyMetadataTitle(panelId: panelId, title: "Chrono, renamed", source: .explicit))
+        XCTAssertNil(workspace.panelCustomTitles[panelId])
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Chrono, renamed")
+        XCTAssertFalse(workspace.applyMetadataTitle(panelId: panelId, title: "cx", source: .osc))
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Chrono, renamed")
+        let stored = PanelMetadataStore.shared.getMetadata(workspaceId: workspace.id, surfaceId: panelId)
+        XCTAssertEqual(stored.metadata[MetadataKey.title] as? String, "Chrono, renamed")
+        XCTAssertEqual(stored.sources[MetadataKey.title]?["source"] as? String, MetadataSource.explicit.rawValue)
+    }
+
+    /// `launch-agent --title` is source declare. Restore shows that title
+    /// and does not write a custom title. A later OSC title cannot replace
+    /// declare, so the tab stays. OSC, heuristic, and derived stay unsynced.
+    @MainActor
+    func testOSCAndHeuristicTitlesAreNotPromotedOnRestore() throws {
+        do {
+            let declared = try restoreTitlePanel(Self.explicitTitleFixture(source: "declare", title: "cx"))
+            defer { retire(declared) }
+            let panelId = try panelId()
+            XCTAssertNil(declared.panelCustomTitles[panelId])
+            XCTAssertEqual(declared.displayedTabTitle(panelId: panelId), "cx")
+            XCTAssertFalse(declared.applyMetadataTitle(panelId: panelId, title: "from-osc", source: .osc))
+            XCTAssertEqual(declared.displayedTabTitle(panelId: panelId), "cx")
+        }
+        for source in ["osc", "heuristic", "derived"] {
+            let workspace = try restoreTitlePanel(Self.explicitTitleFixture(source: source, title: "cx"))
+            defer { retire(workspace) }
+            let panelId = try panelId()
+            XCTAssertNil(workspace.panelCustomTitles[panelId], source)
+            XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Terminal", source)
+        }
+    }
+
+    @MainActor
+    func testMissingTitleSourceKeepsTodayBehavior() throws {
+        let json = """
+        {
+          "id": "B9ACF249-8AF6-4ED4-A55F-49FE2016899C",
+          "type": "terminal",
+          "title": "Glideslope · Chrono",
+          "isPinned": false,
+          "isManuallyUnread": false,
+          "listeningPorts": []
+        }
+        """
+        let workspace = try restoreTitlePanel(json)
+        defer { retire(workspace) }
+        let panelId = try panelId()
+        XCTAssertNil(workspace.panelCustomTitles[panelId])
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Terminal")
+    }
+
+    /// A real custom title still wins, including over a later set-title.
+    @MainActor
+    func testCustomTitleWinsOverADifferentExplicitMetadataTitle() throws {
+        var panel = try decodePanel(Self.explicitTitleFixture(source: "explicit"))
+        panel.customTitle = "Kept name"
+        let workspace = try restoreDecodedPanel(panel)
+        defer { retire(workspace) }
+        XCTAssertEqual(workspace.panelCustomTitles[panel.id], "Kept name")
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panel.id), "Kept name")
+        XCTAssertTrue(workspace.applyMetadataTitle(panelId: panel.id, title: "Chrono, renamed", source: .explicit))
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panel.id), "Kept name")
+    }
+
+    @MainActor
+    func testBlankExplicitMetadataTitleIsNotInstalled() throws {
+        let json = """
+        {
+          "id": "B9ACF249-8AF6-4ED4-A55F-49FE2016899C",
+          "type": "terminal",
+          "title": "Terminal",
+          "isPinned": false,
+          "isManuallyUnread": false,
+          "listeningPorts": [],
+          "metadata": {"title": "   "},
+          "metadataSources": {"title": {"source": "explicit", "ts": 1762146720}}
+        }
+        """
+        let workspace = try restoreTitlePanel(json)
+        defer { retire(workspace) }
+        let panelId = try panelId()
+        XCTAssertNil(workspace.panelCustomTitles[panelId])
+        XCTAssertEqual(workspace.displayedTabTitle(panelId: panelId), "Terminal")
+    }
+
+    // MARK: C11H-323 restored lifecycle
+
+    /// A survivor's agent may have ended its turn while c11 was down. A saved
+    /// derived `activity` never comes back, whoever owns the panel (an opencode
+    /// panel has no causal conversation owner, so before C11H-323 it kept the
+    /// `working` it was saved with for good). An explicit one is the agent's
+    /// own report and keeps its precedence.
+    @MainActor
+    func testARestoredPanelNeverCarriesItsDerivedActivity() throws {
+        for (source, kept) in [("derived", false), ("explicit", true)] {
+            let json = """
+            {
+              "id": "B9ACF249-8AF6-4ED4-A55F-49FE2016899C",
+              "type": "terminal",
+              "title": "Terminal",
+              "isPinned": false,
+              "isManuallyUnread": false,
+              "listeningPorts": [],
+              "metadata": {"activity": "working", "terminal_type": "opencode"},
+              "metadataSources": {"activity": {"source": "\(source)", "ts": 1762146720},
+                                  "terminal_type": {"source": "declare", "ts": 1762146720}}
+            }
+            """
+            let workspace = try restoreTitlePanel(json)
+            defer { retire(workspace) }
+            let panelId = try panelId()
+            let stored = PanelMetadataStore.shared.getMetadata(workspaceId: workspace.id, surfaceId: panelId)
+            XCTAssertEqual(stored.metadata[MetadataKey.activity] as? String, kept ? "working" : nil, source)
+            XCTAssertEqual(workspace.derivedActivityByPanel[panelId], kept ? .working : nil, source)
+            XCTAssertEqual(workspace.resolvedSurfacePanelActivityState(panelId: panelId), kept ? .running : .idle, source)
+        }
+    }
+
+    private func decodePanel(_ json: String) throws -> SessionPanelSnapshot {
+        try JSONDecoder().decode(SessionPanelSnapshot.self, from: Data(json.utf8))
+    }
+
+    @MainActor
+    private func restoreTitlePanel(_ json: String) throws -> Workspace {
+        try restoreDecodedPanel(try decodePanel(json))
+    }
+
+    @MainActor
+    private func restoreDecodedPanel(_ panel: SessionPanelSnapshot) throws -> Workspace {
+        let snapshot = SessionWorkspaceSnapshot(
+            id: UUID(), processTitle: "Fixture", customTitle: nil, customColor: nil,
+            isPinned: false, currentDirectory: "/tmp", focusedPanelId: panel.id,
+            layout: .pane(SessionAreaLayoutSnapshot(panelIds: [panel.id], selectedPanelId: panel.id)),
+            panels: [panel], statusEntries: [], logEntries: [], progress: nil, gitBranch: nil
+        )
+        let workspace = Workspace(restoringSession: true)
+        workspace.restoreSessionSnapshot(snapshot)
+        XCTAssertNotNil(workspace.panels[panel.id])
+        return workspace
+    }
+
+    @MainActor
+    private func retire(_ workspace: Workspace) {
+        let panelIds = Array(workspace.panels.keys)
+        workspace.retireForSessionRestore()
+        for panelId in panelIds {
+            PanelMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+        }
+    }
+
+    private func panelId() throws -> UUID {
+        try XCTUnwrap(UUID(uuidString: "B9ACF249-8AF6-4ED4-A55F-49FE2016899C"))
+    }
+
+    /// Ticket fixture: metadata title, panel title, no customTitle key.
+    private static func explicitTitleFixture(source: String, title: String = "Glideslope · Chrono") -> String {
+        """
+        {
+          "id": "B9ACF249-8AF6-4ED4-A55F-49FE2016899C",
+          "type": "terminal",
+          "title": "\(title)",
+          "isPinned": false,
+          "isManuallyUnread": false,
+          "listeningPorts": [],
+          "metadata": {"title": "\(title)"},
+          "metadataSources": {"title": {"source": "\(source)", "ts": 1762146720}}
+        }
+        """
     }
 }

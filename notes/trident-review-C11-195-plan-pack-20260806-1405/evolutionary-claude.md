@@ -94,8 +94,8 @@ Two problems the plan should resolve explicitly:
 `find(from:)` walks up to 64 levels toward `/`. Changing the start point changes the
 reachable ancestor set. Two concrete hazards:
 
-- Under `~/Projects/Stage11/code/c11/…` the walk passes `~/Projects/Stage11/code/`,
-  `~/Projects/Stage11/`, and `~/`. `~/.c11/agents.json` is a real file on this machine
+- Under `~/src/c11/…` the walk passes `~/src/`,
+  `~/src/`, and `~/`. `~/.c11/agents.json` is a real file on this machine
   and is precisely the artifact behind the documented A-button pin bug — the decoder
   at `DefaultAgentConfig.swift:305` exists specifically to reject its legacy shape.
   A start-point change can newly *reach* it (or a valid-shaped sibling) for launches

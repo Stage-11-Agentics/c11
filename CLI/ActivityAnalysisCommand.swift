@@ -119,7 +119,7 @@ enum ActivityAnalysisCommand {
             // Read-only resolution: do not trigger the app's state migration from an offline query.
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? home.appendingPathComponent("Library/Application Support")
-            state = support.appendingPathComponent("c11")
+            state = support.appendingPathComponent(C11Identity.stateDirectoryName)
             claude = home.appendingPathComponent(".claude/projects")
             codex = home.appendingPathComponent(".codex/sessions")
             self.json = json
@@ -795,7 +795,7 @@ enum ActivityAnalysisCommand {
         let directory = EventLogLayout.eventsDirectoryURL(state: options.state).resolvingSymlinksInPath()
         let names = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         var instance = options.value("--instance")
-        func production(_ name: String) -> Bool { name.hasPrefix("events-com.stage11.c11-") }
+        func production(_ name: String) -> Bool { name.hasPrefix(C11Identity.productionEventLogPrefix) }
         if instance == nil && options.value("--since") == nil && !options.allInstances {
             instance = names.filter { production($0.lastPathComponent) && $0.lastPathComponent.hasSuffix(".ndjson") }
                 .sorted {

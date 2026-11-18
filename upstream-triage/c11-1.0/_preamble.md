@@ -4,19 +4,19 @@ You are one of six research agents scoping **c11 1.0**, a major version in which
 
 ## Orient first
 
-1. Read `~/Projects/Stage11/code/c11/upstream-triage/cmux-landscape-2026-10-01.md` in full. It is the map. Your topic is one section of it.
-2. Read `~/Projects/Stage11/code/c11/PHILOSOPHY.md` and the "unopinionated about the terminal" section of `~/Projects/Stage11/code/c11/CLAUDE.md`. c11 is host and primitive, never writes into agent tools' config files (`~/.claude/settings.json`, `~/.codex/*`, ...), and observes agents from outside. The one sanctioned exception is PATH-scoped session-resume wrappers in `Resources/bin/`. Any design you propose has to sit inside that doctrine, or say plainly that it would require changing it and why.
+1. Read `~/src/c11/upstream-triage/cmux-landscape-2026-10-01.md` in full. It is the map. Your topic is one section of it.
+2. Read `~/src/c11/PHILOSOPHY.md` and the "unopinionated about the terminal" section of `~/src/c11/CLAUDE.md`. c11 is host and primitive, never writes into agent tools' config files (`~/.claude/settings.json`, `~/.codex/*`, ...), and observes agents from outside. The one sanctioned exception is PATH-scoped session-resume wrappers in `Resources/bin/`. Any design you propose has to sit inside that doctrine, or say plainly that it would require changing it and why.
 3. Load the `c11` skill. Rename your tab only if your role sharpens; keep the description current (what you are doing now, next gate) and keep its last `Lineage:` line.
 
 ## Sources
 
-- **c11 source:** `~/Projects/Stage11/code/c11` (branch `main`). READ ONLY. No edits, branches, commits, builds or test runs.
-- **cmux source:** the `upstream` remote in the c11 repo (`manaflow-ai/cmux`). A `git fetch upstream main` was started at about 14:40 today. Check `git -C ~/Projects/Stage11/code/c11 log -1 --format=%cd upstream/main`. If it is older than 2026-09-20 the fetch has not landed; use `gh` meanwhile (`gh pr view <N> -R manaflow-ai/cmux --json title,body,files`, `gh pr diff <N> -R manaflow-ai/cmux`, `gh api repos/manaflow-ai/cmux/contents/<path>`). Read code, not only changelog lines. Never run `git fetch` yourself; one is enough.
+- **c11 source:** `~/src/c11` (branch `main`). READ ONLY. No edits, branches, commits, builds or test runs.
+- **cmux source:** the `upstream` remote in the c11 repo (`manaflow-ai/cmux`). A `git fetch upstream main` was started at about 14:40 today. Check `git -C ~/src/c11 log -1 --format=%cd upstream/main`. If it is older than 2026-09-20 the fetch has not landed; use `gh` meanwhile (`gh pr view <N> -R manaflow-ai/cmux --json title,body,files`, `gh pr diff <N> -R manaflow-ai/cmux`, `gh api repos/manaflow-ai/cmux/contents/<path>`). Read code, not only changelog lines. Never run `git fetch` yourself; one is enough.
 - **Installed cmux 0.64.25:** `/Applications/cmux.app`, CLI at `/Applications/cmux.app/Contents/Resources/bin/cmux`. Note that `cmux` on PATH is c11's compatibility shim, not this. `--help` output and bundle contents are fair game. Do not mutate any running app and do not run `cmux hooks setup` or anything else that writes config.
 
 ## Machine rules
 
-You are on Hyperion, Atin's laptop, shared with many agents. No heavy work: no builds, no test suites, no local inference. Reading code, `git`, `gh` and greps are fine. Use Agent-tool subagents (Sonnet by default) to fan out reading when that helps; keep the judgment calls yourself.
+You are on the laptop, Atin's laptop, shared with many agents. No heavy work: no builds, no test suites, no local inference. Reading code, `git`, `gh` and greps are fine. Use Agent-tool subagents (Sonnet by default) to fan out reading when that helps; keep the judgment calls yourself.
 
 ## Deliverable
 

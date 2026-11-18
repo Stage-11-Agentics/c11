@@ -10,7 +10,7 @@ All flag paths smoked, all error paths produce single-line stderr with exit=1, s
 
 ## Build
 
-`./scripts/reload.sh --tag c11-24-health` from the worktree completed `** BUILD SUCCEEDED **` on the first attempt. App launched at `/Users/atin/Library/Developer/Xcode/DerivedData/c11-c11-24-health/Build/Products/Debug/c11 DEV c11-24-health.app`. CLI helper at `…/Contents/Resources/bin/c11`.
+`./scripts/reload.sh --tag c11-24-health` from the worktree completed `** BUILD SUCCEEDED **` on the first attempt. App launched at `~/Library/Developer/Xcode/DerivedData/c11-c11-24-health/Build/Products/Debug/c11 DEV c11-24-health.app`. CLI helper at `…/Contents/Resources/bin/c11`.
 
 Build warnings inherited from the base branch (Sendable / deprecated APIs in `Sources/Panels/BrowserPanel.swift`, `Sources/AppDelegate.swift`, etc.); none introduced by the C11-24 work.
 
@@ -110,7 +110,7 @@ Reverse-chronological order verified (sentinel 18:38 above metrickit 18:19). I4/
 }
 ```
 
-`path` values redacted to `~/…` form (B4 fix verified — no `/Users/atin/…` leaks).
+`path` values redacted to `~/…` form (B4 fix verified — no `~/…` leaks).
 
 ## c11 health --since 30m
 

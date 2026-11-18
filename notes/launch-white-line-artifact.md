@@ -158,7 +158,7 @@ rm -f /tmp/c11-debug-overlay-redraw.log
 
 The `reload.sh --tag` workflow is documented in `skills/c11-hotload/SKILL.md`. Do not `open` an untagged `c11 DEV.app` while debugging — it conflicts with the tagged debug instance.
 
-App bundle: `/Users/atin/Library/Developer/Xcode/DerivedData/c11-overlay-redraw/Build/Products/Debug/c11 DEV overlay-redraw.app`.
+App bundle: `~/Library/Developer/Xcode/DerivedData/c11-overlay-redraw/Build/Products/Debug/c11 DEV overlay-redraw.app`.
 
 ## Status
 
@@ -201,9 +201,9 @@ Apply in order:
 
    ```bash
    pkill -f "c11 DEV overlay-redraw.app/Contents/MacOS/c11"
-   rm -rf "/Users/atin/Library/Developer/Xcode/DerivedData/c11-overlay-redraw" "/tmp/c11-overlay-redraw" "/tmp/c11-debug-overlay-redraw.sock"
+   rm -rf "$HOME/Library/Developer/Xcode/DerivedData/c11-overlay-redraw" "/tmp/c11-overlay-redraw" "/tmp/c11-debug-overlay-redraw.sock"
    rm -f "/tmp/c11-debug-overlay-redraw.log"
-   rm -f "/Users/atin/Library/Application Support/c11/c11d-dev-overlay-redraw.sock"
+   rm -f "$HOME/Library/Application Support/c11/c11d-dev-overlay-redraw.sock"
    ```
 
 3. **Prune the `overlay-redraw` build tag** along with any other stale tags:

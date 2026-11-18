@@ -97,7 +97,7 @@ If the operator is running an untagged `c11 DEV.app` (the default development wo
 I verified the operator's current socket landscape:
 
 ```
-/Users/atin/Library/Application Support/c11mux/c11.sock   ← /Applications/c11.app (production, bundle id com.stage11.c11)
+~/Library/Application Support/c11mux/c11.sock   ← /Applications/c11.app (production, bundle id com.stage11.c11)
 /tmp/c11-debug.sock                                       ← any untagged DEV.app
 /tmp/c11-debug-help-about.sock                            ← tagged debug build
 ```
@@ -352,7 +352,7 @@ The "push submodule before parent" rule was followed for v0.48.0. **Gap:** `rele
 
 ## 6. Make tests runnable locally — specific recommendation
 
-The fast path is **two changes** that together let `xcodebuild test -scheme c11-unit` run safely on Hyperion without affecting the operator's c11:
+The fast path is **two changes** that together let `xcodebuild test -scheme c11-unit` run safely on the laptop without affecting the operator's c11:
 
 1. Implement P1 #5 (the runtime guard in `Sources/SocketControlSettings.swift`).
 2. Until that lands, use this wrapper:
@@ -421,7 +421,7 @@ The sample stack will say whether 100+ seconds is `createMainWindow` (likely Swi
 **Failing CI runs:**
 - 26056033436 / job 76604384102 — release/v0.48.0 PR (xcodebuild exited; 32 failures)
 - 26054336139 / job 76598532322 — release/v0.48.0 PR (timeout-cancelled mid-suite)
-- Captured logs: `/tmp/run-latest.log`, `/tmp/run-earlier.log` (on Hyperion)
+- Captured logs: `/tmp/run-latest.log`, `/tmp/run-earlier.log` (on the laptop)
 
 **Implicated source paths:**
 - `c11Tests/AppDelegateShortcutRoutingTests.swift:878-912` — the 104s test

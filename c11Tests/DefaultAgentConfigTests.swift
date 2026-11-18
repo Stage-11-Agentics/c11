@@ -576,7 +576,8 @@ final class AgentSkillsOnboardingGatingTests: XCTestCase {
                 sourceDir: tmp,
                 defaults: defaults,
                 environment: [:],
-                isLocalDevBuild: true
+                isLocalDevBuild: true,
+                bundleIdentifier: "com.example.notc11h"
             )
         )
     }

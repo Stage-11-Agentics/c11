@@ -165,7 +165,103 @@ extension TerminalController {
         // the one tested mapping (`buildLaunchRequest`), so config→launch is
         // single-sourced. `v2AgentLaunch` re-derives the same request from these
         // params — one launch composer, reusing AgentLaunchPlanner's error codes.
-        let request = ConfigCommandCore.buildLaunchRequest(from: saved, promptOverride: inputs.prompt)
+        // Caller, delegation and title ride along; ChaosCaster does not use this
+        // function (it calls `agentLaunchParams` and `v2AgentLaunch` itself).
+        switch Self.makeConfigLaunchParams(saved: saved, inputs: inputs, socketParams: params) {
+        case .failure(let error):
+            return .err(code: error.code, message: error.message, data: nil)
+        case .success(let launchParams):
+            return v2AgentLaunch(params: launchParams)
+        }
+    }
+
+    /// Placement, cwd, machine, source, caller, delegation and title for one
+    /// `config.launch`. The saved recipe stays in `agentLaunchParams`.
+    nonisolated static func makeConfigLaunchParams(
+        saved: SavedAgentConfig,
+        inputs: ConfigLaunchInputs,
+        socketParams: [String: Any]
+    ) -> Result<[String: Any], ConfigLaunchParamsError> {
+        var launchParams = agentLaunchParams(for: saved, prompt: inputs.prompt)
+        switch inputs.placement {
+        case .newWorkspace: launchParams["new_workspace"] = true
+        case .pane(let p):
+            launchParams["pane_id"] = p
+            // An area in a background workspace stays in that workspace.
+            if let w = (socketParams["workspace_id"] as? String ?? socketParams["workspace"] as? String)?.nonEmpty {
+                launchParams["workspace_id"] = w
+            }
+        case .workspace(let w): launchParams["workspace_id"] = w
+        case .defaultPlacement: break
+        }
+        if let split = (socketParams["split"] as? String)?.nonEmpty { launchParams["split"] = split }
+        if let cwd = inputs.cwd { launchParams["cwd"] = cwd }
+        // C11H-138: a config saved with a machine launches there, unless the
+        // caller named one. A new workspace stays on this Mac (agent.launch
+        // refuses --on with --new-workspace).
+        if let on = socketParams["on"] as? String, !on.isEmpty {
+            launchParams["on"] = on
+        } else if let machine = saved.machine, machine != SavedAgentConfig.localMachine {
+            guard inputs.placement != .newWorkspace else {
+                return .failure(.remoteNewWorkspace(configName: saved.name, machine: machine))
+            }
+            launchParams["on"] = machine
+        }
+        launchParams["source"] = AgentLaunchSource.socket.rawValue
+        if socketParams["focus"] != nil { launchParams["focus"] = socketParams["focus"]! }
+        if let window = socketParams["window_id"] { launchParams["window_id"] = window }
+        launchParams = applyingConfigLaunchLineage(launchParams, from: socketParams)
+        return .success(launchParams)
+    }
+
+    /// Copy the calling panel, delegation and title onto `agent.launch` params.
+    /// `v2AgentLaunch` reads `caller_surface_id` (the wire spelling of
+    /// `caller_panel_id`) and records that panel as the parent, whichever
+    /// workspace the child opens in. A non-bool delegation value is forwarded
+    /// so the existing boolean check still rejects it.
+    nonisolated static func applyingConfigLaunchLineage(
+        _ launchParams: [String: Any],
+        from socketParams: [String: Any]
+    ) -> [String: Any] {
+        var out = launchParams
+        if let rawCaller = socketParams["caller_surface_id"], !(rawCaller is String) {
+            out["caller_surface_id"] = rawCaller
+        } else if let raw = (socketParams["caller_surface_id"] as? String) ?? (socketParams["caller_panel_id"] as? String) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                out["caller_surface_id"] = trimmed
+            }
+        }
+        let delegatedRaw = socketParams["delegated"]
+        let suppressedRaw = socketParams["suppressed"]
+        let delegatedBad = delegatedRaw != nil && !(delegatedRaw is Bool)
+        let suppressedBad = suppressedRaw != nil && !(suppressedRaw is Bool)
+        if delegatedBad || suppressedBad {
+            if let delegatedRaw { out["delegated"] = delegatedRaw }
+            if let suppressedRaw { out["suppressed"] = suppressedRaw }
+        } else if delegatedRaw != nil || suppressedRaw != nil {
+            let delegated = (delegatedRaw as? Bool) ?? false
+            let suppressed = (suppressedRaw as? Bool) ?? false
+            if delegatedRaw != nil && suppressedRaw != nil && delegated != suppressed {
+                out["delegated"] = delegated
+                out["suppressed"] = suppressed
+            } else if delegated || suppressed {
+                out["delegated"] = true
+                out["suppressed"] = true
+            }
+        }
+        if let title = socketParams["title"] as? String {
+            out["title"] = title
+        }
+        return out
+    }
+
+    /// The `agent.launch` params a saved config's recipe maps to (harness,
+    /// model, effort, system prompt, command, env, prompt, config id), through
+    /// the one tested mapping (`buildLaunchRequest`). Placement, cwd, machine
+    /// and source are the caller's.
+    nonisolated static func agentLaunchParams(for saved: SavedAgentConfig, prompt: String?) -> [String: Any] {
+        let request = ConfigCommandCore.buildLaunchRequest(from: saved, promptOverride: prompt)
         var launchParams: [String: Any] = ["type": request.kind]
         if let m = request.model?.nonEmpty { launchParams["model"] = m }
         if let e = request.effort?.nonEmpty { launchParams["effort"] = e }
@@ -176,19 +272,8 @@ extension TerminalController {
         if let command = request.commandOverride?.nonEmpty { launchParams["command_override"] = command }
         if !request.extraEnv.isEmpty { launchParams["env"] = request.extraEnv }
         if let prompt = request.prompt { launchParams["prompt"] = prompt }
-        switch inputs.placement {
-        case .newWorkspace: launchParams["new_workspace"] = true
-        case .pane(let p): launchParams["pane_id"] = p
-        case .workspace(let w): launchParams["workspace_id"] = w
-        case .defaultPlacement: break
-        }
-        if let cwd = inputs.cwd { launchParams["cwd"] = cwd }
         launchParams["config_id"] = saved.id
-        launchParams["source"] = AgentLaunchSource.socket.rawValue
-        if params["focus"] != nil { launchParams["focus"] = params["focus"] }
-        if let window = params["window_id"] { launchParams["window_id"] = window }
-
-        return v2AgentLaunch(params: launchParams)
+        return launchParams
     }
 
     // MARK: - nonisolated param helpers
@@ -213,7 +298,8 @@ extension TerminalController {
             systemPromptText: params["system_prompt"] as? String,
             command: params["command"] as? String,
             initialPrompt: params["initial_prompt"] as? String,
-            env: env
+            env: env,
+            machine: params["machine"] as? String
         )
     }
 
@@ -222,6 +308,18 @@ extension TerminalController {
         if let n = params[key] as? NSNumber { return n.intValue }
         if let s = params[key] as? String { return Int(s) }
         return nil
+    }
+}
+
+struct ConfigLaunchParamsError: Error, Equatable {
+    let code: String
+    let message: String
+
+    static func remoteNewWorkspace(configName: String, machine: String) -> ConfigLaunchParamsError {
+        ConfigLaunchParamsError(
+            code: "invalid_params",
+            message: "config '\(configName)' runs on \(machine), and --new-workspace opens only on this Mac; launch it without --new-workspace, or save it with --machine ask"
+        )
     }
 }
 

@@ -273,7 +273,7 @@ table.facts td:first-child { font: 11.5px var(--mono); color: var(--dim); white-
 Branch c11/mailbox-conversation-index, PR #866.
 
 ## State
-- Index and thread view built; Atlas gate green in 102 s.
+- Index and thread view built; build-host gate green in 102 s.
 - Reviews: c11-reviewer and codex-reviewer are back. grok-reviewer never took the request.
 - One blocker fixed in 51c07de: name-only mail stays its own row.
 
@@ -301,12 +301,12 @@ Branch c11/mailbox-conversation-index, PR #866.
 
 1. codex-reviewer's re-run on 51c07de came back clean.
 2. Rebased #866 onto main dc46132 at 10:31. No conflicts.
-3. Atlas gate: 104 s, 3,418 logic tests, 0 failures.
+3. Build-host gate: 104 s, 3,418 logic tests, 0 failures.
 4. c11/pr-swift posted success on 8e2d4b0.
 
 Two things I could not settle:
 
-- lattice-poller's nightly went red at 6:00 AM on MailboxSentLedgerTests/testTrimKeepsNewest. It passes on Atlas for me. I suspect the hourly runner's clock; I have not proven it.
+- lattice-poller's nightly went red at 6:00 AM on MailboxSentLedgerTests/testTrimKeepsNewest. It passes on the build host for me. I suspect the hourly runner's clock; I have not proven it.
 - grok-reviewer's panel is closed, so its copy of the review request will sit unread. Send to role:reviewer again when Grok is back, or call two reviews enough?
 
 I will merge at 11:30 unless you say otherwise. If the backstop goes red after merge, I will fix forward on a new branch and tell you here.
@@ -321,13 +321,13 @@ I will merge at 11:30 unless you say otherwise. If the backstop goes red after m
 2. ConversationRow.lastSendState reads the first recipient only. For a broadcast, use this peer's own copy.
 3. The narrow layout keeps the list scroll position when you go back. Good; keep it.
 
-No other findings. Tests: 41 new, all pass on Atlas.`;
+No other findings. Tests: 41 new, all pass on the build host.`;
 
   // Every message this panel has with each peer. "in" = received, "out" = sent.
   // Sent entries carry the state of each recipient's copy.
   const MSGS = [
     { id: "01JBXA7Q2KMC", peers: ["mc"], dir: "out", at: D(10, 30, 16, 12), topic: "merge.ready", st: { mc: "taken" },
-      body: "C11-412 is ready to land: PR #861, head 7c41e09. Atlas gate green in 98 s, review clean." },
+      body: "C11-412 is ready to land: PR #861, head 7c41e09. Build-host gate green in 98 s, review clean." },
     { id: "01JBXAQ0VMC2", peers: ["mc"], dir: "in", at: D(10, 30, 16, 20), topic: "merge.ready", reply: "01JBXA7Q2KMC",
       body: "Queued #861 behind #858. About 20 minutes unless #858's poller run goes red." },
     { id: "01JBXD03RMC3", peers: ["mc"], dir: "in", at: D(10, 30, 17, 2), topic: "build.status", urgent: true, reply: "01JBXA7Q2KMC",
@@ -346,7 +346,7 @@ No other findings. Tests: 41 new, all pass on Atlas.`;
       body: "51c07de is right. No further findings." },
     { id: "01JBZMX10XR1", peers: ["xr"], dir: "in", at: D(10, 31, 17, 58), topic: "review.findings", reply: "01JBZ7WS0RV1", body: CODEX },
     { id: "01JBZTB6MMC6", peers: ["mc"], dir: "out", at: D(10, 31, 18, 40), topic: "handoff", st: { mc: "taken" },
-      body: "", ref: { path: "/Users/atin/Projects/Stage11/code/c11/notes/handoff-c11-415.md", size: "1.1 KB", text: HANDOFF } },
+      body: "", ref: { path: "~/src/c11/notes/handoff-c11-415.md", size: "1.1 KB", text: HANDOFF } },
     { id: "01JC0F2K7XR2", peers: ["xr"], dir: "in", at: D(11, 1, 9, 5), topic: "review.findings", unread: true,
       body: "Re-ran my sweep on 51c07de: clean. I copied merge-captain so it can land #866." },
     { id: "01JC0MPA1MC7", peers: ["mc"], dir: "in", at: D(11, 1, 10, 52), topic: "handoff", unread: true, reply: "01JBZTB6MMC6", body: PLAN },

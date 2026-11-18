@@ -81,7 +81,57 @@ final class PanelFlagKindRegistry: @unchecked Sendable {
         changed = true
     }
 
+    // MARK: Sounds (C11H-319)
+
+    /// Each kind's own sound, kept beside the registry rather than inside the
+    /// kind value: that value is copied onto flags, metadata, events and
+    /// relays, and an older build editing a kind would drop a field it does
+    /// not know. Sounds resolve on the Mac that posts the alert, by kind id.
+    static let soundsStorageKey = "attention.flagKinds.sounds.v1"
+
+    /// The sound a raise of this kind asks for; nil means the flag sound.
+    func sound(id: String) -> NotificationSoundChoice? {
+        lock.lock()
+        let entry = readSoundEntries()[id]
+        lock.unlock()
+        return entry.flatMap(NotificationSoundChoice.init(rawValue:))
+    }
+
+    /// Sets a registered kind's sound; nil means the flag sound. Call on
+    /// main: it writes UserDefaults.
+    func setSound(id: String, _ choice: NotificationSoundChoice?) throws {
+        guard kind(id: id) != nil else { throw PanelFlagKindRegistryError.invalidKind }
+        lock.lock()
+        var changed = false
+        defer {
+            lock.unlock()
+            if changed {
+                NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+            }
+        }
+        var entries = readSoundEntries()
+        entries[id] = choice?.rawValue
+        try writeSoundEntries(entries)
+        changed = true
+    }
+
+    private func readSoundEntries() -> [String: String] {
+        guard let data = defaults.data(forKey: Self.soundsStorageKey), data.count <= 32_768,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [:] }
+        return object.compactMapValues { $0 as? String }
+    }
+
+    /// Drops entries for kinds no longer registered, so the record stays bounded.
+    private func writeSoundEntries(_ entries: [String: String]) throws {
+        let registered = Set(Self.builtIns.map(\.id)).union(readOverrides().keys)
+        let kept = entries.filter { registered.contains($0.key) }
+        guard let data = try? JSONSerialization.data(withJSONObject: kept, options: [.sortedKeys]),
+              data.count <= 32_768 else { throw PanelFlagKindRegistryError.encodingFailed }
+        defaults.set(data, forKey: Self.soundsStorageKey)
+    }
+
     /// Removing a built-in clears its override and restores the default.
+    /// C11H-319: a removed kind's sound goes with it.
     @discardableResult
     func remove(id: String) throws -> Bool {
         guard PanelFlagKind.isValidSlug(id) else { throw PanelFlagKindRegistryError.invalidKind }
@@ -98,6 +148,10 @@ final class PanelFlagKindRegistry: @unchecked Sendable {
             || Self.builtIns.contains(where: { $0.id == id })
         guard existed else { return false }
         try write(overrides)
+        var sounds = readSoundEntries()
+        if sounds.removeValue(forKey: id) != nil {
+            try writeSoundEntries(sounds)
+        }
         changed = true
         return true
     }
@@ -106,15 +160,94 @@ final class PanelFlagKindRegistry: @unchecked Sendable {
         builtIns.contains { $0.id == id }
     }
 
+    // MARK: Usage (C11H-226)
+
+    /// When each kind was last raised and how often, kept beside the registry
+    /// so it outlives the events stream's 14-day retention. A separate key
+    /// leaves the kind entries' shape unchanged for older builds.
+    static let usageStorageKey = "attention.flagKinds.usage.v1"
+
+    struct Usage: Equatable {
+        let lastRaisedAt: Date
+        let raiseCount: Int
+    }
+
+    /// Records one `flag.raised` with this kind. Entries for kinds no longer
+    /// registered are dropped on the way, so the record stays bounded.
+    func recordRaise(id: String, at date: Date = Date()) {
+        lock.lock()
+        defer { lock.unlock() }
+        let registered = Set(Self.builtIns.map(\.id)).union(readOverrides().keys)
+        guard registered.contains(id) else { return }
+        var entries = readUsageEntries().filter { registered.contains($0.key) }
+        let prior = entries[id]
+        entries[id] = [
+            "last_raised_ms": Int64((date.timeIntervalSince1970 * 1000).rounded()),
+            "count": ((prior?["count"] as? Int) ?? 0) + 1,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: entries), data.count <= 32_768 {
+            defaults.set(data, forKey: Self.usageStorageKey)
+        }
+    }
+
+    func usage(id: String) -> Usage? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = readUsageEntries()[id],
+              let ms = (entry["last_raised_ms"] as? NSNumber)?.int64Value,
+              let count = (entry["count"] as? NSNumber)?.intValue else { return nil }
+        return Usage(lastRaisedAt: Date(timeIntervalSince1970: Double(ms) / 1000), raiseCount: count)
+    }
+
+    private func readUsageEntries() -> [String: [String: Any]] {
+        guard let data = defaults.data(forKey: Self.usageStorageKey), data.count <= 32_768,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [:] }
+        return object.compactMapValues { $0 as? [String: Any] }
+    }
+
     private func readOverrides() -> [String: PanelFlagKind] {
+        // Each entry is read on its own (C11H-223): one unreadable entry, such as a
+        // color a newer build added, skips only that kind, so the next write
+        // cannot erase the rest.
         guard let data = defaults.data(forKey: Self.storageKey), data.count <= 32_768,
-              let decoded = try? JSONDecoder().decode([PanelFlagKind].self, from: data) else { return [:] }
-        return Dictionary(decoded.filter(\.isValid).map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+              let entries = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return [:] }
+        let decoded = entries.compactMap(PanelFlagKind.fromJSON)
+        return Dictionary(decoded.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
     }
 
     private func write(_ values: [String: PanelFlagKind]) throws {
         let ordered = values.values.sorted { $0.id < $1.id }
-        guard let data = try? JSONEncoder().encode(ordered), data.count <= 32_768 else {
+        guard let encoded = try? JSONEncoder().encode(ordered),
+              let encodedEntries = (try? JSONSerialization.jsonObject(with: encoded)) as? [[String: Any]] else {
+            throw PanelFlagKindRegistryError.encodingFailed
+        }
+        var entries: [Any] = encodedEntries
+        // Keep entries this build can't read, so a later build's kinds survive
+        // an edit made here.
+        if let data = defaults.data(forKey: Self.storageKey), data.count <= 32_768,
+           let stored = (try? JSONSerialization.jsonObject(with: data)) as? [Any] {
+            // C11H-330: and keep the fields a later build added to a kind this
+            // build can read, so an edit here cannot strip them.
+            var storedByID: [String: [String: Any]] = [:]
+            for case let entry as [String: Any] in stored {
+                if let id = entry["id"] as? String, PanelFlagKind.fromJSON(entry) != nil { storedByID[id] = entry }
+            }
+            entries = encodedEntries.map { entry in
+                guard let id = entry["id"] as? String, let prior = storedByID[id] else { return entry }
+                var merged = entry
+                for (key, value) in prior
+                where !PanelFlagKind.knownJSONKeys.contains(key) && merged[key] == nil {
+                    merged[key] = value
+                }
+                return merged
+            }
+            entries += stored.filter { entry in
+                guard PanelFlagKind.fromJSON(entry) == nil,
+                      let id = (entry as? [String: Any])?["id"] as? String else { return false }
+                return values[id] == nil
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: entries), data.count <= 32_768 else {
             throw PanelFlagKindRegistryError.encodingFailed
         }
         defaults.set(data, forKey: Self.storageKey)
@@ -125,6 +258,12 @@ enum PanelAttentionActor: String, CaseIterable {
     case `operator`
     case agent
     case c11
+}
+
+/// Why c11 lowered a flag on its own, recorded as `cause` on `flag.lowered`
+/// (C11H-330). Absent on an operator's or agent's lower.
+enum PanelFlagLowerCause: String {
+    case evaporated
 }
 
 enum PanelAttentionFlagMutation {
@@ -259,6 +398,77 @@ enum DelegateLineage {
             frontier = next
         }
         return result
+    }
+}
+
+/// One active flag kind: one sidebar flag button (C11H-223, C11H-224).
+/// Kinds are flat: a group carries a color and a count, never a priority.
+struct FlagKindGroup: Equatable, Identifiable {
+    /// The kind snapshot of this group's oldest flag; nil is the generic flag.
+    let kind: PanelFlagKind?
+    let count: Int
+    /// This kind's oldest flag. The button picks its target at click time
+    /// in the operator's jump order (C11H-262).
+    let oldest: AttentionOrder.Target
+    var id: String { kind?.id ?? "" }
+}
+
+struct FlagKindSummary: Equatable {
+    static let empty = FlagKindSummary(groups: [])
+
+    /// Generic first, then kind ids alphabetically. The order never follows
+    /// counts or raise times, so the buttons don't reshuffle as flags come and go.
+    let groups: [FlagKindGroup]
+
+    var total: Int { groups.reduce(0) { $0 + $1.count } }
+
+    /// The sidebar's button stack, top to bottom: named kinds by id, then the
+    /// generic flag, which sits nearest the Waiting Agent button (C11H-224).
+    var stackOrder: [FlagKindGroup] {
+        groups.filter { $0.kind != nil } + groups.filter { $0.kind == nil }
+    }
+
+    /// `orderedFlags` is the flag queue, oldest first.
+    init(orderedFlags: [PanelAttentionSnapshot]) {
+        var byID: [String: FlagKindGroup] = [:]
+        for flag in orderedFlags where flag.isFlagged {
+            let id = flag.flagKind?.id ?? ""
+            if let group = byID[id] {
+                byID[id] = FlagKindGroup(kind: group.kind, count: group.count + 1, oldest: group.oldest)
+            } else {
+                byID[id] = FlagKindGroup(kind: flag.flagKind, count: 1,
+                                         oldest: .init(workspaceID: flag.workspaceId, panelID: flag.surfaceId))
+            }
+        }
+        self.init(groups: byID.keys.sorted().compactMap { byID[$0] })
+    }
+
+    init(groups: [FlagKindGroup]) {
+        self.groups = groups
+    }
+}
+
+/// Badge ink on a flag color: black or white, whichever contrasts more.
+enum FlagKindInk {
+    static func prefersDarkInk(hex: String) -> Bool {
+        let luminance = relativeLuminance(hex: hex) ?? 1
+        // Contrast with black is (L + 0.05) / 0.05; with white, 1.05 / (L + 0.05).
+        return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05)
+    }
+
+    static func contrastWithPreferredInk(hex: String) -> Double {
+        let luminance = relativeLuminance(hex: hex) ?? 1
+        return max((luminance + 0.05) / 0.05, 1.05 / (luminance + 0.05))
+    }
+
+    static func relativeLuminance(hex: String) -> Double? {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        func channel(_ shift: UInt32) -> Double {
+            let c = Double((value >> shift) & 0xFF) / 255
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
     }
 }
 
@@ -415,6 +625,7 @@ final class PanelAttentionIndex: ObservableObject {
     var oldestFlags: [PanelAttentionSnapshot] {
         AttentionJumpSelector.orderedFlags(Array(snapshots.values))
     }
+    var flagKindSummary: FlagKindSummary { FlagKindSummary(orderedFlags: oldestFlags) }
 
     func snapshot(workspaceId: UUID, surfaceId: UUID) -> PanelAttentionSnapshot {
         snapshots[Self.key(workspaceId: workspaceId, surfaceId: surfaceId)]
@@ -518,10 +729,14 @@ final class PanelAttentionService {
     static let shared = PanelAttentionService()
 
     private let feedProjection: FeedProjectionBridge
+    private let evaporation: FlagEvaporationController
     private var didInstallCloseObserver = false
 
-    init(feedProjection: FeedProjectionBridge = .shared) {
+    init(feedProjection: FeedProjectionBridge = .shared, evaporation: FlagEvaporationController = .shared) {
         self.feedProjection = feedProjection
+        self.evaporation = evaporation
+        // The shared controller falls back to the shared service; a test pair binds here.
+        if evaporation !== FlagEvaporationController.shared { evaporation.service = self }
     }
 
     func installCloseObserver() {
@@ -540,16 +755,23 @@ final class PanelAttentionService {
         kind: PanelFlagKind? = nil,
         callerPanelId: UUID? = nil,
         by actor: PanelAttentionActor = .agent,
-        title: String?
+        title: String?,
+        sourceHost: String? = nil
     ) throws -> PanelMetadataStore.WriteResult {
-        try mutate(
+        let runBefore = evaporation.currentRun
+        let result = try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: .raise(reason, kind: kind),
             callerPanelId: callerPanelId,
             actor: actor,
-            title: title
+            title: title,
+            sourceHost: sourceHost
         )
+        // C11H-330: every accepted raise restarts a running evaporation, even
+        // one the store treats as unchanged (same text, same epoch, no event).
+        evaporation.raiseAccepted(surfaceId: surfaceId, runBefore: runBefore)
+        return result
     }
 
     @discardableResult
@@ -558,7 +780,8 @@ final class PanelAttentionService {
         surfaceId: UUID,
         by actor: PanelAttentionActor,
         answer: String? = nil,
-        expectedFlagEpoch: Date? = nil
+        expectedFlagEpoch: Date? = nil,
+        cause: PanelFlagLowerCause? = nil
     ) throws -> PanelMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
@@ -566,7 +789,8 @@ final class PanelAttentionService {
             flag: .lower,
             actor: actor,
             answer: answer,
-            expectedFlagEpoch: expectedFlagEpoch
+            expectedFlagEpoch: expectedFlagEpoch,
+            lowerCause: cause
         )
     }
 
@@ -786,7 +1010,8 @@ final class PanelAttentionService {
             TerminalNotificationStore.shared.cancelFlagNotification(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
-                flagRaisedAt: epoch
+                flagRaisedAt: epoch,
+                cause: .closed
             )
         }
         // Raw notification history must disappear while suppression is still
@@ -818,7 +1043,8 @@ final class PanelAttentionService {
                 TerminalNotificationStore.shared.cancelFlagNotification(
                     workspaceId: workspaceId,
                     surfaceId: attention.surfaceId,
-                    flagRaisedAt: epoch
+                    flagRaisedAt: epoch,
+                    cause: .closed
                 )
             }
         }
@@ -856,7 +1082,9 @@ final class PanelAttentionService {
         actor: PanelAttentionActor = .agent,
         answer: String? = nil,
         expectedFlagEpoch: Date? = nil,
-        title: String? = nil
+        lowerCause: PanelFlagLowerCause? = nil,
+        title: String? = nil,
+        sourceHost: String? = nil
     ) throws -> PanelMetadataStore.WriteResult {
         let transaction = try PanelMetadataStore.shared.mutateAttention(
             workspaceId: workspaceId,
@@ -884,6 +1112,9 @@ final class PanelAttentionService {
                     callerPanelId: transaction.after.flagCallerPanelId,
                     by: actor
                 )
+                if let kind = transaction.after.flagKind {
+                    PanelFlagKindRegistry.shared.recordRaise(id: kind.id)
+                }
                 // Operator decision 2026-07-28: direct flag delivery pierces
                 // suppression. Its stable epoch identity also replaces a
                 // prior reason revision instead of accumulating alerts.
@@ -893,20 +1124,33 @@ final class PanelAttentionService {
                     flagRaisedAt: epoch,
                     title: title,
                     reason: reason,
-                    kind: transaction.after.flagKind
+                    kind: transaction.after.flagKind,
+                    sourceHost: sourceHost
                 )
             } else {
                 EventEmitter.shared.emitFlagLowered(
                     workspace: workspaceId,
                     surface: surfaceId,
                     by: actor,
-                    answer: answer
+                    answer: answer,
+                    cause: lowerCause
                 )
+                // C11H-330: the Feed says who lowered it and why, in memory only.
+                feedProjection.noteFlagLowered(FeedFlagLowered(
+                    workspaceID: workspaceId,
+                    panelID: surfaceId,
+                    reason: transaction.before.flagReason,
+                    kind: transaction.before.flagKind,
+                    by: actor.rawValue,
+                    cause: lowerCause?.rawValue,
+                    atMs: Int64((Date().timeIntervalSince1970 * 1000).rounded())
+                ))
                 if let epoch = transaction.before.flagRaisedAt {
                     TerminalNotificationStore.shared.cancelFlagNotification(
                         workspaceId: workspaceId,
                         surfaceId: surfaceId,
-                        flagRaisedAt: epoch
+                        flagRaisedAt: epoch,
+                        cause: lowerCause == .evaporated ? .evaporated : .lowered
                     )
                 }
             }
@@ -964,6 +1208,7 @@ final class PanelAttentionService {
             workspace?.setDelegationOwnerTitle(nil, forSurface: snapshot.surfaceId)
         }
         workspace?.setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
+        evaporation.attentionDidChange(surfaceId: snapshot.surfaceId)
         // A delegation change moves every delegate below this panel up or
         // down one hop; they can live in other workspaces.
         if lineageChanged {

@@ -296,10 +296,10 @@ def main() -> int:
 
         claude_id = str(uuid.uuid4())
         claude_cwd = (
-            "/Users/atin/Projects/Gregorovich/projects/singularist_salon"
+            "/Users/demo/src/projects/singularist_salon"
         )
         claude_slug = (
-            "-Users-atin-Projects-Gregorovich-projects-singularist-salon"
+            "-Users-demo-src-projects-singularist-salon"
         )
         claude_projects_root = tmp / "claude-projects"
         claude_transcript = (

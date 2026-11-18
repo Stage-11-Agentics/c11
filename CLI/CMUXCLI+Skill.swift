@@ -133,20 +133,24 @@ extension CMUXCLI {
 
     func skillCommandUsage() -> String {
         return """
-        c11 skill — manage the c11 skill file for detected agent tools.
+        c11 skill — manage c11's bundled skills for detected agent tools.
 
         Subcommands:
           path                           Print the bundled skill source directory.
           status [--tool NAME] [--json]  Show detection + install status per tool.
-          install [--tool NAME]          Install (default: claude only).
+          install [NAME...] [--tool NAME]
+                                         Install the bundled skills, or only the named
+                                         ones (default tool: claude only).
                   [--dry-run] [--force]  Dry-run, or force re-copy even if hash matches.
                                          Copies synced from a checkout or edited
                                          are kept unless --force replaces them.
                   [--home PATH]          Override $HOME (useful for tests).
-          remove  [--tool NAME]          Remove c11-installed skills from the tool.
+          remove  [NAME...] [--tool NAME]
+                                         Remove c11-installed skills, or only the named
+                                         ones, from the tool.
                   [--home PATH] [--force]  Local copies are kept unless --force.
 
-        Tools: claude, codex, kimi, opencode.
+        Tools: claude, codex, grok, kimi, opencode, copilot, pi, omp.
 
         Principle:
           Claude Code is the default active install (grandfathered exception).
@@ -225,7 +229,7 @@ extension CMUXCLI {
             var errorPayload: [String: Any]? = nil
             if detected {
                 do {
-                    let statuses = try SkillInstaller.status(for: target, home: home, sourceDir: source)
+                    let statuses = try SkillInstaller.c11Status(for: target, home: home, sourceDir: source)
                     packageRows = statuses.map { st in
                         var row: [String: Any] = [
                             "package": st.package.name,
@@ -311,6 +315,46 @@ extension CMUXCLI {
         }
     }
 
+    /// What a request names. `packages` is nil when no name was given (every bundled
+    /// package); a retired name (`SkillInstaller.retiredPackages`) goes to `retired`, and
+    /// install adds its replacement to `packages` with one line saying so. A name the bundle
+    /// does not carry is refused before any file is written.
+    struct SkillPackageRequest {
+        let packages: Set<String>?
+        let retired: Set<String>
+    }
+
+    func skillPackagesFromParsedArgs(
+        _ parsed: ParsedSkillArgs, sourceDir: URL, mapsRetiredToReplacement: Bool, announce: Bool = true
+    ) throws -> SkillPackageRequest {
+        let requested = parsed.positional
+        if requested.isEmpty { return SkillPackageRequest(packages: nil, retired: []) }
+        let bundled = Set(try SkillInstaller.discoverPackages(sourceDir: sourceDir).map(\.name))
+        var names = Set<String>()
+        var retired = Set<String>()
+        for name in requested {
+            if let replacement = SkillInstaller.retiredPackages[name] {
+                retired.insert(name)
+                guard mapsRetiredToReplacement else { continue }
+                if announce {
+                    print(String(
+                        localized: "cli.skill.package.retired",
+                        defaultValue: "The \(name) skill is part of the \(replacement) skill now; using \(replacement)."
+                    ))
+                }
+                names.insert(replacement)
+            } else if bundled.contains(name) {
+                names.insert(name)
+            } else {
+                throw CLIError(message: String(
+                    localized: "cli.skill.package.unknown",
+                    defaultValue: "No bundled skill named '\(name)'. Bundled: \(bundled.sorted().joined(separator: ", "))."
+                ))
+            }
+        }
+        return SkillPackageRequest(packages: names, retired: retired)
+    }
+
     func runSkillInstall(args: [String], jsonOutput: Bool) throws {
         let parsed = try parseSkillSubcommandArgs(args, spec: [
             SkillFlagSpec(name: "--tool", kind: .value),
@@ -320,6 +364,9 @@ extension CMUXCLI {
             SkillFlagSpec(name: "--dry-run", kind: .flag),
         ])
         let source = try resolveSkillSource(jsonOutput: jsonOutput)
+        let emitJSONEarly = jsonOutput || parsed.has("--json")
+        let packages = try skillPackagesFromParsedArgs(
+            parsed, sourceDir: source, mapsRetiredToReplacement: true, announce: !emitJSONEarly).packages
         let home = homeFromParsedSkillArgs(parsed)
         let target = try targetFromParsedSkillArgs(parsed, defaultTarget: .claude)
         let dryRun = parsed.has("--dry-run")
@@ -327,7 +374,7 @@ extension CMUXCLI {
         let emitJSON = jsonOutput || parsed.has("--json")
 
         if !target.isDetected(home: home) {
-            let msg = "Tool '\(target.rawValue)' config dir \(target.configRoot(home: home).path) not found. Install \(target.displayName) first, or pass --tool <other> if you meant a different target."
+            let msg = "Tool '\(target.rawValue)' config dir \(target.configRoot(home: home).path) not found. Install \(target.displayName) first, or pass --tool <other>."
             if emitJSON {
                 print(skillJSONString(["error": "target_not_detected", "tool": target.rawValue, "message": msg]))
                 exit(2)
@@ -336,7 +383,8 @@ extension CMUXCLI {
         }
 
         if dryRun {
-            let statuses = try SkillInstaller.status(for: target, home: home, sourceDir: source)
+            let statuses = try SkillInstaller.c11Status(for: target, home: home, sourceDir: source)
+                .filter { packages?.contains($0.package.name) ?? true }
             let planned = statuses.filter { force || ($0.state != .installedCurrent && !$0.state.isLocalCopy) }
                 .map { $0.package.name }
             let skipped = statuses.filter { !force && $0.state == .installedCurrent }.map { $0.package.name }
@@ -352,28 +400,20 @@ extension CMUXCLI {
                 ]))
             } else {
                 print("Dry run — \(target.displayName) (\(target.skillsDir(home: home).path))")
-                if planned.isEmpty {
-                    print("  nothing to do; all packages current")
-                } else {
-                    print("  would write: \(planned.joined(separator: ", "))")
-                }
-                if !skipped.isEmpty {
-                    print("  would skip (up-to-date): \(skipped.joined(separator: ", "))")
-                }
-                if !kept.isEmpty {
-                    print("  would keep (local copy; --force replaces): \(kept.joined(separator: ", "))")
-                }
+                print(planned.isEmpty ? "  nothing to do; all packages current" : "  would write: \(planned.joined(separator: ", "))")
+                if !skipped.isEmpty { print("  would skip (up-to-date): \(skipped.joined(separator: ", "))") }
+                if !kept.isEmpty { print("  would keep (local copy; --force replaces): \(kept.joined(separator: ", "))") }
             }
             return
         }
 
-        let result = try SkillInstaller.install(
+        let result = try SkillInstaller.c11Install(
             target: target,
             home: home,
             sourceDir: source,
-            force: force
+            force: force,
+            packages: packages
         )
-
         if emitJSON {
             print(skillJSONString([
                 "tool": target.rawValue,
@@ -382,53 +422,15 @@ extension CMUXCLI {
                 "refreshed": result.refreshed,
                 "skipped": result.skipped,
                 "kept_local": result.keptLocal,
+                "retired": result.retired,
             ]))
         } else {
-            print("Installed skill for \(target.displayName) at \(result.destDir.path)")
-            if !result.installed.isEmpty {
-                print("  installed: \(result.installed.joined(separator: ", "))")
-            }
-            if !result.refreshed.isEmpty {
-                print("  refreshed: \(result.refreshed.joined(separator: ", "))")
-            }
-            if !result.skipped.isEmpty {
-                print("  skipped (up-to-date): \(result.skipped.joined(separator: ", "))")
-            }
-            if !result.keptLocal.isEmpty {
-                print("  kept (local copy; --force replaces): \(result.keptLocal.joined(separator: ", "))")
-            }
-        }
-
-        // For TUIs that support plugins (OpenCode), install those too.
-        if target.supportsPlugins {
-            let pluginResult = try SkillInstaller.installPlugins(
-                target: target,
-                home: home,
-                sourceDir: source,
-                force: force
-            )
-            if emitJSON {
-                // Re-print as a combined object — but the skills result was
-                // already printed above. For JSON mode, callers who want the
-                // plugin result should check stdout is two JSON objects. This
-                // is acceptable because the primary install target is skills;
-                // plugins are a bonus side-effect for OpenCode.
-                if !pluginResult.installed.isEmpty || !pluginResult.skipped.isEmpty {
-                    print(skillJSONString([
-                        "tool": target.rawValue,
-                        "plugins_dest": pluginResult.destDir.path,
-                        "plugins_installed": pluginResult.installed,
-                        "plugins_skipped": pluginResult.skipped,
-                    ]))
-                }
-            } else {
-                if !pluginResult.installed.isEmpty {
-                    print("  plugins installed: \(pluginResult.installed.joined(separator: ", "))")
-                }
-                if !pluginResult.skipped.isEmpty {
-                    print("  plugins skipped (up-to-date): \(pluginResult.skipped.joined(separator: ", "))")
-                }
-            }
+            print("Installed c11 skills for \(target.displayName) at \(result.destDir.path)")
+            if !result.installed.isEmpty { print("  installed: \(result.installed.joined(separator: ", "))") }
+            if !result.refreshed.isEmpty { print("  refreshed: \(result.refreshed.joined(separator: ", "))") }
+            if !result.skipped.isEmpty { print("  skipped (up-to-date): \(result.skipped.joined(separator: ", "))") }
+            if !result.keptLocal.isEmpty { print("  kept (local copy; --force replaces): \(result.keptLocal.joined(separator: ", "))") }
+            if !result.retired.isEmpty { print("  retired (folded into c11): \(result.retired.joined(separator: ", "))") }
         }
     }
 
@@ -440,12 +442,15 @@ extension CMUXCLI {
             SkillFlagSpec(name: "--force", kind: .flag),
         ])
         let source = try resolveSkillSource(jsonOutput: jsonOutput)
+        let request = try skillPackagesFromParsedArgs(
+            parsed, sourceDir: source, mapsRetiredToReplacement: false, announce: false)
         let home = homeFromParsedSkillArgs(parsed)
         let target = try targetFromParsedSkillArgs(parsed, defaultTarget: .claude)
         let emitJSON = jsonOutput || parsed.has("--json")
 
-        let result = try SkillInstaller.remove(
-            target: target, home: home, sourceDir: source, force: parsed.has("--force"))
+        let result = try SkillInstaller.c11Remove(
+            target: target, home: home, sourceDir: source, force: parsed.has("--force"),
+            packages: request.packages, retiring: request.packages == nil ? nil : request.retired)
         if emitJSON {
             print(skillJSONString([
                 "tool": target.rawValue,
@@ -453,43 +458,15 @@ extension CMUXCLI {
                 "removed": result.removed,
                 "skipped": result.skipped,
                 "kept_local": result.keptLocal,
+                "retired": result.retired,
             ]))
         } else {
-            print("Removed skill for \(target.displayName) from \(result.destDir.path)")
-            if !result.removed.isEmpty {
-                print("  removed: \(result.removed.joined(separator: ", "))")
-            }
-            if !result.skipped.isEmpty {
-                print("  skipped: \(result.skipped.joined(separator: ", "))")
-            }
-            if !result.keptLocal.isEmpty {
-                print("  kept (local copy; --force removes): \(result.keptLocal.joined(separator: ", "))")
-            }
-        }
-
-        // Remove plugins for TUIs that support them (OpenCode).
-        if target.supportsPlugins {
-            let pluginResult = try SkillInstaller.removePlugins(
-                target: target,
-                home: home,
-                sourceDir: source
-            )
-            if emitJSON {
-                if !pluginResult.removed.isEmpty || !pluginResult.skipped.isEmpty {
-                    print(skillJSONString([
-                        "tool": target.rawValue,
-                        "plugins_removed": pluginResult.removed,
-                        "plugins_skipped": pluginResult.skipped,
-                    ]))
-                }
-            } else {
-                if !pluginResult.removed.isEmpty {
-                    print("  plugins removed: \(pluginResult.removed.joined(separator: ", "))")
-                }
-                if !pluginResult.skipped.isEmpty {
-                    print("  plugins skipped: \(pluginResult.skipped.joined(separator: ", "))")
-                }
-            }
+            print("Removed c11 skills for \(target.displayName) from \(result.destDir.path)")
+            if !result.removed.isEmpty { print("  removed: \(result.removed.joined(separator: ", "))") }
+            if !result.skipped.isEmpty { print("  skipped: \(result.skipped.joined(separator: ", "))") }
+            if !result.keptLocal.isEmpty { print("  kept (local copy; --force removes): \(result.keptLocal.joined(separator: ", "))") }
+            if !result.retired.isEmpty { print("  retired (folded into c11): \(result.retired.joined(separator: ", "))") }
         }
     }
+
 }

@@ -54,6 +54,7 @@ extension TerminalController {
         var methods: [String] = [
             "agent.event.append",
             "agent.prompt_cache.report",
+            "agent.report",
             "mailbox.native.subscribe",
             "agents.list",
             "journal.clear",
@@ -64,6 +65,10 @@ extension TerminalController {
             "system.identify",
             "system.brand",
             "system.tree",
+            "hc.diagnostics",
+            "hc.call",
+            "restore.status",
+            "restore.run",
             "history.list",
             "history.back",
             "history.forward",
@@ -96,6 +101,9 @@ extension TerminalController {
             "workspace.group.set_color",
             "workspace.group.set_icon",
             "workspace.group.focus",
+            "workspace.group.set_metadata",
+            "workspace.group.get_metadata",
+            "workspace.group.clear_metadata",
 
             "workspace.rename",
             "workspace.set_root",
@@ -142,8 +150,10 @@ extension TerminalController {
             "debug.portal.snapshot",
             "panel.send_text",
             "panel.send_key",
+            "panel.retry_input",
             "panel.read_text",
             "panel.clear_history",
+            "panel.end_status",
             "panel.trigger_flash",
             "panel.cancel_flash",
             "panel.set_metadata",
@@ -159,6 +169,7 @@ extension TerminalController {
             // `LegacyWireAliases` still accepts. The one non-canonical entry.
             "tab.list",
             "agent.launch",
+            "agent.launch_status",
             "flag.raise",
             "flag.lower",
             "flag.list",
@@ -167,6 +178,11 @@ extension TerminalController {
             "flag.kind.list",
             "flag.kind.set",
             "flag.kind.rm",
+            "machine.list",
+            "machine.set",
+            "machine.rm",
+            "machine.unlink",
+            "machine.link_session",
             "config.list",
             "config.recent",
             "config.stats",
@@ -176,6 +192,8 @@ extension TerminalController {
             "config.reorder",
             "config.default",
             "config.launch",
+            "chaos.draw",
+            "chaos.cast",
             "mailbox.resolve",
             "area.list",
             "area.focus",
@@ -194,11 +212,17 @@ extension TerminalController {
             "notification.create_for_panel",
             "notification.create_for_target",
             "notification.list",
+            "notification.level.get",
+            "notification.level.set",
+            "notification.sound.get",
+            "notification.sound.set",
             "notification.clear",
             "app.focus_override.set",
             "app.simulate_active",
             "markdown.open",
             "markdown.get_content",
+            "show.open",
+            "show.close",
             "sidebar.state",
             "browser.open_split",
             "browser.profiles.list",
@@ -294,6 +318,11 @@ extension TerminalController {
         if CapabilityFeatures.current.supports(.windowResize) {
             methods.append("window.resize")
         }
+        // c11 (C11H-197)
+        if CapabilityFeatures.current.supports(.windowName) { methods.append("window.set_name") }
+        if CapabilityFeatures.current.supports(.windowTheme) { methods.append("window.set_theme") }
+        if CapabilityFeatures.current.supports(.windowMove) { methods.append("window.move") }
+        if CapabilityFeatures.current.supports(.displayList) { methods.append("display.list") }
 #if DEBUG
         methods.append(contentsOf: [
             "debug.shortcut.set",
@@ -327,6 +356,7 @@ extension TerminalController {
             "debug.empty_area.count",
             "debug.empty_area.reset",
             "debug.notification.focus",
+            "debug.notification.open",
             "debug.flash.count",
             "debug.flash.reset",
             "debug.panel_snapshot",
@@ -417,7 +447,14 @@ extension TerminalController {
                         "window_ref": v2Ref(kind: .window, uuid: windowId)
                     ]
                 }
+                // c11 (C11H-197): the focused window's name and display.
+                focused.merge(v2IdentifyWindowGeometry(windowId)) { current, _ in current }
             }
+        }
+        // C11H-371: a relayed caller sees the operator's focus only inside its own workspace.
+        if let scope = SocketCommandContext.current?.relayReadScope,
+           focused["workspace_id"] as? String != scope.workspace.uuidString {
+            focused = [:]
         }
 
         // Optionally validate a caller-provided location (useful for agents calling from inside a surface).
@@ -463,6 +500,8 @@ extension TerminalController {
                         payload["pane_id"] = NSNull()
                         payload["pane_ref"] = NSNull()
                     }
+                    // c11 (C11H-197): the caller's window name and display.
+                    payload.merge(v2IdentifyWindowGeometry(callerWindowId)) { current, _ in current }
                     resolvedCaller = payload
                 }
             }
@@ -583,8 +622,13 @@ extension TerminalController {
 
         v2MainSync {
             guard let app = AppDelegate.shared else { return }
+            let workspaceMetadata = WorkspaceMetadataStore.shared.readSnapshot()
+            let captainProjection = WorkspaceCaptainCoordinator.capture(
+                workspaces: app.fleetWorkspaces(), workspaceMetadata: workspaceMetadata)
             let summaries = app.listMainWindowSummaries()
             let defaultWindowId = focusedWindowId ?? summaries.first?.windowId
+            // c11 (C11H-197): one display read for every window node.
+            let windowGeometry = app.allMainWindowGeometry()
 
             // Caller-current-workspace lookup for `scope == "workspace"`. Priority:
             //   1. Explicit --workspace (handled below by workspaceFilter branch)
@@ -604,13 +648,17 @@ extension TerminalController {
                     let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
-                        selected: workspace.id == manager.selectedWorkspaceId
+                        selected: workspace.id == manager.selectedWorkspaceId,
+                        captainProjection: captainProjection,
+                        workspaceMetadataSnapshot: workspaceMetadata
                     )
                     windowNodes = [
                         v2TreeWindowNode(
                             summary: summary,
                             index: windowIndex,
-                            workspaceNodes: [workspaceNode]
+                            workspaceNodes: [workspaceNode],
+                            geometry: windowGeometry[summary.windowId],
+                            captainProjection: captainProjection
                         )
                     ]
                     workspaceFound = true
@@ -623,14 +671,18 @@ extension TerminalController {
                         v2TreeWorkspaceNode(
                             workspace: workspace,
                             index: workspaceIndex,
-                            selected: workspace.id == manager.selectedWorkspaceId
+                            selected: workspace.id == manager.selectedWorkspaceId,
+                            captainProjection: captainProjection,
+                            workspaceMetadataSnapshot: workspaceMetadata
                         )
                     }
                     windowNodes.append(
                         v2TreeWindowNode(
                             summary: summary,
                             index: windowIndex,
-                            workspaceNodes: workspaceNodesForWindow
+                            workspaceNodes: workspaceNodesForWindow,
+                            geometry: windowGeometry[summary.windowId],
+                            captainProjection: captainProjection
                         )
                     )
 
@@ -640,14 +692,18 @@ extension TerminalController {
                         v2TreeWorkspaceNode(
                             workspace: workspace,
                             index: workspaceIndex,
-                            selected: workspace.id == manager.selectedWorkspaceId
+                            selected: workspace.id == manager.selectedWorkspaceId,
+                            captainProjection: captainProjection,
+                            workspaceMetadataSnapshot: workspaceMetadata
                         )
                     }
                     windowNodes.append(
                         v2TreeWindowNode(
                             summary: summary,
                             index: windowIndex,
-                            workspaceNodes: workspaceNodesForWindow
+                            workspaceNodes: workspaceNodesForWindow,
+                            geometry: windowGeometry[summary.windowId],
+                            captainProjection: captainProjection
                         )
                     )
 
@@ -662,13 +718,17 @@ extension TerminalController {
                     let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
-                        selected: workspace.id == manager.selectedWorkspaceId
+                        selected: workspace.id == manager.selectedWorkspaceId,
+                        captainProjection: captainProjection,
+                        workspaceMetadataSnapshot: workspaceMetadata
                     )
                     windowNodes = [
                         v2TreeWindowNode(
                             summary: summary,
                             index: windowIndex,
-                            workspaceNodes: [workspaceNode]
+                            workspaceNodes: [workspaceNode],
+                            geometry: windowGeometry[summary.windowId],
+                            captainProjection: captainProjection
                         )
                     ]
                     return  // Only one workspace per "workspace" scope; exit the v2MainSync closure.
@@ -677,6 +737,11 @@ extension TerminalController {
                     continue
                 }
             }
+        }
+
+        // C11H-371: a relayed tree's window names no other workspace.
+        if let scope = SocketCommandContext.current?.relayReadScope {
+            windowNodes = windowNodes.map { Self.relayScopedTreeWindow($0, scope: scope) }
         }
 
         if let workspaceFilter, !workspaceFound {
@@ -696,6 +761,21 @@ extension TerminalController {
             "scope": scope,
             "windows": windowNodes
         ])
+    }
+
+    /// C11H-371: a tree window node cut to the relayed caller's workspace:
+    /// the operator's selection elsewhere, the sidebar order and the groups
+    /// would each name the window's other workspaces.
+    nonisolated static func relayScopedTreeWindow(_ node: [String: Any], scope: C11RelayPolicy.ReadScope) -> [String: Any] {
+        var node = node
+        let own = scope.workspace.uuidString
+        if node["selected_workspace_id"] as? String != own {
+            node["selected_workspace_id"] = NSNull()
+            node["selected_workspace_ref"] = NSNull()
+        }
+        node["workspace_groups"] = [[String: Any]]()
+        node["root_order"] = ((node["root_order"] as? [[String: Any]]) ?? []).filter { $0["id"] as? String == own }
+        return node
     }
 
     /// C11-131 `app.restart` — clean-shutdown choreography then relaunch.

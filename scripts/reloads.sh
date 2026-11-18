@@ -17,11 +17,20 @@ CLEAN=0
 LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11"
 LAST_SOCKET_PATH_FILE="${LAST_SOCKET_PATH_DIR}/last-socket-path"
 
+# Staging sockets, DerivedData and breadcrumbs live in c11's per-user folder
+# ($(getconf DARWIN_USER_TEMP_DIR)c11, 0700), never at fixed /tmp names
+# another account could create first (C11H-364).
+# shellcheck source=lib/c11-user-paths.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/c11-user-paths.sh"
+C11_RUNTIME_DIR="$(c11_ensure_user_runtime_dir)"
+
 write_last_socket_path() {
   local socket_path="$1"
   mkdir -p "$LAST_SOCKET_PATH_DIR"
-  echo "$socket_path" > "$LAST_SOCKET_PATH_FILE" || true
-  echo "$socket_path" > /tmp/c11-last-socket-path || true
+  c11_private_write "$LAST_SOCKET_PATH_FILE" "$socket_path" || true
+  c11_private_write "$C11_RUNTIME_DIR/c11-last-socket-path" "$socket_path" || true
+  # Older readers still look here; written only when the name is ours.
+  c11_private_write /tmp/c11-last-socket-path "$socket_path" || true
 }
 
 usage() {
@@ -52,9 +61,9 @@ The default derived-data path keys on the tag *family* (the prefix up to
 the first hyphen of the sanitized tag), so related tags share an
 incremental build cache:
 
-  --tag release/v0.49.0   -> /tmp/c11-staging-release/
-  --tag c11-110-build     -> /tmp/c11-staging-c11/
-  --tag feat-foo-bar      -> /tmp/c11-staging-feat/
+  --tag release/v0.49.0   -> $(getconf DARWIN_USER_TEMP_DIR)c11/c11-staging-release/
+  --tag c11-110-build     -> $(getconf DARWIN_USER_TEMP_DIR)c11/c11-staging-c11/
+  --tag feat-foo-bar      -> $(getconf DARWIN_USER_TEMP_DIR)c11/c11-staging-feat/
 
 The script prints the last tag/SHA built into the shared dir on reuse;
 pass --clean (or --derived-data <path>) to override.
@@ -170,7 +179,7 @@ if [[ -n "$TAG" ]]; then
     BUNDLE_ID="com.stage11.c11.staging.${TAG_ID}"
   fi
   if [[ "$DERIVED_SET" -eq 0 ]]; then
-    DERIVED_DATA="/tmp/c11-staging-${TAG_FAMILY}"
+    DERIVED_DATA="$C11_RUNTIME_DIR/c11-staging-${TAG_FAMILY}"
   fi
 fi
 
@@ -224,6 +233,19 @@ fi
 # Staging is built for running, not for IDE navigation; the indexer output
 # would only be useful if we ever edited against this build in Xcode.
 XCODEBUILD_ARGS+=(COMPILER_INDEX_STORE_ENABLE=NO)
+# C11H-133: C's __FILE__ (SwiftPM C targets such as posthog-ios's libwebp) bakes
+# the builder's checkout and DerivedData paths into the shipped binary. Map them
+# to fixed names; clang tries the longest prefix first, so $HOME catches the rest.
+# Swift's #filePath ignores prefix maps, so shipping code never uses it outside DEBUG.
+# scripts/check-build-paths.sh proves the result on the built app.
+PREFIX_MAPS=("\"-ffile-prefix-map=$PWD=c11\"")
+if [[ -n "$DERIVED_DATA" ]]; then
+  DERIVED_DATA_MAP="$DERIVED_DATA"
+  [[ "$DERIVED_DATA_MAP" == /* ]] || DERIVED_DATA_MAP="$PWD/$DERIVED_DATA_MAP"
+  PREFIX_MAPS+=("\"-ffile-prefix-map=$DERIVED_DATA_MAP=DerivedData\"")
+fi
+PREFIX_MAPS+=("\"-ffile-prefix-map=$HOME=~\"")
+XCODEBUILD_ARGS+=("OTHER_CFLAGS=\$(inherited) ${PREFIX_MAPS[*]}")
 # Default to incremental Swift compilation. Wholemodule is faster for a
 # single binary's runtime perf but slower to compile on each iteration.
 # Pass --wmo for the rare staging build that needs prod parity (e.g. the
@@ -285,6 +307,24 @@ if [[ -z "${APP_PATH:-}" || ! -d "${APP_PATH}" ]]; then
   exit 1
 fi
 
+# C11H-133: a plain `build` never strips, so the executables keep their debug
+# map (N_SO and N_OSO stabs naming every source and object under the build
+# root). xcodebuild has written the dSYM from that map; now strip debugging
+# symbols only, from the two executables this build links. Never -T and never
+# a global DEPLOYMENT_POSTPROCESSING: Swift names stay for backtraces, and the
+# package objects keep their DWARF for the dSYM. This is the pristine app the
+# release signs; it is re-signed ad hoc here so it stays valid until then.
+for STRIP_TARGET in "$APP_PATH/Contents/MacOS/$BASE_EXECUTABLE_NAME" "$APP_PATH/Contents/Resources/bin/c11"; do
+  if [[ ! -f "$STRIP_TARGET" ]]; then
+    echo "[reloads.sh] nothing to strip at $STRIP_TARGET" >&2
+    exit 1
+  fi
+  xcrun strip -S "$STRIP_TARGET"
+done
+/usr/bin/codesign --force --sign - --timestamp=none --preserve-metadata=entitlements "$APP_PATH/Contents/Resources/bin/c11"
+/usr/bin/codesign --force --sign - --timestamp=none --preserve-metadata=entitlements,requirements,flags "$APP_PATH"
+"$(cd "$(dirname "$0")" && pwd)/check-release-symbols.sh" "$APP_PATH" "$(dirname "$APP_PATH")/${BASE_APP_NAME}.app.dSYM"
+
 # Staging always copies the built app and patches the plist to set an isolated
 # socket path, bundle id, and display name. This prevents conflicts with the
 # production cmux app.
@@ -319,7 +359,8 @@ if [[ -f "$INFO_PLIST" ]]; then
   STAGING_SLUG="${TAG_SLUG:-staging}"
   APP_SUPPORT_DIR="$HOME/Library/Application Support/c11"
   CMUXD_SOCKET="${APP_SUPPORT_DIR}/c11d-${STAGING_SLUG}.sock"
-  CMUX_SOCKET="/tmp/c11-${STAGING_SLUG}.sock"
+  CMUX_SOCKET="$(c11_socket_path_for_stem "c11-${STAGING_SLUG}" "$C11_RUNTIME_DIR")"
+  echo "[reloads.sh] socket: $CMUX_SOCKET"
   if [[ "$NO_LAUNCH" -eq 0 ]]; then
     write_last_socket_path "$CMUX_SOCKET"
   fi

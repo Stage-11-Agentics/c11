@@ -198,6 +198,10 @@ enum MailboxPanelMail {
         /// before the stamp existed or from a sender it could not pin down.
         var senderPanelId: UUID? = nil
 
+        /// C11H-360: the linked machine a relayed envelope came from
+        /// (`ext.c11h`, written only by c11's relay); nil for local mail.
+        var relayMachine: String? = nil
+
         /// The inline body and the referenced file's text with their links
         /// found (C11-524). Built once when the listing loads, off the main
         /// thread, so the drawer never parses a body while it renders.
@@ -442,6 +446,7 @@ enum MailboxPanelMail {
             isLong: isLong(body) || isLong(referencedText),
             senderPanelId: ((raw["ext"] as? [String: Any])?[MailboxEnvelope.senderPanelKey] as? String)
                 .flatMap(UUID.init(uuidString:)),
+            relayMachine: MailboxEnvelope.relayMachine(raw: raw).map { String($0.prefix(Header.fieldLimit)) },
             bodyRich: MailboxBodyLinks.attributed(body),
             referenceRich: referencedText.isEmpty ? nil : MailboxBodyLinks.attributed(referencedText)
         )
@@ -718,6 +723,9 @@ extension MailboxPanelMail {
         /// The panel the dispatcher stamped as sender; nil on unstamped mail.
         /// Conversations key received mail by it, never by `from`.
         let senderPanel: UUID?
+        /// C11H-360: the linked machine a relayed envelope came from; nil for
+        /// local mail.
+        let relayMachine: String?
         /// The last path component of `body_ref`, capped, for a one-line preview.
         let fileName: String?
 
@@ -743,6 +751,7 @@ extension MailboxPanelMail {
             previewRich = MailboxBodyLinks.attributed(firstLine, cutAt: Self.previewLimit)
             senderPanel = ((raw["ext"] as? [String: Any])?[MailboxEnvelope.senderPanelKey] as? String)
                 .flatMap(UUID.init(uuidString:))
+            relayMachine = MailboxEnvelope.relayMachine(raw: raw).map { String($0.prefix(Self.fieldLimit)) }
             fileName = string("body_ref")
                 .map { String((($0 as NSString).lastPathComponent).prefix(Self.fieldLimit)) }
                 .flatMap { $0.isEmpty ? nil : $0 }
@@ -1003,8 +1012,8 @@ extension MailboxPanelMail {
                 claimedAt: claimedAt,
                 wait: wait
             ))
-            senders[header.from, default: (0, 0)].count += 1
-            if entry.unread { senders[header.from, default: (0, 0)].unread += 1 }
+            senders[senderKey(of: header), default: (0, 0)].count += 1
+            if entry.unread { senders[senderKey(of: header), default: (0, 0)].unread += 1 }
             if let topic = header.topic {
                 topics[topic, default: 0] += 1
             } else {
@@ -1223,7 +1232,7 @@ extension MailboxPanelMail {
         dayStarts: [Date],
         calendar: Calendar
     ) -> Bool {
-        if kind != .from, let from = filter.from, record.header.from != from { return false }
+        if kind != .from, let from = filter.from, senderKey(of: record.header) != from { return false }
         if kind != .topic, let topic = filter.topic, record.header.topic != topic { return false }
         if kind != .time, let window = filter.window {
             guard let date = record.date, window.contains(date) else { return false }
@@ -1243,7 +1252,7 @@ extension MailboxPanelMail {
         var peers = Set<PeerKey>()
         result.fromFilter = filter.from
         for record in insights.records {
-            if let from = filter.from, record.header.from == from {
+            if let from = filter.from, senderKey(of: record.header) == from {
                 let key = peerKey(of: record.header)
                 if peers.insert(key).inserted { result.fromPeers.append(key) }
             }
@@ -1279,8 +1288,8 @@ extension MailboxPanelMail {
                 if let day = record.day { result.daily[day] += 1 }
             }
             if all || matches(record, filter, ignoring: .from, now: now, dayStarts: starts, calendar: calendar) {
-                senders[record.header.from, default: (0, 0)].count += 1
-                if record.unread { senders[record.header.from, default: (0, 0)].unread += 1 }
+                senders[senderKey(of: record.header), default: (0, 0)].count += 1
+                if record.unread { senders[senderKey(of: record.header), default: (0, 0)].unread += 1 }
             }
             if let topic = record.header.topic,
                all || matches(record, filter, ignoring: .topic, now: now, dayStarts: starts, calendar: calendar) {
@@ -1295,9 +1304,11 @@ extension MailboxPanelMail {
 
     /// Up to `limit` sender names, most messages first: the ones worth
     /// resolving to panel numbers. Off the main thread, from the records.
+    /// Relayed mail is never resolved to a panel here by its `from`
+    /// (C11H-360): its tally names its machine instead.
     static func busiestSenders(_ insights: Insights, limit: Int = 200) -> [String] {
         var counts: [String: Int] = [:]
-        for record in insights.records { counts[record.header.from, default: 0] += 1 }
+        for record in insights.records where record.header.relayMachine == nil { counts[record.header.from, default: 0] += 1 }
         return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
             .prefix(limit).map(\.key)
     }
@@ -1408,6 +1419,9 @@ extension MailboxPanelMail {
         /// Where the peer's copy of this panel's newest send to it stands;
         /// nil when the ledger records no send to it.
         var lastSendState: SentState?
+        /// C11H-360: the linked machine of the newest received message, when
+        /// it was relayed; the label already names it.
+        var relayMachine: String? = nil
 
         var count: Int { refs.count }
         var lastAt: Date? { refs.first?.date }
@@ -1476,7 +1490,8 @@ extension MailboxPanelMail {
             var conversation = conversations[key] ?? Conversation(key: key)
             if newestHeaders[key] == nil {
                 newestHeaders[key] = header
-                if header.from != "?" { conversation.label = header.from }
+                if header.from != "?" { conversation.label = senderName(header.from, relayMachine: header.relayMachine) }
+                conversation.relayMachine = header.relayMachine
             }
             conversation.received += 1
             if entry.unread { conversation.unread += 1 }
@@ -1702,11 +1717,26 @@ extension MailboxPanelMail {
     static func peerKey(of message: Message) -> PeerKey? {
         guard message.problem == nil else { return nil }
         if let panel = message.senderPanelId { return .panel(panel) }
-        return .name(message.from.isEmpty ? "?" : String(message.from.prefix(Header.fieldLimit)))
+        return .name(senderName(message.from.isEmpty ? "?" : String(message.from.prefix(Header.fieldLimit)),
+                                relayMachine: message.relayMachine))
+    }
+
+    /// C11H-360: how Insights groups and filters received mail by sender:
+    /// `from`, with the machine for relayed mail, so a relayed `reviewer`
+    /// never joins a local `reviewer`'s tally.
+    static func senderKey(of header: Header) -> String {
+        senderName(header.from, relayMachine: header.relayMachine)
     }
 
     static func peerKey(of header: Header) -> PeerKey {
-        header.senderPanel.map(PeerKey.panel) ?? .name(header.from)
+        header.senderPanel.map(PeerKey.panel) ?? .name(senderName(header.from, relayMachine: header.relayMachine))
+    }
+
+    /// C11H-360: an unstamped sender's conversation name. Relayed mail keeps
+    /// its machine, so it never merges into a local sender's conversation by
+    /// `from`, and its label says where it came from.
+    static func senderName(_ from: String, relayMachine: String?) -> String {
+        MailboxEnvelope.senderLabel(from, relayMachine: relayMachine)
     }
 
     /// A received envelope, read in full, is in `key`'s conversation: its
@@ -1719,7 +1749,7 @@ extension MailboxPanelMail {
         case .name(let name):
             guard message.senderPanelId == nil, message.problem == nil else { return false }
             let from = message.from.isEmpty ? "?" : String(message.from.prefix(Header.fieldLimit))
-            return from == name
+            return senderName(from, relayMachine: message.relayMachine) == name
         }
     }
 
@@ -1973,7 +2003,7 @@ extension MailboxPanelMail {
         for record in records where !record.unread {
             if let wait = record.wait {
                 waits.append(wait)
-                bySender[record.header.from, default: []].append(wait)
+                bySender[senderKey(of: record.header), default: []].append(wait)
                 result.buckets[pickupBucket(wait)] += 1
             } else if record.claimedAt == nil, let date = record.date, date >= start {
                 result.unclaimed += 1

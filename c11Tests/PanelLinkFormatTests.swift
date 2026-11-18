@@ -18,6 +18,20 @@ final class PanelLinkFormatTests: XCTestCase {
         XCTAssertEqual(PanelLinkTarget(workspace.url), .workspace(id))
     }
 
+    /// c11 prints its own scheme and still resolves c11's, so older mail and
+    /// c11's docs keep working inside c11; a look-alike scheme is not a link.
+    func testC11hAndLegacyC11LinksResolveToTheSameTarget() {
+        XCTAssertEqual(PanelLinkTarget("c11h://panel/abcdefab-1234-4567-89ab-abcdefabcdef"), .panel(id)) // c11-2.0:keep (hidden alias)
+        XCTAssertEqual(PanelLinkTarget("c11://panel/abcdefab-1234-4567-89ab-abcdefabcdef"), .panel(id))
+        XCTAssertEqual(PanelLinkTarget(" C11H://workspace/abcdefab-1234-4567-89ab-abcdefabcdef "), .workspace(id)) // c11-2.0:keep (hidden alias)
+        XCTAssertNil(PanelLinkTarget("c11hx://panel/abcdefab-1234-4567-89ab-abcdefabcdef"))
+        XCTAssertNil(PanelLinkTarget("c11h://panel/not-a-uuid")) // c11-2.0:keep (hidden alias)
+        XCTAssertEqual(PanelLinkFormat.acceptedScheme(prefixOf: "C11H:anything"), "c11h") // c11-2.0:keep (hidden alias)
+        XCTAssertEqual(PanelLinkFormat.acceptedScheme(prefixOf: "c11:x"), "c11")
+        XCTAssertNil(PanelLinkFormat.acceptedScheme(prefixOf: "c110://panel"))
+        XCTAssertNil(PanelLinkFormat.acceptedScheme(prefixOf: "https://example.com/c11h:x")) // c11-2.0:keep (hidden alias)
+    }
+
     func testMarkdownCannotEscapeItsLabelOrInterpretMarkup() {
         let link = PanelLinkFormat(kind: .panel, id: id, title: "![agent](bad) *bold* _italic_ `code` <b> &amp; \\ end | Opus")
         XCTAssertEqual(link.markdown, #"[\!\[agent\](bad) \*bold\* \_italic\_ \`code\` \<b\> \&amp; \\ end \| Opus]("# + link.url + ")")

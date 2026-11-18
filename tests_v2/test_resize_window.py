@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """C11-286 / cmux #9826: tagged resize, dispatcher, geometry and focus evidence.
 
-Run only INSIDE an authorized Atlas sandbox guest, with its packaged CLI:
+Run only INSIDE an authorized build-host sandbox guest, with its packaged CLI:
   C11_SOCKET=/tmp/c11-sandbox-<guest>.sock \
   C11_CLI='<tagged app>/Contents/Resources/bin/c11' \
     python3 tests_v2/test_resize_window.py --pid <app-pid> --source-head <sha>

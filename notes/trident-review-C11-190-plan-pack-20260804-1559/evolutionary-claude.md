@@ -82,7 +82,7 @@ Note the third assertion. It is the one a human eyeballing a dashboard would nev
 
 Nothing in the plan makes the next occurrence self-announcing. The org has spend notifications and quota-threshold notifications available; neither is mentioned. At minimum:
 
-- Sentry org-level quota notification at 50% and 80% of the 50,000, to `projects@stage11.ai`.
+- Sentry org-level quota notification at 50% and 80% of the 50,000, to the project's shared mailbox.
 - On-demand spend notification, because `allowOnDemand: true` means the new failure mode is "spends $20 quietly, then blinds quietly."
 - A scheduled run of the verifier from item 1, so a non-zero `rate_limited` count anywhere on the org fails loudly within a day rather than within a month.
 
@@ -208,7 +208,7 @@ Tag events with the drop counters (see Mutations). Rising drop rates surface wed
 
 4. **Ship `scripts/telemetry/verify-sentry-accepted.py`.** Model on acetate's `verify_real_arrival.py`. Wire into `release.yml` post-publish and a nightly schedule. Non-zero exit on any assertion failure.
 
-5. **Turn on Sentry quota and on-demand spend notifications.** 50% and 80% thresholds, to `projects@stage11.ai`. This is the item that would have prevented the whole incident.
+5. **Turn on Sentry quota and on-demand spend notifications.** 50% and 80% thresholds, to the project's shared mailbox. This is the item that would have prevented the whole incident.
 
 6. **Tag surviving events with the drop counters.** Five lines in `AppDelegate`'s `beforeSend`, sketched above. Highest value-per-line in this entire ticket.
 

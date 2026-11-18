@@ -2,7 +2,7 @@
 
 - **Track:** Standard / Analytical
 - **Plan:** C11-190, Sentry quota exhaustion incident, verify monitoring resumes
-- **Plan file:** `/Users/atin/Projects/Stage11/code/c11/.lattice/plans/task_01KZ6YXZRV8SH2V7FJJKPM7QCJ.md`
+- **Plan file:** `~/src/c11/.lattice/plans/task_01KZ6YXZRV8SH2V7FJJKPM7QCJ.md`
 - **Reviewers:** Claude, Codex, Gemini
 - **Synthesized:** 2026-08-04
 - **Sources:** `standard-claude.md`, `standard-codex.md`, `standard-gemini.md`
@@ -190,7 +190,7 @@ Deduplicated across all three reviews and ordered by decision weight. Attributio
 
 ### Scope boundaries
 
-10. **Recurrence detector: in scope, sibling ticket, or deliberately deferred?** If adopted, which shape: Sentry's org-level quota and spend notifications to `projects@stage11.ai`, a scheduled `stats_v2` read that fails loudly on `rate_limited > 0`, or both? Who receives it and what do they do when it fires? **[C, X]**
+10. **Recurrence detector: in scope, sibling ticket, or deliberately deferred?** If adopted, which shape: Sentry's org-level quota and spend notifications to the project's shared mailbox, a scheduled `stats_v2` read that fails loudly on `rate_limited > 0`, or both? Who receives it and what do they do when it fires? **[C, X]**
 
 11. **Org-wide IP and geo scrubbing.** `stage-11-kl` has `scrubIPAddresses: false` and `dataScrubber: false`; only `acetate` was fixed, so c11 is presumably storing users' IPs and cities right now. In scope for C11-190, a new ticket, or an accepted risk? Note the fix needs the leaf-selector workaround plus a stored-event read-back, not just the setting name. **[C, G]**
 

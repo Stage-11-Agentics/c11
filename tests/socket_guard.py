@@ -113,7 +113,7 @@ _orig_posix_spawn = {
 
 # These scripts pkill, open, or quit an app, or send the close-tabs shortcut.
 # The socket scrub does not stop that. A normal host must not start them.
-# A sandbox guest exports the opt-in. The Atlas slot suite is not in this set:
+# A sandbox guest exports the opt-in. The build-host slot suite is not in this set:
 # it keeps its locks under C11_ATLAS_SLOTS_DIR and CI runs it with no opt-in.
 LIVE_APP_ENV = "C11_TEST_ALLOW_LIVE_APP"
 LIVE_APP_SCRIPTS = frozenset(

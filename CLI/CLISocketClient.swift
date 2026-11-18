@@ -24,6 +24,9 @@ final class SocketClient {
 
     let path: String
     private var socketFD: Int32 = -1
+    /// Relay mode (C11H-16): requests travel through this machine's c11 hc
+    /// core instead of a local socket. Nil outside a c11 relay terminal.
+    private var relayClient: C11RelayClient?
     var usesSingleLineResponses = false
 
     // Default deadline: 10 s, tunable via env. Dual-read: C11_* primary, CMUX_* compat.
@@ -63,13 +66,21 @@ final class SocketClient {
     }
 
     func connect() throws {
-        if socketFD >= 0 { return }
+        if socketFD >= 0 || relayClient != nil { return }
+        if C11RelayCLI.isActive {
+            relayClient = try C11RelayCLI.makeClient()
+            return
+        }
         try connectOnce()
     }
+
+    /// True when this client talks to c11 through the relay.
+    var isRelayed: Bool { relayClient != nil || C11RelayCLI.isActive }
 
     func close() {
         serverVocabularyTier = nil
         serverMethods = nil
+        relayClient = nil
         if socketFD >= 0 {
             Darwin.close(socketFD)
             socketFD = -1
@@ -90,6 +101,19 @@ final class SocketClient {
     /// where it may still claim mail and finish before the harness's kill.
     static var processDeadline: Date?
 
+    /// A socket variable this process refused (C11H-282): its path and the
+    /// message. Checked at connect, so commands that never connect (`version`,
+    /// `guide`, help) still run.
+    static var refusedEnvironmentSocket: (path: String, message: String)?
+
+    /// Throws the refusal for a refused path. Call it before a `try?` connect
+    /// that would launch c11 on failure, so the refusal is not swallowed.
+    static func throwIfRefused(path: String) throws {
+        if let refused = refusedEnvironmentSocket, refused.path == path {
+            throw CLIError(message: refused.message)
+        }
+    }
+
     func send(command: String, responseTimeout: TimeInterval?) throws -> String {
         try send(command: command, responseTimeout: responseTimeout, framing: .legacyMultiline)
     }
@@ -99,11 +123,48 @@ final class SocketClient {
         case jsonLine
     }
 
+    /// Retry only an explicit pre-dispatch hc pending response. A transport
+    /// timeout, disconnect, or any other response may have executed the command
+    /// and must never be replayed. All attempts share the original deadline.
     private func send(
         command: String,
         responseTimeout: TimeInterval?,
         framing: ResponseFraming
     ) throws -> String {
+        let start = ProcessInfo.processInfo.systemUptime
+        let budget = min(responseTimeout ?? 2, Self.processDeadline?.timeIntervalSinceNow ?? .infinity)
+        let retryUntil = start + min(2, budget)
+        var remaining = responseTimeout
+        while true {
+            let response = try sendOnce(command: command, responseTimeout: remaining, framing: framing)
+            let pending: Bool
+            if case .jsonLine = framing,
+               let data = response.data(using: .utf8),
+               let frame = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               let error = frame["error"] as? [String: Any],
+               let details = error["data"] as? [String: Any] {
+                let request = (try? JSONSerialization.jsonObject(with: Data(command.utf8))) as? [String: Any]
+                let requestID = request?["id"] as? String
+                pending = requestID != nil && frame["id"] as? String == requestID
+                    && frame["ok"] as? Bool == false && error["code"] as? String == "hc_inventory_pending"
+                    && details["pre_dispatch"] as? Bool == true && details["retryable"] as? Bool == true
+            } else {
+                pending = response.hasPrefix("ERROR: hc_inventory_pending:")
+            }
+            guard pending, ProcessInfo.processInfo.systemUptime + 0.035 < retryUntil else { return response }
+            Thread.sleep(forTimeInterval: 0.025)
+            if let responseTimeout { remaining = max(0.001, start + responseTimeout - ProcessInfo.processInfo.systemUptime) }
+        }
+    }
+
+    private func sendOnce(
+        command: String,
+        responseTimeout: TimeInterval?,
+        framing: ResponseFraming
+    ) throws -> String {
+        if let relayClient {
+            return try sendRelayed(relayClient, command: command, responseTimeout: responseTimeout, framing: framing)
+        }
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
         var responseTimeout = responseTimeout
         if let processDeadline = Self.processDeadline {
@@ -141,6 +202,28 @@ final class SocketClient {
             response.removeLast()
         }
         return response
+    }
+
+    /// One request line through the relay. Safe reads and telemetry share
+    /// `responseTimeout` (capped by the process deadline) across claim and reply;
+    /// other writes retain a short claim window followed by the reply budget.
+    private func sendRelayed(
+        _ relay: C11RelayClient,
+        command: String,
+        responseTimeout: TimeInterval?,
+        framing: ResponseFraming
+    ) throws -> String {
+        var timeout = responseTimeout ?? Self.configuredDefaultDeadlineSeconds
+        if let processDeadline = Self.processDeadline {
+            timeout = min(timeout, max(0.1, processDeadline.timeIntervalSinceNow))
+        }
+        do {
+            var response = try relay.call(line: command, framing: framing == .jsonLine ? .json : .text, timeout: timeout)
+            if response.hasSuffix("\n") { response.removeLast() }
+            return response
+        } catch {
+            throw C11RelayCLI.cliError(error)
+        }
     }
 
     /// Consume exactly one frame, leaving any following frame in the socket for
@@ -218,7 +301,32 @@ final class SocketClient {
         return data
     }
 
+    /// The uid the listener must run as. A Debug CLI takes
+    /// `C11_DEBUG_EXPECT_PEER_UID` so a test can prove the refusal against a
+    /// socket it bound itself; release builds always use `getuid()`.
+    static var expectedPeerUserID: uid_t {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["C11_DEBUG_EXPECT_PEER_UID"],
+           let value = UInt32(raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return uid_t(value)
+        }
+        #endif
+        return getuid()
+    }
+
+    /// `stat` before `connect` can race a name another account takes, so the
+    /// connected listener's own uid is checked before any byte is sent
+    /// (C11H-364 N11).
+    private func refuseForeignPeer() throws {
+        guard C11UserRuntime.peerIsUser(socketFD, expected: Self.expectedPeerUserID) else {
+            Darwin.close(socketFD)
+            socketFD = -1
+            throw CLIError(message: String(localized: "cli.socket.foreignPeer", defaultValue: "The socket at \(path) is served by another user's process. Refusing to send to it."))
+        }
+    }
+
     private func connectOnce() throws {
+        try Self.throwIfRefused(path: path)
         // Verify socket is owned by the current user to prevent fake-socket attacks.
         var st = stat()
         guard stat(path, &st) == 0 else {
@@ -255,6 +363,7 @@ final class SocketClient {
         }
         if result == 0 {
             _ = fcntl(socketFD, F_SETFL, flags)
+            try refuseForeignPeer()
             return
         }
         if let deadline = Self.processDeadline, errno == EINPROGRESS {
@@ -265,6 +374,7 @@ final class SocketClient {
                 var size = socklen_t(MemoryLayout<Int32>.size)
                 if getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &socketError, &size) == 0, socketError == 0 {
                     _ = fcntl(socketFD, F_SETFL, flags)
+                    try refuseForeignPeer()
                     return
                 }
             }
@@ -288,7 +398,7 @@ final class SocketClient {
         if let t = timeout, t > 0 {
             interval = timeval(
                 tv_sec: Int(t.rounded(.down)),
-                tv_usec: __darwin_suseconds_t((t - floor(t)) * 1_000_000)
+                tv_usec: suseconds_t((t - floor(t)) * 1_000_000)
             )
         } else {
             interval = timeval(tv_sec: 0, tv_usec: 0)
@@ -313,6 +423,15 @@ final class SocketClient {
             return client
         }
 
+        #if !os(macOS)
+        // No kqueue vnode watch on Linux: poll for the socket every 50 ms until the timeout.
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while Date() < deadline {
+            usleep(50_000)
+            if (try? client.connect()) != nil { return client }
+        }
+        throw CLIError(message: "c11 app did not start in time (socket not found at \(path))")
+        #else
         guard let watchDirectory = existingWatchDirectory(forPath: path) else {
             throw CLIError(message: "c11 app did not start in time (socket not found at \(path))")
         }
@@ -357,6 +476,7 @@ final class SocketClient {
 
         source.cancel()
         return client
+        #endif
     }
 
     static func waitForFilesystemPath(_ path: String, timeout: TimeInterval) throws {
@@ -364,6 +484,15 @@ final class SocketClient {
             return
         }
 
+        #if !os(macOS)
+        // No kqueue vnode watch on Linux: poll every 50 ms until the timeout.
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while Date() < deadline {
+            usleep(50_000)
+            if FileManager.default.fileExists(atPath: path) { return }
+        }
+        throw CLIError(message: "Timed out waiting for \(path)")
+        #else
         guard let watchDirectory = existingWatchDirectory(forPath: path) else {
             throw CLIError(message: "Timed out waiting for \(path)")
         }
@@ -406,6 +535,7 @@ final class SocketClient {
         }
 
         source.cancel()
+        #endif
     }
 
     private static func existingWatchDirectory(forPath path: String) -> String? {
@@ -432,9 +562,16 @@ final class SocketClient {
     /// The methods the same probe advertised; nil when it failed.
     private(set) var serverMethods: Set<String>?
 
-    private func probeServerVocabularyTier(deadline: SocketDeadline) -> CLIVersionSkew.Tier {
+    private func probeServerVocabularyTier(deadline: SocketDeadline) throws -> CLIVersionSkew.Tier {
         if let cached = serverVocabularyTier { return cached }
-        let caps = try? sendV2Raw(method: "system.capabilities", params: [:], deadline: deadline)
+        let caps: [String: Any]?
+        do { caps = try sendV2Raw(method: "system.capabilities", params: [:], deadline: deadline) }
+        catch let error as CLIError where error.message.contains("hc_inventory_pending") || error.message.contains("hc_caller_not_owned") || error.message.contains("timeout") {
+            // Admission is not a vocabulary negotiation failure. Do not swallow
+            // it and spend another hook deadline on the actual command.
+            throw error
+        }
+        catch { caps = nil }
         let tier = CLIVersionSkew.tier(fromCapabilities: caps)
         serverVocabularyTier = tier
         serverMethods = (caps?["methods"] as? [String]).map(Set.init)
@@ -454,6 +591,17 @@ final class SocketClient {
     }
 
     func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
+        let previousDeadline = Self.processDeadline
+        let seconds: TimeInterval?
+        switch deadline {
+        case .default: seconds = Self.configuredDefaultDeadlineSeconds
+        case .none: seconds = nil
+        case .custom(let value): seconds = value > 0 ? value : nil
+        }
+        if let seconds {
+            Self.processDeadline = min(previousDeadline ?? .distantFuture, Date().addingTimeInterval(seconds))
+        }
+        defer { Self.processDeadline = previousDeadline }
         var params = params
         // Attribution fallback belongs to selection routes. Unrelated protocols
         // (notably the closed journal envelope) must keep their exact parameters.
@@ -461,7 +609,7 @@ final class SocketClient {
            ["workspace.select", "workspace.next", "workspace.previous", "workspace.last",
             "workspace.close", "workspace.move_to_window", "workspace.group.focus",
             "browser.focus_webview", "history.back", "history.forward", "feed.open",
-            "snapshot.restore", "snapshot.restore_set", "config.launch", "window.create",
+            "snapshot.restore", "snapshot.restore_set", "config.launch", "window.create", "chaos.cast",
             // A cache report describes the caller's own panel unless it names one.
             "agent.prompt_cache.report"].contains(method) {
             if let caller = CMUXCLI.callerPanelEnv(), UUID(uuidString: caller) != nil {
@@ -471,7 +619,7 @@ final class SocketClient {
         if let scopedWindow, params["window_id"] == nil,
            method.hasPrefix("workspace.") || (method.hasPrefix("panel.") && method != "panel.move") || method.hasPrefix("area.")
             || method.hasPrefix("notification.") || method.hasPrefix("flag.") || method.hasPrefix("snapshot.")
-            || ["system.identify", "system.tree", "agent.launch", "flag.delegate", "flag.undelegate", "config.launch", "sidebar.state", "snapshot.create"].contains(method) {
+            || ["system.identify", "system.tree", "agent.launch", "flag.delegate", "flag.undelegate", "config.launch", "sidebar.state", "snapshot.create", "chaos.cast"].contains(method) {
             params["window_id"] = scopedWindow
         }
         if let scopedWindow, ["panel.move", "panel.reorder", "area.swap", "area.join", "config.launch", "flag.raise", "flag.lower", "flag.delegate", "flag.undelegate"].contains(method) {
@@ -498,7 +646,7 @@ final class SocketClient {
         // Panel-vocabulary app: send canonical names, never retry. Older app: its method,
         // param keys and ref values for every request (unchanged-name methods included),
         // canonical result.
-        let tier = probeServerVocabularyTier(deadline: deadline)
+        let tier = try probeServerVocabularyTier(deadline: deadline)
         if tier != .panel {
             let legacyResult = try sendV2Raw(
                 method: CLIVersionSkew.legacyMethod(for: method, tier: tier) ?? method,
@@ -519,7 +667,7 @@ final class SocketClient {
         onPayload: ([String: Any]) throws -> Void
     ) throws {
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
-        let tier = probeServerVocabularyTier(deadline: .default)
+        let tier = try probeServerVocabularyTier(deadline: .default)
         guard tier == .panel else {
             throw CLIError(message: "Markdown agent commands require a current c11 socket")
         }
@@ -753,7 +901,8 @@ final class SocketClient {
             if let hint, !hint.isEmpty, !message.contains(hint) {
                 throw CLIError(message: "\(code): \(message)\n\(hint)")
             }
-            throw CLIError(message: "\(code): \(message)")
+            throw CLIError(message: "\(code): \(message)",
+                           structuredResponse: method == "hc.call" ? ["ok": false, "error": error] : nil)
         }
 
         traceStatus = "error"

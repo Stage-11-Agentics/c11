@@ -48,8 +48,8 @@ struct OmpScraper: ConversationScraper {
 
     /// omp's per-cwd session-directory name. Verified against the real store:
     /// the slug is the cwd with the home-directory prefix stripped and every
-    /// `/` mapped to `-`, e.g. `/Users/atin/Projects/Stage11/code/c11` →
-    /// `-Projects-Stage11-code-c11`. No lowercasing; existing dashes are
+    /// `/` mapped to `-`, e.g. `/Users/demo/src/c11` →
+    /// `-src-c11`. No lowercasing; existing dashes are
     /// preserved. This differs from pi's full-path `--<…>--` convention, so it
     /// is deliberately NOT a copy of `PiScraper.sessionSlug`.
     static func sessionSlug(forCwd cwd: String, homeDirectory: URL?) -> String {

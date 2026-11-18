@@ -103,7 +103,7 @@ enum RecentsFuzzy {
 
         // Contiguous substring anywhere in the path. The best occurrence wins:
         // one that ends at the end of the path (a suffix such as
-        // `greenwood-tech/site`), then ones lined up with folder boundaries, so
+        // `glasswing-tech/site`), then ones lined up with folder boundaries, so
         // a query with a slash in it does not tie across every path containing it.
         let needle = q
         if lower.count >= needle.count {
@@ -248,7 +248,7 @@ enum PinTileParentLine {
         ]).width
     }
 
-    /// The last two folders of the parent, dropping to one ("…/greenwood-tech")
+    /// The last two folders of the parent, dropping to one ("…/glasswing-tech")
     /// before the view truncates the tail.
     static func fit(
         parentPath: String,

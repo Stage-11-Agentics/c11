@@ -38,6 +38,8 @@ enum JournalSource: String, Codable, Sendable {
 }
 
 enum JournalAdapter: String, Codable, Sendable {
+    /// Root OSC 7501 facts retained by the owning hc, not a provider transcript.
+    case hcStatus = "hc_status"
     case claudeHook = "claude_hook", opencodePlugin = "opencode_plugin", piPlugin = "pi_plugin"
     case codexNotify = "codex_notify", codexTranscript = "codex_transcript", grokTranscript = "grok_transcript"
     /// Claude's transcript supplies Esc interrupts and recorded terminal usage limits.
@@ -46,7 +48,7 @@ enum JournalAdapter: String, Codable, Sendable {
     var source: JournalSource {
         switch self {
         case .claudeHook, .codexNotify: return .hook
-        case .opencodePlugin, .piPlugin: return .plugin
+        case .opencodePlugin, .piPlugin, .hcStatus: return .plugin
         case .codexTranscript, .grokTranscript, .claudeTranscript: return .transcript
         case .shell: return .shell
         case .keypress: return .keypress
@@ -58,11 +60,16 @@ enum JournalAdapter: String, Codable, Sendable {
         switch self {
         case .claudeHook: return ["session", "turn", "blocked", "error"]
         case .opencodePlugin: return ["session", "turn", "blocked", "error"]
+        case .hcStatus: return ["turn", "blocked", "error"]
         case .piPlugin, .codexNotify: return ["turn"]
         case .codexTranscript: return ["turn", "interrupt"]
         case .grokTranscript: return ["turn", "interrupt"]
         case .claudeTranscript: return ["interrupt", "error"]
         case .c11: return ["control"]
+        // C11H-123: an operator's or the doorbell's Return can start a turn
+        // for an agent that has no turn-start signal of its own (a Codex on
+        // another machine); it never ends one.
+        case .keypress: return ["submit"]
         default: return []
         }
     }
@@ -71,6 +78,8 @@ enum JournalAdapter: String, Codable, Sendable {
 enum JournalTimeQuality: String, Codable, Sendable { case nativeLocal = "native_local", observed, missing }
 enum JournalToolClass: String, Codable { case askUserQuestion = "ask_user_question", exitPlanMode = "exit_plan_mode", other }
 enum JournalSignal: String, Codable {
+    case hcWorking = "hc_working", hcBlocked = "hc_blocked", hcIdle = "hc_idle"
+    case hcDone = "hc_done", hcError = "hc_error"
     case toolActivity = "tool_activity", operatorResponse = "operator_response", connectionLost = "connection_lost"
     case adapterGap = "adapter_gap", adapterRecovered = "adapter_recovered"
     case legacyWorking = "legacy_working", legacyIdle = "legacy_idle", observation
@@ -258,6 +267,20 @@ enum JournalConnection: String, Codable { case live, disconnected, unknown }
 enum JournalHealth: String, Codable { case ok, degraded }
 enum JournalEffect: String, Codable { case applied, duplicateEvidence = "duplicate_evidence", stale, unattributed, child, advisory, observation }
 
+/// Kernel identity captured while a genuine lifecycle hook is authenticated.
+/// Optional in the existing baseline JSON: older baselines remain historical.
+struct JournalRuntimeIdentity: Codable, Equatable, Sendable {
+    let pid: Int32
+    let startTimeMicroseconds: UInt64
+}
+
+/// Captured by the socket worker from the kernel while an authenticated
+/// SessionEnd hook is still running. Never accepted from a draft or spool.
+struct JournalRootExitWitness: Codable, Equatable, Sendable {
+    let coreID: String
+    let terminalAddress: String
+}
+
 struct JournalSnapshot: Codable, Equatable {
     var owner: JournalOwner
     var workspaceID: UUID?
@@ -284,19 +307,48 @@ struct JournalSnapshot: Codable, Equatable {
     var lastLiveSequence: Int64 = 0
     var lastLiveEmittedAtMs: Int64 = 0
     var modelID: String? = nil
+    var runtimeIdentity: JournalRuntimeIdentity? = nil
+    /// Hook time, not delivery time: a delayed SessionEnd must not make an
+    /// agent that exited before a root signal look like its victim.
+    var sessionEndedAtMs: Int64? = nil
+    var sessionEndedRootExit: JournalRootExitWitness? = nil
     var usageLimit: JournalUsageLimit? = nil
     var isHistorical: Bool { confirmation == .unconfirmed || connection != .live }
     var paintsAttention: Bool { phase == .blocked || phase == .error || usageLimit != nil }
     func isFresh(at now: Int64) -> Bool { now >= observedAtMs && now - observedAtMs <= 30_000 }
+
+    /// The fields any workspace view reads (`SidebarActivityProjector`,
+    /// `PanelActivityResolver`, fleet rows). `Workspace.setJournalSnapshot`
+    /// republishes only when these change.
+    struct Presentation: Equatable {
+        var phase: JournalPhase
+        var reason: JournalReason?
+        var sinceMs: Int64
+        var confirmation: JournalConfirmation
+        var connection: JournalConnection
+        var health: JournalHealth
+        var usageLimit: JournalUsageLimit?
+    }
+
+    var presentation: Presentation {
+        Presentation(phase: phase, reason: reason, sinceMs: sinceMs, confirmation: confirmation,
+                     connection: connection, health: health, usageLimit: usageLimit)
+    }
 }
 
 struct JournalContext {
     var eligible: Bool
+    /// Only the inventory consumer sets this. Socket/spool drafts cannot assert it.
+    var hcStatusEvidence = false
     var historical = false
     var modelID: String? = nil
     // Set only by the bounded transcript append route after its versioned
     // parser evidence validates.
     var verifiedNativeClock = false
+    // Supplied by the socket worker after kernel ancestry verification, never
+    // decoded from a journal draft or from an offline spool file.
+    var verifiedRuntimeIdentity: JournalRuntimeIdentity? = nil
+    var sessionEndRootExit: JournalRootExitWitness? = nil
 
     /// Shared by the live coordinator and executable append-path tests. A
     /// provider clock is enabled only by the registered adapter/version pair.

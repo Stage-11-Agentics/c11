@@ -39,6 +39,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     private func assertStartupDuplicateConversationKeepsFirst(firstHasConversation: Bool) async throws {
         let workspace = Workspace()
         let panelId = try XCTUnwrap(workspace.panels.keys.first)
+        // A persistent hc terminal is never planned from the snapshot
+        // (C11H-98); this exercises the snapshot plan, so use an exec shell.
+        try XCTUnwrap(workspace.panels[panelId] as? TerminalPanel).surface.useExecShellForTesting()
         let firstId = "11111111-1111-4111-8111-111111111111"
         let laterId = "22222222-2222-4222-8222-222222222222"
         func conversations(_ id: String) -> PanelConversations {
@@ -125,21 +128,15 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     /// C11-468: every resume decided this launch goes through one guarded
     /// submission. A panel already resumed (by restore or the recovery verb)
     /// is never typed into twice, and a panel the operator typed in is left
-    /// alone.
+    /// alone. Exec shells: a persistent hc terminal takes the ended-session
+    /// recovery guard instead (C11H-310 covers that path).
     func testGuardedSubmissionRefusesAResumedOrTouchedPanel() async throws {
         let workspace = Workspace()
         defer { workspace.teardownAllPanels() }
         let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        terminal.surface.useExecShellForTesting()
         let panelId = terminal.id
-        let ref = ConversationRef(
-            kind: "claude-code", id: claudeSessionId, cwd: "/tmp",
-            capturedVia: .hook, state: .suspended
-        )
-        let plan: Workspace.RestartCommand = (
-            panelId: panelId,
-            action: .typeCommand(text: "true", submitWithReturn: false),
-            conversation: ref
-        )
+        let plan = try await seededPlan(for: panelId, text: "true")
 
         let before = terminal.surface.pendingInitialInputForTests
         await workspace.submitResume(plan, idleShellRequired: false)
@@ -151,12 +148,89 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertEqual(terminal.surface.pendingInitialInputForTests, afterFirst, "a second submission types nothing")
 
         let other = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
+        other.surface.useExecShellForTesting()
+        // Its own conversation, so only the operator keystroke can refuse it.
+        let otherPlan = try await seededPlan(for: other.id, text: "true", conversationId: codexSessionId)
         other.surface.lastOperatorKeyAt = Date()
-        await workspace.submitResume((panelId: other.id, action: plan.action, conversation: ref), idleShellRequired: false)
+        let otherBefore = other.surface.pendingInitialInputForTests
+        await workspace.submitResume(otherPlan, idleShellRequired: false)
+        XCTAssertEqual(other.surface.pendingInitialInputForTests, otherBefore, "nothing typed into a touched panel")
         guard case .skipped(let code, _)? = workspace.launchResumeOutcomes[other.id] else {
             return XCTFail("a panel with an operator keystroke must not receive a resume")
         }
         XCTAssertEqual(code, .panelInUse)
+    }
+
+    /// Seeds the conversation the submission point re-reads from
+    /// `ConversationStore.shared`, and returns the plan for it.
+    private func seededPlan(for panelId: UUID, text: String,
+                            conversationId: String? = nil) async throws -> Workspace.RestartCommand {
+        await ConversationStore.shared.push(
+            surfaceId: panelId.uuidString, kind: "claude-code", id: conversationId ?? claudeSessionId,
+            source: .hook, state: .suspended)
+        // `XCTUnwrap`'s expression is a synchronous autoclosure; await first.
+        let records = await ConversationStore.shared.snapshot()
+        let stored = try XCTUnwrap(
+            records[panelId.uuidString]?.active,
+            "the conversation must be in the store or the submission returns before it types")
+        return (panelId: panelId,
+                action: .typeCommand(text: text, submitWithReturn: false),
+                conversation: stored)
+    }
+
+    private func typedCount(_ text: String, in terminal: TerminalPanel) -> Int {
+        terminal.surface.pendingInitialInputForTests.components(separatedBy: text).count - 1
+    }
+
+    /// C11H-38: Ask parks a launch resume at the real submission point, types
+    /// nothing after Not now, types exactly once after an affirmative choice,
+    /// and never parks a manual resume.
+    func testAskGateParksALaunchScopedResumeAtTheRealSubmissionPoint() async throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        // The exec-shell submission; a persistent hc terminal needs an
+        // ended-session recovery first (C11H-310).
+        terminal.surface.useExecShellForTesting()
+        let command = "echo c11h38-park"
+        let plan = try await seededPlan(for: terminal.id, text: command)
+        let gate = LaunchResumeGate()
+        gate.releaseStagger = 0
+        gate.begin(asking: true)
+
+        await workspace.submitResume(plan, idleShellRequired: false, launchScoped: true, gate: gate)
+        XCTAssertEqual(typedCount(command, in: terminal), 0, "nothing typed while asking")
+        XCTAssertNil(workspace.launchResumeOutcomes[terminal.id])
+        XCTAssertEqual(gate.held.map(\.id), [terminal.id])
+
+        gate.resumeAll()
+        for _ in 0..<100 where workspace.launchResumeOutcomes[terminal.id] == nil {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(workspace.launchResumeOutcomes[terminal.id], .resumed, "released: resumed")
+        XCTAssertEqual(typedCount(command, in: terminal), 1, "typed exactly once")
+    }
+
+    func testAskGateDropsALaunchScopedResumeAfterNotNowButNotAManualOne() async throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        // The exec-shell submission; a persistent hc terminal needs an
+        // ended-session recovery first (C11H-310).
+        terminal.surface.useExecShellForTesting()
+        let command = "echo c11h38-drop"
+        let plan = try await seededPlan(for: terminal.id, text: command)
+        let gate = LaunchResumeGate()
+        gate.begin(asking: true)
+        gate.decline()
+
+        await workspace.submitResume(plan, idleShellRequired: false, launchScoped: true, gate: gate)
+        XCTAssertEqual(typedCount(command, in: terminal), 0, "declined: a launch resume types nothing")
+        XCTAssertNil(workspace.launchResumeOutcomes[terminal.id])
+
+        await workspace.submitResume(plan, idleShellRequired: false, launchScoped: false, gate: gate)
+        XCTAssertEqual(workspace.launchResumeOutcomes[terminal.id], .resumed, "a manual resume is never parked")
+        XCTAssertEqual(typedCount(command, in: terminal), 1, "and types exactly once")
     }
 
     func testDeferredResumeSubmissionSkipsOnlyForLiveAttributedSameConversationWriter() async throws {

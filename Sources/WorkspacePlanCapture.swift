@@ -81,12 +81,14 @@ enum WorkspacePlanCapture {
         // Pass 2 may therefore encode browser-before-agent forward links.
         walker.reservePlanIDs(in: tree)
         let layout = walker.walk(tree)
+        let authoredMetadata = WorkspaceMetadataStore.shared.getAuthoredMetadata(workspaceId: workspace.id)
+        let metadata = PersistedMetadataBridge.encodeValues(authoredMetadata.metadata, sources: authoredMetadata.sources)
         let spec = WorkspaceSpec(
             title: workspace.customTitle,
             customColor: workspace.customColor,
             workingDirectory: workspace.rootDirectory
                 ?? (workspace.currentDirectory.isEmpty ? nil : workspace.currentDirectory),
-            metadata: workspace.metadata.isEmpty ? nil : workspace.metadata
+            metadata: metadata.isEmpty ? nil : metadata
         )
         return WorkspacePlanCaptureResult(
             plan: WorkspaceApplyPlan(
@@ -202,19 +204,24 @@ enum WorkspacePlanCapture {
                         ? AgentIdentityPolicy.normalizedKind($0)
                         : nil
                     }
+                // C11H-365 (L4): a linked machine's terminal keeps its machine
+                // (the placement its surface was made with, as HCPanelPlacements
+                // records it) and its folder there.
+                let remote = (panel as? TerminalPanel)?.hcRemoteTarget
                 let surface = PanelSpec(
                     id: planId,
                     kind: kind,
                     title: title,
                     description: nil,   // description flows via metadata; no separate setter
-                    workingDirectory: workingDirectory(for: panel),
+                    workingDirectory: remote == nil ? workingDirectory(for: panel) : remote?.cwd,
                     command: nil,       // executor synthesises via registry at restore
                     url: url(for: panel),
                     filePath: filePath(for: panel),
                     metadata: metadata.isEmpty ? nil : metadata,
                     paneMetadata: paneMetaForSurface.isEmpty ? nil : paneMetaForSurface,
                     linkedAgentSurfacePlanId: linkedAgentSurfacePlanId,
-                    declaredAgentKind: declaredAgentKind
+                    declaredAgentKind: declaredAgentKind,
+                    machine: remote?.machine
                 )
                 surfaces.append(surface)
 

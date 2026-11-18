@@ -1,0 +1,31 @@
+created 199 in 193.5s
+panels: 200
+real 0.31
+real 0.57
+real 0.31
+real 1.10
+real 2.53
+real 2.74
+  911 944272 107.8 /Users/admin/c11-sandbox/apps/c11v-hc/c11 DEV c11v-hc.app/Contents/MacOS/c11
+ 1449  46848   1.8 /Users/admin/c0b/bin/hc serve
+ 1660   8192   0.0 /Users/admin/c0b/bin/hc serve
+ 1952  28800   1.0 /Users/admin/c0b/bin/hc hold --socket /tmp/c0b/herdr-core/c0b.holder.9adbbaa0.sock
+ 2593   5200   0.0 /Users/admin/c0b/bin/hc hold --socket /tmp/c0bbox/herdr-core/box.holder.54ec9674.sock
+911    c11              0.0  3557M
+911    c11              56.0 3563M+
+zsh children:      605
+1952  herdr-core 0.0  31M   1119
+1449  herdr-core 0.0  71M   5   
+911   c11        0.0  3563M 616 
+911   c11        14.1 3563M+ 618/2
+1449  herdr-core 3.1  71M    5    
+1952  herdr-core 1.3  31M    1119 
+911   c11        12.0 3563M- 616  
+1449  herdr-core 3.6  71M    5    
+1952  herdr-core 1.6  31M    1119 
+1449  herdr-core 3.4  71M    5    
+1952  herdr-core 1.4  31M    1119 
+911   c11        0.7  3563M  616  
+
+real 0.56
+real 1.13

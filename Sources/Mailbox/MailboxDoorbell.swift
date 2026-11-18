@@ -16,10 +16,11 @@ enum MailboxDoorbell {
     /// Runaway guard. Once-per-idle already stops a second ring in one turn,
     /// so this only catches a panel that keeps submitting the line.
     static let rateCap = 20
-    /// A panel that has reported no turn edge since it attached keeps one
-    /// idle period for its whole session, so once-per-idle would hold every
-    /// later envelope. There it holds only this long after the last ring;
-    /// then mail no ring has covered may ring again (C11-555).
+    /// An idle period no edge closes after its ring (a harness that reports
+    /// no turn edges, or only turn ends whose start nothing recorded) would
+    /// hold every later envelope once-per-idle. There it holds only this long
+    /// after the last ring; then mail no ring has covered may ring again
+    /// (C11-555, C11H-163).
     static let turnlessReringInterval: TimeInterval = 300
     /// Typed into the agent. Not chrome, so it is not localized.
     static let text = "c11 mail waiting: run c11 mailbox recv --ack"
@@ -50,8 +51,9 @@ enum MailboxDoorbell {
         /// Read by callers. Suppression is never a skip: a parent is waiting.
         var suppressed: Bool = false
         var rungThisEpoch: Bool = false
-        /// The panel has no turn edge and its last ring is at least
-        /// `turnlessReringInterval` old. Lifts only the once-per-idle hold.
+        /// No edge has closed the idle period since the last ring, and that
+        /// ring is at least `turnlessReringInterval` old. Lifts only the
+        /// once-per-idle hold.
         var turnlessReringDue: Bool = false
         var recentAttempts: Int = 0
         var focused: Bool = false
@@ -72,6 +74,13 @@ enum MailboxDoorbell {
         var coveredIds: Set<String> = []
         /// A refused Return may have left the doorbell line in the composer.
         var strandedPending: Bool = false
+        /// C11H-304: the terminal has no screen (an hc terminal running headless, as a hidden workspace's panels
+        /// are after a relaunch). hc's status and a read of hc's paint stand in for the screen (`MailboxHeadlessPrompt`).
+        var headless: Bool = false
+        /// C11H-304: why the panel with no screen is held instead of rung (`MailboxHeadlessHold`).
+        var headlessHold: String? = nil
+        /// C11H-304: a headless ring in this idle period was not confirmed, so its line may sit in the composer.
+        var headlessStranded: Bool = false
 
         static let absent = Input(hasUnread: false, prompt: nil)
     }
@@ -89,9 +98,16 @@ enum MailboxDoorbell {
         /// while every unread id is in this set.
         var coveredIds: Set<String> = []
         var draftWatch: MailboxDoorbellSequence.DraftWatch?
+        /// C11H-327: the held series the last ring decision replaced. A headless ring refused before its text
+        /// continues it, so a refusal that persists looks again on the series' own backoff (5, 15, 30, then 60 s)
+        /// instead of starting over at 5 s after every refused ring.
+        var seriesBeforeRing: MailboxDoorbellSequence.DraftWatch?
         /// Set when a Return was refused after the line was typed. Cleared by
         /// a submit, or by a look that finds the composer without the line.
         var strandedPending = false
+        /// C11H-304: the idle period of a headless ring that was not confirmed. No screen can clear it; the
+        /// agent's next turn edge opens a new period, which ends the hold.
+        var headlessStrandedEpoch: String?
 
         func rung(in epoch: String) -> Bool { rungEpoch == epoch }
 
@@ -120,6 +136,25 @@ enum MailboxDoorbell {
 
         mutating func endAttempt() {
             inFlight = false
+        }
+
+        /// C11H-306: an attempt that put no byte in front of the agent (a check refused it before its text). It was
+        /// charged when it started; this gives the idle period and its place under the cap back exactly, so a
+        /// later look can ring without a turn edge.
+        mutating func refundAttempt(at started: Date, epoch: String, priorRungEpoch: String?, priorRungAt: Date?) {
+            refundIdlePeriod(at: started, epoch: epoch, priorRungEpoch: priorRungEpoch, priorRungAt: priorRungAt)
+            if let index = attempts.lastIndex(of: started) { attempts.remove(at: index) }
+        }
+
+        /// C11H-327: an attempt the read admitted but the input refused before its text (a latched input fault, no
+        /// attachment): no byte reached the agent, so the idle period comes back and a later look can ring without
+        /// a turn edge, but the attempt keeps its place under the cap. A refusal that persists is capped like any
+        /// ring rather than retried with a clean slate each time.
+        mutating func refundIdlePeriod(at started: Date, epoch: String, priorRungEpoch: String?, priorRungAt: Date?) {
+            if rungEpoch == epoch, rungAt == started {
+                rungEpoch = priorRungEpoch
+                rungAt = priorRungAt
+            }
         }
 
         /// A Return pressed on a stranded line. It counts toward the cap like
@@ -179,6 +214,12 @@ enum MailboxDoorbell {
         if input.optedOut { return .skip(reason: "opted_out") }
         if input.inFlight { return .skip(reason: "in_flight") }
         if input.flagged { return .skip(reason: "flagged") }
+        // C11H-304: a headless ring that was not confirmed is never typed again in the same idle period. A read
+        // of the composer that no longer shows its line, or the agent's next turn, ends the hold (C11H-306).
+        if input.headless, input.headlessStranded, !input.nativeRoute,
+           !MailboxDoorbellSequence.unreadIsCovered(unreadIds: input.unreadIds, coveredIds: input.coveredIds) {
+            return .skip(reason: "stranded")
+        }
         if input.rungThisEpoch && !input.turnlessReringDue { return .skip(reason: "once_per_idle") }
         if input.recentAttempts >= rateCap { return .skip(reason: "rate_capped") }
         // Before the screen read. A covered set must not look like an
@@ -198,6 +239,7 @@ enum MailboxDoorbell {
         if input.journalInterruptionSettling {
             return .deferRing(after: MailboxDoorbellSequence.shortRecheck)
         }
+        if let hold = input.headlessHold { return .skip(reason: hold) }
         guard let prompt = input.prompt else { return .skip(reason: "unavailable") }
         if !FeedAnswerPromptCommit.admits(prompt) {
             return .skip(reason: FeedAnswerPromptCommit.refusalReason(prompt))
@@ -283,17 +325,18 @@ enum MailboxDoorbellSequence {
     /// Skips that hold mail at an open prompt until the composer changes.
     /// Each looks again on the held-composer series. Nothing else re-arms a
     /// ring there, so without the series the mail waits for the next envelope.
-    static let heldComposerReasons: Set<String> = ["draft", "dialog", "unknown_prompt"]
+    static let heldComposerReasons: Set<String> = ["draft", "dialog", "unknown_prompt", "stranded",
+                                                   MailboxHeadlessHold.notIdle, MailboxHeadlessHold.unread]
 
-    /// When once-per-idle stops holding a panel with no turn edge since it
-    /// attached. Nil when the panel reports turn edges (its next idle edge
-    /// opens a new period) or was not rung in this one.
+    /// When once-per-idle stops holding a panel whose idle period no edge
+    /// has closed since its last ring. The epoch is named by the turn edge
+    /// (or the attach), so a ring in the current epoch means nothing has
+    /// moved the clock since. Nil when the panel was not rung in this period.
     static func turnlessReringAt(
         ledger: MailboxDoorbell.Ledger,
-        epoch: String,
-        hasTurnEdge: Bool
+        epoch: String
     ) -> Date? {
-        guard !hasTurnEdge, ledger.rung(in: epoch), let rungAt = ledger.rungAt else { return nil }
+        guard ledger.rung(in: epoch), let rungAt = ledger.rungAt else { return nil }
         return rungAt.addingTimeInterval(MailboxDoorbell.turnlessReringInterval)
     }
 
@@ -408,8 +451,8 @@ enum MailboxDoorbellSequence {
     /// A draft, an unreadable prompt, and a composer that still holds the
     /// doorbell line look again on the held-composer series; this plan never
     /// retypes the line. A covered ring waits for a new envelope.
-    /// `once_per_idle` on a panel with no turn edge looks again at
-    /// `turnlessReringAt` while uncovered mail waits. Any other keep waits
+    /// `once_per_idle` looks again at `turnlessReringAt` while uncovered
+    /// mail waits; an edge before then opens a new idle period. Any other keep waits
     /// for a later edge.
     static func plan(
         decision: MailboxDoorbell.Decision,
@@ -440,9 +483,10 @@ enum MailboxDoorbellSequence {
             }
             watch = nil
         case .skip(let reason) where reason == "once_per_idle":
-            // A panel with turn edges waits for its next idle edge. One with
-            // none has no such edge coming: look again when the hold lifts,
-            // while mail no ring covered is waiting.
+            // The next idle edge opens a new period and rings. No edge may be
+            // coming (a harness with none, or one whose turn start nothing
+            // recorded): look again when the hold lifts, while mail no ring
+            // covered is waiting.
             if let reringAt = turnlessReringAt, !unreadIds.isEmpty,
                !unreadIsCovered(unreadIds: unreadIds, coveredIds: coveredIds) {
                 rearm = .after(max(0, reringAt.timeIntervalSince(now)))
@@ -677,5 +721,111 @@ enum MailboxDoorbellSequence {
     /// not splice a message onto the doorbell line.
     static func textBoxHoldsUnsent(_ text: String) -> Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+/// C11H-304, C11H-306: the names mail to a panel with no screen is held under, on the held-composer series.
+enum MailboxHeadlessHold {
+    /// hc does not report the agent idle or done: working, no status yet, or a core c11 cannot reach.
+    static let notIdle = "headless_status"
+    /// hc reports the agent idle or done, but its composer could not be read (hc unreachable, a screen still being
+    /// drawn, a composer shape the classifier does not know). The row carries the read's why.
+    static let unread = "composer_unread"
+}
+
+/// C11H-304, C11H-306: the prompt read for a terminal with no screen, such as a hidden workspace's panel restored
+/// headless after a relaunch. hc's own record of the agent's status (OSC 7501) says whether it is at its prompt:
+/// blocked is a dialog; working or no status yet holds the mail under its own name. At its prompt, the composer is
+/// read from hc's paint of the screen (`HCComposerObservation`) and classified exactly as the screen path classifies
+/// its own capture: an empty composer or a dim suggestion rings, typed text holds as a draft, a dialog holds.
+enum MailboxHeadlessPrompt {
+
+    struct Read: Equatable {
+        var prompt: PromptInputState?
+        var hold: String?
+        /// Why the composer read failed.
+        var why: String? = nil
+        /// A draft's typed text, for the stranded look. Transient.
+        var composer: String? = nil
+    }
+
+    /// Nil when the agent is at its prompt and its composer has not been read yet: the caller reads it first.
+    static func read(readiness: HCAgentReadiness, composer: HCComposerObservation?) -> Read? {
+        switch readiness {
+        case .blocked: return Read(prompt: .dialog)
+        case .waiting: return Read(prompt: nil, hold: MailboxHeadlessHold.notIdle)
+        case .ready:
+            guard let composer else { return nil }
+            switch composer.state {
+            case .empty, .suggestion, .draft, .dialog:
+                return Read(prompt: composer.state, composer: composer.composer)
+            case .unknown, .unavailable:
+                return Read(prompt: nil, hold: MailboxHeadlessHold.unread, why: composer.why)
+            }
+        }
+    }
+
+    /// Before the doorbell's text: a fresh read shows an empty composer or a dim suggestion, as the screen path's
+    /// guard requires.
+    static func admitsText(_ composer: HCComposerObservation) -> Bool {
+        FeedAnswerPromptCommit.admits(composer.state)
+    }
+
+    /// The hold a refused ring's read before its text explains: a draft or a dialog it saw, or a composer it could
+    /// not read. Nil when the read admitted the text and something else refused it.
+    static func heldReason(afterRefusedRead read: HCComposerObservation?) -> (reason: String, why: String?)? {
+        switch read?.state {
+        case .draft?: return ("draft", nil)
+        case .dialog?: return ("dialog", nil)
+        case .unknown?, .unavailable?: return (MailboxHeadlessHold.unread, read?.why)
+        case .empty?, .suggestion?, nil: return nil
+        }
+    }
+
+    /// How many reads before the Return wait for the agent to echo the line, and the gap between them.
+    static let returnReadAttempts = 4
+    static let returnReadGapNanoseconds: UInt64 = 250_000_000
+
+    /// Before its Return: a fresh read shows exactly the doorbell line in the composer, the screen path's rule.
+    static func admitsReturn(_ composer: HCComposerObservation) -> Bool {
+        MailboxDoorbellSequence.preReturn(rowIsCurrent: true, operatorInputUnchanged: true, agentOwnsTerminal: true,
+            captured: true, prompt: composer.state, composer: composer.composer, journalTurnOpen: false,
+            journalInterruptionSettling: false) == nil
+    }
+
+    /// What one headless ring's Return came to. Mail is delivered only on the agent's own evidence of a turn;
+    /// a Return that was not taken, or a line typed with its Return cut, is held as stranded with why.
+    enum Result: Equatable {
+        case delivered
+        case stranded(why: String)
+        case failed(reason: String)
+    }
+
+    /// The line's write, whether a read then showed exactly the line, and the Return's own write (nil when it was
+    /// not sent). Text with no Return after it may be sitting in the composer: stranded, never typed again.
+    static func result(text: HCInputOutcome, lineRead: Bool, returnOutcome: HCInputOutcome?,
+                       verdict: SendSubmitConfirmation.Verdict?) -> Result {
+        switch text {
+        case .refused(let reason):
+            return .failed(reason: "hc_input_" + reason.rawValue)
+        case .uncertain(let receipt):
+            return receipt.bodyBytesWritten > 0 ? .stranded(why: "return_cut") : .failed(reason: "hc_input_uncertain")
+        case .written(let receipt):
+            guard receipt.bodyBytesWritten > 0 else { return .failed(reason: "hc_input_uncertain") }
+        }
+        guard lineRead, case .written(let receipt)? = returnOutcome, receipt.returnWritten else {
+            return .stranded(why: "return_cut")
+        }
+        switch verdict {
+        case .confirmed?: return .delivered
+        case .unconfirmed(let why)?: return .stranded(why: why)
+        case .pending?, nil: return .stranded(why: "no_turn_start")
+        }
+    }
+
+    /// The pause between the line and its Return: the encoder's own settle delay for mailbox input. Tests shorten it.
+    nonisolated(unsafe) static var returnSettleOverrideNanoseconds: UInt64?
+    static func returnSettleNanoseconds() -> UInt64 {
+        returnSettleOverrideNanoseconds ?? HCHeadlessInputEncoder.settleDelayNanoseconds(.mailbox)
     }
 }

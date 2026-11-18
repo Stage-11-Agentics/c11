@@ -1,0 +1,3 @@
+Spike 0b row 2, hc panel 1 (13:48 PDT): stty size before resize-window: 19 55; after resize-window 820x600: "16 43" and tput cols 43.
+App log: event=resize surface=CDAB6DFA channel=2 cols=43 rows=16 ; hc event size t1 cols=43 rows=16.
+Later shrink run: both hc and exec panels print "35 43" (screenshot 02b-ruler-after-shrink.png).

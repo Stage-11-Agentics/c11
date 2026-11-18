@@ -45,461 +45,28 @@ extension UNUserNotificationCenter {
     }
 }
 
+/// The turn-end sound (C11H-319: one of three channels, `NotificationSoundChannel`)
+/// and the operator's notification command. Sound values and imported files
+/// live in `NotificationSounds.swift`.
 enum NotificationSoundSettings {
-    static let key = "notificationSound"
-    static let defaultValue = "Bottle"
-    static let customFileValue = "custom_file"
-    static let customFilePathKey = "notificationSoundCustomFilePath"
-    static let defaultCustomFilePath = ""
-    private static let stagedCustomSoundBaseName = "cmux-custom-notification-sound"
-    private static let customSoundPreparationQueue = DispatchQueue(
-        label: "com.stage11.c11.notification-sound-preparation",
-        qos: .utility
-    )
-    private static let pendingCustomSoundPreparationLock = NSLock()
-    private static var pendingCustomSoundPreparationPaths: Set<String> = []
-    private static let notificationSoundSupportedExtensions: Set<String> = [
-        "aif",
-        "aiff",
-        "caf",
-        "wav",
-    ]
-
-    private struct CustomSoundSourceMetadata: Codable, Equatable {
-        let sourcePath: String
-        let sourceSize: UInt64
-        let sourceModificationTime: Double
-        let sourceFileIdentifier: UInt64?
-    }
-
-    enum CustomSoundPreparationIssue: Error {
-        case emptyPath
-        case missingFile(path: String)
-        case missingFileExtension(path: String)
-        case stagingFailed(path: String, details: String)
-
-        var logMessage: String {
-            switch self {
-            case .emptyPath:
-                return "Notification custom sound path is empty"
-            case .missingFile(let path):
-                return "Notification custom sound file does not exist: \(path)"
-            case .missingFileExtension(let path):
-                return "Notification custom sound requires a file extension: \(path)"
-            case .stagingFailed(let path, let details):
-                return "Failed to stage custom notification sound from \(path): \(details)"
-            }
-        }
-    }
+    static let key = NotificationSoundChannel.turnEnd.defaultsKey
+    static let defaultValue = NotificationSoundChannel.turnEnd.shippedDefault.rawValue
     static let customCommandKey = "notificationCustomCommand"
     static let defaultCustomCommand = ""
 
-    static let systemSounds: [(label: String, value: String)] = [
-        ("Default", "default"),
-        ("Basso", "Basso"),
-        ("Blow", "Blow"),
-        ("Bottle", "Bottle"),
-        ("Frog", "Frog"),
-        ("Funk", "Funk"),
-        ("Glass", "Glass"),
-        ("Hero", "Hero"),
-        ("Morse", "Morse"),
-        ("Ping", "Ping"),
-        ("Pop", "Pop"),
-        ("Purr", "Purr"),
-        ("Sosumi", "Sosumi"),
-        ("Submarine", "Submarine"),
-        ("Tink", "Tink"),
-        ("Custom File...", customFileValue),
-        ("None", "none"),
-    ]
-
-    static func sound(defaults: UserDefaults = .standard) -> UNNotificationSound? {
-        let value = defaults.string(forKey: key) ?? defaultValue
-        switch value {
-        case "default":
-            return .default
-        case "none":
-            return nil
-        case customFileValue:
-            guard let customSoundName = stagedCustomSoundName(defaults: defaults) else {
-                return nil
-            }
-            return UNNotificationSound(named: UNNotificationSoundName(rawValue: customSoundName))
-        default:
-            return UNNotificationSound(named: UNNotificationSoundName(rawValue: value))
-        }
-    }
-
-    static func usesSystemSound(defaults: UserDefaults = .standard) -> Bool {
-        let value = defaults.string(forKey: key) ?? defaultValue
-        switch value {
-        case "none":
-            return false
-        case customFileValue:
-            return customFileURL(defaults: defaults) != nil
-        default:
-            return true
-        }
-    }
-
-    static func isSilent(defaults: UserDefaults = .standard) -> Bool {
-        return (defaults.string(forKey: key) ?? defaultValue) == "none"
-    }
-
-    static func isCustomFileSelected(defaults: UserDefaults = .standard) -> Bool {
-        (defaults.string(forKey: key) ?? defaultValue) == customFileValue
-    }
-
-    static func stagedCustomSoundName(defaults: UserDefaults = .standard) -> String? {
-        let rawPath = defaults.string(forKey: customFilePathKey) ?? defaultCustomFilePath
-        guard let normalizedPath = normalizedCustomFilePath(rawPath) else {
-            NSLog("Notification custom sound unavailable: \(CustomSoundPreparationIssue.emptyPath.logMessage)")
-            return nil
-        }
-
-        let sourceURL = URL(fileURLWithPath: (normalizedPath as NSString).expandingTildeInPath)
-        let sourceExtension = sourceURL.pathExtension
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard !sourceExtension.isEmpty else {
-            NSLog("Notification custom sound unavailable: \(CustomSoundPreparationIssue.missingFileExtension(path: sourceURL.path).logMessage)")
-            return nil
-        }
-
-        let destinationExtension = stagedCustomSoundFileExtension(forSourceExtension: sourceExtension)
-        let stagedFileName = stagedCustomSoundFileName(
-            forSourceURL: sourceURL,
-            destinationExtension: destinationExtension
-        )
-        let stagedURL = stagedSoundDirectoryURL().appendingPathComponent(stagedFileName, isDirectory: false)
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: sourceURL.path) else {
-            NSLog("Notification custom sound unavailable: \(CustomSoundPreparationIssue.missingFile(path: sourceURL.path).logMessage)")
-            return nil
-        }
-
-        if fileManager.fileExists(atPath: stagedURL.path) {
-            if let sourceMetadata = currentSourceMetadata(for: sourceURL, fileManager: fileManager),
-               let stagedMetadata = loadStagedSourceMetadata(for: stagedURL),
-               stagedMetadata == sourceMetadata {
-                return stagedFileName
-            }
-        }
-
-        if destinationExtension == sourceExtension {
-            switch prepareCustomFileForNotifications(path: normalizedPath) {
-            case .success(let preparedName):
-                return preparedName
-            case .failure(let issue):
-                NSLog("Notification custom sound unavailable: \(issue.logMessage)")
-                return nil
-            }
-        }
-
-        queueCustomSoundPreparation(path: normalizedPath)
-        NSLog("Notification custom sound not ready yet, staging in background: \(sourceURL.path)")
-        return nil
-    }
-
-    static func prepareCustomFileForNotifications(path: String) -> Result<String, CustomSoundPreparationIssue> {
-        guard let normalizedPath = normalizedCustomFilePath(path) else {
-            return .failure(.emptyPath)
-        }
-        let sourceURL = URL(fileURLWithPath: (normalizedPath as NSString).expandingTildeInPath)
-        return prepareCustomSound(from: sourceURL)
-    }
-
-    private static func prepareCustomSound(from sourceURL: URL) -> Result<String, CustomSoundPreparationIssue> {
-        let sourcePath = sourceURL.path
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: sourcePath) else {
-            return .failure(.missingFile(path: sourcePath))
-        }
-        let sourceExtension = sourceURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sourceExtension.isEmpty else {
-            return .failure(.missingFileExtension(path: sourcePath))
-        }
-        let destinationExtension = stagedCustomSoundFileExtension(forSourceExtension: sourceExtension)
-
-        let destinationDirectory = stagedSoundDirectoryURL()
-        let destinationFileName = stagedCustomSoundFileName(
-            forSourceURL: sourceURL,
-            destinationExtension: destinationExtension
-        )
-        let destinationURL = destinationDirectory.appendingPathComponent(destinationFileName, isDirectory: false)
-        let sourceMetadata = currentSourceMetadata(for: sourceURL, fileManager: fileManager)
-
-        do {
-            try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                let stagedMetadata = loadStagedSourceMetadata(for: destinationURL)
-                if stagedMetadata != sourceMetadata {
-                    try? fileManager.removeItem(at: destinationURL)
-                }
-            }
-            if destinationExtension == sourceExtension.lowercased() {
-                try copyStagedSoundIfNeeded(from: sourceURL, to: destinationURL, fileManager: fileManager)
-            } else {
-                try transcodeStagedSoundIfNeeded(from: sourceURL, to: destinationURL, fileManager: fileManager)
-            }
-            if let sourceMetadata {
-                try saveStagedSourceMetadata(sourceMetadata, for: destinationURL)
-            }
-            try cleanupStaleStagedSoundFiles(
-                in: destinationDirectory,
-                keeping: destinationFileName,
-                preservingSourceURL: sourceURL,
-                fileManager: fileManager
-            )
-            return .success(destinationFileName)
-        } catch {
-            return .failure(.stagingFailed(path: sourcePath, details: error.localizedDescription))
-        }
-    }
-
-    static func customFileURL(defaults: UserDefaults = .standard) -> URL? {
-        guard let path = normalizedCustomFilePath(defaults.string(forKey: customFilePathKey) ?? defaultCustomFilePath) else {
-            return nil
-        }
-        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-    }
-
-    static func playCustomFileSound(defaults: UserDefaults = .standard) {
-        guard let url = customFileURL(defaults: defaults) else { return }
-        playSoundFile(at: url)
-    }
-
-    static func playCustomFileSound(path: String) {
-        guard let normalizedPath = normalizedCustomFilePath(path) else { return }
-        let url = URL(fileURLWithPath: (normalizedPath as NSString).expandingTildeInPath)
-        playSoundFile(at: url)
-    }
-
-    static func previewSound(value: String, defaults: UserDefaults = .standard) {
-        switch value {
-        case "default":
+    /// Plays a choice for the operator in Settings, right after a click.
+    static func previewSound(_ choice: NotificationSoundChoice, store: CustomNotificationSoundStore = .shared) {
+        switch choice {
+        case .systemDefault:
             NSSound.beep()
-        case "none":
+        case .none:
             break
-        case customFileValue:
-            playCustomFileSound(defaults: defaults)
-        default:
-            NSSound(named: NSSound.Name(value))?.play()
+        case .named(let name):
+            let base = (name as NSString).deletingPathExtension
+            (NSSound(named: NSSound.Name(base)) ?? NSSound(named: NSSound.Name(name)))?.play()
+        case .file(let id):
+            NSSound(contentsOf: store.url(for: id), byReference: false)?.play()
         }
-    }
-
-    static func stagedCustomSoundFileExtension(forSourceExtension sourceExtension: String) -> String {
-        let normalized = sourceExtension
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard !normalized.isEmpty else { return "caf" }
-        if notificationSoundSupportedExtensions.contains(normalized) {
-            return normalized
-        }
-        return "caf"
-    }
-
-    static func stagedCustomSoundFileName(forSourceURL sourceURL: URL, destinationExtension: String) -> String {
-        let normalizedExtension = destinationExtension
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        let ext = normalizedExtension.isEmpty ? "caf" : normalizedExtension
-        let signature = stagedCustomSoundSourceSignature(for: sourceURL)
-        return "\(stagedCustomSoundBaseName)-\(signature).\(ext)"
-    }
-
-    private static func normalizedCustomFilePath(_ rawPath: String) -> String? {
-        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return trimmed
-    }
-
-    private static func stagedSoundDirectoryURL() -> URL {
-        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Sounds", isDirectory: true)
-    }
-
-    private static func queueCustomSoundPreparation(path: String) {
-        let expandedPath = (path as NSString).expandingTildeInPath
-        pendingCustomSoundPreparationLock.lock()
-        if pendingCustomSoundPreparationPaths.contains(expandedPath) {
-            pendingCustomSoundPreparationLock.unlock()
-            return
-        }
-        pendingCustomSoundPreparationPaths.insert(expandedPath)
-        pendingCustomSoundPreparationLock.unlock()
-
-        customSoundPreparationQueue.async {
-            defer {
-                pendingCustomSoundPreparationLock.lock()
-                pendingCustomSoundPreparationPaths.remove(expandedPath)
-                pendingCustomSoundPreparationLock.unlock()
-            }
-            _ = prepareCustomFileForNotifications(path: expandedPath)
-        }
-    }
-
-    private static func playSoundFile(at url: URL) {
-        DispatchQueue.main.async {
-            guard let sound = NSSound(contentsOf: url, byReference: false) else {
-                NSLog("Notification custom sound failed to load from path: \(url.path)")
-                return
-            }
-            sound.play()
-        }
-    }
-
-    private static func cleanupStaleStagedSoundFiles(
-        in directoryURL: URL,
-        keeping fileName: String,
-        preservingSourceURL: URL,
-        fileManager: FileManager
-    ) throws {
-        let legacyPrefix = "\(stagedCustomSoundBaseName)."
-        let hashedPrefix = "\(stagedCustomSoundBaseName)-"
-        let normalizedSource = preservingSourceURL.standardizedFileURL
-        let keptStagedURL = directoryURL.appendingPathComponent(fileName, isDirectory: false)
-        let keptMetadataFileName = stagedSourceMetadataURL(for: keptStagedURL).lastPathComponent
-        for fileNameCandidate in try fileManager.contentsOfDirectory(atPath: directoryURL.path) {
-            let isManagedName = fileNameCandidate.hasPrefix(legacyPrefix) || fileNameCandidate.hasPrefix(hashedPrefix)
-            let isKeptManagedFile = fileNameCandidate == fileName || fileNameCandidate == keptMetadataFileName
-            guard isManagedName, !isKeptManagedFile else { continue }
-            let staleURL = directoryURL.appendingPathComponent(fileNameCandidate, isDirectory: false)
-            if staleURL.standardizedFileURL == normalizedSource {
-                continue
-            }
-            try? fileManager.removeItem(at: staleURL)
-            try? fileManager.removeItem(at: stagedSourceMetadataURL(for: staleURL))
-        }
-    }
-
-    private static func copyStagedSoundIfNeeded(
-        from sourceURL: URL,
-        to destinationURL: URL,
-        fileManager: FileManager
-    ) throws {
-        let normalizedSource = sourceURL.standardizedFileURL
-        let normalizedDestination = destinationURL.standardizedFileURL
-        guard normalizedSource != normalizedDestination else { return }
-
-        if fileManager.fileExists(atPath: normalizedDestination.path) {
-            let sourceAttributes = try fileManager.attributesOfItem(atPath: normalizedSource.path)
-            let destinationAttributes = try fileManager.attributesOfItem(atPath: normalizedDestination.path)
-            let sourceSize = sourceAttributes[.size] as? NSNumber
-            let destinationSize = destinationAttributes[.size] as? NSNumber
-            let sourceDate = sourceAttributes[.modificationDate] as? Date
-            let destinationDate = destinationAttributes[.modificationDate] as? Date
-            if sourceSize == destinationSize && sourceDate == destinationDate {
-                return
-            }
-            try fileManager.removeItem(at: normalizedDestination)
-        }
-
-        try fileManager.copyItem(at: normalizedSource, to: normalizedDestination)
-    }
-
-    private static func transcodeStagedSoundIfNeeded(
-        from sourceURL: URL,
-        to destinationURL: URL,
-        fileManager: FileManager
-    ) throws {
-        let normalizedSource = sourceURL.standardizedFileURL
-        let normalizedDestination = destinationURL.standardizedFileURL
-        guard normalizedSource != normalizedDestination else { return }
-
-        if fileManager.fileExists(atPath: normalizedDestination.path) {
-            let sourceAttributes = try fileManager.attributesOfItem(atPath: normalizedSource.path)
-            let destinationAttributes = try fileManager.attributesOfItem(atPath: normalizedDestination.path)
-            let sourceDate = sourceAttributes[.modificationDate] as? Date
-            let destinationDate = destinationAttributes[.modificationDate] as? Date
-            if let sourceDate, let destinationDate, destinationDate >= sourceDate {
-                return
-            }
-            try fileManager.removeItem(at: normalizedDestination)
-        }
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
-        process.arguments = [
-            "-f", "caff",
-            "-d", "LEI16",
-            normalizedSource.path,
-            normalizedDestination.path,
-        ]
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorOutput = String(data: errorData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if fileManager.fileExists(atPath: normalizedDestination.path) {
-                try? fileManager.removeItem(at: normalizedDestination)
-            }
-            let description: String
-            if let errorOutput, !errorOutput.isEmpty {
-                description = errorOutput
-            } else {
-                description = "afconvert failed with exit code \(process.terminationStatus)"
-            }
-            throw NSError(
-                domain: "NotificationSoundSettings",
-                code: Int(process.terminationStatus),
-                userInfo: [
-                    NSLocalizedDescriptionKey: description,
-                ]
-            )
-        }
-    }
-
-    private static func stagedCustomSoundSourceSignature(for sourceURL: URL) -> String {
-        let normalizedPath = sourceURL.standardizedFileURL.path
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in normalizedPath.utf8 {
-            hash ^= UInt64(byte)
-            hash &*= 0x100000001b3
-        }
-        return String(format: "%016llx", hash)
-    }
-
-    private static func stagedSourceMetadataURL(for stagedURL: URL) -> URL {
-        stagedURL.appendingPathExtension("source-metadata")
-    }
-
-    private static func currentSourceMetadata(for sourceURL: URL, fileManager: FileManager) -> CustomSoundSourceMetadata? {
-        guard let attributes = try? fileManager.attributesOfItem(atPath: sourceURL.path) else {
-            return nil
-        }
-        guard let sourceSizeNumber = attributes[.size] as? NSNumber else {
-            return nil
-        }
-        let sourceDate = (attributes[.modificationDate] as? Date) ?? .distantPast
-        let fileIdentifier = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
-        return CustomSoundSourceMetadata(
-            sourcePath: sourceURL.standardizedFileURL.path,
-            sourceSize: sourceSizeNumber.uint64Value,
-            sourceModificationTime: sourceDate.timeIntervalSinceReferenceDate,
-            sourceFileIdentifier: fileIdentifier
-        )
-    }
-
-    private static func loadStagedSourceMetadata(for stagedURL: URL) -> CustomSoundSourceMetadata? {
-        let metadataURL = stagedSourceMetadataURL(for: stagedURL)
-        guard let data = try? Data(contentsOf: metadataURL) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(CustomSoundSourceMetadata.self, from: data)
-    }
-
-    private static func saveStagedSourceMetadata(_ metadata: CustomSoundSourceMetadata, for stagedURL: URL) throws {
-        let metadataURL = stagedSourceMetadataURL(for: stagedURL)
-        let data = try JSONEncoder().encode(metadata)
-        try data.write(to: metadataURL, options: .atomic)
     }
 
     private static let customCommandQueue = DispatchQueue(
@@ -655,6 +222,18 @@ enum NotificationAuthorizationState: Equatable {
     }
 }
 
+/// C11H-261: where a notification came from. Only an agent's own turn end
+/// (Claude's Stop hook, Codex's turn-complete callback) is judged by the
+/// waiting check; everything else (`c11 notify`, OSC 9/777, launch failures,
+/// an older CLI) is `.other`. C11H-319: an agent stopped on the operator (a
+/// permission prompt, a question or plan dialog, an ask) is `.needsYou` and
+/// plays the needs-you sound; `.other` and `.turnEnd` play the turn-end sound.
+enum TerminalNotificationOrigin: String, Hashable, Sendable {
+    case other
+    case turnEnd = "turn_end"
+    case needsYou = "needs_you"
+}
+
 struct TerminalNotification: Identifiable, Hashable {
     let id: UUID
     /// Stable external-delivery identity. Routine notification-store records
@@ -668,6 +247,9 @@ struct TerminalNotification: Identifiable, Hashable {
     let body: String
     let createdAt: Date
     var isRead: Bool
+    /// C11H-246: false when the routine dial is at Quiet (a banner, no sound).
+    let deliversSound: Bool
+    let origin: TerminalNotificationOrigin
 
     init(
         id: UUID,
@@ -678,8 +260,12 @@ struct TerminalNotification: Identifiable, Hashable {
         subtitle: String,
         body: String,
         createdAt: Date,
-        isRead: Bool
+        isRead: Bool,
+        deliversSound: Bool = true,
+        origin: TerminalNotificationOrigin = .other
     ) {
+        self.deliversSound = deliversSound
+        self.origin = origin
         self.id = id
         self.systemIdentifier = systemIdentifier
         self.workspaceId = workspaceId
@@ -730,6 +316,13 @@ final class TerminalNotificationStore: ObservableObject {
         var unreadByWorkspaceSurface = Set<WorkspacePanelKey>()
         var latestUnreadByWorkspaceId: [UUID: TerminalNotification] = [:]
         var latestByWorkspaceId: [UUID: TerminalNotification] = [:]
+        /// C11H-261: unread notifications the waiting check judged done. They
+        /// would be signal-eligible otherwise; they are not in `unreadCount`.
+        var doneUnreadCount = 0
+        var doneUnreadCountByWorkspaceId: [UUID: Int] = [:]
+        var doneUnreadByWorkspaceSurface = Set<WorkspacePanelKey>()
+        /// In `notifications` order (newest first).
+        var doneUnread: [TerminalNotification] = []
     }
 
     static let shared = TerminalNotificationStore(
@@ -741,8 +334,15 @@ final class TerminalNotificationStore: ObservableObject {
         let generation: UUID
     }
 
-    static let categoryIdentifier = "com.stage11.c11.userNotification"
-    static let actionShowIdentifier = "com.stage11.c11.userNotification.show"
+    private struct DirectFlagDelivery {
+        let notification: TerminalNotification
+        let spec: FlagNotificationSpec
+        let sourceHost: String
+        let isRevision: Bool
+    }
+
+    static let categoryIdentifier = C11Identity.userNotificationCategoryIdentifier
+    static let actionShowIdentifier = C11Identity.userNotificationShowActionIdentifier
     private enum AuthorizationRequestOrigin: String {
         case notificationDelivery = "notification_delivery"
         case settingsButton = "settings_button"
@@ -756,7 +356,8 @@ final class TerminalNotificationStore: ObservableObject {
             let previousUnreadByWorkspace = indexes.unreadCountByWorkspaceId
             indexes = Self.buildIndexes(
                 for: notifications,
-                signalEligible: Self.isSignalEligible
+                signalEligible: Self.isAttentionSignalEligible,
+                isDone: Self.isJudgedDone
             )
             emitWaitingEdges(previous: previousUnreadByWorkspace, current: indexes.unreadCountByWorkspaceId)
             rebuildAttentionUnreadTail()
@@ -784,6 +385,10 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
+    /// C11H-261: bumped when `refreshSignalEligibility()` changes what counts
+    /// as waiting or done without changing `notifications` (a verdict landed,
+    /// a flag moved), so observers of `$notifications` alone can re-read.
+    @Published private(set) var signalRevision = 0
 
     /// `UNUserNotificationCenter.current()` requires an application bundle.
     /// Bare c11LogicTests run in a non-app XCTest bundle, where calling it can
@@ -826,7 +431,26 @@ final class TerminalNotificationStore: ObservableObject {
     /// revisions keep the deterministic identifier but replace its generation;
     /// lower/close/prune remove the generation before cancellation.
     private var directFlagDeliveryTokens: [String: DirectFlagDeliveryToken] = [:]
+    /// Flag alerts this run posted (or found still owned at launch) and has
+    /// not removed. Opening a panel checks it first, so focus changes on
+    /// unflagged panels do no further work.
+    private var postedFlagIdentifiers = Set<String>()
+    /// C11H-319: the ask each panel's last needs-you was for. Reading the
+    /// notice keeps it; the agent resuming or resolving (a clear) or closing
+    /// the panel drops it.
+    private var pendingAsks: [WorkspacePanelKey: NeedsYouAsk] = [:]
+    /// Sound, source host and panel for each alert that is up, so its removal
+    /// record names them (C11H-246 #10).
+    private var flagAttributions: [String: FlagNotificationAttribution] = [:]
 #if DEBUG
+    private var deliveredFlagReaderForTesting:
+        ((@escaping ([(String, [AnyHashable: Any])]) -> Void) -> Void)?
+    private var operatorLookingProviderForTesting: ((UUID, UUID) -> Bool)?
+    private var flagNotificationRecordHandlerForTesting: ((FlagNotificationRecord) -> Void)?
+    private var flagNotificationRemovalHandlerForTesting: ((String) -> Void)?
+    private var directFlagRequestHandlerForTesting:
+        ((_ request: UNNotificationRequest, _ completion: @escaping (Error?) -> Void) -> Void)?
+    private var notificationSettingsDefaultsForTesting: UserDefaults?
     private var waitingEdgeHandlerForTesting: ((Bool, UUID) -> Void)?
     private var flagNotificationReplacementHandlerForTesting:
         ((_ identifier: String, _ add: @escaping @MainActor () -> Void) -> Void)?
@@ -841,6 +465,9 @@ final class TerminalNotificationStore: ObservableObject {
     private var routineAddHandlerForTesting:
         ((_ request: UNNotificationRequest, _ completion: @escaping (Error?) -> Void) -> Void)?
     private var customCommandDefaultsForTesting: UserDefaults?
+    private var notificationSoundStoreForTesting: CustomNotificationSoundStore?
+    private var flagKindRegistryForTesting: PanelFlagKindRegistry?
+    private var routineNotificationRecordHandlerForTesting: ((RoutineNotificationRecord) -> Void)?
 #endif
     private var indexes = NotificationIndexes()
 
@@ -871,7 +498,8 @@ final class TerminalNotificationStore: ObservableObject {
 
     private init(systemNotificationsEnabled: Bool) {
         self.systemNotificationsEnabled = systemNotificationsEnabled
-        indexes = Self.buildIndexes(for: notifications, signalEligible: Self.isSignalEligible)
+        indexes = Self.buildIndexes(
+            for: notifications, signalEligible: Self.isAttentionSignalEligible, isDone: Self.isJudgedDone)
         if systemNotificationsEnabled {
             refreshAuthorizationStatus()
         }
@@ -892,6 +520,32 @@ final class TerminalNotificationStore: ObservableObject {
 
     var rawUnreadCount: Int {
         indexes.rawUnreadCount
+    }
+
+    /// C11H-261: unread notifications the waiting check judged done (the Done
+    /// button's count). Never counted in `unreadCount`.
+    var doneCount: Int {
+        indexes.doneUnreadCount
+    }
+
+    func doneCount(forWorkspaceId workspaceId: UUID) -> Int {
+        indexes.doneUnreadCountByWorkspaceId[workspaceId] ?? 0
+    }
+
+    func hasDoneNotification(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) -> Bool {
+        indexes.doneUnreadByWorkspaceSurface.contains(WorkspacePanelKey(workspaceId: workspaceId, surfaceId: surfaceId))
+    }
+
+    /// Waiting or done: an unread notification the operator has not seen.
+    /// Visiting or typing into the panel marks either read.
+    func hasPendingNotification(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) -> Bool {
+        hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: surfaceId)
+            || hasDoneNotification(forWorkspaceId: workspaceId, surfaceId: surfaceId)
+    }
+
+    /// The oldest unread notification judged done, for the Done button's jump.
+    func oldestDoneNotification() -> TerminalNotification? {
+        indexes.doneUnread.min { $0.createdAt < $1.createdAt }
     }
 
     private func logAuthorization(_ message: String) {
@@ -955,7 +609,9 @@ final class TerminalNotificationStore: ObservableObject {
             let content = UNMutableNotificationContent()
             content.title = "cmux test notification"
             content.body = "Desktop notifications are enabled."
-            content.sound = NotificationSoundSettings.sound()
+            content.sound = NotificationSoundResolver.routine(
+                channel: .turnEnd, defaults: self.notificationSettingsDefaults, store: self.notificationSoundStore
+            ).notificationSound
             content.categoryIdentifier = Self.categoryIdentifier
 
             let request = UNNotificationRequest(
@@ -1028,15 +684,19 @@ final class TerminalNotificationStore: ObservableObject {
         let previous = indexes.unreadCountByWorkspaceId
         let next = Self.buildIndexes(
             for: notifications,
-            signalEligible: Self.isSignalEligible
+            signalEligible: Self.isAttentionSignalEligible,
+            isDone: Self.isJudgedDone
         )
         guard previous != next.unreadCountByWorkspaceId
-                || indexes.unreadByWorkspaceSurface != next.unreadByWorkspaceSurface else {
+                || indexes.unreadByWorkspaceSurface != next.unreadByWorkspaceSurface
+                || indexes.doneUnreadByWorkspaceSurface != next.doneUnreadByWorkspaceSurface
+                || indexes.doneUnread.map(\.id) != next.doneUnread.map(\.id) else {
             indexes = next
             return
         }
         objectWillChange.send()
         indexes = next
+        signalRevision &+= 1
         emitWaitingEdges(previous: previous, current: indexes.unreadCountByWorkspaceId)
         for workspaceId in Set(previous.keys).union(indexes.unreadCountByWorkspaceId.keys) {
             AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId)?
@@ -1049,7 +709,22 @@ final class TerminalNotificationStore: ObservableObject {
         indexes.latestUnreadByWorkspaceId[workspaceId] ?? indexes.latestByWorkspaceId[workspaceId]
     }
 
-    func addNotification(workspaceId: UUID, surfaceId: UUID?, title: String, subtitle: String, body: String) {
+    func addNotification(workspaceId: UUID, surfaceId: UUID?, title: String, subtitle: String, body: String,
+                         origin: TerminalNotificationOrigin = .other, ask: NeedsYouAsk? = nil) {
+        // C11H-319: one sound per ask. A Claude ask can arrive twice (the
+        // accepted question or plan ask, then Claude's own Notification for
+        // it). A repeat (`NeedsYouAsk.repeats`), read or not, posts no banner
+        // and no sound; its newer text replaces the record's. Anything else
+        // (another request, another session, a second request-less ask, a
+        // caller that names none) is a new ask and delivers.
+        if origin == .needsYou, let surfaceId, let ask {
+            let key = WorkspacePanelKey(workspaceId: workspaceId, surfaceId: surfaceId)
+            if let pending = pendingAsks[key], ask.repeats(pending) {
+                replaceNeedsYouText(key: key, title: title, subtitle: subtitle, body: body)
+                return
+            }
+            pendingAsks[key] = ask
+        }
         var updated = notifications
         var idsToClear: [String] = []
         updated.removeAll { existing in
@@ -1066,7 +741,13 @@ final class TerminalNotificationStore: ObservableObject {
         let attentionSuppressed = surfaceId.map {
             PanelAttentionIndex.shared.snapshot(workspaceId: workspaceId, surfaceId: $0).suppressed
         } ?? false
-        let shouldSuppressExternalDelivery = (isAppFocused && isFocusedPanel) || attentionSuppressed
+        // C11H-246: the routine dial. Every stop keeps the record below
+        // (Feed, sidebar, waiting edges); it decides only the system banner.
+        let delivery = RoutineDeliveryPolicy.decide(
+            level: NotificationLevel.current(defaults: notificationSettingsDefaults),
+            focusSuppressed: isAppFocused && isFocusedPanel,
+            attentionSuppressed: attentionSuppressed
+        )
 
         // An agent notification is a lifecycle boundary: the turn either
         // completed or paused for operator input. Waiting still dominates the
@@ -1093,44 +774,64 @@ final class TerminalNotificationStore: ObservableObject {
             subtitle: subtitle,
             body: body,
             createdAt: Date(),
-            isRead: false
+            isRead: false,
+            deliversSound: delivery != .banner(sound: false),
+            origin: origin
         )
         updated.insert(notification, at: 0)
         notifications = updated
+        // C11H-261: the only trigger for the waiting check's judgment.
+        WaitingCheckJudge.shared.turnEndNotificationAdded(notification)
         if !idsToClear.isEmpty {
             center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
             center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
         }
-        if !shouldSuppressExternalDelivery {
+        if case .banner = delivery {
             notificationDeliveryHandler(self, notification)
         }
     }
 
     /// Direct flag delivery intentionally does not append to `notifications`.
-    /// Operator decision: this path pierces suppression; routine delivery above
-    /// remains barred for every suppressed surface.
+    /// Operator decision: this path pierces suppression and the routine dial;
+    /// routine delivery above remains barred for every suppressed surface.
+    /// C11H-246: every source builds its request through `FlagNotificationSpec`.
     func deliverFlagNotification(
         workspaceId: UUID,
         surfaceId: UUID,
         flagRaisedAt: Date,
         title: String?,
         reason: String,
-        kind: PanelFlagKind? = nil
+        kind: PanelFlagKind? = nil,
+        sourceHost: String? = nil
     ) {
-        let fallback = String(
-            localized: "notification.flaggedAgent.title",
-            defaultValue: "Flagged agent"
-        )
-        let normalizedTitle: String? = {
-            guard let value = title?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty else { return nil }
-            return value
-        }()
-        let identifier = Self.flagNotificationIdentifier(
+        let spec = FlagNotificationSpec.make(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
-            flagRaisedAt: flagRaisedAt
+            flagRaisedAt: flagRaisedAt,
+            title: title,
+            reason: reason,
+            kind: kind,
+            sourceHost: sourceHost ?? Self.localSourceHost,
+            defaults: notificationSettingsDefaults,
+            kindSound: kind.flatMap { flagKindRegistry.sound(id: $0.id) },
+            soundStore: notificationSoundStore
         )
+        let identifier = spec.identifier
+        let host = spec.sourceHost
+        let isRevision = directFlagDeliveryTokens[identifier] != nil || postedFlagIdentifiers.contains(identifier)
+        // The one exception: a new raise on the very panel the operator is
+        // looking at: the app is active, it is the key window's focused
+        // panel, and the operator's own last open named it (focus alone,
+        // which an agent can set, never counts). Its banner is on screen; a
+        // system alert would only repeat it. A revision never removes an
+        // alert already up: only an operator open takes an alert down.
+        if !isRevision, lastOperatorOpenPanel == surfaceId,
+           operatorIsLookingAt(workspaceId: workspaceId, surfaceId: surfaceId) {
+            recordFlagNotification(.init(
+                action: .skippedOperatorLooking, cause: .raised, identifier: identifier, attribution: spec.attribution
+            ))
+            return
+        }
         let token = DirectFlagDeliveryToken(identifier: identifier, generation: UUID())
         directFlagDeliveryTokens[identifier] = token
         let notification = TerminalNotification(
@@ -1138,15 +839,18 @@ final class TerminalNotificationStore: ObservableObject {
             systemIdentifier: identifier,
             workspaceId: workspaceId,
             surfaceId: surfaceId,
-            title: normalizedTitle ?? fallback,
-            subtitle: kind?.displayLabel ?? "",
-            body: reason,
+            title: spec.title,
+            subtitle: spec.subtitle,
+            body: spec.body,
             createdAt: Date(),
             isRead: true
         )
+        let delivery = DirectFlagDelivery(
+            notification: notification, spec: spec, sourceHost: host, isRevision: isRevision
+        )
         let add = { [weak self] in
             guard let self, self.isCurrent(token) else { return }
-            self.scheduleDirectFlagNotification(notification, token: token)
+            self.scheduleDirectFlagNotification(delivery, token: token)
         }
 #if DEBUG
         if let replacement = flagNotificationReplacementHandlerForTesting {
@@ -1168,19 +872,17 @@ final class TerminalNotificationStore: ObservableObject {
         surfaceId: UUID,
         flagRaisedAt: Date
     ) -> String {
-        let epochBits = flagRaisedAt.timeIntervalSince1970.bitPattern
-        return [
-            "com.stage11.c11.flag",
-            workspaceId.uuidString.lowercased(),
-            surfaceId.uuidString.lowercased(),
-            String(epochBits, radix: 16),
-        ].joined(separator: ".")
+        FlagNotificationSpec.identifier(workspaceId: workspaceId, surfaceId: surfaceId, flagRaisedAt: flagRaisedAt)
     }
+
+    /// The source host recorded for a raise made on this Mac.
+    static let localSourceHost = FlagNotificationAttribution.localSourceHost
 
     func cancelFlagNotification(
         workspaceId: UUID,
         surfaceId: UUID,
-        flagRaisedAt: Date
+        flagRaisedAt: Date,
+        cause: FlagNotificationRecord.Cause = .lowered
     ) {
         let identifier = Self.flagNotificationIdentifier(
             workspaceId: workspaceId,
@@ -1189,9 +891,222 @@ final class TerminalNotificationStore: ObservableObject {
         )
         // Invalidate before cancellation so a delayed authorization or add
         // completion cannot resurrect delivery after lower/close/prune.
-        directFlagDeliveryTokens.removeValue(forKey: identifier)
+        launchReadCancellations?.insert(identifier)
+        let hadDelivery = directFlagDeliveryTokens.removeValue(forKey: identifier) != nil
+        let wasPosted = postedFlagIdentifiers.remove(identifier) != nil
         center?.removeDeliveredNotificationsOffMain(withIdentifiers: [identifier])
         center?.removePendingNotificationRequestsOffMain(withIdentifiers: [identifier])
+#if DEBUG
+        flagNotificationRemovalHandlerForTesting?(identifier)
+#endif
+        let attribution = flagAttributions.removeValue(forKey: identifier)
+            ?? FlagNotificationAttribution.fromIdentifier(identifier)
+        if hadDelivery || wasPosted {
+            recordFlagNotification(.init(
+                action: .removed, cause: cause, identifier: identifier, attribution: attribution
+            ))
+        }
+    }
+
+    /// C11H-246: an explicit operator input opened this panel: a notification
+    /// click, a sidebar card or workspace shortcut, a tab click (the tab
+    /// already shown included), keyboard panel selection, a click in the
+    /// terminal, a panel link, or returning to c11 on its key terminal
+    /// window. Its flag alert leaves Notification Center; the flag stays
+    /// raised. This is the only way an alert goes besides lower and close: a
+    /// focus change alone, whoever caused it, never removes one. Requests
+    /// (an agent's socket call) are never an open.
+    func dismissFlagNotificationForOperatorOpen(workspaceId: UUID, surfaceId: UUID?) {
+        guard let surfaceId, SocketCommandContext.current == nil else { return }
+        lastOperatorOpenPanel = surfaceId
+        guard !directFlagDeliveryTokens.isEmpty || !postedFlagIdentifiers.isEmpty else { return }
+        guard let epoch = PanelAttentionIndex.shared.snapshot(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId
+        ).flagRaisedAt else { return }
+        let identifier = Self.flagNotificationIdentifier(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            flagRaisedAt: epoch
+        )
+        guard directFlagDeliveryTokens[identifier] != nil || postedFlagIdentifiers.contains(identifier) else { return }
+        cancelFlagNotification(workspaceId: workspaceId, surfaceId: surfaceId, flagRaisedAt: epoch, cause: .opened)
+    }
+
+    /// The panel the operator's last explicit open named; the looking rule
+    /// skips a fresh post only for it.
+    private(set) var lastOperatorOpenPanel: UUID?
+
+    /// C11H-246 #3: after a launch's restore, keep each delivered flag alert
+    /// whose flag is still raised (never re-posting it) and remove every other
+    /// flag alert a previous run left behind. The Notification Center read
+    /// runs off main and can be slow, so ownership is read on main when it
+    /// answers, never from a snapshot taken before it: a flag raised while
+    /// the read was in flight keeps its alert. Removals run off main.
+    func reconcileDeliveredFlagNotifications(
+        raisedIdentifiers: @escaping @MainActor () -> Set<String> = { TerminalNotificationStore.raisedFlagIdentifiers() }
+    ) {
+        let read: (@escaping ([(String, [AnyHashable: Any])]) -> Void) -> Void
+#if DEBUG
+        if let hook = deliveredFlagReaderForTesting {
+            read = hook
+        } else {
+            guard let center else { return }
+            read = { done in Self.readDelivered(center: center, done) }
+        }
+#else
+        guard let center else { return }
+        read = { done in Self.readDelivered(center: center, done) }
+#endif
+        launchReadCancellations = []
+        read { delivered in
+            let flags = delivered.filter { FlagNotificationSpec.isFlagIdentifier($0.0) }
+            let attributions = Dictionary(flags.map { ($0.0, FlagNotificationAttribution.from(identifier: $0.0, userInfo: $0.1)) },
+                                          uniquingKeysWith: { first, _ in first })
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // An alert taken down while the read was out (an operator
+                    // open, a lower) is neither adopted nor removed again.
+                    let cancelled = self.launchReadCancellations ?? []
+                    self.launchReadCancellations = nil
+                    // Owned now: raised flags, and anything this run posted
+                    // or is still delivering.
+                    let owned = raisedIdentifiers()
+                        .union(self.postedFlagIdentifiers)
+                        .union(self.directFlagDeliveryTokens.keys)
+                    let plan = FlagNotificationReconcilePlan.make(
+                        delivered: flags.map(\.0).filter { !cancelled.contains($0) },
+                        raised: owned
+                    )
+                    for identifier in plan.keep where self.flagAttributions[identifier] == nil {
+                        self.flagAttributions[identifier] = attributions[identifier]
+                    }
+                    self.postedFlagIdentifiers.formUnion(plan.keep)
+                    guard !plan.remove.isEmpty else { return }
+                    self.removeStaleFlagNotifications(plan.remove)
+                    for identifier in plan.remove {
+                        self.recordFlagNotification(.init(
+                            action: .removed, cause: .staleAtLaunch, identifier: identifier,
+                            attribution: attributions[identifier] ?? .fromIdentifier(identifier)
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Identifiers cancelled while the launch read is out; nil otherwise.
+    private var launchReadCancellations: Set<String>?
+
+    /// Every raised flag's alert identifier, read now.
+    static func raisedFlagIdentifiers() -> Set<String> {
+        Set(PanelAttentionIndex.shared.oldestFlags.compactMap { snapshot in
+            snapshot.flagRaisedAt.map {
+                FlagNotificationSpec.identifier(workspaceId: snapshot.workspaceId, surfaceId: snapshot.surfaceId, flagRaisedAt: $0)
+            }
+        })
+    }
+
+    private nonisolated static func readDelivered(
+        center: UNUserNotificationCenter,
+        _ done: @escaping ([(String, [AnyHashable: Any])]) -> Void
+    ) {
+        flagReconcileQueue.async {
+            center.getDeliveredNotifications { delivered in
+                done(delivered.map { ($0.request.identifier, $0.request.content.userInfo) })
+            }
+        }
+    }
+
+    private func removeStaleFlagNotifications(_ identifiers: [String]) {
+#if DEBUG
+        if let hook = flagNotificationRemovalHandlerForTesting {
+            identifiers.forEach(hook)
+        }
+#endif
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: identifiers)
+    }
+
+    private static let flagReconcileQueue = DispatchQueue(
+        label: "com.stage11.c11.flag-notification-reconcile",
+        qos: .utility
+    )
+
+    private func operatorIsLookingAt(workspaceId: UUID, surfaceId: UUID) -> Bool {
+#if DEBUG
+        if let provider = operatorLookingProviderForTesting {
+            return provider(workspaceId, surfaceId)
+        }
+#endif
+        guard let manager = AppDelegate.shared?.workspaceManager else { return false }
+        return FlagPresentationPolicy.operatorIsLooking(
+            isAppFocused: AppFocusState.isAppFocused(),
+            selectedWorkspaceId: manager.selectedWorkspaceId,
+            focusedSurfaceId: manager.focusedSurfaceId(for: workspaceId),
+            workspaceId: workspaceId,
+            surfaceId: surfaceId
+        )
+    }
+
+    private func recordFlagNotification(_ record: FlagNotificationRecord) {
+        NSLog("%@", record.logLine)
+        EventEmitter.shared.emitNotificationFlag(
+            workspace: record.workspaceId,
+            surface: record.surfaceId,
+            payload: record.payload
+        )
+#if DEBUG
+        flagNotificationRecordHandlerForTesting?(record)
+#endif
+    }
+
+    /// C11H-246: the dispatcher's one call for every envelope it delivers to
+    /// an inbox, on its own queue. Reads the dial off main and hops to main
+    /// only at Chatty.
+    nonisolated static func noteMailDelivered(workspaceId: UUID, surfaceId: UUID?, recipient: String, sender: String) {
+        guard RoutineDeliveryPolicy.deliversMail(level: NotificationLevel.current(defaults: mailLevelDefaults)) else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                TerminalNotificationStore.shared.deliverChattyMailBanner(
+                    workspaceId: workspaceId, surfaceId: surfaceId, recipient: recipient, sender: sender
+                )
+            }
+        }
+    }
+
+    /// Where the dispatcher's off-main pre-check reads the dial; tests point
+    /// it at their own suite.
+    nonisolated(unsafe) static var mailLevelDefaults: UserDefaults = .standard
+
+    /// C11H-246: Chatty's mail banner. It keeps no store record, so it
+    /// changes no waiting, unread or liveness state; the Feed and the mailbox
+    /// cell already show the mail. Skipped while the operator is looking at
+    /// the recipient panel, and when the dial left Chatty before this ran.
+    func deliverChattyMailBanner(workspaceId: UUID, surfaceId: UUID?, recipient: String, sender: String) {
+        guard RoutineDeliveryPolicy.deliversMail(
+            level: NotificationLevel.current(defaults: notificationSettingsDefaults)
+        ) else { return }
+        if let surfaceId, operatorIsLookingAt(workspaceId: workspaceId, surfaceId: surfaceId) { return }
+        let title = String(
+            format: String(localized: "notification.chattyMail.title", defaultValue: "Mail for %@"),
+            recipient
+        )
+        let body = sender.isEmpty ? "" : String(
+            format: String(localized: "notification.chattyMail.body", defaultValue: "From %@"),
+            sender
+        )
+        let notification = TerminalNotification(
+            id: UUID(),
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            title: title,
+            subtitle: "",
+            body: body,
+            createdAt: Date(),
+            isRead: true
+        )
+        notificationDeliveryHandler(self, notification)
     }
 
     func cancelRoutineExternalNotifications(workspaceId: UUID, surfaceId: UUID) {
@@ -1250,14 +1165,22 @@ final class TerminalNotificationStore: ObservableObject {
     func markUnread(forWorkspaceId workspaceId: UUID) {
         var updated = notifications
         var didChange = false
-        for index in updated.indices {
-            if updated[index].workspaceId == workspaceId, updated[index].isRead {
+        var marked = Set<UUID>()
+        for index in updated.indices where updated[index].workspaceId == workspaceId {
+            marked.insert(updated[index].id)
+            if updated[index].isRead {
                 updated[index].isRead = false
                 didChange = true
             }
         }
+        // C11H-261: the operator asked for these back; no verdict hides them,
+        // including a done one that was still unread.
+        let droppedVerdict = WaitingCheckJudge.operatorMarkedUnread(
+            marked, live: Set(updated.map(\.id)))
         if didChange {
             notifications = updated
+        } else if droppedVerdict {
+            refreshSignalEligibility()
         }
     }
 
@@ -1286,7 +1209,25 @@ final class TerminalNotificationStore: ObservableObject {
         center?.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
     }
 
+    /// The held-back repeat of an ask: its text replaces the panel's needs-you
+    /// record, which keeps its id, time and read state. No banner, no sound.
+    private func replaceNeedsYouText(key: WorkspacePanelKey, title: String, subtitle: String, body: String) {
+        guard let index = notifications.firstIndex(where: {
+            $0.workspaceId == key.workspaceId && $0.surfaceId == key.surfaceId && $0.origin == .needsYou
+        }) else { return }
+        let old = notifications[index]
+        guard old.title != title || old.subtitle != subtitle || old.body != body else { return }
+        var updated = notifications
+        updated[index] = TerminalNotification(
+            id: old.id, systemIdentifier: old.systemIdentifier, workspaceId: old.workspaceId, surfaceId: old.surfaceId,
+            title: title, subtitle: subtitle, body: body, createdAt: old.createdAt, isRead: old.isRead,
+            deliversSound: old.deliversSound, origin: old.origin
+        )
+        notifications = updated
+    }
+
     func clearAll() {
+        pendingAsks.removeAll()
         guard !notifications.isEmpty else { return }
         let ids = notifications.map { $0.id.uuidString }
         notifications.removeAll()
@@ -1295,6 +1236,8 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func clearNotifications(forWorkspaceId workspaceId: UUID, surfaceId: UUID?) {
+        // The agent resumed or resolved its ask (Claude's hooks clear here).
+        pendingAsks.removeValue(forKey: WorkspacePanelKey(workspaceId: workspaceId, surfaceId: surfaceId))
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)
         var idsToClear: [String] = []
@@ -1312,6 +1255,7 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func clearNotifications(forWorkspaceId workspaceId: UUID) {
+        pendingAsks = pendingAsks.filter { $0.key.workspaceId != workspaceId }
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)
         var idsToClear: [String] = []
@@ -1331,6 +1275,9 @@ final class TerminalNotificationStore: ObservableObject {
     /// Remove raw history for surfaces no longer present in a workspace.
     /// Surface-less workspace notifications remain valid and are retained.
     func clearNotifications(forWorkspaceId workspaceId: UUID, excludingSurfaceIds validSurfaceIds: Set<UUID>) {
+        pendingAsks = pendingAsks.filter { key, _ in
+            key.workspaceId != workspaceId || key.surfaceId.map(validSurfaceIds.contains) ?? true
+        }
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)
         var idsToClear: [String] = []
@@ -1351,6 +1298,14 @@ final class TerminalNotificationStore: ObservableObject {
 
     private func scheduleUserNotification(_ notification: TerminalNotification) {
         let commandDefaults = notificationCustomCommandDefaults
+        // C11H-319: the notification's channel decides its sound; Quiet
+        // (deliversSound false) posts the banner with none.
+        let channel = NotificationSoundChannel.routine(for: notification.origin)
+        let sound = notification.deliversSound
+            ? NotificationSoundResolver.routine(
+                channel: channel, defaults: notificationSettingsDefaults, store: notificationSoundStore
+            )
+            : NotificationSoundResolution.quiet
         requestRoutineAuthorization { [weak self] authorized in
             guard let self, authorized else { return }
 
@@ -1361,7 +1316,7 @@ final class TerminalNotificationStore: ObservableObject {
             content.title = notification.title.isEmpty ? appName : notification.title
             content.subtitle = notification.subtitle
             content.body = notification.body
-            content.sound = NotificationSoundSettings.sound()
+            content.sound = sound.notificationSound
             content.categoryIdentifier = Self.categoryIdentifier
             content.userInfo = Self.userInfo(for: notification)
 
@@ -1372,6 +1327,18 @@ final class TerminalNotificationStore: ObservableObject {
             )
 
             self.addRoutineNotification(request) { error in
+                // The completion arrives on Notification Center's queue.
+                let record = RoutineNotificationRecord(
+                    action: error == nil ? .posted : .failed,
+                    channel: channel,
+                    identifier: request.identifier,
+                    workspaceId: notification.workspaceId,
+                    surfaceId: notification.surfaceId,
+                    sound: sound
+                )
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self.recordRoutineNotification(record) }
+                }
                 if let error {
                     NSLog("Failed to schedule notification: \(error)")
                 } else {
@@ -1394,6 +1361,43 @@ final class TerminalNotificationStore: ObservableObject {
         if let defaults = customCommandDefaultsForTesting { return defaults }
 #endif
         return .standard
+    }
+
+    /// The flag sound and the routine level are read at each delivery, so a
+    /// change in Settings or `notify-level` takes effect on the next one.
+    private var notificationSettingsDefaults: UserDefaults {
+#if DEBUG
+        if let defaults = notificationSettingsDefaultsForTesting { return defaults }
+#endif
+        return .standard
+    }
+
+    /// C11H-319: imported sound files.
+    private var notificationSoundStore: CustomNotificationSoundStore {
+#if DEBUG
+        if let store = notificationSoundStoreForTesting { return store }
+#endif
+        return .shared
+    }
+
+    /// C11H-319: where a flag kind's sound is read, at each delivery.
+    private var flagKindRegistry: PanelFlagKindRegistry {
+#if DEBUG
+        if let registry = flagKindRegistryForTesting { return registry }
+#endif
+        return .shared
+    }
+
+    private func recordRoutineNotification(_ record: RoutineNotificationRecord) {
+        NSLog("%@", record.logLine)
+        EventEmitter.shared.emitNotificationRoutine(
+            workspace: record.workspaceId,
+            surface: record.surfaceId,
+            payload: record.payload
+        )
+#if DEBUG
+        routineNotificationRecordHandlerForTesting?(record)
+#endif
     }
 
     private func requestRoutineAuthorization(_ completion: @escaping (Bool) -> Void) {
@@ -1428,23 +1432,45 @@ final class TerminalNotificationStore: ObservableObject {
     /// both that boundary and the add completion must observe the same current
     /// generation before producing an external side effect.
     private func scheduleDirectFlagNotification(
-        _ notification: TerminalNotification,
+        _ delivery: DirectFlagDelivery,
         token: DirectFlagDeliveryToken
     ) {
         guard isCurrent(token) else { return }
         requestDirectFlagAuthorization { [weak self] authorized in
             guard let self, authorized, self.isCurrent(token) else { return }
-            self.addDirectFlagNotification(notification) { [weak self] error in
+            self.addDirectFlagNotification(delivery) { [weak self] error in
                 DispatchQueue.main.async {
                     guard let self else { return }
+                    let spec = delivery.spec
                     if let error {
                         NSLog("Failed to schedule direct flag notification: \(error)")
+                        self.recordFlagNotification(.init(
+                            action: .failed, cause: delivery.isRevision ? .revised : .raised,
+                            identifier: spec.identifier, attribution: spec.attribution
+                        ))
                         return
                     }
-                    // Never remove here: an old same-identifier completion may
-                    // arrive after a newer revision has already been added.
-                    guard self.isCurrent(token) else { return }
-                    self.runDirectFlagCustomCommand(notification)
+                    // Never remove a revision's alert here: an old same-identifier
+                    // completion may arrive after a newer revision was added.
+                    // But an add that lands after its flag was cancelled (no
+                    // generation at all for this identifier) left an alert
+                    // nothing owns; take it down now.
+                    guard self.isCurrent(token) else {
+                        if self.directFlagDeliveryTokens[spec.identifier] == nil,
+                           !self.postedFlagIdentifiers.contains(spec.identifier) {
+                            self.removeStaleFlagNotifications([spec.identifier])
+                            self.center?.removePendingNotificationRequestsOffMain(withIdentifiers: [spec.identifier])
+                        }
+                        return
+                    }
+                    self.postedFlagIdentifiers.insert(spec.identifier)
+                    self.flagAttributions[spec.identifier] = spec.attribution
+                    self.recordFlagNotification(.init(
+                        action: delivery.isRevision ? .replaced : .posted,
+                        cause: delivery.isRevision ? .revised : .raised,
+                        identifier: spec.identifier, attribution: spec.attribution
+                    ))
+                    self.runDirectFlagCustomCommand(delivery.notification)
                 }
             }
         }
@@ -1467,12 +1493,19 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     private func addDirectFlagNotification(
-        _ notification: TerminalNotification,
+        _ delivery: DirectFlagDelivery,
         completion: @escaping (Error?) -> Void
     ) {
 #if DEBUG
         if let handler = directFlagAddHandlerForTesting {
-            handler(notification, completion)
+            handler(delivery.notification, completion)
+            return
+        }
+#endif
+        let request = delivery.spec.request(appName: Self.appName, categoryIdentifier: Self.categoryIdentifier)
+#if DEBUG
+        if let handler = directFlagRequestHandlerForTesting {
+            handler(request, completion)
             return
         }
 #endif
@@ -1486,22 +1519,13 @@ final class TerminalNotificationStore: ObservableObject {
             )
             return
         }
-        let content = UNMutableNotificationContent()
-        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? "cmux"
-        content.title = notification.title.isEmpty ? appName : notification.title
-        content.subtitle = notification.subtitle
-        content.body = notification.body
-        content.sound = NotificationSoundSettings.sound()
-        content.categoryIdentifier = Self.categoryIdentifier
-        content.userInfo = Self.userInfo(for: notification)
-        let request = UNNotificationRequest(
-            identifier: notification.systemIdentifier ?? notification.id.uuidString,
-            content: content,
-            trigger: nil
-        )
         center.add(request, withCompletionHandler: completion)
+    }
+
+    nonisolated static var appName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "c11"
     }
 
     private func runDirectFlagCustomCommand(_ notification: TerminalNotification) {
@@ -1711,7 +1735,13 @@ final class TerminalNotificationStore: ObservableObject {
         return shouldDeferAutomaticAuthorizationRequest(status: status, isAppActive: isAppActive)
     }
 
+    /// Signal-eligible demand: the attention snapshot allows it and the
+    /// waiting check has not judged it done (C11H-261).
     private static func isSignalEligible(_ notification: TerminalNotification) -> Bool {
+        isAttentionSignalEligible(notification) && !isJudgedDone(notification)
+    }
+
+    private static func isAttentionSignalEligible(_ notification: TerminalNotification) -> Bool {
         guard let surfaceId = notification.surfaceId else { return true }
         return PanelAttentionIndex.shared.snapshot(
             workspaceId: notification.workspaceId,
@@ -1719,9 +1749,16 @@ final class TerminalNotificationStore: ObservableObject {
         ).isSignalEligible
     }
 
+    private static func isJudgedDone(_ notification: TerminalNotification) -> Bool {
+        WaitingCheckJudge.isDone(notification.id)
+    }
+
+    /// `signalEligible` is the attention rule; an eligible unread notification
+    /// for which `isDone` holds is counted as done instead of unread.
     static func buildIndexes(
         for notifications: [TerminalNotification],
-        signalEligible: (TerminalNotification) -> Bool
+        signalEligible: (TerminalNotification) -> Bool,
+        isDone: (TerminalNotification) -> Bool = { _ in false }
     ) -> NotificationIndexes {
         var indexes = NotificationIndexes()
         for notification in notifications {
@@ -1735,6 +1772,15 @@ final class TerminalNotificationStore: ObservableObject {
                 WorkspacePanelKey(workspaceId: notification.workspaceId, surfaceId: notification.surfaceId)
             )
             guard signalEligible(notification) else { continue }
+            if isDone(notification) {
+                indexes.doneUnreadCount += 1
+                indexes.doneUnreadCountByWorkspaceId[notification.workspaceId, default: 0] += 1
+                indexes.doneUnreadByWorkspaceSurface.insert(
+                    WorkspacePanelKey(workspaceId: notification.workspaceId, surfaceId: notification.surfaceId)
+                )
+                indexes.doneUnread.append(notification)
+                continue
+            }
             indexes.unreadCount += 1
             indexes.unreadCountByWorkspaceId[notification.workspaceId, default: 0] += 1
             indexes.unreadByWorkspaceSurface.insert(
@@ -1766,6 +1812,18 @@ final class TerminalNotificationStore: ObservableObject {
 
     func scheduleUserNotificationForTesting(_ notification: TerminalNotification) {
         scheduleUserNotification(notification)
+    }
+
+    /// C11H-319: imported sounds from a scratch store, kind sounds from a
+    /// scratch registry, and every routine record.
+    func configureNotificationSoundsForTesting(
+        store: CustomNotificationSoundStore?,
+        registry: PanelFlagKindRegistry?,
+        routineRecord: ((RoutineNotificationRecord) -> Void)? = nil
+    ) {
+        notificationSoundStoreForTesting = store
+        flagKindRegistryForTesting = registry
+        routineNotificationRecordHandlerForTesting = routineRecord
     }
 
     func configureNotificationSettingsPromptHooksForTesting(
@@ -1856,6 +1914,48 @@ final class TerminalNotificationStore: ObservableObject {
         directFlagAuthorizationHandlerForTesting = nil
         directFlagAddHandlerForTesting = nil
         directFlagCustomCommandHandlerForTesting = nil
+        directFlagRequestHandlerForTesting = nil
+        operatorLookingProviderForTesting = nil
+        flagNotificationRecordHandlerForTesting = nil
+        flagNotificationRemovalHandlerForTesting = nil
+        notificationSettingsDefaultsForTesting = nil
+        directFlagDeliveryTokens.removeAll()
+        postedFlagIdentifiers.removeAll()
+        lastOperatorOpenPanel = nil
+        launchReadCancellations = nil
+        flagAttributions.removeAll()
+        deliveredFlagReaderForTesting = nil
+    }
+
+    /// C11H-246 #3: stand in for Notification Center's delivered read.
+    func configureDeliveredFlagReaderForTesting(
+        _ reader: @escaping (@escaping ([(String, [AnyHashable: Any])]) -> Void) -> Void
+    ) {
+        deliveredFlagReaderForTesting = reader
+    }
+
+    /// C11H-246: capture the built flag request, every removal, and every
+    /// record; decide "the operator is looking"; read settings from a suite.
+    func configureFlagNotificationObservationForTesting(
+        request: @escaping (_ request: UNNotificationRequest, _ completion: @escaping (Error?) -> Void) -> Void,
+        removal: @escaping (String) -> Void,
+        record: @escaping (FlagNotificationRecord) -> Void,
+        operatorLooking: @escaping (UUID, UUID) -> Bool = { _, _ in false },
+        settings: UserDefaults? = nil
+    ) {
+        directFlagRequestHandlerForTesting = request
+        flagNotificationRemovalHandlerForTesting = removal
+        flagNotificationRecordHandlerForTesting = record
+        operatorLookingProviderForTesting = operatorLooking
+        notificationSettingsDefaultsForTesting = settings
+    }
+
+    func configureNotificationSettingsDefaultsForTesting(_ defaults: UserDefaults?) {
+        notificationSettingsDefaultsForTesting = defaults
+    }
+
+    func postedFlagIdentifiersForTesting() -> Set<String> {
+        postedFlagIdentifiers
     }
 
     func promptToEnableNotificationsForTesting() {

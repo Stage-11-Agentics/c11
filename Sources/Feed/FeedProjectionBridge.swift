@@ -14,6 +14,10 @@ final class FeedProjectionBridge: @unchecked Sendable {
     // no identity and cannot receive a display note.
     private var currentAskEventIDs: [UUID: UUID] = [:]
     private var attention: [UUID: FeedAttentionFact] = [:]
+    /// C11H-228: shows that landed while the operator was away.
+    private var shows: [UUID: FeedShowFact] = [:]
+    /// C11H-330: the last flag lowered, with who and why.
+    private var flagLowered: FeedFlagLowered?
     private var tracker = FeedAskTracker()
     private let cache = AskDisplayCache()
     private var projected = FeedProjectionSnapshot.empty
@@ -41,9 +45,9 @@ final class FeedProjectionBridge: @unchecked Sendable {
     private func refreshProjection() {
         let rows = FeedProjector.project(
             journalRows: Array(journal.values), attention: Array(attention.values),
-            notes: cache.notesByPanel(), scope: .all
+            notes: cache.notesByPanel(), scope: .all, shows: Array(shows.values)
         )
-        let next = FeedProjectionSnapshot(rows: rows)
+        let next = FeedProjectionSnapshot(rows: rows, flagLowered: flagLowered)
         var answerRows: [UUID: FeedAnswerProjectionRow] = [:]
         answerRows.reserveCapacity(rows.count)
         for row in rows {
@@ -106,6 +110,22 @@ final class FeedProjectionBridge: @unchecked Sendable {
             self.cache.prune(openRequests: self.journal.mapValues { snap in
                 FeedProjector.blockingKind(snap) == nil ? nil : snap.requestID
             })
+            self.refreshProjection()
+        }
+    }
+
+    /// C11H-228: a showing panel's pending shows, or nil once opened or dropped.
+    func noteShow(panelID: UUID, fact: FeedShowFact?) {
+        queue.async { [self] in
+            if let fact { self.shows[panelID] = fact } else { self.shows.removeValue(forKey: panelID) }
+            self.refreshProjection()
+        }
+    }
+
+    /// Queued after the lower's attention snapshot, so the row has left first.
+    func noteFlagLowered(_ lowered: FeedFlagLowered) {
+        queue.async { [self] in
+            self.flagLowered = lowered
             self.refreshProjection()
         }
     }
@@ -235,6 +255,7 @@ final class FeedProjectionBridge: @unchecked Sendable {
                 "scope": scope.rawValue,
                 "instance": EventEmitter.shared.currentInstance() ?? NSNull(),
                 "rows": rows.map { $0.jsonObject() },
+                "flag_lowered": projected.flagLowered?.jsonObject() ?? NSNull(),
             ]
         }
     }

@@ -1,0 +1,37 @@
+{
+  "seq": 8,
+  "ts": "2026-11-04T12:00:00.000Z",
+  "type": "display.changed",
+  "instance": "com.stage11.c11.debug.c11-197",
+  "v": 2,
+  "payload": {
+    "displays": [
+      {
+        "display_id": 4,
+        "ref": "display:2",
+        "index": 2,
+        "name": "DELL P2715Q (1)",
+        "main": false,
+        "builtin": false,
+        "frame": {
+          "x": -2560,
+          "y": -271,
+          "width": 2560,
+          "height": 1440
+        },
+        "visible_frame": {
+          "x": -2560,
+          "y": -271,
+          "width": 2560,
+          "height": 1440
+        },
+        "scale": 2,
+        "uuid": "DBDAE43B-1551-4262-90B2-74C254A7C815"
+      }
+    ],
+    "added": [
+      "DBDAE43B-1551-4262-90B2-74C254A7C815"
+    ],
+    "removed": []
+  }
+}

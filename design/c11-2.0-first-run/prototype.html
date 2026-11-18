@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 2.0 First Run</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  /* Page chrome (the review page around the sheets). */
+  :root {
+    --page: #e9e6df;
+    --page-ink: #1c1b19;
+    --page-muted: #5e584e;
+    --page-rule: #cfc6b6;
+    --gold: #c9a84c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #161513;
+      --page-ink: #ece8df;
+      --page-muted: #a39c8f;
+      --page-rule: #34312b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #161513;
+    --page-ink: #ece8df;
+    --page-muted: #a39c8f;
+    --page-rule: #34312b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--page-ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .top {
+    padding: 22px 28px 16px;
+    border-bottom: 1px solid var(--page-rule);
+  }
+  .kicker {
+    margin: 0 0 4px; font-size: 11px; font-weight: 650; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--page-muted);
+  }
+  h1 { margin: 0 0 6px; font-size: 22px; font-weight: 680; letter-spacing: -0.01em; }
+  .lede { margin: 0; max-width: 78ch; color: var(--page-muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 14px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--page-rule); border-radius: 7px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 12.5px; padding: 5px 11px; border: 0; background: transparent;
+    color: var(--page-ink); cursor: pointer; min-width: 128px;
+  }
+  .seg button + button { border-left: 1px solid var(--page-rule); }
+  .seg button[aria-pressed="true"] { background: var(--gold); color: #1c1b19; font-weight: 600; }
+  .ctl-label { font-size: 12px; color: var(--page-muted); margin-right: 6px; }
+  .stage {
+    display: flex; flex-wrap: wrap; gap: 28px; padding: 28px; justify-content: center;
+  }
+  .col { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .col-label { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--page-muted); }
+  .notes { max-width: 1260px; margin: 0 auto; padding: 0 28px 40px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .note { border-top: 2px solid var(--gold); padding-top: 10px; }
+  .note h2 { margin: 0 0 6px; font-size: 13px; font-weight: 680; }
+  .note p, .note li { margin: 0 0 6px; color: var(--page-muted); font-size: 13px; }
+  .note ul { margin: 0; padding-left: 18px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+
+  /* The sheet, drawn as macOS draws the SwiftUI window (600 pt wide). */
+  .mac {
+    --win: #ececec; --label: rgba(0,0,0,0.85); --secondary: rgba(0,0,0,0.55);
+    --tertiary: rgba(0,0,0,0.30); --control: #ffffff; --separator: rgba(0,0,0,0.12);
+    --titlebar: #e3e3e3; --cell: rgba(0,0,0,0.07); --btn: #0a84ff; --btn-ink: #fff;
+    width: 600px; max-width: calc(100vw - 32px);
+    border-radius: 12px; overflow: hidden;
+    background: var(--win); color: var(--label);
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.25), 0 22px 60px rgba(0,0,0,0.28);
+  }
+  .mac.dark {
+    --win: #282828; --label: rgba(255,255,255,0.88); --secondary: rgba(255,255,255,0.55);
+    --tertiary: rgba(255,255,255,0.28); --control: #1e1e1e; --separator: rgba(255,255,255,0.12);
+    --titlebar: #323232; --cell: rgba(255,255,255,0.08); --btn: #0a84ff; --btn-ink: #fff;
+    box-shadow: 0 0 0 0.5px rgba(255,255,255,0.18), 0 22px 60px rgba(0,0,0,0.6);
+  }
+  .titlebar {
+    height: 28px; display: flex; align-items: center; justify-content: center; position: relative;
+    background: var(--titlebar); border-bottom: 1px solid var(--separator);
+    font-size: 13px; font-weight: 600; color: var(--secondary);
+  }
+  .lights { position: absolute; left: 10px; top: 8px; display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #ff5f57; }
+  .lights i:nth-child(2) { background: var(--tertiary); }
+  .lights i:nth-child(3) { background: var(--tertiary); }
+  .body { padding: 26px 28px 22px; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.6px; color: var(--gold); margin: 0 0 6px; }
+  .title { font-size: 20px; font-weight: 600; margin: 0 0 6px; line-height: 1.25; }
+  .subtitle { font-size: 13px; color: var(--secondary); margin: 0 0 18px; }
+  .picture {
+    background: var(--control); border: 1px solid var(--separator); border-radius: 10px;
+    padding: 14px; margin-bottom: 22px; display: flex; align-items: center; height: 150px;
+  }
+  .glyph-wrap { width: 140px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .glyph-cap { font-size: 11px; font-weight: 500; color: var(--secondary); height: 14px; }
+  .lines { width: 58px; height: 122px; }
+  .row { flex: 1; display: flex; align-items: center; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1.5px var(--win); }
+  .place { flex: 1; }
+  .place b { display: block; font-size: 13px; font-weight: 600; }
+  .place span { font-size: 11px; color: var(--secondary); }
+  .count { width: 64px; text-align: right; }
+  .count b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .count span { font-size: 10px; color: var(--tertiary); }
+  .points { display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px; }
+  .point { display: flex; gap: 12px; align-items: baseline; font-size: 13px; line-height: 1.5; }
+  .num { width: 14px; text-align: right; flex: none; font: 600 12px ui-monospace, "SF Mono", Menlo, monospace; color: var(--gold); }
+  .point b { font-weight: 600; color: var(--label); }
+  .point span { color: var(--secondary); }
+  .menu { color: var(--label); white-space: nowrap; }
+  /* Reserve the switch line's height in both variants, so toggling moves nothing. */
+  .stop-extra { display: block; min-height: 3em; }
+  .footer { display: flex; align-items: center; gap: 12px; }
+  .footer p { flex: 1; margin: 0; font-size: 12px; color: var(--secondary); }
+  .btn {
+    font: 500 13px -apple-system, BlinkMacSystemFont, sans-serif; padding: 5px 16px; border-radius: 6px;
+    border: 0; background: var(--btn); color: var(--btn-ink); min-width: 84px; height: 28px;
+  }
+  @media (max-width: 680px) {
+    .stage { padding: 16px; }
+    .top { padding: 18px 16px 14px; }
+    .notes { padding: 0 16px 32px; }
+    .picture { height: auto; flex-wrap: wrap; }
+    .lines { display: none; }
+  }
+</style>
+</head>
+<body>
+  <section class="top">
+    <p class="kicker">C11H-267 · c11 2.0 prep · prototype</p>
+    <h1>First run after updating from c11 1.x</h1>
+    <p class="lede">The existing What's Different window (<code>WhatsDifferentView.swift</code>), with copy for someone
+      who used c11 1.x. It opens beside the restored windows without taking the keyboard, once, and never on a QA launch.
+      A fresh install sees the ordinary welcome instead.</p>
+    <div class="controls">
+      <span><span class="ctl-label">How to stop it</span>
+        <span class="seg" role="group" aria-label="Stop line">
+          <button type="button" data-stop="switch" aria-pressed="true">With Quit switch</button>
+          <button type="button" data-stop="none" aria-pressed="false">No switch</button>
+        </span>
+      </span>
+      <span><span class="ctl-label">Page</span>
+        <span class="seg" role="group" aria-label="Page theme">
+          <button type="button" data-theme-set="auto" aria-pressed="true">Auto</button>
+          <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+        </span>
+      </span>
+    </div>
+  </section>
+
+  <main class="stage">
+    <div class="col"><span class="col-label">Light</span><div class="mac" data-sheet></div></div>
+    <div class="col"><span class="col-label">Dark</span><div class="mac dark" data-sheet></div></div>
+  </main>
+
+  <section class="notes">
+    <div class="note">
+      <h2>Who sees it</h2>
+      <ul>
+        <li><b>c11 1.x user, first 2.0 launch:</b> this window, once.</li>
+        <li><b>Fresh install:</b> the welcome workspace, as today. No upgrade note.</li>
+        <li><b>c11h user moving to 2.0:</b> nothing new; they already know hc.</li>
+        <li><b>QA launch</b> (<code>C11_QA_LAUNCH</code>) or XCTest: never.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>Nothing waits on it</h2>
+      <p>A plain window ordered front without the keyboard, never a modal. Terminals restore and agents run
+        before, during and after it. Help ▸ What's New in c11 2.0 opens it again.</p>
+    </div>
+    <div class="note">
+      <h2>The stop line is true</h2>
+      <p><b>End All Sessions…</b> exists today and ends every terminal and its jobs, nohup included.
+        <b>Keep Terminals After Quit</b> is the switch (Lead, 14:05): off, Quit ends every
+        terminal and stops hc, as 1.x did. Window ▸ hc Core exists today.</p>
+    </div>
+  </section>
+
+<template id="sheet">
+  <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>What's New in c11 2.0</div>
+  <div class="body">
+    <p class="eyebrow">c11 2.0</p>
+    <p class="title">Quitting c11 no longer ends your terminals.</p>
+    <p class="subtitle">A background helper called hc now holds them. Your shells, agents and jobs keep running
+      when c11 quits, updates or crashes, and they are there when you open it again.</p>
+
+    <div class="picture" aria-hidden="true">
+      <div class="glyph-wrap">
+        <svg width="140" height="94" viewBox="0 0 140 94">
+          <rect x="0.5" y="0.5" width="139" height="93" rx="7" fill="var(--win)" stroke="var(--separator)"/>
+          <circle cx="9.5" cy="8.5" r="2.5" fill="#ff5f57" opacity=".75"/>
+          <circle cx="17.5" cy="8.5" r="2.5" fill="#febc2e" opacity=".75"/>
+          <circle cx="25.5" cy="8.5" r="2.5" fill="#28c840" opacity=".75"/>
+          <rect x="6" y="18" width="30.8" height="9" rx="2" fill="var(--gold)" opacity=".55"/>
+          <rect x="6" y="30" width="30.8" height="9" rx="2" fill="var(--cell)"/>
+          <rect x="6" y="42" width="30.8" height="9" rx="2" fill="var(--cell)"/>
+          <rect x="40.8" y="18" width="45.1" height="70" rx="2" fill="var(--cell)"/>
+          <rect x="88.9" y="18" width="45.1" height="33.5" rx="2" fill="var(--cell)"/>
+          <rect x="88.9" y="54.5" width="45.1" height="33.5" rx="2" fill="var(--cell)"/>
+        </svg>
+        <span class="glyph-cap">This window</span>
+      </div>
+      <svg class="lines" viewBox="0 0 58 122">
+        <path d="M2 50 C 34 50, 26 61, 58 61" fill="none" stroke="var(--gold)" stroke-width="1.6" stroke-linecap="round" opacity=".85"/>
+        <circle cx="2" cy="50" r="3" fill="var(--secondary)"/>
+      </svg>
+      <div class="row">
+        <span class="dot"></span>
+        <span class="place"><b>MacBook Pro</b><span>This Mac</span></span>
+        <span class="count"><b>6</b><span>terminals</span></span>
+      </div>
+    </div>
+
+    <div class="points">
+      <div class="point"><span class="num">1</span><div><b>They keep running.</b>
+        <span>Quit c11, or let it update or crash, and every terminal carries on. Open c11 again and you are back in the same sessions.</span></div></div>
+      <div class="point"><span class="num">2</span><div><b>Closing a panel ends it.</b>
+        <span>End Session stops that terminal and everything it started, nohup and background jobs too. In c11 1.x they outlived the panel.</span></div></div>
+      <div class="point"><span class="num">3</span><div><b>hc runs in the background.</b>
+        <span>It holds your terminals while c11 is closed. To see it and every terminal it holds, choose <span class="menu">Window ▸ hc Core</span>.</span></div></div>
+      <div class="point"><span class="num">4</span><div><b>To stop it all,</b>
+        <span>choose <span class="menu">End All Sessions…</span> in the c11 menu. It ends every terminal and the jobs inside them.</span>
+        <span class="stop-extra" data-stop-extra></span></div></div>
+    </div>
+
+    <div class="footer">
+      <p>Open this again from Help ▸ What's New in c11 2.0.</p>
+      <button class="btn" type="button">Got It</button>
+    </div>
+  </div>
+</template>
+
+<script>
+  const SWITCH_LINE = "To have Quit end your terminals as c11 1.x did, turn off Keep Terminals After Quit in Settings ▸ General.";
+  const tpl = document.getElementById("sheet");
+  document.querySelectorAll("[data-sheet]").forEach(el => el.appendChild(tpl.content.cloneNode(true)));
+
+  function setStop(mode) {
+    document.querySelectorAll("[data-stop-extra]").forEach(el => {
+      el.textContent = mode === "switch" ? SWITCH_LINE : "";
+    });
+    document.querySelectorAll("[data-stop]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.stop === mode)));
+  }
+  function setTheme(mode) {
+    if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    document.querySelectorAll("[data-theme-set]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeSet === mode)));
+  }
+  document.querySelectorAll("[data-stop]").forEach(b => b.addEventListener("click", () => setStop(b.dataset.stop)));
+  document.querySelectorAll("[data-theme-set]").forEach(b => b.addEventListener("click", () => setTheme(b.dataset.themeSet)));
+  setStop("switch");
+</script>
+</body>
+</html>

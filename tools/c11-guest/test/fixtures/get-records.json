@@ -1,0 +1,296 @@
+{
+ "t1": {
+  "address": "t1",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793500000000,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "-zsh"
+   ],
+   "cwd": "/Users/admin",
+   "name": "zsh",
+   "pid": 2100
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "7329BF55-2299-4695-B948-DFD6AD63E836",
+   "c11.creation": "00000000-0000-4000-8000-000000000000"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": 2100,
+  "reason": null,
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "live",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ },
+ "t2": {
+  "address": "t2",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793500000001,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "-zsh"
+   ],
+   "cwd": "/Users/admin",
+   "name": "zsh",
+   "pid": 2101
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "34672EE8-471A-482C-B457-7187F9264690",
+   "c11.creation": "00000000-0000-4000-8000-000000000001"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": 2101,
+  "reason": null,
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "live",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ },
+ "t3": {
+  "address": "t3",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793500000002,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "-zsh"
+   ],
+   "cwd": "/Users/admin",
+   "name": "zsh",
+   "pid": 2102
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "19926033-47EA-4781-8857-AE8CB0C5F2E2",
+   "c11.creation": "00000000-0000-4000-8000-000000000002"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": 2102,
+  "reason": null,
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "live",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ },
+ "t4": {
+  "address": "t4",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793500000003,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "-zsh"
+   ],
+   "cwd": "/Users/admin",
+   "name": "zsh",
+   "pid": 2103
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "ABE85390-A6DB-4D08-AA62-DB142FC95AD1",
+   "c11.creation": "00000000-0000-4000-8000-000000000003"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": 2103,
+  "reason": null,
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "live",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ },
+ "t6": {
+  "address": "t6",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793500000004,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "-zsh"
+   ],
+   "cwd": "/Users/admin",
+   "name": "zsh",
+   "pid": 2104
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "8722CE35-210C-4B22-A0C6-07CD2C88F329",
+   "c11.creation": "00000000-0000-4000-8000-000000000004"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": 2104,
+  "reason": null,
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "live",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ },
+ "t7": {
+  "address": "t7",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793500000005,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": null,
+  "finished_ms": null,
+  "foreground": {
+   "argv": [
+    "-zsh"
+   ],
+   "cwd": "/Users/admin",
+   "name": "zsh",
+   "pid": 2105
+  },
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "C7A626D1-BC29-440F-B56C-468C11DCE24A",
+   "c11.creation": "00000000-0000-4000-8000-000000000005"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": 2105,
+  "reason": null,
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "live",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ },
+ "t5": {
+  "address": "t5",
+  "argv": [
+   "/bin/zsh",
+   "-l"
+  ],
+  "cols": 200,
+  "created_ms": 1793499000000,
+  "cwd": "/Users/admin",
+  "die_with_parent": false,
+  "exit_code": 0,
+  "finished_ms": 1793500100000,
+  "foreground": null,
+  "identity": "ghostty",
+  "keep": false,
+  "labels": {
+   "c11.panel": "7329BF55-2299-4695-B948-DFD6AD63E836",
+   "c11.creation": "00000000-0000-4000-8000-000000000000"
+  },
+  "name": null,
+  "notify": true,
+  "parent": null,
+  "pid": null,
+  "reason": "exited",
+  "reported": false,
+  "rm": false,
+  "rows": 120,
+  "screen": "exact",
+  "signal": null,
+  "state": "finished",
+  "status": null,
+  "status_ms": null,
+  "template": null,
+  "title": "",
+  "turn": 0
+ }
+}

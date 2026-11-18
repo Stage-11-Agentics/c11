@@ -63,7 +63,14 @@ final class MailboxDispatchLog {
             nativeRoute: String? = nil,
             nativeFailure: String? = nil,
             recipientPanel: UUID? = nil,
-            nativeState: String? = nil
+            nativeState: String? = nil,
+            /// C11H-237: why a closed gate holds the mail (`journal_turn`,
+            /// `working_edge`) and since when, so `mailbox status` can say it.
+            hold: String? = nil,
+            holdSince: Date? = nil,
+            /// C11H-305: why a doorbell line was not taken (`no_turn_start`,
+            /// `composer_holds_text`, `dialog`, `return_cut`), on its `stranded` row.
+            why: String? = nil
         )
         case rejected(id: String?, reason: String)
         case cleaned(id: String)
@@ -76,7 +83,8 @@ final class MailboxDispatchLog {
         /// A held ring looked at the composer again and scheduled its next
         /// look. Logged as a `handler` event (outcome `doorbell_recheck`)
         /// with `reason` and `next_ms`, one line per look.
-        case doorbellRecheck(id: String, recipient: String, reason: String, nextMs: Int, recipientPanel: UUID? = nil)
+        case doorbellRecheck(id: String, recipient: String, reason: String, nextMs: Int, recipientPanel: UUID? = nil,
+                             hold: String? = nil, holdSince: Date? = nil)
     }
 
     /// Dispatcher-observable outcomes for a single handler invocation.
@@ -192,7 +200,7 @@ final class MailboxDispatchLog {
             if let recipientUsageLimit { payload["recipient_usage_limit"] = recipientUsageLimit }
             if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
             if let recipientWorkspace { payload["recipient_workspace"] = recipientWorkspace.uuidString }
-        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure, let recipientPanel, let nativeState):
+        case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure, let recipientPanel, let nativeState, let hold, let holdSince, let why):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -207,6 +215,8 @@ final class MailboxDispatchLog {
             if let nativeFailure { payload["native_failure"] = nativeFailure }
             if let nativeState { payload["native_state"] = nativeState }
             if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
+            Self.addHold(&payload, hold: hold, since: holdSince)
+            if let why { payload["why"] = why }
         case .rejected(let id, let reason):
             payload["event"] = "rejected"
             if let id { payload["id"] = id }
@@ -227,7 +237,7 @@ final class MailboxDispatchLog {
             payload["handler"] = "stdin"
             payload["outcome"] = HandlerOutcome.claimFailed.rawValue
             payload["errno"] = Int(code)
-        case .doorbellRecheck(let id, let recipient, let reason, let nextMs, let recipientPanel):
+        case .doorbellRecheck(let id, let recipient, let reason, let nextMs, let recipientPanel, let hold, let holdSince):
             payload["event"] = "handler"
             payload["id"] = id
             payload["recipient"] = recipient
@@ -236,6 +246,7 @@ final class MailboxDispatchLog {
             payload["reason"] = reason
             payload["next_ms"] = nextMs
             if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
+            Self.addHold(&payload, hold: hold, since: holdSince)
         }
 
         guard
@@ -248,6 +259,13 @@ final class MailboxDispatchLog {
             return "\n"
         }
         return line + "\n"
+    }
+
+    /// A hold names a short code and, when known, its start time.
+    private static func addHold(_ payload: inout [String: Any], hold: String?, since: Date?) {
+        guard let hold else { return }
+        payload["hold"] = hold
+        if let since { payload["hold_since"] = formatTimestamp(since) }
     }
 
     private static func formatTimestamp(_ date: Date) -> String {

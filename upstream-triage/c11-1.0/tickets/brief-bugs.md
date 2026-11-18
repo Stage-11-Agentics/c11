@@ -1,6 +1,6 @@
 # File the c11 1.0 bug tickets
 
-Read `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/ticket-writer-brief.md` and follow its rules, template and duplicate check. This brief replaces its "Your workstream" section.
+Read `~/src/c11/upstream-triage/c11-1.0/ticket-writer-brief.md` and follow its rules, template and duplicate check. This brief replaces its "Your workstream" section.
 
 **Workstream:** `bugs` (tag `ws:bugs`). **Actor:** `agent:grok`. **Map file:** `tickets/bugs.md`. **Your c11 tab:** "Tickets Bugs".
 

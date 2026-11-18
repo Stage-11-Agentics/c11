@@ -194,6 +194,25 @@ final class MessagesPageTests: XCTestCase {
         XCTAssertEqual(snapshot.messages.first?.body, "C11_257_TEXT_PROOF")
     }
 
+    /// C11H-360 (L7): relayed mail names its machine on Messages even when
+    /// only the accepted event is left (a topic-only envelope, or an inbox
+    /// copy long gone).
+    func testAcceptedEventAloneNamesTheRelayMachine() throws {
+        func message(_ extra: [String: Any]) throws -> MessagesPageRecord {
+            var payload: [String: Any] = ["id": "01K3A2B7X8PQRTVWYZ0123456J", "from": "reviewer", "topic": "ci.status",
+                                          "body": "remote words", "bytes": 12]
+            payload.merge(extra) { _, new in new }
+            let event = try XCTUnwrap(MessagesPageEvent(object: [
+                "v": 2, "type": "mailbox.accepted", "instance": "relay-origin",
+                "ts": "2026-10-08T00:00:00.000Z", "seq": 1, "payload": payload,
+            ]))
+            return try XCTUnwrap(MessagesPageBuilder.build(events: [event]).messages.first)
+        }
+        XCTAssertEqual(try message(["relay_machine": "studio"]).sender,
+                       MailboxEnvelope.senderLabel("reviewer", relayMachine: "studio"))
+        XCTAssertEqual(try message([:]).sender, "reviewer")
+    }
+
     func testExplicitAcceptedTextDecisionOverridesSenderArtifactOptOut() throws {
         let directory = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
             .appendingPathComponent("_read", isDirectory: true)
@@ -1035,6 +1054,38 @@ extension MessagesPageTests {
         )
     }
 
+    func testLaunchTimeComesFromTheLineageNodeNotTheEventLog() throws {
+        let live = UUID(), liveWorkspace = UUID(), closed = UUID(), closedWorkspace = UUID()
+        let sessionURL = tempDir.appendingPathComponent("session.json")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: makeDirectorySession(
+            livePanel: live, liveWorkspace: liveWorkspace, closedPanel: closed, closedWorkspace: closedWorkspace
+        )) as? [String: Any])
+        var nodes = try XCTUnwrap(object["panelLineageNodes"] as? [[String: Any]])
+        let launchedAt = Date(timeIntervalSince1970: 1_763_056_620)
+        nodes[0]["origin"] = "app"
+        nodes[0]["origin_detail"] = "launch"
+        nodes[0]["created_at"] = launchedAt.timeIntervalSinceReferenceDate
+        object["panelLineageNodes"] = nodes
+        try JSONSerialization.data(withJSONObject: object).write(to: sessionURL)
+
+        let directory = MessagesPageDirectory.load(sessionURL: sessionURL)
+        // A later panel.created event (a relaunch or move after the first aged out) changes nothing.
+        var history = MessagesPagePanelHistory()
+        history.panels[live.uuidString] = .init(created: "2026-11-20T09:00:00Z")
+        history.order = [live.uuidString]
+
+        for view in [directory, directory.adding(history: history)] {
+            let lead = try XCTUnwrap(view.panels.first(where: { $0.id == live.uuidString }))
+            XCTAssertEqual(lead.origin, "app")
+            XCTAssertEqual(lead.originDetail, "launch")
+            let stamp = try XCTUnwrap(lead.jsonObject["lineage_created_at"] as? String)
+            XCTAssertEqual(ISO8601DateFormatter().date(from: stamp), launchedAt)
+        }
+        // A node recorded before created_at existed has no launch time, not a guess.
+        let owner = try XCTUnwrap(directory.adding(history: history).panels.first(where: { $0.id == closed.uuidString }))
+        XCTAssertNil(owner.jsonObject["lineage_created_at"])
+    }
+
     func testMissingOrUnreadableSessionFileGivesAnEmptyDirectory() throws {
         XCTAssertEqual(MessagesPageDirectory.load(sessionURL: nil), .empty)
         XCTAssertEqual(MessagesPageDirectory.load(sessionURL: tempDir.appendingPathComponent("absent.json")), .empty)
@@ -1123,7 +1174,7 @@ extension MessagesPageTests {
         writer.stopForTesting()
 
         let html = try String(contentsOf: MessagesPageLayout.pageURL(state: tempDir), encoding: .utf8)
-        XCTAssertTrue(html.contains(#""directory":{"link_scheme":"c11","panels":[],"workspaces":[]}"#))
+        XCTAssertTrue(html.contains(#""directory":{"link_scheme":""# + PanelLinkFormat.scheme + #"","panels":[],"workspaces":[]}"#))
     }
 
     func testDeepLinkTargetsThePanelAndStaysTheMessagesPage() throws {

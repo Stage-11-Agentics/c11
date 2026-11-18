@@ -4,8 +4,7 @@ import Foundation
 ///
 /// Three sources in priority order: per-repo (walks up from a working
 /// directory checking `.c11/blueprints/` then `.cmux/blueprints/`),
-/// per-user (`~/.config/c11/blueprints/` plus the legacy
-/// `~/.config/cmux/blueprints/`), and built-in (app bundle `Blueprints/`
+/// per-user (`~/.config/c11/blueprints/`), and built-in (app bundle `Blueprints/`
 /// subdirectory). `merged(cwd:)` combines all three, per-repo first,
 /// sorted by modifiedAt desc within each group.
 ///
@@ -217,18 +216,19 @@ struct WorkspaceBlueprintStore: Sendable {
         return []
     }
 
-    /// Scan `~/.config/c11/blueprints/*.{json,md}` and the legacy
-    /// `~/.config/cmux/blueprints/` path. The c11 directory ships first so
-    /// the picker prefers canonically-named files when both exist. The
-    /// `directoryOverride:` test seam returns just that directory unchanged.
-    func perUserBlueprintURLs() -> [URL] {
+    /// Scan `~/.config/c11/blueprints/*.{json,md}` only. c11 and cmux
+    /// config directories are not a fallback. The `directoryOverride:`
+    /// test seam returns just that directory unchanged.
+    static func userBlueprintDirectory(home: URL) -> URL {
+        C11Identity.userBlueprintsDirectory(home: home)
+    }
+
+    func perUserBlueprintURLs(home: URL? = nil) -> [URL] {
         if let override = directoryOverride {
             return blueprintURLs(in: override)
         }
-        let home = fileManager.homeDirectoryForCurrentUser
-        let primary = home.appendingPathComponent(".config/c11/blueprints", isDirectory: true)
-        let legacy = home.appendingPathComponent(".config/cmux/blueprints", isDirectory: true)
-        return blueprintURLs(in: primary) + blueprintURLs(in: legacy)
+        let root = home ?? fileManager.homeDirectoryForCurrentUser
+        return blueprintURLs(in: Self.userBlueprintDirectory(home: root))
     }
 
     /// Scan the app bundle's `Blueprints/` subdirectory, or the override's

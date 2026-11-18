@@ -221,6 +221,30 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
         )
     }
 
+    func testOriginNoteSaysWhoLaunchedThePanel() throws {
+        XCTAssertEqual(PanelSheetDetailBuilder.originNote(origin: .operator, parentTitle: nil), "Launched by operator")
+        XCTAssertEqual(PanelSheetDetailBuilder.originNote(origin: .app, originDetail: "restore", parentTitle: nil),
+                       "Launched by c11 (restore)")
+        XCTAssertEqual(PanelSheetDetailBuilder.originNote(origin: .external, parentTitle: nil), "Launched from outside c11")
+        XCTAssertEqual(PanelSheetDetailBuilder.originNote(origin: nil, parentTitle: nil), "Origin not recorded")
+        XCTAssertEqual(PanelSheetDetailBuilder.originNote(origin: .panel, parentTitle: "Planner"), "Child of Planner")
+        let launchedAt = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(
+            PanelSheetDetailBuilder.originNote(origin: .app, originDetail: "launch", createdAt: launchedAt,
+                                               parentTitle: nil, formatTime: { _ in "Nov 13, 10:57 AM" }),
+            "Created by c11 launch at Nov 13, 10:57 AM"
+        )
+        XCTAssertEqual(PanelSheetDetailBuilder.originNote(origin: .app, originDetail: "launch", parentTitle: nil),
+                       "Created by c11 launch")
+        // Local zone and locale, never UTC, and no second "at".
+        let stamp = PanelSheetDetailBuilder.launchTime(
+            Date(timeIntervalSince1970: 1_763_056_620), // 2025-11-13T17:57:00Z
+            locale: Locale(identifier: "en_US"),
+            timeZone: try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        )
+        XCTAssertEqual(stamp.replacingOccurrences(of: "\u{202F}", with: " "), "Nov 13, 9:57 AM")
+    }
+
     func testFlagSubtitleShowsGenericReasonAndNamedKindSnapshot() {
         let generic = PanelSheetDetailBuilder.build(inputs(
             directory: "/repo",
@@ -241,10 +265,10 @@ final class PanelSheetDetailBuilderTests: XCTestCase {
     // MARK: Title
 
     func testFullTitleIsKeptWhole() {
-        let long = "Tests on Atlas with a deliberately   very long tab title that the tab strip shortens"
+        let long = "Tests on Studio with a deliberately   very long tab title that the tab strip shortens"
         XCTAssertEqual(
             PanelSheetDetailBuilder.build(inputs(title: long)).title,
-            "Tests on Atlas with a deliberately very long tab title that the tab strip shortens"
+            "Tests on Studio with a deliberately very long tab title that the tab strip shortens"
         )
         XCTAssertNil(PanelSheetDetailBuilder.build(inputs(title: "  ")).title)
     }

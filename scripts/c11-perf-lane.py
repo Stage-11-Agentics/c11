@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the non-gating c11 performance measurements on Atlas main."""
+"""Run the non-gating c11 performance measurements on the build host's main."""
 
 from __future__ import annotations
 

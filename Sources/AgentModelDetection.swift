@@ -83,6 +83,33 @@ struct TranscriptSignals: Equatable, Sendable {
     /// Claude names its cache tier only on requests that write to the cache;
     /// a pure read keeps the tier of the request before it.
     var promptCacheBasis: PromptCacheObservation.Basis?
+    /// C11H-320 PR 3: the model the transcript says the agent runs, and how
+    /// many times it has changed (a line naming another model, or a `/model`
+    /// the transcript records). A context window belongs to the model it was
+    /// reported under: a change clears the transcript's own window here, and a
+    /// window reported over the socket, bound to the epoch it arrived in, is
+    /// not used once the epoch moves.
+    var model: String?
+    var modelEpoch = 0
+
+    /// Two spellings of one model compare equal: case and a `[1m]`-style
+    /// suffix aside.
+    static func modelKey(_ model: String) -> String {
+        var key = model.trimmingCharacters(in: .whitespaces).lowercased()
+        if key.hasSuffix("]"), let open = key.lastIndex(of: "[") { key = String(key[..<open]) }
+        return key
+    }
+
+    /// A line named the agent's model.
+    mutating func noteModel(_ next: String) {
+        if let model, Self.modelKey(model) != Self.modelKey(next) { modelChanged() }
+        model = next
+    }
+
+    private mutating func modelChanged() {
+        modelEpoch += 1
+        promptCache?.contextWindow = nil
+    }
 
     mutating func apply(_ event: TranscriptEvent) {
         switch event {
@@ -129,7 +156,12 @@ struct TranscriptSignals: Equatable, Sendable {
         promptCacheBasis = basis
         promptCacheRequestKey = usage.requestKey
         let requestAt = usage.anchorsOnPriorLine ? min(at, lastLineAt ?? at) : at
+        // A window belongs to the model the transcript has named: one seen
+        // before any model is known is not kept. A line without the window
+        // keeps the last one: the model has not changed.
+        let window = model == nil ? nil : (usage.contextWindow ?? promptCache?.contextWindow)
         promptCache = PromptCacheObservation(requestAt: requestAt, basis: basis, promptTokens: usage.promptTokens)
+        promptCache?.contextWindow = window
         noteLine(at)
     }
 
@@ -155,6 +187,9 @@ struct TranscriptSignals: Equatable, Sendable {
     /// Something replaced the cached prefix (a model switch, a compaction):
     /// cold from that moment, until the next request writes a new cache.
     mutating func resetPromptCache(_ line: PromptCacheResetLine) {
+        // `/model`: whatever it switched to, a window was the old model's,
+        // whether or not a cache exists yet.
+        if line.reason == .modelSwitch { modelChanged() }
         // Before any request there is no cache to reset.
         guard let at = line.at, let prior = promptCache else { return }
         promptCache = PromptCacheObservation(
@@ -164,6 +199,7 @@ struct TranscriptSignals: Equatable, Sendable {
             reset: line.reason,
             resetAt: at
         )
+        promptCache?.contextWindow = line.reason == .modelSwitch ? nil : prior.contextWindow
         promptCacheRequestKey = nil
         noteLine(at)
     }
@@ -212,6 +248,9 @@ struct PromptCacheObservation: Equatable, Sendable {
     var source: Source = .transcript
     /// Cache misses this session, where the harness counts them (statusline).
     var misses: Int? = nil
+    /// C11H-320 PR 3: the model's context window as the harness's own
+    /// session file states it (Codex's `token_count.info.model_context_window`).
+    var contextWindow: Int? = nil
 
     enum Reset: Equatable, Sendable {
         case modelSwitch
@@ -261,6 +300,8 @@ struct PromptCacheUsage: Equatable, Sendable {
     /// The line is written when the response finishes; the request went out
     /// at the line before it.
     var anchorsOnPriorLine: Bool
+    /// The model's context window, when the line states it (Codex).
+    var contextWindow: Int? = nil
 }
 
 enum PromptCachePolicy {
@@ -663,8 +704,12 @@ struct AgentModelProbe: Sendable {
                 }
                 // One very long turn can push the last `turn_context` out of the
                 // window; look further back for just that line.
-                if state.model == nil, start > 0, kind == "codex" {
-                    state.model = findEarlierTurnContextModel(handle: handle, before: start)
+                if state.model == nil, start > 0, kind == "codex",
+                   let found = findEarlierTurnContextModel(handle: handle, before: start) {
+                    state.model = found
+                    // The same tracker a forward `turn_context` sets, so the next
+                    // model change ends the windows read after this point.
+                    state.signals.noteModel(found)
                 }
                 lifecycle.append(contentsOf: candidateLifecycle)
                 if case .gap = candidateCoverage { coverage = candidateCoverage }
@@ -790,7 +835,10 @@ struct AgentModelProbe: Sendable {
         // Child Codex records are deliberately invisible to the model clocks as
         // well as to the journal. A response/tool line alone is not a turn edge.
         if acceptedLifecycle || parsed.lifecycle == nil {
-            if let model = parsed.model { state.model = model }
+            if let model = parsed.model {
+                state.model = model
+                state.signals.noteModel(model)
+            }
             if let reset = parsed.promptCacheReset { state.signals.resetPromptCache(reset) }
             if let sentAt = parsed.promptCacheRequestSentAt { state.signals.noteRequestSent(sentAt) }
             if let usage = parsed.promptCache { state.signals.notePromptCache(usage) }
@@ -1290,7 +1338,8 @@ struct AgentModelProbe: Sendable {
                         basis: .estimate(PromptCachePolicy.codexColdAfter),
                         fallbackBasis: .estimate(PromptCachePolicy.codexColdAfter),
                         promptTokens: input > 0 ? input : nil,
-                        anchorsOnPriorLine: false
+                        anchorsOnPriorLine: false,
+                        contextWindow: codexContextWindow(info["model_context_window"])
                     )
                 }
             }
@@ -1307,6 +1356,15 @@ struct AgentModelProbe: Sendable {
             return ParsedTranscriptLine()
         }
         return ParsedTranscriptLine(event: .agent(at: at, tools: 0, tokens: 0, messageKey: nil))
+    }
+
+    /// Codex's `model_context_window`: a whole JSON number of tokens from 1
+    /// to 100,000,000; a Boolean, fraction, text or anything else is none.
+    static func codexContextWindow(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double.isFinite, double == double.rounded(), double >= 1, double <= 100_000_000 else { return nil }
+        return Int(double)
     }
 
     private static func parseGrok(_ line: Data) -> ParsedTranscriptLine {

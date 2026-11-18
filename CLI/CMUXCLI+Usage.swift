@@ -28,7 +28,11 @@ extension CMUXCLI {
           Output defaults to refs; pass --id-format uuids or --id-format both to include UUIDs.
 
         Socket Path:
-          Resolution precedence: --socket flag → C11_SOCKET → CMUX_SOCKET_PATH → CMUX_SOCKET → auto-discovery.
+          Resolution precedence: --socket flag → C11_SOCKET → C11_SOCKET_PATH → CMUX_SOCKET_PATH → CMUX_SOCKET → auto-discovery.
+          --socket takes any path. A variable must name a c11 socket: one in ~/Library/Application Support/c11/,
+          or in /tmp named c11.sock, c11-*.sock or c11.*.sock. A c11h or cmux socket in a variable is skipped
+          (their terminals export it). Any other path is refused with an error naming the variable; c11 never
+          falls back to another socket in its place.
           When auto-discovery picks a non-default socket, c11 prints one stderr line attributing the source.
           Suppress that line with C11_QUIET_DISCOVERY=1.
 
@@ -55,7 +59,9 @@ extension CMUXCLI {
           agents [--json] [--bundle-id <id>]
           identify [--workspace <id|ref|index>] [--panel <id|ref|index>] [--no-caller]
           link (--panel <id|ref|index> [--workspace <scope>] | --workspace <id|ref|index>) [--format url|markdown|osc8] [--json]
-          list-windows
+          list-windows [--json]
+          window list|name|move   (window names and placement; see --help)
+          display list [--json]
           current-window
           new-window
           focus-window --window <id>
@@ -82,7 +88,7 @@ extension CMUXCLI {
           focus-area --area <id|ref> [--workspace <id|ref>]
           new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
           new-panel [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--cwd <path|inherit>]
-          close-panel [--panel <id|ref>] [--workspace <id|ref>]
+          close-panel [--panel <id|ref>] [--workspace <id|ref>] [--expect-title <text>]
           move-panel --panel <id|ref|index> [--area <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
           reorder-panel --panel <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
           panel-action --action <name> [--panel <id|ref|index>] [--workspace <id|ref|index>] [--title <text>] [--url <url>]
@@ -97,6 +103,9 @@ extension CMUXCLI {
           panel-health [--workspace <id|ref>]
           health [--since <duration> | --since-boot] [--rail <name>] [--json]
           doctor [--json]
+          hc-diagnostics [--json]
+          core [--workspace <id|ref>]
+          hc server status|restart | ls | get <terminal> | run [--cwd <path>] [--env K=V] [--label K=V] -- <program> [args]
           trigger-flash [--workspace <id|ref>] [--panel <id|ref>] [--color <#hex>] [--persistent]
           cancel-flash [--workspace <id|ref>] [--panel <id|ref>]
           list-panels [--workspace <id|ref>]
@@ -110,6 +119,7 @@ extension CMUXCLI {
           current-workspace
           read-selection [--workspace <id|ref>] [--panel <id|ref>]
           input-state --panel <id|ref> [--workspace <id|ref>] [--json]
+          retry-input --panel <id|ref> [--workspace <id|ref>] [--json]
           read-screen [--workspace <id|ref>] [--panel <id|ref>] [--scrollback] [--lines <n>]
           send [--workspace <id|ref>] [--panel <id|ref>] [--raw] [--no-submit] [--allow-unguarded] <text | ->
           paste [--workspace <id|ref>] [--panel <id|ref>] [--no-submit] [--allow-unguarded] [text | -]
@@ -129,9 +139,14 @@ extension CMUXCLI {
           claude-hook <session-start|stop|notification|stop-failure|permission-request|subagent-start|subagent-stop|pre-compact> [--workspace <id|ref>] [--panel <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--panel <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-panel <id|ref> | --area <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
-          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--delegated] [--env K=V ...] [--json]
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--split right|down|left|up] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--delegated] [--env K=V ...] [--json]
+          chaos {draw | cast} [--mode two|four|ensemble|one] [--seed <n>] [--prompts] [--dry-run] [--json]
           model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--cache-read <usd>] [--cache-write <usd>] [--cache-write-1h <usd>] [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
-          flag-kind {list [--json] | set --id <slug> --name <name> --color <token> [--emoji <emoji>] | rm --id <slug>}
+          flag-kind {list [--json] | set --id <slug> --name <name> --color <token> [--emoji <emoji>] [--evaporate-seconds <1-600>] [--sound <sound|path|flag>] | set --id <slug> --sound <sound|path|flag> | rm --id <slug>}
+          notify-level [silent|quiet|normal|chatty] [--json]
+          notify-sound [turn-end|needs-you|flag [<sound>|<path>]] [--json]
+          machine {list [--json] | set --id <machine|local> [--name <name> | --clear-name] [--color <#RRGGBB[AA]> | --clear-color] | rm --id <machine|local>}
+          machine {link --host <ssh-target> [--name <machine>] [--update] [--yes] | unlink --id <machine> [--dry-run] [--yes]}
           raise-flag --panel <id|ref> [--kind <slug>] "<reason>"
           lower-flag --panel <id|ref>
           delegate --panel <id|ref>
@@ -169,6 +184,8 @@ extension CMUXCLI {
           display-message [-p|--print] <text>
 
           markdown [open] <path>             (open markdown file in formatted viewer panel with live reload)
+          show <path|url> [--dir <folder>] [--wait <s>]   (show a file or URL to the operator beside the caller, from any machine)
+          show close [<path|url>]
 
           messages view                         (open the live local agent-messages page)
           mailbox [send|recv|trace|tail|view]    (durable inter-agent messaging)
@@ -217,9 +234,11 @@ extension CMUXCLI {
           C11_PANEL_ID        Auto-set in c11 terminals. Used as default --panel.
           C11_PANEL_NUM       Auto-set in c11 terminals. The panel's number within its workspace.
           C11_SOCKET          Override the Unix socket path (preferred). Takes precedence over
-                              CMUX_SOCKET_PATH and CMUX_SOCKET.
-          CMUX_SOCKET_PATH    Legacy alias for C11_SOCKET. Still accepted; loses to C11_SOCKET when both set.
-          CMUX_SOCKET         Older alias for the same. Loses to both above.
+                              C11_SOCKET_PATH, CMUX_SOCKET_PATH and CMUX_SOCKET. Must name a c11 socket
+                              (see Socket Path); any other path is refused, never replaced.
+          C11_SOCKET_PATH     Set in c11 terminals. Same rule; loses to C11_SOCKET.
+          CMUX_SOCKET_PATH    Legacy alias for the same. Loses to both above.
+          CMUX_SOCKET         Older alias for the same. Loses to all three above.
           C11_QUIET_DISCOVERY Set to 1 to suppress the stderr line c11 prints when auto-discovering a non-default socket.
         """
     }

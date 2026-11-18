@@ -904,14 +904,20 @@ final class QuitConfirmationPolicyTests: XCTestCase {
 
 final class UpdateChannelSettingsTests: XCTestCase {
     func testResolvedFeedFallsBackWhenInfoFeedMissing() {
-        let resolved = UpdateFeedResolver.resolvedFeedURLString(infoFeedURL: nil)
+        let resolved = UpdateFeedResolver.resolvedFeedURLString(
+            infoFeedURL: nil,
+            bundleIdentifier: "com.example.notc11h"
+        )
         XCTAssertEqual(resolved.url, UpdateFeedResolver.fallbackFeedURL)
         XCTAssertFalse(resolved.isNightly)
         XCTAssertTrue(resolved.usedFallback)
     }
 
     func testResolvedFeedFallsBackWhenInfoFeedEmpty() {
-        let resolved = UpdateFeedResolver.resolvedFeedURLString(infoFeedURL: "")
+        let resolved = UpdateFeedResolver.resolvedFeedURLString(
+            infoFeedURL: "",
+            bundleIdentifier: "com.example.notc11h"
+        )
         XCTAssertEqual(resolved.url, UpdateFeedResolver.fallbackFeedURL)
         XCTAssertFalse(resolved.isNightly)
         XCTAssertTrue(resolved.usedFallback)
@@ -919,7 +925,10 @@ final class UpdateChannelSettingsTests: XCTestCase {
 
     func testResolvedFeedUsesInfoFeedForStableChannel() {
         let infoFeed = "https://example.com/custom/appcast.xml"
-        let resolved = UpdateFeedResolver.resolvedFeedURLString(infoFeedURL: infoFeed)
+        let resolved = UpdateFeedResolver.resolvedFeedURLString(
+            infoFeedURL: infoFeed,
+            bundleIdentifier: "com.example.notc11h"
+        )
         XCTAssertEqual(resolved.url, infoFeed)
         XCTAssertFalse(resolved.isNightly)
         XCTAssertFalse(resolved.usedFallback)
@@ -927,7 +936,8 @@ final class UpdateChannelSettingsTests: XCTestCase {
 
     func testResolvedFeedDetectsNightlyFromInfoFeedURL() {
         let resolved = UpdateFeedResolver.resolvedFeedURLString(
-            infoFeedURL: "https://example.com/nightly/appcast.xml"
+            infoFeedURL: "https://example.com/nightly/appcast.xml",
+            bundleIdentifier: "com.example.notc11h"
         )
         XCTAssertEqual(resolved.url, "https://example.com/nightly/appcast.xml")
         XCTAssertTrue(resolved.isNightly)

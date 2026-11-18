@@ -1,0 +1,13 @@
+Defect 1 (early frames dropped), dumps from C11_SPIKE_HC_DUMP_DIR before the fix, 14:23 PDT. Reattach dumps hold only zsh's SIGWINCH redraw, no paint (CSI !p):
+2E8B4952-ch4.bin 54 b'\r\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jadmin@Manageds-Virtual-Machine ~ % '
+EF35540E-ch5.bin 54 (same)
+Only 83680B59-ch5.bin (559 bytes) starts with b'\x1b[!p\x1b[?2026l...' (that attach won the race).
+Python observe-viewer attach to t14 at 65x20 history 2000 (14:17 PDT): paint bytes 7843, 117 ticks from 21:14:00Z, 23 of them 21:15:00-22Z; c11's panel had none before 21:15:23Z (14:15:23 PDT).
+After the fix, 21:28:43Z: event=early_frames_replayed channel=3 frames=1 bytes=1834, and the ticker panel held all ticks (row13-after-resume.txt).
+
+Defect 8 (no reaper): `hc ls` after the second 200-panel run counted 373 terminal addresses; earlier hc-guest.sh core-stop / pkill failed with "fork failed: resource temporarily unavailable" and "exec request failed on channel 0".
+
+Defect 9 (flood memory), ps during the 500 MB flood (14:44 PDT):
+ 1558  38.8  55952 hc hold
+ 4183  52.8 288672 hc serve      <- 288 MB RSS
+22876 141.9 238368 c11

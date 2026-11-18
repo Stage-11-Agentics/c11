@@ -10,9 +10,154 @@ NOT on `manaflow-ai/ghostty` main. The PageList fix (section 8) is rebased on to
 ## Fork update checklist
 
 1) Make changes in `ghostty/`.
+   A new or changed C API goes in both `ghostty/include/ghostty.h` and c11's repo-root
+   `ghostty.h` (the copy the bridging header imports); with only the first, the app build
+   fails with "cannot find ... in scope".
 2) Commit and push to `Stage-11-Agentics/ghostty`.
 3) Update this file with the new change summary + conflict notes.
 4) In the parent repo: `git add ghostty` and commit the submodule SHA.
+
+## Kitty graphics: a per-surface direct-only switch (C11H-363)
+
+Branch `c11h/C11H-363-kitty-direct-only`, one commit on `cfdf3dce0` (`c11h/C11H-133-prefix-map-v2`),
+adds `ghostty_surface_config_s.kitty_graphics_direct_only` (appended last, off by default). With it
+on, a Kitty graphics query, or the first chunk of a transmit or transmit-and-display, whose medium
+is a file (`t=f`), a temporary file (`t=t`) or shared memory (`t=s`) is answered
+`EINVAL: unsupported medium` before `LoadingImage.init`: no path is resolved, opened, read or
+unlinked, and the reply carries only the command's own `i`, `I` and `p`, so it is the same for every
+path. Continuation chunks are data, never paths. Direct (`t=d`) images load as before.
+
+The value is copied onto `Terminal.kitty_graphics_direct_only` in `Surface.init`, after Termio init
+and before the IO thread starts or any embedder output is processed. It is a top-level `Terminal`
+field, not part of `flags`, so a full reset (`ESC c`) does not clear it. `newSurfaceOptions` carries
+it to inherited configs.
+
+Why: c11 feeds every hc terminal's output to Ghostty with `ghostty_surface_process_output`, and the
+replies go back as that program's input. For a terminal on another machine, path media let that
+machine test whether any path exists on this Mac and learn a readable file's exact size, block the
+output lane on a FIFO, force large reads, or unlink temp-folder files and shared-memory objects.
+c11 sets the switch on every hc (manual-IO) surface (`HCSurfaceNativeIO`); exec surfaces keep
+Ghostty's behaviour.
+
+The `kitty path media` tests cover an existing and a missing `t=f` path giving one reply (and
+different replies with the switch off), a `t=t` file under the temp folder that is refused and still
+exists afterwards, `t=f` and `t=s` transmits that store nothing, a direct image that still loads, and
+a full reset that keeps the switch. The admitted kit builder verifies that removing the guard fails
+them. On a future upstream sync keep the field and both call sites in `graphics_exec.zig`.
+Admitted kit gate `9270d2eee5174c5ab1c2feaa16aad6b1` (build host, 81 native tests, every mutation red,
+`kitty-direct-only` among them); fork commit `d5de3713a13ac65386a0a86ec033a85563e713cb`, archive SHA256
+`f68b76312fd0dabcbd1307358574ae7b888b23f351d8ac85c2244bf2e67046b0`, also in
+`scripts/ghosttykit-checksums.txt`.
+
+## Highway's file path carries no builder home
+
+Branch `c11h/C11H-133-prefix-map-v2` at `cfdf3dce00247effdac0764db88797fe315d8d10`, one commit on
+`ae28413c9` (`c11h/C11H-325-hyperlink-at`), adds `-ffile-prefix-map=<package root>=highway` to the
+C++ flags of the upstream highway sources in `pkg/highway/build.zig`. `HWY_ABORT` bakes `__FILE__`
+into the binary, and the package sits in the zig global cache under the builder's home, so a release
+carried that path. The shipped string is now `highway/hwy/targets.cc`. The same commit first sat on
+`8f851996b` as `c11h/C11H-133-prefix-map` (`34adc0154`); that branch stays. On a future sync, keep the
+flag unless upstream drops `__FILE__`.
+Admitted kit gate `ded3b5d034a64f01a18ce6a8f0a6319f` (build host, 76 native tests, every mutation red);
+archive SHA256 `e4010b4d84df4b3681c6f15ac20b8ea33fe4250b905fc95a9da43b597bff2ef7`, also in
+`scripts/ghosttykit-checksums.txt`.
+
+## Hyperlink lookup under a point (C11H-325)
+
+Branch `c11h/C11H-325-hyperlink-at` at `ae28413c99bfa03dd8472d36df12ccf29b806743`, one commit on
+`8f851996b` (`c11h/C11H-255-ff`), adds `ghostty_surface_hyperlink_at(surface, x, y, buf, cap)`.
+It returns the byte length of the OSC 8 URI on the cell under a view position (the same unscaled
+coordinates as `ghostty_surface_mouse_pos`; 0 for no link or a negative coordinate) and copies at
+most `cap` bytes, so a return above `cap` means truncated; a null buffer only measures. A point past
+the grid's right or bottom edge (the padding) reads the edge cell, as Ghostty's own `linkAtPos` and
+the mouse reports it sends the program do; the fork commit's doc comments still say "outside the
+viewport" and are corrected with its next change. It takes the
+renderer mutex, changes no link, selection or mouse state and reports nothing to the program.
+
+Why: Ghostty resolves link hover and link clicks only while it is not reporting the mouse (or
+Shift releases the grab). With a program holding the mouse (Claude Code fullscreen), c11 reads the
+cell's target itself so a plain or Cmd click on a c11 link reaches c11 (`CapturedPanelLinkClick`).
+
+The `hyperlink at viewport` test covers hit, miss, link end, a second row, rows and columns
+outside the viewport, truncation and measuring. The admitted kit builder verifies that reporting
+no link, or the truncated length, fails it. On a future sync keep the function; upstream has no
+equivalent query.
+Admitted kit gate `8ea6fc305f284a6f9192e02106d166c7` (build host, 76 native tests, both mutations red);
+archive SHA256 `98b34e0f877f0352e5576d29de9d5b1556462747363878289d83197f09a63e49`, also in
+`scripts/ghosttykit-checksums.txt`.
+
+## Surface creation does not wait for glyph-cache writers
+
+Branch `c11/surface-lock` at `e54aa97945d0e595e0f6a4707688a37963c07a04` removes the shared font-grid lock from
+renderer initialization's metrics copy. `SharedGrid` metrics are immutable after
+initialization, and `Surface.init` already owns a grid-set reference. This matches
+`setFontGrid`, which already reads metrics without acquiring the glyph-cache lock.
+Surface creation remains on the main thread; no attachment or input lifecycle changes.
+
+The `surface creation metrics` regression holds the grid's writer lock while
+calling the production initialization helper. Completion must occur before the
+writer is released. The admitted kit builder verifies that restoring the old
+shared lock fails this test, then restores the source and runs the green suite.
+Guest creation timings and rendered first-output evidence are recorded separately.
+The additive `ghostty_surface_font_size` C API returns the main-thread surface's
+requested font points, independently of pending renderer work or display scale.
+Creation inheritance uses it instead of reading a quicklook font face under the
+grid lock. It accepts a live surface on the app thread and returns zero for null.
+The native test exercises the production scalar helper under a held writer; injecting a
+shared lock must fail before the green suite runs. The Debug creation diagnostic
+also avoids quicklook. Existing APIs and struct layouts are unchanged.
+
+On a future sync, preserve both lock-free reads unless upstream removes the same
+contention. The test-only guest fixture is not in the shipping commit.
+
+## Additive manual-input and loaded-config APIs
+
+The c11 integration pins `216418f4afe8e1caf0c0d91b7365f55c339a87cc` on
+`c11/synchronous-input-encode`, based on `1fe92fa804821088cd01931fa0c47c0bfc16f6bd`.
+This branch is reviewed separately before pushing to `stage11`; the fork's
+`main` and classic c11's pointer remain unchanged.
+
+- `3129307c5fc52260c327b7d984119521f99cd3e1` adds
+  `ghostty_surface_encode_paste`. Manual surfaces can synchronously capture
+  canonical paste bytes and a separate unmodified Return without transmitting.
+  It snapshots terminal modes under the existing mutex, then unlocks before
+  encoding and calling back. Buffers are borrowed only during the callback;
+  false means no callback and no transmission. Existing input APIs are unchanged.
+- `21027b804712820d1e2155577a7c82636d1ad796` adds
+  `ghostty_config_visit_launch`. It visits loaded command/shell or ordered argv
+  and explicit config env entries, without reading process environment or
+  mutating configuration. Strings are borrowed only during each synchronous
+  callback. Both callbacks are required. Existing layouts and APIs are unchanged.
+- `cf8ccb9c14fa5bdc2eee10be8d6ef4757b83c3c7` adds
+  `ghostty_clipboard_request_get_type`. It reads the kind of a borrowed live
+  clipboard request before completion. Null arguments return false without
+  changing the output; the function does not consume or mutate the request.
+  This lets an embedder distinguish paste from OSC 52 reads while preserving
+  the existing completion path and every existing struct layout.
+
+- `a4bea3aef680b5a92d3e5b33aac00b70fabe4929` adds
+  `ghostty_config_visit_launch_fields`. It visits only loaded working-directory
+  and term, read-only, with bytes borrowed during the synchronous callback.
+  Null arguments refuse before visitation. It reads no process environment.
+
+- `216418f4afe8e1caf0c0d91b7365f55c339a87cc` adds
+  `ghostty_surface_encode_key`. Manual surfaces synchronously capture canonical
+  key bytes and an optional paired release, using one terminal-mode snapshot.
+  Modifier remaps and Option-as-Alt configuration are read without changing
+  key state. No bindings, selection changes or IO run; the callback borrows
+  bytes outside the terminal lock. Existing key APIs are unchanged.
+
+All changed Zig files pass `zig fmt --check`; the C header passes syntax checks.
+Admitted native gate `4ae2d44c2153424d956c1739ebf8bff7` ran all five new filters
+(73 tests passed) and built the universal kit. Clipboard null-output,
+launch-fields null-callback and key-release mutations failed their behavioral
+tests before restoration and the green run. Archive SHA256:
+`13bc9478f9ce52679692b5a920bc3d90e21f21e9eab7b74677c6594089cfc560`, also in
+`scripts/ghosttykit-checksums.txt`. This proves native unit tests and packaging;
+app integration and guest input proofs remain separate. Commits 3–5 await one
+combined review and push authorization; the first two are published.
+No existing behavior or ABI layout changed. The fork main and classic c11's
+pointer remain unchanged.
 
 ## Current fork changes
 

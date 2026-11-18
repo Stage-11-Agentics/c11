@@ -117,6 +117,13 @@ if [[ "${{FAKE_SPAWN_LEADER:-0}}" == "1" && -n "$sock" ]]; then
 fi
 exit 0
 """)
+        # The wrapper's per-user fallback folder comes from getconf; point it
+        # at this test's own root so no test touches the real one (C11H-364).
+        (tmp / "T").mkdir()
+        make_executable(wrapper_dir / "getconf", f"""#!/bin/sh
+[ "$1" = DARWIN_USER_TEMP_DIR ] && {{ echo "{tmp}/T/"; exit 0; }}
+exec /usr/bin/getconf "$@"
+""")
         make_executable(wrapper_dir / "c11", """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FAKE_C11_LOG"
 [[ "${1:-}" == "--socket" ]] && shift 2
@@ -262,15 +269,26 @@ def test_non_interactive_launch_is_untouched() -> None:
         run.close()
 
 
-def test_long_tmpdir_falls_back_to_tmp_for_the_socket() -> None:
+def test_long_tmpdir_falls_back_to_the_per_user_folder_for_the_socket() -> None:
+    # Not shared /tmp, where another account could take the name first (C11H-364).
     with tempfile.TemporaryDirectory(prefix="c11-grok-long-", dir="/tmp") as td:
         long_dir = Path(td) / ("d" * 70)
         long_dir.mkdir()
         run = Run([], tmpdir=str(long_dir))
         try:
-            expect(run.argv[2] == f"/tmp/c11-grok-leader-{run.pid}.sock", str(run.argv))
+            folder = run.tmp / "T" / "c11"
+            expect(run.argv[2] == f"{folder}/c11-grok-leader-{run.pid}.sock", str(run.argv))
+            expect(folder.is_dir() and (folder.stat().st_mode & 0o777) == 0o700, "per-user folder not 0700")
         finally:
             run.close()
+
+
+def test_shared_tmp_tmpdir_also_uses_the_per_user_folder() -> None:
+    run = Run([], tmpdir="/tmp")
+    try:
+        expect(run.argv[2] == f"{run.tmp}/T/c11/c11-grok-leader-{run.pid}.sock", str(run.argv))
+    finally:
+        run.close()
 
 
 def test_sidecar_failures_are_recorded_by_reason() -> None:

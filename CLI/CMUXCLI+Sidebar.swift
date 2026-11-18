@@ -139,7 +139,9 @@ extension CMUXCLI {
         let command = ([socketCommand] + forwardedArgs)
             .map(shellQuote)
             .joined(separator: " ")
-        return try sendV1Command(command, client: client)
+        // C11H-359: status values and log lines can come from another machine.
+        // The reply keeps its line structure; any other control prints as `\xHH`.
+        return HCCoreUtility.printable(try sendV1Command(command, client: client), keepLineFeeds: true)
     }
 
     /// Resolve only explicit workspace context for sidebar commands. CMUX is
@@ -202,6 +204,30 @@ extension CMUXCLI {
         }
         if let startup = payload["startup"] as? String {
             parts.append("startup=\(startup)")
+            if let dialog = payload["startup_dialog"] as? String {
+                parts.append("dialog=\(dialog)")
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+
+    func closePanelOKSummary(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
+        let summary = v2OKSummary(payload, idFormat: idFormat)
+        guard let panelID = (payload["panel_id"] as? String) ?? (payload["surface_id"] as? String),
+              let title = (payload["panel_title"] as? String) ?? (payload["surface_title"] as? String) else {
+            return summary
+        }
+
+        var parts = [summary]
+        let panelHandle = formatHandle(payload, kind: "panel", idFormat: idFormat)
+        if panelHandle?.contains(panelID) != true {
+            parts.append(panelID)
+        }
+        if let encodedTitle = try? JSONEncoder().encode(title),
+           let quotedTitle = String(data: encodedTitle, encoding: .utf8) {
+            parts.append(quotedTitle)
+        } else {
+            parts.append("\"\"")
         }
         return parts.joined(separator: " ")
     }

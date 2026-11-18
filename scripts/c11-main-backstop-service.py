@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install/update/stop only the independent Atlas main backstop; never the PR poller."""
+"""Install/update/stop only the independent build-host main backstop; never the PR poller."""
 import argparse
 import hashlib
 import json

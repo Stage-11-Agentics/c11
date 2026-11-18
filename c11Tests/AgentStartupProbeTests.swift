@@ -193,7 +193,7 @@ final class AgentStartupProbeTests: XCTestCase {
             try? input.fileHandleForWriting.close()
             fixture.waitUntilExit() // fixture self-terminates after ten seconds
         }
-        // Interpreter/PTY startup gets its own budget under Atlas build load.
+        // Interpreter/PTY startup gets its own budget under build-host load.
         // The fixture still self-terminates after ten seconds.
         let fixtureStartupDeadline = Date().addingTimeInterval(10)
         var recorded: [String: Any]?
@@ -270,4 +270,80 @@ final class AgentStartupProbeTests: XCTestCase {
         os.close(slave)
         os.close(master)
     """
+
+    // MARK: - Screen look (C11H-85)
+
+    private let startedResult = AgentStartupProbe.Result(
+        status: .started, process: .init(pid: 42, executable: "claude"))
+
+    func testStartedBehindTheTrustChooserIsWaitingOnADialog() {
+        let start = Date(timeIntervalSince1970: 100)
+        var clock = start
+        var reads = 0
+        let result = AgentStartupProbe.settleOnScreen(
+            startedResult, expectedKind: "claude-code", deadline: start.addingTimeInterval(8),
+            readScreen: {
+                reads += 1
+                // Process up, screen not drawn yet, then the chooser.
+                return reads < 3 ? .init(state: .unknown, dialog: nil) : .init(state: .dialog, dialog: .trust)
+            },
+            now: { clock }, sleep: { clock = clock.addingTimeInterval($0) })
+        XCTAssertEqual(result.status, .waitingDialog)
+        XCTAssertEqual(result.status.rawValue, "waiting_dialog")
+        XCTAssertEqual(result.dialog, "trust")
+        XCTAssertEqual(result.process, .init(pid: 42, executable: "claude"), "the process evidence is kept")
+        XCTAssertEqual(reads, 3)
+    }
+
+    func testStartedWithAComposerStaysStartedWithoutWaiting() {
+        let start = Date(timeIntervalSince1970: 100)
+        var clock = start
+        var pauses = 0
+        for state in [PromptInputState.empty, .suggestion, .draft] {
+            let result = AgentStartupProbe.settleOnScreen(
+                startedResult, expectedKind: "claude-code", deadline: start.addingTimeInterval(8),
+                readScreen: { .init(state: state, dialog: nil) },
+                now: { clock }, sleep: { _ in pauses += 1 })
+            XCTAssertEqual(result, startedResult, "\(state)")
+        }
+        XCTAssertEqual(pauses, 0)
+        XCTAssertEqual(clock, start)
+    }
+
+    func testAScreenThatNeverDrawsOrReadsKeepsStartedAfterTheSettleWindow() {
+        let start = Date(timeIntervalSince1970: 100)
+        var clock = start
+        let unreadable = AgentStartupProbe.settleOnScreen(
+            startedResult, expectedKind: "claude-code", deadline: start.addingTimeInterval(8),
+            readScreen: { nil }, now: { clock }, sleep: { clock = clock.addingTimeInterval($0) })
+        XCTAssertEqual(unreadable, startedResult)
+        XCTAssertEqual(clock.timeIntervalSince(start), 2.5, accuracy: 0.0001)
+
+        clock = start
+        let blank = AgentStartupProbe.settleOnScreen(
+            startedResult, expectedKind: "claude-code", deadline: start.addingTimeInterval(1),
+            readScreen: { .init(state: .unknown, dialog: nil) },
+            now: { clock }, sleep: { clock = clock.addingTimeInterval($0) })
+        XCTAssertEqual(blank, startedResult)
+        XCTAssertEqual(clock.timeIntervalSince(start), 1, accuracy: 0.0001, "never past the shared deadline")
+    }
+
+    func testOtherKindsAndUnstartedResultsAreNeverLookedAt() {
+        let deadline = Date(timeIntervalSince1970: 100).addingTimeInterval(8)
+        var reads = 0
+        let read: () -> AgentStartupProbe.ScreenRead? = { reads += 1; return .init(state: .dialog, dialog: .trust) }
+        XCTAssertEqual(
+            AgentStartupProbe.settleOnScreen(
+                .init(status: .started, process: .init(pid: 42, executable: "codex")),
+                expectedKind: "codex", deadline: deadline, readScreen: read,
+                now: { Date(timeIntervalSince1970: 100) }, sleep: { _ in }).status,
+            .started)
+        let pending = AgentStartupProbe.Result(status: .pending, process: nil)
+        XCTAssertEqual(
+            AgentStartupProbe.settleOnScreen(
+                pending, expectedKind: "claude-code", deadline: deadline, readScreen: read,
+                now: { Date(timeIntervalSince1970: 100) }, sleep: { _ in }),
+            pending)
+        XCTAssertEqual(reads, 0)
+    }
 }

@@ -1,0 +1,229 @@
+{
+ "hc_version": "0.1.16",
+ "hc_sha256": "5714074326b758dafd4215b0411c883b6600798750c75315d88ebc110cf2aa0a",
+ "captured": "2026-11-15, the build host, HC_SESSION=hc-lab-306, observe attach with history 0 (wave3-run/306/LAB.md)",
+ "paints": [
+  {
+   "file": "claude-empty.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "empty",
+   "note": "Claude idle after a turn: `❯`+NBSP, nothing typed, cursor at x=2 (ClaudeCaptures.narrowEmpty)."
+  },
+  {
+   "file": "claude-suggest.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "suggestion",
+   "note": "Claude's next-prompt suggestion in SGR 2, cursor on its first cell (ClaudeCaptures.narrowSuggestion)."
+  },
+  {
+   "file": "claude-draft.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "status check",
+   "note": "Upright typed text, cursor after it (ClaudeCaptures.narrowDraft)."
+  },
+  {
+   "file": "claude-dialog.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "dialog",
+   "note": "Folder-trust chooser, `No, exit` highlighted, cursor on that row, OSC 7501 state=blocked (recordedTrustScreen)."
+  },
+  {
+   "file": "claude-draft-typed.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "status check",
+   "note": "Drawn by the stand-in after `status check` was written as input on the 80x24 non-observe attach."
+  },
+  {
+   "file": "claude-draft-wide.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "日本語 ok",
+   "note": "Wide characters typed through hc input: three 2-cell CJK glyphs, cursor at x=11."
+  },
+  {
+   "file": "claude-draft-wrap.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "please review the composer guard and then the doorbell path, file by file, and report back",
+   "note": "A 90-character draft drawn as Ink draws it: hard rows, the continuation indented 2 (classifier reads it with a newline)."
+  },
+  {
+   "file": "claude-draft-softwrap.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "please review the composer guard and then the doorbell path, file by file, and report back",
+   "note": "The same draft written past the right margin so the terminal autowraps it (soft wrap), as the classifier's synthetic soft-wrap test assumes."
+  },
+  {
+   "file": "claude-doorbell.vt",
+   "harness": "claude-code",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "c11 mail waiting: run c11 mailbox recv --ack",
+   "note": "The doorbell line typed over the suggestion through hc input, no Return."
+  },
+  {
+   "file": "claude-suggest-120x40.vt",
+   "harness": "claude-code",
+   "cols": 120,
+   "rows": 40,
+   "expect": "suggestion",
+   "note": "Claude suggestion at 120x40 (the hold attach sets the size)."
+  },
+  {
+   "file": "codex-empty.vt",
+   "harness": "codex",
+   "cols": 80,
+   "rows": 24,
+   "expect": "empty",
+   "note": "`› ` with nothing after it. Synthetic: real Codex draws its placeholder whenever the composer is empty."
+  },
+  {
+   "file": "codex-suggest.vt",
+   "harness": "codex",
+   "cols": 80,
+   "rows": 24,
+   "expect": "suggestion",
+   "note": "Codex's faint `Ask Codex to do anything` placeholder, cursor at x=2 (WideComposerCaptures.codexEmpty)."
+  },
+  {
+   "file": "codex-draft.vt",
+   "harness": "codex",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "status check",
+   "note": "WideComposerCaptures.codexDraft at 80 columns."
+  },
+  {
+   "file": "codex-doorbell.vt",
+   "harness": "codex",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "c11 mail waiting: run c11 mailbox recv --ack",
+   "note": "The doorbell line typed over the placeholder through hc input, no Return."
+  },
+  {
+   "file": "grok-empty.vt",
+   "harness": "grok",
+   "cols": 80,
+   "rows": 24,
+   "expect": "empty",
+   "note": "Grok's boxed composer, empty, cursor at x=6 (GrokCaptures.emptyAfterEscape); alternate screen, bg #141414."
+  },
+  {
+   "file": "grok-suggest.vt",
+   "harness": "grok",
+   "cols": 80,
+   "rows": 24,
+   "expect": "suggestion",
+   "note": "Italic grey (SGR 3, 38;2;88;88;88) next-prompt suggestion, never faint, cursor on its first cell (GrokCaptures.suggestion)."
+  },
+  {
+   "file": "grok-draft.vt",
+   "harness": "grok",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "Reply with the one word ALPHA and stop.",
+   "note": "Upright typed text (GrokCaptures.typedDraft)."
+  },
+  {
+   "file": "grok-doorbell.vt",
+   "harness": "grok",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "c11 mail waiting: run c11 mailbox recv --ack",
+   "note": "The doorbell line typed over the italic suggestion through hc input (GrokCaptures.doorbellPasted)."
+  },
+  {
+   "file": "opencode-empty.vt",
+   "harness": "opencode",
+   "cols": 80,
+   "rows": 24,
+   "expect": "empty",
+   "note": "OpenCode's `┃` composer, empty, cursor at x=5 (WideComposerCaptures.openCodeEmpty); alternate screen."
+  },
+  {
+   "file": "opencode-suggest.vt",
+   "harness": "opencode",
+   "cols": 80,
+   "rows": 24,
+   "expect": "suggestion",
+   "note": "`Ask anything… \"Fix a TODO in the codebase\"` in a normal-weight grey, not faint (live OpenCode 1.18.30)."
+  },
+  {
+   "file": "opencode-draft.vt",
+   "harness": "opencode",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "status check",
+   "note": "WideComposerCaptures.openCodeDraft at 80 columns."
+  },
+  {
+   "file": "opencode-doorbell.vt",
+   "harness": "opencode",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "c11 mail waiting: run c11 mailbox recv --ack",
+   "note": "The doorbell line typed over the placeholder through hc input, no Return."
+  },
+  {
+   "file": "pi-empty.vt",
+   "harness": "pi",
+   "cols": 80,
+   "rows": 24,
+   "expect": "empty",
+   "note": "Pi's composer between two full-width rules, empty, cursor at x=0 (WideComposerCaptures.piEmpty)."
+  },
+  {
+   "file": "pi-suggest.vt",
+   "harness": "pi",
+   "cols": 80,
+   "rows": 24,
+   "expect": "suggestion",
+   "note": "Faint (SGR 2) text in Pi's composer, which the classifier reads as a suggestion. Pi draws none of its own; this is the classifier's shape."
+  },
+  {
+   "file": "pi-draft.vt",
+   "harness": "pi",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "status check",
+   "note": "WideComposerCaptures.piDraft at 80 columns."
+  },
+  {
+   "file": "pi-doorbell.vt",
+   "harness": "pi",
+   "cols": 80,
+   "rows": 24,
+   "expect": "draft",
+   "draft_text": "c11 mail waiting: run c11 mailbox recv --ack",
+   "note": "The doorbell line typed into the empty composer through hc input, no Return."
+  }
+ ]
+}

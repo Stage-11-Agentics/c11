@@ -109,17 +109,20 @@ This is a checklist trigger, not a CI gate.
 - `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
   (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
   the operator's prod c11.
-- To keep the Release build off the laptop, run it on Atlas instead:
+- To keep the Release build off the laptop, run it on the build host instead:
   `./scripts/remote-build.sh --tag rel-vX.Y.Z --mode release` runs the same
   `reloads.sh` there and returns the STAGING app (about 3 min on a fresh tag for
   v1.4.0). A fresh release worktree needs `git submodule update --init ghostty
   vendor/bonsplit` first, or remote-build refuses with "ghostty must be provisioned".
+  Every release tag (`rel-vX.Y.Z`, `release-local-vX.Y.Z`) is new on the build host, so under its
+  free-space floor the build stops with `refused new tag` (exit 73): prune a finished tag from the
+  list it prints, or set `C11_BUILD_HOST_FLOOR_GIB=<GiB>` for this deliberate build (logged).
   Launch it on the operator's Mac yourself as soon as it is built or replaced,
   without waiting to be asked: `env -i HOME="$HOME" open --env C11_QA_LAUNCH=fresh <app>`
   keeps the startup dialogs closed. The `env -i` matters: `open` from inside a c11
   terminal passes that shell's `C11_SOCKET*`, `CMUX_SOCKET*` and `C11_PANEL_ID` to
   the app, which then holds the daily c11's socket path. If a staging copy is
-  already running, ask the operator before quitting it. Prune both Atlas caches
+  already running, ask the operator before quitting it. Prune both build-host caches
   for the tag afterwards (c11-hotload, Tag hygiene).
 - Once the staging app is built and launched, write a **spin script** for it: one
   bash file the operator runs inside a staging terminal (staging accepts socket
@@ -148,13 +151,13 @@ This is a checklist trigger, not a CI gate.
     build-script changes AND only with explicit operator accept-the-risk).
 - Don't drift past this decision. Default is rebuild; deviating is explicit.
 
-6.7. Pre-build the release on Atlas, in parallel with staging and CI:
-- Releases build and publish on Atlas, so the operator's Mac can sleep. Atlas's `~/c11-release` is used only for those two runs (6.7 and step 10); commits, pushes, the release PR and its checks stay in your release-branch checkout.
-- On Atlas (over ssh), check out the tested head detached, with submodules: `cd ~/c11-release && git fetch origin release/vX.Y.Z && git checkout --detach <tested head> && git submodule update --init --recursive ghostty vendor/bonsplit`. Then run `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --dry-run vX.Y.Z` there. `--host local` builds in place through the same admission slots as `remote-build.sh`. It builds the production app (cold, wholemodule, Apple silicon only, Xcode 26.3; about 6-7 minutes), signs it with the Developer ID from the release keychain, rehearses every step up to notarization, and keeps the build in `build-release-local/vX.Y.Z/pristine` for the real run to reuse.
-- Run both Atlas commands in a login shell (`ssh atlas 'zsh -lc "…"'`, escaping `\$HOME`): a plain ssh command lacks `/opt/homebrew/bin`, and preflight stops with `missing tool: gh`.
+6.7. Pre-build the release on the signing host, in parallel with staging and CI:
+- Releases build and publish on the signing host (`C11_SIGNING_HOST` in `~/.config/c11/dev-hosts`), so the operator's Mac can sleep. Its release folder (a c11 checkout) is used only for those two runs (6.7 and step 10); commits, pushes, the release PR and its checks stay in your release-branch checkout.
+- On the signing host (over ssh), check out the tested head detached, with submodules: `cd <release folder> && git fetch origin release/vX.Y.Z && git checkout --detach <tested head> && git submodule update --init --recursive ghostty vendor/bonsplit`. Then run `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --dry-run vX.Y.Z` there. `--host local` builds in place through the same admission slots as `remote-build.sh`. It builds the production app (cold, wholemodule, Apple silicon only, Xcode 26.3; about 6-7 minutes), signs it with the Developer ID from the release keychain, rehearses every step up to notarization, and keeps the build in `build-release-local/vX.Y.Z/pristine` for the real run to reuse.
+- Run both signing-host commands in a login shell (`ssh <signing host> 'zsh -lc "…"'`, escaping `\$HOME`): a plain ssh command lacks `/opt/homebrew/bin`, and preflight stops with `missing tool: gh`.
 - The tree must be clean: a build that carried uncommitted files cannot be reused. Rerun 6.7 whenever the tested head changes.
 - The pristine build keeps its dSYMs, so the real run can upload them to Sentry when `SENTRY_AUTH_TOKEN` is set there.
-- Signing-keychain mode takes one launchd unlock lease of Atlas's release keychain and relocks it on every exit path. That keychain holds the Developer ID identity (team UKQ4QALWD4), the `acetate-notary` profile and the `c11mux` Sparkle key. Notarization uses `c11-notary`, else `acetate-notary` (`C11_NOTARY_PROFILE` picks one), and the log names the profile and team. Before the first release from a machine, run `scripts/atlas-signing-check.sh` and `scripts/move-sparkle-key-to-atlas.sh --check` from your own Mac, not from the Atlas shell: both drive Atlas over ssh, and Atlas cannot ssh to itself.
+- Signing-keychain mode takes one launchd unlock lease of the signing host's release keychain and relocks it on every exit path. That keychain holds the Developer ID identity (team UKQ4QALWD4), the `acetate-notary` profile and the `c11mux` Sparkle key. Notarization uses `c11-notary`, else `acetate-notary` (`C11_NOTARY_PROFILE` picks one), and the log names the profile and team. Before the first release from a machine, run `scripts/atlas-signing-check.sh` and `scripts/move-sparkle-key-to-atlas.sh --check` from your own Mac, not from the signing host's shell: both drive the signing host over ssh, and it cannot ssh to itself.
 
 7. Create release PR:
 - `gh pr create --title "Release vX.Y.Z" --body "..."`
@@ -199,8 +202,10 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 - **If you tagged the wrong commit:** nothing is published until step 10 finishes. Stop the release run, delete the tag in both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), re-verify the gate, then re-tag and push.
 
 10. Publish with `scripts/release-local.sh`:
-- On Atlas, fetch the new tag into `~/c11-release` and check it is the tested commit before running: `git fetch origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z && test "$(git rev-parse 'vX.Y.Z^{commit}')" = "$SHA" && git checkout --detach vX.Y.Z` (the script requires the tag locally). Then: `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --reuse-build vX.Y.Z`. It reuses the 6.7 build after checking its identity (commit, unsigned executable hash, bundle id, Xcode pin, arm64 app, CLI and helper), then signs, notarizes the app and the DMG, generates and verifies the appcast, publishes the GitHub release, and dispatches the Homebrew cask update. About 2-3 minutes, most of it Apple's notarization. Without a 6.7 build, drop `--reuse-build` and it builds first (about 7 more minutes).
+- On the signing host, fetch the new tag into the release folder and check it is the tested commit before running: `git fetch origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z && test "$(git rev-parse 'vX.Y.Z^{commit}')" = "$SHA" && git checkout --detach vX.Y.Z` (the script requires the tag locally). Then: `C11_SIGNING_KEYCHAIN=$HOME/Library/Keychains/acetate-release.keychain-db scripts/release-local.sh --host local --reuse-build vX.Y.Z`. It reuses the 6.7 build after checking its identity (commit, unsigned executable hash, bundle id, Xcode pin, arm64 app, CLI and helper), then signs, notarizes the app and the DMG, generates and verifies the appcast, publishes the GitHub release, and dispatches the Homebrew cask update. About 2-3 minutes, most of it Apple's notarization. Without a 6.7 build, drop `--reuse-build` and it builds first (about 7 more minutes).
+- **Linux machines (C11H-392).** A release can carry a Linux host's hc and relay CLI. Before 6.7, build the CLI for Linux at the tested head in a disposable Linux box (`tools/linux-cli/build.sh --static`), and take hc from the Linux host's `hc-build.sh` output (`~/hc-build/out/v<version>-x86_64-linux-musl/herdr-core` in its build user's home, beside `build.json`), whose hash `Resources/hc/hc-source.json` pins under `remote.linux-x86_64` (`kept` says where). A rebuild elsewhere can hash differently (the host C compiler counts); keep that file, or commit and review a new pin before the release. Put both in one folder as `herdr-core` and `c11` on the signing host and add `--remote-artifacts <folder>` to both `release-local.sh` runs: the app names them by hash before it is signed, and they publish with the release (`herdr-core-linux-x86_64`, `c11-linux-x86_64`, `c11-linux-checksums.txt`). Without it the app carries no Linux files, and Add Machine refuses Linux hosts.
 - The summary prints each step's seconds and appends them to `build-release-local/timings.jsonl`. Add the release's row to `docs/release-speed.md`.
+- Add the signed helper's hash (the published app's `Contents/Resources/hc-pin.json` `executableSHA256`, the helper hashed to match) with the version, build number and commit to `HCCoreBinary.shippedHelperSHA256` on `main`, in a PR the same day, so a later build adopts this release's cores (C11H-394).
 - Confirm the release exists in GitHub Releases, is neither a draft nor a prerelease, and includes `c11-macos.dmg`.
 - `gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name` prints `vX.Y.Z`, and `releases/latest/download/appcast.xml` serves `X.Y.Z` with the new build number.
 
@@ -219,7 +224,7 @@ The tag goes on the tested release-branch head, never on a merge into `main`. `m
 A hotfix branches from the shipped tag, not from `main`:
 
 - `git checkout -b release/vX.Y.(Z+1) vX.Y.Z`, then `git cherry-pick -x` each fix from `main`.
-- A base tag from before the Atlas release path (1.7.0 and earlier) still starts `release.yml` on a tag push and lacks the release tooling. Bring both from `main` in one commit before staging: `git checkout origin/main -- .github/workflows/release.yml scripts/`. The hotfix then ships Apple silicon only, like every release after 1.7.0. The tag gate in step 9 refuses a tested head without it.
+- A base tag from before the local release path (1.7.0 and earlier) still starts `release.yml` on a tag push and lacks the release tooling. Bring both from `main` in one commit before staging: `git checkout origin/main -- .github/workflows/release.yml scripts/`. The hotfix then ships Apple silicon only, like every release after 1.7.0. The tag gate in step 9 refuses a tested head without it.
 - Then run the normal flow on that branch: a patch bump, a changelog section, staging, checks, the tag gate on the tested head, and the merge back.
 - A hotfix is valid only while `vX.Y.Z` is the newest shipped release. A hotfix tag takes `releases/latest` and gets a higher build number, so Sparkle would offer it to users already on a newer release. If a newer release has shipped, stop and ask the operator.
 - On the merge back, `main`'s `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` win in `project.pbxproj`. Place the hotfix's changelog section by date, below `[Unreleased]` and any newer release sections.
@@ -253,7 +258,7 @@ Updates both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (build number). T
 
 **Default policy:** bump the minor version unless the user explicitly asks for patch or major.
 
-## GitHub fallback (Atlas unavailable)
+## GitHub fallback (signing host unavailable)
 
 `release.yml` runs the same job on a GitHub `macos-26` runner (Xcode 26.3, arm64) when the local path cannot run. It starts only by hand, on an existing tag:
 
@@ -267,8 +272,8 @@ It takes about 25-35 minutes. `release-local.sh` refuses to publish while a `rel
 ## Local release notes
 
 - `scripts/release-local.sh --help` lists the options; `.claude/commands/release-local.md` walks through a run.
-- A real run needs an Atlas build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin (2630, Xcode 26.3).
-- Without `C11_SIGNING_KEYCHAIN` the script signs from the login keychain of the Mac running it, and without `--host local` it builds on Atlas over ssh, so it can also run from the operator's Mac.
+- A real run needs a signing-host build whose `DTXcode` matches the script's `RELEASE_DTXCODE` pin (2630, Xcode 26.3).
+- Without `C11_SIGNING_KEYCHAIN` the script signs from the login keychain of the Mac running it, and without `--host local` it builds on the build host (`C11_REMOTE_HOST`) over ssh, so it can also run from the operator's Mac.
 - Releases are Apple silicon only; 1.7.0 is the last build for Intel Macs. The appcast step fails closed unless an arm64-only item carries the hardware requirement and the information-only guard for older updaters.
 - The guards match CI's: existing release assets are never overwritten (`scripts/release_asset_guard.js`), and the release stays a draft until every asset is verified, so the `latest` slot always carries `appcast.xml`.
 

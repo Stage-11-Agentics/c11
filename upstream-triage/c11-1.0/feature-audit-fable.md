@@ -5,10 +5,10 @@ Independent audit, 2026-10-01. Read-only. c11 citations are against `origin/main
 ## 1. Verdict in five lines
 
 1. Build the lifecycle **fold**, not the journal **file**. The three incidents behind the journal (blocked looks like finished, waiting dies on restart, a late hook leaves an agent stuck on working) are fixed by typed per-tab state with an app-assigned sequence, persisted in the session snapshot c11 already writes. The durable append-only file with a synchronous ack and a spool is the C11-188 attractor, and its unique value (replay from a log, 14-day history) has no named consumer that a snapshot verb and the existing events stream do not serve.
-2. Agents on remote hosts is a 1.x product, not a 1.0 feature. #490 just removed the only command channel, the persistent PTY holder is a port of about 2,600 lines of Go that cmux is still patching, and option A builds a Hyperion-owned daemon on a machine that already runs a full c11.app. Ship the smoke test, status truth and reattach in 1.0; ship the holder once, as federation's first step, after 1.0.
+2. Agents on remote hosts is a 1.x product, not a 1.0 feature. #490 just removed the only command channel, the persistent PTY holder is a port of about 2,600 lines of Go that cmux is still patching, and option A builds a laptop-owned daemon on a machine that already runs a full c11.app. Ship the smoke test, status truth and reattach in 1.0; ship the holder once, as federation's first step, after 1.0.
 3. The Feed is worth it in its small form: one typed ask per tab, a CLI list, oldest-first ⌥V, flags in the menu bar, and text replies that re-read the screen first. Menu-key answering and banner buttons are "if time". The screen classifier is 1.x.
 4. The grab list's hardening batch (4.1, 4.3, 4.4, 4.7, `rpc`, `guide`), stable tab numbers (4.2) and restore on the right account (4.11) are core and cheap. Groups, Recently Closed, the URL allowlist and passkeys are the items to let slip.
-5. Six weeks is enough for the above plus the bug harvest, provided C11-216 (builds on Atlas) lands in week one. It is still in backlog today (`lattice show C11-216`: "Status: backlog"). Without it the fleet throttles on Hyperion's one-build lock and the plan loses a week.
+5. Six weeks is enough for the above plus the bug harvest, provided C11-216 (builds on the build host) lands in week one. It is still in backlog today (`lattice show C11-216`: "Status: backlog"). Without it the fleet throttles on the laptop's one-build lock and the plan loses a week.
 
 Totals: 22 core, 18 if time, 20 1.x, 2 cut.
 
@@ -49,19 +49,19 @@ Legend. Atin / Public: H, M, L. Size: my estimate, with the report's estimate in
 
 | # | Item | Atin | Public | Size | Risk | Cheaper alternative | Verdict |
 |---|---|---|---|---|---|---|---|
-| R0 | Smoke-test today's `c11 ssh` against Atlas; make the skill tell the truth | H: nothing has exercised it since the fork beyond CI's `remote-daemon-tests` (`.github/workflows/ci.yml:63`) and the docker suites in `tests_v2/test_ssh_remote_*.py` | M | S | May already be broken | | **core** |
-| R1 | Persistent PTY holder in `c11d-remote`, harvested from cmux's Go daemon | H: survives a lid close | L: public users have no Atlas | L [M to L] | c11's daemon is 1,136 non-test lines (`daemon/remote/cmd/c11d-remote/main.go` 1,105, `cli.go` 31). cmux's is 14,299, with `ws_pty.go` at 2,637 and `main.go` at 3,251. `ws_pty.go` has carried fixes steadily from July to September (`git log upstream/main -- …/ws_pty.go`: #8643, #8677, #9111, 05f3e1a0a9, four September hardening commits). This is a port, not a cherry-pick. Replay-mid-escape artifacts, resize races and orphaned slots are the known failure classes | tmux on a c11-owned socket (R1b), which `Resources/bin/c11-spawn-agent` already does on Atlas (C11-37, done) | **1.x** |
-| R1b | Interim holder: `tmux -L c11`, status off, no user config, reattached by `c11 ssh atlas` | H | L | S to M | The scrollback, mouse and escape-passthrough problems the Overwatch seat work hit. Acceptable for agents nobody types into | | **if time** |
+| R0 | Smoke-test today's `c11 ssh` against the build host; make the skill tell the truth | H: nothing has exercised it since the fork beyond CI's `remote-daemon-tests` (`.github/workflows/ci.yml:63`) and the docker suites in `tests_v2/test_ssh_remote_*.py` | M | S | May already be broken | | **core** |
+| R1 | Persistent PTY holder in `c11d-remote`, harvested from cmux's Go daemon | H: survives a lid close | L: public users have no build host | L [M to L] | c11's daemon is 1,136 non-test lines (`daemon/remote/cmd/c11d-remote/main.go` 1,105, `cli.go` 31). cmux's is 14,299, with `ws_pty.go` at 2,637 and `main.go` at 3,251. `ws_pty.go` has carried fixes steadily from July to September (`git log upstream/main -- …/ws_pty.go`: #8643, #8677, #9111, 05f3e1a0a9, four September hardening commits). This is a port, not a cherry-pick. Replay-mid-escape artifacts, resize races and orphaned slots are the known failure classes | tmux on a c11-owned socket (R1b), which `Resources/bin/c11-spawn-agent` already does on the build host (C11-37, done) | **1.x** |
+| R1b | Interim holder: `tmux -L c11`, status off, no user config, reattached by `c11 ssh <build-host>` | H | L | S to M | The scrollback, mouse and escape-passthrough problems the Overwatch seat work hit. Acceptable for agents nobody types into | | **if time** |
 | R2 | Command channel multiplexed over the ssh stdio link | M | L | M [M] | #490 removed the forwarding path; `WorkspaceRemoteCLIRelayServer` now refuses every command after auth (`Sources/Workspace.swift:3118-3130`). This is a rebuild of a security-sensitive surface in a public product. Head-of-line blocking behind proxy traffic | None if R1 is deferred: there is nothing to carry | **1.x** |
 | R3 | Scoped, deny-by-default dispatch on the Mac | M | L | M [M] | 242 socket methods to classify (`Sources/SocketHandlers/SystemHandlers.swift:26-292`). cmux's `RemoteRelayCommandPolicy` is 233 lines plus a routing schema, and it took three PRs to land. New methods must default to denied or the hole reopens | Report-only verbs (`set-agent`, `set-status`, `set-description`, `raise-flag`, lifecycle hooks) is a six-method allowlist, S, if R1b ships | **1.x** |
 | R4 | Remote CLI verbs generated from a shared table, wrappers uploaded to `~/.c11/bin`, the `--settings` merge | M | L | M [M] | Go and Swift CLIs drifting; Claude's last-`--settings`-wins | | **1.x** |
 | R5 | Host-aware status: skip `kill(pid, 0)` eviction and `ps -t` detection for remote tabs; a "link down" state | H: today a remote agent's status is evicted by the Mac sweep (`Sources/WorkspaceManager.swift:1200-1225`; `Sources/AgentDetector.swift:7`) | M | S | Stale working after a silent remote death | | **core** |
 | R6 | Persist remote workspaces, reconnect and reattach on restart | H: today they are dropped from the snapshot (`Sources/WorkspaceManager.swift:5639`, `.filter { !$0.isRemoteWorkspace }`) | M | M [M] | Restart while the link is down | Type the stored resume command when the holder is gone (already host-agnostic) | **if time** |
-| R7 | Per-tab host model | M: `launch-agent --host atlas` is what an orchestrator wants | L | L [L] | Remote configuration is a `@Published` property of `Workspace` (`Sources/Workspace.swift:4998, 7602`) with its own session controller; moving it to the tab touches the model, sidebar, tree and skill right after the C11-248 rename and while the sidebar is under hang investigation (C11-197, C11-202 both backlog) | One remote workspace per host, which is what exists | **1.x** |
-| R8 | `c11 move <tab> --to host` (Claude, then Codex) | M: rare moment | L | M + S [M + S] | cmux's mover is about 940 lines across `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentMove/` and ignores `CLAUDE_CONFIG_DIR`; Atin's three profiles and Atlas's different username are new ground. Code applied before data, no rollback, in cmux | `rsync` the transcript and `claude --resume` by hand on the other side | **1.x** |
+| R7 | Per-tab host model | M: `launch-agent --host <build-host>` is what an orchestrator wants | L | L [L] | Remote configuration is a `@Published` property of `Workspace` (`Sources/Workspace.swift:4998, 7602`) with its own session controller; moving it to the tab touches the model, sidebar, tree and skill right after the C11-248 rename and while the sidebar is under hang investigation (C11-197, C11-202 both backlog) | One remote workspace per host, which is what exists | **1.x** |
+| R8 | `c11 move <tab> --to host` (Claude, then Codex) | M: rare moment | L | M + S [M + S] | cmux's mover is about 940 lines across `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentMove/` and ignores `CLAUDE_CONFIG_DIR`; Atin's three profiles and the build host's different username are new ground. Code applied before data, no rollback, in cmux | `rsync` the transcript and `claude --resume` by hand on the other side | **1.x** |
 | R9 | Prime transport override for Overwatch seats | M | L | S [S] | Needs R2 and R3 first; Prime's stdio quality is unverified | PR comments, which work today | **1.x** |
-| R10 | Federation: Atlas's c11.app owns the agents, Hyperion attaches | H: this is the end state both reports name | L | XL | State-of-record inversion, cross-instance auth | | **1.x** |
-| R11 | **New.** A read-only cross-host fleet view: Hyperion's c11 polls `c11 tree --report` and `flag.list` on Atlas's c11 over ssh and shows an "Atlas" section in the sidebar with marks, flags and jump-to-Screen-Sharing | H: Atlas already runs c11.app with full citizenship (`overwatch/SEAT-MODEL.md` §1, C11-244); the missing piece is one sidebar for both machines | L | M | Polling cost; read-only so no security surface | This is federation step 0 and what the phone rung 3 wants too | **if time** |
+| R10 | Federation: The build host's c11.app owns the agents, the laptop attaches | H: this is the end state both reports name | L | XL | State-of-record inversion, cross-instance auth | | **1.x** |
+| R11 | **New.** A read-only cross-host fleet view: The laptop's c11 polls `c11 tree --report` and `flag.list` on the build host's c11 over ssh and shows an "the build host" section in the sidebar with marks, flags and jump-to-Screen-Sharing | H: The build host already runs c11.app with full citizenship (`overwatch/SEAT-MODEL.md` §1, C11-244); the missing piece is one sidebar for both machines | L | M | Polling cost; read-only so no security surface | This is federation step 0 and what the phone rung 3 wants too | **if time** |
 
 ### The grab list (report 06)
 
@@ -104,14 +104,14 @@ Legend. Atin / Public: H, M, L. Size: my estimate, with the report's estimate in
 
 | # | Item | Atin | Public | Size | Risk | Verdict |
 |---|---|---|---|---|---|---|
-| X1 | C11-216: c11 builds on Atlas | H | none | M | Still "backlog" in Lattice; nothing started. Every other item queues behind Hyperion's build lock until it lands | **core**, week 1 |
+| X1 | C11-216: c11 builds on the build host | H | none | M | Still "backlog" in Lattice; nothing started. Every other item queues behind the laptop's build lock until it lands | **core**, week 1 |
 | X2 | `send` draft guard: refuse to type when the prompt line holds unsent operator text or the agent is blocked on a dialog, with a clear error (cmux `surface.input_state`, `cmuxCLITests/CLISendDraftGuardTests.swift`) | H: Atin types in one pane while agents `send` into others | M | S | The same screen check F3a needs | **if time** |
 | X3 | Events cursor that survives restart, with a `gap` flag (cmux #15030); c11's `seq` resets per process | M: Overwatch's heartbeat loop | L | S | None | **if time** |
 | X4 | Mailbox delivery through hooks instead of PTY injection (cmux #15279) | H, but C11-257 is already in progress on this | M | M | Overlap with C11-257 | **1.x**, fold into C11-257 |
 
 ## 3. The six-week 1.0
 
-Assumptions: 6 to 8 Codex and Grok workers, cross-family reviews, builds and soaks on Atlas, two Atin sign-off passes. The bug harvest takes about two workers for the first two weeks and tapers.
+Assumptions: 6 to 8 Codex and Grok workers, cross-family reviews, builds and soaks on the build host, two Atin sign-off passes. The bug harvest takes about two workers for the first two weeks and tapers.
 
 **What ships in 1.0.0:**
 - Lifecycle truth: J1, J3, J4, J5, J8, J10, with F1 merged into J1.
@@ -124,10 +124,10 @@ Assumptions: 6 to 8 Codex and Grok workers, cross-family reviews, builds and soa
 
 | Week | Critical path | In parallel |
 |---|---|---|
-| 1 | **X1 Atlas builds.** Record real hook sequences from a tagged build (Claude in bypass and normal mode, Codex, Grok) as the fixture corpus for J1 | F0 and P0 as one bug batch (point release). Grab batch 1: 4.1, 4.3, 4.4, 4.7, 4.9a (3 or 4 PRs, Grok). R0 smoke test against Atlas. Bug track A (Ghostty patch set, Codex) |
+| 1 | **X1 the build host builds.** Record real hook sequences from a tagged build (Claude in bypass and normal mode, Codex, Grok) as the fixture corpus for J1 | F0 and P0 as one bug batch (point release). Grab batch 1: 4.1, 4.3, 4.4, 4.7, 4.9a (3 or 4 PRs, Grok). R0 smoke test against the build host. Bug track A (Ghostty patch set, Codex) |
 | 2 | J1 design review (cross-family, before code), then J1 implementation. Acceptance criteria name the three incidents and nothing else | 4.2 stable refs. 4.11 restore accounts. Bug tracks B and C. J3 Claude hooks |
 | 3 | J1 lands behind the existing `activity` writer, so nothing downstream changes until the fold is trusted. J4 Codex hooks, J5 transcript events | F2a. R5 and R6. Bug tracks D and E. J10 doctrine sentence and skill updates |
-| 4 | J8 consumers: `lifecycle.changed`, `c11 agents --json`, clocks. F3a text replies. First integrated dev build on Atlas | 4.20 lock, 4.13 or 4.15 (one worker each). First 40-agent, 48-hour soak on Atlas with hang telemetry |
+| 4 | J8 consumers: `lifecycle.changed`, `c11 agents --json`, clocks. F3a text replies. First integrated dev build on the build host | 4.20 lock, 4.13 or 4.15 (one worker each). First 40-agent, 48-hour soak on the build host with hang telemetry |
 | 5 | **Atin sign-off pass 1.** Fixes from it | F2b or F3b if the pass is clean. R1b if time. Localization pass for every new string (six locales, parallel sub-agents) |
 | 6 | Freeze. Second soak (72 h). **Sign-off pass 2.** Release engineering, skill sync (`scripts/sync-installed-skills.sh`), 1.0.0 | Groups do not start in week 6 |
 
@@ -155,17 +155,17 @@ The strongest honest case:
 
 1. The command channel was removed yesterday. #490 turned `WorkspaceRemoteCLIRelayServer` into a refusing endpoint (`Sources/Workspace.swift:3118-3130`). Slices 2 to 4 rebuild a remote-to-Mac command surface, deny by default, in a public product, inside the same release that just closed a hole in the old one. That deserves its own release and its own security review.
 2. The holder is a port, and the source is still moving. c11's daemon is 1,136 non-test lines; cmux's is 14,299. The persistent PTY lives in a 2,637-line `ws_pty.go` with fixes landing through September. Nothing in c11 has exercised the daemon since the fork beyond unit tests.
-3. It builds the wrong direction. Both reports say the end state is federation: Atlas's c11.app owns its agents and Hyperion attaches. Atlas already runs c11.app with full citizenship (the Overwatch seat model puts the orchestrator inside it; C11-244 runs Tart guests there). Option A spends L to XL on a Hyperion-owned daemon on Atlas, then federation retires it. The PTY holder gets built twice.
-4. The public gets nothing. Public users have no Atlas and no tailnet; Linux hosts are a 1.0 stretch by D12. Every remote slice is Atin-only value in 1.0.
+3. It builds the wrong direction. Both reports say the end state is federation: The build host's c11.app owns its agents and the laptop attaches. The build host already runs c11.app with full citizenship (the Overwatch seat model puts the orchestrator inside it; C11-244 runs Tart guests there). Option A spends L to XL on a laptop-owned daemon on the build host, then federation retires it. The PTY holder gets built twice.
+4. The public gets nothing. Public users have no build host and no tailnet; Linux hosts are a 1.0 stretch by D12. Every remote slice is Atin-only value in 1.0.
 5. The per-tab host model (L) rewires `Workspace` while the C11-248 rename is a week old and the sidebar has two open hang tickets.
-6. The interim already exists. `Resources/bin/c11-spawn-agent` runs Claude in `tmux -L agents` on Atlas today (C11-37 done). The gap is sidebar citizenship, and a read-only cross-host view (R11) closes most of it with no daemon and no security surface.
+6. The interim already exists. `Resources/bin/c11-spawn-agent` runs Claude in `tmux -L agents` on the build host today (C11-37 done). The gap is sidebar citizenship, and a read-only cross-host view (R11) closes most of it with no daemon and no security surface.
 
-**Does it win?** For 1.0, yes. Ship R0, R5, R6 and the skill truth; put R11 in the "if time" lane; defer every daemon slice. It does not win for 1.x: Atin's direction is agents off Hyperion, a holder is needed eventually, and C11-186's detachable surfaces need the same component. Build it once, on the Atlas side, as federation's P1.
+**Does it win?** For 1.0, yes. Ship R0, R5, R6 and the skill truth; put R11 in the "if time" lane; defer every daemon slice. It does not win for 1.x: Atin's direction is agents off the laptop, a holder is needed eventually, and C11-186's detachable surfaces need the same component. Build it once, on the build host side, as federation's P1.
 
 ## 5. Dependencies and sequencing
 
 **What unlocks what:**
-- X1 (Atlas builds) unlocks the fleet. It is first and it has not started.
+- X1 (the build host builds) unlocks the fleet. It is first and it has not started.
 - The fixture corpus (recorded hook sequences from a tagged build) unlocks J1. The AAR's amplifier 2 was "no empirical oracle"; record before designing.
 - J1 unlocks F1 (same field), F2a, F3a, J8, and the `c11 agents --json` verb Overwatch and the phone both read.
 - J3, J4, J5 feed J1 but can land in any order behind it.
@@ -193,7 +193,7 @@ The strongest honest case:
 | D3 | A plain NDJSON journal file | The session snapshot for state; the existing events stream for history (`lifecycle.changed`) | One file substrate, not two |
 | D4 | Transcript reading yes, screen reading later | Transcript reading yes, scoped to turn edges for Codex and Grok. Do not promise screen reading in 1.0 docs | J9 is an open-ended target |
 | D9 | A remote agent is a tab | One remote workspace per host in 1.0, which is what exists | Per-tab is L on a freshly renamed model; moot if federation is the end state |
-| D10 | c11's Go daemon holds the terminals, ported from cmux | No holder work in 1.0. tmux on a c11-owned socket if time. The Go holder is built once, Atlas-side, after 1.0 | Section 4 |
+| D10 | c11's Go daemon holds the terminals, ported from cmux | No holder work in 1.0. tmux on a c11-owned socket if time. The Go holder is built once, build-host-side, after 1.0 | Section 4 |
 | D11 | No federation in 1.0; build so it follows | Agree, and build the read-only cross-host view (R11) as federation step 0 instead of option A's channel | It is what Overwatch and the phone want, with no security surface |
 | D16 | Cmd+[ and Cmd+] become focus history everywhere; browser Back and Forward move | Focus history on those keys except when a browser tab is focused | Cmd+[ is browser Back in every macOS browser; retraining public users for a feature they may not use is a cost. Context-dependent chords are normal on macOS |
 | D21 | Measure the sidebar in P3 | Measure in P1 | Groups depend on the answer |
@@ -214,7 +214,7 @@ Decisions I agree with and would not reopen: D5, D6, D7, D8, D12, D13, D14, D15,
 
 **What 1.0 should have that cmux does not:**
 1. **`c11 agents --json`**: one verb returning, per tab, kind, model, state, reason, since, flag, suppressed, host and `last_seen_at`. Overwatch, the phone view and any orchestrator read this instead of scraping `tree` plus `get-metadata` plus `read-screen`. cmux has no equivalent; its Feed and journal are two separate reads.
-2. **A fleet soak as a release gate**: 40 agents, 72 hours, on Atlas, with hang telemetry and memory curves, before 1.0.0 is cut. Green tests are not a working product. cmux ships without this and its changelog shows it.
+2. **A fleet soak as a release gate**: 40 agents, 72 hours, on the build host, with hang telemetry and memory curves, before 1.0.0 is cut. Green tests are not a working product. cmux ships without this and its changelog shows it.
 3. **The skill as the contract, verifiable**: `c11 guide` printing the skill that matches the running build, and the installed-copy check in `c11 doctor`. cmux has `guide`; c11 has the sync problem that makes it matter.
 4. **Flags with answers**: `flag.lowered` carrying the reply text and `resolution: answered`. cmux has no flag model at all.
 5. **A cross-host fleet view** (R11) that composes existing primitives over ssh, with no daemon, no account and no relay.

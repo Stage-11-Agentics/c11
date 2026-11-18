@@ -222,7 +222,8 @@ final class AgentConfigLibraryViewModel: ObservableObject {
             if let id = draft.sourceId {
                 var file = store.current
                 if let i = file.configs.firstIndex(where: { $0.id == id }) {
-                    let updated = SavedAgentConfig(id: id, name: name, order: file.configs[i].order, config: config)
+                    let updated = SavedAgentConfig(id: id, name: name, order: file.configs[i].order, config: config,
+                                                   machine: draft.machine)
                     file.configs[i] = updated
                     try store.write(file)
                     reload()
@@ -231,7 +232,8 @@ final class AgentConfigLibraryViewModel: ObservableObject {
                 // The id vanished (deleted out from under us): fall through to add
                 // rather than silently reporting a save that never happened.
             }
-            let stored = try store.add(SavedAgentConfig(id: "", name: name, order: 0, config: config))
+            let stored = try store.add(SavedAgentConfig(id: "", name: name, order: 0, config: config,
+                                                        machine: draft.machine))
             reload()
             return stored
         } catch {
@@ -299,6 +301,8 @@ struct EditorDraft: Equatable {
     var sourceId: String?
     var name: String
     var config: AgentLaunchConfig
+    /// C11H-138: nil asks, `local` is this Mac, else hc's machine name.
+    var machine: String? = nil
 
     var resolvedName: String {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
@@ -317,7 +321,7 @@ struct EditorDraft: Equatable {
     }
 
     static func from(_ saved: SavedAgentConfig) -> EditorDraft {
-        EditorDraft(sourceId: saved.id, name: saved.name, config: saved.config)
+        EditorDraft(sourceId: saved.id, name: saved.name, config: saved.config, machine: saved.machine)
     }
 }
 
@@ -695,7 +699,9 @@ struct AgentConfigEditorSheet: View {
         guard let saved = persistDraft() else { return }
         // Never silently no-op (design MINOR-5): keep the sheet open + explain
         // when there is nothing to launch into or the recipe can't launch.
-        switch AppDelegate.shared?.launchSavedAgentConfig(saved) ?? .noWorkspace {
+        // Save & Launch is the operator's (C11H-260).
+        let result = PanelLineage.shared.withOrigin(.operator) { AppDelegate.shared?.launchSavedAgentConfig(saved) }
+        switch result ?? .noWorkspace {
         case .launched:
             onClose(false) // launched — do not return to the popover
         case .noWorkspace:
@@ -771,6 +777,7 @@ struct AgentConfigRecipeEditor: View {
                 providerField
                 modelField
                 effortField
+                machineField
                 harnessField
                 systemPromptField
                 advancedField
@@ -1332,6 +1339,32 @@ struct AgentConfigRecipeEditor: View {
 
     private func axisOff(_ text: String) -> some View {
         Text(text).font(.system(size: 10.5)).foregroundStyle(Color(white: 0.29)).padding(.vertical, 6)
+    }
+
+    /// C11H-138: where this config launches. "Ask" shows the machine picker
+    /// when another machine is linked; a machine name skips it.
+    private var machineField: some View {
+        let linked = MachinePicker.liveMachines().keys.sorted()
+        var names = linked
+        if let saved = draft.machine, saved != SavedAgentConfig.localMachine,
+           !names.contains(where: { $0.caseInsensitiveCompare(saved) == .orderedSame }) {
+            names.append(saved)
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            fieldLabel(String(localized: "agentConfigEditor.machine", defaultValue: "Machine"),
+                       trailing: overrideChip(draft.machine != nil))
+            FlowChipsRaw {
+                chip(label: String(localized: "agentConfigEditor.machine.ask", defaultValue: "Ask"),
+                     selected: draft.machine == nil) { draft.machine = nil }
+                chip(label: String(localized: "agentConfigEditor.machine.thisMac", defaultValue: "This Mac"),
+                     selected: draft.machine == SavedAgentConfig.localMachine) { draft.machine = SavedAgentConfig.localMachine }
+                ForEach(names, id: \.self) { name in
+                    chip(label: MachineRoster.shared.entry(id: name)?.name ?? HCMachineTarget.displayName(name),
+                         selected: draft.machine?.caseInsensitiveCompare(name) == .orderedSame) { draft.machine = name }
+                }
+            }
+        }
+        .accessibilityIdentifier("AgentConfigEditorMachine")
     }
 
     private func chip(label: String, selected: Bool, action: @escaping () -> Void) -> some View {

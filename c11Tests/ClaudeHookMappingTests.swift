@@ -132,6 +132,23 @@ final class ClaudeHookMappingTests: XCTestCase {
         XCTAssertEqual(compact.snapshot?.phase, working.phase)
     }
 
+    /// C11H-322: a verified SessionStart puts its session at the prompt, so
+    /// the `compact` start Claude fires mid-turn after auto-compaction (in the
+    /// process already running that turn) must record nothing.
+    func testACompactSessionStartRecordsNothing() throws {
+        var compact = base()
+        compact["source"] = "compact"
+        XCTAssertNil(ClaudeHookMapping.map(subcommand: "session-start", object: compact))
+        for source in ["startup", "resume", "clear"] {
+            var object = base()
+            object["source"] = source
+            let draft = try owned("session-start", object, panel: panelA)
+            XCTAssertEqual(draft.kind, .sessionStarted, source)
+            XCTAssertEqual(draft.nativeEvent, "SessionStart", source)
+        }
+        XCTAssertEqual(try owned("session-start", base(), panel: panelA).kind, .sessionStarted, "no source: an older Claude")
+    }
+
     func testSessionEndIgnoresAnUnrelatedPromptID() throws {
         let start = try owned("session-start", base(), panel: panelA)
         let working = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1).snapshot)

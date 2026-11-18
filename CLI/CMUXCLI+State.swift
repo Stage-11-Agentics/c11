@@ -68,8 +68,12 @@ extension CMUXCLI {
             params["out"] = out
         }
         let response = try client.sendV2(method: "session.save", params: params)
+        // A refused or failed --out copy fails the command, after the
+        // canonical save it did make is reported (C11H-364 L16).
+        let outError = (response["out_error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         if jsonOutput {
             print(jsonString(response))
+            if let outError { throw CLIError(message: outError) }
             return
         }
         let path = response["snapshot_path"] as? String ?? "?"
@@ -77,6 +81,9 @@ extension CMUXCLI {
         let workspaces = response["workspaces"] as? Int ?? 0
         let panels = response["terminal_panels"] as? Int ?? 0
         let refs = response["refs"] as? Int ?? 0
+        if let outError {
+            throw CLIError(message: outError + " " + String(localized: "cli.state.save.snapshotKept", defaultValue: "The session snapshot itself was saved to \(path)."))
+        }
         print("OK state save")
         print("  snapshot: \(path)")
         if let out = response["out_path"] as? String { print("  copy: \(out)") }
@@ -90,7 +97,7 @@ extension CMUXCLI {
         let appSupport = (NSSearchPathForDirectoriesInDomains(
             .applicationSupportDirectory, .userDomainMask, true
         ).first) ?? (NSHomeDirectory() + "/Library/Application Support")
-        return appSupport + "/c11/session-com.stage11.c11.json"
+        return appSupport + "/\(C11Identity.stateDirectoryName)/session-\(C11Identity.releaseBundleIdentifier).json"
     }
 
     /// Claude Code's per-project transcript directory slug: every character

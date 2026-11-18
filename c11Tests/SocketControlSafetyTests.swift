@@ -141,46 +141,419 @@ final class SocketControlIsLocalDevBuildTests: XCTestCase {
     }
 }
 
-/// `LaunchResumePicker.resolveEffectivePolicy` — QA launch overrides win; a
-/// local dev build replaces a stored `.ask` picker with silent `.always`
-/// restore; an explicit operator policy is otherwise honored. The absent
-/// default and the Option launch are covered by `LaunchResumePolicyTests`.
+/// C11H-38: resume is the default and nothing blocks. A launch holds or skips
+/// the resume of ended conversations only by an explicit choice (Option held,
+/// or "On launch" set in Settings), and `C11_QA_LAUNCH` beats both.
 final class LaunchResumeGateTests: XCTestCase {
-    func testQAResumeForcesAlways() {
-        XCTAssertEqual(
-            LaunchResumePicker.resolveEffectivePolicy(qa: .on(.resume), persisted: .ask, isLocalDevBuild: false),
-            .always)
+    private func decide(_ qa: QALaunchPolicy = .off, _ persisted: LaunchResumePolicy = .always,
+                        option: Bool = false) -> LaunchResumeDecision {
+        LaunchResumePicker.decide(qa: qa, persisted: persisted, optionHeld: option)
     }
 
-    func testQAFreshForcesNever() {
-        XCTAssertEqual(
-            LaunchResumePicker.resolveEffectivePolicy(qa: .on(.fresh), persisted: .ask, isLocalDevBuild: false),
-            .never)
+    func testResumeIsTheDefault() {
+        XCTAssertEqual(decide(), .resume)
+        XCTAssertTrue(decide().resumesConversations)
+        XCTAssertTrue(decide().restoresSession)
     }
 
-    func testDevBuildTurnsAskIntoSilentAlways() {
-        XCTAssertEqual(
-            LaunchResumePicker.resolveEffectivePolicy(qa: .off, persisted: .ask, isLocalDevBuild: true),
-            .always)
+    func testOptionHeldOffersTheChoiceForThisLaunchWhateverTheSetting() {
+        XCTAssertEqual(decide(option: true), .ask(.optionHeld))
+        XCTAssertEqual(decide(.off, .never, option: true), .ask(.optionHeld))
+        XCTAssertFalse(decide(option: true).resumesConversations, "nothing resumes until the operator answers")
+        XCTAssertTrue(decide(option: true).restoresSession, "asking never holds back restore or live terminals")
     }
 
-    func testReleaseBuildKeepsAskPicker() {
-        XCTAssertEqual(
-            LaunchResumePicker.resolveEffectivePolicy(qa: .off, persisted: .ask, isLocalDevBuild: false),
-            .ask)
+    func testTheSettingsMapToTheThreeWords() {
+        XCTAssertEqual(decide(.off, .always), .resume)
+        XCTAssertEqual(decide(.off, .ask), .ask(.setting))
+        XCTAssertEqual(decide(.off, .never), .startFresh(.setting))
     }
 
-    func testExplicitNeverHonoredEvenOnDevBuild() {
-        // A dev build must not resurrect a session the operator opted out of.
-        XCTAssertEqual(
-            LaunchResumePicker.resolveEffectivePolicy(qa: .off, persisted: .never, isLocalDevBuild: true),
-            .never)
+    func testQALaunchBeatsOptionAndTheSetting() {
+        XCTAssertEqual(decide(.on(.resume), .never, option: true), .resume)
+        XCTAssertEqual(decide(.on(.fresh), .always, option: true), .startFresh(.qaLaunch))
+        XCTAssertFalse(decide(.on(.fresh)).restoresSession, "a QA fresh launch restores nothing, as before")
     }
 
-    func testExplicitAlwaysHonored() {
-        XCTAssertEqual(
-            LaunchResumePicker.resolveEffectivePolicy(qa: .off, persisted: .always, isLocalDevBuild: false),
-            .always)
+    func testStartFreshAppliesNoSnapshotSoRunningTerminalsGoToRecovered() {
+        XCTAssertFalse(decide(.off, .never).restoresSession)
+        XCTAssertFalse(decide(.off, .never).resumesConversations, "start fresh never resumes ended conversations")
+    }
+
+    func testOptionAndShiftTogetherStartFreshForThisLaunch() {
+        let both = LaunchResumePicker.decide(qa: .off, persisted: .always, optionHeld: true, shiftHeld: true)
+        XCTAssertEqual(both, .startFresh(.optionShiftHeld))
+        XCTAssertEqual(LaunchResumePicker.decide(qa: .off, persisted: .always, optionHeld: false, shiftHeld: true),
+                       .resume, "Shift alone does nothing")
+        XCTAssertEqual(LaunchResumePicker.decide(qa: .on(.resume), persisted: .never, optionHeld: true, shiftHeld: true),
+                       .resume, "QA still wins")
+    }
+
+    func testStoredValuesReadAsTheSameThreeWordsAsC11() {
+        let suite = "c11h38.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(LaunchResumePolicy.current(defaults: defaults), .always, "unset resumes")
+        for stored in ["", "  ", "banana"] {
+            defaults.set(stored, forKey: LaunchResumePolicy.defaultsKey)
+            XCTAssertEqual(LaunchResumePolicy.current(defaults: defaults), .always, "stored '\(stored)'")
+        }
+        defaults.set(" Never ", forKey: LaunchResumePolicy.defaultsKey)
+        XCTAssertEqual(LaunchResumePolicy.current(defaults: defaults), .never)
+        defaults.set("ask", forKey: LaunchResumePolicy.defaultsKey)
+        XCTAssertEqual(LaunchResumePolicy.current(defaults: defaults),
+                       LaunchResumePolicy.offersAskOption ? .ask : .always)
+        XCTAssertEqual(LaunchResumePolicy.defaultsKey, "c11.launch.resumePolicy")
+    }
+}
+
+/// Parking the resume of ended conversations while the operator chooses.
+@MainActor
+final class LaunchResumeParkingTests: XCTestCase {
+    private func gate(asking: Bool) -> LaunchResumeGate {
+        let gate = LaunchResumeGate()
+        gate.releaseStagger = 0
+        gate.begin(asking: asking)
+        return gate
+    }
+
+    private func park(_ gate: LaunchResumeGate, _ id: UUID, ran: XCTestExpectation? = nil,
+                      _ log: @escaping (UUID) -> Void = { _ in }) -> Bool {
+        gate.intercept(panelID: id, workspaceTitle: "W", panelTitle: id.uuidString) {
+            log(id); ran?.fulfill()
+        }
+    }
+
+    func testANonAskingLaunchNeverParksAnything() {
+        let gate = gate(asking: false)
+        XCTAssertFalse(park(gate, UUID()))
+        XCTAssertTrue(gate.held.isEmpty)
+    }
+
+    /// The real entry a launch resume takes before it types, with a recording
+    /// sink standing in for the typing.
+    private func submit(_ gate: LaunchResumeGate, _ id: UUID = UUID(), scoped: Bool = true,
+                        record: @escaping () -> Void) async {
+        await gate.submit(panelID: id, workspaceTitle: "W", panelTitle: "P", launchScoped: scoped) { record() }
+    }
+
+    func testALaunchResumeIsNotTypedWhileAskingAndTypedOnceAfterAnAffirmativeChoice() async {
+        let gate = gate(asking: true)
+        var typed = 0
+        let typedOnce = expectation(description: "typed once")
+        await submit(gate) { typed += 1; typedOnce.fulfill() }
+        XCTAssertEqual(typed, 0, "nothing is typed before the operator chooses")
+        XCTAssertEqual(gate.held.count, 1)
+        gate.resumeAll()
+        await fulfillment(of: [typedOnce], timeout: 5)
+        XCTAssertEqual(typed, 1)
+    }
+
+    func testALaunchResumeIsNeverTypedAfterNotNow() async {
+        let gate = gate(asking: true)
+        var typed = 0
+        await submit(gate) { typed += 1 }
+        gate.decline()
+        await submit(gate) { typed += 1 }
+        XCTAssertEqual(typed, 0, "not now drops what was parked and what arrives later")
+    }
+
+    func testAManualResumeIsNeverParked() async {
+        let gate = gate(asking: true)
+        var typed = 0
+        await submit(gate, scoped: false) { typed += 1 }
+        XCTAssertEqual(typed, 1, "a manual resume runs even while the launch is asking")
+        XCTAssertTrue(gate.held.isEmpty)
+    }
+
+    func testAStartupRecoveryStaysSubjectToTheAnswerWhateverTheElapsedTime() async {
+        let gate = gate(asking: true)
+        var typed = 0
+        await submit(gate) { typed += 1 }
+        XCTAssertEqual(typed, 0, "unanswered: parked, with no timer to let it through")
+        XCTAssertEqual(gate.held.count, 1)
+
+        gate.decline()
+        // Nothing in the gate reads a clock; a recovery that finishes minutes
+        // or hours after the question is still dropped.
+        await submit(gate) { typed += 1 }
+        XCTAssertEqual(typed, 0, "declined: a late startup recovery is still dropped")
+    }
+
+    func testAMarkedTerminalsResolutionIsLaunchScopedUntilItsRecoveryIsSettled() {
+        var marks = LaunchRestoreMarks()
+        let restored = UUID(), fresh = UUID()
+        marks.mark(restored)
+
+        XCTAssertFalse(marks.isStartupResolution(restored, resolved: false), "still unresolved: not its resolution yet")
+        XCTAssertTrue(marks.isStartupResolution(restored, resolved: true), "however late the backend answers")
+        XCTAssertTrue(marks.isStartupResolution(restored, resolved: true), "reading it spends nothing")
+        XCTAssertFalse(marks.isStartupResolution(fresh, resolved: true), "a terminal the launch did not restore")
+    }
+
+    func testAPlanReleasedToBeRetriedKeepsItsStartupScope() {
+        // The replacement could not attach yet (no launch spec or window), so
+        // the plan is released and made again when the panel attaches.
+        var marks = LaunchRestoreMarks()
+        let id = UUID()
+        marks.mark(id)
+
+        marks.consume(id)                                  // planned
+        marks.planReleased(id, wasStartup: true)           // could not attach: released
+        XCTAssertTrue(marks.isStartupResolution(id, resolved: true), "the retry is still this launch's")
+
+        marks.consume(id)                                  // planned again, and this time it holds
+        XCTAssertFalse(marks.isStartupResolution(id, resolved: true),
+                       "a genuine end later in the session is ordinary recovery")
+    }
+
+    func testAReleasedPlanThatWasNotStartupDoesNotBecomeOne() {
+        var marks = LaunchRestoreMarks()
+        let id = UUID()
+        marks.planReleased(id, wasStartup: false)          // a mid-session end that could not attach yet
+        XCTAssertFalse(marks.isStartupResolution(id, resolved: true))
+    }
+
+    func testASurvivorsMarkIsSpentSoALaterEndIsNotScoped() {
+        var marks = LaunchRestoreMarks()
+        let id = UUID()
+        marks.mark(id)
+        marks.consume(id)       // resolved live: no recovery needed
+        XCTAssertFalse(marks.isStartupResolution(id, resolved: true), "its later end is not this launch's")
+    }
+
+    func testAnAskingLaunchParksUntilTheOperatorAnswers() {
+        let gate = gate(asking: true)
+        let a = UUID(), b = UUID()
+        XCTAssertTrue(park(gate, a))
+        XCTAssertTrue(park(gate, a), "the same panel is held once")
+        XCTAssertTrue(park(gate, b))
+        XCTAssertEqual(Set(gate.held.map(\.id)), [a, b])
+        XCTAssertEqual(gate.held.count, 2)
+    }
+
+    func testResumeAllRunsEverythingHeldAndLetsLaterOnesThrough() async {
+        let gate = gate(asking: true)
+        let ran = expectation(description: "both resumed"); ran.expectedFulfillmentCount = 2
+        XCTAssertTrue(park(gate, UUID(), ran: ran))
+        XCTAssertTrue(park(gate, UUID(), ran: ran))
+        gate.resumeAll()
+        await fulfillment(of: [ran], timeout: 5)
+        XCTAssertTrue(gate.held.isEmpty)
+        XCTAssertEqual(gate.phase, .resumeAll)
+        XCTAssertFalse(park(gate, UUID()), "a later arrival after Resume all resumes as it comes")
+    }
+
+    func testChoosingResumesOnlyThoseAndLeavesTheRestAndLaterOnesAlone() async {
+        let gate = gate(asking: true)
+        let keep = UUID(), skip = UUID()
+        var resumed: [UUID] = []
+        let ran = expectation(description: "chosen resumed")
+        XCTAssertTrue(park(gate, keep, ran: ran) { resumed.append($0) })
+        XCTAssertTrue(park(gate, skip) { resumed.append($0) })
+        gate.resume(only: [keep])
+        await fulfillment(of: [ran], timeout: 5)
+        XCTAssertEqual(resumed, [keep])
+        XCTAssertTrue(park(gate, UUID()), "after choosing, later arrivals are not resumed")
+    }
+
+    func testNotNowResumesNothingNowOrLater() {
+        let gate = gate(asking: true)
+        var resumed = 0
+        XCTAssertTrue(park(gate, UUID()) { _ in resumed += 1 })
+        gate.decline()
+        XCTAssertTrue(gate.held.isEmpty)
+        XCTAssertTrue(park(gate, UUID()) { _ in resumed += 1 })
+        XCTAssertEqual(resumed, 0)
+        XCTAssertEqual(gate.phase, .declined)
+    }
+}
+
+/// What the banner says, from what the launch did. It reports; it decides nothing.
+@MainActor
+final class LaunchResumeReportTests: XCTestCase {
+    private var now = Date(timeIntervalSince1970: 1_000)
+
+    private func makeReport() -> LaunchResumeReport {
+        LaunchResumeReport(clock: { [unowned self] in self.now })
+    }
+
+    private func skip(_ why: String = "no transcript") -> LaunchResumeReport.Outcome {
+        .skipped(workspaceTitle: "Reviews", panelTitle: "Codex", reason: why)
+    }
+
+    func testNothingResumedMeansNoBanner() {
+        let report = makeReport()
+        XCTAssertNil(report.headline, "before launch decides")
+        report.begin(.resume)
+        XCTAssertNil(report.headline, "a clean launch with nothing ended says nothing")
+    }
+
+    func testCountsEachResumedPanelOnceAndSaysSoInSingularAndPlural() {
+        let report = makeReport()
+        report.begin(.resume)
+        let a = UUID(), b = UUID(), c = UUID()
+        report.record(panelID: a, outcome: .resumed)
+        XCTAssertEqual(report.headline, "Resumed 1 session.")
+        report.record(panelID: a, outcome: .resumed)
+        report.record(panelID: b, outcome: .resumed)
+        report.record(panelID: c, outcome: .resumed)
+        XCTAssertEqual(report.headline, "Resumed 3 sessions.")
+    }
+
+    func testSkippedPanelsAreReportedAndNeverCountedAsResumed() {
+        let report = makeReport()
+        report.begin(.resume)
+        report.record(panelID: UUID(), outcome: .resumed)
+        report.record(panelID: UUID(), outcome: .resumed)
+        let skipped = UUID()
+        report.record(panelID: skipped, outcome: skip())
+        XCTAssertEqual(report.headline, "Resumed 2 sessions. 1 session was not resumed.")
+        XCTAssertEqual(report.skipped.map(\.reason), ["no transcript"])
+
+        report.record(panelID: UUID(), outcome: skip("panel in use"))
+        XCTAssertEqual(report.headline, "Resumed 2 sessions. 2 sessions were not resumed.")
+
+        // A later retry that succeeds moves the panel from skipped to resumed.
+        report.record(panelID: skipped, outcome: .resumed)
+        XCTAssertEqual(report.headline, "Resumed 3 sessions. 1 session was not resumed.")
+    }
+
+    /// C11H-99: after an in-place update every agent kept running. None is a
+    /// skip, so the banner never says "not resumed" for them.
+    func testAgentsThatKeptRunningAreNeverReportedAsNotResumed() {
+        let report = makeReport()
+        report.begin(.resume)
+        let kept = (0..<12).map { _ in UUID() }
+        for panel in kept { report.record(panelID: panel, outcome: .kept) }
+        XCTAssertEqual(report.headline, "12 agents kept running.")
+        XCTAssertEqual(report.keptCount, 12)
+        XCTAssertEqual(report.resumedCount, 0)
+        XCTAssertTrue(report.skipped.isEmpty, "no Details list of skips")
+        XCTAssertFalse(report.headline?.contains("not resumed") ?? true)
+    }
+
+    /// A panel skipped before hc said its agent was still running ends as
+    /// kept, and the counts stay separate from real resumes and skips.
+    func testAKeptAgentReplacesAnEarlierSkipAndCountsApart() {
+        let report = makeReport()
+        report.begin(.resume)
+        let codex = UUID()
+        report.record(panelID: codex, outcome: skip("transcript unverified"))
+        XCTAssertEqual(report.headline, "1 session was not resumed.")
+        report.record(panelID: codex, outcome: .kept)
+        XCTAssertEqual(report.headline, "1 agent kept running.")
+        XCTAssertTrue(report.skipped.isEmpty)
+        report.record(panelID: UUID(), outcome: .resumed)
+        report.record(panelID: UUID(), outcome: skip())
+        report.record(panelID: UUID(), outcome: .kept)
+        XCTAssertEqual(report.headline, "Resumed 1 session. 1 session was not resumed. 2 agents kept running.")
+        XCTAssertEqual(LaunchResumeReport.headline(mode: .resumed, resumed: 0, skipped: 0, kept: 0), nil)
+    }
+
+    func testOnlySkipsStillReports() {
+        let report = makeReport()
+        report.begin(.resume)
+        report.record(panelID: UUID(), outcome: skip())
+        XCTAssertEqual(report.headline, "1 session was not resumed.")
+    }
+
+    func testOutcomesAfterTheLaunchWindowAreNotThisLaunchs() {
+        let report = makeReport()
+        report.begin(.resume)
+        now = now.addingTimeInterval(LaunchResumeReport.launchWindow + 1)
+        report.record(panelID: UUID(), outcome: .resumed)
+        XCTAssertNil(report.headline, "a manual resume an hour later is not part of the launch report")
+    }
+
+    /// C11H-99 on an Ask launch: one agent kept running and one session ended.
+    /// The keep is recorded once, while the ask strip waits; choosing to
+    /// resume (Resume all, or Choose…) counts it with what is resumed.
+    func testAnAgentKeptWhileAskingIsCountedOnceTheOperatorChoosesToResume() {
+        let report = makeReport()
+        report.begin(.ask(.optionHeld))
+        let kept = UUID()
+        report.record(panelID: kept, outcome: .kept)
+        XCTAssertNil(report.headline, "the ask strip owns the line while asking")
+        report.startCounting()
+        XCTAssertEqual(report.headline, "1 agent kept running.")
+        report.record(panelID: UUID(), outcome: .resumed)
+        XCTAssertEqual(report.headline, "Resumed 1 session. 1 agent kept running.")
+        XCTAssertEqual(report.keptCount, 1)
+        XCTAssertTrue(report.skipped.isEmpty)
+    }
+
+    /// Only this launch's ask carries: a later launch, or a resume launch that
+    /// never asked, starts with nothing kept.
+    func testKeptAgentsCarryOnlyFromThisLaunchsAsk() {
+        let report = makeReport()
+        report.begin(.ask(.optionHeld))
+        report.record(panelID: UUID(), outcome: .kept)
+        report.begin(.resume)
+        XCTAssertEqual(report.keptCount, 0)
+        XCTAssertNil(report.headline)
+        report.startCounting()
+        XCTAssertEqual(report.keptCount, 0, "a second startCounting does not invent kept agents")
+    }
+
+    func testAskCountsOnlyAfterTheOperatorChoosesToResume() {
+        let report = makeReport()
+        report.begin(.ask(.optionHeld))
+        report.record(panelID: UUID(), outcome: .resumed)
+        XCTAssertNil(report.headline, "the ask banner belongs to the gate")
+        report.startCounting()
+        report.record(panelID: UUID(), outcome: .resumed)
+        XCTAssertEqual(report.headline, "Resumed 1 session.")
+        XCTAssertEqual(LaunchResumeReport.askHeadline(count: 1), "1 session ended while c11 was closed.")
+        XCTAssertEqual(LaunchResumeReport.askHeadline(count: 4), "4 sessions ended while c11 was closed.")
+        XCTAssertNil(LaunchResumeReport.askHeadline(count: 0))
+    }
+
+    func testStartFreshCountsTheRunningTerminalsThatWentToRecovered() {
+        let report = makeReport()
+        report.begin(.startFresh(.setting))
+        XCTAssertEqual(report.headline, "Started fresh.")
+        let a = UUID()
+        report.noteRecovered(panelID: a)
+        XCTAssertEqual(report.headline, "Started fresh. 1 running terminal is in the Recovered workspace.")
+        report.noteRecovered(panelID: a)
+        report.noteRecovered(panelID: UUID())
+        report.noteRecovered(panelID: UUID())
+        XCTAssertEqual(report.headline, "Started fresh. 3 running terminals are in the Recovered workspace.")
+        report.record(panelID: UUID(), outcome: .resumed)
+        XCTAssertEqual(report.headline, "Started fresh. 3 running terminals are in the Recovered workspace.",
+                       "a start-fresh launch ignores resume outcomes")
+    }
+
+    func testStartFreshSaysNothingWithoutASessionToSkipOrATerminalToRecover() {
+        let report = makeReport()
+        report.begin(.startFresh(.setting), hadPreviousSession: false)
+        XCTAssertNil(report.headline, "first launch, nothing recovered")
+        report.noteRecovered(panelID: UUID())
+        XCTAssertNotNil(report.headline, "a running terminal that went to Recovered is always worth saying")
+        report.begin(.startFresh(.qaLaunch))
+        report.noteRecovered(panelID: UUID())
+        XCTAssertNil(report.headline, "automation is never told")
+    }
+
+    func testRecoveredTerminalsAreOnlyCountedOnAStartFreshLaunch() {
+        let report = makeReport()
+        report.begin(.resume)
+        report.noteRecovered(panelID: UUID())
+        XCTAssertEqual(report.recoveredCount, 0)
+    }
+
+    func testDismissHidesItAndABeginStartsOver() {
+        let report = makeReport()
+        report.begin(.resume)
+        report.record(panelID: UUID(), outcome: .resumed)
+        report.dismiss()
+        XCTAssertNil(report.headline)
+        report.record(panelID: UUID(), outcome: .resumed)
+        XCTAssertNil(report.headline, "a dismissed banner stays dismissed")
+        report.begin(.resume)
+        XCTAssertEqual(report.resumedCount, 0)
+        XCTAssertTrue(report.skipped.isEmpty)
     }
 }
 
@@ -192,66 +565,88 @@ final class LaunchResumeGateTests: XCTestCase {
 /// shared default) and the per-bundle namespacing defense-in-depth.
 final class SocketCollisionResolutionTests: XCTestCase {
 
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
     func testStagingDoesNotAdoptInheritedProdSocketPath() {
-        // The exact incident: staging bundle, ambient CMUX_SOCKET_PATH == prod's
-        // shared socket. Must fall through to staging's own default, never prod's.
+        // A staging bundle launched beside c11h inherits c11h's socket. It must
+        // bind staging's own path, never c11h's, even when the path is c11h's
+        // Application Support socket.
+        let foreign = "/tmp/c11h.sock"
         let path = SocketControlSettings.socketPath(
-            environment: ["CMUX_SOCKET_PATH": SocketControlSettings.stableDefaultSocketPath],
-            bundleIdentifier: "com.stage11.c11.staging.rel.v0.54.0",
+            environment: ["CMUX_SOCKET_PATH": foreign],
+            bundleIdentifier: "com.stage11.c11.staging",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
-        XCTAssertEqual(path, "/tmp/c11-staging.sock")
-        XCTAssertNotEqual(path, SocketControlSettings.stableDefaultSocketPath)
+        XCTAssertEqual(path, C11Identity.stagingSocketPath)
+        XCTAssertNotEqual(path, foreign)
     }
+    // c11-2.0:end-keep
 
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
     func testDebugDoesNotAdoptInheritedStagingSharedSocketPath() {
-        // Cross-channel inheritance the other direction (debug from a staging pane).
         let path = SocketControlSettings.socketPath(
-            environment: ["CMUX_SOCKET_PATH": "/tmp/c11-staging.sock"],
+            environment: ["CMUX_SOCKET_PATH": "/tmp/c11h-staging.sock"],
             bundleIdentifier: "com.stage11.c11.debug",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
-        XCTAssertEqual(path, "/tmp/c11-debug.sock")
+        XCTAssertEqual(path, C11Identity.debugSocketPath)
     }
+    // c11-2.0:end-keep
 
-    func testExplicitOptInStillAdoptsForeignPath() {
-        // CMUX_ALLOW_SOCKET_OVERRIDE is the intentional escape hatch (used by
-        // scripts/test-unit-local.sh) and must still win.
-        let path = SocketControlSettings.socketPath(
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
+    func testExplicitOptInStillRefusesAForeignPath() {
+        let foreign = "/tmp/c11h.sock"
+        let refused = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": SocketControlSettings.stableDefaultSocketPath,
+                "CMUX_SOCKET_PATH": foreign,
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
             bundleIdentifier: "com.stage11.c11.staging",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
-        XCTAssertEqual(path, SocketControlSettings.stableDefaultSocketPath)
+        XCTAssertEqual(refused, C11Identity.stagingSocketPath)
+
+        let own = "/tmp/c11-custom.sock"
+        let adopted = SocketControlSettings.socketPath(
+            environment: [
+                "C11_SOCKET_PATH": own,
+                "C11_ALLOW_SOCKET_OVERRIDE": "1",
+            ],
+            bundleIdentifier: "com.stage11.c11.staging",
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        XCTAssertEqual(adopted, own)
     }
+    // c11-2.0:end-keep
 
     func testTaggedStagingOverrideStillHonored() {
-        // A tag-specific override path is launch-script intent, not inheritance,
-        // and is not a shared default — the tagged-build workflow is unaffected.
+        let own = "/tmp/c11-staging-my-tag.sock"
         let path = SocketControlSettings.socketPath(
-            environment: ["CMUX_SOCKET_PATH": "/tmp/c11-staging-my-tag.sock"],
+            environment: ["CMUX_SOCKET_PATH": own],
             bundleIdentifier: "com.stage11.c11.staging.my-tag",
             isDebugBuild: false
         )
-        XCTAssertEqual(path, "/tmp/c11-staging-my-tag.sock")
+        XCTAssertEqual(path, own)
     }
 
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
     func testForeignSharedDefaultDetection() {
-        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath(
+        XCTAssertFalse(SocketControlSettings.isForeignSharedDefaultSocketPath(
             SocketControlSettings.stableDefaultSocketPath))
-        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-staging.sock"))
-        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-debug.sock"))
-        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-nightly.sock"))
-        // Tag-specific paths are NOT shared defaults.
+        XCTAssertFalse(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-debug.sock"))
         XCTAssertFalse(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-staging-my-tag.sock"))
-        XCTAssertFalse(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-debug-feat-x.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11h-staging.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11h-debug.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11h-nightly.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11h-staging-my-tag.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11h-debug-feat-x.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11h.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/cmux.sock"))
     }
+    // c11-2.0:end-keep
 
     func testNonProdStableBundleGetsBundleScopedSocket() {
         // A non-prod bundle that still falls through to the stable default (e.g.

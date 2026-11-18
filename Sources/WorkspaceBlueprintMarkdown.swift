@@ -29,7 +29,7 @@ import Foundation
 ///     children:
 ///       - type: terminal
 ///         title: Main terminal
-///         cwd: ~/Projects/Stage11/code/c11
+///         cwd: ~/src/c11
 ///       - direction: vertical
 ///         split: 60/40
 ///         children:

@@ -489,6 +489,52 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         XCTAssertNil(WorkspaceLayoutExecutor.validate(plan: minimalPlan(version: 1)))
     }
 
+    func testBlueprintMetadataSkipsInvalidEntriesAndStillAppliesValidJSON() throws {
+        var plan = minimalPlan()
+        plan.workspace.metadata = [
+            "bad key": .string("rejected"), "captain": .bool(false),
+            "description": .string("valid description"),
+            "icon": .string(String(repeating: "x", count: WorkspaceMetadataValidator.maxIconLen + 1)),
+            "nested": .object(["ready": .bool(true), "items": .array([.null, .number(42)])]),
+            "oversized": .string(String(repeating: "x", count: WorkspaceMetadataStore.payloadCapBytes)),
+            "z.valid": .string("still applied after failures")
+        ]
+        // A legacy hand-written plan must get past structural validation.
+        let decoded = try JSONDecoder().decode(WorkspaceApplyPlan.self, from: JSONEncoder().encode(plan))
+        XCTAssertNil(WorkspaceLayoutExecutor.validate(plan: decoded))
+        let store = WorkspaceMetadataStore(eventSink: { _ in })
+        let id = UUID()
+        var attempted: [String] = []
+        let warnings = WorkspaceLayoutExecutor.applyWorkspaceMetadata(try XCTUnwrap(decoded.workspace.metadata)) { key, value in
+            attempted.append(key)
+            try store.setMetadata(workspaceId: id, partial: PersistedMetadataBridge.decodeValues([key: value]))
+        }
+        XCTAssertEqual(attempted, decoded.workspace.metadata?.keys.sorted())
+        XCTAssertEqual(warnings.count, 4)
+        for key in ["bad key", "captain", "icon", "oversized"] {
+            XCTAssertTrue(warnings.contains { $0.contains(key) })
+        }
+        XCTAssertEqual(store.persistenceSnapshot(workspaceId: id).metadataValues, [
+            "description": .string("valid description"),
+            "nested": .object(["ready": .bool(true), "items": .array([.null, .number(42)])]),
+            "z.valid": .string("still applied after failures")
+        ])
+    }
+
+    func testBlueprintMetadataWriterFailureWarnsAndContinues() {
+        var accepted: [String] = []
+        let warnings = WorkspaceLayoutExecutor.applyWorkspaceMetadata([
+            "a": .string("first"), "b": .string("fails"), "c": .string("last")
+        ]) { key, _ in
+            if key == "b" { throw WorkspaceMetadataStore.WriteError.encodeFailed }
+            accepted.append(key)
+        }
+        XCTAssertEqual(accepted, ["a", "c"])
+        XCTAssertEqual(warnings.count, 1)
+        XCTAssertTrue(warnings[0].contains("b"))
+        XCTAssertTrue(warnings[0].contains("encode_error"))
+    }
+
     func testValidateRejectsUnsupportedVersion() {
         let failure = WorkspaceLayoutExecutor.validate(plan: minimalPlan(version: 2))
         XCTAssertEqual(failure?.code, "unsupported_version")

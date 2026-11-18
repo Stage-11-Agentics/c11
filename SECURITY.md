@@ -5,7 +5,7 @@ Found something that looks like a security issue in c11? Report it privately. Pu
 ## How to report
 
 - **Preferred — GitHub Security Advisories:** <https://github.com/Stage-11-Agentics/c11/security/advisories/new>
-- **Fallback — email:** `benevolent.futures@gmail.com`, subject line `c11 security`.
+- **Fallback — email:** `hello@stage11.ai`, subject line `c11 security`.
 
 Include what you found, how to trigger it, and anything you've already established about impact. We'll acknowledge within three business days, work with you on reproduction and a fix, and coordinate public disclosure after the patch ships. Credit however you want it — your name, a handle, or not at all.
 

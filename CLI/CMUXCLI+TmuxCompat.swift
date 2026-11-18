@@ -584,10 +584,9 @@ extension CMUXCLI {
 
     func saveTmuxCompatStore(_ store: TmuxCompatStore) throws {
         let url = tmuxCompatStoreURL()
-        let parent = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true, attributes: nil)
         let data = try JSONEncoder().encode(store)
-        try data.write(to: url, options: .atomic)
+        // Captured pane text: folder 0700, file 0600 (C11H-364 L17).
+        try PrivateFileWriter.writePrivateStore(data, to: url)
     }
 
     func runShellCommand(_ command: String, stdinText: String) throws -> (status: Int32, stdout: String, stderr: String) {
@@ -614,10 +613,13 @@ extension CMUXCLI {
         return (process.terminationStatus, stdout, stderr)
     }
 
+    /// `wait-for` channels live in c11's per-user folder, never shared /tmp,
+    /// where another account could answer or block them (C11H-364 L19).
     func tmuxWaitForSignalURL(name: String) -> URL {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-        let sanitized = name.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
-        return URL(fileURLWithPath: "/tmp/cmux-wait-for-\(String(sanitized)).sig")
+        URL(fileURLWithPath: C11UserRuntime.waitForChannelPath(
+            name: name,
+            directory: C11UserRuntime.directoryPath()
+        ))
     }
 
     func runTmuxCompatCommand(
@@ -740,22 +742,42 @@ extension CMUXCLI {
                 throw CLIError(message: "wait-for requires a name")
             }
             let signalURL = tmuxWaitForSignalURL(name: name)
+            do {
+                try C11UserRuntime.ensureWaitForFolder(directory: C11UserRuntime.directoryPath())
+            } catch {
+                throw CLIError(message: String(localized: "cli.waitFor.folderUnsafe", defaultValue: "wait-for cannot use its private folder: \(error.localizedDescription)"))
+            }
+            // Only our own signal file counts, and anything else at the name
+            // fails instead of printing OK (C11H-364 L19).
             if signal {
-                FileManager.default.createFile(atPath: signalURL.path, contents: Data())
+                do {
+                    try C11UserRuntime.signalWaitFor(at: signalURL.path)
+                } catch {
+                    throw CLIError(message: String(localized: "cli.waitFor.signalRefused", defaultValue: "wait-for -S did not signal '\(name)': \(signalURL.path) is not a signal file this user created."))
+                }
                 print("OK")
                 return
             }
             let deadline = Date().addingTimeInterval(timeout)
-            do {
-                try SocketClient.waitForFilesystemPath(signalURL.path, timeout: max(0, deadline.timeIntervalSinceNow))
-                try? FileManager.default.removeItem(at: signalURL)
-                print("OK")
-                return
-            } catch {
-                if FileManager.default.fileExists(atPath: signalURL.path) {
-                    try? FileManager.default.removeItem(at: signalURL)
+            while true {
+                switch C11UserRuntime.consumeWaitForSignal(at: signalURL.path) {
+                case .signalled:
                     print("OK")
                     return
+                case .refused:
+                    throw CLIError(message: String(localized: "cli.waitFor.channelRefused", defaultValue: "wait-for refused '\(name)': \(signalURL.path) is not a signal file this user created."))
+                case .notSignalled:
+                    break
+                }
+                let remaining = deadline.timeIntervalSinceNow
+                guard remaining > 0 else { break }
+                if (try? SocketClient.waitForFilesystemPath(signalURL.path, timeout: remaining)) == nil {
+                    // Timed out: one last look, then report the timeout.
+                    if C11UserRuntime.consumeWaitForSignal(at: signalURL.path) == .signalled {
+                        print("OK")
+                        return
+                    }
+                    break
                 }
             }
             throw CLIError(message: "wait-for timed out waiting for '\(name)'")
@@ -884,7 +906,12 @@ extension CMUXCLI {
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId, allowFocused: true)
             if let sfId { params["panel_id"] = sfId }
             let payload = try client.sendV2(method: "panel.clear_history", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            // C11H-24 / X.4: an hc terminal's clear is local; the app says so.
+            var text = v2OKSummary(payload, idFormat: idFormat)
+            if let warning = payload["warning"] as? String, !warning.isEmpty {
+                text += "\n" + warning
+            }
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: text)
 
         case "set-hook":
             var store = loadTmuxCompatStore()

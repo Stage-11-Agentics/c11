@@ -1,0 +1,79 @@
+# Nocturne — matte near-black, hairline rules, one cold accent, amber only for
+# what needs you. The colour register of design/themes/c11h-themes.html theme 6.
+# Not expressible here (needs theme schema work): the display grotesk for names,
+# tracked mono caps for labels, 4 pt card radius, 2 px progress bars.
+
+[identity]
+name         = "nocturne"
+display_name = "Nocturne"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+void    = "#07080A"
+surface = "#0B0C0F"
+raised  = "#111318"
+rule    = "#1A1D22"
+text    = "#E4E6EA"
+textDim = "#6F747D"
+cold    = "#C9D6EA"   # accent: selection, the focused frame
+amber   = "#E0B35A"   # needs you
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.cold"
+accentAlt           = "$palette.amber"
+separator           = "$palette.rule"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.0
+inactiveOpacity  = 0.20
+unfocusedOpacity = 0.45
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$background"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$palette.raised"
+activeTabFillFallback         = "$palette.raised"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 0.9
+inactiveTabCustomOpacity      = 0.55
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$background"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background      = "$background"
+activeFill      = "$palette.raised"
+divider         = "$separator"
+activeIndicator = "$accent"
+
+[chrome.browserChrome]
+background  = "$background"
+omnibarFill = "$surface"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false

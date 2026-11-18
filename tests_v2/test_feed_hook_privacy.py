@@ -35,7 +35,10 @@ def main():
                     elif request["method"] == "agent.event.append":
                         if mode == "lost":
                             return
-                        response = {"ok": False, "error": {"code": mode, "message": mode}}
+                        if mode == "committed":
+                            response = {"ok": True, "result": {"event_id": "synthetic-event", "sequence": 1}}
+                        else:
+                            response = {"ok": False, "error": {"code": mode, "message": mode}}
                     else:
                         response = {"ok": True, "result": {}}
                     response = json.dumps(response)
@@ -56,7 +59,7 @@ def main():
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
-            for mode in ("unsupported_version", "invalid_event", "idempotency_conflict", "expired", "lost", "method_not_found", "no-draft"):
+            for mode in ("unsupported_version", "invalid_event", "idempotency_conflict", "expired", "lost", "method_not_found", "committed", "no-draft"):
                 calls.clear()
                 isolated = root / mode
                 isolated.mkdir()
@@ -84,13 +87,22 @@ def main():
                     assert any(isinstance(c, dict) and c["method"] == "agent.event.append" for c in calls), mode
                 else:
                     assert not any(isinstance(c, dict) and c["method"] == "agent.event.append" for c in calls), calls
-                if mode in ("method_not_found", "no-draft"):
-                    assert any(c.startswith("notify_target ") and SENTINEL in c for c in legacy), calls
+                if mode == "committed":
+                    # C11H-319: an accepted ask posts exactly one needs-you, with a
+                    # generic body; the question text stays structural.
+                    needs_you = [c for c in legacy if c.startswith("notify_needs_you ")]
+                    assert len(needs_you) == 1, calls
+                    assert "Waiting for input" in needs_you[0], needs_you
+                    assert SENTINEL not in json.dumps(legacy), legacy
+                    assert not any(c.startswith("notify_target ") for c in legacy), legacy
+                elif mode in ("method_not_found", "no-draft"):
+                    # C11H-319: a question is a needs-you; an older app gets notify_target.
+                    assert any(c.startswith(("notify_needs_you ", "notify_target ")) and SENTINEL in c for c in legacy), calls
                     if mode == "method_not_found":
                         assert SENTINEL in state.read_text(), "confirmed legacy route did not persist its body"
                 else:
                     assert SENTINEL not in json.dumps(calls), mode
-                    assert not any(c.startswith(("notify_target ", "report_agent_activity ")) for c in legacy), mode
+                    assert not any(c.startswith(("notify_target ", "notify_needs_you ", "report_agent_activity ")) for c in legacy), mode
                     for saved in isolated.rglob("*"):
                         if saved.is_file():
                             assert SENTINEL.encode() not in saved.read_bytes(), (mode, saved)

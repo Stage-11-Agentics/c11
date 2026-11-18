@@ -30,7 +30,7 @@ This applies everywhere c11 happens: issues, pull requests, discussions, the cod
 
 ## Reporting
 
-Email `benevolent.futures@gmail.com` with `c11 conduct` in the subject. Include what happened, where, when, and any evidence you have — links, screenshots, context. We read everything, respond within a few business days, and won't share the reporter's identity with the subject of the report beyond what's strictly necessary to resolve it.
+Email `hello@stage11.ai` with `c11 conduct` in the subject. Include what happened, where, when, and any evidence you have — links, screenshots, context. We read everything, respond within a few business days, and won't share the reporter's identity with the subject of the report beyond what's strictly necessary to resolve it.
 
 Bad-faith reports are themselves a violation.
 

@@ -1,5 +1,34 @@
 import Foundation
 
+/// How the Waiting and Flagged buttons and Jump to Latest Unread pick the
+/// next panel (C11H-262). Stored in c11's own defaults; an unknown or missing
+/// value reads as the default.
+enum AttentionJumpOrder: String, CaseIterable, Identifiable {
+    /// The selected workspace's waiting agents and flags first, oldest first;
+    /// then the oldest elsewhere, whose workspace becomes the next to clear.
+    case workspaceFirst
+    /// Oldest first across every workspace.
+    case chronological
+
+    static let storageKey = "attention.jumpOrder"
+    static let defaultOrder: AttentionJumpOrder = .workspaceFirst
+
+    static func current(defaults: UserDefaults = .standard) -> AttentionJumpOrder {
+        defaults.string(forKey: storageKey).flatMap(AttentionJumpOrder.init(rawValue:)) ?? defaultOrder
+    }
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .workspaceFirst:
+            return String(localized: "attention.jumpOrder.workspaceFirst", defaultValue: "Current workspace first")
+        case .chronological:
+            return String(localized: "attention.jumpOrder.chronological", defaultValue: "Oldest first")
+        }
+    }
+}
+
 /// Shared presentation order, not another lifecycle reducer. Missing clocks sort last.
 enum AttentionOrder {
     struct Target: Hashable {
@@ -64,12 +93,52 @@ enum AttentionOrder {
     static func candidates(rows: [FeedRow], unreadTail: [Candidate]) -> [Candidate] {
         var seen: Set<Target> = []
         let prefix = rows.compactMap { row -> Candidate? in
-            guard row.flag != nil || isOpenAsk(row) || row.kind == .error else { return nil }
+            guard row.flag != nil || isOpenAsk(row) || row.kind == .error || row.kind == .show else { return nil }
             let target = Target(workspaceID: row.workspaceID, panelID: row.panelID)
             guard seen.insert(target).inserted else { return nil }
             return Candidate(target: target, notificationID: nil)
         }
         return prefix + unreadTail.filter { seen.insert($0.target).inserted }
+    }
+
+    /// Where the operator is when they jump: the active window's selected
+    /// workspace and its focused panel.
+    struct Position: Equatable {
+        let workspaceID: UUID?
+        let panelID: UUID?
+
+        static let nowhere = Position(workspaceID: nil, panelID: nil)
+    }
+
+    /// The order one jump (Waiting, a Flagged button, Jump to Latest Unread)
+    /// tries `candidates`, which arrive already in queue order (C11H-262).
+    ///
+    /// Workspace first groups candidates by workspace, each workspace placed
+    /// where its first candidate sits in the queue, and starts at the
+    /// selected workspace. Both orders are a cycle that starts just after the
+    /// panel the operator is on and ends with that panel, so repeated jumps
+    /// walk every flag or question that stays up instead of reopening one.
+    static func arranged(_ candidates: [Candidate], order: AttentionJumpOrder, at position: Position) -> [Candidate] {
+        var cycle = candidates
+        if order == .workspaceFirst {
+            var workspaces: [UUID] = []
+            var byWorkspace: [UUID: [Candidate]] = [:]
+            for candidate in candidates {
+                let workspaceID = candidate.target.workspaceID
+                if byWorkspace[workspaceID] == nil { workspaces.append(workspaceID) }
+                byWorkspace[workspaceID, default: []].append(candidate)
+            }
+            cycle = workspaces.flatMap { byWorkspace[$0] ?? [] }
+        }
+        if let workspaceID = position.workspaceID, let panelID = position.panelID,
+           let index = cycle.firstIndex(where: { $0.target == Target(workspaceID: workspaceID, panelID: panelID) }) {
+            return Array(cycle[(index + 1)...]) + cycle[...index]
+        }
+        if order == .workspaceFirst, let workspaceID = position.workspaceID,
+           let start = cycle.firstIndex(where: { $0.target.workspaceID == workspaceID }) {
+            return Array(cycle[start...]) + cycle[..<start]
+        }
+        return cycle
     }
 
     @discardableResult
@@ -80,9 +149,11 @@ enum AttentionOrder {
 
 struct FeedProjectionSnapshot: Equatable {
     let rows: [FeedRow]
+    /// C11H-330: the last flag lowered, with who and why. In memory only.
+    var flagLowered: FeedFlagLowered? = nil
     static let empty = FeedProjectionSnapshot(rows: [])
     var attentionRows: [FeedRow] {
-        rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) || $0.kind == .error }.map { row in
+        rows.filter { $0.flag != nil || AttentionOrder.isOpenAsk($0) || $0.kind == .error || $0.kind == .show }.map { row in
             guard row.kind == .turnEnd else { return row }
             // A finished turn may still carry a flag; attention presents just that flag.
             return FeedRow(workspaceID: row.workspaceID, panelID: row.panelID, kind: nil,

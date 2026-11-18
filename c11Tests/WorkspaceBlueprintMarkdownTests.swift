@@ -462,7 +462,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
                     ))
                 )),
                 surfaces: [
-                    PanelSpec(id: "s1", kind: .terminal, title: "Main terminal", workingDirectory: "~/Projects/Stage11/code/c11"),
+                    PanelSpec(id: "s1", kind: .terminal, title: "Main terminal", workingDirectory: "~/src/c11"),
                     PanelSpec(id: "s2", kind: .browser, title: "Lattice", url: "http://localhost:8799/"),
                     PanelSpec(id: "s3", kind: .markdown, title: "Notes", filePath: "~/notes/today.md")
                 ]
@@ -526,7 +526,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
             children:
               - type: terminal
                 title: Main terminal
-                cwd: ~/Projects/Stage11/code/c11
+                cwd: ~/src/c11
               - direction: vertical
                 split: 60/40
                 children:
@@ -565,7 +565,7 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         let terminal = parsed.plan.surfaces.first { $0.kind == .terminal }
         let browser  = parsed.plan.surfaces.first { $0.kind == .browser }
         let markdown = parsed.plan.surfaces.first { $0.kind == .markdown }
-        XCTAssertEqual(terminal?.workingDirectory, "~/Projects/Stage11/code/c11")
+        XCTAssertEqual(terminal?.workingDirectory, "~/src/c11")
         XCTAssertEqual(browser?.url,               "http://localhost:8799/")
         XCTAssertEqual(markdown?.filePath,         "~/notes/today.md")
     }

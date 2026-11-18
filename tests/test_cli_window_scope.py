@@ -2,7 +2,7 @@
 """C11-283: exercise window routing through a CLI subprocess and fake socket.
 
 Run with C11_CLI_BIN set to the CLI built from the change under test (for the
-1.0 run, retrieved from Atlas). No app, GUI, or operator session is used.
+1.0 run, retrieved from the build host). No app, GUI, or operator session is used.
 The fake server intentionally defaults to key window A; only explicit routing
 can reach B. Both windows use the same local numeric indexes and distinct refs.
 Independent case groups run in a thread pool, each with its own fake server;

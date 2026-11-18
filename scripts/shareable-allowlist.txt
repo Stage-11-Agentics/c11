@@ -1,0 +1,3 @@
+# C11H-130: deliberate matches for scripts/check-shareable.py, one per line:
+# path<TAB>the whole line, stripped<TAB>reason. Each entry admits exactly one line; an entry
+# that matches no line, or more than one, fails the check.

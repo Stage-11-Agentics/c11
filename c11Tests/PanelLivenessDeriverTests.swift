@@ -357,19 +357,21 @@ final class PanelLivenessDeriverTests: XCTestCase {
         }
     }
 
+    /// C11H-344: working is yellow, waiting is white (near-black on light
+    /// chrome), done (idle) stays gray, cold darker than idle.
     func testPanelActivityColorsMatchDarkAndLightContract() {
         let dark = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#101114")!)
-        XCTAssertEqual(dark.runningHex, "#E8E8E8")
+        XCTAssertEqual(dark.runningHex, "#D0AA45")
         XCTAssertEqual(dark.idleHex, "#9AA0A9")
         XCTAssertEqual(dark.coldHex, "#62676F")
-        XCTAssertEqual(dark.waitingHex, "#D0AA45")
+        XCTAssertEqual(dark.waitingHex, "#E8E8E8")
         XCTAssertEqual(dark.waitingInkHex, "#08090B")
 
         let light = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#F5F3EF")!)
-        XCTAssertEqual(light.runningHex, "#1D2024")
+        XCTAssertEqual(light.runningHex, "#9B7415")
         XCTAssertEqual(light.idleHex, "#585D66")
         XCTAssertEqual(light.coldHex, "#8D939C")
-        XCTAssertEqual(light.waitingHex, "#9B7415")
+        XCTAssertEqual(light.waitingHex, "#1D2024")
         XCTAssertEqual(light.waitingInkHex, "#FFFDF8")
     }
 
@@ -532,6 +534,363 @@ final class PanelLivenessDeriverTests: XCTestCase {
                                        detectedTerminalType: "claude-code", now: now.addingTimeInterval(10_000))
         XCTAssertEqual(activityValue(ws, reported), SidebarActivityState.working.rawValue,
                        "an agent edge owns its working")
+    }
+
+    // MARK: - C11H-323: hc's word is a survivor's lifecycle
+
+    func testHCStatusWordsMapToALifecycle() {
+        XCTAssertEqual(PanelLivenessDeriver.hcActivity(status: "working"), .working)
+        for resting in ["idle", "done", "blocked", "error"] {
+            XCTAssertEqual(PanelLivenessDeriver.hcActivity(status: resting), .idle, resting)
+        }
+        XCTAssertNil(PanelLivenessDeriver.hcActivity(status: nil))
+        XCTAssertNil(PanelLivenessDeriver.hcActivity(status: "thinking"))
+    }
+
+    /// After a relaunch the restore leaves a survivor with no `activity`; hc's
+    /// word (the agent's own last OSC 7501 report, kept while c11 was down)
+    /// fills it and follows it, and hc's later silence withdraws only its own.
+    func testHCsWordFollowsASurvivorWithNoNewerLifecycle() {
+        let ws = UUID(); let survivor = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: survivor) }
+        var mirrored: [SidebarActivityState?] = []
+        let mirror: @MainActor (SidebarActivityState?) -> Void = { mirrored.append($0) }
+
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: hcWord("done"), mirror: mirror)
+        XCTAssertTrue(poll { self.activityValue(ws, survivor) == SidebarActivityState.idle.rawValue })
+        XCTAssertEqual(activitySource(ws, survivor), .derived)
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: hcWord("working"), mirror: mirror)
+        XCTAssertTrue(poll { self.activityValue(ws, survivor) == SidebarActivityState.working.rawValue })
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: hcWord("done"), mirror: mirror)
+        XCTAssertTrue(poll { self.activityValue(ws, survivor) == SidebarActivityState.idle.rawValue },
+                      "hc's done ends the working it wrote")
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: nil, mirror: mirror)
+        XCTAssertTrue(poll { self.activityValue(ws, survivor) == nil }, "no agent in front: hc's own word goes")
+        XCTAssertTrue(poll { mirrored == [.idle, .working, .idle, nil] }, "\(mirrored)")
+
+        // An unchanged word is no edge and mirrors nothing (a cold mark stays).
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: hcWord("done"), mirror: mirror)
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: hcWord("done"), mirror: mirror)
+        XCTAssertTrue(poll { mirrored.count == 5 })
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(mirrored.count, 5, "\(mirrored)")
+
+        // hc's working is the agent's own report: the sweep never decays it.
+        PanelLivenessDeriver.onHCStatus(surfaceId: survivor, workspaceId: ws, word: hcWord("working"), mirror: mirror)
+        XCTAssertTrue(poll { self.activityValue(ws, survivor) == SidebarActivityState.working.rawValue })
+        PanelLivenessDeriver.reconcile(surfaceId: survivor, workspaceId: ws, detectedTerminalType: "claude-code",
+                                       now: Date().addingTimeInterval(10_000))
+        XCTAssertEqual(activityValue(ws, survivor), SidebarActivityState.working.rawValue)
+    }
+
+    /// hc's word never overrides a newer lifecycle: an agent edge or an
+    /// explicit value. It does replace a working only the shell wrote (the
+    /// agent TUI's lifetime, not a turn; C11-398).
+    func testHCsWordYieldsToAnAgentEdgeAndReplacesOnlyTheShellsWorking() {
+        let ws = UUID(); let reported = UUID(); let explicit = UUID(); let shellOnly = UUID()
+        defer { for id in [reported, explicit, shellOnly] { store.removeSurface(workspaceId: ws, surfaceId: id) } }
+
+        PanelLivenessDeriver.onAgentLifecycleChanged(surfaceId: reported, workspaceId: ws, activity: .working, source: .reported)
+        XCTAssertTrue(poll { self.activityValue(ws, reported) == SidebarActivityState.working.rawValue })
+        PanelLivenessDeriver.onHCStatus(surfaceId: reported, workspaceId: ws, word: hcWord("done"), mirror: { _ in })
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(activityValue(ws, reported), SidebarActivityState.working.rawValue, "the agent's edge owns it")
+
+        // hc wrote it, then the agent reported: hc no longer owns it.
+        PanelLivenessDeriver.onHCStatus(surfaceId: shellOnly, workspaceId: ws, word: hcWord("working"), mirror: { _ in })
+        XCTAssertTrue(poll { self.activityValue(ws, shellOnly) == SidebarActivityState.working.rawValue })
+        PanelLivenessDeriver.onAgentLifecycleChanged(surfaceId: shellOnly, workspaceId: ws, activity: .working, source: .reported)
+        PanelLivenessDeriver.onHCStatus(surfaceId: shellOnly, workspaceId: ws, word: nil, mirror: { _ in })
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(activityValue(ws, shellOnly), SidebarActivityState.working.rawValue)
+        store.removeSurface(workspaceId: ws, surfaceId: shellOnly)
+
+        _ = store.setInternal(workspaceId: ws, surfaceId: explicit, key: MetadataKey.activity,
+                              value: SidebarActivityState.working.rawValue, source: .explicit)
+        PanelLivenessDeriver.onHCStatus(surfaceId: explicit, workspaceId: ws, word: hcWord("done"), mirror: { _ in })
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(activityValue(ws, explicit), SidebarActivityState.working.rawValue)
+        XCTAssertEqual(activitySource(ws, explicit), .explicit)
+
+        PanelLivenessDeriver.onShellActivityChanged(surfaceId: shellOnly, workspaceId: ws, state: .commandRunning,
+                                                    mirror: { _ in })
+        XCTAssertTrue(poll { self.activityValue(ws, shellOnly) == SidebarActivityState.working.rawValue })
+        PanelLivenessDeriver.onHCStatus(surfaceId: shellOnly, workspaceId: ws, word: hcWord("done"), mirror: { _ in })
+        XCTAssertTrue(poll { self.activityValue(ws, shellOnly) == SidebarActivityState.idle.rawValue },
+                      "the shell's working is no turn; hc's done is the agent's word")
+    }
+
+    private func hcWord(_ status: String, at stampMs: Int64? = 1) -> PanelLivenessDeriver.HCStatusWord {
+        PanelLivenessDeriver.HCStatusWord(status: status, stampMs: stampMs)
+    }
+
+    /// The one rule both of hc's paths use. A stale, unknown or missing word
+    /// withdraws only hc's own value; a word fills nothing, or replaces hc's
+    /// own or the shell's working, and yields to every other writer.
+    func testHCsWordIsAdmittedByOneRule() {
+        let working = SidebarActivityState.working.rawValue, idle = SidebarActivityState.idle.rawValue
+        let cases: [(String, PanelLivenessDeriver.HCStatusWord?, Int64?, String?, PanelLivenessDeriver.ActivityClaim?,
+                     PanelLivenessDeriver.HCAdmission)] = [
+            ("fills an empty activity", hcWord("working"), nil, nil, nil, .write(.working)),
+            ("moves its own", hcWord("done"), nil, working, .hc, .write(.idle)),
+            ("replaces only the shell's working", hcWord("idle"), nil, working, .shellWorking, .write(.idle)),
+            ("yields to an agent edge", hcWord("idle"), nil, working, nil, .keep),
+            ("yields to the journal's claim", hcWord("working"), nil, idle, .journal, .keep),
+            ("no word withdraws its own", nil, nil, working, .hc, .withdraw),
+            ("no word leaves the shell's", nil, nil, working, .shellWorking, .keep),
+            ("an unknown word is no word", hcWord("thinking"), nil, working, .hc, .withdraw),
+            ("Codex: working stamped before its turn end withdraws hc's own", hcWord("working", at: 4_000), 5_000,
+             working, .hc, .withdraw),
+            ("Codex: a stale working never fills", hcWord("working", at: 4_000), 5_000, nil, nil, .keep),
+            ("Codex: a stale working never touches the shell's", hcWord("working", at: 5_000), 5_000,
+             working, .shellWorking, .keep),
+            ("Codex: working without hc's time is stale", hcWord("working", at: nil), 5_000, nil, nil, .keep),
+            ("Codex: a stale blocked withdraws hc's own", hcWord("blocked", at: 4_000), 5_000, idle, .hc, .withdraw),
+            ("Codex: working after its turn end applies", hcWord("working", at: 6_000), 5_000, nil, nil, .write(.working)),
+            ("Codex: idle always applies", hcWord("idle", at: 4_000), 5_000, working, .hc, .write(.idle)),
+        ]
+        for (name, word, turnEnd, prior, claim, expected) in cases {
+            XCTAssertEqual(PanelLivenessDeriver.admitHCWord(word, turnEndMs: turnEnd, prior: prior, claim: claim),
+                           expected, name)
+        }
+    }
+
+    /// C11H-322/323 review, both blockers: hc's word, a restored journal row
+    /// and an agent edge end in one lifecycle whatever order they arrive in.
+    /// Each scenario runs for a Claude row and for a Codex row whose own notify
+    /// ended its turn (T2) after hc stamped `working` (T1 < T2; C11H-123), in
+    /// every order (a live row always before the same row turned historical),
+    /// then takes the row's re-projection and hc's identical record again.
+    func testHCsWordARestoredRowAndAnAgentEdgeEndTheSameInEveryArrivalOrder() throws {
+        enum Event: Equatable {
+            case hc(String, Int64)
+            /// The journal row, live: Claude's submit and Stop, or Codex's notify at T2.
+            case live
+            /// The row from an earlier process, historical: Claude mid-turn, or Codex's
+            /// notify at T2; after `.live`, that row's connection lost.
+            case restored
+            case agent(SidebarActivityState)
+        }
+        let coordinator = JournalCoordinator.shared
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("c11h-322-order-\(UUID().uuidString)")
+        let previous = coordinator.replaceStoreForTesting(try JournalStore(layout: JournalStorageLayout(directory: directory)))
+        defer {
+            _ = coordinator.replaceStoreForTesting(previous)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let base = Int64(Date().timeIntervalSince1970 * 1000)
+        let t1 = base - 5_000, t3 = base + 600_000   // T2 is the notify's time, stamped at staging
+        let claude = "claude-code", codex = "codex"
+        let scenarios: [(String, String, [Event], SidebarActivityState?)] = [
+            ("a survivor that finished while c11 was down", claude, [.hc("done", t1), .restored], .idle),
+            ("a survivor mid-turn", claude, [.hc("working", t1), .restored], .working),
+            ("Codex: hc's working from before its own turn end", codex, [.hc("working", t1), .restored], nil),
+            ("Codex: hc's working after its own turn end", codex, [.hc("working", t3), .restored], .working),
+            ("an agent edge after hc's done", claude, [.hc("done", t1), .agent(.working), .restored], .working),
+            ("an agent edge after hc's working", claude, [.hc("working", t1), .agent(.idle), .restored], .idle),
+            ("Codex: an agent edge after hc's stale working", codex,
+             [.hc("working", t1), .agent(.working), .restored], .working),
+            ("Codex: an agent edge after hc's fresh working", codex,
+             [.hc("working", t3), .agent(.idle), .restored], .idle),
+            ("a live idle journal that went historical", claude, [.hc("working", t1), .live, .restored], .working),
+            ("Codex: a live journal that went historical, hc stale", codex,
+             [.hc("working", t1), .live, .restored], nil),
+            ("Codex: a live journal that went historical, hc fresh", codex,
+             [.hc("working", t3), .live, .restored], .working),
+        ]
+        func orders(_ events: [Event]) -> [[Event]] {
+            guard !events.isEmpty else { return [[]] }
+            return events.indices.flatMap { i -> [[Event]] in
+                var rest = events; let head = rest.remove(at: i)
+                return orders(rest).map { [head] + $0 }
+            }.filter { order in
+                guard let live = order.firstIndex(of: .live), let restored = order.firstIndex(of: .restored) else { return true }
+                return live < restored
+            }
+        }
+        func append(_ draft: JournalDraft) throws {
+            let result = try coordinator.append(draft)
+            XCTAssertEqual(result.receipt.projectionEffect, .applied, "\(draft.nativeEvent)")
+        }
+
+        var runs = 0
+        for (name, kind, events, expected) in scenarios {
+            for order in orders(events) {
+                runs += 1
+                let ws = UUID(), id = UUID(), session = "c11h-322-\(UUID().uuidString)"
+                defer {
+                    coordinator.remove(panelID: id)
+                    store.removeSurface(workspaceId: ws, surfaceId: id)
+                }
+                let label = "\(name) [\(order.map { "\($0)" }.joined(separator: " → "))]"
+                func claudeHook(_ subcommand: String) throws -> JournalDraft {
+                    var draft = try XCTUnwrap(ClaudeHookMapping.map(subcommand: subcommand, object: ["session_id": session]))
+                    draft.panelID = id
+                    draft.workspaceID = ws
+                    return draft
+                }
+                func own() {
+                    guard coordinator.exactOwner(panelID: id) == nil else { return }
+                    coordinator.register(panelID: id, workspaceID: ws)
+                    coordinator.setOwner(panelID: id, owner: JournalOwner(panelID: id, agentKind: kind, sessionID: session))
+                    coordinator.synchronizeRuntimeForTesting()
+                }
+                func turnEnd() throws {
+                    try append(JournalDraft(kind: .turnCompleted, emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+                                            panelID: id, workspaceID: ws, sessionID: session, agentKind: codex,
+                                            source: .hook, adapter: .codexNotify, nativeEvent: "agent-turn-complete"))
+                }
+                func connectionLost() throws {
+                    try append(JournalDraft(kind: .stateChanged, emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+                                            panelID: id, workspaceID: ws, sessionID: session, agentKind: kind,
+                                            source: .c11, adapter: .c11, nativeEvent: "connection_lost",
+                                            signal: .connectionLost))
+                }
+                func project() {
+                    PanelLivenessDeriver.onJournalProjection(panelID: id, snapshot: coordinator.snapshot(panelID: id),
+                                                             boundary: nil)
+                }
+                for event in order {
+                    switch event {
+                    case .hc(let status, let stamp):
+                        PanelLivenessDeriver.onHCStatus(surfaceId: id, workspaceId: ws, word: hcWord(status, at: stamp),
+                                                        mirror: { _ in })
+                    case .agent(let activity):
+                        PanelLivenessDeriver.onAgentLifecycleChanged(surfaceId: id, workspaceId: ws, activity: activity,
+                                                                     source: activity == .working ? .submit : .reported)
+                    case .live:
+                        own()
+                        if kind == codex {
+                            try turnEnd()
+                        } else {
+                            try append(try claudeHook("prompt-submit"))
+                            try append(try claudeHook("stop"))
+                        }
+                        XCTAssertEqual(coordinator.snapshot(panelID: id)?.connection, .live, label)
+                        project()
+                    case .restored:
+                        if !order.contains(.live) {
+                            own()
+                            if kind == codex { try turnEnd() } else { try append(try claudeHook("prompt-submit")) }
+                        }
+                        try connectionLost()
+                        let row = try XCTUnwrap(coordinator.snapshot(panelID: id), label)
+                        XCTAssertTrue(row.isHistorical && !row.paintsAttention, label)
+                        if kind == codex {
+                            let ended = try XCTUnwrap(CodexTurnAuthority.turnEndMs(row), label)
+                            XCTAssertTrue(t1 < ended && ended < t3, label)
+                        }
+                        project()
+                    }
+                    // Each arrival lands before the next one is staged.
+                    PanelLivenessDeriver.drainForTesting()
+                }
+                XCTAssertEqual(activityValue(ws, id), expected?.rawValue, label)
+                // The same row projected again (a startup or spool-drain refresh) and hc's
+                // identical record again change nothing.
+                project()
+                for case .hc(let status, let stamp) in order {
+                    PanelLivenessDeriver.onHCStatus(surfaceId: id, workspaceId: ws, word: hcWord(status, at: stamp),
+                                                    mirror: { _ in })
+                }
+                PanelLivenessDeriver.drainForTesting()
+                XCTAssertEqual(activityValue(ws, id), expected?.rawValue, "\(label), again")
+            }
+        }
+        XCTAssertEqual(runs, 41, "4 pairs × 2 orders, 4 with an agent edge × 6, 3 with a live row × 3")
+    }
+
+    /// C11H-321, the 2026-11-15 reboot: every resumed Claude had no `activity`
+    /// (its journal not yet reconnected, its shell's working decayed), so the
+    /// sweep never read its expired prompt cache and 55 cold agents drew idle.
+    /// The cache is fed through the socket report store and read by the sweep.
+    func testAPanelWithNoLifecycleGoesColdWhenItsPromptCacheExpired() {
+        let ws = UUID(); let expired = UUID(); let warm = UUID(); let touched = UUID(); let noCache = UUID()
+        let panels = [expired, warm, touched, noCache]
+        var verdicts: [UUID: (cold: Bool, cacheExpired: Bool)] = [:]
+        PanelLivenessDeriver.coldVerdictObserver = { id, cold, cacheExpired in
+            if panels.contains(id) { verdicts[id] = (cold, cacheExpired) }
+        }
+        defer {
+            PanelLivenessDeriver.coldVerdictObserver = nil
+            panels.forEach { PromptCacheReportStore.shared.remove(panelId: $0) }
+        }
+        let now = Date()
+        func request(_ at: Date) -> PromptCacheReport {
+            .request(.init(at: at, provider: "anthropic", model: "claude-opus-5-5", inputTokens: 100,
+                           cacheReadTokens: 10, cacheWriteTokens: 0, ttl: nil))
+        }
+        PromptCacheReportStore.shared.record(request(now.addingTimeInterval(-7_200)), panelId: expired,
+                                             receivedAt: now.addingTimeInterval(-7_200))
+        PromptCacheReportStore.shared.record(request(now.addingTimeInterval(-30)), panelId: warm,
+                                             receivedAt: now.addingTimeInterval(-30))
+        PromptCacheReportStore.shared.record(request(now.addingTimeInterval(-7_200)), panelId: touched,
+                                             receivedAt: now.addingTimeInterval(-7_200))
+        // Input or a lifecycle edge newer than the evidence: the cache may be in use again.
+        PanelActivityTracker.shared.recordActivity(surfaceId: touched.uuidString, at: now)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+
+        for panel in panels {
+            XCTAssertNil(activityValue(ws, panel), "no lifecycle truth")
+            PanelLivenessDeriver.reconcile(surfaceId: panel, workspaceId: ws,
+                                           detectedTerminalType: "claude-code", now: now)
+        }
+
+        XCTAssertEqual(verdicts[expired]?.cold, true, "an expired cache draws cold at once")
+        XCTAssertEqual(verdicts[expired]?.cacheExpired, true, "the cold mark carries the cache's blue")
+        XCTAssertEqual(verdicts[warm]?.cold, false, "a warm cache stays idle until it expires")
+        XCTAssertEqual(verdicts[touched]?.cold, false, "a touch newer than the cache evidence fails warm")
+        XCTAssertEqual(verdicts[noCache]?.cold, false, "no cache evidence stays warm")
+        for panel in panels { XCTAssertNil(activityValue(ws, panel), "the sweep writes no lifecycle") }
+
+        // The warm one turns cold on time, on a later sweep.
+        PanelLivenessDeriver.reconcile(surfaceId: warm, workspaceId: ws, detectedTerminalType: "claude-code",
+                                       now: now.addingTimeInterval(3_600))
+        XCTAssertEqual(verdicts[warm]?.cold, true)
+    }
+
+    /// C11H-321: the resume c11 types after a reboot is the shell's working, not a turn. A cache read cold after
+    /// that touch ends it at once, well inside C11-398's window, and draws cold; a warm cache keeps the window.
+    func testAnExpiredCacheEndsAShellOnlyWorkingAtOnce() {
+        let ws = UUID(); let expired = UUID(); let warm = UUID()
+        var verdicts: [UUID: Bool] = [:]
+        PanelLivenessDeriver.coldVerdictObserver = { id, cold, _ in
+            if id == expired || id == warm { verdicts[id] = cold }
+        }
+        defer {
+            PanelLivenessDeriver.coldVerdictObserver = nil
+            for panel in [expired, warm] {
+                PromptCacheReportStore.shared.remove(panelId: panel)
+                store.removeSurface(workspaceId: ws, surfaceId: panel)
+            }
+        }
+        for panel in [expired, warm] {
+            PanelLivenessDeriver.onShellActivityChanged(surfaceId: panel, workspaceId: ws, state: .commandRunning,
+                                                        mirror: { _ in })
+            XCTAssertTrue(poll { self.activityValue(ws, panel) == SidebarActivityState.working.rawValue })
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        // The next sweep, 15 s after the typed resume.
+        let sweep = Date().addingTimeInterval(15)
+        func request(_ at: Date) -> PromptCacheReport {
+            .request(.init(at: at, provider: "anthropic", model: "claude-opus-5-5", inputTokens: 100,
+                           cacheReadTokens: 10, cacheWriteTokens: 0, ttl: nil))
+        }
+        PromptCacheReportStore.shared.record(request(sweep.addingTimeInterval(-7_200)), panelId: expired,
+                                             receivedAt: sweep.addingTimeInterval(-7_200))
+        PromptCacheReportStore.shared.record(request(sweep.addingTimeInterval(-30)), panelId: warm,
+                                             receivedAt: sweep.addingTimeInterval(-30))
+
+        for panel in [expired, warm] {
+            PanelLivenessDeriver.reconcile(surfaceId: panel, workspaceId: ws, detectedTerminalType: "claude-code",
+                                           now: sweep)
+        }
+
+        XCTAssertNil(activityValue(ws, expired), "an expired cache: the shell's working was not a turn")
+        XCTAssertEqual(verdicts[expired], true, "and it draws cold")
+        XCTAssertEqual(activityValue(ws, warm), SidebarActivityState.working.rawValue,
+                       "a warm cache keeps C11-398's window")
+        XCTAssertNotEqual(verdicts[warm], true)
     }
 
     func testReconcileLeavesFreshWorkingAlone() {

@@ -2,7 +2,7 @@
 
 You are the implementation agent for the 2026-08-25 freeze investigation. The
 diagnosis is complete and evidence-backed; your job is to land the fixes. Work in
-`~/Projects/Stage11/code/c11` on a branch per workstream, PRs per repo convention.
+`~/src/c11` on a branch per workstream, PRs per repo convention.
 
 ## Required reading, in order
 

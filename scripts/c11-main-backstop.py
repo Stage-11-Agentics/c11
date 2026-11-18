@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Atlas main-tip backstop. Dry runs build normally but never post commit statuses."""
+"""Build-host main-tip backstop. Dry runs build normally but never post commit statuses."""
 from __future__ import annotations
 
 import argparse
@@ -30,7 +30,8 @@ quarantine = module("quarantine", "host_test_quarantine.py")
 CONTEXT = "c11/main-atlas"
 LABEL = "com.stage11.c11-main-backstop"
 ROOT = Path.home() / "c11-main-backstop"
-SLOTS = Path.home() / "c11-poller/bin/atlas_build_slots.py"
+POLLER_DIR = Path.home() / "c11-poller"  # the installed poller's folder on the build host
+SLOTS = POLLER_DIR / "bin/atlas_build_slots.py"
 CADENCE = 30
 TIMEOUT = 900
 
@@ -276,7 +277,7 @@ def status_description(result):
         for stage in result.get("stages") or []:
             if stage.get("unreadable") and stage.get("description"):
                 return stage["description"][:140]
-    return f"Atlas app, logic, host, CLI gate: {result['state']} ({int(result['seconds'])}s)"
+    return f"Build-host app, logic, host, CLI gate: {result['state']} ({int(result['seconds'])}s)"
 
 
 def post(result):
@@ -349,7 +350,7 @@ def main():
     parser.add_argument("--attempt", type=Path)
     args = parser.parse_args()
     root = args.root.expanduser().resolve()
-    if root == (Path.home() / "c11-poller").resolve() or (Path.home() / "c11-poller").resolve() in root.parents:
+    if root == POLLER_DIR.resolve() or POLLER_DIR.resolve() in root.parents:
         parser.error("the PR poller root is off limits")
     if root / "worktree" in Path(__file__).resolve().parents:
         parser.error("runner must live outside its build checkout")

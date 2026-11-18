@@ -15,53 +15,12 @@ import Sentry
 
 extension CMUXCLI {
 
-    static let debugLastSocketHintPath = "/tmp/cmux-last-socket-path"
-
     static func normalizedEnvValue(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else {
             return nil
         }
         return trimmed
-    }
-
-    static func pathIsSocket(_ path: String) -> Bool {
-        var st = stat()
-        guard lstat(path, &st) == 0 else { return false }
-        return (st.st_mode & S_IFMT) == S_IFSOCK
-    }
-
-    static func debugSocketPathFromHintFile() -> String? {
-#if DEBUG
-        guard let raw = try? String(contentsOfFile: debugLastSocketHintPath, encoding: .utf8) else {
-            return nil
-        }
-        guard let hinted = normalizedEnvValue(raw),
-              hinted.hasPrefix("/tmp/cmux-debug"),
-              hinted.hasSuffix(".sock"),
-              pathIsSocket(hinted) else {
-            return nil
-        }
-        return hinted
-#else
-        return nil
-#endif
-    }
-
-    static func defaultSocketPath(environment: [String: String]) -> String {
-        for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
-            if let explicit = normalizedEnvValue(environment[key]) {
-                return explicit
-            }
-        }
-#if DEBUG
-        if let hinted = debugSocketPathFromHintFile() {
-            return hinted
-        }
-        return "/tmp/cmux-debug.sock"
-#else
-        return "/tmp/cmux.sock"
-#endif
     }
 
     /// Print one stderr line attributing an auto-discovered socket so the

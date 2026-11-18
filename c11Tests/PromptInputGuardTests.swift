@@ -79,6 +79,28 @@ final class PromptInputClassifierTests: XCTestCase {
         }
     }
 
+    /// C11H-298 (repair 1b): in the incident Claude's "Heads up" tip sat above the composer. It must not hide
+    /// an empty prompt or a draft there either, or a send would fall to `prompt_unknown` and never be confirmed.
+    func testPassiveClaudeTipAboveComposerDoesNotHideEmptyPromptOrDraft() {
+        let strips: [[String]] = [
+            ["Heads up · Claude Code tip", "1: Learn more  2: Knew this already  0: Dismiss"],
+            ["Heads up · 1: Learn more 2: Knew this already 0: Dismiss"],
+        ]
+        for strip in strips {
+            for draft in ["", "Read /tmp/brief.md and follow it exactly."] {
+                var rows = strip.enumerated().map { Row(y: $0.offset, spans: [Span(text: $0.element)]) }
+                let top = rows.count
+                rows += [
+                    Row(y: top, spans: [Span(text: rule)]),
+                    Row(y: top + 1, spans: [Span(text: "❯\u{00A0}" + draft)]),
+                    Row(y: top + 2, spans: [Span(text: rule)]),
+                ]
+                XCTAssertEqual(PromptInputClassifier.classify(region(rows, cursorY: top + 1), harness: "claude-code").state,
+                               draft.isEmpty ? .empty : .draft, "\(strip) draft=\(!draft.isEmpty)")
+            }
+        }
+    }
+
     func testDraftReportsOnlyLengthAndNeverPromptText() throws {
         let sentinel = "NEVER_EXPOSE_PROMPT_9F31"
         let input = region([
@@ -309,6 +331,90 @@ final class PromptInputClassifierTests: XCTestCase {
             Row(y: 20, spans: [Span(text: "")]),
         ], cursorY: 16)
         XCTAssertEqual(PromptInputClassifier.classify(clipped, harness: "claude-code").state, .dialog)
+    }
+
+    /// Recorded from Claude Code in a fresh folder (c11, 2026-11-01): the 99-column
+    /// folder-trust screen with `No, exit` highlighted. The capture window keeps the
+    /// last 16 rows and the cursor sits on the selected option, as in the other
+    /// recorded chooser fixtures. Row text is as drawn, including the wrapped path.
+    private func recordedTrustScreen(selected: Int) -> PromptRegionSnapshot {
+        let no = selected == 0 ? " \u{276F} No, exit" : "   No, exit"
+        let yes = selected == 1 ? " \u{276F} Yes, I trust this folder" : "   Yes, I trust this folder"
+        let texts = [
+            " /private/tmp/claude-501/scratchpad/trustdir-97792/with/a/long/path/that/the/dialog/wr",
+            " aps/onto/a/second/row",
+            "",
+            " Quick safety check: Is this a project you created or one you trust? (Like your own code, a",
+            " well-known open source project, or work from your team). If not, take a moment to review what's",
+            " in this folder first.",
+            "",
+            " Claude Code'll be able to read, edit, and execute files here.",
+            "",
+            " Security guide",
+            "",
+            no,
+            yes,
+            "",
+            " Enter to confirm \u{00B7} Esc to cancel",
+            "",
+        ]
+        return region(texts.enumerated().map { Row(y: $0.offset, spans: [Span(text: $0.element)]) }, cursorY: 11 + selected)
+    }
+
+    func testRecordedClaudeTrustScreenIsATrustDialogWhicheverOptionIsHighlighted() {
+        for selected in [0, 1] {
+            let screen = recordedTrustScreen(selected: selected)
+            XCTAssertEqual(PromptInputClassifier.classify(screen, harness: "claude-code").state, .dialog, "selected \(selected)")
+            XCTAssertEqual(PromptInputClassifier.chooserKind(screen, harness: "claude-code"), .trust, "selected \(selected)")
+            // A launch that has not learned the harness yet still refuses.
+            XCTAssertEqual(PromptInputClassifier.chooserKind(screen, harness: nil), .trust, "selected \(selected)")
+        }
+    }
+
+    func testEveryRouteThatTypesRefusesTheRecordedTrustScreen() {
+        // `send`, `feed answer` and the mailbox doorbell all decide from the
+        // classified state; none of them may deliver (or press Return) on a dialog.
+        let state = PromptInputClassifier.classify(recordedTrustScreen(selected: 0), harness: "claude-code").state
+        XCTAssertEqual(state, .dialog)
+        XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .refuse(reason: "dialog"))
+        XCTAssertFalse(FeedAnswerPromptCommit.admits(state))
+        XCTAssertEqual(FeedAnswerPromptCommit.refusalReason(state), "dialog")
+        // The doorbell: no ring is decided, and nothing presses Return after a paste.
+        var input = MailboxDoorbell.Input(hasUnread: true, prompt: state)
+        input.now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "dialog"))
+        let preReturn = MailboxDoorbellSequence.preReturn(
+            rowIsCurrent: true, operatorInputUnchanged: true, agentOwnsTerminal: true,
+            captured: true, prompt: state, composer: nil)
+        XCTAssertNotNil(preReturn, "a dialog must refuse the doorbell's Return")
+        if case .submitted? = preReturn { XCTFail("a dialog must never reach a submitted Return") }
+    }
+
+    func testDialogKindNamesThePlanChooserAndNothingElse() {
+        let plan = region([
+            Row(y: 0, spans: [Span(text: "Would you like to make this plan?")]),
+            Row(y: 1, spans: [Span(text: "\u{276F} Yes, implement this plan")]),
+            Row(y: 2, spans: [Span(text: "  No, keep planning")]),
+            Row(y: 3, spans: [Span(text: "Enter to select \u{00B7} Esc to go back")]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.chooserKind(plan, harness: "claude-code"), .plan)
+
+        let composer = region([
+            Row(y: 0, spans: [Span(text: rule)]),
+            Row(y: 1, spans: [Span(text: "\u{276F}\u{00A0} ")]),
+            Row(y: 2, spans: [Span(text: rule)]),
+        ], cursorY: 1)
+        XCTAssertNil(PromptInputClassifier.chooserKind(composer, harness: "claude-code"))
+
+        // The old chooser still on screen above a live composer is not a dialog.
+        let stale = region([
+            Row(y: 0, spans: [Span(text: "\u{276F} No, exit")]),
+            Row(y: 1, spans: [Span(text: "  Yes, I trust this folder")]),
+            Row(y: 2, spans: [Span(text: "Enter to confirm \u{00B7} Esc to cancel")]),
+            Row(y: 3, spans: [Span(text: rule)]),
+            Row(y: 4, spans: [Span(text: "\u{276F}\u{00A0} ")]),
+        ], cursorY: 4)
+        XCTAssertNil(PromptInputClassifier.chooserKind(stale, harness: "claude-code"))
     }
 
     func testVisibleOldChooserAboveLiveComposerDoesNotLookLikeDialog() {
@@ -1259,6 +1365,48 @@ extension PromptInputClassifierTests {
         }
     }
 
+    /// C11H-272 (2026-11-13, panels 1927, 1928, 1933): a stray pkill ended
+    /// three Codex seats and their zsh lived on. Codex's composer row, with
+    /// zsh's `terminated` line written over it, sat above the bare prompt,
+    /// and input-state read the whole stretch as a 281-character draft, so
+    /// every send was refused. With the shell in front only the prompt's own
+    /// line counts.
+    private func deadCodexAboveShellPrompt() -> PromptRegionSnapshot {
+        region([
+            Row(y: 0, spans: [Span(text: "• Gate passed; PR #356 is up.")]),
+            Row(y: 1, spans: [Span(text: "")]),
+            Row(y: 2, spans: [Span(text: "› zsh: terminated  codex --dangerously-bypass-approvals-and-sandbox")]),
+            Row(y: 3, spans: [Span(text: "demo@mac work % ")]),
+        ], cursorY: 3)
+    }
+
+    func testDeadAgentComposerAboveAShellPromptIsNotADraft() {
+        let screen = deadCodexAboveShellPrompt()
+        let state = PromptInputClassifier.classify(screen, harness: "shell").state
+        XCTAssertEqual(state, .unknown)
+        XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .deliver(.unknown))
+        XCTAssertEqual(PromptInputObservation.activeScreen(screen, harness: " Shell ").classification.state, .unknown)
+        XCTAssertNil(PromptInputClassifier.composerText(screen, harness: "shell"))
+        // An untyped panel may hide a running agent, so it keeps the wide scan.
+        XCTAssertEqual(PromptInputClassifier.classify(screen, harness: nil).state, .draft)
+    }
+
+    /// The shell's own line keeps the refusal reader, soft wraps included.
+    func testAShellDraftOnThePromptLineStillRefuses() {
+        let typed = region([
+            Row(y: 0, spans: [Span(text: "› zsh: terminated  codex --yolo")]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}git st")]),
+        ], cursorY: 1)
+        XCTAssertEqual(PromptInputClassifier.classify(typed, harness: "shell"), .init(state: .draft, draftLength: 6))
+        let wrapped = region([
+            Row(y: 0, spans: [Span(text: "› zsh: terminated  codex --yolo")]),
+            Row(y: 1, spans: [Span(text: "❯\u{00A0}git commit -m 'a long ")], softWrap: true),
+            Row(y: 2, spans: [Span(text: "message'")], wrapContinuation: true),
+        ], cursorY: 2)
+        XCTAssertEqual(PromptInputClassifier.classify(wrapped, harness: "shell"), .init(state: .draft, draftLength: 30))
+        XCTAssertEqual(PromptInputClassifier.composerText(wrapped, harness: "shell"), "git commit -m 'a long message'")
+    }
+
     private var piLiveRule: String { String(repeating: "─", count: 69) }
 
     func testR1V3PiLiveDraftEndingInARuleRowIsNotEmpty() {
@@ -2183,4 +2331,1098 @@ private enum GrokUnfocusedCaptures {
         (29, [S("                                                                                                    ", bg: 0x141414)]),
     ])
 
+}
+
+// MARK: - C11H-280 Claude Code's composer on narrow and wide panels
+
+/// Real Claude Code 2.1.325 screens. The 99x35 ones ran in a c11 panel under
+/// `script`; the 348x86 ones in a pty of that size, the width of a full-width
+/// c11 panel. The raw bytes were replayed into cells, and each fixture is what
+/// the native reader returns: the cursor window (9 rows above the cursor, 6
+/// below) and, on the wide screens, the bottom window, both under the
+/// 4096-cell budget. Claude draws its suggested next prompt SGR 2 with the
+/// cursor on its first cell, and typed text upright.
+final class ClaudePromptSuggestionTests: XCTestCase {
+    func testNarrowCapturesClassify() {
+        XCTAssertEqual(PromptInputClassifier.classify(ClaudeCaptures.narrowEmpty.region(), harness: "claude-code"),
+                       .init(state: .empty, draftLength: nil))
+        let suggestion = ClaudeCaptures.narrowSuggestion.region()
+        XCTAssertEqual(PromptInputClassifier.classify(suggestion, harness: "claude-code"),
+                       .init(state: .suggestion, draftLength: nil))
+        XCTAssertNil(PromptInputClassifier.composerText(suggestion, harness: "claude-code"))
+        for (capture, text) in [(ClaudeCaptures.narrowDraft, "status check"),
+                                (ClaudeCaptures.narrowTypedOverSuggestion, "x")] {
+            let region = capture.region()
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "claude-code").state, .draft, text)
+            XCTAssertEqual(PromptInputClassifier.composerText(region, harness: "claude-code"), text)
+        }
+    }
+
+    /// The reported hold. A wide panel's cursor window passes the cell budget,
+    /// so that read alone is incomplete and the box is `unknown`.
+    func testWideCursorReadAloneIsUnknown() {
+        for capture in [ClaudeCaptures.wideEmpty, ClaudeCaptures.wideSuggestion, ClaudeCaptures.wideDraft] {
+            let region = capture.region(dropBottom: true)
+            XCTAssertFalse(region.complete)
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "claude-code").state, .unknown)
+        }
+    }
+
+    func testWideEmptyAndSuggestionRingAndAdmitSend() {
+        for (capture, expected) in [(ClaudeCaptures.wideEmpty, PromptInputState.empty),
+                                    (ClaudeCaptures.wideSuggestion, .suggestion)] {
+            let region = capture.region()
+            let state = PromptInputClassifier.classify(region, harness: "claude-code").state
+            XCTAssertEqual(state, expected)
+            XCTAssertNil(PromptInputClassifier.composerText(region, harness: "claude-code"))
+            XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .ring)
+            XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .deliver(.checked))
+            XCTAssertTrue(FeedAnswerPromptCommit.admits(state))
+        }
+    }
+
+    func testWideDraftsHold() {
+        let cases: [(ClaudeCapture, String)] = [
+            (ClaudeCaptures.wideDraft, "status check"),
+            (ClaudeCaptures.wideTypedOverSuggestion, "x"),
+            (ClaudeCaptures.wideSuggestionShapedDraft, "yes, read the next file"),
+        ]
+        for (capture, text) in cases {
+            let region = capture.region()
+            let state = PromptInputClassifier.classify(region, harness: "claude-code").state
+            XCTAssertEqual(state, .draft, text)
+            XCTAssertEqual(PromptInputClassifier.composerText(region, harness: "claude-code"), text)
+            XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .skip(reason: "draft"))
+            XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .refuse(reason: "draft"))
+        }
+    }
+
+    /// Fail closed: without the faint bit the suggestion's words are typed text.
+    func testSuggestionWithoutTheFaintSignalIsADraft() {
+        for (capture, text) in [(ClaudeCaptures.narrowSuggestion, "yes, look at AttentionOrder.swift"),
+                                (ClaudeCaptures.wideSuggestion, "yes")] {
+            let region = capture.region(dropFaint: true)
+            XCTAssertEqual(PromptInputClassifier.classify(region, harness: "claude-code").state, .draft, text)
+            XCTAssertEqual(PromptInputClassifier.composerText(region, harness: "claude-code"), text)
+        }
+    }
+
+    /// A bottom window the budget cut is no better than the clipped cursor read.
+    func testIncompleteBottomWindowStaysUnknown() {
+        let region = ClaudeCaptures.wideSuggestion.region(bottomIncomplete: true)
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "claude-code").state, .unknown)
+    }
+
+    /// The bottom window replaces only a clipped read. A complete cursor read
+    /// is classified as it is, even when a bottom window rides along.
+    func testCompleteCursorReadIsNotReplaced() {
+        var region = ClaudeCaptures.narrowEmpty.region()
+        region.screenBottom = ClaudeCaptures.wideDraft.region().screenBottom
+        XCTAssertEqual(PromptInputClassifier.classify(region, harness: "claude-code").state, .empty)
+    }
+
+    /// Grok (its own bottom rules) and panels with no composer reader keep
+    /// the clipped read.
+    func testOtherHarnessesKeepTheClippedRead() {
+        for harness in ["grok", "omp", nil] as [String?] {
+            XCTAssertEqual(PromptInputClassifier.classify(ClaudeCaptures.wideSuggestion.region(), harness: harness).state,
+                           .unknown, harness ?? "untyped")
+        }
+    }
+
+    /// The capture takes the second native read only after a clipped cursor
+    /// read on a bottom-composer panel; narrow panels read once.
+    func testBottomReadFollowsOnlyAClippedClaudeRead() {
+        let wide = ClaudeCaptures.wideSuggestion.region(dropBottom: true)
+        let narrow = ClaudeCaptures.narrowSuggestion.region()
+        XCTAssertTrue(PromptInputClassifier.readsScreenBottom(harness: "claude-code", afterCursorRead: wide))
+        XCTAssertFalse(PromptInputClassifier.readsScreenBottom(harness: "claude-code", afterCursorRead: narrow))
+        for harness in ["codex", "opencode", "pi"] {
+            XCTAssertTrue(PromptInputClassifier.readsScreenBottom(harness: harness, afterCursorRead: wide), harness)
+        }
+        XCTAssertFalse(PromptInputClassifier.readsScreenBottom(harness: "grok", afterCursorRead: wide))
+        XCTAssertFalse(PromptInputClassifier.readsScreenBottom(harness: nil, afterCursorRead: wide))
+    }
+
+    /// Through the capture the app runs, with each native window replayed
+    /// from the real screen. A Claude panel always takes the bottom read too
+    /// (C11H-320: its blocking dialogs hide the cursor); other harnesses read
+    /// once unless clipped.
+    @MainActor
+    func testCaptureTakesTheBottomReadAfterAClippedClaudeRead() {
+        let cases: [(ClaudeCapture, String, [TerminalController.PromptRegionAnchor], PromptInputState)] = [
+            (ClaudeCaptures.wideSuggestion, "claude-code", [.cursor, .bottom], .suggestion),
+            (ClaudeCaptures.wideEmpty, "claude-code", [.cursor, .bottom], .empty),
+            (ClaudeCaptures.wideDraft, "claude-code", [.cursor, .bottom], .draft),
+            (ClaudeCaptures.narrowSuggestion, "claude-code", [.cursor, .bottom], .suggestion),
+            (ClaudeCaptures.wideSuggestion, "omp", [.cursor], .unknown),
+        ]
+        for (capture, harness, expectedReads, expected) in cases {
+            var reads: [TerminalController.PromptRegionAnchor] = []
+            let region = TerminalController.capturePromptInputRegion(harness: harness, forSupervisor: false) { anchor in
+                reads.append(anchor)
+                return anchor == .cursor ? capture.cursorRead() : capture.bottomRead()
+            }
+            let state = region.map { PromptInputClassifier.classify($0, harness: harness).state }
+            XCTAssertEqual(reads, expectedReads, "\(harness) \(expected)")
+            XCTAssertEqual(state, expected, "\(harness)")
+            if let state, expected != .draft, expected != .unknown {
+                XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .ring)
+                XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .deliver(.checked))
+            }
+        }
+    }
+}
+
+// MARK: - C11H-280 Codex, OpenCode and Pi composers on wide panels
+
+/// Real 348x86 screens, each idle after one turn: Codex CLI 0.167.1, OpenCode
+/// 2.0.25 and Pi 1.5.0, recorded by scripts/prompt-capture/capture.py. Their
+/// composers sit within the bottom 11 rows, so on a full-width panel the
+/// clipped cursor read is `unknown` and the bottom read classifies the box.
+final class WideComposerCaptureTests: XCTestCase {
+    /// Through the capture the app runs: each takes the bottom read after the
+    /// clipped cursor read, an empty box rings and passes `send`'s guard, and
+    /// a typed box holds with its exact text.
+    @MainActor
+    func testWideComposersReadFromTheBottomWindow() {
+        let cases: [(String, ClaudeCapture, String, PromptInputState, String?)] = [
+            ("codex", WideComposerCaptures.codexEmpty, "placeholder", .suggestion, nil),
+            ("codex", WideComposerCaptures.codexTyped, "x", .draft, "x"),
+            ("codex", WideComposerCaptures.codexDraft, "draft", .draft, "status check"),
+            ("opencode", WideComposerCaptures.openCodeEmpty, "empty", .empty, nil),
+            ("opencode", WideComposerCaptures.openCodeDraft, "draft", .draft, "status check"),
+            ("pi", WideComposerCaptures.piEmpty, "empty", .empty, nil),
+            ("pi", WideComposerCaptures.piDraft, "draft", .draft, "status check"),
+        ]
+        for (harness, capture, label, expected, text) in cases {
+            let name = "\(harness) \(label)"
+            XCTAssertEqual(PromptInputClassifier.classify(capture.region(dropBottom: true), harness: harness).state,
+                           .unknown, name)
+            var reads: [TerminalController.PromptRegionAnchor] = []
+            let region = TerminalController.capturePromptInputRegion(harness: harness, forSupervisor: false) { anchor in
+                reads.append(anchor)
+                return anchor == .cursor ? capture.cursorRead() : capture.bottomRead()
+            }
+            XCTAssertEqual(reads, [.cursor, .bottom], name)
+            guard let region else { return XCTFail(name) }
+            let state = PromptInputClassifier.classify(region, harness: harness).state
+            XCTAssertEqual(state, expected, name)
+            XCTAssertEqual(PromptInputClassifier.composerText(region, harness: harness), text, name)
+            if expected == .draft {
+                XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .skip(reason: "draft"), name)
+                XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .refuse(reason: "draft"), name)
+            } else {
+                XCTAssertEqual(MailboxDoorbell.decide(.init(prompt: state)), .ring, name)
+                XCTAssertEqual(SendInputGuard.decide(state: state, allowUnguarded: false), .deliver(.checked), name)
+            }
+        }
+    }
+
+    /// A draft taller than the bottom window: `status check`, then blank rows
+    /// with the cursor on the last. The window holds the cursor but not the
+    /// typed row, so no reader may call the box empty. OpenCode's box reached
+    /// the top of the window and read `empty` before its start was required.
+    @MainActor
+    func testTallDraftCutAtTheTopIsNeverEmpty() {
+        let cases: [(String, ClaudeCapture, String)] = [
+            ("opencode", WideComposerCaptures.openCodeTallDraft348, "348"),
+            ("opencode", WideComposerCaptures.openCodeTallDraft420, "420"),
+            ("opencode", WideComposerCaptures.openCodeTallDraft512, "512"),
+            ("codex", WideComposerCaptures.codexTallDraft, "348"),
+            ("claude-code", WideComposerCaptures.claudeTallDraft, "348"),
+            ("pi", WideComposerCaptures.piTallDraft, "348"),
+        ]
+        for (harness, capture, width) in cases {
+            let name = "\(harness) \(width)"
+            var reads: [TerminalController.PromptRegionAnchor] = []
+            let region = TerminalController.capturePromptInputRegion(harness: harness, forSupervisor: false) { anchor in
+                reads.append(anchor)
+                return anchor == .cursor ? capture.cursorRead() : capture.bottomRead()
+            }
+            XCTAssertEqual(reads, [.cursor, .bottom], name)
+            guard let region else { return XCTFail(name) }
+            let state = PromptInputClassifier.classify(region, harness: harness).state
+            XCTAssertEqual(state, .unknown, name)
+            XCTAssertNotEqual(MailboxDoorbell.decide(.init(prompt: state)), .ring, name)
+            XCTAssertFalse(FeedAnswerPromptCommit.admits(state), name)
+        }
+    }
+}
+
+// Generated by scripts/prompt-capture/fixtures.py (--redact on the status
+// lines, which held a home path) from the pty bytes of
+// scripts/prompt-capture/capture.py runs at 348x86
+// (the tall OpenCode drafts also at 420x86 and 512x86).
+private enum WideComposerCaptures {
+    /// OpenCode at 348x86: `status check` and six blank rows, the cursor on the last.
+    static let openCodeTallDraft348 = ClaudeCapture(cursorX: 5, cursorY: 80, rows: [
+        (71, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (72, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (73, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (74, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("status check", fg: 0xEEEEEE, bg: 0x1E1E1E), S(r(" ", 329), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (75, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ], partialRow: [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 233), fg: 0xFFFFFF, bg: 0x1E1E1E)],
+    bottomRows: [
+        (75, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (82, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 311), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (83, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("╹", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r("▀", 343), fg: 0x1E1E1E, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ])
+    /// OpenCode at 420x86: `status check` and six blank rows, the cursor on the last.
+    static let openCodeTallDraft420 = ClaudeCapture(cursorX: 5, cursorY: 80, rows: [
+        (71, [S(r(" ", 420), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (72, [S(r(" ", 420), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (73, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (74, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("status check", fg: 0xEEEEEE, bg: 0x1E1E1E), S(r(" ", 401), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (75, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ], partialRow: [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 313), fg: 0xFFFFFF, bg: 0x1E1E1E)],
+    bottomRows: [
+        (77, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 415), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (82, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 383), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (83, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("╹", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r("▀", 415), fg: 0x1E1E1E, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (84, [S("  [status line redacted]" + r(" ", 396))]),
+        (85, [S(r(" ", 420), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ])
+    /// OpenCode at 512x86: `status check` and six blank rows, the cursor on the last.
+    static let openCodeTallDraft512 = ClaudeCapture(cursorX: 5, cursorY: 80, rows: [
+        (71, [S(r(" ", 512), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (72, [S(r(" ", 512), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (73, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (74, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("status check", fg: 0xEEEEEE, bg: 0x1E1E1E), S(r(" ", 493), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (75, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ], partialRow: [],
+    bottomRows: [
+        (78, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 507), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (82, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 475), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (83, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("╹", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r("▀", 507), fg: 0x1E1E1E, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (84, [S("  [status line redacted]" + r(" ", 488))]),
+        (85, [S(r(" ", 512), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ])
+    /// Codex: `status check` and nine blank rows, the cursor on the last.
+    static let codexTallDraft = ClaudeCapture(cursorX: 2, cursorY: 82, rows: [
+        (73, [S("› status check" + r(" ", 334))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r(" ", 348))]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r(" ", 348))]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S(r(" ", 323) + "⚠ "), S("1 warning", fg: 0xC4A767), S(" · f2 to view ")]),
+    ])
+    /// Claude Code: `status check` and nine blank rows, the cursor on the last.
+    static let claudeTallDraft = ClaudeCapture(cursorX: 2, cursorY: 82, rows: [
+        (73, [S("❯\u{00A0}status check" + r(" ", 334))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle) · PR", fg: 0x999999), S(" "), S("#303", fg: 0xFFC107), S(r(" ", 300))]),
+    ])
+    /// Pi: `status check` and nine blank rows, the cursor on the last.
+    static let piTallDraft = ClaudeCapture(cursorX: 0, cursorY: 82, rows: [
+        (73, [S("status check" + r(" ", 336))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r("─", 348), fg: 0x6185CC)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r("─", 348), fg: 0x6185CC)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("↑18k ↓30 R9.7k CH35.2% 2.6%/1.0M (auto)" + r(" ", 285) + "(kimi) k3.1-pro • medium", fg: 0x7E888E)]),
+    ])
+    /// Codex: idle after a turn, the composer empty under its faint placeholder.
+    static let codexEmpty = ClaudeCapture(cursorX: 2, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S("› "), S("Ask Codex to do anything", faint: true), S(r(" ", 322))]),
+        (83, [S(r(" ", 348))]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S("› "), S("Ask Codex to do anything", faint: true), S(r(" ", 322))]),
+        (83, [S(r(" ", 348))]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  ← for agents · ? for shortcuts" + r(" ", 291) + "⚠ "), S("1 warning", fg: 0xC4A767), S(" · f2 to view ")]),
+    ])
+    /// Codex: `x` typed over the placeholder.
+    static let codexTyped = ClaudeCapture(cursorX: 3, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S("› x" + r(" ", 345))]),
+        (83, [S(r(" ", 348))]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S("› x" + r(" ", 345))]),
+        (83, [S(r(" ", 348))]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S(r(" ", 323) + "⚠ "), S("1 warning", fg: 0xC4A767), S(" · f2 to view ")]),
+    ])
+    /// Codex: `status check` typed.
+    static let codexDraft = ClaudeCapture(cursorX: 14, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S("› status check" + r(" ", 334))]),
+        (83, [S(r(" ", 348))]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r(" ", 348))]),
+        (82, [S("› status check" + r(" ", 334))]),
+        (83, [S(r(" ", 348))]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S(r(" ", 323) + "⚠ "), S("1 warning", fg: 0xC4A767), S(" · f2 to view ")]),
+    ])
+    /// OpenCode: idle after a turn, the composer empty.
+    static let openCodeEmpty = ClaudeCapture(cursorX: 5, cursorY: 80, rows: [
+        (71, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (72, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (73, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (74, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (75, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ], partialRow: [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 233), fg: 0xFFFFFF, bg: 0x1E1E1E)],
+    bottomRows: [
+        (75, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (82, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 311), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (83, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("╹", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r("▀", 343), fg: 0x1E1E1E, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ])
+    /// OpenCode: `status check` typed.
+    static let openCodeDraft = ClaudeCapture(cursorX: 17, cursorY: 80, rows: [
+        (71, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (72, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (73, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (74, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (75, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("status check", fg: 0xEEEEEE, bg: 0x1E1E1E), S(r(" ", 329), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ], partialRow: [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 233), fg: 0xFFFFFF, bg: 0x1E1E1E)],
+    bottomRows: [
+        (75, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (76, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (77, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (78, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (79, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (80, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("status check", fg: 0xEEEEEE, bg: 0x1E1E1E), S(r(" ", 329), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (81, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r(" ", 343), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (82, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("┃", fg: 0xAAAAAA, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K31", fg: 0xAAAAAA, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("·", fg: 0x808080, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("K3.1 Pro", fg: 0xEEEEEE, bg: 0x1E1E1E), S(" ", fg: 0xFFFFFF, bg: 0x1E1E1E), S("Kimi For Coding", fg: 0x808080, bg: 0x1E1E1E), S(r(" ", 311), fg: 0xFFFFFF, bg: 0x1E1E1E), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (83, [S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A), S("╹", fg: 0xAAAAAA, bg: 0x0A0A0A), S(r("▀", 343), fg: 0x1E1E1E, bg: 0x0A0A0A), S("  ", fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S(r(" ", 348), fg: 0xFFFFFF, bg: 0x0A0A0A)]),
+    ])
+    /// Pi: idle after a turn, the composer empty.
+    static let piEmpty = ClaudeCapture(cursorX: 0, cursorY: 82, rows: [
+        (73, [S(r(" ", 348), bg: 0x213B49)]),
+        (74, [S(" ", bg: 0x213B49), S("Reply with the single word ok. Do not run any tools.", fg: 0xDEE0E1, bg: 0x213B49), S(r(" ", 295), bg: 0x213B49)]),
+        (75, [S(r(" ", 348), bg: 0x213B49)]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(" "), S("I'll respond single word ok no tools. Make sure response exactly ok lowercase.", italic: true, fg: 0x96A0A4), S(r(" ", 269))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(" ok" + r(" ", 345))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x6185CC)]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r("─", 348), fg: 0x6185CC)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348), bg: 0x213B49)]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(" "), S("I'll respond single word ok no tools. Make sure response exactly ok lowercase.", italic: true, fg: 0x96A0A4), S(r(" ", 269))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(" ok" + r(" ", 345))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x6185CC)]),
+        (82, [S(r(" ", 348))]),
+        (83, [S(r("─", 348), fg: 0x6185CC)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("↑28k ↓29 2.6%/1.0M (auto)" + r(" ", 299) + "(kimi) k3.1-pro • medium", fg: 0x7E888E)]),
+    ])
+    /// Pi: `status check` typed.
+    static let piDraft = ClaudeCapture(cursorX: 12, cursorY: 82, rows: [
+        (73, [S(r(" ", 348), bg: 0x213B49)]),
+        (74, [S(" ", bg: 0x213B49), S("Reply with the single word ok. Do not run any tools.", fg: 0xDEE0E1, bg: 0x213B49), S(r(" ", 295), bg: 0x213B49)]),
+        (75, [S(r(" ", 348), bg: 0x213B49)]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(" "), S("I'll respond single word ok no tools. Make sure response exactly ok lowercase.", italic: true, fg: 0x96A0A4), S(r(" ", 269))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(" ok" + r(" ", 345))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x6185CC)]),
+        (82, [S("status check" + r(" ", 336))]),
+        (83, [S(r("─", 348), fg: 0x6185CC)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348), bg: 0x213B49)]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(" "), S("I'll respond single word ok no tools. Make sure response exactly ok lowercase.", italic: true, fg: 0x96A0A4), S(r(" ", 269))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(" ok" + r(" ", 345))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x6185CC)]),
+        (82, [S("status check" + r(" ", 336))]),
+        (83, [S(r("─", 348), fg: 0x6185CC)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("↑28k ↓29 2.6%/1.0M (auto)" + r(" ", 299) + "(kimi) k3.1-pro • medium", fg: 0x7E888E)]),
+    ])
+}
+
+private struct ClaudeCapture {
+    let cursorX: Int
+    let cursorY: Int
+    /// The cursor window's whole rows.
+    let rows: [(Int, [S])]
+    /// Cells of the row the cell budget cut, which the native reader returns
+    /// with no row entry. Present only when the cursor read is incomplete.
+    var partialRow: [S]? = nil
+    /// The bottom window. The native reader drops the row the budget would
+    /// cut, so this read stays complete.
+    var bottomRows: [(Int, [S])]? = nil
+
+    /// The native cursor read alone.
+    func cursorRead() -> PromptRegionSnapshot { region(dropBottom: true) }
+
+    /// The native bottom read, which reports the live cursor too. Nil when
+    /// this screen was narrow enough that no bottom window was recorded.
+    func bottomRead() -> PromptRegionSnapshot? {
+        guard let bottom = region().screenBottom else { return nil }
+        return PromptRegionSnapshot(
+            cursorX: cursorX, cursorY: cursorY, cursorPendingWrap: false, complete: bottom.complete,
+            rows: bottom.rows, cells: bottom.cells, text: bottom.text
+        )
+    }
+
+    func region(dropBottom: Bool = false, bottomIncomplete: Bool = false, dropFaint: Bool = false) -> PromptRegionSnapshot {
+        let window = Self.cells(rows, partial: partialRow, dropFaint: dropFaint)
+        var snapshot = PromptRegionSnapshot(
+            cursorX: cursorX,
+            cursorY: cursorY,
+            cursorPendingWrap: false,
+            complete: partialRow == nil,
+            rows: window.rows,
+            cells: window.cells,
+            text: window.text
+        )
+        if let bottomRows, !dropBottom {
+            let bottom = Self.cells(bottomRows, partial: nil, dropFaint: dropFaint)
+            snapshot.screenBottom = PromptRegionRows(
+                complete: !bottomIncomplete, rows: bottom.rows, cells: bottom.cells, text: bottom.text
+            )
+        }
+        return snapshot
+    }
+
+    /// One cell per scalar: these screens hold no wide or combining glyphs.
+    private static func cells(
+        _ rows: [(Int, [S])], partial: [S]?, dropFaint: Bool
+    ) -> (rows: [PromptRegionRow], cells: [PromptRegionCell], text: Data) {
+        var bytes = Data()
+        var cells: [PromptRegionCell] = []
+        var outputRows: [PromptRegionRow] = []
+        func append(_ spans: [S]) {
+            for span in spans {
+                for scalar in span.text.unicodeScalars {
+                    let encoded = Array(String(scalar).utf8)
+                    cells.append(PromptRegionCell(
+                        textOffset: bytes.count, textLength: encoded.count,
+                        faint: span.faint && !dropFaint, italic: span.italic, fg: span.fg, bg: span.bg
+                    ))
+                    bytes.append(contentsOf: encoded)
+                }
+            }
+        }
+        for (y, spans) in rows {
+            let start = cells.count
+            append(spans)
+            outputRows.append(PromptRegionRow(
+                screenY: y, cellRange: start..<cells.count, softWrap: false, wrapContinuation: false
+            ))
+        }
+        if let partial { append(partial) }
+        return (outputRows, cells, bytes)
+    }
+}
+
+private func r(_ text: String, _ count: Int) -> String { String(repeating: text, count: count) }
+
+// Generated by scripts/prompt-capture/fixtures.py (--redact "[haiku-5.5") from
+// real Claude Code 2.1.325 pty bytes: the 99x35 screens recorded with
+// `script` in a c11 panel, the 348x86 ones by scripts/prompt-capture/capture.py.
+// The status line under each box is redacted to its width, which the cell
+// budget counts.
+private enum ClaudeCaptures {
+    /// 99x35, idle after a turn: an empty box.
+    static let narrowEmpty = ClaudeCapture(cursorX: 2, cursorY: 31, rows: [
+        (22, [S("⏺", fg: 0xFFFFFF), S(" I'm not sure what \"x\" means. Which do you want?" + r(" ", 50))]),
+        (23, [S(r(" ", 99))]),
+        (24, [S("  1. Yes, read "), S("AttentionOrder.swift", fg: 0xB1B9F9), S(" next. (Recommended if you meant yes to my question.)" + r(" ", 11))]),
+        (25, [S("  2. Stop here. I'll leave the Feed review at "), S("SendInputGuard.swift", fg: 0xB1B9F9), S("." + r(" ", 32))]),
+        (26, [S("  3. Something else. Tell me what you meant." + r(" ", 55))]),
+        (27, [S(r(" ", 99))]),
+        (28, [S("✻", fg: 0x999999), S(" "), S("Crunched for 1s · done 5:28 PM", fg: 0x999999), S(r(" ", 67))]),
+        (29, [S(r(" ", 99))]),
+        (30, [S(r("─", 99), fg: 0x888888)]),
+        (31, [S("❯\u{00A0}" + r(" ", 97))]),
+        (32, [S(r("─", 99), fg: 0x888888)]),
+        (33, [S("  [status line redacted]" + r(" ", 75))]),
+        (34, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 61))]),
+    ])
+    /// 99x35, idle after a turn: Claude's suggested next prompt, SGR 2, the cursor on its first cell.
+    static let narrowSuggestion = ClaudeCapture(cursorX: 2, cursorY: 31, rows: [
+        (22, [S("  panel's prompt-input state. It refuses delivery when the prompt holds a draft or a dialog is     ")]),
+        (23, [S("  open, unless the caller explicitly overrides the guard, and it also checks that the target" + r(" ", 7))]),
+        (24, [S("  workspace and panel are still current before writing." + r(" ", 44))]),
+        (25, [S(r(" ", 99))]),
+        (26, [S("  Should I look at the next file, "), S("AttentionOrder.swift", fg: 0xB1B9F9), S("?" + r(" ", 44))]),
+        (27, [S(r(" ", 99))]),
+        (28, [S("✻", fg: 0x999999), S(" "), S("Worked for 2s · done 5:27 PM", fg: 0x999999), S(r(" ", 69))]),
+        (29, [S(r(" ", 99))]),
+        (30, [S(r("─", 99), fg: 0x888888)]),
+        (31, [S("❯\u{00A0}"), S("yes, look at AttentionOrder.swift", faint: true), S(r(" ", 64))]),
+        (32, [S(r("─", 99), fg: 0x888888)]),
+        (33, [S("  [status line redacted]" + r(" ", 75))]),
+        (34, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 61))]),
+    ])
+    /// 99x35: `status check` typed into the empty box.
+    static let narrowDraft = ClaudeCapture(cursorX: 14, cursorY: 31, rows: [
+        (22, [S("⏺", fg: 0xFFFFFF), S(" I'm not sure what \"x\" means. Which do you want?" + r(" ", 50))]),
+        (23, [S(r(" ", 99))]),
+        (24, [S("  1. Yes, read "), S("AttentionOrder.swift", fg: 0xB1B9F9), S(" next. (Recommended if you meant yes to my question.)" + r(" ", 11))]),
+        (25, [S("  2. Stop here. I'll leave the Feed review at "), S("SendInputGuard.swift", fg: 0xB1B9F9), S("." + r(" ", 32))]),
+        (26, [S("  3. Something else. Tell me what you meant." + r(" ", 55))]),
+        (27, [S(r(" ", 99))]),
+        (28, [S("✻", fg: 0x999999), S(" "), S("Crunched for 1s · done 5:28 PM", fg: 0x999999), S(r(" ", 67))]),
+        (29, [S(r(" ", 99))]),
+        (30, [S(r("─", 99), fg: 0x888888)]),
+        (31, [S("❯\u{00A0}status check" + r(" ", 85))]),
+        (32, [S(r("─", 99), fg: 0x888888)]),
+        (33, [S("  [status line redacted]" + r(" ", 75))]),
+        (34, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 61))]),
+    ])
+    /// 99x35: one key typed over a suggestion. The suggestion is gone and `x` is upright.
+    static let narrowTypedOverSuggestion = ClaudeCapture(cursorX: 3, cursorY: 31, rows: [
+        (22, [S("  including the journal sequence and ask event, so a delayed Return cannot answer a later ask in   ")]),
+        (23, [S("  the same tab, and it starts "), S("FeedAnswerEligibility.capture", fg: 0xB1B9F9), S(", which returns that identity only when ")]),
+        (24, [S("  the workspace, owner, snapshot and projected row all check out." + r(" ", 34))]),
+        (25, [S(r(" ", 99))]),
+        (26, [S("  Should I read the rest of "), S("FeedAnswer.swift", fg: 0xB1B9F9), S("?" + r(" ", 54))]),
+        (27, [S(r(" ", 99))]),
+        (28, [S("✻", fg: 0x999999), S(" "), S("Worked for 2s · done 5:29 PM", fg: 0x999999), S(r(" ", 69))]),
+        (29, [S(r(" ", 99))]),
+        (30, [S(r("─", 99), fg: 0x888888)]),
+        (31, [S("❯\u{00A0}x" + r(" ", 96))]),
+        (32, [S(r("─", 99), fg: 0x888888)]),
+        (33, [S("  [status line redacted]" + r(" ", 75))]),
+        (34, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 61))]),
+    ])
+    /// 348x86, idle after a turn: an empty box.
+    static let wideEmpty = ClaudeCapture(cursorX: 2, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}" + r(" ", 346))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}" + r(" ", 346))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 310))]),
+    ])
+    /// 348x86, idle after a turn: the suggestion `yes`.
+    static let wideSuggestion = ClaudeCapture(cursorX: 2, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}"), S("yes", faint: true), S(r(" ", 343))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}"), S("yes", faint: true), S(r(" ", 343))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 310))]),
+    ])
+    /// 348x86: `x` typed over that suggestion.
+    static let wideTypedOverSuggestion = ClaudeCapture(cursorX: 3, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}x" + r(" ", 345))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}x" + r(" ", 345))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 310))]),
+    ])
+    /// 348x86: `status check` typed, the words the Orchestrator's suggestion showed on 2026-11-13.
+    static let wideDraft = ClaudeCapture(cursorX: 14, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}status check" + r(" ", 334))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}status check" + r(" ", 334))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 310))]),
+    ])
+    /// 348x86: `yes, read the next file` typed by hand, a suggestion's shape drawn upright.
+    static let wideSuggestionShapedDraft = ClaudeCapture(cursorX: 25, cursorY: 82, rows: [
+        (73, [S(r(" ", 348))]),
+        (74, [S(r(" ", 348))]),
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}yes, read the next file" + r(" ", 323))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+    ], partialRow: [S("  [status line redacted]" + r(" ", 244))],
+    bottomRows: [
+        (75, [S(r(" ", 348))]),
+        (76, [S(r(" ", 348))]),
+        (77, [S(r(" ", 348))]),
+        (78, [S(r(" ", 348))]),
+        (79, [S(r(" ", 348))]),
+        (80, [S(r(" ", 348))]),
+        (81, [S(r("─", 348), fg: 0x888888)]),
+        (82, [S("❯\u{00A0}yes, read the next file" + r(" ", 323))]),
+        (83, [S(r("─", 348), fg: 0x888888)]),
+        (84, [S("  [status line redacted]" + r(" ", 324))]),
+        (85, [S("  "), S("⏵⏵ auto mode on", fg: 0xFFC107), S(" (shift+tab to cycle)", fg: 0x999999), S(r(" ", 310))]),
+    ])
+}
+
+/// C11H-298: a send reports submitted only on the agent's own evidence that it took the line.
+final class SendSubmitConfirmationTests: XCTestCase {
+    private typealias Facts = SendSubmitConfirmation.Facts
+
+    private func expectation(screen: Bool, isAgent: Bool = true, wantsReturn: Bool = true, bodyIsEmpty: Bool = false,
+                             unguarded: Bool = false, _ baseline: Facts) -> SendSubmitConfirmation.Expectation {
+        SendSubmitConfirmation.expectation(wantsReturn: wantsReturn, bodyIsEmpty: bodyIsEmpty, screen: screen,
+                                           isAgent: isAgent, unguarded: unguarded, baseline: baseline)
+    }
+
+    func testAnIdleAgentWithNoScreenMustStartATurn() {
+        XCTAssertEqual(expectation(screen: false, Facts(hcStatus: "idle")), .turnStart)
+        XCTAssertEqual(expectation(screen: false, Facts(hcStatus: "done")), .turnStart)
+    }
+
+    func testAnEmptyComposerOnScreenMustTakeTheLine() {
+        XCTAssertEqual(expectation(screen: true, Facts(prompt: .empty)), .turnStart)
+        XCTAssertEqual(expectation(screen: true, Facts(prompt: .suggestion)), .turnStart)
+    }
+
+    func testNothingToWaitOnIsNamed() {
+        XCTAssertEqual(expectation(screen: false, wantsReturn: false, Facts(hcStatus: "idle")), .none("no_return"))
+        XCTAssertEqual(expectation(screen: false, bodyIsEmpty: true, Facts(hcStatus: "idle")), .none("bare_return"))
+        XCTAssertEqual(expectation(screen: false, isAgent: false, Facts()), .none("not_agent"))
+        XCTAssertEqual(expectation(screen: false, Facts(hcStatus: "working")), .none("agent_working"))
+        XCTAssertEqual(expectation(screen: false, Facts(hcStatus: "idle", journalPhase: .working)), .none("agent_working"))
+        XCTAssertEqual(expectation(screen: false, unguarded: true, Facts(hcStatus: "blocked")), .none("unguarded"))
+        XCTAssertEqual(expectation(screen: true, Facts(prompt: .unknown)), .none("prompt_unknown"))
+        XCTAssertEqual(expectation(screen: true, unguarded: true, Facts(prompt: .draft)), .none("unguarded"))
+        XCTAssertEqual(SendSubmitConfirmation.expectation(wantsReturn: true, bodyIsEmpty: false, screen: false, isAgent: true,
+            unguarded: false, baseline: Facts(hcStatus: "idle"), localCommand: true), .none("local_command"))
+    }
+
+    /// `/clear`, `/model opus` and `!ls` start no turn; an absolute path opening a message is a message.
+    func testSlashCommandsAndShellLinesAreLocal() {
+        for line in ["/clear", "/model opus", "  /compact keep the plan", "!ls -la", "/mcp:tools", "/release-notes"] {
+            XCTAssertTrue(SendSubmitConfirmation.isLocalCommand(line), line)
+        }
+        for line in ["/Users/me/brief.md, read it", "/tmp/x.md and follow it", "Read /tmp/brief.md", "/ space", "/1abc", ""] {
+            XCTAssertFalse(SendSubmitConfirmation.isLocalCommand(line), line)
+        }
+    }
+
+    /// Repair 1, B1: hc can fill in the retained time of the same status and turn after a reconnect, with no
+    /// input taken. The journal's idle `sinceMs` moving from 0 to 2500 for `done`, turn 9, is not a turn.
+    func testATimestampFilledInLaterForTheSameTurnIsNotATurn() {
+        for turnID in [nil, "9"] as [String?] {
+            let before = Facts(hcStatus: "done", hcTurn: 9, journalPhase: .idle, journalSinceMs: 0, journalTurnID: turnID)
+            var enriched = before; enriched.journalSinceMs = 2500
+            XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: enriched, final: false), .pending)
+            XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: enriched, final: true), .unconfirmed("no_turn_start"))
+            // Repair 2: learning an identity the baseline did not hold (nil to "hc-9") is discovery, not a turn.
+            var discovered = enriched; discovered.journalTurnID = "hc-9"
+            if turnID == nil {
+                XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: discovered, final: true),
+                               .unconfirmed("no_turn_start"), "nil to hc-9 is a first look at the same turn")
+            }
+            var nextTurn = enriched; nextTurn.journalTurnID = "10"
+            XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: nextTurn, final: true),
+                           turnID == nil ? .unconfirmed("no_turn_start") : .confirmed("journal_turn"),
+                           "only a change from an identity the baseline held is a new turn")
+        }
+    }
+
+    /// Repair 2 (Astra B1): a restored or reconnected panel whose live journal is absent at the baseline and
+    /// appears during the wait shows the retained turn it already had. With every hc fact unchanged (`done`,
+    /// 2500, turn 9), that first look is never a submission, idle or working.
+    func testAJournalFirstSeenDuringTheWaitIsNotATurn() {
+        let before = Facts(hcStatus: "done", hcStatusMs: 2500, hcTurn: 9)
+        var appeared = before
+        appeared.journalPhase = .idle; appeared.journalSinceMs = 2500; appeared.journalTurnID = "hc-9"
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: appeared, final: false), .pending)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: appeared, final: true), .unconfirmed("no_turn_start"))
+        var retainedWorking = appeared; retainedWorking.journalPhase = .working
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: retainedWorking, final: true),
+                       .unconfirmed("no_turn_start"), "a republished working phase is not this line's turn")
+        var hcMoved = appeared; hcMoved.hcTurn = 10
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: before, now: hcMoved, final: false), .confirmed("hc_turn"),
+                       "an independently advanced hc turn still confirms")
+    }
+
+    /// Repair 2 (Astra B2): a recognized agent owns the terminal whether or not c11 can read its composer, and
+    /// for an agent JSON `submitted` is only its confirmed take.
+    func testAnAgentWithoutAComposerReaderStillOwnsItsTerminal() {
+        for kind in ["omp", "github-copilot", "claude-code", "codex"] {
+            XCTAssertTrue(SendSubmitConfirmation.screenTargetIsAgent(harness: kind, record: nil), kind)
+        }
+        XCTAssertFalse(PromptInputClassifier.supportsComposer(harness: "omp"), "the case this covers")
+        XCTAssertFalse(SendSubmitConfirmation.screenTargetIsAgent(harness: nil, record: nil))
+        XCTAssertFalse(SendSubmitConfirmation.screenTargetIsAgent(harness: "zsh", record: nil))
+        let claude = HCTerminalRecord(key: HCTerminalKey(owningCoreID: "c", localAddress: "t1"), state: .running, labels: [:],
+            machineAvailability: .local, pid: 7, foreground: HCForeground(name: "claude", argv: ["claude"]), status: "idle")
+        XCTAssertTrue(SendSubmitConfirmation.screenTargetIsAgent(harness: nil, record: claude), "hc's foreground")
+        XCTAssertFalse(SendSubmitConfirmation.submittedField(verdict: nil, agentOwned: true, returnWritten: true),
+                       "an agent line not waited on is not reported submitted")
+        XCTAssertTrue(SendSubmitConfirmation.submittedField(verdict: nil, agentOwned: false, returnWritten: true))
+        XCTAssertFalse(SendSubmitConfirmation.submittedField(verdict: nil, agentOwned: false, returnWritten: false))
+        XCTAssertTrue(SendSubmitConfirmation.submittedField(verdict: .confirmed("hc_status"), agentOwned: true, returnWritten: true))
+        XCTAssertFalse(SendSubmitConfirmation.submittedField(verdict: .unconfirmed("dialog"), agentOwned: true, returnWritten: true))
+    }
+
+    /// Review finding 1: an empty composer read from the frame drawn before the text was typed proves nothing.
+    func testAnEmptyComposerFromTheBaselineFrameIsNotEvidence() {
+        let baseline = Facts(hcStatus: "idle", prompt: .empty, frame: 41)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: baseline, now: Facts(hcStatus: "idle", prompt: .empty, frame: 41),
+                                                    final: false), .pending)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: baseline, now: Facts(hcStatus: "idle", prompt: .empty, frame: 41),
+                                                    final: true), .unconfirmed("no_turn_start"))
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: baseline, now: Facts(hcStatus: "idle", prompt: .empty, frame: 42),
+                                                    final: false), .confirmed("composer_empty"))
+    }
+
+    /// Review finding 2: a turn already running is the agent's own work. Its edges never confirm this line;
+    /// only the composer can, and a line still in it outranks any edge.
+    func testARunningTurnsOwnEdgesNeverConfirmTheLine() {
+        let working = Facts(hcStatus: "working", hcStatusMs: 100, hcTurn: 3, journalPhase: .working, journalSinceMs: 50,
+                            prompt: .empty, frame: 1)
+        let blocked = Facts(hcStatus: "blocked", hcStatusMs: 400, hcTurn: 3, journalPhase: .blocked, journalSinceMs: 400,
+                            prompt: .draft, frame: 2)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: working, now: blocked, final: true), .unconfirmed("composer_holds_text"))
+        let ended = Facts(hcStatus: "idle", hcStatusMs: 500, hcTurn: 4, journalPhase: .idle, journalSinceMs: 500,
+                          prompt: .unknown, frame: 3)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: working, now: ended, final: true), .unconfirmed("no_turn_start"))
+        var queued = ended; queued.prompt = .empty
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: working, now: queued, final: false), .confirmed("composer_empty"))
+        let idle = Facts(hcStatus: "idle", hcStatusMs: 100, journalPhase: .idle, journalSinceMs: 50, prompt: .empty, frame: 1)
+        var started = blocked; started.prompt = .empty
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle, now: started, final: false), .confirmed("journal_turn"))
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle, now: blocked, final: true), .unconfirmed("composer_holds_text"),
+                       "a turn edge with the line still in the composer is not this line")
+    }
+
+    func testTheAgentsOwnTurnConfirms() {
+        let idle = Facts(hcStatus: "idle", hcStatusMs: 100, hcTurn: 4, journalPhase: .idle, journalSinceMs: 50,
+                         journalTurnID: "turn-1")
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle,
+            now: Facts(hcStatus: "idle", hcStatusMs: 100, hcTurn: 4, journalPhase: .working, journalSinceMs: 200), final: false),
+            .confirmed("journal_turn"))
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle,
+            now: Facts(hcStatus: "idle", hcStatusMs: 100, hcTurn: 4, journalPhase: .idle, journalSinceMs: 300,
+                       journalTurnID: "turn-2"), final: false),
+            .confirmed("journal_turn"), "a whole turn that came and went between looks, under a new turn identity")
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle,
+            now: Facts(hcStatus: "working", hcStatusMs: 180, hcTurn: 4, journalPhase: .idle, journalSinceMs: 50), final: false),
+            .confirmed("hc_status"))
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle,
+            now: Facts(hcStatus: "idle", hcStatusMs: 100, hcTurn: 5, journalPhase: .idle, journalSinceMs: 50), final: false),
+            .confirmed("hc_turn"))
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: Facts(prompt: .empty), now: Facts(prompt: .empty), final: false),
+            .confirmed("composer_empty"))
+    }
+
+    /// The 2026-11-14 01:38 incident: the Return was written, hc and the journal stayed idle, and the text sat in
+    /// the composer. The send must not say submitted.
+    func testAnIdleAgentThatNeverTookTheLineIsUnconfirmed() {
+        let idle = Facts(hcStatus: "idle", hcStatusMs: 100, journalPhase: .idle, journalSinceMs: 50)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle, now: idle, final: false), .pending)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle, now: idle, final: true), .unconfirmed("no_turn_start"))
+        var draft = idle; draft.prompt = .draft
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle, now: draft, final: true), .unconfirmed("composer_holds_text"))
+        var dialog = idle; dialog.prompt = .dialog
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: idle, now: dialog, final: true), .unconfirmed("dialog"))
+        let working = Facts(hcStatus: "working", hcStatusMs: 100, journalPhase: .working, journalSinceMs: 50)
+        XCTAssertEqual(SendSubmitConfirmation.judge(baseline: working, now: working, final: true), .unconfirmed("no_turn_start"),
+                       "a turn that was already open before the send is not this send's turn")
+    }
+
+    func testTheWaitLooksUntilEvidenceOrTheDeadline() {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let deadline = clock.addingTimeInterval(1)
+        let baseline = Facts(hcStatus: "idle", prompt: .empty)
+        var looks = 0
+        let held = SendSubmitConfirmation.wait(baseline: baseline, deadline: deadline, now: { clock },
+            sleep: { clock = clock.addingTimeInterval($0) }) { timeout in
+            XCTAssertLessThanOrEqual(timeout, 1)
+            looks += 1
+            return Facts(hcStatus: "idle", prompt: .draft)
+        }
+        XCTAssertEqual(held, .unconfirmed("composer_holds_text"))
+        XCTAssertTrue((9...10).contains(looks), "one look per 100 ms until the deadline, got \(looks)")
+
+        clock = Date(timeIntervalSince1970: 2_000)
+        looks = 0
+        let taken = SendSubmitConfirmation.wait(baseline: baseline, deadline: clock.addingTimeInterval(3), now: { clock },
+            sleep: { clock = clock.addingTimeInterval($0) }) { _ in
+            looks += 1
+            return Facts(hcStatus: looks < 3 ? "idle" : "working", hcStatusMs: Int64(looks))
+        }
+        XCTAssertEqual(taken, .confirmed("hc_status"))
+        XCTAssertEqual(looks, 3)
+
+        clock = Date(timeIntervalSince1970: 3_000)
+        let blind = SendSubmitConfirmation.wait(baseline: baseline, deadline: clock.addingTimeInterval(0.5), now: { clock },
+            sleep: { clock = clock.addingTimeInterval($0) }) { _ in nil }
+
+        // Repair 1, B3: the wait ends at its deadline. Each look may block only for the time left, and a look
+        // that uses all of it (a busy main thread) ends the wait instead of earning another poll.
+        for (budget, lookTakes) in [(0.35, 1.0), (3.0, 1.0), (3.0, 0.03)] {
+            let start = Date(timeIntervalSinceReferenceDate: 4_000)   // near the reference date: full precision
+            clock = start
+            var timeouts: [TimeInterval] = []
+            let verdict = SendSubmitConfirmation.wait(baseline: baseline, deadline: start.addingTimeInterval(budget),
+                now: { clock }, sleep: { clock = clock.addingTimeInterval($0) }) { timeout in
+                timeouts.append(timeout); clock = clock.addingTimeInterval(min(timeout, lookTakes)); return nil
+            }
+            XCTAssertEqual(verdict, .unconfirmed("no_turn_start"))
+            XCTAssertLessThanOrEqual(clock.timeIntervalSince(start), budget + 1e-6, "budget \(budget): \(timeouts)")
+            XCTAssertTrue(timeouts.allSatisfy { $0 > 0 && $0 <= 1 }, "\(timeouts)")
+        }
+        XCTAssertEqual(blind, .unconfirmed("no_turn_start"), "no answer at all is not a submission")
+    }
+
+    /// The doorbell's main-actor wait: a line the composer still holds is never delivered.
+    @MainActor
+    func testTheDoorbellWaitHoldsALineTheComposerKeeps() async {
+        let baseline = Facts(hcStatus: "idle", prompt: .empty)
+        let held = await SendSubmitConfirmation.waitOnMain(baseline: baseline, deadline: Date().addingTimeInterval(0.3)) {
+            Facts(hcStatus: "idle", prompt: .draft)
+        }
+        XCTAssertEqual(held, .unconfirmed("composer_holds_text"))
+        let taken = await SendSubmitConfirmation.waitOnMain(baseline: baseline, deadline: Date().addingTimeInterval(2)) {
+            Facts(hcStatus: "idle", prompt: .empty)
+        }
+        XCTAssertEqual(taken, .confirmed("composer_empty"))
+    }
+
+    /// C11H-305: a look the waiting thread gave up on never runs its capture later, however late main gets to it.
+    func testALookThatTimedOutNeverRunsItsCapture() {
+        nonisolated(unsafe) var parked: (@Sendable () -> Void)?
+        nonisolated(unsafe) var captures = 0
+        let facts = SendSubmitConfirmation.timedLook(timeout: 0.02, schedule: { parked = $0 }) {
+            captures += 1
+            return Facts(hcStatus: "working")
+        }
+        XCTAssertNil(facts, "no answer inside the bound")
+        parked?()  // main reaches the queued look only now
+        XCTAssertEqual(captures, 0, "a cancelled look is dropped at its top")
+        let answered = SendSubmitConfirmation.timedLook(timeout: 1, schedule: { work in
+            DispatchQueue.global().async { work() }
+        }) { Facts(hcStatus: "idle") }
+        XCTAssertEqual(answered?.hcStatus, "idle", "a look in time answers")
+    }
 }

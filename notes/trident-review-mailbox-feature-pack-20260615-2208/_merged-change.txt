@@ -1,5 +1,5 @@
 commit 09d26f1cb2035aa85f394632a507321873292e85
-Author: Atin <atin@atin.me>
+Author: Atin <operator@example.com>
 Date:   Mon Jun 15 21:54:06 2026 -0400
 
     Mailbox: route across all workspaces, stop silent drops (#251)

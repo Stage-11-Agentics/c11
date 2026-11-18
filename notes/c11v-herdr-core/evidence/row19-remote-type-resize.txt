@@ -1,0 +1,6 @@
+42 65
+Manageds-Virtual-Machine:~ admin$ echo typed-remote-$((6*7)); stty size
+typed-remote-42
+42 65
+35 43
+2026-10-30T21:50:34.320Z event=resize surface=DB086907 channel=6 cols=43 rows=35

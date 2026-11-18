@@ -32,7 +32,36 @@ private enum FeedAnswerPreparation {
 
 private enum FeedAnswerDeliveryStart {
     case started(FailClosedCommitGate<FeedAnswerSubmitOutcome>, [String: Any])
+    case hcStarted(HCFeedAnswerDelivery)
     case error(TerminalController.V2CallResult)
+}
+
+/// Worker wait only. A timeout cancels the reserved write, including its Return;
+/// completion retains the transport receipt instead of guessing delivery.
+private final class HCFeedAnswerDelivery: @unchecked Sendable {
+    private let completed = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var result: TerminalController.V2CallResult?
+    private var task: Task<Void, Never>?
+
+    @MainActor
+    init(operation: @escaping @MainActor () async -> TerminalController.V2CallResult) {
+        task = Task { @MainActor in
+            let value = await operation()
+            store(value)
+            completed.signal()
+        }
+    }
+    private func store(_ value: TerminalController.V2CallResult) {
+        lock.lock(); result = value; lock.unlock()
+    }
+    func wait() -> TerminalController.V2CallResult? {
+        if completed.wait(timeout: .now() + 5) != .success {
+            task?.cancel()
+            guard completed.wait(timeout: .now() + 2) == .success else { return nil }
+        }
+        lock.lock(); defer { lock.unlock() }; return result
+    }
 }
 
 extension TerminalController {
@@ -191,6 +220,9 @@ extension TerminalController {
         let gate: FailClosedCommitGate<FeedAnswerSubmitOutcome>
         let inputFields: [String: Any]
         switch deliveryStart {
+        case .hcStarted(let delivery):
+            return delivery.wait() ?? feedAnswerError(code: "submit_unconfirmed",
+                data: ["delivery": "unconfirmed", "retry": "unsafe", "retry_safe": false])
         case .started(let value, let fields):
             gate = value
             inputFields = fields
@@ -407,6 +439,48 @@ extension TerminalController {
             ))
         }
 
+        if prepared.terminalSurface.usesPersistentHCInput {
+            return .hcStarted(HCFeedAnswerDelivery { [self] in
+                let outcome = await prepared.terminalSurface.submitHCInput(body, submit: true, source: .feed,
+                    screenGuard: { [weak self] _ in
+                        self?.hcFeedAnswerGuard(prepared, expectedComposer: nil) ?? false
+                    }, returnGuard: { [weak self] _ in
+                        self?.hcFeedAnswerGuard(prepared, expectedComposer: body) ?? false
+                    })
+                var data = prepared.resolved.responseEnvelope
+                for (key, value) in observation.responseFields { data[key] = value }
+                switch outcome {
+                case .refused(let reason):
+                    for (key, value) in feedAnswerStatusFields(delivered: false, submitted: false, retry: "safe") {
+                        data[key] = value
+                    }
+                    data["body_bytes_written"] = 0
+                    data["return_written"] = false
+                    return feedAnswerError(code: "hc_input_" + reason.rawValue, data: data)
+                case .uncertain(let receipt):
+                    for (key, value) in feedAnswerStatusFields(delivered: receipt.bodyBytesWritten > 0,
+                        submitted: receipt.returnWritten, retry: "unsafe") { data[key] = value }
+                    data["body_bytes_written"] = receipt.bodyBytesWritten
+                    data["return_written"] = receipt.returnWritten
+                    return feedAnswerError(code: "submit_unconfirmed", data: data)
+                case .written(let receipt):
+                    data["body_bytes_written"] = receipt.bodyBytesWritten
+                    data["return_written"] = receipt.returnWritten
+                    for (key, value) in feedAnswerStatusFields(delivered: true,
+                        submitted: receipt.returnWritten, retry: "unsafe") { data[key] = value }
+                    guard receipt.returnWritten,
+                          case .submitted(let lowered, let epoch) = finishFeedAnswerHandoff(
+                            prepared, answer: answer, actor: actor, handedOff: true) else {
+                        return feedAnswerError(code: "submit_unconfirmed", data: data)
+                    }
+                    data["answered"] = prepared.identity.startKind == .turnEnd || lowered
+                    data["flag_lowered"] = lowered
+                    if let epoch { data["flag_epoch"] = epoch }
+                    return .ok(data)
+                }
+            })
+        }
+
         let gate = FailClosedCommitGate<FeedAnswerSubmitOutcome> { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return .targetLost }
@@ -467,6 +541,24 @@ extension TerminalController {
         prepared.terminalSurface.armFeedAnswerFlagLowerSuppression()
         let handedOff = prepared.terminalSurface.sendKeyNow(.returnKey, captureNativeHandoff: true)
         prepared.terminalSurface.clearFeedAnswerFlagLowerSuppression()
+        return finishFeedAnswerHandoff(prepared, answer: answer, actor: actor, handedOff: handedOff)
+    }
+
+    @MainActor
+    private func hcFeedAnswerGuard(_ prepared: FeedAnswerPrepared, expectedComposer: String?) -> Bool {
+        guard feedAnswerTargetIsCurrent(prepared), feedAnswerRowIsCurrent(prepared),
+              prepared.terminalSurface.lastOperatorInputAt == prepared.operatorInputAt else { return false }
+        let harness = prepared.resolved.workspace.surfaceActivityTerminalKind(panelId: prepared.identity.panelID)
+        guard let region = capturePromptInputRegion(surface: prepared.nativeSurface, harness: harness) else { return false }
+        let state = PromptInputClassifier.classify(region, harness: harness).state
+        guard let expectedComposer else { return FeedAnswerPromptCommit.admits(state) }
+        let composer = state == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
+        return FeedAnswerComposerCheck.compare(state: state, composer: composer, expected: expectedComposer) == .matches
+    }
+
+    @MainActor
+    private func finishFeedAnswerHandoff(_ prepared: FeedAnswerPrepared, answer: String,
+                                        actor: PanelAttentionActor, handedOff: Bool) -> FeedAnswerSubmitOutcome {
         return FeedAnswerHandoff.outcome(
             nativeHandoff: handedOff,
             startKind: prepared.identity.startKind

@@ -90,6 +90,9 @@ struct EventEnvelope {
         case workspaceSelected = "workspace.selected"
         case workspaceSwitchBlocked = "workspace.switch_blocked"
         case workspaceReordered = "workspace.reordered"
+        // c11 (C11H-197): display and window geometry.
+        case displayChanged = "display.changed"
+        case windowMoved = "window.moved"
         case areaSplit = "area.split"
         case areaClosed = "area.closed"
         case flashRequested = "flash.requested"
@@ -104,10 +107,25 @@ struct EventEnvelope {
         case supervisorTurnInterrupted = "supervisor.turn_interrupted"
         case supervisorStalled = "supervisor.stalled"
         case supervisorStallCleared = "supervisor.stall_cleared"
+        /// C11H-320 PR 3: one agent's `blocked` and `stalled` verdicts (as
+        /// `c11 fleet` shows them) starting, changing and ending.
+        case agentBlocked = "agent.blocked"
+        case agentUnblocked = "agent.unblocked"
+        case agentStalled = "agent.stalled"
+        case agentUnstalled = "agent.unstalled"
+        /// A seat's agent did not come back after a host end and waits for
+        /// the operator (`c11 restore run`); once per seat per launch.
+        case agentRestoreNeedsOperator = "agent.restore_needs_operator"
         case flagRaised = "flag.raised"
         case flagLowered = "flag.lowered"
         case flagSuppressed = "flag.suppressed"
         case flagUnsuppressed = "flag.unsuppressed"
+        // c11 (C11H-246): a flag's system notification posted, replaced,
+        // skipped because the operator was looking, failed, or removed.
+        case notificationFlag = "notification.flag"
+        // c11 (C11H-319): a turn-end or needs-you system notification posted
+        // or failed, with the sound it played.
+        case notificationRoutine = "notification.routine"
         case mailboxAccepted = "mailbox.accepted"
         case panelInputSent = "panel.input_sent"
         case mailboxDelivered = "mailbox.delivered"
@@ -115,10 +133,17 @@ struct EventEnvelope {
         case appRelaunched = "app.relaunched"
         case conversationResumeMode = "conversation.resume.mode"
         case conversationResumeDecision = "conversation.resume.decision"
+        case conversationResumeRefused = "conversation.resume.refused"
         case conversationStartupAudit = "conversation.startup_audit"
         case hangPrecursor = "hang.precursor"
+        // c11 (C11H-238): every ended main-thread stall.
+        case mainStall = "main.stall"
         case askOpened = "ask.opened"
         case askClosed = "ask.closed"
+        // c11 (C11H-235): a signal c11 did not send ended a local terminal's
+        // root, and several such ends together.
+        case terminalEndedBySignal = "terminal.ended_by_signal"
+        case terminalMassSignalEnd = "terminal.mass_signal_end"
         // Stream-control markers:
         case logPolicy = "log.policy"
         case logRetention = "log.retention"
@@ -139,10 +164,122 @@ struct EventEnvelope {
         EventType.supervisorStallCleared.rawValue,
     ]
 
+    /// Closed membership for `events tail --filter agent` (C11H-320 PR 3).
+    static let agentTypes: Set<String> = [
+        EventType.agentBlocked.rawValue,
+        EventType.agentUnblocked.rawValue,
+        EventType.agentStalled.rawValue,
+        EventType.agentUnstalled.rawValue,
+        EventType.agentRestoreNeedsOperator.rawValue,
+    ]
+
     static func matchesFilter(_ filter: String?, type: String?) -> Bool {
         guard let filter else { return true }
         guard let type else { return false }
-        return filter == "supervisor" ? supervisorTypes.contains(type) : canonicalType(filter) == canonicalType(type)
+        switch filter {
+        case "supervisor": return supervisorTypes.contains(type)
+        case "agent": return agentTypes.contains(type)
+        default: return canonicalType(filter) == canonicalType(type)
+        }
+    }
+
+    /// `events tail`'s `--filter` values (C11H-320 PR 3), each given once or
+    /// more. Every value is one predicate and a line must pass them all:
+    /// `type=<t>` (or a bare dotted type) the exact type, `supervisor` and
+    /// `agent` their closed sets, `workspace=<uuid>` and `panel=<uuid>` the
+    /// line's subject. A type outside the closed taxonomy (its documented v1
+    /// spellings included), a malformed UUID or an unknown keyword is an
+    /// error, never an empty stream.
+    struct TailFilter: Equatable {
+        enum Predicate: Equatable {
+            case type(String)
+            case group(String)
+            case workspace(String)
+            case panel(String)
+        }
+
+        var predicates: [Predicate] = []
+
+        static let groupNames: Set<String> = ["supervisor", "agent"]
+
+        /// Every type this build writes or reads: the v2 enum and the v1 spellings.
+        static var knownTypes: Set<String> {
+            Set(EventType.allCases.map(\.rawValue)).union(legacyTypeAliases.keys)
+        }
+
+        static func parse(_ values: [String]) -> Result<TailFilter, TailFilterError> {
+            var filter = TailFilter()
+            func typePredicate(_ raw: String) -> Result<Predicate, TailFilterError> {
+                guard !raw.isEmpty else { return .failure(.init("--filter type= needs an event type")) }
+                guard knownTypes.contains(raw) else {
+                    return .failure(.init("--filter: '\(raw)' is not an event type this build writes; see c11 guide events"))
+                }
+                return .success(.type(canonicalType(raw)))
+            }
+            for raw in values {
+                let value = raw.trimmingCharacters(in: .whitespaces)
+                let predicate: Result<Predicate, TailFilterError>
+                if groupNames.contains(value) {
+                    predicate = .success(.group(value))
+                } else if let type = value.dropPrefix("type=") {
+                    predicate = typePredicate(type)
+                } else if let id = value.dropPrefix("workspace=") {
+                    predicate = UUID(uuidString: id).map { .success(.workspace($0.uuidString)) }
+                        ?? .failure(.init("--filter workspace= takes a workspace UUID (events tail reads the log without the app, so it cannot resolve workspace:N)"))
+                } else if let id = value.dropPrefix("panel=") {
+                    predicate = UUID(uuidString: id).map { .success(.panel($0.uuidString)) }
+                        ?? .failure(.init("--filter panel= takes a panel UUID (events tail reads the log without the app, so it cannot resolve panel:N)"))
+                } else if !value.contains("="), value.contains(".") {
+                    // A bare event type, as `--filter panel.closed` always read.
+                    predicate = typePredicate(value)
+                } else {
+                    predicate = .failure(.init("--filter takes type=<type>, supervisor, agent, workspace=<uuid> or panel=<uuid>, not '\(raw)'"))
+                }
+                switch predicate {
+                case .success(let parsed): filter.predicates.append(parsed)
+                case .failure(let error): return .failure(error)
+                }
+            }
+            return .success(filter)
+        }
+
+        /// Whether a line with this type and subject passes every predicate.
+        func matches(type: String?, workspace: String?, panel: String?) -> Bool {
+            let canonical = type.map(canonicalType)
+            let workspace = workspace.flatMap(UUID.init(uuidString:))?.uuidString
+            let panel = panel.flatMap(UUID.init(uuidString:))?.uuidString
+            for predicate in predicates {
+                switch predicate {
+                case .type(let wanted): guard canonical == wanted else { return false }
+                case .group(let name): guard matchesFilter(name, type: canonical) else { return false }
+                case .workspace(let id): guard workspace == id else { return false }
+                case .panel(let id): guard panel == id else { return false }
+                }
+            }
+            return true
+        }
+
+        /// One raw NDJSON line against the filters and `--since` (a seq floor
+        /// or a time), as `events tail` prints it; one decode.
+        func admits(line: String, sinceSeq: UInt64? = nil, sinceDate: Date? = nil) -> Bool {
+            guard !predicates.isEmpty || sinceSeq != nil || sinceDate != nil else { return true }
+            guard let object = EventEnvelope.object(fromLine: line) else { return false }
+            if let sinceSeq {
+                guard let raw = object[Key.seq] as? NSNumber, raw.uint64Value >= sinceSeq else { return false }
+            }
+            if let sinceDate {
+                guard let text = object[Key.ts] as? String, let ts = formatter.date(from: text), ts >= sinceDate else { return false }
+            }
+            return matches(type: object[Key.type] as? String, workspace: object[Key.workspace] as? String,
+                           panel: EventEnvelope.panelRef(in: object))
+        }
+
+        func matches(line: String) -> Bool { admits(line: line) }
+    }
+
+    struct TailFilterError: Error, Equatable {
+        let message: String
+        init(_ message: String) { self.message = message }
     }
 
     /// Captured on the emitting thread; formatted at serialize time.
@@ -343,5 +480,12 @@ struct EventEnvelope {
         case Scope.legacyPane: return Scope.area
         default: return scope
         }
+    }
+}
+
+private extension String {
+    /// The rest after `prefix`, or nil when the string does not start with it.
+    func dropPrefix(_ prefix: String) -> String? {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : nil
     }
 }

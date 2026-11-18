@@ -1,6 +1,6 @@
 # Tab bar round five: worker brief
 
-Worktree `/Users/atin/Projects/Stage11/code/c11/c11-worktrees/tab-bar-round-five`, branch `tab-bar-round-five`, stacked on `tab-sheet-grid` (c11 #462 + bonsplit #6, reviewed, not merged yet). Run `git submodule update --init --recursive`, then branch bonsplit `tab-bar-round-five` from `6328254`. Open new PRs based on `tab-sheet-grid` in both repos. Parent: Cairn at `surface:159` / `workspace:14`. Report at each phase change, on blockers, and at the end. Do not merge.
+Worktree `~/src/c11/c11-worktrees/tab-bar-round-five`, branch `tab-bar-round-five`, stacked on `tab-sheet-grid` (c11 #462 + bonsplit #6, reviewed, not merged yet). Run `git submodule update --init --recursive`, then branch bonsplit `tab-bar-round-five` from `6328254`. Open new PRs based on `tab-sheet-grid` in both repos. Parent: Cairn at `surface:159` / `workspace:14`. Report at each phase change, on blockers, and at the end. Do not merge.
 
 **Binding design:** `design/tab-bar-qol/prototype-v5.html`. Copy it into this worktree from `../tab-sheet-grid/design/tab-bar-qol/` if it isn't here yet. Serve it and drive it: the area-width slider, the count cell, and hovering rows and tabs. Atin's words: tabs should stay visible more often; the sheet was too big in a small window and a touch too black; the black count button was too prominent; the list and the horizontal tabs need a clear relationship; the motion should be very fast, cognitively and on the CPU.
 

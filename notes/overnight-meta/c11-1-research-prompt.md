@@ -6,23 +6,23 @@ This is an **overnight research task**, not a delegation. You produce one markdo
 
 ## Your task in one sentence
 
-Read everything below, then write a markdown recommendation file at `/Users/atin/Projects/Stage11/code/c11/notes/c11-1-recommendation-2026-05-06.md` that gives the operator a clear picture of where C11-1 stands and what they should decide when they return.
+Read everything below, then write a markdown recommendation file at `~/src/c11/notes/c11-1-recommendation-2026-05-06.md` that gives the operator a clear picture of where C11-1 stands and what they should decide when they return.
 
 ## Sources to read (in this order)
 
 1. **The Lattice ticket** — full description, events, comments:
    ```bash
-   cd /Users/atin/Projects/Stage11/code/c11
+   cd ~/src/c11
    lattice show task_01KPP7QBZ3NJMXS4C9NA2XW01X --json | jq '.data.description'
    lattice show task_01KPP7QBZ3NJMXS4C9NA2XW01X --full
    ```
    Focus on: what's been tried, what's blocked, what's flagged needs-human, what the audit recommended.
 
-2. **The audit notes** — `/Users/atin/Projects/Stage11/code/c11/notes/c11-audit-2026-04-21.md`. This is the source-of-truth audit referenced by the ticket trail. Read in full.
+2. **The audit notes** — `~/src/c11/notes/c11-audit-2026-04-21.md`. This is the source-of-truth audit referenced by the ticket trail. Read in full.
 
 3. **The two C11-1 worktrees on disk:**
-   - `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-completion-audit`
-   - `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup`
+   - `~/src/c11-worktrees/c11-1-completion-audit`
+   - `~/src/c11-worktrees/c11-1-rebrand-cleanup`
 
    For each:
    ```bash
@@ -32,19 +32,19 @@ Read everything below, then write a markdown recommendation file at `/Users/atin
    ```
    Identify what's been attempted, what's pending, and what's clean-vs-dirty. If either worktree has uncommitted changes that look load-bearing, surface them.
 
-4. **The project CLAUDE.md** — `/Users/atin/Projects/Stage11/code/c11/CLAUDE.md`. The "Lineage", "Pitfalls", and "Localization" sections are particularly relevant; the rebrand pass is fork-level and must keep upstream-merge ergonomics intact.
+4. **The project CLAUDE.md** — `~/src/c11/CLAUDE.md`. The "Lineage", "Pitfalls", and "Localization" sections are particularly relevant; the rebrand pass is fork-level and must keep upstream-merge ergonomics intact.
 
 5. **The cmux→c11 naming feedback memory:**
-   `/Users/atin/.claude/projects/-Users-atin-Projects-Stage11-code-c11/memory/feedback_cmux_to_c11_naming.md`
+   `~/.claude/projects/-Users-demo-Projects-Stage11-code-c11/memory/feedback_cmux_to_c11_naming.md`
    Captures the operator's distinction between "lineage talk" (where `cmux` should remain) and "wrong residual `cmux`" (where it should become `c11`). This is the rule of thumb you'll cite throughout the recommendation.
 
 6. **Stage 11 repo CLAUDE files for context** (skim, don't deep-read):
-   - `/Users/atin/Projects/Stage11/CLAUDE.md`
-   - `/Users/atin/Projects/Stage11/code/CLAUDE.md`
+   - `~/src/CLAUDE.md`
+   - `~/src/CLAUDE.md`
 
 ## What to write
 
-File path: `/Users/atin/Projects/Stage11/code/c11/notes/c11-1-recommendation-2026-05-06.md`
+File path: `~/src/c11/notes/c11-1-recommendation-2026-05-06.md`
 
 Structure:
 
@@ -85,5 +85,5 @@ A proposed sequence of actions to land C11-1, given the recommendations in secti
 ## When you're done
 
 1. Write the recommendation file at the path above.
-2. Append the file path to `/Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/c11-1-research-done.txt` (one line, the absolute path).
+2. Append the file path to `~/src/c11/notes/overnight-meta/c11-1-research-done.txt` (one line, the absolute path).
 3. Stop. Do not address the human directly — the meta-orchestrator will pick up the completion signal from the `c11-1-research-done.txt` file on its next polling tick.

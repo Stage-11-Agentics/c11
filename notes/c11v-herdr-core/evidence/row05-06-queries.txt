@@ -1,0 +1,35 @@
+Spike 0b rows 5, 6: q0b.py inside an hc panel (first block) and an exec panel of the same build (second block).
+ms ~400 = answered (the probe waits 0.4 s of quiet after the last byte); ~3000 would be a timeout. None timed out.
+21:09:27 hc
+Q DA1 ms=406 reply=b'\x1b[?62;22c'                      <- answered by the core: no 52 (clipboard)
+Q DSR ms=406 reply=b'\x1b[1;1R'
+Q KITTY ms=427 reply=b'\x1b[?0u'
+Q OSC10 ms=407 reply=b'\x1b]10;rgb:ffff/ffff/ffff\x07'
+Q OSC11 ms=408 reply=b'\x1b]11;rgb:2828/2c2c/3434\x07'
+Q OSC4 ms=406 reply=b'\x1b]4;1;rgb:cccc/6666/6666\x07'
+Q XTGETTCAP(TN;colors) ms=407 reply=b'\x1bP1+r636F6C6F7273=323536\x1b\\'   <- TN reply missing
+Q OSC52R ms=407 reply=b'\x1b]52;c;\x1b\\'
+Q XTVERSION ms=407 reply=b'\x1bP>|ghostty\x1b\\'      <- core's answer, no version
+Q CSI18t ms=406 reply=b'\x1b[8;42;65t'
+Q CSI16t ms=406 reply=b'\x1b[6;17;8t'
+21:09:43 exec
+Q DA1 ms=407 reply=b'\x1b[?62;22;52c'
+Q DSR ms=693 reply=b'\x1b[1;1R'
+Q KITTY ms=408 reply=b'\x1b[?0u'
+Q OSC10 ms=407 reply=b'\x1b]10;rgb:ffff/ffff/ffff\x07'
+Q OSC11 ms=405 reply=b'\x1b]11;rgb:2828/2c2c/3434\x07'
+Q OSC4 ms=402 reply=b'\x1b]4;1;rgb:cccc/6666/6666\x07'
+Q XTGETTCAP(TN;colors) ms=406 reply=b'\x1bP1+r544E=787465726D2D67686F73747479\x1b\\\x1bP1+r636F6C6F7273=323536\x1b\\'
+Q OSC52R ms=407 reply=b'\x1b]52;c;\x1b\\'
+Q XTVERSION ms=406 reply=b'\x1bP>|ghostty 1.3.0-HEAD+1b7bcf0\x1b\\'
+Q CSI18t ms=405 reply=b'\x1b[8;42;65t'
+Q CSI16t ms=408 reply=b'\x1b[6;17;8t'
+
+XTGETTCAP isolation, 21:10:16 hc then 21:10:23 exec:
+hc   XTTN (TN alone)            reply=TN=xterm-ghostty                          (viewer answered)
+hc   XTGETTCAP (TN;colors)      reply=colors=256 only                           (TN lost)
+hc   XTTWO (TN query, colors q) reply=colors=256 THEN TN=xterm-ghostty          (reordered)
+exec XTTWO                      reply=TN THEN colors                            (in order)
+
+OSC 52 (row 6), hc panel, 21:11:12: printf '\e]52;c;<b64 spike-clip-0b>\a' -> guest pbpaste = spike-clip-0b;
+then OSC 52 read reply=b'\x1b]52;c;c3Bpa2UtY2xpcC0wYg==\x1b\\' (= spike-clip-0b), answered by c11's Ghostty through the stream.

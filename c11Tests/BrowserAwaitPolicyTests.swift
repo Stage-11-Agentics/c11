@@ -1,5 +1,6 @@
 import XCTest
 import WebKit
+import CoreServices
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -359,5 +360,42 @@ final class BrowserAwaitPolicyTests: XCTestCase {
             }
         }
         XCTAssertEqual(outcome ?? nil, "first")
+    }
+}
+
+/// C11H-365 (L14): a context-menu save of a `data:` link or image writes the
+/// page's own bytes, so the file is marked for Gatekeeper like any download;
+/// a file that can't be marked is removed. No download runs here: the seam is
+/// the write itself, into a temporary folder.
+final class ContextMenuDataSaveTests: XCTestCase {
+    private func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ctxsave-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    func testADataSaveIsQuarantinedAsAWebDownload() throws {
+        let destination = try folder().appendingPathComponent("saved.bin")
+        try ContextMenuDataSave.write(Data("payload".utf8), to: destination, pageURL: URL(string: "https://example.com/page"))
+        XCTAssertEqual(try Data(contentsOf: destination), Data("payload".utf8))
+        // The attribute Gatekeeper reads, set on the file itself.
+        XCTAssertGreaterThan(getxattr(destination.path, "com.apple.quarantine", nil, 0, 0, 0), 0,
+                             "the saved file must carry com.apple.quarantine")
+        let properties = try XCTUnwrap(try destination.resourceValues(forKeys: [.quarantinePropertiesKey]).quarantineProperties)
+        XCTAssertEqual(properties[kLSQuarantineTypeKey as String] as? String, kLSQuarantineTypeWebDownload as String)
+        let asked = ContextMenuDataSave.quarantineProperties(pageURL: URL(string: "https://example.com/page"))
+        XCTAssertEqual(asked[kLSQuarantineAgentNameKey as String] as? String, "c11")
+        XCTAssertEqual((asked[kLSQuarantineOriginURLKey as String] as? URL)?.absoluteString, "https://example.com/page")
+    }
+
+    func testAFileThatCantBeMarkedIsRemoved() throws {
+        struct Refused: Error {}
+        let destination = try folder().appendingPathComponent("saved.bin")
+        XCTAssertThrowsError(try ContextMenuDataSave.write(Data("payload".utf8), to: destination, pageURL: nil,
+                                                           mark: { _, _ in throw Refused() }))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path), "no unmarked copy is left")
+        XCTAssertNil(ContextMenuDataSave.quarantineProperties(pageURL: URL(string: "data:text/plain,x"))[kLSQuarantineOriginURLKey as String],
+                     "a data: URL is never recorded as the origin")
     }
 }

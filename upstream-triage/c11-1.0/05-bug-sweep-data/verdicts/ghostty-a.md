@@ -65,7 +65,7 @@ The most serious terminal-state findings are zero-capacity growth that never pro
 
 Several small changes reduce work multiplied across 10 to 40 agents: correct Metal buffer sizing and capacity bookkeeping, correct bitmap allocation sizing, return free-listed page backing to macOS, skip unchanged SGR updates, and cache/gate macOS logging. The unfair terminal mutex also lacks the upstream demand handoff; renderer starvation remains inferred until measured. These changes concern Ghostty work and do not repair the separate SwiftUI AttributeGraph, hover-recursion, or SurfaceMetadataStore queue stalls.
 
-The input findings affect real terminal bytes and event pairing. Non-ASCII Alt encoding is directly shared, and Cmd-click can leave an unmatched press in a mouse-reporting TUI. The pinned libxev source also contains the error-pop behavior fixed by `2f6ee7b3d`, but the macOS WouldBlock trigger is not established, so that finding stays probable. The cached dependency inspected was `/Users/atin/.cache/zig/p/libxev-0.0.0-86vtc4IcEwCqEYxEYoN_3KXmc6A9VLcm22aVImfvecYs/src/watcher/stream.zig:841`, matching `ghostty/build.zig.zon:12`. No runtime paste or key probe was run.
+The input findings affect real terminal bytes and event pairing. Non-ASCII Alt encoding is directly shared, and Cmd-click can leave an unmatched press in a mouse-reporting TUI. The pinned libxev source also contains the error-pop behavior fixed by `2f6ee7b3d`, but the macOS WouldBlock trigger is not established, so that finding stays probable. The cached dependency inspected was `~/.cache/zig/p/libxev-0.0.0-86vtc4IcEwCqEYxEYoN_3KXmc6A9VLcm22aVImfvecYs/src/watcher/stream.zig:841`, matching `ghostty/build.zig.zon:12`. No runtime paste or key probe was run.
 
 ## Triage ledger
 

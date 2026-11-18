@@ -34,6 +34,8 @@ public enum AgentLaunchSource: String, Codable, Sendable, CaseIterable {
     /// (design §5.4). Distinct provenance from `.aButton` so the stats rail can
     /// tell a configured-then-launched recipe from a plain A-button launch.
     case configEditor = "config-editor"
+    /// A Chaos Wizard cast (C11H-199): the sidebar button or `c11 chaos cast`.
+    case chaos
 }
 
 /// The ingestion rail that produced a most-recent observation. Used only for

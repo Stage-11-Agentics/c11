@@ -2,7 +2,7 @@
 
 Acceptance evidence and current gate state: [app PR #627](https://github.com/Stage-11-Agentics/c11/pull/627) and [CLI PR #628](https://github.com/Stage-11-Agentics/c11/pull/628). The Lattice C11-349 validation attachments retain the assertion and runtime receipts.
 
-Use stock `scripts/remote-build.sh --tag c11-349` on Atlas. A tagged app may
+Use stock `scripts/remote-build.sh --tag c11-349` on the build host. A tagged app may
 isolate synthetic recording with the validation-only launch hook
 `C11_ACTIVITY_HISTORY_DIRECTORY=/absolute/owned/path`. All history readers
 must use the same value. Legacy baseline builds ignore it; their runs may
@@ -11,7 +11,7 @@ must preserve every original file.
 
 The performance gate compares the same 40-panel, 30-minute spinner/progress,
 input and mailbox workload on baseline twice, analytics on and analytics off,
-on native Atlas and a constrained stock sandbox guest. Start every variant
+on native the build host and a constrained stock sandbox guest. Start every variant
 with the same 300-file, roughly 130 MB synthetic candidate-label corpus and
 metadata-only synthetic mirrors of any baseline foreign history. Never copy
 production event contents into test artifacts. Measure startup/pruning bounds

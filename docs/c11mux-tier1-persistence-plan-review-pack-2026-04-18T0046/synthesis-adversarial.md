@@ -94,7 +94,7 @@ Risks ordered by the strength and breadth of consensus.
 ### Claude-only
 
 1. **Remote-daemon workspaces silently get no resume affordance.** `WorkspaceRemoteDaemonManifest` puts `~/.claude/projects/` on the remote, not the Mac. The plan scans local `~/.claude/` only — users will file this as a bug.
-2. **Worktree / cwd-no-longer-exists fallback is unspecified.** If an agent was in `/Users/atin/Projects/foo-wt-fix` and the worktree was deleted, "Reopen in `<dir>`" fails silently. No directory-existence check, no parent fallback, no recovery flow.
+2. **Worktree / cwd-no-longer-exists fallback is unspecified.** If an agent was in `~/src/foo-wt-fix` and the worktree was deleted, "Reopen in `<dir>`" fails silently. No directory-existence check, no parent fallback, no recovery flow.
 3. **`staleFromRestart` as a UX concept has no mock, no staleness threshold, and risks being louder than useful.** A sidebar with 15 workspaces half-italicized after restart may be worse than an empty sidebar.
 4. **Scope-rot via canonical keys.** No single spec for what is canonical vs. custom; `<agent>_session_id`, `<agent>_session_started_at`, `<agent>_last_command` will proliferate.
 5. **`SessionPersistenceStore.load` returns `nil` on decode failure — total snapshot loss.** No partial recovery for "one field is malformed, load the rest."

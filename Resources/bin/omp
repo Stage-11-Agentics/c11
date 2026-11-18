@@ -243,12 +243,17 @@ fi
 
 # (4) Runtime extensions, by flag only, and only for an agent session.
 if [[ -n "$c11_bin" && -f "$self_dir/omp-prompt-cache.ts" ]] && omp_runs_agent_session "$@"; then
+    # C11H-35: the per-launch c11 note, by omp's own flag (no file, no config).
+    c11_bin_dir="$(cd "$(dirname "$0")" && pwd)"
+    C11_NOTE_ARGS=()
+    # shellcheck source=/dev/null
+    [[ -r "$c11_bin_dir/c11-agent-note.sh" ]] && . "$c11_bin_dir/c11-agent-note.sh" && c11_note_args omp "$c11_bin_dir" "$@"
     export C11_AGENT_HOOK_CLI="$c11_bin"
     # omp-native-mail.ts reports working/idle edges and delivers the mailbox
     # doorbell at idle. Same rail: a launch flag, nothing written to omp's config.
     if [[ -f "$self_dir/omp-native-mail.ts" ]]; then
-        exec "$REAL_OMP" --extension "$self_dir/omp-prompt-cache.ts" --extension "$self_dir/omp-native-mail.ts" "$@"
+        exec "$REAL_OMP" --extension "$self_dir/omp-prompt-cache.ts" --extension "$self_dir/omp-native-mail.ts" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"
     fi
-    exec "$REAL_OMP" --extension "$self_dir/omp-prompt-cache.ts" "$@"
+    exec "$REAL_OMP" --extension "$self_dir/omp-prompt-cache.ts" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"
 fi
 exec "$REAL_OMP" "$@"

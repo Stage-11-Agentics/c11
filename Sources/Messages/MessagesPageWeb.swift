@@ -302,7 +302,7 @@ enum MessagesPageWeb {
       const P = new Map();
       const W = new Map();
       const panel = (id) => {
-        if (!P.has(id)) P.set(id, { id, title: null, workspace: null, live: false, type: null, agent: null, address: null, parent: null, desc: null, notes: [], closedAt: null });
+        if (!P.has(id)) P.set(id, { id, title: null, workspace: null, live: false, type: null, agent: null, address: null, parent: null, origin: null, originDetail: null, lineageCreatedAt: null, desc: null, notes: [], closedAt: null });
         return P.get(id);
       };
       const workspace = (id, title, live) => {
@@ -317,7 +317,10 @@ enum MessagesPageWeb {
       (directory.panels || []).forEach((d) => {
         const p = panel(up(d.id));
         Object.assign(p, { title: d.title || null, workspace: up(d.workspace), live: !!d.live, type: d.type || null,
-          agent: d.agent || null, address: d.address || null, parent: up(d.parent), desc: typeof d.description === "string" ? d.description : null,
+          agent: d.agent || null, address: d.address || null, parent: up(d.parent),
+          origin: typeof d.origin === "string" ? d.origin : null, originDetail: typeof d.origin_detail === "string" ? d.origin_detail : null,
+          lineageCreatedAt: typeof d.lineage_created_at === "string" ? d.lineage_created_at : null,
+          desc: typeof d.description === "string" ? d.description : null,
           notes: Array.isArray(d.notes) ? d.notes.filter((n) => n && typeof n.text === "string" && Number.isFinite(Date.parse(n.at))) : [],
           closedAt: Number.isFinite(Date.parse(d.closed)) ? Date.parse(d.closed) : null });
         if (d.address && d.live) addressToPanel.set(d.address, p.id);
@@ -970,6 +973,13 @@ enum MessagesPageWeb {
                   [[n.sent, "cw-num"], [n.recv, "cw-num"], [ago(n.last), "cw-when"]], () => hoverNode(n.id))))
             : h("div", { class: "cw-empty" }, "No panels talked in this window."));
       };
+      // Who made a panel that has no parent here (C11H-260). The operator is "operator", never "you".
+      const originText = (p) => p.origin === "operator" ? "Launched by operator"
+        : p.origin === "app" && p.originDetail === "launch"
+          ? "Created by c11 launch" + (p.lineageCreatedAt ? " at " + new Date(p.lineageCreatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "")
+        : p.origin === "app" ? (p.originDetail ? "Launched by c11 (" + p.originDetail + ")" : "Launched by c11")
+        : p.origin === "external" ? "Launched from outside c11"
+        : p.origin === "unknown" ? "Origin not recorded" : null;
       const inspectNode = (n) => {
         const p = P.get(n.id) || {}, wid = wsOf(n.id);
         const pairs = [...current.agg.pairs.values()].filter((x) => x.a === n.id || x.b === n.id).sort((a, b) => b.last - a.last);
@@ -978,6 +988,7 @@ enum MessagesPageWeb {
         if (p.address) rows.push(["Address", p.address]);
         if (p.agent) rows.push(["Agent", p.agent]);
         if (p.parent) rows.push(["Child of", titleOf(p.parent)]);
+        else if (originText(p)) rows.push(["Origin", originText(p)]);
         rows.push(["Sent", n.sent], ["Received", n.recv], ["Last", when(n.last)]);
         const actions = h("div", { class: "cw-actions" },
           state.scope === "panel" && state.panel === n.id ? null : button("Centre on panel", () => focusPanel(n.id)),

@@ -2483,13 +2483,13 @@ final class WindowCloseShortcutTests: ShortcutRoutingTestSupport {
         XCTAssertEqual(manager.workspaces.count, 1)
         XCTAssertEqual(manager.workspaces[0].panels.count, 1)
 
-        // The test host's Ghostty bundle ships no shell-integration scripts, so
-        // Ghostty cannot tell the fresh shell is idle and close-confirm would
-        // gate this close. Report the idle prompt the way c11 shell integration
-        // does in a real session.
-        let workspace = manager.workspaces[0]
-        for panelId in workspace.panels.keys {
-            workspace.updatePanelShellActivityState(panelId: panelId, state: .promptIdle)
+        // C11H-24: the window's lone terminal is an hc terminal, so closing
+        // its workspace asks first even at an idle prompt. Accept through the
+        // synchronous seam; the close then takes the window with it.
+        var workspaceClosePrompts = 0
+        manager.workspaceCloseConfirmationHandler = { _, _ in
+            workspaceClosePrompts += 1
+            return true
         }
 
         guard let event = makeKeyDownEvent(
@@ -2515,6 +2515,7 @@ final class WindowCloseShortcutTests: ShortcutRoutingTestSupport {
             waitUntil { !targetWindow.isVisible && appDelegate.workspaceManagerFor(windowId: windowId) == nil },
             "Cmd+W on the last surface in the last workspace should close the window"
         )
+        XCTAssertEqual(workspaceClosePrompts, 1, "Cmd+W on the last surface routes to one workspace close")
     }
 
     func testCmdWKeepsLastSurfaceWorkspaceOpenWhenKeepWorkspaceOpenPreferenceIsEnabled() throws {
@@ -2545,11 +2546,35 @@ final class WindowCloseShortcutTests: ShortcutRoutingTestSupport {
             return
         }
 
-        // The test host's Ghostty bundle ships no shell-integration scripts, so
-        // Ghostty cannot tell the fresh shell is idle and close-confirm would
-        // gate this close. Report the idle prompt the way c11 shell integration
-        // does in a real session.
-        workspace.updatePanelShellActivityState(panelId: initialPanelId, state: .promptIdle)
+        // C11H-24: this window's terminal is an hc terminal (it started with the
+        // window, so it cannot be re-pinned), and Cmd+W on it asks through the
+        // panel's End Session card. Mount a card host on screen before the
+        // close, as testPendingRevealSelectsTheHiddenConfirmTab does, so the
+        // card reports visible before the unmounted-card watch can cancel it.
+        let flagKey = AreaInteractionFeatureFlag.userDefaultsKey
+        let oldFlag = defaults.object(forKey: flagKey)
+        defaults.removeObject(forKey: flagKey)
+        defer {
+            if let oldFlag {
+                defaults.set(oldFlag, forKey: flagKey)
+            } else {
+                defaults.removeObject(forKey: flagKey)
+            }
+        }
+        XCTAssertTrue(workspace.closeHoldsHCSession(panelIds: [initialPanelId]))
+        let hostWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        hostWindow.isReleasedWhenClosed = false
+        defer { hostWindow.orderOut(nil) }
+        // Visible without taking key status from the window Cmd+W targets.
+        hostWindow.orderFront(nil)
+        let host = AreaInteractionOverlayHost(panelId: initialPanelId, runtime: workspace.paneInteractionRuntime)
+        host.frame = hostWindow.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 480, height: 320)
+        hostWindow.contentView?.addSubview(host)
 
         guard let event = makeKeyDownEvent(
             key: "w",
@@ -2567,7 +2592,16 @@ final class WindowCloseShortcutTests: ShortcutRoutingTestSupport {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        XCTAssertTrue(
+            waitUntil { workspace.paneInteractionRuntime.isConfirmCardVisible(panelId: initialPanelId) },
+            "Cmd+W on an hc terminal should show its End Session card"
+        )
+        XCTAssertTrue(workspace.paneInteractionRuntime.acceptActive(panelId: initialPanelId))
+        XCTAssertTrue(
+            waitUntil { workspace.panels[initialPanelId] == nil && workspace.panels.count == 1 },
+            "Accepting the card should close the panel and leave a replacement terminal"
+        )
+        _ = host
 
         XCTAssertNotNil(
             self.window(withId: windowId),
@@ -4055,5 +4089,48 @@ final class SidebarTilesWindowTests: ShortcutRoutingTestSupport {
         XCTAssertEqual(state.persistedWidth, 486)
         let fresh = app.createMainWindow()
         XCTAssertEqual(try XCTUnwrap(app.sidebarState(for: app.mainWindow(for: fresh))).persistedWidth, 200)
+    }
+}
+
+/// C11H-317: a `WorkspaceManager` made in the test host requests neither the
+/// first-run Welcome quad (which opens a stage11.ai browser panel) nor the
+/// default grid. Both run through the real init and its first `addWorkspace`,
+/// with `AppDelegate.shared` live. Each half fails with the test-host
+/// suppression removed: the welcome half when the welcome is unshown and QA is
+/// off, the grid half whatever the QA policy.
+@MainActor
+final class TestHostFirstRunLayoutTests: XCTestCase {
+    private func makeDefaults(welcomeShown: Bool) throws -> (UserDefaults, String) {
+        let suiteName = "c11.testHostFirstRun.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set(welcomeShown, forKey: WelcomeSettings.shownKey)
+        defaults.set(true, forKey: DefaultGridSettings.enabledKey)
+        return (defaults, suiteName)
+    }
+
+    private func assertNoFirstRunLayout(_ manager: WorkspaceManager, _ label: String) throws {
+        XCTAssertNotNil(AppDelegate.shared, "the host app must be live for this test to mean anything")
+        XCTAssertTrue(manager.suppressesFirstRunLayout, "\(label): the test host suppresses first-run layout by default")
+        XCTAssertEqual(manager.welcomeQuadRequestCount, 0, "\(label): no Welcome quad request in the test host")
+        XCTAssertEqual(manager.defaultGridRequestCount, 0, "\(label): no default grid request in the test host")
+        // The welcome flow lays out its quad 0.5 s after the terminal is ready.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.6))
+        let workspace = try XCTUnwrap(manager.workspaces.first)
+        XCTAssertEqual(workspace.panels.count, 1, "\(label): the first workspace keeps its one terminal")
+        XCTAssertFalse(workspace.panels.values.contains { $0 is BrowserPanel }, "\(label): no browser panel")
+    }
+
+    func testWorkspaceManagerInTestHostOpensNoWelcomeQuad() throws {
+        let (defaults, suiteName) = try makeDefaults(welcomeShown: false)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let manager = WorkspaceManager(welcomeDefaults: defaults)
+        try assertNoFirstRunLayout(manager, "welcome unshown")
+    }
+
+    func testWorkspaceManagerInTestHostBuildsNoDefaultGrid() throws {
+        let (defaults, suiteName) = try makeDefaults(welcomeShown: true)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let manager = WorkspaceManager(welcomeDefaults: defaults)
+        try assertNoFirstRunLayout(manager, "welcome shown, grid enabled")
     }
 }

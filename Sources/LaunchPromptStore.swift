@@ -56,10 +56,18 @@ final class LaunchPromptStore: @unchecked Sendable {
     private var entries: [UUID: Entry] = [:]
     private var releasedOwners: Set<UUID> = []
 
+    /// `Application Support/c11/runtime/launch-prompts`. Does not create the directory.
+    static func defaultRootDirectory(applicationSupport: URL) -> URL {
+        applicationSupport
+            .appendingPathComponent(C11Identity.stateDirectoryName, isDirectory: true)
+            .appendingPathComponent("runtime", isDirectory: true)
+            .appendingPathComponent("launch-prompts", isDirectory: true)
+    }
+
     init(rootDirectory: URL? = nil, namespaceID: UUID = UUID(), nextFileID: @escaping () -> UUID = UUID.init) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        self.rootDirectory = rootDirectory ?? support.appendingPathComponent("c11/runtime/launch-prompts", isDirectory: true)
+        self.rootDirectory = rootDirectory ?? Self.defaultRootDirectory(applicationSupport: support)
         namespaceName = "\(getpid())-\(namespaceID.uuidString)"
         self.nextFileID = nextFileID
     }

@@ -1,0 +1,5 @@
+panel:4 hist=300 ticks=0 first=hist-0001 static
+panel:5 hist=0 ticks=109 first=tick 21:27:49 pid=2151
+2026-10-30T21:29:31.774Z event=attached surface=64FEA6FD-CBAE-47F3-BA55-B319DB8AD3D9 terminal=t1 channel=2 history=2000 reason=reattach held_input=0 dropped_input=0 elapsed_us=585
+2026-10-30T21:29:31.869Z event=reattach surface=94932219-AE35-4965-9245-3A015C5BF119 terminal=t5 pid=2151 cols=130 rows=20
+2026-10-30T21:29:31.871Z event=attached surface=94932219-AE35-4965-9245-3A015C5BF119 terminal=t5 channel=3 history=2000 reason=reattach held_input=0 dropped_input=0 elapsed_us=503

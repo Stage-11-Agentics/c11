@@ -43,7 +43,7 @@ struct JournalSpool {
 
     @discardableResult
     func write(_ draft: JournalDraft) -> Bool {
-        let deadline = DispatchTime.now().uptimeNanoseconds + 25_000_000
+        let deadline = DispatchTime.now().uptimeNanoseconds + budgets.spoolWriteNanos
         do {
             try draft.validate()
             let data = try draft.canonicalData() + Data([10])
@@ -146,5 +146,18 @@ struct JournalSpool {
             }
         }
         return counts
+    }
+}
+
+/// C11H-40: what `c11 agent-event append` does after its socket call failed.
+/// A failed or unreachable socket spools the draft for the app to replay. An
+/// admission refusal is the app's answer, so it is reported and never spooled:
+/// a replayed spool entry would reach the journal without the gate.
+enum JournalDeliveryFailure: Equatable {
+    case spool
+    case refused(code: String)
+
+    static func afterSocketError(_ error: Error) -> JournalDeliveryFailure {
+        SocketAdmissionRefusal.code(of: error).map { .refused(code: $0) } ?? .spool
     }
 }

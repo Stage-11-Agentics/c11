@@ -114,12 +114,29 @@ struct SavedAgentConfig: Codable, Equatable {
     var name: String
     var order: Int
     var config: AgentLaunchConfig
+    /// C11H-138: where this config launches. `nil` asks (when another machine
+    /// is linked), `local` is always this Mac, anything else is hc's machine
+    /// name. Placement, not recipe, so it is not part of `AgentLaunchConfig`.
+    var machine: String?
 
-    init(id: String, name: String, order: Int, config: AgentLaunchConfig) {
+    init(id: String, name: String, order: Int, config: AgentLaunchConfig, machine: String? = nil) {
         self.id = id
         self.name = name
         self.order = order
         self.config = config
+        self.machine = SavedAgentConfig.normalizedMachine(machine)
+    }
+
+    static let localMachine = "local"
+
+    /// `nil`, empty and `ask` mean ask; `local` and `here` mean this Mac.
+    static func normalizedMachine(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        switch trimmed.lowercased() {
+        case "ask": return nil
+        case "local", "here": return localMachine
+        default: return trimmed
+        }
     }
 
     // Flat on-disk shape. `systemPrompt` is intentionally camelCase — it is the
@@ -133,6 +150,7 @@ struct SavedAgentConfig: Codable, Equatable {
         case command
         case initialPrompt = "initial_prompt"
         case env
+        case machine
     }
 
     init(from decoder: Decoder) throws {
@@ -149,6 +167,7 @@ struct SavedAgentConfig: Codable, Equatable {
             initialPrompt: try c.decodeIfPresent(String.self, forKey: .initialPrompt),
             env: try c.decodeIfPresent([String: String].self, forKey: .env)
         )
+        self.machine = SavedAgentConfig.normalizedMachine(try c.decodeIfPresent(String.self, forKey: .machine))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -163,6 +182,7 @@ struct SavedAgentConfig: Codable, Equatable {
         try c.encodeIfPresent(config.command, forKey: .command)
         try c.encodeIfPresent(config.initialPrompt, forKey: .initialPrompt)
         try c.encodeIfPresent(config.env, forKey: .env)
+        try c.encodeIfPresent(machine, forKey: .machine)
     }
 }
 

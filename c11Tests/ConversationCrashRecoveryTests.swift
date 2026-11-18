@@ -23,10 +23,20 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         let home: URL?
         var existingPaths: Set<String> = []
         var recursiveEntries: [URL: [ConversationFilesystemEntry]] = [:]
+        /// C11H-196: directory names under `~/.claude/projects`, newest first.
+        var projectDirs: [String] = []
+        var prefixes: [String: String] = [:]
         init(home: String = "/Users/test") { self.home = URL(fileURLWithPath: home) }
         var homeDirectory: URL? { home }
         func fileExists(atPath path: String) -> Bool { existingPaths.contains(path) }
-        func listDirectoryByMtime(_ d: URL, max: Int) -> [ConversationFilesystemEntry] { [] }
+        func listDirectoryByMtime(_ d: URL, max: Int) -> [ConversationFilesystemEntry] {
+            guard d.standardizedFileURL.path == "/Users/test/.claude/projects" else { return [] }
+            return projectDirs.prefix(max).map {
+                ConversationFilesystemEntry(url: d.appendingPathComponent($0, isDirectory: true), fileName: $0,
+                                            mtime: Date(), size: 0)
+            }
+        }
+        func readSessionPrefix(atPath path: String, maxBytes: Int) -> String? { prefixes[path] }
         func listSessionsRecursivelyByMtime(_ r: URL, extensionFilter: String, max: Int) -> [ConversationFilesystemEntry] {
             Array((recursiveEntries[r] ?? [])
                 .filter { $0.fileName.hasSuffix("." + extensionFilter) }
@@ -47,13 +57,13 @@ final class ConversationCrashRecoveryTests: XCTestCase {
 
     func testProjectSlugReplacesEveryNonAlphanumeric() {
         XCTAssertEqual(
-            ClaudeCodeStrategy.projectSlug(forCwd: "/Users/atin/Projects/Stage11/code/c11"),
-            "-Users-atin-Projects-Stage11-code-c11"
+            ClaudeCodeStrategy.projectSlug(forCwd: "/Users/demo/Projects/Stage11/code/c11"),
+            "-Users-demo-Projects-Stage11-code-c11"
         )
         // A `/.claude` segment collapses to `--claude` (slash + dot both → -).
         XCTAssertEqual(
-            ClaudeCodeStrategy.projectSlug(forCwd: "/Users/atin/Projects/Stage11/code/c11/.claude/worktrees/c11-41"),
-            "-Users-atin-Projects-Stage11-code-c11--claude-worktrees-c11-41"
+            ClaudeCodeStrategy.projectSlug(forCwd: "/Users/demo/Projects/Stage11/code/c11/.claude/worktrees/c11-41"),
+            "-Users-demo-Projects-Stage11-code-c11--claude-worktrees-c11-41"
         )
     }
 
@@ -65,8 +75,8 @@ final class ConversationCrashRecoveryTests: XCTestCase {
     func testProjectSlugReplacesUnderscoresAndPunctuation() {
         XCTAssertEqual(
             ClaudeCodeStrategy.projectSlug(
-                forCwd: "/Users/atin/Projects/Gregorovich/projects/singularist_salon"),
-            "-Users-atin-Projects-Gregorovich-projects-singularist-salon"
+                forCwd: "/Users/demo/src/notes/singularist_salon"),
+            "-Users-demo-src-notes-singularist-salon"
         )
         // Mixed separators each map to a single dash; digits and case survive.
         XCTAssertEqual(
@@ -98,21 +108,117 @@ final class ConversationCrashRecoveryTests: XCTestCase {
     /// underscore defect slipped past `testTranscriptExists…WhenPresent`.
     func testTranscriptExistsFindsUnderscoreCwdTranscriptOnDisk() {
         let fs = MockFS()  // home = /Users/test
-        let underscoreCwd = "/Users/atin/Projects/Gregorovich/projects/singularist_salon"
+        let underscoreCwd = "/Users/demo/src/notes/singularist_salon"
         fs.existingPaths.insert(
             "/Users/test/.claude/projects/"
-            + "-Users-atin-Projects-Gregorovich-projects-singularist-salon/\(uuidA).jsonl"
+            + "-Users-demo-src-notes-singularist-salon/\(uuidA).jsonl"
         )
         let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: underscoreCwd,
                                   capturedVia: .hook, state: .suspended)
         XCTAssertEqual(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs), true)
     }
 
-    func testTranscriptExistsNilWhenCwdMissing() {
+    /// C11H-196 gate A: the SessionStart bridge records no cwd. The transcript
+    /// is found by id in any project directory. After the 2026-11-04 reboot,
+    /// 26 of 38 Claude panels were skipped as "unverified" this way, although
+    /// 25 of those transcripts were on disk.
+    func testTranscriptFoundByIdWhenCwdMissing() {
         let fs = mockFS(present: [uuidA], cwd: cwd)
+        fs.projectDirs = [ClaudeCodeStrategy.projectSlug(forCwd: "/Users/test/other"),
+                          ClaudeCodeStrategy.projectSlug(forCwd: cwd)]
         let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: nil,
                                   capturedVia: .hook, state: .suspended)
-        XCTAssertNil(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs))
+        XCTAssertEqual(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs), true)
+    }
+
+    /// A session started in another folder than the ref says is still found.
+    func testTranscriptFoundByIdWhenCwdSlugMisses() {
+        let fs = mockFS(present: [uuidA], cwd: cwd)
+        fs.projectDirs = [ClaudeCodeStrategy.projectSlug(forCwd: cwd)]
+        let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: "/Users/test/moved",
+                                  capturedVia: .hook, state: .suspended)
+        XCTAssertEqual(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs), true)
+    }
+
+    func testTranscriptMissingEverywhereIsFalseWithoutCwd() {
+        let fs = mockFS(present: [uuidB], cwd: cwd)
+        fs.projectDirs = [ClaudeCodeStrategy.projectSlug(forCwd: cwd)]
+        let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: nil,
+                                  capturedVia: .hook, state: .suspended)
+        XCTAssertEqual(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs), false)
+    }
+
+    /// The resume's `cd` comes from the transcript head: the first `cwd`
+    /// value whose slug is the transcript's own project directory.
+    func testRecoveredCwdComesFromTheTranscriptHead() {
+        let underscore = "/Users/test/work_b.dir"
+        let slug = ClaudeCodeStrategy.projectSlug(forCwd: underscore)
+        let fs = mockFS(present: [uuidA], cwd: underscore)
+        fs.projectDirs = [slug]
+        fs.prefixes["/Users/test/.claude/projects/\(slug)/\(uuidA).jsonl"] = [
+            #"{"type":"last-prompt","sessionId":"x"}"#,
+            #"{"type":"mode","mode":"normal"}"#,
+            #"{"type":"user","cwd":"/Users/test/elsewhere","message":"x"}"#,
+            #"{"type":"user","cwd":"\#(underscore)","message":"y"}"#,
+        ].joined(separator: "\n")
+        let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: nil, capturedVia: .hook, state: .alive)
+        XCTAssertEqual(ClaudeCodeStrategy().recoveredCwd(for: ref, filesystem: fs), underscore)
+        let right = ConversationRef(kind: "claude-code", id: uuidA, cwd: underscore, capturedVia: .hook, state: .alive)
+        XCTAssertNil(ClaudeCodeStrategy().recoveredCwd(for: right, filesystem: fs), "a cwd that already leads there stays")
+    }
+
+    /// The verdict carries the recovered cwd into the ref, so the typed resume
+    /// `cd`s into the folder Claude filed the session under.
+    func testVerifiedVerdictFillsTheRefsCwdAndTheResumeCdsThere() async {
+        let fs = mockFS(present: [uuidA], cwd: cwd)
+        let slug = ClaudeCodeStrategy.projectSlug(forCwd: cwd)
+        fs.projectDirs = [slug]
+        fs.prefixes["/Users/test/.claude/projects/\(slug)/\(uuidA).jsonl"] = #"{"cwd":"\#(cwd)"}"#
+        let store = ConversationStore()
+        let surface = UUID().uuidString
+        _ = await store.captureClaudeBridgeSession(surfaceId: surface, sessionID: uuidA, isCurrent: { true })
+        let records = await store.snapshot()
+        XCTAssertNil(records[surface]?.active?.cwd, "the bridge had no cwd to give")
+        let verdicts = ConversationStore.crashTranscriptVerdicts(for: records, registry: .v1, filesystem: fs)
+        await store.applyCrashTranscriptVerdicts(verdicts)
+        let active = await store.active(for: surface)
+        XCTAssertEqual(active?.state, .suspended)
+        XCTAssertEqual(active?.cwd, cwd)
+        guard let active, case .command(let command) = Workspace.resumeDecision(for: active, registry: .v1, mode: .dirty) else {
+            return XCTFail("a verified transcript resumes in a dirty launch")
+        }
+        XCTAssertTrue(command.text.hasPrefix("cd '\(cwd)' && "), command.text)
+        XCTAssertTrue(command.text.contains("--resume '\(uuidA)'"), command.text)
+    }
+
+    /// C11H-196 gate B: after a clean shutdown a kind that cannot be checked
+    /// keeps its state and resumes; after a dirty one it does not.
+    func testUnverifiableKindIsDowngradedOnlyAfterADirtyShutdown() async {
+        for dirty in [false, true] {
+            let store = ConversationStore()
+            await store.push(surfaceId: "S1", kind: "kimi", id: "real-id", source: .hook, cwd: cwd, state: .alive)
+            let verdicts = ConversationStore.crashTranscriptVerdicts(for: await store.snapshot(), registry: .v1,
+                                                                     filesystem: mockFS(present: [], cwd: cwd))
+            await store.applyCrashTranscriptVerdicts(verdicts, downgradeUnverifiable: dirty)
+            let active = await store.active(for: "S1")
+            XCTAssertEqual(active?.state, dirty ? .unknown : .alive)
+        }
+    }
+
+    /// The bridge records the agent's own folder, and a later report of the
+    /// same session without one keeps it.
+    func testBridgeCaptureRecordsAndKeepsTheAgentsCwd() async {
+        let store = ConversationStore()
+        let surface = UUID().uuidString
+        let first = await store.captureClaudeBridgeSession(surfaceId: surface, sessionID: uuidA, cwd: cwd, isCurrent: { true })
+        XCTAssertEqual(first?.cwd, cwd)
+        let again = await store.captureClaudeBridgeSession(surfaceId: surface, sessionID: uuidA, cwd: nil, isCurrent: { true })
+        XCTAssertEqual(again?.cwd, cwd)
+        let other = UUID().uuidString
+        _ = await store.captureClaudeBridgeSession(surfaceId: other, sessionID: uuidB, isCurrent: { true })
+        let filled = await store.captureClaudeBridgeSession(surfaceId: other, sessionID: uuidB, cwd: "/Users/test/b",
+                                                            isCurrent: { true })
+        XCTAssertEqual(filled?.cwd, "/Users/test/b", "a cwd learned later fills an exact ref that had none")
     }
 
     func testTranscriptExistsNilWhenIdInvalid() {

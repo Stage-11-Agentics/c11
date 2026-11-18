@@ -84,11 +84,17 @@ struct ConversationRef: Codable, Sendable, Equatable {
     var placeholder: Bool
     var cwd: String?
     var capturedAt: Date
+    /// Identity capture, distinct from lifecycle updates to `capturedAt`.
+    /// Optional for snapshots written before this provenance was recorded.
+    var identityCapturedAt: Date? = nil
     var capturedVia: CaptureSource
     var state: ConversationState
     var quarantineReason: ConversationQuarantineReason?
     var diagnosticReason: String?
     var payload: [String: PersistedJSONValue]?
+    /// A SessionEnd observed while this exact conversation was live. Unlike
+    /// generic `.unknown`, this can be ordered against hc's root end time.
+    var sessionEndedAt: Date? = nil
 
     init(
         kind: String,
@@ -107,6 +113,7 @@ struct ConversationRef: Codable, Sendable, Equatable {
         self.placeholder = placeholder
         self.cwd = cwd
         self.capturedAt = capturedAt
+        self.identityCapturedAt = capturedAt
         self.capturedVia = capturedVia
         self.state = state
         self.quarantineReason = quarantineReason
@@ -158,6 +165,14 @@ extension CaptureSource {
 }
 
 extension ConversationRef {
+    var identityCaptureTime: Date { identityCapturedAt ?? capturedAt }
+
+    mutating func updateLifecycleTimestamp(_ at: Date) {
+        // Latch a legacy snapshot's capture time before its first update.
+        identityCapturedAt = identityCaptureTime
+        capturedAt = at
+    }
+
     var isQuarantined: Bool { quarantineReason != nil }
 
     /// Causal exact refs are the only refs allowed to resolve duplicate or

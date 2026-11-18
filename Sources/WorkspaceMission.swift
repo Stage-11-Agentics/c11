@@ -10,6 +10,14 @@ struct WorkspaceMission: Equatable, Hashable, Sendable {
     var tooltip: String { paragraph + "\n\n" + path }
 }
 
+/// One bounded read feeds both projections. A captain-only file is valid even
+/// when it has no mission paragraph; neither projection owns the other's life.
+struct WorkspaceProjectDocument: Equatable, Sendable {
+    let path: String
+    let mission: WorkspaceMission?
+    let captain: String?
+}
+
 enum WorkspaceMissionFile {
     static let byteLimit = 64 * 1024
 
@@ -21,6 +29,10 @@ enum WorkspaceMissionFile {
     /// Only call on a worker. Nonblocking open plus fstat rejects FIFOs/devices;
     /// a bounded descriptor read also handles a file that grows after the stat.
     static func read(root: String?) -> WorkspaceMission? {
+        readDocument(root: root)?.mission
+    }
+
+    static func readDocument(root: String?) -> WorkspaceProjectDocument? {
         guard let path = path(root: root) else { return nil }
         let fd = open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { return nil }
@@ -44,22 +56,74 @@ enum WorkspaceMissionFile {
               let text = String(bytes: bytes.prefix(length), encoding: .utf8),
               !text.unicodeScalars.contains(where: {
                   CharacterSet.controlCharacters.contains($0) && $0 != "\n" && $0 != "\r" && $0 != "\t"
-              }),
-              let paragraph = missionParagraph(text) else { return nil }
-        var sentence = paragraph
-        paragraph.enumerateSubstrings(in: paragraph.startIndex..<paragraph.endIndex, options: .bySentences) {
-            substring, _, _, stop in
-            if let substring { sentence = substring.trimmingCharacters(in: .whitespacesAndNewlines) }
-            stop = true
+              }) else { return nil }
+        let fields = captainFields(text)
+        let mission = missionParagraph(fields.missionText).map { paragraph in
+            var sentence = paragraph
+            paragraph.enumerateSubstrings(in: paragraph.startIndex..<paragraph.endIndex, options: .bySentences) {
+                substring, _, _, stop in
+                if let substring { sentence = substring.trimmingCharacters(in: .whitespacesAndNewlines) }
+                stop = true
+            }
+            return WorkspaceMission(path: path, summary: String(sentence.prefix(512)), paragraph: String(paragraph.prefix(2_000)))
         }
-        return WorkspaceMission(path: path, summary: String(sentence.prefix(512)), paragraph: String(paragraph.prefix(2_000)))
+        return WorkspaceProjectDocument(path: path, mission: mission, captain: fields.captain)
+    }
+
+    /// Captain declarations are metadata, not fallback mission prose. Only a
+    /// marked line/section outside fences, comments and quotations can seed it.
+    /// Keep a single address line, unwrapping only one surrounding backtick pair.
+    static func captainFields(_ text: String) -> (captain: String?, missionText: String) {
+        let text = text.replacingOccurrences(of: "(?s)<!--.*?(?:-->|$)", with: "", options: .regularExpression)
+        var fence: MarkdownFence?
+        var captainSection = false
+        var captain: String?
+        var missionLines: [String] = []
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\u{feff}", with: "")
+            if consumeFence(line, fence: &fence) {
+                missionLines.append(raw)
+                continue
+            }
+            if line.range(of: "^#{1,6}\\s+", options: .regularExpression) != nil {
+                captainSection = line.range(of: "^#{1,6}\\s+Captain\\s*#*\\s*$", options: [.regularExpression, .caseInsensitive]) != nil
+                missionLines.append(captainSection ? "" : raw)
+                continue
+            }
+            if let label = line.range(of: "^\\*\\*Captain[.:]?\\*\\*[:.]?\\s*", options: [.regularExpression, .caseInsensitive]) {
+                if captain == nil {
+                    captain = captainAddress(String(line[label.upperBound...]))
+                }
+                missionLines.append("")
+                continue
+            }
+            if captainSection {
+                if captain == nil, !line.isEmpty,
+                   line.range(of: "^(?:>|[-*+]\\s|[|<])", options: .regularExpression) == nil {
+                    captain = captainAddress(line)
+                }
+                missionLines.append("")
+                continue
+            }
+            missionLines.append(raw)
+        }
+        return (captain, missionLines.joined(separator: "\n"))
+    }
+
+    private static func captainAddress(_ text: String) -> String? {
+        var value = text.trimmingCharacters(in: .whitespaces)
+        if value.count >= 2, value.hasPrefix("`"), value.hasSuffix("`") {
+            value = String(value.dropFirst().dropLast())
+        }
+        return try? WorkspaceMetadataValidator.normalizedCaptain(value)
     }
 
     /// First marked mission wins for the entire root. Workspace headings are
     /// notes, not selectors. With no marker, accept the first prose paragraph.
     static func missionParagraph(_ text: String) -> String? {
         let text = text.replacingOccurrences(of: "(?s)<!--.*?(?:-->|$)", with: "", options: .regularExpression)
-        var fence: Character?
+        var fence: MarkdownFence?
         var paragraph: [String] = []
         var fallback: String?
         var marked = false
@@ -71,12 +135,7 @@ enum WorkspaceMissionFile {
         for raw in text.components(separatedBy: .newlines) + [""] {
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 .replacingOccurrences(of: "\u{feff}", with: "")
-            if line.hasPrefix("```") || line.hasPrefix("~~~") {
-                if fence == line.first { fence = nil }
-                else if fence == nil { fence = line.first }
-                continue
-            }
-            if fence != nil { continue }
+            if consumeFence(line, fence: &fence) { continue }
             let heading = line.range(of: "^#{1,6}\\s+", options: .regularExpression) != nil
             let label = line.range(of: "^(?:\\*\\*Mission[.:]?\\*\\*[:.]?|Mission:)\\s*", options: [.regularExpression, .caseInsensitive])
             if line.isEmpty || heading || label != nil {
@@ -109,6 +168,29 @@ enum WorkspaceMissionFile {
         return fallback
     }
 
+    private struct MarkdownFence {
+        let marker: Character
+        let length: Int
+    }
+
+    /// A shorter fence or a line with an info string cannot close an example.
+    /// Both projections use the same state so sample metadata never leaks out.
+    private static func consumeFence(_ line: String, fence: inout MarkdownFence?) -> Bool {
+        if let open = fence {
+            let run = line.prefix(while: { $0 == open.marker })
+            if run.count >= open.length,
+               line.dropFirst(run.count).trimmingCharacters(in: .whitespaces).isEmpty {
+                fence = nil
+            }
+            return true
+        }
+        guard let marker = line.first, marker == "`" || marker == "~" else { return false }
+        let length = line.prefix(while: { $0 == marker }).count
+        guard length >= 3 else { return false }
+        fence = MarkdownFence(marker: marker, length: length)
+        return true
+    }
+
     private static func plainText(_ text: String) -> String {
         let text = text.replacingOccurrences(of: "!?\\[([^]]+)\\]\\([^)]*\\)", with: "$1", options: .regularExpression)
         return text.replacingOccurrences(of: "**", with: "")
@@ -123,6 +205,7 @@ enum WorkspaceMissionFile {
 final class WorkspaceMissionMonitor: @unchecked Sendable {
     static let shared = WorkspaceMissionMonitor()
     typealias Receiver = @MainActor @Sendable (WorkspaceMission?) -> Void
+    typealias DocumentReceiver = @MainActor @Sendable (WorkspaceProjectDocument?) -> Void
 
     final class Subscription: @unchecked Sendable {
         private let cancel: @Sendable () -> Void
@@ -151,24 +234,39 @@ final class WorkspaceMissionMonitor: @unchecked Sendable {
     }
 
     private struct Entry {
-        var receivers: [UUID: Receiver] = [:]
+        var receivers: [UUID: DocumentReceiver] = [:]
         var stamp: Stamp?
-        var value: WorkspaceMission?
+        var value: WorkspaceProjectDocument?
         var loaded = false
     }
 
     private let queue = DispatchQueue(label: "c11.workspace-mission", qos: .utility)
     private let interval: TimeInterval
-    private let reader: @Sendable (String) -> WorkspaceMission?
+    private let reader: @Sendable (String) -> WorkspaceProjectDocument?
     private var entries: [String: Entry] = [:]
     private var timer: DispatchSourceTimer?
 
-    init(interval: TimeInterval = 2, reader: @escaping @Sendable (String) -> WorkspaceMission? = { WorkspaceMissionFile.read(root: $0) }) {
+    init(interval: TimeInterval = 2, documentReader: @escaping @Sendable (String) -> WorkspaceProjectDocument?) {
         self.interval = interval
-        self.reader = reader
+        self.reader = documentReader
+    }
+
+    convenience init(interval: TimeInterval = 2) {
+        self.init(interval: interval, documentReader: { WorkspaceMissionFile.readDocument(root: $0) })
+    }
+
+    /// Retained for mission-only clients and their injected readers.
+    convenience init(interval: TimeInterval = 2, reader: @escaping @Sendable (String) -> WorkspaceMission?) {
+        self.init(interval: interval, documentReader: { root in
+            reader(root).map { WorkspaceProjectDocument(path: $0.path, mission: $0, captain: nil) }
+        })
     }
 
     func observe(root: String, receive: @escaping Receiver) -> Subscription {
+        observeDocument(root: root) { receive($0?.mission) }
+    }
+
+    func observeDocument(root: String, receive: @escaping DocumentReceiver) -> Subscription {
         let id = UUID()
         queue.async {
             var entry = self.entries[root] ?? Entry()
@@ -219,14 +317,19 @@ final class WorkspaceMissionMonitor: @unchecked Sendable {
 @MainActor
 final class WorkspaceMissionBinding {
     private let monitor: WorkspaceMissionMonitor
-    private let receive: WorkspaceMissionMonitor.Receiver
+    private let receive: WorkspaceMissionMonitor.DocumentReceiver
     private var subscription: WorkspaceMissionMonitor.Subscription?
     private var root: String?
     private var observationID = UUID()
 
     init(monitor: WorkspaceMissionMonitor = .shared, receive: @escaping WorkspaceMissionMonitor.Receiver) {
         self.monitor = monitor
-        self.receive = receive
+        self.receive = { receive($0?.mission) }
+    }
+
+    init(monitor: WorkspaceMissionMonitor = .shared, receiveDocument: @escaping WorkspaceMissionMonitor.DocumentReceiver) {
+        self.monitor = monitor
+        self.receive = receiveDocument
     }
 
     func setRoot(_ root: String?) {
@@ -237,7 +340,7 @@ final class WorkspaceMissionBinding {
         subscription = nil
         receive(nil)
         guard let root else { return }
-        subscription = monitor.observe(root: root) { [weak self] value in
+        subscription = monitor.observeDocument(root: root) { [weak self] value in
             guard let self, self.observationID == id else { return }
             self.receive(value)
         }
@@ -261,5 +364,25 @@ struct WorkspaceMissionLaunchContext: Sendable {
         var env = original
         env[Self.environmentKey] = mission?.path ?? ""
         return env
+    }
+
+    /// The mission context for one launch, or nil when the launch runs on
+    /// another machine: `C11_MISSION_FILE` names a file on this Mac, so a remote
+    /// terminal keeps the environment and command it was asked for (C11H-51).
+    static func forLaunch(isRemote: Bool, missionRoot: String?,
+                          read: (String?) -> WorkspaceMission? = WorkspaceMissionFile.read(root:)) -> Self? {
+        isRemote ? nil : Self(mission: read(missionRoot))
+    }
+}
+
+extension Optional where Wrapped == WorkspaceMissionLaunchContext {
+    /// A remote launch (nil context) passes the requested environment through.
+    func environment(_ original: [String: String]) -> [String: String] {
+        map { $0.environment(original) } ?? original
+    }
+
+    /// A remote launch (nil context) types the launch line unchanged.
+    func command(_ command: String) -> String {
+        map { $0.command(command) } ?? command
     }
 }

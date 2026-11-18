@@ -32,11 +32,16 @@ struct WorkspaceGroupMemberAttention: Equatable {
     let waitingCount: Int
     let unreadCount: Int
     let lifecycleByPanel: [UUID: WorkspaceGroupPanelLifecycle]
+    /// C11H-296: the store's card-context revision (a panel's title or
+    /// description). Headers ignore it; a change alone republishes the
+    /// projection, throttled, so agent rows show a new description.
+    let cardContextRevision: UInt64
 
     init(
         panels: [WorkspaceGroupPanelAttention] = [],
         unreadCount: Int = 0,
-        lifecycleByPanel: [UUID: WorkspaceGroupPanelLifecycle] = [:]
+        lifecycleByPanel: [UUID: WorkspaceGroupPanelLifecycle] = [:],
+        cardContextRevision: UInt64 = 0
     ) {
         flaggedCount = panels.reduce(0) { $0 + ($1.isFlagged ? 1 : 0) }
         waitingCount = panels.reduce(0) { $0 + ($1.isWaiting && !$1.isSuppressed ? 1 : 0) }
@@ -44,6 +49,7 @@ struct WorkspaceGroupMemberAttention: Equatable {
         // Do not sum per-tab notification counts or WorkspacePulse's synthetic waiting fallback.
         self.unreadCount = unreadCount
         self.lifecycleByPanel = lifecycleByPanel
+        self.cardContextRevision = cardContextRevision
     }
 
     static let zero = Self()
@@ -53,6 +59,8 @@ struct WorkspaceGroupSidebarHeader: Equatable {
     let group: WorkspaceGroup
     let summary: WorkspaceGroupHeaderSummary
     let isActive: Bool
+    /// The group's own Captain (C11H-299), shown once on the header.
+    var captain: WorkspaceCaptainSummary = .unset
 }
 
 struct WorkspaceGroupSidebarWorkspaceRow: Equatable {
@@ -144,15 +152,16 @@ struct WorkspaceGroupSidebarProjection: Equatable {
         groups: [WorkspaceGroup],
         workspaces: [WorkspaceOrderEntry],
         attentionByWorkspace: [UUID: WorkspaceGroupMemberAttention] = [:],
-        selectedWorkspaceId: UUID? = nil
+        selectedWorkspaceId: UUID? = nil,
+        captainByGroup: [UUID: WorkspaceCaptainSummary] = [:],
+        rootOrder: [UUID]? = nil
     ) -> Self {
         var seenGroups = Set<UUID>()
         let groups = groups.filter { seenGroups.insert($0.id).inserted }
         var members: [UUID: [WorkspaceGroupSidebarWorkspaceRow]] = [:]
         var summaries: [UUID: WorkspaceGroupHeaderSummary] = [:]
         var activeGroups = Set<UUID>()
-        var pinnedUngrouped: [WorkspaceGroupSidebarWorkspaceRow] = []
-        var unpinnedUngrouped: [WorkspaceGroupSidebarWorkspaceRow] = []
+        var ungroupedRows: [UUID: WorkspaceGroupSidebarWorkspaceRow] = [:]
         for (index, workspace) in workspaces.enumerated() {
             // A transient orphan remains reachable as an ungrouped row.
             let groupId = workspace.groupId.flatMap { seenGroups.contains($0) ? $0 : nil }
@@ -165,10 +174,8 @@ struct WorkspaceGroupSidebarProjection: Equatable {
                 summaries[groupId, default: .zero].waitingCount += attention.waitingCount
                 summaries[groupId, default: .zero].unreadCount += attention.unreadCount
                 if workspace.id == selectedWorkspaceId { activeGroups.insert(groupId) }
-            } else if workspace.isPinned {
-                pinnedUngrouped.append(row)
             } else {
-                unpinnedUngrouped.append(row)
+                ungroupedRows[workspace.id] = row
             }
         }
         var rows: [WorkspaceGroupSidebarRow] = []
@@ -188,15 +195,27 @@ struct WorkspaceGroupSidebarProjection: Equatable {
                 visibleWorkspaceIds.append(row.workspaceId)
             }
         }
-        for pinned in [true, false] {
-            for group in groups where group.isPinned == pinned {
+        // C11H-342: groups and ungrouped workspaces in one root order. An
+        // ungrouped row's move neighbours are its root neighbours (a group too).
+        let root = WorkspaceRootOrder.resolve(stored: rootOrder, groups: groups, workspaces: workspaces)
+        let groupsById = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
+        for (index, entry) in root.enumerated() {
+            if entry.isGroup {
+                guard let group = groupsById[entry.id] else { continue }
                 let header = WorkspaceGroupSidebarHeader(group: group, summary: summaries[group.id] ?? .zero,
-                                                         isActive: activeGroups.contains(group.id))
+                                                         isActive: activeGroups.contains(group.id),
+                                                         captain: captainByGroup[group.id] ?? .unset)
                 headersById[group.id] = header
                 rows.append(.group(header))
                 if !group.isCollapsed { appendWorkspaces(members[group.id] ?? []) }
+            } else if var row = ungroupedRows[entry.id] {
+                if index > 0, root[index - 1].isPinned == entry.isPinned { row.moveUpTarget = root[index - 1].id }
+                if index + 1 < root.count, root[index + 1].isPinned == entry.isPinned {
+                    row.moveDownTarget = root[index + 1].id
+                }
+                rows.append(.workspace(row))
+                visibleWorkspaceIds.append(row.workspaceId)
             }
-            appendWorkspaces(pinned ? pinnedUngrouped : unpinnedUngrouped)
         }
         return Self(rows: rows, visibleWorkspaceIds: visibleWorkspaceIds, headersById: headersById)
     }
@@ -221,6 +240,10 @@ struct WorkspaceGroupSidebarObservationSource {
     let groups: () -> [WorkspaceGroup]
     let workspaces: () -> [WorkspaceGroupSidebarObservedWorkspace]
     let selectedWorkspaceId: () -> UUID?
+    /// Each group's Captain summary; a change arrives on `structureChanges`.
+    var groupCaptains: () -> [UUID: WorkspaceCaptainSummary] = { [:] }
+    /// C11H-342: the stored root order; a change arrives on `structureChanges`.
+    var rootOrder: () -> [UUID]? = { nil }
 }
 
 /// A single sidebar/window subscription owner, independent of visible rows and mounted bodies.
@@ -228,9 +251,20 @@ struct WorkspaceGroupSidebarObservationSource {
 @MainActor
 final class WorkspaceGroupSidebarCoordinator: ObservableObject {
     typealias RefreshScheduler = (@escaping @MainActor () -> Void) -> Void
+    typealias DelayedScheduler = (TimeInterval, @escaping @MainActor () -> Void) -> Void
     @Published private(set) var projection: WorkspaceGroupSidebarProjection = .empty
 
+    /// C11H-296: a title or description change alone republishes at most once
+    /// in this window, so a burst of writes from many agents costs a bounded
+    /// number of sidebar list evaluations and a lone write shows at once.
+    static let cardContextWindow: TimeInterval = 0.25
+
     private let scheduleRefresh: RefreshScheduler
+    private let scheduleAfter: DelayedScheduler
+    private let now: () -> TimeInterval
+    private var lastPublishAt: TimeInterval?
+    private var cardContextPending = false
+    private var cardContextTrailingScheduled = false
     private var source: WorkspaceGroupSidebarObservationSource?
     private var rootSubscriptions: [AnyCancellable] = []
     private var memberSubscriptions: [UUID: AnyCancellable] = [:]
@@ -245,19 +279,31 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
     private var generation = 0
     private var attachmentIdentity: [ObjectIdentifier]?
     private var projectedGroups: [WorkspaceGroup] = []
+    private var projectedGroupCaptains: [UUID: WorkspaceCaptainSummary] = [:]
+    private var projectedRootOrder: [UUID]?
     private var projectedMemberIds: [UUID] = []
     private var projectedSelection: UUID?
     private var hasProjectedSource = false
 
-    init(scheduleRefresh: @escaping RefreshScheduler = { work in DispatchQueue.main.async { work() } }) {
+    init(
+        scheduleRefresh: @escaping RefreshScheduler = { work in DispatchQueue.main.async { work() } },
+        scheduleAfter: @escaping DelayedScheduler = { delay, work in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { work() } }
+        },
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) {
         self.scheduleRefresh = scheduleRefresh
+        self.scheduleAfter = scheduleAfter
+        self.now = now
     }
 
     func attach(manager: WorkspaceManager, notificationStore: TerminalNotificationStore) {
         let identity = [ObjectIdentifier(manager), ObjectIdentifier(notificationStore)]
         guard attachmentIdentity != identity else { return }
         let source = WorkspaceGroupSidebarObservationSource(
-            structureChanges: Publishers.Merge(manager.$workspaces.map { _ in () }, manager.$workspaceGroups.map { _ in () })
+            structureChanges: Publishers.Merge4(manager.$workspaces.map { _ in () }, manager.$workspaceGroups.map { _ in () },
+                                                manager.workspaceGroupCaptainBoard.$summaries.map { _ in () },
+                                                manager.$workspaceRootOrder.map { _ in () })
                 .eraseToAnyPublisher(),
             selectionChanges: manager.$storedSelectedWorkspaceId.map { _ in () }.eraseToAnyPublisher(),
             notificationChanges: notificationStore.objectWillChange.eraseToAnyPublisher(),
@@ -293,11 +339,15 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
                             }
                             return WorkspaceGroupMemberAttention(panels: panels,
                                 unreadCount: notificationStore.unreadCount(forWorkspaceId: workspace.id),
-                                lifecycleByPanel: lifecycle)
+                                lifecycleByPanel: lifecycle,
+                                cardContextRevision: PanelMetadataStore.shared.cardContextRevision(
+                                    workspaceId: workspace.id))
                         })
                 }
             },
-            selectedWorkspaceId: { [weak manager] in manager?.selectedWorkspaceId })
+            selectedWorkspaceId: { [weak manager] in manager?.selectedWorkspaceId },
+            groupCaptains: { [weak manager] in manager?.workspaceGroupCaptainBoard.summaries ?? [:] },
+            rootOrder: { [weak manager] in manager?.workspaceRootOrder })
         attach(source: source)
         attachmentIdentity = identity
     }
@@ -338,6 +388,8 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
         orderEntries.removeAll()
         attentionByWorkspace.removeAll()
         projectedGroups.removeAll()
+        projectedGroupCaptains.removeAll()
+        projectedRootOrder = nil
         projectedMemberIds.removeAll()
         projectedSelection = nil
         hasProjectedSource = false
@@ -346,6 +398,9 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
         needsStructure = false
         needsAllAttention = false
         refreshScheduled = false
+        lastPublishAt = nil
+        cardContextPending = false
+        cardContextTrailingScheduled = false
     }
 
     private func requestRefresh() {
@@ -360,6 +415,42 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
     }
 
     private func refresh() {
+        refreshProjection()
+        publishPendingCardContext()
+    }
+
+    /// Every publication rebuilds the rows' pulses, so each one also carries
+    /// a pending card-context change.
+    private func publish(_ next: WorkspaceGroupSidebarProjection) {
+        cardContextPending = false
+        lastPublishAt = now()
+        projection = next
+    }
+
+    /// A card-context change no other publication carried: at once when the
+    /// last publication is a window old, else once at the window's end.
+    private func publishPendingCardContext() {
+        guard cardContextPending, !cardContextTrailingScheduled else { return }
+        let elapsed = lastPublishAt.map { now() - $0 } ?? .infinity
+        guard elapsed < Self.cardContextWindow else {
+            var next = projection
+            next.pulseRevision &+= 1
+            publish(next)
+            return
+        }
+        cardContextTrailingScheduled = true
+        let expectedGeneration = generation
+        scheduleAfter(Self.cardContextWindow - elapsed) { [weak self] in
+            guard let self, self.generation == expectedGeneration else { return }
+            self.cardContextTrailingScheduled = false
+            guard self.cardContextPending else { return }
+            var next = self.projection
+            next.pulseRevision &+= 1
+            self.publish(next)
+        }
+    }
+
+    private func refreshProjection() {
         guard let source else { return }
         if needsStructure {
             needsStructure = false
@@ -389,8 +480,11 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
         needsAllAttention = false
         dirtyMembers.removeAll()
         let groups = source.groups()
+        let groupCaptains = source.groupCaptains()
+        let rootOrder = source.rootOrder()
         let selected = source.selectedWorkspaceId()
         var structureChanged = !hasProjectedSource || groups != projectedGroups || memberIds != projectedMemberIds
+            || groupCaptains != projectedGroupCaptains || rootOrder != projectedRootOrder
         var attentionChanges: [UUID: (old: WorkspaceGroupMemberAttention, new: WorkspaceGroupMemberAttention)] = [:]
         for id in captureIds {
             guard let member = observedMembers[id] else { continue }
@@ -404,18 +498,24 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
             attentionByWorkspace[id] = attention
         }
         let pulseChanged = attentionChanges.values.contains { $0.old.lifecycleByPanel != $0.new.lifecycleByPanel }
+        if attentionChanges.values.contains(where: { $0.old.cardContextRevision != $0.new.cardContextRevision }) {
+            cardContextPending = true
+        }
         let pulseRevision = projection.pulseRevision + (pulseChanged ? 1 : 0)
         if structureChanged {
             // Rebuild membership and canonical-index lookup only on structural changes.
             var next = WorkspaceGroupSidebarProjection.make(
                 groups: groups, workspaces: memberIds.compactMap { orderEntries[$0] },
-                attentionByWorkspace: attentionByWorkspace, selectedWorkspaceId: selected)
+                attentionByWorkspace: attentionByWorkspace, selectedWorkspaceId: selected,
+                captainByGroup: groupCaptains, rootOrder: rootOrder)
             next.pulseRevision = pulseRevision
             projectedGroups = groups
+            projectedGroupCaptains = groupCaptains
+            projectedRootOrder = rootOrder
             projectedMemberIds = memberIds
             projectedSelection = selected
             hasProjectedSource = true
-            if next != projection { projection = next }
+            if next != projection { publish(next) }
             return
         }
         guard !attentionChanges.isEmpty || selected != projectedSelection else { return }
@@ -426,14 +526,16 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
             summary.flaggedCount += change.new.flaggedCount - change.old.flaggedCount
             summary.waitingCount += change.new.waitingCount - change.old.waitingCount
             summary.unreadCount += change.new.unreadCount - change.old.unreadCount
-            headers[groupId] = WorkspaceGroupSidebarHeader(group: header.group, summary: summary, isActive: header.isActive)
+            headers[groupId] = WorkspaceGroupSidebarHeader(group: header.group, summary: summary, isActive: header.isActive,
+                                                           captain: header.captain)
         }
         let selectedGroupId = selected.flatMap { orderEntries[$0]?.groupId }
         if selected != projectedSelection {
             for (id, header) in headers {
                 let isActive = id == selectedGroupId
                 if header.isActive != isActive {
-                    headers[id] = WorkspaceGroupSidebarHeader(group: header.group, summary: header.summary, isActive: isActive)
+                    headers[id] = WorkspaceGroupSidebarHeader(group: header.group, summary: header.summary, isActive: isActive,
+                                                              captain: header.captain)
                 }
             }
             projectedSelection = selected
@@ -443,7 +545,7 @@ final class WorkspaceGroupSidebarCoordinator: ObservableObject {
             if case .group(let header) = row, let updated = headers[header.group.id] { return .group(updated) }
             return row
         }
-        projection = WorkspaceGroupSidebarProjection(rows: rows, visibleWorkspaceIds: projection.visibleWorkspaceIds,
-                                                     headersById: headers, pulseRevision: pulseRevision)
+        publish(WorkspaceGroupSidebarProjection(rows: rows, visibleWorkspaceIds: projection.visibleWorkspaceIds,
+                                                headersById: headers, pulseRevision: pulseRevision))
     }
 }

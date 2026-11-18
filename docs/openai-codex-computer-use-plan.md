@@ -5,7 +5,7 @@ Status: implementation started. The initial provider-neutral Swift macOS adapter
 Branch/worktree:
 
 - Branch: `feat/openai-cua-runner`
-- Worktree: `/Users/atin/Projects/Stage11/code/c11-worktrees/openai-cua-runner`
+- Worktree: `~/src/c11-worktrees/openai-cua-runner`
 
 Date: 2026-04-30
 

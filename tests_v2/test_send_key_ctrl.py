@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """C11-308 / cmux #15928 and #15980: executable tagged-PTY key checks.
 
-Run INSIDE the disposable Atlas guest, using the same filesystem as its app:
+Run INSIDE the disposable build-host guest, using the same filesystem as its app:
   C11_SOCKET=/tmp/c11-sandbox-<guest>.sock C11_CLI='<tagged app>/Contents/Resources/bin/c11' \
     python3 tests_v2/test_send_key_ctrl.py --pid <tagged-app-pid> --source-head <sha>
 

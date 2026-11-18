@@ -149,7 +149,7 @@ failed tip lookup fails the run rather than testing a stale commit) and
 compatibility smoke and GhosttyKit packaging run hourly, all on the free
 GitHub-hosted `macos-15` runner and never on fork pull requests. The Merge
 Captain does not wait for a main run to land a ready PR. At the exact PR head, require fresh review evidence, the
-cheap checks, and `scripts/remote-build.sh` on Atlas for every Swift or native
+cheap checks, and `scripts/remote-build.sh` on the build host for every Swift or native
 change. This is an exact-head gate after the branch includes current
 `origin/main`; a docs-only change is exempt only when the diff is limited to
 documentation or prose and has no Swift, native workflow, script, project,
@@ -160,7 +160,7 @@ repository, trigger, and network boundary require Atin's decision.
 For a Ghostty or bonsplit pointer change, manually dispatch `Build GhosttyKit`
 against the internal bump branch, wait for the prerelease non-`latest` artifact
 and bot checksum commit, refresh the PR checks at that bot-created head, then
-run the exact-head Atlas gate before landing. After landing, a main backstop
+run the exact-head build-host gate before landing. After landing, a main backstop
 failure is a fix-forward incident: do not reclassify an older PR as green or use
 a rerun to conceal a broken main.
 
@@ -203,7 +203,7 @@ with a machine-wide load generator.
 reads, checked by a grep of the tests). Files interact through shared processes,
 registries and databases with no overlapping lines, so otherwise merge and gate again.
 
-Forgejo PAT via `security find-internet-password -s forgejo.stage11.ai -w`.
+Forgejo PAT via `security find-internet-password -s <forgejo host> -w`.
 
 - **Additive-registration conflicts** (`__init__.py` re-exports, CLI/plugin registries): resolve as the union, ordered by ticket ID — the standing pattern. Real semantic conflicts → escalate with a `🛑` banner.
 - **A squash carries only the ticket's own files, and a child lands after its anchor.** Before squashing, `git diff --stat <remote>/main...HEAD` shows only the ticket's own files; a branch that merged an unlanded anchor waits until that anchor lands. Otherwise the squash puts the anchor's files on main in whatever state the child last merged, and when those are migrations, the anchor's later edits change already-applied files: a runner that checksums applied migrations would refuse to boot on the next deploy, so deploys freeze until the anchor lands.

@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11h architecture: hc, c11h and the bus</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root {
+  --accent: #FF4F1F;
+  --on-accent: #111214;
+  --surface: #111214;
+  --field: #0C0D0F;
+  --chip: #1A1B1F;
+  --edge: #2C2E33;
+  --rule-soft: #1F2024;
+  --ink: #FFFFFF;
+  --text: rgba(255,255,255,0.92);
+  --text-2: rgba(255,255,255,0.58);
+  --text-dim: rgba(255,255,255,0.46);
+  --inv-bg: #FFFFFF;
+  --inv-fg: #111214;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --grot: -apple-system, "SF Pro Text", Inter, system-ui, "Helvetica Neue", sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --surface: #FFFFFF; --field: #F7F7F8; --chip: #F2F2F4; --edge: #111214; --rule-soft: #D3D4D8;
+    --ink: #111214; --text: #111214; --text-2: #111214; --text-dim: rgba(17,18,20,0.5);
+    --inv-bg: #111214; --inv-fg: #FFFFFF;
+  }
+}
+:root[data-theme="light"] {
+  --surface: #FFFFFF; --field: #F7F7F8; --chip: #F2F2F4; --edge: #111214; --rule-soft: #D3D4D8;
+  --ink: #111214; --text: #111214; --text-2: #111214; --text-dim: rgba(17,18,20,0.5);
+  --inv-bg: #111214; --inv-fg: #FFFFFF;
+}
+* { box-sizing: border-box; border-radius: 0; }
+html, body { margin: 0; background: var(--field); color: var(--text); }
+body { font-family: var(--grot); font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.sheet { max-width: 1160px; margin: 0 auto; padding: 32px 40px 80px; background: var(--surface); border-left: 1px solid var(--edge); border-right: 1px solid var(--edge); min-height: 100vh; }
+@media (max-width: 760px) { .sheet { padding: 24px 16px 60px; } }
+.mono, .placard, .zone-label, th, .meta, .src, .tag, .seg button, .mark-word, .legend, .k { font-family: var(--mono); }
+.placard { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); font-weight: 500; }
+h1 { font-size: 28px; line-height: 32px; font-weight: 600; margin: 6px 0 8px; }
+h2 { font-size: 14px; line-height: 20px; font-weight: 500; margin: 0; }
+.lede { font-size: 14px; line-height: 20px; color: var(--text); max-width: 880px; margin: 0 0 16px; }
+.title-rule { border: 0; border-top: 1px solid var(--edge); margin: 0 0 8px; }
+.titleblock { display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--edge); margin: 16px 0 40px; }
+.titleblock div { padding: 8px 10px; border-right: 1px solid var(--rule-soft); min-height: 56px; }
+.titleblock div:last-child { border-right: 0; }
+.titleblock .placard { display: block; margin-bottom: 4px; }
+.titleblock .v { font-family: var(--mono); font-size: 12px; line-height: 16px; font-weight: 600; }
+@media (max-width: 760px) { .titleblock { grid-template-columns: repeat(2, 1fr); } .titleblock div { border-bottom: 1px solid var(--rule-soft); } }
+.zone { display: flex; align-items: center; gap: 10px; margin: 48px 0 16px; }
+.zone .sq { width: 18px; height: 18px; border: 1px solid var(--edge); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 10.5px; font-weight: 600; flex: 0 0 18px; }
+.zone .zone-label { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; white-space: nowrap; }
+.zone .line { flex: 1; border-top: 1px solid var(--edge); }
+p { max-width: 880px; margin: 0 0 12px; }
+p.help { font-size: 13px; line-height: 18px; color: var(--text-2); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th { text-align: left; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; color: var(--text-2); padding: 8px 10px 6px 0; border-bottom: 1px solid var(--edge); vertical-align: bottom; }
+td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; font-size: 13px; line-height: 18px; }
+td.idx, th.idx { font-family: var(--mono); font-size: 11px; width: 28px; color: var(--text-2); }
+td.k { font-weight: 600; font-size: 12px; white-space: nowrap; }
+.src { font-size: 10px; letter-spacing: 0.04em; color: var(--text-dim); white-space: nowrap; }
+.tag { display: inline-block; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--edge); color: var(--text-2); margin-left: 6px; vertical-align: 1px; }
+.mark { display: inline-block; width: 9px; height: 9px; border: 1px solid var(--ink); vertical-align: -1px; margin-right: 6px; }
+.mark.on { background: var(--ink); }
+.mark.live { background: var(--accent); border-color: var(--accent); }
+.mark.plan { border-style: dashed; }
+.mark-word { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); margin: 8px 0 0; }
+/* segmented control */
+.seg { display: flex; border: 1px solid var(--edge); width: fit-content; margin: 0 0 12px; }
+.seg button { position: relative; width: 236px; height: 34px; background: var(--chip); color: var(--text); border: 0; border-right: 1px solid var(--edge); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; cursor: pointer; padding: 0; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--inv-bg); color: var(--inv-fg); }
+.seg button:active { opacity: 0.55; }
+@media (max-width: 760px) { .seg button { width: 110px; font-size: 9.5px; } }
+/* brackets, outside corners, on hover only */
+.bk { position: relative; }
+.bk .b { position: absolute; width: 7px; height: 7px; opacity: 0; transition: opacity 60ms linear; pointer-events: none; border-color: var(--ink); border-style: solid; border-width: 0; }
+.bk .b.tl { left: -5px; top: -5px; border-left-width: 1.5px; border-top-width: 1.5px; }
+.bk .b.tr { right: -5px; top: -5px; border-right-width: 1.5px; border-top-width: 1.5px; }
+.bk .b.bl { left: -5px; bottom: -5px; border-left-width: 1.5px; border-bottom-width: 1.5px; }
+.bk .b.br { right: -5px; bottom: -5px; border-right-width: 1.5px; border-bottom-width: 1.5px; }
+.bk:hover .b { opacity: 0.78; }
+/* diagram */
+.diagram { border: 1px solid var(--edge); background: var(--surface); overflow-x: auto; }
+.diagram svg { display: block; width: 100%; height: auto; min-width: 760px; }
+.state { display: none; }
+.state[data-active="true"] { display: block; }
+svg text { font-family: var(--mono); fill: var(--text); }
+svg .mach { fill: var(--field); stroke: var(--edge); stroke-width: 1; }
+svg .mach-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
+svg .mach-sub { font-size: 9.5px; fill: var(--text-2); }
+svg .row { fill: var(--surface); stroke: var(--edge); stroke-width: 1; }
+svg .row.off { stroke: var(--text-dim); stroke-dasharray: 3 3; fill: none; }
+svg .row-name { font-size: 10.5px; font-weight: 600; }
+svg .row-name.off { fill: var(--text-dim); }
+svg .row-sub { font-size: 9px; fill: var(--text-2); }
+svg .row-sub.off { fill: var(--text-dim); }
+svg .sq { stroke: var(--ink); stroke-width: 1; fill: none; }
+svg .sq.on { fill: var(--ink); }
+svg .sq.live { fill: var(--accent); stroke: var(--accent); }
+svg .sq.plan { stroke-dasharray: 2 2; }
+svg .link { stroke: var(--ink); stroke-width: 1; fill: none; }
+svg .link.live { stroke: var(--accent); stroke-width: 1.5; }
+svg .link.dashed { stroke-dasharray: 4 3; }
+svg .link.plan { stroke: var(--text-dim); stroke-dasharray: 2 3; }
+svg .lbl-bg { fill: var(--surface); stroke: var(--edge); stroke-width: 1; }
+svg .lbl { font-size: 9px; fill: var(--text-2); }
+svg .lbl.live { fill: var(--accent); }
+svg .callout { fill: var(--surface); stroke: var(--ink); stroke-width: 1; }
+svg .callout.live { fill: var(--accent); stroke: var(--accent); }
+svg .callout-n { font-size: 10px; font-weight: 600; }
+svg .callout-n.live { fill: var(--on-accent); }
+table.links { margin: 0; border-top: 1px solid var(--edge); }
+table.links th:first-child, table.links td:first-child { padding-left: 12px; }
+table.links td.k { white-space: normal; font-size: 11px; }
+svg .bus { fill: none; stroke: var(--edge); stroke-width: 1; stroke-dasharray: 4 3; }
+svg .bus-t { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; fill: var(--text-2); }
+svg .bus-s { font-size: 9px; fill: var(--text-dim); }
+svg .layer { fill: var(--field); stroke: var(--edge); stroke-width: 1; }
+svg .layer-t { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
+svg .layer-s { font-size: 10px; fill: var(--text-2); }
+svg .arrow { stroke: var(--ink); stroke-width: 1; fill: none; }
+.delta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--edge); margin-top: 16px; }
+.delta > div { padding: 12px 14px; border-right: 1px solid var(--rule-soft); }
+.delta > div:last-child { border-right: 0; }
+.delta ul { margin: 6px 0 0; padding-left: 16px; font-size: 13px; line-height: 18px; }
+.delta li { margin: 0 0 4px; }
+@media (max-width: 760px) { .delta { grid-template-columns: 1fr; } .delta > div { border-right: 0; border-bottom: 1px solid var(--rule-soft); } }
+.theme { position: fixed; right: 16px; top: 16px; }
+.theme button { position: relative; height: 26px; width: 92px; background: var(--chip); border: 1px solid var(--edge); color: var(--text); font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.theme button:active { opacity: 0.55; }
+kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--edge); padding: 0 4px; }
+code { font-family: var(--mono); font-size: 12px; }
+.foot { margin-top: 48px; border-top: 1px solid var(--edge); padding-top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--text-dim); text-transform: uppercase; }
+@media (prefers-reduced-motion: reduce) { .bk .b { transition: none; } }
+</style>
+</head>
+<body>
+<div class="theme"><button type="button" class="bk" id="themeBtn" aria-label="Toggle theme">THEME: AUTO<span class="b tl"></span><span class="b tr"></span><span class="b bl"></span><span class="b br"></span></button></div>
+<main class="sheet">
+
+<div class="placard">C11H / ARCHITECTURE</div>
+<h1>hc, c11h and the bus</h1>
+<p class="lede">The whole picture of what runs for c11h today, what it becomes at the end of each milestone, and why. Three layers: hc runs terminals on each machine; c11h is the window and the agent layer; the bus carries agent messages between machines. Every claim carries a source tag; the tags resolve in zone H. Where sources disagree, the page says so instead of picking.</p>
+<hr class="title-rule">
+<div class="titleblock">
+  <div><span class="placard">Title</span><span class="v">c11h architecture</span></div>
+  <div><span class="placard">Drawn</span><span class="v">2026-11-01 13:30 PST</span></div>
+  <div><span class="placard">Status</span><span class="v">Working page, uncommitted</span></div>
+  <div><span class="placard">Sheet</span><span class="v">1 of 1</span></div>
+  <div><span class="placard">Live reads</span><span class="v">hc-census 13:25, ps 13:27</span></div>
+  <div><span class="placard">Drawn by</span><span class="v">c11h Architect (Cairn)</span></div>
+</div>
+
+<!-- ZONE A -->
+<div class="zone"><span class="sq">A</span><span class="zone-label">The three layers</span><span class="line"></span></div>
+<div class="diagram" style="max-width: 880px;">
+<svg viewBox="0 0 880 250" role="img" aria-label="Three layers: c11h on top, hc below, the bus beside">
+  <rect class="layer" x="20" y="14" width="560" height="70"/>
+  <text class="layer-t" x="34" y="36">C11H · THE WINDOW AND THE AGENT LAYER</text>
+  <text class="layer-s" x="34" y="54">workspaces, panels, sidebar, flags, Feed, mailbox, journal,</text>
+  <text class="layer-s" x="34" y="70">browser, markdown, the c11 CLI and skill</text>
+  <path class="arrow" d="M300 84 L300 112"/><path class="arrow" d="M296 106 L300 112 L304 106"/>
+  <text class="layer-s" x="310" y="102">one local Unix socket, framed JSON-RPC</text>
+  <rect class="layer" x="20" y="112" width="560" height="70"/>
+  <text class="layer-t" x="34" y="134">HC · RUNS THE TERMINALS ON EACH MACHINE</text>
+  <text class="layer-s" x="34" y="152">a core and a holder per session; machines linked over SSH;</text>
+  <text class="layer-s" x="34" y="168">screens, PTYs and programs outlive the app</text>
+  <rect class="layer" x="20" y="200" width="560" height="36"/>
+  <text class="layer-t" x="34" y="222">MACHINES · LAPTOP, BUILD HOST, PRIME BOXES</text>
+  <rect class="layer" x="620" y="20" width="240" height="150" style="stroke-dasharray: 4 3"/>
+  <text class="layer-t" x="634" y="44">THE BUS</text>
+  <text class="layer-s" x="634" y="64">carries agent messages between</text>
+  <text class="layer-s" x="634" y="78">machines. Planning only today;</text>
+  <text class="layer-s" x="634" y="92">off c11h's critical path</text>
+  <text class="layer-s" x="634" y="106">(Decided 14). Terminal bytes</text>
+  <text class="layer-s" x="634" y="120">never ride it; messages never</text>
+  <text class="layer-s" x="634" y="134">ride hc's links.</text>
+  <text class="layer-s" x="634" y="158">source: B9 §3, V D14</text>
+</svg>
+</div>
+<table style="max-width: 880px;">
+  <thead><tr><th class="idx">#</th><th>Layer</th><th>What it is</th><th>The one-line why</th><th>Source</th></tr></thead>
+  <tbody>
+  <tr><td class="idx">01</td><td class="k">hc</td><td>herdr-core, herdr's open terminal runtime (Rust, Apache-2.0). Stock upstream release 0.1.16, built and signed by us, never patched. Per machine and session: a <b>core</b> (the socket, one Ghostty VT screen per terminal) and a <b>holder</b> (owns every PTY, keeps a 1 MiB tail, restarts a crashed core after 3 s). Cores reach other machines over SSH with <code>hc machine add</code>.</td><td>Terminals and the agents in them keep running when the app quits, crashes or updates, and a terminal on the build host arrives like a local one, without writing our own daemon.</td><td><span class="src">V law 1, 6, 8 · CORE §shape · V D12</span></td></tr>
+  <tr><td class="idx">02</td><td class="k">c11h</td><td>A separate macOS app forked from c11 (<code>com.stage11.c11h</code>), with hc underneath. It talks to one hc socket on its own machine and owns everything the operator sees and every piece of agent state: metadata, descriptions, flags, delegates, mailbox files, journal, lineage. None of that lives in hc.</td><td>c11's experience is the floor, not the ceiling; c11 itself stays untouched as the daily tool until c11h earns its place (Decided 13: separate app for now).</td><td><span class="src">V §vision, law 7 · CORE §mapping · V D13</span></td></tr>
+  <tr><td class="idx">03</td><td class="k">the bus</td><td>Constellation Bus: one small published message core (Rust, SQLite per copy, replicate-and-merge, a Cloudflare Durable Object as the cloud copy), run standalone by Stage 11 and, at some later point, bundled by c11h on every host. Planning only, no code, by Atin's hold of 2026-10-18.</td><td>"Say it once, from anywhere. It arrives, or someone finds out": mail with receipts that keeps working when any machine is down. Taken off c11h's critical path on 2026-11-01 13:35.</td><td><span class="src">B D41, D46 to D49 · PH · V D14</span></td></tr>
+  </tbody>
+</table>
+
+<!-- ZONE B -->
+<div class="zone"><span class="sq">B</span><span class="zone-label">Who owns what</span><span class="line"></span></div>
+<table>
+  <thead><tr><th>Piece</th><th>Whose code</th><th>Repo</th><th>Built and signed</th><th>Lead</th><th>Source</th></tr></thead>
+  <tbody>
+  <tr><td class="k">hc</td><td>herdr's (<code>herdrdev/herdr-core</code>), stock. We never contact herdr: no issues, PRs or permission asked; Apache-2.0 met on our side.</td><td><code>Stage-11-Agentics/hc</code>, private GitHub, standalone. Holds only our tooling: build and sign scripts, the contract suite (C1 to C14), <code>hc-census</code>, the pin by hash. Never hc's source; a patch branch only if a patch is ever unavoidable.</td><td>The build host is the one canonical builder (<code>cargo build --release --locked</code>, pinned upstream tag fetched by hash). Signed inside c11h.app with Stage 11's Developer ID at Milestone 2's <code>hc-bundle</code>. Today's pin: 0.1.16, binary <code>c617feeb…</code>.</td><td>hc Lead (mailbox <code>hc-lead</code>)</td><td><span class="src">HC · FP · V D10, D12</span></td></tr>
+  <tr><td class="k">c11h</td><td>Ours, forked from c11 at 20c4583d (2026-10-31), c11's <code>main</code> merged in before each update from update3 on. c11 itself is a fork of cmux.</td><td><code>Stage-11-Agentics/c11h</code>, private GitHub; board <code>stage11/c11h</code> on hosted Lattice.</td><td>Build-host builds; signed from the build host's sealed <code>acetate-release</code> keychain, hardened; notarized from update3 (GO 13:21 today). Sparkle off; one install command.</td><td>c11h Lead (M1 M2 Lead), the Orchestrator and its line</td><td><span class="src">V §separation · MS §tracks · ST 13:21</span></td></tr>
+  <tr><td class="k">the bus</td><td>Ours: the message core. Stage 11's credentials, cloud copy, seat wiring and adapters stay private.</td><td>Planning repo on Forgejo (<code>Stage11/constellation-bus</code>). The core, when code starts: <code>Stage-11-Agentics/constellation-bus</code>, Apache-2.0, private until Atin says public.</td><td>Not yet. Rust, one static binary for macOS and Linux, same toolchain and signing path as hc inside c11h.</td><td>Bus Lead</td><td><span class="src">B CLAUDE · B D47, D48</span></td></tr>
+  </tbody>
+</table>
+
+<!-- ZONE C -->
+<div class="zone"><span class="sq">C</span><span class="zone-label">What runs where: today, Milestone 1 end, Milestone 2 end</span><span class="line"></span></div>
+<p class="help">One diagram, three states. Pick a state; the frame never moves. Filled square: running. Orange: the live link or the thing that is new in that state. Outline: absent. Dashed outline: planned but not on c11h's path. Keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>.</p>
+<div class="seg" role="group" aria-label="State">
+  <button type="button" class="bk" data-state="today" aria-pressed="true">1 · Today, 2026-11-01<span class="b tl"></span><span class="b tr"></span><span class="b bl"></span><span class="b br"></span></button>
+  <button type="button" class="bk" data-state="m1" aria-pressed="false">2 · Milestone 1 end · Daily driver<span class="b tl"></span><span class="b tr"></span><span class="b bl"></span><span class="b br"></span></button>
+  <button type="button" class="bk" data-state="m2" aria-pressed="false">3 · Milestone 2 end · The fleet<span class="b tl"></span><span class="b tr"></span><span class="b bl"></span><span class="b br"></span></button>
+</div>
+<div class="diagram" id="diagram">
+  <div class="state" data-state="today" data-active="true"></div>
+  <div class="state" data-state="m1"></div>
+  <div class="state" data-state="m2"></div>
+</div>
+<div class="legend"><span><span class="mark on"></span>running</span><span><span class="mark live"></span>live link / new in this state</span><span><span class="mark"></span>absent or stopped</span><span><span class="mark plan"></span>planned, off c11h's path</span></div>
+
+<div class="delta">
+  <div>
+    <h2>Today <span class="tag">2026-11-01</span></h2>
+    <ul>
+      <li>c11h update1 installed on the laptop at 10:34, beside c11; the c11h hc core kept its five terminals through the install. <span class="src">MS §where</span></li>
+      <li>The laptop's c11h core links to the build host's c11h core through <code>atlas-via.sh</code> (exact binary, session and socket named; no PATH lookup). Typing rides Tailscale's DERP relay, 72 ms p50, pending the UniFi forward. <span class="src">P T11, S17 · CEN</span></li>
+      <li>The relay is installed on the build host (11:29): <code>c11</code> in a build-host c11h terminal rides hc's document events to the laptop. Same-user prototype trust. <span class="src">R · ST 11:29</span></li>
+      <li>herdr-app's own <code>default</code> sessions run beside c11h's on both machines; the build host's is 0.1.15 and the laptop's 0.1.16, a version skew on a live link. <span class="src">CS · CEN</span></li>
+      <li>hc is a separate install at <code>~/.local/share/c11h/hc/0.1.16/</code>, not yet inside the app. <span class="src">C L1</span></li>
+      <li>No bus process anywhere. Agent state for build-host panels lives on the laptop. <span class="src">B C11 · B9 §1</span></li>
+    </ul>
+  </div>
+  <div>
+    <h2>Milestone 1 end <span class="tag">about 2026-11-19</span></h2>
+    <ul>
+      <li>Same topology, proven on the real link: a build-host panel from the menu, an hour with the lid closed, Claude on the build host working then blocked, a build-host agent flagging and mailing a laptop agent. <span class="src">MS M1</span></li>
+      <li>Direct tailnet path after Atin's UniFi forward (UDP 41641); typing re-measured against the 20 ms line. <span class="src">P S17</span></li>
+      <li>update3 notarized, with c11's <code>main</code> merged in (C11H-51) and a version line like 1.7.6-h3. <span class="src">MS D2, D5 · ST 13:19</span></li>
+      <li><code>hc-census</code> on the laptop and the build host every 60 s, pushed to the Seat Census on the build host (<code>studio:8796/hc.json</code>); the census probe already runs on the laptop. <span class="src">CS · CEN</span></li>
+      <li>Milestone 2's hc work starts underneath: the hc repo, the contract suite and the upstream watch job on the build host; the shard experiment measured. <span class="src">W1 · SH</span></li>
+      <li>Two weeks of real use logged; holder losses counted; Atin's continue-or-stop call. <span class="src">MS M1 · V law 9</span></li>
+    </ul>
+  </div>
+  <div>
+    <h2>Milestone 2 end <span class="tag">about 7 weeks later</span></h2>
+    <ul>
+      <li>Stock hc bundled inside c11h.app at <code>Contents/Helpers</code>, in a folder the user can't write, launched with <code>HC_LAUNCHD_DIRECT</code> and its own config; no separate hc install. <span class="src">MS M2 · FP</span></li>
+      <li>Shards: K hc sessions per machine (<code>c11h-s1…sK</code>, one per workspace), each its own core, holder and parse thread; about 18 MB each; the build host paired one to one. A holder loss or a flood touches one shard. <span class="src">SHC · SH</span></li>
+      <li>A per-host agent layer on each machine: metadata, flags, mailbox and journal stored on the host where the agent runs, merged into c11h on wake. <span class="src">MS M2 t7, t9</span></li>
+      <li>Mail and telemetry between hosts over c11h's own link (Decided 14); the bus core may replace that transport later. The relay is deleted. <span class="src">V D14 · MS t8, t12</span></li>
+      <li>One command turns a Prime box into a host with hc (Linux build), the agent layer and the CLIs; never the parent of a Mac terminal. <span class="src">MS M2 t13 to t15</span></li>
+      <li>Upstream releases adopted by the watch job plus a pin bump; the tooling repo public on Atin's go. <span class="src">FP · MS t4, t5</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ZONE D -->
+<div class="zone"><span class="sq">D</span><span class="zone-label">The data paths</span><span class="line"></span></div>
+<table>
+  <thead><tr><th class="idx">#</th><th>Path</th><th>Today</th><th>Milestone 2 end</th><th>Source</th></tr></thead>
+  <tbody>
+  <tr><td class="idx">01</td><td class="k">Keystrokes and screens</td><td>c11h's Ghostty surface, in manual IO mode, is bound to one hc terminal (<code>t7</code>, <code>studio/t7</code>) over the local socket with <code>terminal.attach</code>: a rendered first paint, then the program's raw bytes. For the build host: laptop core → SSH → build-host core → holder → PTY, and back. Local hop adds 0.2 to 0.3 ms p99; the DERP path adds about 72 ms.</td><td>Same shape per shard: each local shard links to its build-host twin, N SSH links (ControlMaster off at first). Direct tailnet path.</td><td><span class="src">CORE §verified, §mapping · C L5, L6 · SH §d</span></td></tr>
+  <tr><td class="idx">02</td><td class="k">Agent status</td><td>Local: c11's hooks, wrappers and process detection, as in c11. Remote: the agent itself reports OSC 7501 (working, blocked, idle, done) into the hc core; c11h reads it from the one inventory stream with the foreground program; a lost link shows Reconnecting and keeps the last phase. No remote pid is inspected locally.</td><td>Unchanged for status; the per-host layer adds what c11's hooks see on that host, so build-host detection matches local detection.</td><td><span class="src">RS · CORE §mapping · P T13</span></td></tr>
+  <tr><td class="idx">03</td><td class="k">Agent messages and flags</td><td>Local: c11's mailbox files, flags and metadata under c11h's own state on the laptop. The build host: the <code>c11</code> relay shim takes a slot (<code>c11h.relay.r00…r31</code>) in the build host's hc document store by compare-and-set; the doc event crosses the link; c11h on the laptop verifies the caller (<code>C11_PANEL_ID</code> must own the terminal with <code>HC_TERMINAL_ID</code>) and runs the request. Fail fast at 1.5 s; telemetry spools (256 records); mail is marked <code>ext.c11h.relay</code>. Allowed: reads, metadata, status, flags, mail. Refused: send, create, close, launch, browser.</td><td>Each host writes locally into its own agent layer; c11h's link carries mail and telemetry with receipts; a flag raised on the build host reaches the sidebar when the laptop wakes. Relay gone. If the bus core is adopted later, <code>c11 mailbox send</code> rides it and the receipt says so.</td><td><span class="src">R · B D40, D43 · V D14 · MS t7, t8</span></td></tr>
+  <tr><td class="idx">04</td><td class="k">State: where each kind lives</td><td>Programs and PTYs: the holder. Screens, history (5 MB), labels, OSC 7501 status, documents: the core, on disk under <code>~/.local/state/herdr-core/c11h</code>. Panel identity: label <code>c11.panel=&lt;uuid&gt;</code> on the hc terminal plus c11h's snapshot. Layout, workspaces, metadata, flags, mailbox, journal, prompt cache: c11h on the laptop. hc census records: <code>~/.local/state/constellation/hc/</code>. Tickets: hosted Lattice <code>stage11/c11h</code>. Nothing of c11's agent state goes into hc documents (vision, Not doing).</td><td>The same, with agent state split per host and merged on wake (<code>away-merge</code>), transcripts indexed per host for the session finder (bus D38), and shard placement sticky by workspace in the snapshot.</td><td><span class="src">CORE §mapping · C L1, L3 · V §not doing · CS · MS t9, t10</span></td></tr>
+  </tbody>
+</table>
+
+<!-- ZONE E -->
+<div class="zone"><span class="sq">E</span><span class="zone-label">Open seams and risks</span><span class="line"></span></div>
+<table>
+  <thead><tr><th class="idx">#</th><th>Seam</th><th>What it is</th><th>The answer</th><th>Source</th></tr></thead>
+  <tbody>
+  <tr><td class="idx">01</td><td class="k">Holder loss</td><td>One holder owns every PTY in a session; if it dies, every terminal in that session ends (<code>holder_lost</code>). Counted during real use.</td><td>Shards. Measured on the build host today: a holder kill ended exactly its own session's terminals, the other session untouched. One shard per workspace, so a loss stays inside one workspace. Counter: C11H-55.</td><td><span class="src">P risk 1 · SH §b · SHC</span></td></tr>
+  <tr><td class="idx">02</td><td class="k">Flood typing</td><td>One lock and one parse thread per core: with 8 terminals flooding, a keystroke in a quiet panel waited 7 to 16 s, also when typed straight through hc. Normal agent output is fine.</td><td>Shards, pending the flood numbers from the shard experiment (the open question: does a quiet shard keep idle latency while another floods). Stock hc plus the contract suite, no patch, unless the numbers say otherwise.</td><td><span class="src">P risk 2 · SH §a (pending) · FP</span></td></tr>
+  <tr><td class="idx">03</td><td class="k">Trust</td><td>hc has no per-client auth: any same-user process drives any terminal through the socket. Federation trust is total: a linked machine can read and type into any local terminal that started work on it. The relay lets any same-user process on the build host claim any c11h panel on the build host. c11h's socket admission by terminal ancestry restores attribution, not a boundary.</td><td>Prototype only, by Atin's ruling. Milestone 2 replaces the relay with the per-host layer; Milestone 3's trust gate (<code>trust-model</code>, C11H-45, an independent review) closes or documents every same-user path before any build reaches someone else. A Prime box is never a parent of a Mac terminal.</td><td><span class="src">C2H R4 · R · P S9, risk 3 · MS M3</span></td></tr>
+  <tr><td class="idx">04</td><td class="k">Upstream drift</td><td>hc moves fast (seven releases in a week; protocol "preview"); upstream's compat test covers RPC params only. Upstream <code>master</code> already starts the macOS core through launchd, which breaks TCC attribution to c11h.app unless the launcher sets <code>HC_LAUNCHD_DIRECT</code>.</td><td>Pin by hash, verified at every connection. The contract suite C1 to C14 (17 rows pass on the pin and on our build; <code>master</code> fails C7 as expected). A daily watch job builds each new tag unmodified and reports; adoption is a pin bump, nothing to rebase.</td><td><span class="src">C2H · FP §tracking · C §before any pin bump</span></td></tr>
+  <tr><td class="idx">05</td><td class="k">The build-host link</td><td>The laptop to the build host goes through Tailscale's DERP relay (hard NAT at the lab): 72 ms p50 typing, against a 20 ms line. Reconnect passed (pids kept through a 45 s outage).</td><td>Atin's UniFi forward of UDP 41641 to the laptop, then re-measure (<code>p2-typing-remeasure</code>). Not a stop until then.</td><td><span class="src">P S17 · RUN pathfinder</span></td></tr>
+  <tr><td class="idx">06</td><td class="k">Laptop closed</td><td>Links are rooted in the viewer: the build host cannot dial the laptop. While the laptop sleeps, build-host agents keep running but their <code>c11</code> calls fail fast and only telemetry spools. A Prime box is reachable over hc only while the dialer holds the link.</td><td>Milestone 2's per-host agent layer holds flags and mail on the host and merges on wake. The bus's seat model (box dials a cloud copy) is the answer for a box with every Mac asleep; that is the bus's job, not c11h's.</td><td><span class="src">B9 §3, §4 · MS M2</span></td></tr>
+  <tr><td class="idx">07</td><td class="k">Two agent layers on the build host</td><td>The build host runs its own c11 for Overwatch seats (per the Constellation map), and the laptop's c11h owns the hc-session panels on the build host. Two mailbox roots will exist for weeks.</td><td>Named in the bus research as a fact the directory must record; no c11h ticket yet.</td><td><span class="src">B9 §1 (INFERRED there)</span></td></tr>
+  <tr><td class="idx">08</td><td class="k">TCC after an app update</td><td>The contract wants the core as c11h.app's direct child so file grants attribute to c11h. The live laptop c11h core (pid 84600) now has parent launchd: it outlived the update1 relaunch. Whether grants hold across that was listed as untested in the design.</td><td>Observation from today's process table, not a claim of breakage; Atin checks file access by hand (Pathfinder: not provable in a guest). <code>HC_LAUNCHD_DIRECT</code> at <code>hc-bundle</code>.</td><td><span class="src">PS · CORE decision 4 · C2H C7</span></td></tr>
+  <tr><td class="idx">09</td><td class="k">Claude login on the build host</td><td>An ssh-born build-host session lacks the GUI login keychain where Claude's credentials live: "Login expired" in a build-host panel.</td><td>C11H-44: <code>/login</code> in that panel for day one; the real fix is the per-host layer or a GUI-session core, or a configured per-machine launcher (token-file claude-charlie).</td><td><span class="src">ST 11:22 · MS M1 t2</span></td></tr>
+  <tr><td class="idx">10</td><td class="k">Sources disagree: the bus and Milestone 2</td><td>The milestone plan (12:44) says Milestone 2's remote-agent tickets "wait on the Constellation bus having a host runtime" and ticket <code>bus-transport</code> carries mail over the bus. The vision's Decided 14 (13:35) says the bus is off c11h's critical path and c11h's own link carries mail between hosts, the bus core maybe replacing it later. The architect brief for this page still names the bus as Milestone 2's agent layer.</td><td>The later ruling is Atin's and amends Decided 11. This page draws Milestone 2 with c11h's link as the transport and the bus as a dashed, optional later swap. The milestone plan's tickets 6 to 12 still read the old way and should be re-cut by the Orchestrator.</td><td><span class="src">MS M2 §depends · V D14</span></td></tr>
+  </tbody>
+</table>
+
+<!-- ZONE F -->
+<div class="zone"><span class="sq">F</span><span class="zone-label">Glossary</span><span class="line"></span></div>
+<table>
+  <thead><tr><th>Name</th><th>Means</th><th>Source</th></tr></thead>
+  <tbody>
+  <tr><td class="k">hc</td><td>herdr-core, said "Herder Core": herdr's open terminal runtime (Rust, Apache-2.0). One core per machine and session, a holder that owns the processes, machines linked over SSH.</td><td><span class="src">V §names</span></td></tr>
+  <tr><td class="k">core</td><td>The hc process that owns the Unix socket, keeps each terminal's screen (one libghostty-vt per terminal), the event stream, labels, status and the small document store. Can crash, restart or update while programs keep running. One per session.</td><td><span class="src">CORE §shape</span></td></tr>
+  <tr><td class="k">holder</td><td>The hc process that owns every PTY in a session and keeps a 1 MiB raw tail per terminal. Started with the first terminal; restarts a crashed core after 3 s; if it dies, every program in the session dies. Older holders drain after a core update, so an "orphan" holder with live terminals is normal.</td><td><span class="src">CORE §shape · CS</span></td></tr>
+  <tr><td class="k">session</td><td>One named hc world: its own socket, core, holder, state directory (<code>~/.local/state/herdr-core/&lt;session&gt;</code>). c11h uses <code>c11h</code> (dev builds <code>c11h-&lt;tag&gt;</code>); herdr-app uses <code>default</code>. Never shared.</td><td><span class="src">C L1 · V §separation</span></td></tr>
+  <tr><td class="k">shard</td><td>One of the several hc sessions c11h spreads its terminals across (<code>c11h-s1…sK</code>), each its own core, holder and parse thread, so a holder loss or an output flood touches one shard. Placement sticky by workspace. Identity is <code>(owningCoreID, address)</code> because addresses restart at <code>t1</code> in every shard.</td><td><span class="src">V D12 · SHC</span></td></tr>
+  <tr><td class="k">link / machine</td><td>An SSH connection one core holds to another machine's core (<code>hc machine add</code>, far end <code>hc connect --session …</code>). Terminals there arrive as <code>studio/t7</code>. Rooted in the viewer: hosts never dial a laptop. c11h names the exact remote binary through <code>atlas-via.sh</code>.</td><td><span class="src">CORE §shape · P T11 · B9 §3</span></td></tr>
+  <tr><td class="k">herdr / herdr-app</td><td>herdr: the company (YC F26) and its terminal multiplexer TUI (not on hc). herdr-app: herdr's desktop client on hc, the nearest competitor; installed on the laptop as a reference, with its own <code>default</code> sessions on both machines.</td><td><span class="src">V §names · CS</span></td></tr>
+  <tr><td class="k">relay</td><td>c11h ticket 14 (C11H-16): the <code>c11</code> shim in a build-host c11h terminal that reaches c11h on the laptop through hc's document events over the existing link, while the laptop is awake. Prototype trust; replaced in Milestone 2.</td><td><span class="src">R · P S9</span></td></tr>
+  <tr><td class="k">bus / cbus</td><td>Constellation Bus, CLI <code>cbus</code>: the message and event backbone (mail with receipts, topics with retained values) that works with any machine down. One published core; Stage 11's wiring private.</td><td><span class="src">B C11 · PH</span></td></tr>
+  <tr><td class="k">postmaster</td><td>The bus's per-host delivery process that writes into the local last mile (c11's outbox, hc <code>terminal.send … if: idle</code>, or a guarded tmux paste on a box).</td><td><span class="src">B9 §terms</span></td></tr>
+  <tr><td class="k">census</td><td><code>hc-census</code>: one stdlib Python file that reads the process table, binary hashes and state files (never connects to a core) and writes one <code>hc.instance.v1</code> record per (node, session); the laptop pushes to the build host; the Seat Census serves <code>/hc.json</code>. Flags version skew, orphan holders, holder loss.</td><td><span class="src">CS</span></td></tr>
+  <tr><td class="k">pin</td><td>The one hc build c11h runs, by SHA-256, verified at every connection: today 0.1.16, binary <code>c617feeb…</code>. Moves only through a pin-bump ticket that passes the contract suite.</td><td><span class="src">C L2 · HC</span></td></tr>
+  <tr><td class="k">contract suite</td><td>C1 to C14 in the hc repo: what c11h relies on in hc (launch tuple, inherited env, RPC methods, event framing, attach stream, child-end semantics, direct-child TCC, holder recovery, link handshake, ancestry, addresses, headless size, update path), run against a candidate binary in a throwaway session.</td><td><span class="src">C2H</span></td></tr>
+  <tr><td class="k">Recovered</td><td>The c11h workspace where orphaned hc terminals from c11h's own session land for Atin to close; c11h never kills them.</td><td><span class="src">P S7</span></td></tr>
+  <tr><td class="k">c11h-core</td><td>C11H-37: a standalone utility for c11h's own hc core (list, attach, jump to panel), built from Atin's prototype revisions.</td><td><span class="src">MS §where · ST 11:57</span></td></tr>
+  </tbody>
+</table>
+
+<!-- ZONE G -->
+<div class="zone"><span class="sq">G</span><span class="zone-label">Live reads, 2026-11-01 13:25 to 13:27 PST (read-only)</span><span class="line"></span></div>
+<table>
+  <thead><tr><th>Node</th><th>Session</th><th>Binary</th><th>Core</th><th>Holders</th><th>Terminals</th><th>Link</th><th>Health</th></tr></thead>
+  <tbody>
+  <tr><td class="k">Laptop</td><td><code>default</code> (herdr-app)</td><td>0.1.16 pin hash, <code>herdr-core-try</code></td><td>pid 25396, up 21 h 48 m</td><td>2: pid 7586; pid 5854 orphan, up 1 d, 5 live</td><td>7 live, 1 finished</td><td>studio, <code>default</code>, PATH lookup, remote 0.1.15, up 15 h 52 m</td><td>warn: version skew, orphan holder</td></tr>
+  <tr><td class="k">Laptop</td><td><code>c11h</code> (c11h.app)</td><td>0.1.16 pin, <code>~/.local/share/c11h/hc/0.1.16</code></td><td>pid 84600, up 2 h 48 m, parent launchd</td><td>1: pid 91586, 5 live</td><td>5 live, 5 finished</td><td>studio, <code>c11h</code>, via <code>atlas-via.sh</code>, remote 0.1.16, up 1 h 25 m</td><td>ok</td></tr>
+  <tr><td class="k">Build host</td><td><code>default</code></td><td>0.1.15 <code>~/.local/bin/herdr-core</code></td><td>far end of laptop default</td><td>1</td><td>2 live (12:16 read)</td><td>answers laptop default</td><td>skew</td></tr>
+  <tr><td class="k">Build host</td><td><code>c11h</code></td><td>0.1.16 pin</td><td>far end of laptop c11h</td><td>1</td><td>3 live, 7 finished (12:16 read)</td><td>answers laptop c11h; relay shim installed 11:29</td><td>ok</td></tr>
+  <tr><td class="k">Build host</td><td><code>c11h-c11h</code>, <code>c11h-c11h-b</code> and a third test session</td><td>state only</td><td>none</td><td>none</td><td>0 live</td><td></td><td>stale, on the close-out prune list</td></tr>
+  <tr><td class="k">Prime boxes</td><td></td><td>no hc today</td><td></td><td></td><td></td><td></td><td>Milestone 2</td></tr>
+  </tbody>
+</table>
+<p class="help">Laptop rows are from <code>hc-census collect</code> and <code>ps</code> on the laptop at 13:25 to 13:27 PST. Build-host rows are the hc Lead's 12:16 PST read in <code>constellation-state.md</code>; <code>studio:8796/hc.json</code> is not served yet (404 at 13:27), so the build host was not re-read. Also seen on the laptop: c11h.app pid 43463 (up 2 h 25 m), and inside its terminals a Codex seat launched through c11h's wrapper. Nothing was connected to, signalled or restarted.</p>
+
+<!-- ZONE H -->
+<div class="zone"><span class="sq">H</span><span class="zone-label">Sources</span><span class="line"></span></div>
+<table>
+  <thead><tr><th>Tag</th><th>File</th><th>What it holds</th></tr></thead>
+  <tbody>
+  <tr><td class="k">V</td><td><code>c11h/docs/c11h-vision.md</code> (origin/main, with Decided 13 and 14)</td><td>The goal, laws 1 to 10, milestones M1 to M9, names, separation, Decided 1 to 14</td></tr>
+  <tr><td class="k">CORE</td><td><code>c11h/docs/c11v-herdr-core.md</code></td><td>The technical design on hc: shape, what was verified, the mapping of c11 onto hc, decisions</td></tr>
+  <tr><td class="k">P</td><td><code>c11h/docs/c11h-plan.md</code></td><td>Settled 1 to 17, M1 tickets 1 to 15, phase 2 tickets 11 to 14, go/no-go checks, risks 1 to 6</td></tr>
+  <tr><td class="k">C</td><td><code>c11h/docs/c11h-contract.md</code></td><td>The frozen hc contract L1 to L7 (launch tuple, identity, lifecycle, inventory, APIs, input, bounds)</td></tr>
+  <tr><td class="k">R</td><td><code>c11h/docs/c11h-relay.md</code></td><td>How a relayed call travels, trust, spool, what is allowed, mail rules, the build-host install</td></tr>
+  <tr><td class="k">RS</td><td><code>c11h/docs/c11h-remote-status.md</code></td><td>Remote status from OSC 7501 and the foreground program; Reconnecting semantics</td></tr>
+  <tr><td class="k">TR</td><td><code>c11h/docs/c11h-transport.md</code></td><td>Part 2B: live connection, inventory reducer, write batches, fault injection</td></tr>
+  <tr><td class="k">MS</td><td><code>c11h/docs/c11h-milestones.md</code> (PR #97, merged 12:52)</td><td>Where things stood at 11:20, the three milestones, tickets, decisions 1 to 5</td></tr>
+  <tr><td class="k">RUN</td><td><code>c11h/<run-notes>/run-state.md</code></td><td>Pinned config, ticket map, Pathfinder table, decisions, retro notes</td></tr>
+  <tr><td class="k">ST</td><td><code>c11h/<run-notes>/status.md</code> (origin/main)</td><td>The run's status lines, newest 13:21 PST</td></tr>
+  <tr><td class="k">HC</td><td><code>hc/CLAUDE.md</code></td><td>The hc repo's purpose and rules (never touch a running hc, never contact herdr, pin by hash)</td></tr>
+  <tr><td class="k">FP</td><td><code>hc/docs/fork-plan.md</code></td><td>Stock hc, everything outside the binary, where the repo lives, tracking upstream, build and sign</td></tr>
+  <tr><td class="k">SH</td><td><code>hc/docs/shards.md</code></td><td>Shard measurements: holder isolation, cost per shard, remote links; flood numbers pending</td></tr>
+  <tr><td class="k">SHC</td><td><code>hc/docs/shards-c11h.md</code></td><td>The shard design for c11h and its tickets SH1 to SH6</td></tr>
+  <tr><td class="k">C2H</td><td><code>hc/docs/c11h-to-hc.md</code></td><td>C1 to C14, how a break is caught, release evidence R1 to R4, the first contract run</td></tr>
+  <tr><td class="k">CS</td><td><code>hc/docs/constellation-state.md</code></td><td>Every hc instance at 12:16 PST, the <code>hc.instance.v1</code> record, where the census lives</td></tr>
+  <tr><td class="k">W1</td><td><code>hc/docs/wave-1.md</code></td><td>hc wave 1 tickets W1 to W7 and what they need from the c11h run</td></tr>
+  <tr><td class="k">B</td><td><code>constellation-bus/C11.md</code>, <code>CLAUDE.md</code>, <code>sequence/run-state.md</code></td><td>Mission, status (planning only), decisions D38 to D49</td></tr>
+  <tr><td class="k">PH</td><td><code>constellation-bus/PHILOSOPHY.md</code>, <code>DESIGN.md</code></td><td>Beliefs 1 to 14, taste, the Mailroom direction</td></tr>
+  <tr><td class="k">B9</td><td><code>constellation-bus/sequence/research/09-c11h-fit.md</code></td><td>The seam with c11h: who owns what, ticket 14, hc's links as a carrier, Prime boxes, the build-host link</td></tr>
+  <tr><td class="k">US</td><td><code>constellation-bus/sequence/USER_STORIES.md</code></td><td>Bus milestones M0 to M5, US-47, AC-182 to AC-186</td></tr>
+  <tr><td class="k">COS / PL</td><td><code>Gregorovich/projects/constellation/COSMOLOGY.md</code>, <code>PLACEMENT.md</code></td><td>The machines' vocabulary and where work runs</td></tr>
+  <tr><td class="k">CEN / PS</td><td><code>hc/census/hc-census collect --pretty</code>; <code>ps -axo pid,ppid,etime,command</code></td><td>Laptop live reads, 13:25 to 13:27 PST</td></tr>
+  </tbody>
+</table>
+<div class="foot">Working page for Atin · not committed · Pacific time throughout · drawn 2026-11-01 13:30 PST</div>
+</main>
+
+<script>
+(function () {
+  // ---- diagram data ----
+  var COLX = [20, 390, 760], COLW = 320, ROWH = 46, ROWG = 8, HEADH = 46, TOP = 16, MAXROWS = 8;
+  var BUSY = TOP + HEADH + MAXROWS * (ROWH + ROWG) + 24; // y of the bus strip
+  var H = BUSY + 70, W = 1100;
+
+  var STATES = {
+    today: {
+      machines: [
+        { id: 'hyp', title: 'LAPTOP', sub: 'rover, M4 Max · the operator\'s seat · awake', rows: [
+          { id: 'app', name: 'c11h.app', sub: 'the window + agent layer · update1 10:34 · pid 43463', mark: 'on' },
+          { id: 'hc', name: 'hc core · session c11h', sub: 'pin 0.1.16 · 1 holder · 5 live · run/c11h.sock', mark: 'on' },
+          { id: 'state', name: 'agent state (mailbox, flags, journal)', sub: 'files under c11h\'s own state · build-host panels\' mail lives here', mark: 'on' },
+          { id: 'c11', name: 'c11.app', sub: 'Atin\'s daily tool, untouched · no hc', mark: 'on' },
+          { id: 'def', name: 'hc core · session default', sub: 'herdr-app\'s · 0.1.16 · 2 holders (1 orphan) · 7 live', mark: 'on' },
+          { id: 'cen', name: 'hc-census probe', sub: 'collect works on the laptop · launchd push not yet', mark: 'off' },
+          { id: 'bus', name: 'bus core', sub: 'none · planning only', mark: 'off' }
+        ]},
+        { id: 'atl', title: 'BUILD HOST', sub: 'starmind, M2 Ultra · always on', rows: [
+          { id: 'hc', name: 'hc core · session c11h', sub: 'pin 0.1.16 · far end: connect --session c11h · 3 live', mark: 'on' },
+          { id: 'relay', name: 'relay shim c11', sub: '~/.local/share/c11h/relay/c11h/bin/c11 · installed 11:29 · prototype trust', mark: 'live' },
+          { id: 'def', name: 'hc core · session default', sub: '0.1.15 · far end of herdr-app\'s link · 2 live', mark: 'on' },
+          { id: 'herdr', name: 'herdr server (TUI)', sub: 'herdr\'s own multiplexer, not hc', mark: 'on' },
+          { id: 'c11', name: 'c11.app (the build host)', sub: 'Overwatch seats · per the Constellation map, not read today', mark: 'on' },
+          { id: 'tool', name: 'hc tooling (build, contract suite, watch)', sub: 'starts during Milestone 1 under the hc Lead', mark: 'off' },
+          { id: 'guest', name: 'Tart guests', sub: 'c11h proof runs with the pin inside · stopped between runs', mark: 'off' },
+          { id: 'bus', name: 'bus core', sub: 'none · planning only', mark: 'off' }
+        ]},
+        { id: 'pri', title: 'PRIME BOXES', sub: 'rented Linux microVMs · off the tailnet · no inbound', rows: [
+          { id: 'hc', name: 'hc', sub: 'none today · Milestone 2 (M7)', mark: 'off' },
+          { id: 'seat', name: 'Overwatch seats', sub: 'tmux, launched from the build host over Prime\'s SSH gateway', mark: 'on' },
+          { id: 'pm', name: 'bus postmaster', sub: 'bus M0 · box dials a cloud copy', mark: 'plan' }
+        ]}
+      ],
+      links: [
+        { from: 'hyp.hc', to: 'atl.hc', cls: 'live', label: 'SSH via the c11h link script · Tailscale DERP ≈72 ms p50 · bytes, events, relay slots' },
+        { from: 'atl.relay', to: 'hyp.app', cls: 'live dashed', label: 'c11 calls ride hc doc events on the same link · only while the laptop is awake' },
+        { from: 'hyp.def', to: 'atl.def', cls: '', label: 'herdr-app\'s link · PATH lookup · 0.1.16 to 0.1.15 skew' },
+        { from: 'atl.c11', to: 'pri.seat', cls: '', label: 'prime sandbox ssh (gateway only)' }
+      ],
+      bus: { t: 'CONSTELLATION BUS · NO PROCESS ANYWHERE', s: 'planning only (Atin\'s hold, 2026-10-18) · tone-architect stage · D41: one published core, D46 to D49: Rust, SQLite, Cloudflare Durable Object cloud copy' }
+    },
+    m1: {
+      machines: [
+        { id: 'hyp', title: 'LAPTOP', sub: 'rover · awake for the by-hand rows, closed for the lid row', rows: [
+          { id: 'app', name: 'c11h.app', sub: 'update3+ · notarized · c11 main merged · 1.7.6-hN', mark: 'live' },
+          { id: 'hc', name: 'hc core · session c11h', sub: 'pin 0.1.16 · still a separate install at ~/.local/share/c11h/hc', mark: 'on' },
+          { id: 'state', name: 'agent state (mailbox, flags, journal)', sub: 'on the laptop · unchanged', mark: 'on' },
+          { id: 'c11', name: 'c11.app', sub: 'untouched · generic c11h fixes may flow back as c11 PRs', mark: 'on' },
+          { id: 'def', name: 'hc core · session default', sub: 'herdr-app\'s · untouched', mark: 'on' },
+          { id: 'cen', name: 'hc-census', sub: 'launchd every 60 s · pushes to the build host\'s inbox', mark: 'live' },
+          { id: 'bus', name: 'bus core', sub: 'none', mark: 'off' }
+        ]},
+        { id: 'atl', title: 'BUILD HOST', sub: 'starmind · always on', rows: [
+          { id: 'hc', name: 'hc core · session c11h', sub: 'pin 0.1.16 · far end of the link · Claude login fixed (C11H-44)', mark: 'on' },
+          { id: 'relay', name: 'relay shim c11', sub: 'still the prototype · build-host agents name, flag and mail while the laptop is awake', mark: 'on' },
+          { id: 'def', name: 'hc core · session default', sub: 'herdr-app\'s · untouched', mark: 'on' },
+          { id: 'herdr', name: 'herdr server (TUI)', sub: 'untouched', mark: 'on' },
+          { id: 'c11', name: 'c11.app (the build host)', sub: 'Overwatch seats', mark: 'on' },
+          { id: 'tool', name: 'hc tooling (build, contract suite, watch)', sub: 'W1, W2, W7 live · our v0.1.16 build reproduces · master fails C7 as expected', mark: 'live' },
+          { id: 'cen', name: 'hc-census + Seat Census :8796/hc.json', sub: 'all four sessions on both machines · 1 HOLDER LOST lights the Eye', mark: 'live' },
+          { id: 'bus', name: 'bus core', sub: 'none', mark: 'off' }
+        ]},
+        { id: 'pri', title: 'PRIME BOXES', sub: 'unchanged', rows: [
+          { id: 'hc', name: 'hc', sub: 'none · Milestone 2', mark: 'off' },
+          { id: 'seat', name: 'Overwatch seats', sub: 'tmux over Prime\'s SSH gateway', mark: 'on' },
+          { id: 'pm', name: 'bus postmaster', sub: 'bus M0', mark: 'plan' }
+        ]}
+      ],
+      links: [
+        { from: 'hyp.hc', to: 'atl.hc', cls: 'live', label: 'direct tailnet path after the UniFi forward (UDP 41641) · re-measured against 20 ms' },
+        { from: 'atl.relay', to: 'hyp.app', cls: 'dashed', label: 'relay, unchanged' },
+        { from: 'hyp.def', to: 'atl.def', cls: '', label: 'herdr-app\'s link' },
+        { from: 'hyp.cen', to: 'atl.cen', cls: 'live dashed', label: 'ssh studio, atomic rename into the inbox, every 60 s' },
+        { from: 'atl.c11', to: 'pri.seat', cls: '', label: 'prime sandbox ssh' }
+      ],
+      bus: { t: 'CONSTELLATION BUS · STILL NO PROCESS', s: 'a separate project · c11h waits on nothing from it (Decided 14)' }
+    },
+    m2: {
+      machines: [
+        { id: 'hyp', title: 'LAPTOP', sub: 'rover · may be closed for an hour and come back whole', rows: [
+          { id: 'app', name: 'c11h.app with hc bundled', sub: 'Contents/Helpers · stock, built + signed by us · HC_LAUNCHD_DIRECT · own XDG · no separate install', mark: 'live' },
+          { id: 'hc', name: 'shards c11h-s1 … sK', sub: 'one core + holder per workspace · ≈18 MB and 0.09 % CPU each · legacy c11h session as shard 0', mark: 'live' },
+          { id: 'state', name: 'per-host agent layer', sub: 'this host\'s metadata, flags, mailbox, journal · merges the build host\'s on wake', mark: 'live' },
+          { id: 'c11', name: 'c11.app', sub: 'untouched · graduation deferred (Decided 13)', mark: 'on' },
+          { id: 'def', name: 'hc core · session default', sub: 'herdr-app\'s · untouched', mark: 'on' },
+          { id: 'cen', name: 'hc-census', sub: 'lists each shard', mark: 'on' },
+          { id: 'bus', name: 'bus core (bundled)', sub: 'Decided 11: yes at M6 · Decided 14: off the path, may replace the link transport later', mark: 'plan' }
+        ]},
+        { id: 'atl', title: 'BUILD HOST', sub: 'starmind · holds its agents\' state while laptop sleeps', rows: [
+          { id: 'hc', name: 'shards c11h-s1 … sK', sub: 'paired one to one with the laptop\'s · bundled build installed by the link script', mark: 'live' },
+          { id: 'state', name: 'per-host agent layer', sub: 'c11 on the build host writes locally, never over the link · flags and mail wait here · full c11 skill works', mark: 'live' },
+          { id: 'relay', name: 'relay shim c11', sub: 'removed (relay-retire) · no ext.c11h.relay on any envelope', mark: 'off' },
+          { id: 'def', name: 'hc core · session default', sub: 'herdr-app\'s · untouched', mark: 'on' },
+          { id: 'c11', name: 'c11.app (the build host)', sub: 'Overwatch seats · two agent layers on the build host', mark: 'on' },
+          { id: 'tool', name: 'hc tooling (build, contract suite, watch)', sub: 'each upstream tag built unmodified, suite run, result to the hc board · adoption = pin bump', mark: 'on' },
+          { id: 'cen', name: 'hc-census + Seat Census', sub: 'per shard · boxes read over SSH', mark: 'on' },
+          { id: 'bus', name: 'bus core (standalone copy)', sub: 'if the bus is built: Stage 11\'s own copy · separate project', mark: 'plan' }
+        ]},
+        { id: 'pri', title: 'PRIME BOX', sub: 'joined by one command from the laptop · removed by one', rows: [
+          { id: 'hc', name: 'hc (Linux musl, our build)', sub: 'linked from a Mac core · never the parent of a Mac terminal', mark: 'live' },
+          { id: 'state', name: 'per-host agent layer + agent CLIs', sub: 'an agent here reports, flags and mails like a build-host one', mark: 'live' },
+          { id: 'seat', name: 'Overwatch seats', sub: 'tmux seats continue beside c11h seats', mark: 'on' },
+          { id: 'pm', name: 'bus postmaster', sub: 'bus seat model: works with every Mac asleep · the bus\'s job, not c11h\'s', mark: 'plan' }
+        ]}
+      ],
+      links: [
+        { from: 'hyp.hc', to: 'atl.hc', cls: 'live', label: 'N SSH links, one per shard pair · ControlMaster off at first' },
+        { from: 'hyp.state', to: 'atl.state', cls: 'live dashed', label: 'mail + telemetry over c11h\'s own link, with receipts (Decided 14) · bus later, maybe' },
+        { from: 'hyp.def', to: 'atl.def', cls: '', label: 'herdr-app\'s link' },
+        { from: 'hyp.hc', to: 'pri.hc', cls: 'live', label: 'via Prime\'s SSH gateway · live while laptop dials' },
+        { from: 'hyp.bus', to: 'atl.bus', cls: 'plan', label: 'bus merge, if adopted' }
+      ],
+      bus: { t: 'CONSTELLATION BUS · OPTIONAL, LATER', s: 'if built: copies on the laptop, the build host and a Cloudflare Durable Object; c11 mailbox send to another host rides it and the receipt says so (D43) · not on c11h\'s path (Decided 14)' }
+    }
+  };
+
+  function el(name, attrs, text) {
+    var e = document.createElementNS('http://www.w3.org/2000/svg', name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function trunc(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+  function render(state) {
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img' });
+    var pos = {};
+    state.machines.forEach(function (m, ci) {
+      var x = COLX[ci];
+      svg.appendChild(el('rect', { class: 'mach', x: x, y: TOP, width: COLW, height: HEADH + MAXROWS * (ROWH + ROWG) + 4 }));
+      svg.appendChild(el('text', { class: 'mach-title', x: x + 12, y: TOP + 20 }, m.title));
+      svg.appendChild(el('text', { class: 'mach-sub', x: x + 12, y: TOP + 35 }, trunc(m.sub, 54)));
+      m.rows.forEach(function (r, ri) {
+        var y = TOP + HEADH + ri * (ROWH + ROWG);
+        var off = r.mark === 'off' || r.mark === 'plan';
+        svg.appendChild(el('rect', { class: 'row' + (off ? ' off' : ''), x: x + 10, y: y, width: COLW - 20, height: ROWH }));
+        svg.appendChild(el('rect', { class: 'sq ' + r.mark, x: x + 19, y: y + 11, width: 8, height: 8 }));
+        svg.appendChild(el('text', { class: 'row-name' + (off ? ' off' : ''), x: x + 34, y: y + 19 }, trunc(r.name, 40)));
+        svg.appendChild(el('text', { class: 'row-sub' + (off ? ' off' : ''), x: x + 34, y: y + 34 }, trunc(r.sub, 50)));
+        pos[m.id + '.' + r.id] = { l: x + 10, r: x + COLW - 10, y: y + ROWH / 2 };
+      });
+    });
+    var mids = [];
+    state.links.forEach(function (lk, i) {
+      var a = pos[lk.from], b = pos[lk.to];
+      if (!a || !b) return;
+      var x1, x2;
+      if (a.r < b.l) { x1 = a.r; x2 = b.l; } else { x1 = a.l; x2 = b.r; }
+      var midx = (x1 + x2) / 2, midy = (a.y + b.y) / 2;
+      var d = 'M' + x1 + ' ' + a.y + ' C ' + midx + ' ' + a.y + ', ' + midx + ' ' + b.y + ', ' + x2 + ' ' + b.y;
+      svg.appendChild(el('path', { class: 'link ' + lk.cls, d: d }));
+      var live = lk.cls.indexOf('live') >= 0;
+      svg.appendChild(el('circle', { cx: x1, cy: a.y, r: 2, class: 'sq' + (live ? ' live' : ' on') }));
+      svg.appendChild(el('circle', { cx: x2, cy: b.y, r: 2, class: 'sq' + (live ? ' live' : ' on') }));
+      mids.forEach(function (m) { if (Math.abs(m[0] - midx) < 24 && Math.abs(m[1] - midy) < 24) midy = m[1] + 22; });
+      mids.push([midx, midy]);
+      svg.appendChild(el('rect', { class: 'callout' + (live ? ' live' : ''), x: midx - 8, y: midy - 8, width: 16, height: 16 }));
+      svg.appendChild(el('text', { class: 'callout-n' + (live ? ' live' : ''), x: midx, y: midy + 4, 'text-anchor': 'middle' }, String(i + 1)));
+    });
+    svg.appendChild(el('rect', { class: 'bus', x: 20, y: BUSY, width: W - 40, height: 50 }));
+    svg.appendChild(el('text', { class: 'bus-t', x: 32, y: BUSY + 20 }, state.bus.t));
+    svg.appendChild(el('text', { class: 'bus-s', x: 32, y: BUSY + 37 }, trunc(state.bus.s, 170)));
+    return svg;
+  }
+
+  function linkTable(state) {
+    var names = {};
+    state.machines.forEach(function (m) { m.rows.forEach(function (r) { names[m.id + '.' + r.id] = m.title.charAt(0) + m.title.slice(1).toLowerCase() + ' · ' + r.name; }); });
+    var t = document.createElement('table'); t.className = 'links';
+    t.innerHTML = '<thead><tr><th class="idx">#</th><th>From</th><th>To</th><th>Link</th></tr></thead>';
+    var tb = document.createElement('tbody');
+    state.links.forEach(function (lk, i) {
+      var tr = document.createElement('tr');
+      var live = lk.cls.indexOf('live') >= 0;
+      tr.innerHTML = '<td class="idx">' + (i + 1) + '</td><td class="k">' + names[lk.from] + '</td><td class="k">' + names[lk.to] + '</td><td>' + (live ? '<span class="mark live"></span>' : '<span class="mark on"></span>') + lk.label + '</td>';
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    return t;
+  }
+
+  var holders = document.querySelectorAll('#diagram .state');
+  for (var i = 0; i < holders.length; i++) {
+    var key = holders[i].getAttribute('data-state');
+    holders[i].appendChild(render(STATES[key]));
+    holders[i].appendChild(linkTable(STATES[key]));
+  }
+  var buttons = document.querySelectorAll('.seg button');
+  function show(key) {
+    for (var i = 0; i < holders.length; i++) holders[i].setAttribute('data-active', holders[i].getAttribute('data-state') === key ? 'true' : 'false');
+    for (var j = 0; j < buttons.length; j++) buttons[j].setAttribute('aria-pressed', buttons[j].getAttribute('data-state') === key ? 'true' : 'false');
+  }
+  for (var b = 0; b < buttons.length; b++) buttons[b].addEventListener('click', function () { show(this.getAttribute('data-state')); });
+  document.addEventListener('keydown', function (e) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === '1') show('today'); else if (e.key === '2') show('m1'); else if (e.key === '3') show('m2');
+    else if (e.key === 't' || e.key === 'T') cycleTheme();
+  });
+
+  // ---- theme ----
+  var order = ['auto', 'dark', 'light'], ti = 0;
+  var btn = document.getElementById('themeBtn');
+  function applyTheme() {
+    var t = order[ti];
+    if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+    btn.childNodes[0].nodeValue = 'THEME: ' + t.toUpperCase();
+  }
+  function cycleTheme() { ti = (ti + 1) % order.length; applyTheme(); }
+  btn.addEventListener('click', cycleTheme);
+})();
+</script>
+</body>
+</html>

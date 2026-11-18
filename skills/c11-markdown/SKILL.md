@@ -32,7 +32,7 @@ without changing panel or workspace selection.
 2. Open it in a markdown panel.
 3. The panel auto-updates when the file changes on disk.
 
-**Place docs by anchor, never by focus.** An agent opening a doc for itself passes `--panel "$C11_PANEL_ID"` (or `--area <ref>`). The first doc splits beside that panel and later ones join the markdown area already beside it; a cross-workspace `--workspace` open adds a panel to an existing area instead of splitting.
+**Place docs by anchor, never by focus.** An agent opening a doc for itself passes `--panel "$C11_PANEL_ID"` (or `--area <ref>`). The first doc splits beside that panel and later ones join the markdown area already beside it; a cross-workspace `--workspace` open adds a panel to an existing area instead of splitting. Once the workspace already has two areas, pass `--area <ref>` and make no third: the view area that holds browsers or docs if one exists, otherwise your own area (the c11 skill, "Where new work goes").
 
 ```bash
 # Open beside your own panel

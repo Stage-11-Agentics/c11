@@ -1,0 +1,9 @@
+Spike 0b row 4, guest, hc panel (times are guest UTC; PDT = UTC-7)
+c11 tree after printf '\e]2;spike-title-ok\a':
+    │   └── panel panel:1 [terminal] "spike-title-ok" [selected] ◀ active
+c11 tree after the next prompt (shell integration resets the title to the cwd):
+    │   └── panel panel:1 [terminal] "/tmp/gr" [selected] ◀ active
+c11 debug log, OSC 7 from the hc shell reaching c11 and scheduling the git probe:
+21:09:07.167 workspace.gitProbe.schedule workspace=99F24 panel=DFB56 dir=/tmp/gr reason=directoryChange
+21:09:07.214 workspace.gitProbe.schedule workspace=99F24 panel=DFB56 dir=/usr/share/man reason=directoryChange
+21:09:08.225 workspace.gitProbe.schedule workspace=99F24 panel=DFB56 dir=/tmp/gr reason=directoryChange

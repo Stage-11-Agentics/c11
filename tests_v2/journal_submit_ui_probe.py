@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Atlas tagged UI proof for C11-231 submit attribution (synthetic data only).
+"""Build-host tagged UI proof for C11-231 submit attribution (synthetic data only).
 
 Run inside the ticket's isolated Tart guest after sandbox-up. UI events target
 the exact tagged PID; socket calls only build/query the fixture. The active

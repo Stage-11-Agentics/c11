@@ -3,12 +3,15 @@ import Foundation
 /// Projects build identity from bundle metadata; UI callers may pass an explicit environment fallback.
 struct C11BuildIdentity {
     let shortVersion: String?
+    /// c11's version line (`C11Version`, e.g. 1.7.6-h3), else the plain c11 version.
+    let versionLine: String?
     let build: String?
     let commit: String?
     let bundleIdentifier: String?
 
     init(info: [String: Any]) {
         shortVersion = Self.string(info["CFBundleShortVersionString"])
+        versionLine = Self.c11VersionLine(info: info) ?? shortVersion
         build = Self.string(info["CFBundleVersion"])
         commit = Self.resolveCommit(info: info, environment: [:])
         bundleIdentifier = Self.string(info["CFBundleIdentifier"])
@@ -29,16 +32,24 @@ struct C11BuildIdentity {
 
     var payload: [String: Any] {
         ["short_version": shortVersion as Any? ?? NSNull(),
+         "version_line": versionLine as Any? ?? NSNull(),
          "build": build as Any? ?? NSNull(),
          "commit": commit as Any? ?? NSNull(),
          "bundle_identifier": bundleIdentifier as Any? ?? NSNull()]
     }
 
     var summary: String {
-        var text = "c11 " + (shortVersion ?? "version unknown")
+        var text = "c11 " + (versionLine ?? "version unknown")
         if let build { text += " (\(build))" }
         if let commit { text += " [\(commit)]" }
+        if let bundleIdentifier { text += "\nbundle: \(bundleIdentifier)" }
         return text
+    }
+
+    /// `C11Version` from an Info.plist, nil when absent or not expanded by the build.
+    static func c11VersionLine(info: [String: Any]) -> String? {
+        guard let line = string(info["C11Version"]), !line.contains("$(") else { return nil }
+        return line
     }
 
     static func commitsMatch(_ cli: String?, _ server: String?) -> Bool? {
@@ -94,7 +105,9 @@ struct BundledSkill {
         return nil
     }
 
-    func load(page: String? = nil) throws -> Page {
+    func load(page requested: String? = nil) throws -> Page {
+        // The retired line's page name is a hidden alias for the page that replaced it.
+        let page = requested == C11Identity.Legacy.guidePage ? "persistence" : requested
         let mainURL = root.appendingPathComponent("SKILL.md")
         guard let main = try? String(contentsOf: mainURL, encoding: .utf8) else { throw LoadError.missing }
         let version = Self.frontmatterVersion(main)

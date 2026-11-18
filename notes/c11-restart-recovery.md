@@ -17,7 +17,7 @@ Lattice holds the graph, the plans, the artifacts, and the run state; the
 orchestrator re-reads all of it and re-dispatches the current ready wave.
 
 ```bash
-cd ~/Projects/Gregorovich/projects/glass
+cd ~/src/projects/glass
 codex --yolo
 ```
 
@@ -41,8 +41,8 @@ integration, not implementation — clients build against hermetic fixtures.
 
 | Needed | For | Status |
 |---|---|---|
-| Gaffer resolve service on Atlas, resolve-only, no cloud fallback | GLS-24 integration | not built |
-| Glideslope fused aggregate on Atlas | GLS-27 slope (position works without) | not built |
+| Gaffer resolve service on the build host, resolve-only, no cloud fallback | GLS-24 integration | not built |
+| Glideslope fused aggregate on the build host | GLS-27 slope (position works without) | not built |
 | AirQ tailnet read endpoint on the collector host | GLS-29 entirely | not built — loopback-only today |
 
 ---
@@ -54,7 +54,7 @@ integration, not implementation — clients build against hermetic fixtures.
 ### Acetate — 5 sessions
 
 ```bash
-cd ~/Projects/Gregorovich/projects/acetate
+cd ~/src/projects/acetate
 claude --resume f9dc2ccd-4440-4040-a9cd-f52fc46d3899   # most recent
 claude --resume 18281fe6-d030-4a86-be41-f40428045a2a
 claude --resume 4a864675-153a-41b3-8e2e-ec486ada7c25
@@ -69,7 +69,7 @@ died with the restart — re-arm it or push manually once Forgejo is back.
 ### c11 itself — 3 sessions
 
 ```bash
-cd ~/Projects/Stage11/code/c11
+cd ~/src/c11
 claude --resume 3c098a4c-2531-4e38-85f0-ce7920e292a5   # most recent
 claude --resume 400afc7f-8bb4-42e9-bc29-8c9ed7ff8c8c
 claude --resume dd85e5a1-2c86-4d48-8c60-d3ad2ff1c5c8
@@ -78,14 +78,14 @@ claude --resume dd85e5a1-2c86-4d48-8c60-d3ad2ff1c5c8
 ### Stage11 — 1 session
 
 ```bash
-cd ~/Projects/Stage11
+cd ~/src
 claude --resume 47cf0576-8053-4eaf-b637-814bd9827712
 ```
 
 ### Glass (Claude, separate from the Codex orchestration) — 1 session
 
 ```bash
-cd ~/Projects/Gregorovich/projects/glass
+cd ~/src/projects/glass
 claude --resume de64045d-6e90-4102-8656-28551769a33d
 ```
 
@@ -98,8 +98,8 @@ its history.
 
 Two Codex agents were not part of the Glass run:
 
-- `~/Projects/Stage11/code/c11` — two sessions, one running 1d16h
-- `~/Projects/Gregorovich/projects/acetate` — one session
+- `~/src/c11` — two sessions, one running 1d16h
+- `~/src/projects/acetate` — one session
 
 Codex resumes by session id or picker:
 

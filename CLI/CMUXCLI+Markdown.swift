@@ -431,6 +431,8 @@ extension CMUXCLI {
         }
 
         // Try connecting to the socket. If it fails, launch the app and retry.
+        // A refused socket variable is an error, never a reason to launch (C11H-282).
+        try SocketClient.throwIfRefused(path: socketPath)
         let client = SocketClient(path: socketPath)
         if (try? client.connect()) == nil {
             client.close()

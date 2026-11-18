@@ -415,6 +415,12 @@ enum CodexLaunchBoundaryMarkerStore {
 struct CrashTranscriptVerdict: Sendable, Equatable {
     let id: String
     let exists: Bool?
+    let expectedRef: ConversationRef
+    /// C11H-196: the folder the transcript says the session started in, when
+    /// the ref's own cwd is missing or does not lead to it.
+    var recoveredCwd: String? = nil
+    /// C11H-196: when the transcript was last written, for resume order.
+    var lastActivity: Date? = nil
 }
 
 struct RuntimeEnvCaptureResult: Sendable, Equatable {
@@ -487,6 +493,21 @@ actor ConversationStore {
     private var openCodeBoundRouteIDBySurface: [String: String] = [:]
     private var openCodeMailboxAliasBySurface: [String: OpenCodeMailboxAlias] = [:]
 
+    /// Persistent terminals outlive this process. Read their current lifecycle
+    /// at the commit boundary: a verdict collected before reattachment is not
+    /// evidence that the terminal (or its agent) ended.
+    private var permitsDeadProcessRecovery: @Sendable (String) -> Bool = { _ in true }
+    /// Whether a late startup-audit result for the OLD conversation may be
+    /// committed. Distinct from liveness above: a replacement terminal keeps
+    /// the end evidence it replaced, which authorizes recovering that
+    /// conversation but must never make a live agent eligible for the Quit
+    /// and no-resume bulk mutations. Nil means the same as liveness.
+    private var permitsRecoveryCommit: (@Sendable (String) -> Bool)?
+
+    private func commitsRecovery(_ surfaceId: String) -> Bool {
+        (permitsRecoveryCommit ?? permitsDeadProcessRecovery)(surfaceId)
+    }
+
     init() {}
 
     /// Process-wide singleton. Held outside `Workspace` because:
@@ -496,6 +517,16 @@ actor ConversationStore {
     /// - per-workspace partitioning would require duplicate seed/snapshot
     ///   code paths for no isolation benefit (surface IDs are app-unique).
     static let shared = ConversationStore()
+
+    /// Fresh launches have no snapshot to seed, but their new persistent
+    /// terminals need the same Quit policy as restored ones.
+    func setDeadProcessRecoveryPolicy(
+        _ policy: @escaping @Sendable (String) -> Bool,
+        recoveryCommit: (@Sendable (String) -> Bool)? = nil
+    ) {
+        permitsDeadProcessRecovery = policy
+        permitsRecoveryCommit = recoveryCommit
+    }
 }
 
 /// Architecture-level kill switch (`CMUX_DISABLE_CONVERSATION_STORE=1`).
@@ -596,11 +627,17 @@ extension ConversationStore {
     /// Replace the entire store contents in one shot. Called once on
     /// snapshot restore to seed from `SessionPanelSnapshot.surfaceConversations`.
     @discardableResult
-    func seed(from records: [String: PanelConversations]) -> OwnershipAuditResult {
+    func seed(
+        from records: [String: PanelConversations],
+        permitsDeadProcessRecovery: @escaping @Sendable (String) -> Bool = { _ in true },
+        permitsRecoveryCommit: (@Sendable (String) -> Bool)? = nil
+    ) -> OwnershipAuditResult {
         authenticatedOpenCodeTuiPIDBySurface.removeAll()
         openCodeRouteGenerationBySurface.removeAll()
         openCodeRoutePendingBySurface.removeAll()
         openCodeBoundRouteIDBySurface.removeAll()
+        self.permitsDeadProcessRecovery = permitsDeadProcessRecovery
+        self.permitsRecoveryCommit = permitsRecoveryCommit
         openCodeMailboxAliasBySurface.removeAll()
         bySurface = records
         return auditGlobalOwnership()
@@ -819,7 +856,8 @@ extension ConversationStore {
         capturedAt: Date = Date(),
         state: ConversationState = .alive,
         diagnosticReason: String? = nil,
-        payload: [String: PersistedJSONValue]? = nil
+        payload: [String: PersistedJSONValue]? = nil,
+        sessionEnded: Bool = false
     ) -> ConversationRef? {
         guard source == .hook || source == .scrape || source == .manual else {
             return nil
@@ -837,6 +875,26 @@ extension ConversationStore {
             // ownership marker.
             return nil
         }
+        if sessionEnded, source == .hook, let current = bySurface[surfaceId]?.active {
+            // An old hook cannot end the next conversation. Keep the exact
+            // wrapper/hook identity and cwd instead of replacing them with a
+            // generic unknown ref after the process has disappeared.
+            guard current.kind == kind, current.id == id else { return current }
+            guard current.state == .alive || current.state == .suspended
+                || (current.state == .unknown && current.sessionEndedAt != nil) else { return current }
+            var ended = current
+            if current.state == .alive || current.state == .suspended {
+                ended.sessionEndedAt = capturedAt
+            }
+            ended.state = .unknown
+            // This ends the captured invocation; it does not capture a new
+            // one. Retain its lower time bound to exclude older journal ends.
+            ended.diagnosticReason = diagnosticReason
+            var snapshot = bySurface[surfaceId] ?? .empty
+            snapshot.active = ended
+            bySurface[surfaceId] = snapshot
+            return ended
+        }
         let ref = ConversationRef(
             kind: kind,
             id: id,
@@ -851,6 +909,56 @@ extension ConversationStore {
         _ = reconcile(surfaceId: surfaceId, candidate: ref)
         _ = auditGlobalOwnership()
         return bySurface[surfaceId]?.active ?? ref
+    }
+
+    /// Recheck on the actor before transcript verification. A late end hook,
+    /// clear or replacement cannot be overwritten by the child-exit cache read.
+    func prepareOutsideSignalRecovery(surfaceId: UUID, expected: ConversationRef, evidence: HCEndEvidence,
+                                      journal: JournalSnapshot?) -> ConversationRef? {
+        guard let current = bySurface[surfaceId.uuidString]?.active,
+              current.id == expected.id, current.kind == expected.kind else { return nil }
+        guard let ref = HCOutsideSignalConversation.resolve(panelID: surfaceId, evidence: evidence,
+            conversation: current, journal: journal) else { return nil }
+        var snapshot = bySurface[surfaceId.uuidString] ?? .empty
+        snapshot.active = ref
+        bySurface[surfaceId.uuidString] = snapshot
+        return ref
+    }
+
+    /// The native stream already verified the SessionStart hook's ancestry and
+    /// process birth. Check its current registration inside this actor mutation
+    /// so deferred work from an older /clear hook cannot displace the new owner.
+    /// This captures identity only; offline journal phase remains historical
+    /// until a genuine live hook reports it.
+    ///
+    /// C11H-196: `cwd` is the agent process's own working directory, read
+    /// from the verified peer. A resume needs it (Claude files a transcript
+    /// under its start folder), and an existing ref of the same session keeps
+    /// its cwd when the process's cannot be read.
+    @discardableResult
+    func captureClaudeBridgeSession(surfaceId: String, sessionID: String, cwd: String? = nil,
+                                    isCurrent: @Sendable () -> Bool) -> ConversationRef? {
+        guard UUID(uuidString: surfaceId) != nil, UUID(uuidString: sessionID) != nil, isCurrent() else { return nil }
+        let existing = bySurface[surfaceId]?.active
+        let sameSession = existing.map { $0.kind == "claude-code" && $0.id.lowercased() == sessionID.lowercased() } ?? false
+        let knownCwd = cwd.flatMap { $0.isEmpty ? nil : $0 } ?? (sameSession ? existing?.cwd : nil)
+        if let existing, sameSession, existing.isEligibleCausalOwner {
+            guard existing.cwd == nil, let knownCwd else { return existing }
+            var filled = existing
+            filled.cwd = knownCwd
+            var snapshot = bySurface[surfaceId] ?? .empty
+            snapshot.active = filled
+            bySurface[surfaceId] = snapshot
+            return filled
+        }
+        let ref = ConversationRef(kind: "claude-code", id: sessionID, placeholder: false, cwd: knownCwd,
+                                  capturedAt: Date(), capturedVia: .hook, state: .alive,
+                                  diagnosticReason: "exact session recovered from its live SessionStart bridge")
+        var snapshot = bySurface[surfaceId] ?? .empty
+        snapshot.active = ref
+        bySurface[surfaceId] = snapshot
+        _ = auditGlobalOwnership()
+        return bySurface[surfaceId]?.active
     }
 
     enum HookSessionAdoption: Equatable, Sendable {
@@ -1230,13 +1338,15 @@ extension ConversationStore {
     @discardableResult
     func applyScrapeBatch(
         _ batch: ScrapeCandidateBatch,
-        pipeline: ScrapeCapturePipeline
+        pipeline: ScrapeCapturePipeline,
+        isStartupRecovery: Bool = false
     ) -> ScrapeCaptureCommitResult {
         var working = bySurface
         let plan = pipeline.reconcileBatch(batch, existing: working)
         var appliedSurfaceIds = Set<String>()
 
         for (surfaceId, reason) in plan.quarantineReasonsBySurface {
+            guard !isStartupRecovery || commitsRecovery(surfaceId) else { continue }
             Self.quarantine(
                 surfaceId: surfaceId,
                 reason: reason,
@@ -1245,6 +1355,7 @@ extension ConversationStore {
         }
 
         for (surfaceId, ref) in plan.refsBySurface {
+            guard !isStartupRecovery || commitsRecovery(surfaceId) else { continue }
             var conversations = working[surfaceId] ?? .empty
             if let existing = conversations.active,
                !Self._testShouldReplace(existing: existing, candidate: ref) {
@@ -1281,7 +1392,7 @@ extension ConversationStore {
     ) {
         guard var snap = bySurface[surfaceId], var active = snap.active else { return }
         active.state = .tombstoned
-        active.capturedAt = at
+        active.updateLifecycleTimestamp(at)
         active.diagnosticReason = reason ?? "tombstoned"
         snap.active = active
         bySurface[surfaceId] = snap
@@ -1292,9 +1403,10 @@ extension ConversationStore {
     /// on `state = .suspended`.
     func suspendAllAlive(at: Date = Date()) {
         for (key, var snap) in bySurface {
+            guard permitsDeadProcessRecovery(key) else { continue }
             if var active = snap.active, active.state == .alive {
                 active.state = .suspended
-                active.capturedAt = at
+                active.updateLifecycleTimestamp(at)
                 snap.active = active
                 bySurface[key] = snap
             }
@@ -1307,9 +1419,10 @@ extension ConversationStore {
     /// audit never calls it: failure is reported, never written.
     func markAllUnknown(at: Date = Date(), reason: String = "crash recovery (dirty sentinel)") {
         for (key, var snap) in bySurface {
+            guard permitsDeadProcessRecovery(key) else { continue }
             if var active = snap.active {
                 active.state = .unknown
-                active.capturedAt = at
+                active.updateLifecycleTimestamp(at)
                 active.diagnosticReason = reason
                 snap.active = active
                 bySurface[key] = snap
@@ -1373,10 +1486,14 @@ extension ConversationStore {
             if let surfaceIds, !surfaceIds.contains(key) { continue }
             guard let active = conversations.active,
                   active.state == .alive || active.state == .suspended else { continue }
+            let strategy = registry.strategy(forKind: active.kind)
+            let exists = strategy?.transcriptExists(for: active, filesystem: filesystem)
             verdicts[key] = CrashTranscriptVerdict(
                 id: active.id,
-                exists: registry.strategy(forKind: active.kind)?
-                    .transcriptExists(for: active, filesystem: filesystem)
+                exists: exists,
+                expectedRef: active,
+                recoveredCwd: exists == true ? strategy?.recoveredCwd(for: active, filesystem: filesystem) : nil,
+                lastActivity: exists == true ? strategy?.transcriptModifiedAt(for: active, filesystem: filesystem) : nil
             )
         }
         return verdicts
@@ -1385,29 +1502,52 @@ extension ConversationStore {
     /// Commit verdicts in one actor turn. A ref that changed while they were
     /// computed (another id, or no longer `.alive`/`.suspended`) keeps its
     /// newer state.
+    ///
+    /// C11H-196: `downgradeUnverifiable: false` (a host end after a clean
+    /// shutdown) leaves a ref that cannot be checked as it was, instead of
+    /// marking it unknown. A verified ref takes the transcript's recovered cwd.
     func applyCrashTranscriptVerdicts(
         _ verdicts: [String: CrashTranscriptVerdict],
-        at: Date = Date()
+        at: Date = Date(),
+        downgradeUnverifiable: Bool = true
     ) {
         for (key, verdict) in verdicts {
+            guard commitsRecovery(key) else { continue }
             guard var snap = bySurface[key], var active = snap.active,
-                  active.id == verdict.id,
+                  active == verdict.expectedRef,
                   active.state == .alive || active.state == .suspended else { continue }
             switch verdict.exists {
             case .some(true):
                 active.state = .suspended
                 active.diagnosticReason = "crash recovery: transcript verified on disk"
+                if let cwd = verdict.recoveredCwd, !cwd.isEmpty { active.cwd = cwd }
             case .some(false):
                 active.state = .unknown
                 active.diagnosticReason = "crash recovery: transcript not found"
             case .none:
+                guard downgradeUnverifiable else { continue }
                 active.state = .unknown
                 active.diagnosticReason = "crash recovery: transcript verification unavailable"
             }
-            active.capturedAt = at
+            active.updateLifecycleTimestamp(at)
             snap.active = active
             bySurface[key] = snap
         }
+    }
+
+    /// C11H-196: the operator asked to resume this panel's saved conversation
+    /// after a host end. It becomes the panel's active ref again (a session
+    /// started there meanwhile no longer is), resumable by the operator's say.
+    /// Returns the ref as stored after the ownership audit.
+    func restoreForOperatorResume(surfaceId: String, ref: ConversationRef) -> ConversationRef? {
+        var restored = ref
+        if restored.state != .alive, restored.state != .suspended { restored.state = .suspended }
+        restored.diagnosticReason = "operator resume after host end"
+        var snapshot = bySurface[surfaceId] ?? .empty
+        snapshot.active = restored
+        bySurface[surfaceId] = snapshot
+        _ = auditGlobalOwnership()
+        return bySurface[surfaceId]?.active
     }
 
     /// Wipe a surface's conversations. Operator escape hatch

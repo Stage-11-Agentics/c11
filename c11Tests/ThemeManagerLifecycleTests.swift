@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 import Combine
+import SwiftUI
 @testable import c11
 
 @MainActor
@@ -24,14 +25,14 @@ final class ThemeManagerLifecycleTests: XCTestCase {
         )
 
         let names = Set(manager.availableThemes.map(\.identity.name))
-        XCTAssertTrue(names.isSuperset(of: ["stage11", "phosphor", "radical"]))
+        XCTAssertEqual(names, ["stage11", "c11", "nocturne", "bigboard", "datasheet-mono", "terminal-grid", "outrun-horizon"])
     }
 
     func testDefaultThemeUserDirectoryUsesC11ApplicationSupportName() {
         let userThemesDirectory = ThemeManager.userThemesDirectory()
 
         XCTAssertEqual(userThemesDirectory.lastPathComponent, "themes")
-        XCTAssertEqual(userThemesDirectory.deletingLastPathComponent().lastPathComponent, "c11")
+        XCTAssertEqual(userThemesDirectory.deletingLastPathComponent().lastPathComponent, C11Identity.stateDirectoryName)
     }
 
     func testManagerLoadsActiveThemeAndIncrementsVersionOnReload() {
@@ -113,5 +114,46 @@ final class ThemeManagerLifecycleTests: XCTestCase {
         let context = manager.makeContext(colorScheme: ThemeContext.ColorScheme.light)
         let thickness = try XCTUnwrap(manager.resolve(.dividers_thicknessPt, context: context) as CGFloat?)
         XCTAssertEqual(Double(thickness), 1.0, accuracy: 0.0001)
+    }
+}
+
+/// C11H-187: Settings draws every bundled theme as a live preview. The render is saved as a
+/// PNG (path printed as C11_GALLERY_PNG=) so a reviewer can see the real page.
+@MainActor
+final class ThemeGalleryRenderTests: XCTestCase {
+    func testTheGalleryDrawsEveryBundledThemeAsAPreview() throws {
+        let width: CGFloat = 720
+        let host = NSHostingView(rootView: ThemePreviewGallery().frame(width: width).background(Color(nsColor: .windowBackgroundColor)))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: 1400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        host.frame = NSRect(x: 0, y: 0, width: width, height: 1400)
+        host.layoutSubtreeIfNeeded()
+        host.frame.size.height = max(host.fittingSize.height, 300)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+
+        let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("c11-theme-gallery.png")
+        try png.write(to: url)
+        print("C11_GALLERY_PNG=\(url.path)")
+
+        XCTAssertEqual(ThemeManager.shared.availableThemes.filter { $0.source == .builtin }.count, 7)
+        // Seven differently coloured previews leave many distinct colours; a blank or
+        // single-theme page leaves few.
+        var colours = Set<UInt32>()
+        let step = 6
+        for y in stride(from: 0, to: rep.pixelsHigh, by: step) {
+            for x in stride(from: 0, to: rep.pixelsWide, by: step) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                colours.insert(UInt32(c.redComponent * 31) << 10 | UInt32(c.greenComponent * 31) << 5 | UInt32(c.blueComponent * 31))
+            }
+        }
+        XCTAssertGreaterThan(colours.count, 40, "the gallery drew too few colours to hold seven previews")
     }
 }

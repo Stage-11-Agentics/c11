@@ -255,7 +255,7 @@ Add two file references and two build-file entries:
 
 ## 6. Phased execution (done in a worktree)
 
-Each phase is a logical commit. The worktree lives outside `/Users/atin/Projects/Stage11/code/cmux` so it does not disturb the working checkout.
+Each phase is a logical commit. The worktree lives outside `~/src/cmux` so it does not disturb the working checkout.
 
 ### Worktree setup
 ```

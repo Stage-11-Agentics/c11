@@ -1,0 +1,14 @@
+42 65
+Manageds-Virtual-Machine:~ admin$ stty size
+35 43
+Manageds-Virtual-Machine:~ admin$ echo typed-during-drop
+typed-during-drop
+Manageds-Virtual-Machine:~ admin$ echo after-reconnect pid=$$
+after-reconnect pid=2594
+Manageds-Virtual-Machine:~ admin$ 
+2026-10-30T21:50:07.227Z event=hc_size terminal=box/t1 cols=65 rows=42 panel=DB086907
+2026-10-30T21:50:34.320Z event=resize surface=DB086907 channel=6 cols=43 rows=35
+2026-10-30T21:50:34.320Z event=hc_size terminal=box/t1 cols=43 rows=35 panel=DB086907
+2026-10-30T21:50:52.049Z event=paint_received surface=DB086907 channel=6 bytes=838
+2026-10-30T21:50:52.049Z event=hc_created terminal=box/t1 panel=DB086907
+2026-10-30T21:50:52.050Z event=hc_size terminal=box/t1 cols=43 rows=35 panel=DB086907

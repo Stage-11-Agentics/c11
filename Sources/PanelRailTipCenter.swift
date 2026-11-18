@@ -659,7 +659,10 @@ struct PanelRailTipView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let palette = TipPalette.resolve(colorScheme)
+        let palette = TipPalette.resolve(
+            colorScheme,
+            states: ThemeStatePalette.current(context: ThemeManager.shared.makeContext(colorScheme: colorScheme))
+        )
         VStack(alignment: .leading, spacing: 8) {
             if model.mode == .undo {
                 Text(String(localized: "tabRailTip.undoTitle", defaultValue: "Panel Layout is Rail"))
@@ -827,7 +830,7 @@ struct PanelRailTipView: View {
         _ palette: TipPalette
     ) -> Color {
         switch status {
-        case .waiting: return palette.amber
+        case .waiting: return palette.waiting
         case .flagged: return flagColor(markColorOverrideHex, palette)
         default: return palette.faint
         }
@@ -835,8 +838,8 @@ struct PanelRailTipView: View {
 
     private func mark(_ row: PanelRailTipPreviewRow, _ palette: TipPalette) -> Color {
         switch row.status {
-        case .working: return palette.text
-        case .waiting: return palette.amber
+        case .working: return palette.working
+        case .waiting: return palette.waiting
         case .flagged: return flagColor(row.markColorOverrideHex, palette)
         case .cold:
             return row.markColorOverrideHex.flatMap { NSColor(hex: $0) }.map { Color(nsColor: $0) } ?? palette.faint
@@ -852,7 +855,7 @@ struct PanelRailTipView: View {
 
 /// Sheet colors from the tab bar, duplicated here so the tip does not depend
 /// on bonsplit's internal palette. Dark and light pairs match that sheet.
-private struct TipPalette {
+struct TipPalette {
     let background: Color
     let header: Color
     let text: Color
@@ -864,11 +867,18 @@ private struct TipPalette {
     let ink: Color
     let rowActive: Color
     let count: Color
-    let amber: Color
+    /// The lifecycle colours for the slot: the theme's `[states]`, else c11's
+    /// (C11H-344: working yellow, waiting white on dark, near-black on light).
+    var working: Color
+    var waiting: Color
     let violet: Color
 
-    static func resolve(_ scheme: ColorScheme) -> TipPalette {
-        scheme == .dark ? dark : light
+    static func resolve(_ scheme: ColorScheme, states: ThemeStatePalette = .unset) -> TipPalette {
+        var palette = scheme == .dark ? dark : light
+        let lifecycle = Workspace.resolvedSurfaceTabActivityColors(lightBackground: scheme != .dark, states: states)
+        palette.working = Self.lifecycle(lifecycle.runningHex)
+        palette.waiting = Self.lifecycle(lifecycle.waitingHex)
+        return palette
     }
 
     private static func rgb(_ hex: UInt32) -> Color {
@@ -880,7 +890,17 @@ private struct TipPalette {
     }
 
     private static let gold = rgb(0xd4a72c)
-    private static let amber = rgb(0xe0a030)
+    private static func lifecycle(_ hex: String?) -> Color {
+        Color(nsColor: hex.flatMap { NSColor(hex: $0) } ?? .labelColor)
+    }
+
+    private static func working(light: Bool) -> Color {
+        lifecycle(Workspace.resolvedSurfaceTabActivityColors(lightBackground: light).runningHex)
+    }
+
+    private static func waiting(light: Bool) -> Color {
+        lifecycle(Workspace.resolvedSurfaceTabActivityColors(lightBackground: light).waitingHex)
+    }
     private static let violet = rgb(0x9d8ad9)
     private static let ink = rgb(0x1b1b1b)
 
@@ -896,7 +916,8 @@ private struct TipPalette {
         ink: ink,
         rowActive: rgb(0x25272d),
         count: rgb(0x2f3138),
-        amber: amber,
+        working: working(light: false),
+        waiting: waiting(light: false),
         violet: violet
     )
 
@@ -912,7 +933,8 @@ private struct TipPalette {
         ink: ink,
         rowActive: rgb(0xf0f1f5),
         count: rgb(0xeceef2),
-        amber: amber,
+        working: working(light: true),
+        waiting: waiting(light: true),
         violet: violet
     )
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Advisory Atlas poller for same-repo c11 pull requests.
+"""Advisory build-host poller for same-repo c11 pull requests.
 
 Phase 2 of C11-371. This process is not a GitHub Actions runner. Nothing in
 this file bootstraps a LaunchAgent. `supervise` is one long-running process
@@ -8,7 +8,7 @@ queue, the rate-limit deadline and the credential client in memory; a restart
 rebuilds them from the GitHub API plus R2 recovery. The LaunchAgent template
 does not create enabled.json. Arming waits for Atin's GO-LIVE.
 
-Credentials: gh mode (the Atlas gh login, credential.json {"mode": "gh"}) is
+Credentials: gh mode (the build host's gh login, credential.json {"mode": "gh"}) is
 active; App mode (app.json plus private-key.pem) is the config-only upgrade.
 
 Status delivery (orchestrator ruling): no outbox. A status POST gets three
@@ -563,8 +563,9 @@ def logic_quarantine_ids(worktree):
         if not HOST_TEST_ID.fullmatch(test_id):
             raise ValueError("%s:%s: expected one exact c11Tests or c11LogicTests method selector" %
                              (path, line_number))
-        if scope not in ("all", "atlas"):
-            raise ValueError("%s:%s: scope must be all or atlas" % (path, line_number))
+        # "remote"; an older inventory's name for it is still read.
+        if scope not in ("all", "remote", "atlas"):
+            raise ValueError("%s:%s: scope must be all or remote" % (path, line_number))
         if test_id in seen:
             raise ValueError("%s:%s: duplicate host quarantine selector %s" %
                              (path, line_number, test_id))
@@ -1407,7 +1408,7 @@ class AppClient:
 
 
 class GhClient:
-    """The Atlas gh login as the credential (Atin's decision; the active mode).
+    """The build host's gh login as the credential (Atin's decision; the active mode).
 
     The token is read with `gh auth token` at each request, held only for that
     request, and never logged or written. GH_TOKEN and GITHUB_TOKEN are removed
@@ -2380,7 +2381,7 @@ class Supervisor:
         self._stop_group(record)
         sha = record.get("sha") or ""
         if reason in ("guest", "slot"):
-            self.delivered = self._post(sha, "pending", "yielded to Atlas work", pr=record.get("pr"))
+            self.delivered = self._post(sha, "pending", "yielded to build-host work", pr=record.get("pr"))
             self.log(decision="yielded", reason=reason, pr=record.get("pr"))
         elif reason == "superseded":
             # A newer push cut this build short; nothing about this head failed.

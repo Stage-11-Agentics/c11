@@ -1151,6 +1151,251 @@ final class AgentModelDetectionTests: XCTestCase {
         XCTAssertEqual(prompted.basis, .ttl(PromptCachePolicy.anthropicExtendedTTL))
     }
 
+    // MARK: - C11H-320 PR 3: a context window belongs to its model
+
+    /// One fleet row for `state`'s transcript, its harness window from `store`.
+    private func fleetContext(_ kind: String, _ state: ModelTailState, panel: UUID,
+                              store: PromptCacheReportStore) -> Any? {
+        let ws = UUID()
+        let row = FleetSnapshot.Panel(windowId: UUID(), workspaceId: ws, workspaceTitle: "Ship", panelId: panel, panelTitle: "Seat",
+            detectedKind: kind, activity: nil, cold: false, unreadNotification: false, journalAttention: false,
+            parentPanelId: nil, lastTurnEndedMs: nil, promptCache: state.signals.promptCache, promptCacheUnknown: false,
+            unreadMail: nil, lastSeenAt: nil, beingSeen: false, journal: nil)
+        var values: [String: Any] = [MetadataKey.terminalType: kind]
+        if let model = state.model { values[AgentModelDetector.MetadataKeys.detected] = model }
+        let snapshot = FleetSnapshot(capturedAt: Date(), metadata: .init(metadata: [ws: [panel: values]], sources: [:]),
+                                     panels: [row], workspaceCount: 1, windowCount: 1, mainCopyDurationMs: 0)
+        var sources = FleetSnapshot.ObservationSources()
+        sources.report = { _ in nil }
+        sources.look = { _ in nil }
+        sources.wait = { _ in nil }
+        sources.sweep = { nil }
+        sources.stall = { _ in nil }
+        sources.turnStartedMs = { _ in nil }
+        sources.stallThreshold = { 600 }
+        sources.edges = { nil }
+        sources.contextWindow = { store.slot(forPanel: $0)?.harnessWindow }
+        sources.transcriptModel = { _ in .init(signals: state.signals) }
+        let limits = FleetContextLimits(records: { ModelCatalogSnapshot.records }, stamp: { "snapshot" })
+        sources.catalogLimit = { limits.limit(forModel: $0, agent: $1) }
+        let rows = snapshot.document(observations: sources, delta: nil)["panels"] as? [[String: Any]]
+        return rows?.first?["context"]
+    }
+
+    private func claudeAssistant(_ id: String, _ hms: String, model: String) -> String {
+        #"{"type":"assistant","isSidechain":false,"timestamp":"2026-01-01T\#(hms).000Z","message":{"model":"\#(model)","id":"\#(id)","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":2,"cache_read_input_tokens":50000,"cache_creation_input_tokens":500,"output_tokens":5}}}"#
+    }
+
+    /// The statusline reports a window with no model; the transcript then
+    /// switches model, the next prompt and its usage arrive, and later the
+    /// model switches back. The window is the first model's, and once the
+    /// model has changed it is never used again.
+    func testAReportedClaudeWindowDiesWithItsModelForGood() throws {
+        let panel = UUID()
+        let store = PromptCacheReportStore()
+        let url = try place(Data(([claudeUser("10:00:00"), claudeAssistant("m1", "10:00:10", model: "claude-opus-5-5")]
+            .joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let r = ref("claude-code", id: claudeId)
+        _ = detect("claude-code", r, &state)
+        func report(_ at: String) {
+            let params: [String: Any] = ["panel_id": panel.uuidString, "prompt_cache": ["warm": true, "ttl": "5m"],
+                                         "context_window": ["context_window_size": 200_000]]
+            _ = TerminalController.promptCacheReportResult(params: params, store: store, now: t(at)) { _ in
+                .init(signals: state.signals)
+            }
+        }
+        report("10:01:00")
+        var context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 200_000)
+        XCTAssertEqual(context["limit_source"] as? String, "harness")
+
+        // `/model`, then the next prompt and its usage on the new model.
+        try append([claudeLocal("10:20:01", "<local-command-stdout>Set model to `Sonnet 5.5` and saved as your default for new sessions</local-command-stdout>"),
+                    claudeUser("10:25:00"), claudeAssistant("m2", "10:25:10", model: "claude-sonnet-5-5")]
+            .joined(separator: "\n") + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertNil(state.signals.promptCache?.reset, "the next prompt has cleared the switch flag")
+        context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertTrue(context["limit"] is NSNull, "the old model's window is not the new one's")
+
+        // Back on the first model: the window still does not return.
+        try append([claudeLocal("10:40:01", "<local-command-stdout>Set model to `Opus 5.5` and saved as your default for new sessions</local-command-stdout>"),
+                    claudeUser("10:45:00"), claudeAssistant("m3", "10:45:10", model: "claude-opus-5-5")]
+            .joined(separator: "\n") + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertTrue(context["limit"] is NSNull, "a change since the window ends it for good")
+
+        // A window reported now belongs to this model and is used.
+        report("10:46:00")
+        context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 200_000)
+
+        // A window with no model and no transcript to bind it to is unused.
+        let unbound = PromptCacheReportStore()
+        _ = TerminalController.promptCacheReportResult(
+            params: ["panel_id": panel.uuidString, "prompt_cache": ["warm": true, "ttl": "5m"],
+                     "context_window": ["context_window_size": 200_000]],
+            store: unbound, now: t("10:47:00")) { _ in .init() }
+        XCTAssertNil(unbound.slot(forPanel: panel)?.harnessWindow?.model)
+        context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: unbound) as? [String: Any])
+        XCTAssertTrue(context["limit"] is NSNull, "continuity unknown: never carried")
+    }
+
+    private func claudeZeroCacheAssistant(_ id: String, _ hms: String, model: String) -> String {
+        #"{"type":"assistant","isSidechain":false,"timestamp":"2026-01-01T\#(hms).000Z","message":{"model":"\#(model)","id":"\#(id)","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":5}}}"#
+    }
+
+    private func modelSwitch(_ hms: String, to name: String) -> String {
+        claudeLocal(hms, "<local-command-stdout>Set model to `\(name)` and saved as your default for new sessions</local-command-stdout>")
+    }
+
+    private let statuslineWindow: [String: Any] = ["prompt_cache": ["warm": true, "ttl": "5m"],
+                                                   "context_window": ["context_window_size": 200_000]]
+
+    /// A window that names its model but arrives before the transcript has
+    /// named one carries no proof of continuity: it is never used, before or
+    /// after the model changes away and back.
+    func testAWindowReportedBeforeTheTranscriptNamedAModelIsNeverUsed() throws {
+        let panel = UUID()
+        var named = statuslineWindow
+        named["context_window"] = ["context_window_size": 200_000, "model": "claude-opus-5-5"]
+        named["panel_id"] = panel.uuidString
+        // The app's own path: the detector has no transcript for this panel yet.
+        let early = PromptCacheReportStore()
+        _ = TerminalController.promptCacheReportResult(params: named, store: early, now: t("09:59:00"))
+        XCTAssertNil(early.slot(forPanel: panel)?.harnessWindow?.epoch)
+        // A transcript that exists but has named no model yet is no proof either.
+        let blank = PromptCacheReportStore()
+        _ = TerminalController.promptCacheReportResult(params: named, store: blank, now: t("09:59:00")) { _ in
+            .init(signals: TranscriptSignals())
+        }
+
+        let url = try place(Data(([claudeUser("10:00:00"), claudeAssistant("m1", "10:00:10", model: "claude-opus-5-5")]
+            .joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let r = ref("claude-code", id: claudeId)
+        _ = detect("claude-code", r, &state)
+        for store in [early, blank] {
+            let context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+            XCTAssertTrue(context["limit"] is NSNull, "no proof it is this model's")
+        }
+        try append([modelSwitch("10:20:01", to: "Sonnet 5.5"), claudeUser("10:25:00"),
+                    claudeAssistant("m2", "10:25:10", model: "claude-sonnet-5-5"),
+                    modelSwitch("10:40:01", to: "Opus 5.5"), claudeUser("10:45:00"),
+                    claudeAssistant("m3", "10:45:10", model: "claude-opus-5-5")].joined(separator: "\n") + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertEqual(state.signals.model, "claude-opus-5-5")
+        for store in [early, blank] {
+            let context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+            XCTAssertTrue(context["limit"] is NSNull, "after A, B, A it is still not proven")
+        }
+    }
+
+    /// A first request that reads and writes no cache leaves no transcript
+    /// cache; a `/model` must still end the window at once, before the next
+    /// response names the new model.
+    func testAModelSwitchWithNoCacheYetStillEndsTheWindow() throws {
+        let panel = UUID()
+        let store = PromptCacheReportStore()
+        let url = try place(Data(([claudeUser("10:00:00"), claudeZeroCacheAssistant("m1", "10:00:10", model: "claude-opus-5-5")]
+            .joined(separator: "\n") + "\n").utf8), at: claudePath())
+        var state = ModelTailState()
+        let r = ref("claude-code", id: claudeId)
+        _ = detect("claude-code", r, &state)
+        XCTAssertNil(state.signals.promptCache, "no cache read or written: no transcript cache")
+        var params = statuslineWindow
+        params["panel_id"] = panel.uuidString
+        _ = TerminalController.promptCacheReportResult(params: params, store: store, now: t("10:01:00")) { _ in
+            .init(signals: state.signals)
+        }
+        let context = try XCTUnwrap(fleetContext("claude-code", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 200_000)
+        try append([modelSwitch("10:20:01", to: "Sonnet 5.5"), claudeUser("10:25:00")].joined(separator: "\n") + "\n", to: url)
+        _ = detect("claude-code", r, &state)
+        XCTAssertTrue(fleetContext("claude-code", state, panel: panel, store: store) is NSNull,
+                      "the recorded switch ends it before any new response (no prompt size either: context is null)")
+    }
+
+    /// One very long Codex turn: the model comes from the backward search.
+    /// A window read before any model was named is nobody's; one read after
+    /// the search is the found model's, and a changed `turn_context` ends it.
+    func testALongCodexTurnsBackwardSearchedModelOwnsItsWindows() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        func usage(_ total: Int, window: Int?) -> String {
+            let stated = window.map { #","model_context_window":\#($0)"# } ?? ""
+            return #"{"timestamp":"2026-01-01T09:30:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":64000,"output_tokens":5},"total_token_usage":{"total_tokens":\#(total)}\#(stated)}}}"#
+        }
+        var data = Data(#"{"timestamp":"2026-01-01T09:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.6-sol"}}"#.utf8) + Data([0x0A])
+        let filler = Data((#"{"timestamp":"2026-01-01T09:00:01.000Z","type":"response_item","payload":{"type":"reasoning","x":""# + String(repeating: "x", count: 900) + #""}}"# + "\n").utf8)
+        for _ in 0..<5_000 { data.append(filler) }
+        data.append(Data((usage(1000, window: 258_400) + "\n").utf8))
+        let url = try place(data, at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let r = ref("codex", id: id)
+        XCTAssertEqual(detect("codex", r, &state), .model("gpt-5.6-sol"))
+        let panel = UUID(), store = PromptCacheReportStore()
+        var context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit_source"] as? String, "catalog", "the tail's window came before any model was named")
+        XCTAssertEqual(context["limit"] as? Int, 272_000)
+
+        try append(usage(2000, window: 258_400) + "\n", to: url)
+        _ = detect("codex", r, &state)
+        context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 258_400, "after the search the window is the found model's")
+        XCTAssertEqual(context["limit_source"] as? String, "harness")
+
+        try append([#"{"timestamp":"2026-01-01T09:40:00.000Z","type":"turn_context","payload":{"model":"gpt-5.3-codex-spark"}}"#,
+                    usage(3000, window: nil)].joined(separator: "\n") + "\n", to: url)
+        _ = detect("codex", r, &state)
+        context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 128_000, "the changed model ends the found model's window")
+        XCTAssertEqual(context["limit_source"] as? String, "catalog")
+    }
+
+    /// Codex states its window on each usage line; `turn_context` names its
+    /// model. A switch to another model, then a usage line without a window,
+    /// leaves no window; switching back does not restore the old one.
+    func testACodexWindowDiesWithItsModelForGood() throws {
+        let now = Date()
+        let id = uuidV7(now)
+        func usage(_ hms: String, total: Int, window: Int?) -> String {
+            let stated = window.map { #","model_context_window":\#($0)"# } ?? ""
+            return #"{"timestamp":"2026-01-01T\#(hms).000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":64000,"output_tokens":5},"total_token_usage":{"total_tokens":\#(total)}\#(stated)}}}"#
+        }
+        func model(_ name: String) -> String { #"{"type":"turn_context","payload":{"model":"\#(name)"}}"# }
+        let url = try place(Data(([#"{"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"\#(id)"}}"#,
+                                   model("gpt-5.6-sol"), usage("09:00:10", total: 1000, window: 258_400)]
+            .joined(separator: "\n") + "\n").utf8), at: codexPath(id: id, date: now))
+        var state = ModelTailState()
+        let r = ref("codex", id: id)
+        _ = detect("codex", r, &state)
+        let panel = UUID(), store = PromptCacheReportStore()
+        var context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 258_400)
+        XCTAssertEqual(context["limit_source"] as? String, "harness")
+
+        try append([model("gpt-5.3-codex-spark"), usage("09:05:10", total: 2000, window: nil)].joined(separator: "\n") + "\n", to: url)
+        _ = detect("codex", r, &state)
+        XCTAssertEqual(state.model, "gpt-5.3-codex-spark")
+        context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 128_000, "the new model's own catalog route, not the old window")
+        XCTAssertEqual(context["limit_source"] as? String, "catalog")
+
+        try append([model("gpt-5.6-sol"), usage("09:10:10", total: 3000, window: nil)].joined(separator: "\n") + "\n", to: url)
+        _ = detect("codex", r, &state)
+        context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 272_000, "back on the first model, its old window does not return")
+        XCTAssertEqual(context["limit_source"] as? String, "catalog")
+
+        try append([model("gpt-5.6-sol"), usage("09:15:10", total: 4000, window: 258_400)].joined(separator: "\n") + "\n", to: url)
+        _ = detect("codex", r, &state)
+        context = try XCTUnwrap(fleetContext("codex", state, panel: panel, store: store) as? [String: Any])
+        XCTAssertEqual(context["limit"] as? Int, 258_400, "a repeated same-model context keeps a fresh window")
+    }
+
     @MainActor
     func testPromptCacheFieldNamesAReset() throws {
         let at = Date(timeIntervalSince1970: 2_000_000)
@@ -1359,8 +1604,8 @@ final class AgentModelDetectionTests: XCTestCase {
     }
 
     func testKimiWorkDirFolderSuffixIsTheFirst12HexOfTheSHA256OfThePath() {
-        // `printf '%s' /Users/atin/Projects/Gregorovich | shasum -a 256` → 6b6ccce27f11…
-        XCTAssertEqual(KimiWireLocator.workDirSuffix(forCwd: "/Users/atin/Projects/Gregorovich"), "_6b6ccce27f11")
+        // `printf '%s' /Users/demo/src/notes | shasum -a 256` → 364234901c9b…
+        XCTAssertEqual(KimiWireLocator.workDirSuffix(forCwd: "/Users/demo/src/notes"), "_364234901c9b")
     }
 
     // MARK: - C11-412 Claude Esc interrupt

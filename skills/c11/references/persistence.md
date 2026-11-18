@@ -1,0 +1,61 @@
+# c11: sessions, the hc core, relaunch and restore
+
+Print this page with `c11 guide persistence`. What c11's persistent terminals keep and end, where its state lives, the hc core, and what a relaunch or reboot does to running agents. A link to `<page>.md` names another page: `c11 guide <page>`.
+
+**This guide matches the build you are in; an installed c11 skill may not.** `c11 guide` is the authority for c11's commands. If another c11 skill or doc names a command this guide lacks, that command does not exist in c11: do not try it, and do not edit any installed skill to add it.
+
+## Closing a panel ends its session
+
+Every c11 terminal is an hc session. **Closing its panel ends everything it started**, `nohup` and background jobs included; the close button says **End Session** and names what ends.
+
+- Don't start a long job in a panel you or the operator may close, expecting it to survive.
+- **Apps you `open` count too.** hc ends every process carrying the terminal's `HC_SCOPE`, and `open` passes your environment to the app it launches, so an app or daemon you start from a panel dies by SIGHUP when that panel closes. To start one that must outlive the panel, drop terminal identity first: `env $(env | sed -n -E 's/^((HC|C11|CMUX)_[A-Za-z0-9_]*)=.*/-u \1/p') open -g <app>` (bash or zsh). `ps -E -ww -o command= -p <pid> | grep HC_SCOPE=` shows whether a running process is tied to a panel; Apple-signed binaries hide their environment and are never swept.
+- **End All Sessions…** (app menu) is the operator's. Never script it, and never close a panel to "clean up" unless the operator asked.
+- To stop an agent in another panel, send keys: `c11 send-key --panel <ref> ctrl+c` twice, the second within a second, at its idle prompt. A typed `/exit` is not dependable.
+- `close-panel` refuses a workspace's last panel (`invalid_state`); run `close-workspace` instead.
+- Moving a workspace or panel to another window (`move-workspace-to-window`, `move-panel --window`) is not an end: terminals keep their session and jobs.
+
+## Sessions and state
+
+c11 state lives under `~/Library/Application Support/c11`, logs under `~/Library/Logs/c11`, the socket under that support directory, and hc under `~/.local/share/c11`. The typing-latency probe writes a file named by `C11_LATENCY_LOG`. One run appends one sample per measured key. `c11 hc-diagnostics --json` lists each terminal panel's id, terminal, tty, lifecycle, serving hc build, restore notice and host-end recovery, and the holder-loss count. While terminal inventory catches up at birth or reconnect, c11 can return retryable `hc_inventory_pending` without dispatching the operation. Ordinary CLI calls retry within their deadline, and short lifecycle reports keep the bounded journal spool. A definitive `hc_caller_not_owned` requires an authoritative refreshed ancestry check. The gate restores same-user functionality and is not a security boundary.
+
+## The hc core
+
+`c11-core` (also `c11 core`, or **Window ▸ hc Core**) shows c11's own hc core from any terminal: its holder, every terminal (launched, last active, agent, CPU and memory, c11 panel) and linked machines. `--json` prints schema `c11.core/1` (`docs/c11-core.md`). `c11-core restart` restarts the core and keeps every terminal; `c11-core open <t>` opens a terminal in Terminal.app watch-only (`<t>` is hc's address, `tN` or `<machine>/tN`; records with any other address are not shown); `--take-over` types there and takes its size, and asks first (`--yes` with `--json` or no terminal). It refuses any core that is not c11's pinned build for this session. `c11-core abandoned` lists hc sessions whose core and holder are gone (an old dev build, an uninstalled one) with what their terminals left running, chosen by hc's recorded pid and start time; `c11-core end-abandoned <session>` ends those (HUP, then KILL after 3 s) and never touches a live terminal or this build's sessions. Run it only when asked or when the leftovers are yours to clean up.
+
+`c11 hc server status|restart`, `c11 hc ls` and `c11 hc get <terminal>` read or restart the core (reading is safe; `restart` is the operator's). `c11 hc run [--cwd <path>] [--env K=V] [--label K=V] -- <program> [args]` starts a program as an hc terminal. Reads have a 12 s core budget and a 16 s CLI budget; a failed read prints its cause and `retry_safe=true`, so repeat it. `run` is never retried. `hc ls` keeps local rows when a remote times out and marks `partial`, terminal `availability` and machine `inventory_status` (`unavailable` for a down link, `unconfirmed` when a connected machine returned no rows); neither means its sessions ended. The `hc` in a c11 panel has no `hc keys`, on purpose: raw keys would skip the dialog guard that `send` and `send-key` keep.
+
+For a panel stuck `Reconnecting` after reopening, `~/Library/Logs/c11/hc-diagnostics.log` records `event=attachment_progress` with `panel_id`, `terminal`, `phase` (`resolve`, `headless`, `attach`), `outcome` and `wait_ms`. A restored terminal found live later still attaches without creating another. Every main-thread stall the hang monitor saw end is a `main.stall` event (`c11 events tail --filter type=main.stall`: `duration_ms`, `cause`, `panel_count`, `watchdog_late`); its stack is in `~/Library/Logs/c11/hang.log`.
+
+## Quit, relaunch and restore
+
+Quitting c11 detaches persistent terminals; their agents and jobs keep running. Reopening the app reattaches to the same sessions and does not send a resume command into a survivor. Only a confirmed ended session can resume a saved conversation, once, in a fresh terminal; after a reboot that includes panels in hidden workspaces, resumed headlessly one at a time, and an ended panel that was not resumed says why and offers Resume conversation, at this launch and later ones. Each end is decided once: a launch resumes by itself only an end no earlier session found, never one the previous session found and left. `c11 restore status` lists each ended panel's restore record and `c11 restore run --panel <ref>|--all` finishes one in the background, once, never into a running agent. An unavailable inventory is not evidence that a session ended. The application menu's **End All Sessions…** command explicitly ends this c11's sessions and their jobs, including background jobs and nohup processes (a terminal another c11 build labelled as its own keeps running); it keeps ended panels visible and reports any ends the backend has not confirmed. Nonpersistent fallback terminals still end when the app quits.
+
+**After a c11 relaunch.** Quitting or updating c11, or an app crash, detaches persistent terminals: their agents, background shells, watchers and `run_in_background` jobs keep running, and they get no notice. Two cases do end your processes: a `not kept` fallback terminal ends with the app, and a reboot or a holder loss ends every terminal. An agent c11 resumes in a fallback terminal gets one mailbox notice (from `c11`, topic `c11.relaunch`) at its first idle prompt, with the number of background jobs (process groups) measured under it at quit; an agent resumed after a reboot or holder loss gets none. Whenever your conversation was resumed rather than reattached, restart every watcher or monitor you depend on and re-resolve any short ref you kept. The notice is an ordinary envelope (`c11 mailbox recv --ack`), and a later relaunch replaces an unread one. External watchers can remap saved refs from the `app.relaunched` event, which lists the previous run's `old_ref` to UUID pairs ([events](events.md)).
+
+- **Surviving c11 terminals recover their agents.** A ready local HC inventory re-arms tty, process, resource, port, model and prompt-cache observers. A native Claude bridge can reconfirm the saved activity of its exact surviving process and session after offline hooks drain. Claude launched while the app is down keeps per-launch hooks only in an inherited c11-owned HC terminal; its native bridge restores the exact session and mail route when the app returns. Activity known only from the outage stays historical or unknown until a genuine live hook arrives. No tenant settings are written.
+- **A survivor's lifecycle is read, never restored.** The lifecycle c11 derived for a panel at quit is not carried into the relaunch; an activity the agent set itself (explicit or OSC) is, at its own precedence. Until the agent's next hook or edge, a surviving agent's working or idle is hc's status for its terminal: the agent's own last report, which hc kept while c11 was down. An agent that ended its turn while c11 was down reads idle (cold once its cache expires); one still mid-turn reads working; one hc has no word for reads idle.
+
+## Outside signals
+
+- **A signal c11 did not send** (a broad `pkill -f`, a `kill` aimed at the wrong pid) that ends a local terminal holding a live agent conversation keeps the panel: its banner names the signal and offers **Resume conversation**, and its restore record is `skipped`. c11 never resumes it unasked; `c11 restore run --panel <ref>` (or `--all`) brings it back. An exit, Ctrl-C on the terminal's root program, End Session, a shell with no live conversation, and a terminal on another machine are ordinary ends.
+- **A mass end** (3 or more kept panels ended by outside signals within 5 s) raises no flag and no notification: the restore strip shows it once with **Resume all**, which resumes each waiting panel once, in the background, about 1.5 s apart. Settings ▸ General, **Resume agents after a mass outside-signal end** (off by default), resumes them by itself.
+- Each end is logged as `event=outside_signal_end` (and `event=mass_signal_end`) in `hc-diagnostics.log`, and as `terminal.ended_by_signal` and `terminal.mass_signal_end` events ([events](events.md)). A watchdog outside c11 terminals is refused by the socket (`hc_caller_not_owned`); it reads `~/Library/Application Support/c11/events/events-*.ndjson` instead.
+- A local terminal's root is the login shell itself, which ignores SIGTERM; jobs you start in it still take signals.
+
+## When input is paused
+
+A write cut off midway (the link blinks while a message and its Return are going out) **pauses the panel's input**, so a half-sent message is never followed by more. A paused panel refuses `send` and `send-key` (`hc_input_inputFault`, or `hc_input_uncertain` for the cut write itself). Nothing resumes by itself. Recover in two steps:
+
+1. `c11 retry-input --panel <ref>` clears the pause; it never resends what was cut off. `reconnecting` means wait a few seconds and run it again; a panel that is not paused is refused (`hc_input_not_paused`).
+2. Clear what may be half-typed with `c11 send-key --panel <ref> ctrl+u` (or `escape` for a dialog), **the same `<ref>`**, read the screen, and only then send again.
+
+If `retry-input` keeps failing, tell the operator which panel and the error text.
+
+## Sending to a panel with no screen
+
+With a screen (the usual case) the prompt guard applies. With none (a locked Mac, a hidden workspace), hc's status decides: an agent idle, done or working, or a plain shell, receives the text; an agent **blocked** on a dialog, permission prompt or login, or one with no status, is refused, and the error names the status. `--allow-unguarded` overrides only when you know the target can take the text. The Return waits the same paste-settle delay as on screen, and a send to an idle or done agent reports submitted only once the agent's turn starts (`c11 guide sending`).
+
+## Skill copies
+
+`c11 skill install` copies the bundled skills listed in `skills/MANIFEST.json` into an agent harness's skills folder, only when asked, and stamps each copy `.c11-skill.json`; `c11 skill remove` removes only stamped copies. The earlier sidecar skill is part of this card and its pages now; installing or removing retires a copy of it that c11 stamped. c11 sends no telemetry and no crash reports.

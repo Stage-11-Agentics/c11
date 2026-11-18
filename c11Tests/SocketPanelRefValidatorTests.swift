@@ -264,6 +264,136 @@ final class TerminalReadBytesTests: XCTestCase {
     }
 }
 
+/// C11H-104: `close-panel --panel panel:145` printed `OK panel:146`. The reply
+/// minted the ref after the close had released the panel's durable number.
+/// It must name the ref the panel had before the close.
+@MainActor
+final class ClosePanelReplyRefTests: XCTestCase {
+    private func call(_ controller: TerminalController, _ method: String,
+                      _ params: [String: Any]) async throws -> [String: Any] {
+        let data = try JSONSerialization.data(withJSONObject: ["id": 104, "method": method, "params": params])
+        let command = String(decoding: data, as: UTF8.self)
+        let response = await Task.detached {
+            controller.processCommandUsingSocketExecutionPolicy(command)
+        }.value
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+    }
+
+    /// A closed panel's released number is minted again when something reads
+    /// its ref (`c11 family` does). The ref it had before must stop resolving
+    /// and stop being known, so C11-576's guard fails it closed instead of
+    /// letting a handler fall back to the focused panel.
+    func testAReMintedClosedPanelsOldRefIsNoLongerKnown() async throws {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        let registry = PanelAllocationRegistry(fileURL: nil)
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak registry] ids in
+            MainActor.assumeIsolated { registry?.releasePanels(ids) }
+        }
+        let controller = TerminalController.makeForTesting(panelAllocations: registry)
+        controller.setActiveWorkspaceManager(manager)
+        let created = try await call(controller, "panel.create", ["workspace_id": workspace.id.uuidString, "type": "terminal"])
+        let createdResult = try XCTUnwrap(created["result"] as? [String: Any], "\(created)")
+        let createdID = try XCTUnwrap((createdResult["panel_id"] as? String) ?? (createdResult["surface_id"] as? String))
+        let uuid = try XCTUnwrap(UUID(uuidString: createdID))
+        let refBefore = try XCTUnwrap(controller.v2Ref(kind: .surface, uuid: uuid) as? String)
+        XCTAssertTrue(controller.v2KnownRefs.contains(refBefore))
+
+        if workspace.focusedPanelId != uuid { workspace.focusPanel(uuid) }
+        let closed = try await call(controller, "panel.close", [:])
+        XCTAssertEqual(closed["ok"] as? Bool, true, "\(closed)")
+
+        let refNow = try XCTUnwrap(controller.v2Ref(kind: .surface, uuid: uuid) as? String)
+        XCTAssertNotEqual(refNow, refBefore, "the close no longer released the panel's number, so this test no longer re-mints")
+        XCTAssertNil(controller.v2ResolveHandleRef(refBefore))
+        XCTAssertFalse(controller.v2KnownRefs.contains(refBefore),
+                       "\(refBefore) names nothing now, so the target guard must not admit it")
+    }
+
+    func testClosePanelReportsTheRefThePanelHadBeforeTheClose() async throws {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        // The app releases a closed panel's durable number through this
+        // observer (`PanelAllocationRegistry.installCloseObserver`); wire the
+        // same release to this test's own registry so the close behaves as in
+        // the app. Held weakly: it does nothing once the test ends.
+        let registry = PanelAllocationRegistry(fileURL: nil)
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak registry] ids in
+            MainActor.assumeIsolated { registry?.releasePanels(ids) }
+        }
+        let controller = TerminalController.makeForTesting(panelAllocations: registry)
+        controller.setActiveWorkspaceManager(manager)
+        let initiallyFocused = try XCTUnwrap(workspace.focusedPanelId)
+        let created = try await call(controller, "panel.create", ["workspace_id": workspace.id.uuidString, "type": "terminal"])
+        XCTAssertEqual(created["ok"] as? Bool, true, "\(created)")
+        let createdResult = try XCTUnwrap(created["result"] as? [String: Any])
+        let createdID = try XCTUnwrap((createdResult["panel_id"] as? String) ?? (createdResult["surface_id"] as? String))
+        let uuid = try XCTUnwrap(UUID(uuidString: createdID))
+        let refBefore = "panel:\(controller.surfaceOrdinal(forSurfaceUUID: uuid))"
+        let liveTitle = try XCTUnwrap(workspace.panelTitle(panelId: uuid) ?? workspace.panels[uuid]?.displayTitle)
+
+        // Keep focus on its sibling and close this panel by UUID. This verifies
+        // the response echoes the requested target, not the focused panel.
+        workspace.focusPanel(initiallyFocused)
+        XCTAssertEqual(workspace.focusedPanelId, initiallyFocused)
+        let close = controller.v2PanelClose(params: [
+            "workspace_id": workspace.id.uuidString,
+            "surface_id": createdID,
+            "expected_title": liveTitle,
+        ])
+        let rawResult: Any
+        switch close {
+        case .ok(let value): rawResult = value
+        case .err(let code, let message, let data):
+            XCTFail("Close failed: \(code): \(message) \(String(describing: data))")
+            return
+        }
+        let result = try XCTUnwrap(LegacyWireAliases.completeResult(rawResult) as? [String: Any])
+        XCTAssertEqual((result["panel_id"] as? String) ?? (result["surface_id"] as? String), createdID)
+        let refAfter = try XCTUnwrap((result["panel_ref"] as? String) ?? (result["surface_ref"] as? String), "\(result)")
+        XCTAssertEqual(LegacyWireAliases.canonicalHandle(refAfter), LegacyWireAliases.canonicalHandle(refBefore),
+                       "close reported a ref the panel never had")
+        XCTAssertEqual(result["panel_title"] as? String, liveTitle, "close must echo the live panel title")
+        XCTAssertNotNil(result["workspace_id"], "existing close JSON fields remain present")
+        XCTAssertNotNil(result["workspace_ref"], "existing close JSON fields remain present")
+        XCTAssertNotNil(result["panel_id"], "existing close JSON fields remain present")
+        XCTAssertNotNil(result["panel_ref"], "existing close JSON fields remain present")
+        XCTAssertNotNil(result["window_id"], "existing close JSON fields remain present")
+        XCTAssertNotNil(result["window_ref"], "existing close JSON fields remain present")
+        XCTAssertNotNil(result["session_end"], "existing close JSON fields remain present")
+        XCTAssertNil(workspace.panels[uuid])
+    }
+
+    func testCloseTitleMismatchRefusesAndLeavesTargetOpen() async throws {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        let controller = TerminalController.makeForTesting(panelAllocations: PanelAllocationRegistry(fileURL: nil))
+        controller.setActiveWorkspaceManager(manager)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let liveTitle = try XCTUnwrap(workspace.panelTitle(panelId: panelId) ?? workspace.panels[panelId]?.displayTitle)
+        let mismatch = "not the live title: \(liveTitle)"
+        let sibling = try await call(controller, "panel.create", [
+            "workspace_id": workspace.id.uuidString,
+            "type": "terminal",
+        ])
+        XCTAssertEqual(sibling["ok"] as? Bool, true, "\(sibling)")
+
+        let close = controller.v2PanelClose(params: [
+            "workspace_id": workspace.id.uuidString,
+            "surface_id": panelId.uuidString,
+            "expected_title": mismatch,
+        ])
+        guard case .err(let code, _, _) = close else {
+            XCTFail("A title mismatch must refuse, got \(close)")
+            return
+        }
+        XCTAssertEqual(code, "title_mismatch")
+        XCTAssertEqual(workspace.panels[panelId]?.id, panelId,
+                       "A mismatch must leave the requested target panel open")
+        XCTAssertEqual(workspace.panels.count, 2)
+    }
+}
+
 /// C11-576: an explicit routing target that names nothing fails closed on
 /// every method, through the real command router (main-actor and socket-worker
 /// paths alike). Before the fix a short ref from an earlier launch read as an
@@ -280,14 +410,24 @@ final class ExplicitTargetFailClosedRouterTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
     }
 
+    private typealias Row = (method: String, key: String, extra: [String: Any])
+
     /// The methods behind new-panel, new-area, new-workspace, launch-agent,
     /// list-panels, send, send-key, the sidebar reads, browser and markdown
     /// open, metadata writes, rename and flags. Each row names the routing key
-    /// under test and the method's other required params.
-    private let rows: [(method: String, key: String, extra: [String: Any])] = [
+    /// under test and the method's other required params. Three tests share
+    /// the rows: each probe is a real router round trip, and all of them in
+    /// one test ran past XCTest's 60 s allowance when the build host stalled
+    /// (C11H-402).
+    private let readRows: [Row] = [
         ("panel.list", "workspace_id", [:]),
         ("area.list", "workspace_id", [:]),
         ("area.panels", "pane_id", [:]),
+        ("sidebar.state", "workspace_id", [:]),
+        ("panel.focus", "surface_id", [:]),
+    ]
+
+    private let createRows: [Row] = [
         ("panel.create", "workspace_id", ["type": "terminal"]),
         ("panel.create", "pane_id", ["type": "terminal"]),
         ("area.create", "workspace_id", ["direction": "right"]),
@@ -296,20 +436,21 @@ final class ExplicitTargetFailClosedRouterTests: XCTestCase {
         ("agent.launch", "workspace_id", ["type": "claude-code", "by": "operator"]),
         ("agent.launch", "pane_id", ["type": "claude-code", "by": "operator"]),
         ("agent.launch", "surface_id", ["type": "claude-code", "by": "operator"]),
-        ("panel.send_text", "surface_id", ["text": "echo stale"]),
-        ("panel.send_text", "workspace_id", ["text": "echo stale"]),
-        ("panel.send_key", "surface_id", ["key": "enter"]),
-        ("sidebar.state", "workspace_id", [:]),
         ("browser.open_split", "workspace_id", ["url": "about:blank"]),
         ("browser.open_split", "surface_id", ["url": "about:blank"]),
         ("markdown.open", "workspace_id", ["path": "/tmp/c11-576.md"]),
         ("markdown.open", "surface_id", ["path": "/tmp/c11-576.md"]),
+    ]
+
+    private let writeRows: [Row] = [
+        ("panel.send_text", "surface_id", ["text": "echo stale"]),
+        ("panel.send_text", "workspace_id", ["text": "echo stale"]),
+        ("panel.send_key", "surface_id", ["key": "enter"]),
         ("panel.set_metadata", "surface_id", ["metadata": ["title": "stale"]]),
         ("workspace.set_metadata", "workspace_id", ["metadata": ["k": "v"]]),
         ("workspace.rename", "workspace_id", ["title": "stale"]),
         ("panel.trigger_flash", "surface_id", [:]),
         ("flag.raise", "surface_id", ["reason": "stale", "by": "operator"]),
-        ("panel.focus", "surface_id", [:]),
     ]
 
     private func staleRef(for key: String) -> String {
@@ -337,11 +478,30 @@ final class ExplicitTargetFailClosedRouterTests: XCTestCase {
         )
     }
 
-    func testStaleRefsUnknownUUIDsIndexesAndNamesFailClosedOnEveryRow() async throws {
+    func testStaleRefsUnknownUUIDsIndexesAndNamesFailClosedOnReads() async throws {
+        try await assertEveryProbeFailsClosed(readRows)
+    }
+
+    func testStaleRefsUnknownUUIDsIndexesAndNamesFailClosedOnCreatesAndLaunches() async throws {
+        try await assertEveryProbeFailsClosed(createRows)
+    }
+
+    func testStaleRefsUnknownUUIDsIndexesAndNamesFailClosedOnSendsAndWrites() async throws {
+        try await assertEveryProbeFailsClosed(writeRows)
+    }
+
+    /// A stale ref, an unknown UUID and (for workspaces) an index and a name,
+    /// on each row: every probe is refused with not-found and changes nothing.
+    private func assertEveryProbeFailsClosed(_ rows: [Row]) async throws {
         let manager = WorkspaceManager()
         let selected = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
         _ = manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
         manager.selectWorkspace(selected)
+        // A directory that is not on disk: an area probe of agent.launch plans
+        // in the selected workspace's directory, and in the home directory that
+        // planning ran git and read the user's own project config.
+        selected.currentDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-576-absent-\(UUID().uuidString)", isDirectory: true).path
         let controller = TerminalController.makeForTesting()
         controller.setActiveWorkspaceManager(manager)
         // Mint the live refs so a live `workspace:1` is not what we probe.

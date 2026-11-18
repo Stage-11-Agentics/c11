@@ -43,7 +43,7 @@ workspace control plane for software maintainers and AI agents."*
 Distilled to one paragraph: **A Go CLI on the operator's laptop plus a
 Cloudflare Worker broker.** The CLI is named `crabbox`. You run
 `crabbox warmup` and get a fresh Linux VM from your choice of ~22
-providers (Hetzner, AWS, Azure, GCP, Hetzner microVMs called Sprites, E2B,
+providers (a budget VPS provider, AWS, Azure, GCP, VPS microVMs called Sprites, E2B,
 Modal, Daytona, Cloudflare Containers, RunPod, plain SSH to a static host,
 local Docker, …). The VM gets a cute slug like `blue-lobster`. From then
 on `crabbox run --id blue-lobster -- pnpm test` rsyncs your current dirty
@@ -74,7 +74,7 @@ From `how-it-works.html`, verbatim:
            │                                         │ provider API
            │                                         ▼
            │                          ┌──────────────────────────────┐
-           │ SSH (primary + fallback) │ Hetzner Cloud / AWS EC2      │
+           │ SSH (primary + fallback) │ budget VPS / AWS EC2      │
            └────────── rsync ────────►│ Ubuntu runner                │
                                       │ /work/crabbox/<lease>/<repo> │
                                       └──────────────────────────────┘
@@ -179,7 +179,7 @@ articulating for c11:
 
 - **The substrate is plural.** Crabbox doesn't pick a sandbox vendor for
   you. It abstracts over the entire current market (E2B, Modal, Daytona,
-  Sprites, Cloudflare Containers, plain Hetzner VMs, even your own static
+  Sprites, Cloudflare Containers, plain budget-VPS VMs, even your own static
   SSH host) and lets the operator pick. This is the same instinct as c11
   supporting Claude Code, Codex, Kimi, opencode etc. via `set-agent
   --type` rather than committing to one.
@@ -228,7 +228,7 @@ crabbox doctor      # local tool check + broker reachability + provider readines
 Then the canonical loop:
 
 ```bash
-crabbox warmup --provider hetzner --class standard       # → blue-lobster
+crabbox warmup --provider vps --class standard       # → blue-lobster
 crabbox run --id blue-lobster -- pnpm test
 crabbox run --id blue-lobster -- pnpm test:e2e            # warm; rsync is a no-op
 crabbox stop blue-lobster
@@ -240,7 +240,7 @@ The hosted broker at `crabbox.openclaw.ai` is **restricted to trusted
 OpenClaw maintainers.** If you `crabbox login` and it complains about org
 membership, your three options are:
 
-1. **Direct-provider mode** — point Crabbox at your own Hetzner / AWS /
+1. **Direct-provider mode** — point Crabbox at your own VPS / AWS /
    Azure / GCP / etc. credentials and skip the hosted broker. The provider
    call goes straight from your laptop. This is the realistic path for
    personal/Stage-11 use.
@@ -251,10 +251,10 @@ membership, your three options are:
    minutes of Cloudflare work, gives you the full multi-user/spend-cap
    model.
 
-3. **Ask to be added** — peter@openclaw.ai is the contact.
+3. **Ask to be added** — ask the project's maintainers.
 
 For first-time exploration I'd recommend **(1) direct-provider mode with
-Hetzner**. Hetzner is the cheapest of the brokered providers, the CX31 /
+a budget VPS**. A budget VPS is the cheapest of the brokered providers, the CX31 /
 CCX13 classes are plenty for most test suites, and you can get a feel for
 the loop without spinning up Cloudflare infrastructure. Move to
 self-hosted broker later if the spend-cap and multi-user features start
@@ -265,8 +265,8 @@ to matter.
 ```bash
 # In a dedicated pane:
 c11 rename-tab "🦀 blue-lobster"
-c11 set-description "Hetzner CX31, idle 30m, last cmd: pnpm test"
-crabbox warmup --provider hetzner --class standard --slug feature-x
+c11 set-description "budget VPS CX31, idle 30m, last cmd: pnpm test"
+crabbox warmup --provider vps --class standard --slug feature-x
 crabbox run --id feature-x -- pnpm test
 ```
 
@@ -340,8 +340,8 @@ spend caps.
 
 The combination of:
 1. Brokered provider credentials in a Cloudflare Worker (so neither the
-   laptop nor the leased VM holds AWS/Hetzner keys),
-2. Genuine pluralism over *both* raw cloud (Hetzner, AWS, Azure, GCP,
+   laptop nor the leased VM holds AWS/VPS keys),
+2. Genuine pluralism over *both* raw cloud (VPS, AWS, Azure, GCP,
    Proxmox, static SSH) *and* delegated sandbox SDKs (E2B, Modal,
    Daytona, Cloudflare, Tensorlake, Sprites, …),
 3. Ephemeral per-run lease lifecycle with spend caps in the Durable
@@ -361,7 +361,7 @@ abundance, but the middle-band broker-CLI shape is a one-tool slot today.
   `crabbox.openclaw.ai` and the integration matrix it enables are
   exposed.
 - **The brokered Worker is a single point of failure.** If the hosted
-  Worker goes dark, brokered-cloud providers (Hetzner/AWS/Azure/GCP)
+  Worker goes dark, brokered-cloud providers (VPS/AWS/Azure/GCP)
   become unusable until someone forks and stands up their own. Delegated
   providers (E2B, Daytona, Blacksmith Testbox) degrade more gracefully
   because Crabbox is a thin shim there.
@@ -370,7 +370,7 @@ abundance, but the middle-band broker-CLI shape is a one-tool slot today.
   For delegated providers, Crabbox's actual value-add is local ergonomics
   (slugs, claims, timing) rather than core functionality — you might
   reasonably reach for the provider's own CLI directly.
-- **Brokered creds = trust transfer.** Putting your Hetzner/AWS keys in
+- **Brokered creds = trust transfer.** Putting your VPS/AWS keys in
   someone else's Worker DO means trusting their custody, audit, and
   durability. Crabbox is open-source, so self-hosting the Worker is an
   out — but you lose the network-effect benefit and add operational
@@ -419,7 +419,7 @@ next ~90 days.** Specifically:
 
 - Ship the generic `crabbox` skill (Tier 0 below) — risk-free, lives
   forever regardless of what we choose.
-- Pilot the brokered-cloud path on a non-critical AWS or Hetzner sub-
+- Pilot the brokered-cloud path on a non-critical AWS or budget-VPS sub-
   account. Verify the broker actually works for our provider, that spend
   caps fire, that lease ID churn doesn't break the iteration loop.
 - Pilot a delegated-provider path (E2B or Blacksmith Testbox) and
@@ -455,7 +455,7 @@ The skill teaches Crabbox itself:
 - When to reach for it (heavy test suite, agent sandbox, parallel
   scenario runs, anything that would tie up the laptop for >2 min).
 - The canonical lifecycle (`warmup → run --id <slug> → stop`).
-- The provider-selection cheat sheet (Hetzner for cheapest Linux,
+- The provider-selection cheat sheet (a budget VPS for cheapest Linux,
   Blacksmith Testbox if you're already on Blacksmith CI, E2B for fast
   ephemeral microVM SDK semantics, Modal for GPU, static SSH for a box
   you own).
@@ -603,7 +603,7 @@ the lattice-orchestrator skill itself once Crabbox is past v1.0.
   least the medium term.
 
 - **Delegated providers vary wildly in capability.** SSH-based providers
-  (Hetzner, AWS, Azure, GCP, Proxmox, static SSH, local Docker) get the
+  (a budget VPS, AWS, Azure, GCP, Proxmox, static SSH, local Docker) get the
   full feature surface: `--script`, `--fresh-pr`, captures, downloads,
   `--full-resync`. Delegated providers (E2B, Modal, Daytona, Cloudflare
   Containers, Islo, Upstash, Tensorlake, RunPod, W&B, Railway) reject
@@ -630,7 +630,7 @@ the lattice-orchestrator skill itself once Crabbox is past v1.0.
 - **Cost-cap-respect is on you.** The broker enforces per-lease and
   per-org monthly caps. Direct-provider mode (no broker) doesn't have
   this guardrail; you're on the hook for paying attention to your
-  Hetzner / AWS bill. Set conservative `--ttl` and `--idle-timeout`
+  VPS / AWS bill. Set conservative `--ttl` and `--idle-timeout`
   values until you've calibrated.
 
 ---
@@ -647,8 +647,8 @@ moves.
    Crabbox heavily, lightly, or eventually swap it for Daytona's loop
    when it ships. Cost: ~1 hour. Value: durable.
 
-2. **Install on Hyperion**, `crabbox init` in a small repo, get the
-   loop working with **Hetzner direct-provider mode** (skip the hosted
+2. **Install on the laptop**, `crabbox init` in a small repo, get the
+   loop working with **budget-VPS direct-provider mode** (skip the hosted
    broker initially — fastest way to a working loop without the trust-
    transfer question). ~20 min. You'll know if the loop feels right
    within five runs.

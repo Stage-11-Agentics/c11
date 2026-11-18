@@ -5,7 +5,7 @@ judge reads the prose on every run; the deterministic gates read the machine con
 block at the bottom. Tune the pipeline by editing this file — not the workflow code.
 
 Spec: [Drawbridge 0.01.000](https://github.com/Stage-11-Agentics) (instantiation #1).
-Maintainer interview conducted 2026-06-03 with Atin Woodard.
+Maintainer interview conducted 2026-06-03 with Atin.
 
 ## Mission
 
@@ -81,11 +81,11 @@ Anything larger escalates no matter how clean it looks.
 
 1. **Zulip** (primary): channel `c11`, topic `drawbridge`, posted by the bot
    account. Token lives in the `ZULIP_BOT_API_KEY` repo secret — never in files.
-   **Reachability:** `zulip.stage11.ai` resolves only inside the tailnet (CoreDNS
+   **Reachability:** the Zulip host resolves only inside the tailnet (CoreDNS
    split DNS; no public record). The notify and sweep jobs join the tailnet via
    an ephemeral `tailscale/github-action` step: OAuth client (repo secrets
    `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`) mints `tag:ci` nodes that the ACL
-   pins to pine's 443/53 and that self-remove when the job ends.
+   pins to the git server's 443/53 and that self-remove when the job ends.
 2. **GitHub-native fallback** (automatic): when Zulip is unreachable, the notify
    job labels the item `drawbridge:notify-failed` and assigns the
    `fallback_assignee` from the machine config instead of failing the run red —
@@ -177,10 +177,10 @@ exact root-level path.
   "ci_ignored_paths": ["**/*.md", "docs/**", "notes/**", "Resources/Localizable.xcstrings"],
   "required_checks": ["workflow-guard-tests", "remote-daemon-tests", "web-typecheck"],
   "zulip": {
-    "site": "https://zulip.stage11.ai",
+    "site": "https://zulip.example.com",
     "channel": "c11",
     "topic": "drawbridge",
-    "bot_email": "mcp-bot@zulip.stage11.ai"
+    "bot_email": "mcp-bot@zulip.example.com"
   },
   "fallback_assignee": "BenevolentFutures"
 }

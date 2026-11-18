@@ -12,13 +12,13 @@ let workspaceSnapshotDateFormatter: ISO8601DateFormatter = {
     return f
 }()
 
-/// Filesystem I/O for snapshot envelopes. Writes always go to
-/// `~/.c11-snapshots/` (the rename from `cmux` → `c11` is the one-way
-/// door). Reads support a backwards-compat fallback to `~/.cmux-snapshots/`
-/// so operators who piloted an earlier iteration don't lose files; `c11
-/// list-snapshots` merges both locations and tags legacy rows.
+/// Filesystem I/O for snapshot envelopes. Reads and writes stay in
+/// `~/.c11-snapshots/`. c11 does not read `~/.c11-snapshots/` or
+/// `~/.cmux-snapshots/`, so a c11 list cannot offer those files and a
+/// c11 list cannot see c11's.
 ///
-/// Atomic writes use `Data.write(to:options:)` with `.atomic`. File names
+/// Writes go through `PrivateFileWriter`: a 0600 file from an exclusive
+/// no-follow temporary file, renamed into a 0700 store. File names
 /// are `<snapshot_id>.json` — the ULID stem is authoritative; renames on
 /// disk would desync the envelope's `snapshot_id` and must be avoided.
 ///
@@ -43,16 +43,15 @@ struct WorkspaceSnapshotStore: Sendable {
 
     // MARK: - Default locations
 
-    /// `~/.c11-snapshots/`. Writes always land here.
-    static func defaultDirectory() -> URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".c11-snapshots", isDirectory: true)
+    /// `~/.c11-snapshots/`. Reads and writes land here.
+    static func defaultDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        C11Identity.snapshotDirectory(home: home)
     }
 
-    /// `~/.cmux-snapshots/`. Read-only legacy path.
-    static func defaultLegacyDirectory() -> URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".cmux-snapshots", isDirectory: true)
+    /// Same directory as `defaultDirectory`. The cmux and c11 snapshot
+    /// trees are not a fallback.
+    static func defaultLegacyDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        defaultDirectory(home: home)
     }
 
     /// `~/.c11-snapshots/sets/`. Where `c11 snapshot --all` manifests
@@ -66,6 +65,30 @@ struct WorkspaceSnapshotStore: Sendable {
     }
 
     // MARK: - Write
+
+    /// The store root (`~/.c11-snapshots`) and every folder under it are
+    /// private: created 0700, an existing looser one tightened, a folder
+    /// another account owns refused (C11H-364 L15). A link this user owns (the
+    /// migration's adopted alias) is followed to a folder this user owns.
+    private func ensureStoreDirectory(_ directory: URL) throws {
+        try PrivateFileWriter.ensurePrivateDirectory(at: currentDirectory, allowOwnSymlink: true)
+        let root = currentDirectory.standardizedFileURL.path
+        var chain: [URL] = []
+        var cursor = directory.standardizedFileURL
+        while cursor.path != root, cursor.path.hasPrefix(root + "/") {
+            chain.append(cursor)
+            cursor = cursor.deletingLastPathComponent()
+        }
+        for folder in chain.reversed() {
+            try PrivateFileWriter.ensurePrivateDirectory(at: folder, allowOwnSymlink: true)
+        }
+    }
+
+    private func isInsideStore(_ directory: URL) -> Bool {
+        let root = currentDirectory.standardizedFileURL.path
+        let path = directory.standardizedFileURL.path
+        return path == root || path.hasPrefix(root + "/")
+    }
 
     enum StoreError: Error, Equatable, CustomStringConvertible {
         case createDirectoryFailed(String, underlying: String)
@@ -103,7 +126,7 @@ struct WorkspaceSnapshotStore: Sendable {
             case .decodeFailed(let path, let err):
                 return "snapshot decode failed at \(path): \(err)"
             case .notFound(let id):
-                return "snapshot id '\(id)' not found under ~/.c11-snapshots or ~/.cmux-snapshots"
+                return "snapshot id '\(id)' not found under ~/.c11-snapshots"
             case .invalidSnapshotId(let id):
                 return "snapshot id '\(id)' is not a safe filename stem"
             case .pathEscapesSnapshotRoots(let path):
@@ -135,8 +158,10 @@ struct WorkspaceSnapshotStore: Sendable {
     /// **Do not call this path from socket handlers.** An arbitrary
     /// `explicitPath` is an arbitrary-file-write primitive — a malicious
     /// agent could overwrite `~/.claude/settings.json` with snapshot
-    /// JSON. This entry point exists for the CLI (`c11 snapshot --out
-    /// <path>`) where the caller holds real shell permissions already.
+    /// JSON. No production caller passes a path outside the store:
+    /// `c11 snapshot --out <path>` copies in the CLI process through
+    /// `PrivateFileWriter.writeCopy`. A path outside the store gets the same
+    /// rules here (0600, missing folders 0700, a non-empty folder refused).
     /// Socket handlers must call `writeToDefaultDirectory(_:)` instead.
     @discardableResult
     func write(_ snapshot: WorkspaceSnapshotFile, to explicitPath: URL? = nil) throws -> URL {
@@ -147,8 +172,13 @@ struct WorkspaceSnapshotStore: Sendable {
             target = currentDirectory.appendingPathComponent("\(snapshot.snapshotId).json")
         }
         let parent = target.deletingLastPathComponent()
+        let isStoreTarget = explicitPath == nil || isInsideStore(parent)
         do {
-            try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+            if isStoreTarget {
+                try ensureStoreDirectory(parent)
+            } else {
+                try PrivateFileWriter.createMissingPrivateDirectories(at: parent)
+            }
         } catch {
             throw StoreError.createDirectoryFailed(parent.path, underlying: "\(error)")
         }
@@ -165,7 +195,14 @@ struct WorkspaceSnapshotStore: Sendable {
             throw StoreError.encodeFailed("\(error)")
         }
         do {
-            try data.write(to: target, options: .atomic)
+            // 0600 through an exclusive no-follow temporary file (C11H-364 L15).
+            // An operator-named `--out` that is a non-empty folder is refused,
+            // never deleted.
+            if isStoreTarget {
+                try PrivateFileWriter.write(data, to: target)
+            } else {
+                try PrivateFileWriter.writeCopy(data, to: target)
+            }
         } catch {
             throw StoreError.writeFailed(target.path, underlying: "\(error)")
         }
@@ -209,7 +246,7 @@ struct WorkspaceSnapshotStore: Sendable {
         let dir = defaultSetsDirectory()
         let target = dir.appendingPathComponent("\(set.setId).json")
         do {
-            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            try ensureStoreDirectory(dir)
         } catch {
             throw StoreError.createDirectoryFailed(dir.path, underlying: "\(error)")
         }
@@ -226,7 +263,7 @@ struct WorkspaceSnapshotStore: Sendable {
             throw StoreError.encodeFailed("\(error)")
         }
         do {
-            try data.write(to: target, options: .atomic)
+            try PrivateFileWriter.write(data, to: target)
         } catch {
             throw StoreError.writeFailed(target.path, underlying: "\(error)")
         }

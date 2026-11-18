@@ -76,3 +76,20 @@ enum QALaunchPolicy: Equatable {
         self == .on(.fresh)
     }
 }
+
+extension QALaunchPolicy {
+    /// The process hosts an XCTest bundle (`XCTestConfigurationFilePath`
+    /// is set): the c11Tests host app or the c11LogicTests runner. A real
+    /// launch, a QA launch and a c11UITests app-under-test don't carry it.
+    /// Workspace creation reads it to skip the first-run Welcome quad and the
+    /// default grid in tests (C11H-317); it is not QA mode and suppresses
+    /// nothing else.
+    static func isHostedTestProcess(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// `isHostedTestProcess()` for this process, read once.
+    static let currentProcessIsHostedTest = isHostedTestProcess()
+}

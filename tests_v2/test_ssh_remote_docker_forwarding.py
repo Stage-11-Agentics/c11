@@ -82,7 +82,26 @@ def _parse_host_port(docker_port_output: str) -> int:
     return int(last)
 
 
-def _curl_via_socks(proxy_port: int, target_url: str) -> str:
+def _proxy_auth(proxy: dict) -> tuple[str, str]:
+    auth = proxy.get("auth")
+    if not isinstance(auth, dict):
+        raise cmuxError(f"remote proxy status is missing auth credentials (Debug build required): {proxy}")
+    username = auth.get("username")
+    password = auth.get("password")
+    if not isinstance(username, str) or not username or not isinstance(password, str) or not password:
+        raise cmuxError(f"remote proxy auth should include username and password: {proxy}")
+    return username, password
+
+
+def _socks5_auth_request(auth: tuple[str, str]) -> bytes:
+    username = auth[0].encode("utf-8")
+    password = auth[1].encode("utf-8")
+    if not (0 < len(username) < 256 and 0 < len(password) < 256):
+        raise cmuxError("SOCKS5 username/password must be 1-255 bytes")
+    return b"\x01" + bytes([len(username)]) + username + bytes([len(password)]) + password
+
+
+def _curl_via_socks(proxy_port: int, auth: tuple[str, str], target_url: str) -> str:
     if shutil.which("curl") is None:
         raise cmuxError("curl is required for SOCKS proxy verification")
     proc = _run(
@@ -94,6 +113,8 @@ def _curl_via_socks(proxy_port: int, target_url: str) -> str:
             "5",
             "--socks5-hostname",
             f"127.0.0.1:{proxy_port}",
+            "--proxy-user",
+            f"{auth[0]}:{auth[1]}",
             target_url,
         ],
         check=False,
@@ -200,16 +221,22 @@ def _http_get_on_connected_socket(sock: socket.socket, host: str, port: int, pat
     return _read_http_response_from_connected_socket(sock)
 
 
-def _socks5_connect(proxy_host: str, proxy_port: int, target_host: str, target_port: int) -> socket.socket:
+def _socks5_connect(proxy_host: str, proxy_port: int, auth: tuple[str, str], target_host: str, target_port: int) -> socket.socket:
     sock = socket.create_connection((proxy_host, proxy_port), timeout=6)
     sock.settimeout(6)
 
-    # greeting: no-auth only
-    sock.sendall(b"\x05\x01\x00")
+    # greeting: username/password auth (RFC 1929)
+    sock.sendall(b"\x05\x01\x02")
     greeting = _recv_exact(sock, 2)
-    if greeting != b"\x05\x00":
+    if greeting != b"\x05\x02":
         sock.close()
         raise cmuxError(f"SOCKS5 greeting failed: {greeting!r}")
+
+    sock.sendall(_socks5_auth_request(auth))
+    auth_reply = _recv_exact(sock, 2)
+    if auth_reply != b"\x01\x00":
+        sock.close()
+        raise cmuxError(f"SOCKS5 username/password auth failed: {auth_reply!r}")
 
     try:
         host_bytes = socket.inet_aton(target_host)
@@ -234,7 +261,7 @@ def _socks5_connect(proxy_host: str, proxy_port: int, target_host: str, target_p
     return sock
 
 
-def _socks5_http_get_pipelined(proxy_host: str, proxy_port: int, target_host: str, target_port: int) -> str:
+def _socks5_http_get_pipelined(proxy_host: str, proxy_port: int, auth: tuple[str, str], target_host: str, target_port: int) -> str:
     sock = socket.create_connection((proxy_host, proxy_port), timeout=6)
     sock.settimeout(6)
     try:
@@ -249,7 +276,8 @@ def _socks5_http_get_pipelined(proxy_host: str, proxy_port: int, target_host: st
             atyp = b"\x03"
             addr = bytes([len(host_encoded)]) + host_encoded
 
-        greeting = b"\x05\x01\x00"
+        greeting = b"\x05\x01\x02"
+        auth_req = _socks5_auth_request(auth)
         connect_req = b"\x05\x01\x00" + atyp + addr + struct.pack("!H", target_port)
         http_get = (
             "GET / HTTP/1.1\r\n"
@@ -260,11 +288,14 @@ def _socks5_http_get_pipelined(proxy_host: str, proxy_port: int, target_host: st
 
         # Send greeting + CONNECT + first upstream payload in one write to exercise
         # SOCKS request parsing when pending bytes already exist in the handshake buffer.
-        sock.sendall(greeting + connect_req + http_get)
+        sock.sendall(greeting + auth_req + connect_req + http_get)
 
         greeting_reply = _recv_exact(sock, 2)
-        if greeting_reply != b"\x05\x00":
+        if greeting_reply != b"\x05\x02":
             raise cmuxError(f"SOCKS5 greeting failed: {greeting_reply!r}")
+        auth_reply = _recv_exact(sock, 2)
+        if auth_reply != b"\x01\x00":
+            raise cmuxError(f"SOCKS5 username/password auth failed: {auth_reply!r}")
         _read_socks5_connect_reply(sock)
         return _read_http_response_from_connected_socket(sock)
     finally:
@@ -274,12 +305,14 @@ def _socks5_http_get_pipelined(proxy_host: str, proxy_port: int, target_host: st
             pass
 
 
-def _http_connect_tunnel(proxy_host: str, proxy_port: int, target_host: str, target_port: int) -> socket.socket:
+def _http_connect_tunnel(proxy_host: str, proxy_port: int, auth: tuple[str, str], target_host: str, target_port: int) -> socket.socket:
     sock = socket.create_connection((proxy_host, proxy_port), timeout=6)
     sock.settimeout(6)
+    credentials = b64encode(f"{auth[0]}:{auth[1]}".encode("utf-8")).decode("ascii")
     request = (
         f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
         f"Host: {target_host}:{target_port}\r\n"
+        f"Proxy-Authorization: Basic {credentials}\r\n"
         "Proxy-Connection: Keep-Alive\r\n"
         "\r\n"
     ).encode("utf-8")
@@ -363,8 +396,8 @@ def _websocket_echo_on_connected_socket(sock: socket.socket, ws_host: str, ws_po
     return _read_server_text_frame(sock)
 
 
-def _websocket_echo_via_socks(proxy_port: int, ws_host: str, ws_port: int, message: str) -> str:
-    sock = _socks5_connect("127.0.0.1", proxy_port, ws_host, ws_port)
+def _websocket_echo_via_socks(proxy_port: int, auth: tuple[str, str], ws_host: str, ws_port: int, message: str) -> str:
+    sock = _socks5_connect("127.0.0.1", proxy_port, auth, ws_host, ws_port)
     try:
         return _websocket_echo_on_connected_socket(sock, ws_host, ws_port, message, "SOCKS proxy")
     finally:
@@ -374,8 +407,8 @@ def _websocket_echo_via_socks(proxy_port: int, ws_host: str, ws_port: int, messa
             pass
 
 
-def _websocket_echo_via_connect(proxy_port: int, ws_host: str, ws_port: int, message: str) -> str:
-    sock = _http_connect_tunnel("127.0.0.1", proxy_port, ws_host, ws_port)
+def _websocket_echo_via_connect(proxy_port: int, auth: tuple[str, str], ws_host: str, ws_port: int, message: str) -> str:
+    sock = _http_connect_tunnel("127.0.0.1", proxy_port, auth, ws_host, ws_port)
     try:
         return _websocket_echo_on_connected_socket(sock, ws_host, ws_port, message, "HTTP CONNECT proxy")
     finally:
@@ -596,6 +629,7 @@ def main() -> int:
             _must(bool(workspace_id), f"cmux ssh output missing workspace_id: {payload}")
 
             last_status, proxy_port = _wait_connected_proxy_port(client, workspace_id)
+            proxy_auth = _proxy_auth((last_status.get("remote") or {}).get("proxy") or {})
 
             daemon = ((last_status.get("remote") or {}).get("daemon") or {})
             _must(str(daemon.get("state") or "") == "ready", f"daemon should be ready in connected state: {last_status}")
@@ -639,7 +673,7 @@ def main() -> int:
             deadline_http = time.time() + 15.0
             while time.time() < deadline_http:
                 try:
-                    body = _curl_via_socks(proxy_port, f"http://127.0.0.1:{REMOTE_HTTP_PORT}/")
+                    body = _curl_via_socks(proxy_port, proxy_auth, f"http://127.0.0.1:{REMOTE_HTTP_PORT}/")
                 except Exception:
                     time.sleep(0.5)
                     continue
@@ -648,21 +682,21 @@ def main() -> int:
                 time.sleep(0.3)
 
             _must("cmux-ssh-forward-ok" in body, f"Forwarded HTTP endpoint returned unexpected body: {body[:120]!r}")
-            pipelined_body = _socks5_http_get_pipelined("127.0.0.1", proxy_port, "127.0.0.1", REMOTE_HTTP_PORT)
+            pipelined_body = _socks5_http_get_pipelined("127.0.0.1", proxy_port, proxy_auth, "127.0.0.1", REMOTE_HTTP_PORT)
             _must(
                 "cmux-ssh-forward-ok" in pipelined_body,
                 f"SOCKS pipelined greeting/connect+payload path returned unexpected body: {pipelined_body[:120]!r}",
             )
 
             ws_message = "cmux-ws-over-socks-ok"
-            echoed_message = _websocket_echo_via_socks(proxy_port, "127.0.0.1", REMOTE_WS_PORT, ws_message)
+            echoed_message = _websocket_echo_via_socks(proxy_port, proxy_auth, "127.0.0.1", REMOTE_WS_PORT, ws_message)
             _must(
                 echoed_message == ws_message,
                 f"WebSocket echo over SOCKS proxy mismatch: {echoed_message!r} != {ws_message!r}",
             )
 
             ws_connect_message = "cmux-ws-over-connect-ok"
-            echoed_connect = _websocket_echo_via_connect(proxy_port, "127.0.0.1", REMOTE_WS_PORT, ws_connect_message)
+            echoed_connect = _websocket_echo_via_connect(proxy_port, proxy_auth, "127.0.0.1", REMOTE_WS_PORT, ws_connect_message)
             _must(
                 echoed_connect == ws_connect_message,
                 f"WebSocket echo over CONNECT proxy mismatch: {echoed_connect!r} != {ws_connect_message!r}",

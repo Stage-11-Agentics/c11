@@ -46,7 +46,11 @@ def parse_settings_arg(argv: list[str]) -> dict:
     return json.loads(argv[index + 1])
 
 
-def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True, interactive: bool = False, native_disabled: bool = False) -> tuple[int, list[str], list[str], str, str]:
+def run_wrapper(*, socket_state: str, argv: list[str], in_c11: bool = True, writable_tmpdir: bool = True,
+                interactive: bool = False, native_disabled: bool = False, native_enabled: bool = False,
+                persistent: bool = False,
+                overrides: dict[str, str] | None = None,
+                plant: bool = False, observed: dict | None = None) -> tuple[int, list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="cmux-claude-wrapper-test-") as td:
         tmp = Path(td)
         home = tmp / "home"
@@ -100,7 +104,7 @@ exit 0
             test_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             test_socket.bind(socket_path)
 
-        env = os.environ.copy()
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("C11_", "CMUX_", "HC_"))}
         if writable_tmpdir:
             env["TMPDIR"] = str(tmp)
         else:
@@ -119,11 +123,32 @@ exit 0
         env["FAKE_CMUX_PING_OK"] = "1" if socket_state == "live" else "0"
         env["CLAUDECODE"] = "nested-session-sentinel"
         env["C11_CLAUDE_NATIVE_MAIL_DISABLED"] = "1" if native_disabled else "0"
+        if native_enabled:
+            env["C11_CLAUDE_NATIVE_MAIL"] = "1"
+        if persistent:
+            env.update(C11_PANEL_ID="00000000-0000-0000-0000-000000000009", C11_SOCKET_PATH=socket_path,
+                       HC_SESSION="c11-fixture", C11_HC_SESSION="c11-fixture",
+                       HC_SOCKET=str(home / ".local/share/c11/run/c11-fixture.sock"),
+                       C11_HC_SOCKET=str(home / ".local/share/c11/run/c11-fixture.sock"),
+                       HC_TERMINAL_SOCKET=str(home / ".local/share/c11/run/c11-fixture.sock"),
+                       HC_TERMINAL_ID="t9z")
+        env.update(overrides or {})
+
+        command = ["claude", *argv]
+        victim = tmp / "victim-settings.json"
+        if plant:
+            # C11H-354: another user plants a symlink at the name the wrapper
+            # used to write (`c11-claude-hooks-<its pid>.json`), pointing at a
+            # file the operator owns. `exec` keeps this shell's pid for the wrapper.
+            victim.write_text("original\n", encoding="utf-8")
+            env["FAKE_VICTIM"] = str(victim)
+            command = ["bash", "-c", 'ln -s "$FAKE_VICTIM" "$TMPDIR/c11-claude-hooks-$$.json" && exec claude "$@"',
+                       "bash", *argv]
 
         terminal = pty.openpty() if interactive else None
         try:
             proc = subprocess.run(
-                ["claude", *argv],
+                command,
                 cwd=tmp,
                 env=env,
                 stdin=terminal[1] if terminal else subprocess.DEVNULL,
@@ -147,10 +172,23 @@ exit 0
             raise AssertionError("wrapper wrote ~/.claude/settings.json")
         # Capture the actual per-launch settings payload before the isolated
         # temporary directory is removed. The wrapper now passes a file path.
+        if observed is not None:
+            observed["victim"] = victim.read_text(encoding="utf-8") if victim.exists() else None
+            observed["planted"] = [(link.name, os.readlink(link)) for link in tmp.glob("c11-claude-hooks-*.json")
+                                   if link.is_symlink()]
         if "--settings" in real_argv:
             settings_index = real_argv.index("--settings") + 1
             settings_arg = real_argv[settings_index]
             if not settings_arg.startswith("{"):
+                if observed is not None:
+                    path = Path(settings_arg)
+                    observed["settings_path"] = settings_arg
+                    observed["settings_is_symlink"] = path.is_symlink()
+                    observed["settings_mode"] = path.lstat().st_mode & 0o777
+                    observed["folder"] = str(path.parent)
+                    observed["folder_mode"] = path.parent.lstat().st_mode & 0o777
+                    observed["folder_owned"] = path.parent.lstat().st_uid == os.getuid()
+                    observed["tmp"] = str(tmp)
                 real_argv[settings_index] = Path(settings_arg).read_text(encoding="utf-8")
         return proc.returncode, real_argv, read_lines(cmux_log), proc.stderr.strip(), claudecode_value
 
@@ -181,6 +219,11 @@ def test_live_socket_injects_supported_hooks(failures: list[str]) -> None:
         "StopFailure", "PermissionRequest", "SubagentStart", "SubagentStop", "PreCompact",
     }
     expect(set(hooks.keys()) == expected_hooks, f"unexpected hook keys: {sorted(hooks.keys())}, expected {sorted(expected_hooks)}", failures)
+    # SessionStart runs this launch's own c11 (the one beside the wrapper), quoted, so a
+    # different c11 earlier on PATH cannot add its own launch text to the note.
+    session_start = hooks.get("SessionStart", [{}])[0].get("hooks", [{}])[0].get("command", "")
+    expect(session_start.startswith("'/") and session_start.endswith("/wrapper-bin/c11' claude-hook session-start"),
+           f"SessionStart should run the resolved c11, got {session_start!r}", failures)
     # PreToolUse should be async to avoid blocking tool execution.
     pre_tool_use_hooks = hooks.get("PreToolUse", [{}])[0].get("hooks", [{}])
     expect(
@@ -267,9 +310,34 @@ def test_unwritable_tmpdir_falls_back_to_inline_json(failures: list[str]) -> Non
     expect("PermissionRequest" in hooks, f"inline fallback: missing PermissionRequest in {sorted(hooks)}", failures)
 
 
+def test_planted_symlink_at_the_old_name_is_never_written_through(failures: list[str]) -> None:
+    observed: dict = {}
+    code, real_argv, _cmux_log, stderr, _claudecode = run_wrapper(
+        socket_state="live", argv=["hello"], plant=True, observed=observed
+    )
+    expect(code == 0, f"planted symlink: wrapper exited {code}: {stderr}", failures)
+    expect(len(observed.get("planted", [])) == 1,
+           f"planted symlink: the test did not plant its link: {observed}", failures)
+    expect(observed.get("victim") == "original\n",
+           f"planted symlink: the wrapper wrote through it into the operator's file: {observed.get('victim')!r}", failures)
+    expect("settings_path" in observed, f"planted symlink: hooks not passed as a file: {real_argv}", failures)
+    if "settings_path" in observed:
+        expect(not observed["settings_is_symlink"], f"planted symlink: hooks path is a symlink: {observed}", failures)
+        expect(observed["folder"] != observed["tmp"],
+               f"planted symlink: hooks file sits directly in the shared temp folder: {observed}", failures)
+        expect(observed["folder_mode"] == 0o700 and observed["folder_owned"],
+               f"planted symlink: hooks folder is not private: {oct(observed['folder_mode'])}", failures)
+        expect(observed["settings_mode"] & 0o077 == 0,
+               f"planted symlink: hooks file is readable by others: {oct(observed['settings_mode'])}", failures)
+    hooks = parse_settings_arg(real_argv).get("hooks", {})
+    expect("SessionStart" in hooks, f"planted symlink: hooks lost: {sorted(hooks)}", failures)
+
+
 def test_native_inbox_hook_is_interactive_only(failures: list[str]) -> None:
-    def native_hooks(arguments: list[str], interactive: bool = True) -> tuple[list[dict], list[str]]:
-        code, forwarded, _, stderr, _ = run_wrapper(socket_state="live", argv=arguments, interactive=interactive)
+    def native_hooks(arguments: list[str], interactive: bool = True,
+                     enabled: bool = True) -> tuple[list[dict], list[str]]:
+        code, forwarded, _, stderr, _ = run_wrapper(socket_state="live", argv=arguments, interactive=interactive,
+                                                    native_enabled=enabled)
         expect(code == 0, f"native hook {arguments}: {code} {stderr}", failures)
         hooks = parse_settings_arg(forwarded).get("hooks", {}).get("SessionStart", [])
         return [hook for group in hooks for hook in group["hooks"] if hook["command"] == "c11 claude-mailbox"], forwarded
@@ -288,11 +356,58 @@ def test_native_inbox_hook_is_interactive_only(failures: list[str]) -> None:
         expect(not hooks, f"noninteractive/passthrough launch gained inbox hook: {arguments}", failures)
     hooks, _ = native_hooks(["hello"], interactive=False)
     expect(not hooks, "piped launch gained an inbox hook", failures)
-    code, forwarded, _, stderr, _ = run_wrapper(socket_state="live", argv=["hello"], interactive=True, native_disabled=True)
+    hooks, _ = native_hooks(["hello"], enabled=False)
+    expect(not hooks, "interactive launch gained the inbox bridge without C11_CLAUDE_NATIVE_MAIL=1", failures)
+    code, forwarded, _, stderr, _ = run_wrapper(socket_state="live", argv=["hello"], interactive=True,
+                                                native_enabled=True, native_disabled=True)
     settings = parse_settings_arg(forwarded).get("hooks", {})
     expect(code == 0 and "Stop" in settings, f"native diagnostic opt-out changed lifecycle hooks: {stderr}", failures)
     expect(not any(h["command"] == "c11 claude-mailbox" for group in settings.get("SessionStart", []) for h in group["hooks"]),
            "native diagnostic opt-out still installed the bridge", failures)
+
+
+def test_offline_persistent_c11_keeps_launch_hooks(failures: list[str]) -> None:
+    for socket_state in ("missing", "stale"):
+        code, forwarded, _, stderr, _ = run_wrapper(socket_state=socket_state, argv=["hello"],
+                                                   persistent=True, interactive=True)
+        hooks = parse_settings_arg(forwarded).get("hooks", {})
+        expect(code == 0 and "Stop" in hooks and "UserPromptSubmit" in hooks and
+               not any(h["command"] == "c11 claude-mailbox" for g in hooks.get("SessionStart", []) for h in g["hooks"]),
+               f"offline {socket_state} default: wrong hooks: {sorted(hooks)} {stderr}", failures)
+        code, forwarded, _, stderr, _ = run_wrapper(socket_state=socket_state, argv=["hello"],
+                                                   persistent=True, interactive=True, native_enabled=True)
+        hooks = parse_settings_arg(forwarded).get("hooks", {})
+        expect(code == 0 and "Stop" in hooks and "UserPromptSubmit" in hooks,
+               f"offline {socket_state}: missing reporting hooks: {forwarded} {stderr}", failures)
+        native = [h for group in hooks.get("SessionStart", []) for h in group["hooks"]
+                  if h["command"] == "c11 claude-mailbox"]
+        expect(len(native) == 1 and native[0].get("async") is True,
+               f"offline {socket_state}: native bridge not installed: {native}", failures)
+        expect(forwarded[-1] == "hello", f"offline {socket_state}: original arguments changed", failures)
+
+
+def test_offline_exception_requires_the_owned_persistent_tuple(failures: list[str]) -> None:
+    for override in [
+        {"HC_SESSION": "default"}, {"C11_HC_SESSION": "c11-other"}, {"HC_SESSION": "c11-../../foreign"},
+        {"HC_SOCKET": "/foreign.sock"}, {"C11_HC_SOCKET": "/foreign.sock"}, {"HC_TERMINAL_SOCKET": "/foreign.sock"},
+        {"HC_TERMINAL_ID": ""}, {"HC_TERMINAL_ID": "remote/t12"}, {"HC_TERMINAL_ID": "t0"},
+        {"HC_TERMINAL_ID": "t1a"}, {"C11_PANEL_ID": "invalid"},
+        {"C11_CLAUDE_HOOKS_DISABLED": "1"}, {"CMUX_CLAUDE_HOOKS_DISABLED": "1"},
+    ]:
+        code, forwarded, _, stderr, _ = run_wrapper(socket_state="missing", argv=["hello"],
+                                                   persistent=True, interactive=True, overrides=override)
+        expect(code == 0 and forwarded == ["hello"],
+               f"invalid offline tuple {override}: did not pass through: {forwarded} {stderr}", failures)
+    # A tuple without C11_SOCKET_PATH. socket_guard gives every socket variable in a child's
+    # environment one path, so an empty value set in `overrides` reaches the wrapper as the
+    # fixture socket. bash runs BASH_ENV before the wrapper's first line; the case unsets it there.
+    with tempfile.TemporaryDirectory(prefix="c11-claude-wrapper-unset-") as td:
+        unset = Path(td) / "unset-c11-socket-path.sh"
+        unset.write_text("unset C11_SOCKET_PATH\n", encoding="utf-8")
+        code, forwarded, _, stderr, _ = run_wrapper(socket_state="missing", argv=["hello"], persistent=True,
+                                                   interactive=True, overrides={"BASH_ENV": str(unset)})
+        expect(code == 0 and forwarded == ["hello"],
+               f"invalid offline tuple without C11_SOCKET_PATH: did not pass through: {forwarded} {stderr}", failures)
 
 
 def main() -> int:
@@ -302,7 +417,10 @@ def main() -> int:
     test_stale_socket_skips_hook_injection(failures)
     test_outside_c11_passes_argv_through(failures)
     test_unwritable_tmpdir_falls_back_to_inline_json(failures)
+    test_planted_symlink_at_the_old_name_is_never_written_through(failures)
     test_native_inbox_hook_is_interactive_only(failures)
+    test_offline_persistent_c11_keeps_launch_hooks(failures)
+    test_offline_exception_requires_the_owned_persistent_tuple(failures)
 
     if failures:
         print("FAIL: claude wrapper regression checks failed")

@@ -7,7 +7,7 @@ Captured at the end of the privacy/telemetry sweep that retargeted PostHog and S
 - `2be8f36a` Sentry DSN (app + CLI) retargeted to `stage-11-kl` org.
 - `4fd49cbf` PostHog event names, env vars, platform tag renamed cmux → c11.
 - `ad52caee` PostHog `stage11-c11` project provisioned and key embedded.
-- `de54cfb4` Feedback default endpoint blanked; `founders@manaflow.com` → `hello@stage11.ai` everywhere it appears in user-visible copy (English + 6 translated locales + UI test); About-panel docs link → `https://github.com/Stage-11-Agentics/c11`; update-history commit links repointed off `manaflow-ai/cmux`.
+- `de54cfb4` Feedback default endpoint blanked; upstream's founders' address → Stage 11's public contact address everywhere it appears in user-visible copy (English + 6 translated locales + UI test); About-panel docs link → `https://github.com/Stage-11-Agentics/c11`; update-history commit links repointed off `manaflow-ai/cmux`.
 
 After these commits, no shipped Swift, plist, xcstrings, or entitlement file references `cmux.com`, `manaflow.com`, or `manaflow-ai/cmux` as a runtime target.
 
@@ -15,7 +15,7 @@ After these commits, no shipped Swift, plist, xcstrings, or entitlement file ref
 
 These are real work items, not just naming polish.
 
-1. **Stand up a Stage 11-owned feedback endpoint.** The default is now empty, so feedback submission no-ops in shipped builds. Either bring up an endpoint at `feedback.stage11.ai` (or wherever) and embed it as `defaultEndpoint`, or remove the feedback UI entirely and direct users to `hello@stage11.ai` / GitHub issues. Decision needed.
+1. **Stand up a Stage 11-owned feedback endpoint.** The default is now empty, so feedback submission no-ops in shipped builds. Either bring up an endpoint on a Stage 11 server (or wherever) and embed it as `defaultEndpoint`, or remove the feedback UI entirely and direct users to Stage 11's public contact address / GitHub issues. Decision needed.
 2. **Create a `stage11-c11` Sentry project.** The app currently uses the org's default DSN (`o4511028450295808/4511028453900288`). Cleaner to provision a dedicated `stage11-c11` project under `stage-11-kl` and swap the DSN. Needs the Sentry org auth token from 1Password (`Stage11-Platform / <sentry-item>` — first sweep couldn't find an item literally named `Sentry`; verify the actual item name).
 3. **Stand up a c11 docs site, or accept the GitHub repo as docs.** About-panel "Docs" link currently points at `https://github.com/Stage-11-Agentics/c11`. Fine for now, but if a real docs site exists later, point it there.
 4. **Push the `platform/posthog.md` doc update.** Local commit `bf7b83d` records the new `stage11-c11` project and revises the policy so public PostHog project keys live in the markdown rather than 1Password. Not yet pushed; this conversation only authorized direct-to-main on `c11`, not `platform`.

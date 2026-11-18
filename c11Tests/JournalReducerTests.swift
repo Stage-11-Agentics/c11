@@ -7,6 +7,14 @@ import XCTest
 #endif
 
 enum JournalTestData {
+    /// C11H-291: a spool whose write is not raced against the product's 25 ms
+    /// wall-clock budget, which a cold first write overruns under parallel load.
+    /// Tests of what a spooled draft does use it; the budget has its own test.
+    static func spool(_ layout: JournalStorageLayout) -> JournalSpool {
+        var spool = JournalSpool(layout: layout)
+        spool.budgets.spoolWriteNanos = 10_000_000_000
+        return spool
+    }
     static let panel = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     static let workspace = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     static let instance = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
@@ -421,7 +429,7 @@ final class JournalReducerTests: XCTestCase {
     /// SessionEnd hook finds no socket and spools, and the relaunched c11
     /// drains that spool before the resumed session's SessionStart. The drain
     /// restamps the row with this process's instance, but as history. The
-    /// start must still re-attach (seen live on Atlas, C11-398).
+    /// start must still re-attach (seen live on the build host, C11-398).
     func testResumeAfterADrainedSessionEndReattaches() throws {
         let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot)
         var earlier = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnCompleted), seq: 2).snapshot)
@@ -491,6 +499,118 @@ final class JournalReducerTests: XCTestCase {
         let working = JournalTestData.fold(live, JournalTestData.draft(.turnStarted), seq: 3).snapshot
         XCTAssertTrue(attached.stillHolds(projected: live, current: live))
         XCTAssertFalse(attached.stillHolds(projected: live, current: working))
+    }
+
+    // MARK: - C11H-322: a verified session start is the agent at its prompt
+
+    private let verifiedProcess = JournalRuntimeIdentity(pid: 4242, startTimeMicroseconds: 7_000_000)
+
+    private func verified(_ identity: JournalRuntimeIdentity? = nil, historical: Bool = false) -> JournalContext {
+        var context = JournalContext(eligible: true, historical: historical)
+        context.verifiedRuntimeIdentity = identity ?? verifiedProcess
+        return context
+    }
+
+    /// The 2026-11-15 reboot restore: every resumed Claude's SessionStart
+    /// landed live and re-attached its row as unknown, which projects no
+    /// activity and never reads the prompt cache. The panel's own verified
+    /// interactive Claude reports its start before it reads a first prompt.
+    func testAVerifiedResumeAfterARestartRestsAtItsPrompt() throws {
+        for before in [JournalTestData.draft(.turnStarted), JournalTestData.draft(.turnCompleted)] {
+            var earlier = try XCTUnwrap(JournalTestData.fold(nil, before, seq: 1).snapshot)
+            earlier.appInstanceID = UUID() // the row an earlier c11 process wrote
+            let resumed = JournalTestData.fold(earlier, sessionStart(), seq: 2, context: verified())
+            XCTAssertEqual(resumed.effect, .applied)
+            XCTAssertEqual(resumed.reason, "session_reattached")
+            let state = try XCTUnwrap(resumed.snapshot)
+            XCTAssertEqual(state.phase, .idle, "at its prompt, not unknown")
+            XCTAssertEqual(state.connection, .live)
+            XCTAssertEqual(state.confirmation, .confirmed)
+            XCTAssertNil(state.turnID)
+            XCTAssertNil(state.turnOutcome, "a start completes no turn")
+            XCTAssertFalse(state.terminalBarrier, "an ask in the next turn still opens")
+            XCTAssertEqual(state.runtimeIdentity, verifiedProcess)
+            // The harness's next edge still moves the turn.
+            XCTAssertEqual(JournalTestData.fold(state, JournalTestData.draft(.turnStarted), seq: 3).snapshot?.phase, .working)
+            XCTAssertEqual(JournalTestData.fold(state, JournalTestData.draft(.questionRequested), seq: 3).snapshot?.phase, .blocked)
+        }
+        // A fresh session's first start, too.
+        let fresh = JournalTestData.fold(nil, sessionStart(), seq: 1, context: verified())
+        XCTAssertEqual(fresh.reason, "session_observed")
+        XCTAssertEqual(fresh.snapshot?.phase, .idle)
+    }
+
+    /// A start c11 cannot tie to the panel's interactive process (relayed,
+    /// headless, unverified) or one drained from the spool says nothing about
+    /// the turn: C11-398's unknown stands.
+    func testAnUnverifiedOrDrainedStartStaysUnknown() throws {
+        var earlier = try XCTUnwrap(JournalTestData.fold(nil, JournalTestData.draft(.turnStarted), seq: 1).snapshot)
+        earlier.appInstanceID = UUID()
+        XCTAssertEqual(JournalTestData.fold(earlier, sessionStart(), seq: 2).snapshot?.phase, .unknown)
+        XCTAssertEqual(JournalTestData.fold(nil, sessionStart(), seq: 1).snapshot?.phase, .unknown)
+        let drained = JournalTestData.fold(earlier, sessionStart(), seq: 2, context: verified(historical: true))
+        XCTAssertEqual(drained.reason, "session_already_known")
+        XCTAssertEqual(drained.snapshot?.phase, .working)
+        // Another harness's start, even beside a verified identity (none sets one today), is not Claude's report.
+        var other = sessionStart()
+        other.agentKind = "opencode"
+        other.source = .plugin
+        other.adapter = .opencodePlugin
+        other.nativeEvent = "session.created"
+        XCTAssertEqual(JournalTestData.fold(nil, other, seq: 1, context: verified()).snapshot?.phase, .unknown)
+    }
+
+    /// The same session started again by a new process while this c11 runs
+    /// (`/exit` then `claude --resume`, or `restore run` after an outside
+    /// signal): its row was live here and SessionEnd disconnected it. Before
+    /// C11H-322 the start was only an identity update, and the journal stayed
+    /// disconnected until the next hook.
+    func testANewProcessResumingInThisProcessReconnectsAtItsPrompt() throws {
+        let first = JournalRuntimeIdentity(pid: 100, startTimeMicroseconds: 1_000_000)
+        let started = try XCTUnwrap(JournalTestData.fold(nil, sessionStart(), seq: 1, context: verified(first)).snapshot)
+        let working = try XCTUnwrap(JournalTestData.fold(started, JournalTestData.draft(.turnStarted), seq: 2,
+                                                         context: verified(first)).snapshot)
+        var end = JournalTestData.draft(.sessionEnded)
+        end.nativeEvent = "SessionEnd"
+        let ended = try XCTUnwrap(JournalTestData.fold(working, end, seq: 3).snapshot)
+        XCTAssertEqual(ended.connection, .disconnected)
+        XCTAssertNotNil(ended.sessionEndedAtMs)
+
+        let resumed = JournalTestData.fold(ended, sessionStart(), seq: 4, context: verified())
+        XCTAssertEqual(resumed.effect, .applied)
+        XCTAssertEqual(resumed.reason, "session_process_changed")
+        let state = try XCTUnwrap(resumed.snapshot)
+        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.connection, .live)
+        XCTAssertEqual(state.confirmation, .confirmed)
+        XCTAssertNil(state.sessionEndedAtMs, "teardown evidence belongs to the new process")
+        XCTAssertEqual(state.runtimeIdentity, verifiedProcess)
+
+        // The same process starting again (a `/resume` back to it) is already known.
+        let again = JournalTestData.fold(state, sessionStart(), seq: 5, context: verified())
+        XCTAssertEqual(again.reason, "session_already_known")
+        XCTAssertEqual(again.snapshot?.phase, .idle)
+        let busy = try XCTUnwrap(JournalTestData.fold(state, JournalTestData.draft(.turnStarted), seq: 5,
+                                                      context: verified()).snapshot)
+        XCTAssertEqual(JournalTestData.fold(busy, sessionStart(), seq: 6, context: verified()).snapshot?.phase, .working,
+                       "a start from the process already running a turn never ends it")
+    }
+
+    /// The gate sees the same attach edge as before (C11-398): a verified
+    /// start that lands idle rings only through the screen read.
+    func testAVerifiedStartIsStillAnAttachEdge() throws {
+        let start = sessionStart()
+        var earlier = try XCTUnwrap(JournalTestData.fold(nil, JournalTestData.draft(.turnStarted), seq: 1).snapshot)
+        earlier.appInstanceID = UUID()
+        let fold = JournalTestData.fold(earlier, start, seq: 2, context: verified())
+        XCTAssertEqual(fold.snapshot?.phase, .idle)
+        let edge = try XCTUnwrap(JournalMailboxBoundary.make(draft: start, result: mailboxResult(start, fold),
+                                                             historical: false, pid: 4242))
+        XCTAssertTrue(edge.attached)
+        XCTAssertFalse(edge.working)
+        XCTAssertTrue(edge.stillHolds(projected: fold.snapshot, current: fold.snapshot))
+        let working = JournalTestData.fold(fold.snapshot, JournalTestData.draft(.turnStarted), seq: 3).snapshot
+        XCTAssertFalse(edge.stillHolds(projected: fold.snapshot, current: working))
     }
 }
 
@@ -599,6 +719,200 @@ final class JournalMovedPanelAppendTests: XCTestCase {
 
         XCTAssertEqual(result.receipt.projectionEffect, .applied)
         XCTAssertEqual(try XCTUnwrap(store.current(owner: owner)).workspaceID, live)
+    }
+}
+
+/// Restart tests use the real SQLite baseline, offline spool, coordinator and
+/// projection callbacks. Only the kernel-authenticated process facts are fake.
+final class JournalRuntimeContinuityTests: XCTestCase {
+    private let process = JournalRuntimeIdentity(pid: 4242, startTimeMicroseconds: 123_000_000)
+    private var directory: URL!
+    private var now: Int64!
+
+    override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("c11-journal-continuity-\(UUID().uuidString)")
+        now = Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: directory) }
+
+    private var layout: JournalStorageLayout { JournalStorageLayout(directory: directory) }
+
+    private func restored(kind: JournalKind = .turnStarted, identity: Bool = true)
+        throws -> (JournalCoordinator, JournalStore, JournalSnapshot) {
+        let at = now!
+        var original: JournalStore? = try JournalStore(layout: layout, clock: { at })
+        var draft = JournalTestData.draft(kind, at: at)
+        draft.turnID = "surviving-turn"
+        if kind == .questionRequested { draft.requestID = "waiting-question" }
+        var context = JournalContext(eligible: true)
+        if identity { context.verifiedRuntimeIdentity = process }
+        _ = try original!.append(draft: draft, context: context)
+        let baseline = try XCTUnwrap(original!.current(owner: draft.owner!))
+        original = nil
+        let store = try JournalStore(layout: layout, clock: { at + 100 })
+        let coordinator = JournalCoordinator(store: store)
+        coordinator.register(panelID: baseline.owner.panelID, workspaceID: JournalTestData.workspace)
+        coordinator.setOwner(panelID: baseline.owner.panelID, owner: baseline.owner)
+        coordinator.start { _, _, _, _ in }
+        awaitProjection(coordinator) { $0?.isHistorical == true }
+        return (coordinator, store, baseline)
+    }
+
+    private func finishStartup(_ coordinator: JournalCoordinator) {
+        coordinator.startupSeedReady()
+        coordinator.startupPanelsReady()
+    }
+
+    /// Drains the coordinator's startup work, then checks the projection every
+    /// 2 ms (spinning the run loop for any main-queue hop) for up to 1 s; a
+    /// clean check settles in milliseconds. XCTNSPredicateExpectation polls
+    /// about once a second, which made each positive check cost a second (C11H-30).
+    private func awaitProjection(_ coordinator: JournalCoordinator,
+                                 _ condition: @escaping (JournalSnapshot?) -> Bool,
+                                 inverted: Bool = false,
+                                 file: StaticString = #filePath, line: UInt = #line) {
+        coordinator.synchronizeRuntimeForTesting()
+        if inverted {
+            XCTAssertFalse(condition(coordinator.snapshot(panelID: JournalTestData.panel)), file: file, line: line)
+            return
+        }
+        let deadline = Date().addingTimeInterval(1)
+        while !condition(coordinator.snapshot(panelID: JournalTestData.panel)), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.002))
+        }
+        XCTAssertTrue(condition(coordinator.snapshot(panelID: JournalTestData.panel)),
+                      "projection did not reach the expected state within 1 s", file: file, line: line)
+    }
+
+    func testSurvivingProcessReconfirmsAfterDrainWithoutNewEventOrClock() throws {
+        let (coordinator, store, baseline) = try restored()
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: UUID())
+        awaitProjection(coordinator, { $0?.isHistorical == false }, inverted: true)
+        finishStartup(coordinator)
+        awaitProjection(coordinator) { $0?.isHistorical == false }
+        var expected = baseline
+        expected.connection = .live
+        expected.confirmation = .confirmed
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID), expected)
+        XCTAssertEqual(try store.current(owner: baseline.owner), baseline, "reconnect is not a stored lifecycle event")
+        XCTAssertEqual(try store.readPage(after: 0).count, 1)
+    }
+
+    func testStopWhileDownWinsBeforeReconfirmationAndLateDrainStillApplies() throws {
+        let (coordinator, store, baseline) = try restored()
+        var stop = JournalTestData.draft(.turnCompleted, at: now)
+        stop.turnID = baseline.turnID
+        XCTAssertTrue(JournalTestData.spool(layout).write(stop))
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: UUID())
+        finishStartup(coordinator)
+        awaitProjection(coordinator) { $0?.phase == .idle && $0?.isHistorical == false }
+        let stored = try XCTUnwrap(store.current(owner: baseline.owner))
+        XCTAssertEqual(stored.lastLiveSequence, 0, "continuity cannot suppress offline hooks")
+        XCTAssertEqual(stored.runtimeIdentity, process)
+        XCTAssertEqual(try store.readPage(after: 0).count, 2)
+        var late = JournalTestData.draft(.turnStarted, at: now)
+        late.turnID = "later-offline-turn"
+        let result = try coordinator.append(late, historical: true)
+        XCTAssertEqual(result.receipt.projectionEffect, .applied)
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID)?.phase, .working)
+    }
+
+    func testBlockedRequestAndItsOriginalClockSurviveReconfirmation() throws {
+        let (coordinator, _, baseline) = try restored(kind: .questionRequested)
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: UUID())
+        finishStartup(coordinator)
+        awaitProjection(coordinator) { $0?.isHistorical == false }
+        var expected = baseline
+        expected.connection = .live
+        expected.confirmation = .confirmed
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID), expected)
+        XCTAssertEqual(expected.requestID, "waiting-question")
+    }
+
+    func testDifferentProcessBirthAndDifferentSessionStayHistorical() throws {
+        let (coordinator, _, baseline) = try restored()
+        finishStartup(coordinator)
+        for identity in [JournalRuntimeIdentity(pid: process.pid, startTimeMicroseconds: process.startTimeMicroseconds + 1),
+                         JournalRuntimeIdentity(pid: process.pid + 1, startTimeMicroseconds: process.startTimeMicroseconds)] {
+            coordinator.runtimeConnected(owner: baseline.owner, identity: identity, subscriptionID: UUID())
+            awaitProjection(coordinator, { $0?.isHistorical == false }, inverted: true)
+        }
+        let other = JournalOwner(panelID: baseline.owner.panelID, agentKind: "claude-code", sessionID: "another-session")
+        coordinator.runtimeConnected(owner: other, identity: process, subscriptionID: UUID())
+        awaitProjection(coordinator, { $0?.isHistorical == false }, inverted: true)
+    }
+
+    func testMissingIdentityInOlderBaselineCannotBeReconfirmed() throws {
+        let (coordinator, _, baseline) = try restored(identity: false)
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: UUID())
+        finishStartup(coordinator)
+        awaitProjection(coordinator, { $0?.isHistorical == false }, inverted: true)
+        var encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any])
+        encoded.removeValue(forKey: "runtimeIdentity")
+        XCTAssertNil(try JSONDecoder().decode(JournalSnapshot.self, from: JSONSerialization.data(withJSONObject: encoded)).runtimeIdentity)
+    }
+
+    func testSessionEndWhileDownRevokesContinuity() throws {
+        let (coordinator, store, baseline) = try restored()
+        var end = JournalTestData.draft(.sessionEnded, at: now)
+        end.nativeEvent = "SessionEnd"
+        XCTAssertTrue(JournalTestData.spool(layout).write(end))
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: UUID())
+        finishStartup(coordinator)
+        awaitProjection(coordinator) { $0?.lastSequence == baseline.lastSequence + 1 }
+        XCTAssertNil(try store.current(owner: baseline.owner)?.runtimeIdentity)
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID)?.isHistorical, true)
+    }
+
+    /// C11H-322: the resumed process is verified behind its hook, so it is at
+    /// its prompt, live; the old process's continuity never repaints working.
+    func testSameSessionResumeRestsAtItsPromptWithNewProcessEvidence() throws {
+        let (coordinator, _, baseline) = try restored()
+        let resumed = JournalRuntimeIdentity(pid: process.pid + 1, startTimeMicroseconds: process.startTimeMicroseconds + 1)
+        var start = JournalTestData.draft(.sessionStarted, at: now)
+        start.nativeEvent = "SessionStart"
+        let result = try coordinator.append(start, interactivePID: resumed.pid, verifiedRuntimeIdentity: resumed)
+        XCTAssertEqual(result.changedSnapshot?.phase, .idle)
+        XCTAssertEqual(result.changedSnapshot?.connection, .live)
+        XCTAssertEqual(result.changedSnapshot?.runtimeIdentity, resumed)
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: UUID())
+        finishStartup(coordinator)
+        awaitProjection(coordinator, { $0?.phase == .working }, inverted: true)
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID)?.phase, .idle)
+    }
+
+    func testReplacementAndDisconnectCannotRetainAnOldConfirmation() throws {
+        let (coordinator, _, baseline) = try restored(kind: .turnCompleted)
+        let old = UUID(), current = UUID()
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: old)
+        finishStartup(coordinator)
+        awaitProjection(coordinator) { $0?.isHistorical == false && $0?.phase == .idle }
+        coordinator.runtimeConnected(owner: baseline.owner, identity: process, subscriptionID: current)
+        coordinator.runtimeDisconnected(panelID: baseline.owner.panelID, subscriptionID: old)
+        coordinator.synchronizeRuntimeForTesting()
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID)?.isHistorical, false)
+        coordinator.runtimeConnected(owner: baseline.owner,
+                                     identity: .init(pid: process.pid + 1, startTimeMicroseconds: 1),
+                                     subscriptionID: old, isCurrent: { false })
+        coordinator.synchronizeRuntimeForTesting()
+        XCTAssertEqual(coordinator.snapshot(panelID: baseline.owner.panelID)?.isHistorical, false)
+        coordinator.runtimeDisconnected(panelID: baseline.owner.panelID, subscriptionID: current)
+        awaitProjection(coordinator) { $0?.isHistorical == true }
+    }
+
+    func testRuntimeIdentityRequiresLiveGenuineHookEvidence() throws {
+        var context = JournalContext(eligible: true)
+        context.verifiedRuntimeIdentity = process
+        let start = JournalTestData.draft(.turnStarted)
+        let live = try XCTUnwrap(JournalTestData.fold(nil, start, seq: 1, context: context).snapshot)
+        XCTAssertEqual(live.runtimeIdentity, process)
+        context.historical = true
+        XCTAssertNil(JournalTestData.fold(nil, start, seq: 1, context: context).snapshot?.runtimeIdentity)
+        let unverified = JournalTestData.fold(live, JournalTestData.draft(.turnCompleted), seq: 2,
+                                             context: JournalContext(eligible: true)).snapshot
+        XCTAssertNil(unverified?.runtimeIdentity)
     }
 }
 

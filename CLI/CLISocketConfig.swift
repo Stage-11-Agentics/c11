@@ -28,17 +28,11 @@ enum CLIIDFormat: String {
 }
 
 enum SocketPasswordResolver {
-    private static let service = "com.cmuxterm.app.socket-control"
+    private static let service = C11Identity.keychainService
     private static let account = "local-socket-password"
-    // Must match the app's SocketControlPasswordStore.directoryName ("c11") so
-    // the CLI reads the password file the app actually writes. The legacy name
-    // was "c11mux"; the app moved to "c11" (StateDirectoryMigration.currentName)
-    // and the app's symlink covers migrated machines, but a fresh install never
-    // creates a `c11mux` dir — reading it there returned nil and the password
-    // was silently invisible to the CLI. `legacyDirectoryName` stays as a
-    // read-only fallback for any un-migrated checkout.
-    private static let directoryName = "c11"
-    private static let legacyDirectoryName = "c11mux"
+    // c11 reads only its own password file. c11 and c11mux directories are
+    // another product's state and are not a fallback.
+    private static let directoryName = C11Identity.passwordDirectoryName
     private static let fileName = "socket-control-password"
 
     static func resolve(explicit: String?, socketPath: String) -> String? {
@@ -90,20 +84,15 @@ enum SocketPasswordResolver {
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
-        // Canonical "c11" dir first; fall back to the legacy "c11mux" dir for
-        // un-migrated checkouts where the app's migration symlink is absent.
-        for dir in [directoryName, legacyDirectoryName] {
-            let passwordURL = appSupport
-                .appendingPathComponent(dir, isDirectory: true)
-                .appendingPathComponent(fileName, isDirectory: false)
-            guard let data = try? Data(contentsOf: passwordURL),
-                  let value = String(data: data, encoding: .utf8),
-                  let normalizedValue = normalized(value) else {
-                continue
-            }
-            return normalizedValue
+        let passwordURL = appSupport
+            .appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent(fileName, isDirectory: false)
+        guard let data = try? Data(contentsOf: passwordURL),
+              let value = String(data: data, encoding: .utf8),
+              let normalizedValue = normalized(value) else {
+            return nil
         }
-        return nil
+        return normalizedValue
     }
 
     static func keychainServices(
@@ -120,7 +109,7 @@ enum SocketPasswordResolver {
         socketPath: String,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String? {
-        if let tag = normalized(environment["CMUX_TAG"]) {
+        if let tag = normalized(environment["C11_TAG"] ?? environment["CMUX_TAG"]) {
             let scoped = sanitizeScope(tag)
             if !scoped.isEmpty {
                 return scoped
@@ -128,7 +117,7 @@ enum SocketPasswordResolver {
         }
 
         let candidate = URL(fileURLWithPath: socketPath).lastPathComponent
-        let prefixes = ["cmux-debug-", "cmux-"]
+        let prefixes = ["c11-debug-", "c11-"]
         for prefix in prefixes {
             guard candidate.hasPrefix(prefix), candidate.hasSuffix(".sock") else { continue }
             let start = candidate.index(candidate.startIndex, offsetBy: prefix.count)
@@ -160,6 +149,9 @@ enum SocketPasswordResolver {
     }
 
     private static func loadFromKeychain(socketPath: String) -> String? {
+        #if !(canImport(Security) && canImport(LocalAuthentication))
+        return nil
+        #else
         for service in keychainServices(socketPath: socketPath) {
             let authContext = LAContext()
             authContext.interactionNotAllowed = true
@@ -187,6 +179,7 @@ enum SocketPasswordResolver {
             return password
         }
         return nil
+        #endif
     }
 }
 
@@ -194,33 +187,88 @@ enum CLISocketPathSource {
     case explicitFlag
     case environment
     case implicitDefault
+    /// A socket variable names a path that is not c11's (C11H-282). The path
+    /// is kept, never swapped for discovery, and `SocketClient` refuses it.
+    case refusedEnvironment
+}
+
+/// The socket variables, read in precedence order (C11H-282). The first one
+/// naming c11's own socket is used. One naming another product's socket (the
+/// c11h line's, cmux's) is skipped: its terminals export it, and terminals c11
+/// adopted from c11h still carry it. The first naming any other path is
+/// refused when the CLI would connect, with a message naming the variable, the
+/// path and the rule, so a script never drives a different c11 without a word.
+enum CLISocketEnvironmentOverride: Equatable {
+    static let keys = ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"]
+
+    case none
+    case own(key: String, path: String)
+    case foreign(key: String, path: String)
+
+    /// The environment before `mirrorC11CmuxEnv` copied each `CMUX_` variable
+    /// to its `C11_` twin. Only the refusal's wording reads it.
+    static var launchEnvironment: [String: String]?
+
+    static func read(_ environment: [String: String]) -> CLISocketEnvironmentOverride {
+        for key in keys {
+            guard let raw = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else { continue }
+            switch C11Identity.socketOverrideKind(raw) {
+            case .own: return .own(key: key, path: raw)
+            case .otherProduct: continue
+            case .foreign: return .foreign(key: namedKey(key, path: raw), path: raw)
+            }
+        }
+        return .none
+    }
+
+    /// A 1.x script sets `CMUX_SOCKET_PATH`; the mirror puts the same path in
+    /// `C11_SOCKET_PATH`, which wins. Name the variable the caller set.
+    private static func namedKey(_ key: String, path: String) -> String {
+        guard let launch = launchEnvironment else { return key }
+        let setAtLaunch = { (name: String) in
+            launch[name]?.trimmingCharacters(in: .whitespacesAndNewlines) == path
+        }
+        if setAtLaunch(key) { return key }
+        return keys.first(where: setAtLaunch) ?? key
+    }
+
+    var ownPath: String? {
+        if case .own(_, let path) = self { return path }
+        return nil
+    }
+
+    var refusalMessage: String? {
+        guard case .foreign(let key, let path) = self else { return nil }
+        return Self.refusalMessage(key: key, path: path)
+    }
+
+    static func refusalMessage(key: String, path: String) -> String {
+        String(
+            localized: "cli.socket.overrideRefused",
+            defaultValue: "\(key)=\(path) is not a c11 socket, so c11 will not use it. A c11 socket is in ~/Library/Application Support/c11/, or in /tmp named c11.sock, c11-*.sock or c11.*.sock. Rename the socket, or pass --socket \(path) to use this path."
+        )
+    }
 }
 
 enum CLISocketPathResolver {
-    // Must match the app's SocketControlSettings (socketDirectoryName "c11",
-    // stableSocketFileName "c11.sock") so the CLI's implicit default and the
-    // last-socket-path breadcrumb read the same location the app writes.
-    private static let appSupportDirectoryName = "c11"
-    private static let stableSocketFileName = "c11.sock"
+    // Matches C11Identity: Application Support/c11/c11.sock, with
+    // /tmp/c11.sock only when Application Support cannot be resolved.
+    // c11 and cmux sockets are never candidates.
     private static let lastSocketPathFileName = "last-socket-path"
-    // The running app writes its breadcrumb to /tmp/c11-last-socket-path (see
-    // SocketControlSettings.legacyLastSocketPathFile). The CLI must read the same
-    // path; the older /tmp/cmux-last-socket-path is kept only for back-compat.
-    private static let c11LastSocketPathFile = "/tmp/c11-last-socket-path"
-    static let legacyDefaultSocketPath = "/tmp/cmux.sock"
-    private static let fallbackSocketPath = "/tmp/cmux-debug.sock"
-    private static let stagingSocketPath = "/tmp/cmux-staging.sock"
-    private static let legacyLastSocketPathFile = "/tmp/cmux-last-socket-path"
+    static let legacyDefaultSocketPath = C11Identity.tmpStableSocketPath
 
     static var defaultSocketPath: String {
-        let stablePath: String? = stableSocketDirectoryURL()?
-            .appendingPathComponent(stableSocketFileName, isDirectory: false)
-            .path
-        return stablePath ?? legacyDefaultSocketPath
+        if let directory = stableSocketDirectoryURL() {
+            return directory
+                .appendingPathComponent(C11Identity.stableSocketFileName, isDirectory: false)
+                .path
+        }
+        return C11Identity.tmpStableSocketPath
     }
 
     static func isImplicitDefaultPath(_ path: String) -> Bool {
-        path == defaultSocketPath || path == legacyDefaultSocketPath
+        path == defaultSocketPath || path == C11Identity.tmpStableSocketPath
     }
 
     static func resolve(
@@ -228,113 +276,103 @@ enum CLISocketPathResolver {
         source: CLISocketPathSource,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String {
-        guard source == .implicitDefault else {
+        if source == .explicitFlag || source == .refusedEnvironment {
             return requestedPath
         }
-
-        let candidates = dedupe(candidatePaths(requestedPath: requestedPath, environment: environment))
-
-        // Prefer sockets that are currently accepting connections.
-        for path in candidates where canConnect(to: path) {
-            return path
+        if source == .environment, C11Identity.isOwnSocketPath(requestedPath) {
+            return requestedPath
         }
-
-        // If the listener is still starting, prefer existing socket files.
-        for path in candidates where isSocketFile(path) {
-            return path
-        }
-
-        return requestedPath
-    }
-
-    private static func candidatePaths(requestedPath: String, environment: [String: String]) -> [String] {
-        var candidates: [String] = []
-
-        if let tag = normalized(environment["CMUX_TAG"]) {
-            let slug = sanitizeTagSlug(tag)
-            candidates.append("/tmp/cmux-debug-\(slug).sock")
-            candidates.append("/tmp/cmux-\(slug).sock")
-        }
-
-        candidates.append(requestedPath)
-        candidates.append(defaultSocketPath)
-        candidates.append(legacyDefaultSocketPath)
-        candidates.append(fallbackSocketPath)
-        candidates.append(stagingSocketPath)
-        candidates.append(contentsOf: discoverTaggedSockets(limit: 12))
-        if let last = readLastSocketPath() {
-            candidates.append(last)
-        }
-        return candidates
-    }
-
-    private static func readLastSocketPath() -> String? {
-        return readLastSocketPathWithSource()?.value
-    }
-
-    private static func readLastSocketPathWithSource() -> (value: String, source: String)? {
-        let primaryCandidate: String? = stableSocketDirectoryURL()?
-            .appendingPathComponent(lastSocketPathFileName, isDirectory: false)
-            .path
-        let candidates = [primaryCandidate, c11LastSocketPathFile, legacyLastSocketPathFile].compactMap { $0 }
-
-        for candidate in candidates {
-            guard let data = try? String(contentsOfFile: candidate, encoding: .utf8) else {
-                continue
-            }
-            if let value = normalized(data) {
-                return (value: value, source: candidate)
+        let listings = socketListings()
+        let breadcrumbs = breadcrumbFiles()
+        let unprobed = C11Identity.ImplicitSocketDiscovery(
+            environment: environment,
+            defaultPath: defaultSocketPath,
+            socketListings: listings,
+            breadcrumbFiles: breadcrumbs
+        )
+        let candidates = C11Identity.implicitSocketCandidates(unprobed)
+        var connectable: Set<String> = []
+        var existing: Set<String> = []
+        for path in candidates {
+            if canConnect(to: path) {
+                connectable.insert(path)
+            } else if isSocketFile(path) {
+                existing.insert(path)
             }
         }
-        return nil
+        return C11Identity.resolveImplicitSocket(C11Identity.ImplicitSocketDiscovery(
+            environment: environment,
+            defaultPath: defaultSocketPath,
+            socketListings: listings,
+            breadcrumbFiles: breadcrumbs,
+            connectable: connectable,
+            existingSocketFiles: existing
+        ))
     }
 
-    /// Best-effort attribution for an auto-discovered socket path.
-    ///
-    /// Returns a human-readable hint identifying *where* `resolvedPath` came
-    /// from — the pointer file path when the resolver matched the
-    /// `last-socket-path` breadcrumb, or a short `CMUX_TAG=...` tag when the
-    /// path matches a tag-derived candidate. Returns `nil` when the source is
-    /// unclear (default fallback, /tmp scan, etc.) so callers can fall back
-    /// to a generic "(auto-discovered)" message.
     static func discoverySourceHint(resolvedPath: String, environment: [String: String]) -> String? {
         if let last = readLastSocketPathWithSource(), last.value == resolvedPath {
             return last.source
         }
-        if let tag = normalized(environment["CMUX_TAG"]) {
-            let slug = sanitizeTagSlug(tag)
-            if resolvedPath == "/tmp/cmux-debug-\(slug).sock"
-                || resolvedPath == "/tmp/cmux-\(slug).sock" {
-                return "CMUX_TAG=\(tag)"
+        for key in ["C11_TAG", "CMUX_TAG"] {
+            guard let tag = normalized(environment[key]) else { continue }
+            let slug = C11Identity.sanitizeTagSlug(tag)
+            if resolvedPath == C11Identity.taggedDebugSocketPath(slug: slug)
+                || resolvedPath == C11Identity.userSocketPath(stem: "c11-\(slug)")
+                || resolvedPath == C11Identity.legacyTaggedDebugSocketPath(slug: slug)
+                || resolvedPath == "/tmp/c11-\(slug).sock" {
+                return "\(key)=\(tag)"
             }
         }
         return nil
     }
 
-    private static func discoverTaggedSockets(limit: Int) -> [String] {
-        var discovered: [(path: String, mtime: TimeInterval)] = []
-        for directory in socketDiscoveryDirectories() {
-            guard let entries = try? FileManager.default.contentsOfDirectory(atPath: directory) else {
+    private static func readLastSocketPathWithSource() -> (value: String, source: String)? {
+        var candidates = [C11Identity.userLastSocketPathFile, C11Identity.lastSocketPathFile]
+        if let directory = stableSocketDirectoryURL() {
+            candidates.insert(
+                directory.appendingPathComponent(lastSocketPathFileName, isDirectory: false).path,
+                at: 0
+            )
+        }
+        for candidate in candidates where C11Identity.isC11BreadcrumbFile(candidate) {
+            guard let data = C11UserRuntime.readBreadcrumb(at: candidate),
+                  let value = normalized(data),
+                  C11Identity.isOwnSocketPath(value) else {
                 continue
             }
-            discovered.reserveCapacity(min(limit, discovered.count + entries.count))
-            for name in entries where (name.hasPrefix("cmux") || name.hasPrefix("c11")) && name.hasSuffix(".sock") {
-                let path = URL(fileURLWithPath: directory)
-                    .appendingPathComponent(name, isDirectory: false)
-                    .path
-                var st = stat()
-                guard lstat(path, &st) == 0 else { continue }
-                guard (st.st_mode & mode_t(S_IFMT)) == mode_t(S_IFSOCK) else { continue }
-                if path == defaultSocketPath || path == legacyDefaultSocketPath || path == fallbackSocketPath || path == stagingSocketPath {
-                    continue
-                }
-                let modified = TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1_000_000_000
-                discovered.append((path: path, mtime: modified))
+            return (value: value, source: candidate)
+        }
+        return nil
+    }
+
+    private static func socketListings() -> [String: [String]] {
+        var listings: [String: [String]] = [:]
+        for directory in [C11UserRuntime.directoryPath(), "/tmp", "/private/tmp"] {
+            if let names = try? FileManager.default.contentsOfDirectory(atPath: directory) {
+                listings[directory] = names
             }
         }
+        if let directory = stableSocketDirectoryURL()?.path,
+           let names = try? FileManager.default.contentsOfDirectory(atPath: directory) {
+            listings[directory] = names
+        }
+        return listings
+    }
 
-        discovered.sort { $0.mtime > $1.mtime }
-        return dedupe(discovered.prefix(limit).map(\.path))
+    private static func breadcrumbFiles() -> [String: String] {
+        var files: [String: String] = [:]
+        var paths = [C11Identity.userLastSocketPathFile, C11Identity.lastSocketPathFile]
+        if let directory = stableSocketDirectoryURL() {
+            paths.append(directory.appendingPathComponent(lastSocketPathFileName, isDirectory: false).path)
+        }
+        // A breadcrumb is read only when it is our own regular file (C11H-364).
+        for path in paths where C11Identity.isC11BreadcrumbFile(path) {
+            if let data = C11UserRuntime.readBreadcrumb(at: path) {
+                files[path] = data
+            }
+        }
+        return files
     }
 
     private static func isSocketFile(_ path: String) -> Bool {
@@ -363,16 +401,8 @@ enum CLISocketPathResolver {
                 Darwin.connect(fd, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        return result == 0
-    }
-
-    private static func sanitizeTagSlug(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let slug = trimmed
-            .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-            .replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return slug.isEmpty ? "agent" : slug
+        // A listener another account runs is never a discovery candidate (C11H-364).
+        return result == 0 && C11UserRuntime.peerIsUser(fd, expected: SocketClient.expectedPeerUserID)
     }
 
     static func normalized(_ value: String?) -> String? {
@@ -385,27 +415,7 @@ enum CLISocketPathResolver {
         guard let appSupportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
-        return appSupportDirectory.appendingPathComponent(appSupportDirectoryName, isDirectory: true)
-    }
-
-    private static func socketDiscoveryDirectories() -> [String] {
-        let appSupportSocketDirectory: String = stableSocketDirectoryURL()?.path ?? ""
-        return dedupe([
-            "/tmp",
-            appSupportSocketDirectory,
-        ])
-    }
-
-    private static func dedupe(_ paths: [String]) -> [String] {
-        var seen: Set<String> = []
-        var ordered: [String] = []
-        ordered.reserveCapacity(paths.count)
-        for path in paths where !path.isEmpty {
-            if seen.insert(path).inserted {
-                ordered.append(path)
-            }
-        }
-        return ordered
+        return appSupportDirectory.appendingPathComponent(C11Identity.socketDirectoryName, isDirectory: true)
     }
 }
 

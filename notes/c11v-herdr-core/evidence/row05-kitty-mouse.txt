@@ -1,0 +1,5 @@
+KITTY_READY press Escape
+KITTY_KEY_BYTES= 033 [ 2 7 
+before click: "~/c0b/lines.txt" 300 lines, 27600 bytes                                                                        2,1           Top
+after click at y=442: "~/c0b/lines.txt" 300 lines, 27600 bytes                                                                        21,22         Top
+after click at y=272: "~/c0b/lines.txt" 300 lines, 27600 bytes                                                                        11,22         Top

@@ -130,6 +130,11 @@ final class FocusHistoryStore: ObservableObject {
             return false
         }
         PanelSeenTracker.shared.refresh()
+        if focus == nil {
+            // C11H-246: Back and Forward from the menu or keyboard name the
+            // panel they land on. The socket route passes its own focus.
+            location.workspaceManager.acknowledgeOperatorOpen(workspaceId: workspace.id, panelId: entry.panelId)
+        }
         return true
     }
 }

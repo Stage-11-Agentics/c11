@@ -13,6 +13,16 @@ import XCTest
 @MainActor
 final class PanelOrdinalDisplayTests: XCTestCase {
 
+    private func call(_ controller: TerminalController, _ method: String,
+                      _ params: [String: Any]) async throws -> [String: Any] {
+        let data = try JSONSerialization.data(withJSONObject: ["id": 156, "method": method, "params": params])
+        let command = String(decoding: data, as: UTF8.self)
+        let response = await Task.detached {
+            controller.processCommandUsingSocketExecutionPolicy(command)
+        }.value
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+    }
+
     // MARK: - Settings resolver
 
     func testShowsSurfaceIdsDefaultsToTrueWhenUnset() {
@@ -38,7 +48,9 @@ final class PanelOrdinalDisplayTests: XCTestCase {
     // MARK: - Ordinal minting
 
     func testSurfaceOrdinalMintsSequentiallyAndIsStablePerSurface() {
-        let controller = TerminalController.makeForTesting()
+        // Panel numbers are durable (C11H-23): a fresh registry, so this test
+        // does not see numbers other tests minted in the shared one.
+        let controller = TerminalController.makeForTesting(panelAllocations: PanelAllocationRegistry(fileURL: nil))
         let a = UUID()
         let b = UUID()
 
@@ -54,7 +66,7 @@ final class PanelOrdinalDisplayTests: XCTestCase {
     }
 
     func testSurfaceOrdinalMatchesRefResolution() {
-        let controller = TerminalController.makeForTesting()
+        let controller = TerminalController.makeForTesting(panelAllocations: PanelAllocationRegistry(fileURL: nil))
         let uuid = UUID()
         let ordinal = controller.surfaceOrdinal(forSurfaceUUID: uuid)
 
@@ -64,6 +76,57 @@ final class PanelOrdinalDisplayTests: XCTestCase {
                        "tab:N and the legacy surface:N are the same handle")
         XCTAssertEqual(controller.v2ResolveHandleRef("panel:\(ordinal)"), uuid,
                        "panel:N is the canonical spelling of the same handle")
+    }
+
+    func testSurfaceRefStaysStableAcrossSiblingCreateAndClose() async throws {
+        let manager = WorkspaceManager()
+        let workspace = manager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        let registry = PanelAllocationRegistry(fileURL: nil)
+        PanelLineage.shared.addPanelClosedForGoodObserver { [weak registry] ids in
+            MainActor.assumeIsolated { registry?.releasePanels(ids) }
+        }
+        let controller = TerminalController.makeForTesting(panelAllocations: registry)
+        controller.setActiveWorkspaceManager(manager)
+        let target = try XCTUnwrap(workspace.focusedPanelId)
+
+        let targetRef = controller.surfaceRefOnly(forSurfaceUUID: target)
+        var siblings: [(id: UUID, ref: String)] = []
+        for _ in 0..<2 {
+            let created = try await call(controller, "panel.create", [
+                "workspace_id": workspace.id.uuidString,
+                "type": "terminal",
+            ])
+            XCTAssertEqual(created["ok"] as? Bool, true, "\(created)")
+            let result = try XCTUnwrap(created["result"] as? [String: Any])
+            let panelId = try XCTUnwrap(UUID(uuidString: (result["panel_id"] as? String)
+                ?? (result["surface_id"] as? String ?? "")))
+            siblings.append((panelId, controller.surfaceRefOnly(forSurfaceUUID: panelId)))
+        }
+
+        for sibling in siblings {
+            let close = controller.v2PanelClose(params: [
+                "workspace_id": workspace.id.uuidString,
+                "surface_id": sibling.id.uuidString,
+            ])
+            guard case .ok = close else {
+                XCTFail("Closing a sibling failed: \(close)")
+                return
+            }
+
+            let later = try await call(controller, "panel.create", [
+                "workspace_id": workspace.id.uuidString,
+                "type": "terminal",
+            ])
+            XCTAssertEqual(later["ok"] as? Bool, true, "\(later)")
+            let laterResult = try XCTUnwrap(later["result"] as? [String: Any])
+            let laterId = try XCTUnwrap(UUID(uuidString: (laterResult["panel_id"] as? String)
+                ?? (laterResult["surface_id"] as? String ?? "")))
+            XCTAssertFalse(siblings.map(\.ref).contains(controller.surfaceRefOnly(forSurfaceUUID: laterId)),
+                           "A later sibling must not inherit a closed sibling's ref")
+        }
+
+        XCTAssertEqual(controller.surfaceRefOnly(forSurfaceUUID: target), targetRef,
+                       "Creating or closing siblings must not change a live panel's ref")
     }
 
     // MARK: - Prefix composition

@@ -1,6 +1,6 @@
 name: CI main (macOS)
 
-# Clean-machine native backstop, independent of Atlas's c11/main-atlas status.
+# Clean-machine native backstop, independent of the build host's c11/main-atlas status.
 # Hourly checks skip tips already green in this workflow's own status context.
 # Dispatch can force a rebuild. One run stays active and newer requests replace
 # the single pending run; each admitted run resolves its ref's current tip.
@@ -423,6 +423,7 @@ jobs:
           launch_cli_test moved-panel-caller env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_moved_panel_caller.py
           launch_cli_test read-selection env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_read_selection.py
           launch_cli_test response-framing env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_response_framing.py
+          launch_cli_test linked-strings-escaped env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_linked_strings_escaped.py
           launch_cli_test session-start-window env C11_CLI_BIN="$CLI_BINARY" python3 tests/test_claude_hook_session_start_window.py
           launch_cli_test send-raw env C11_CLI="$CLI_BINARY" python3 tests_v2/test_send_raw_and_flags.py --offline
           launch_cli_test claude-mailbox-bridge env C11_TEST_CLI="$CLI_BINARY" python3 tests/test_claude_mailbox_bridge.py
@@ -446,6 +447,19 @@ jobs:
 
       - name: Shell helper lifetime and git reporting
         run: bash tests/test_shell_git_watchers.sh
+
+      - name: Shell prompt resets a dead agent's keyboard modes
+        run: python3 tests/test_shell_keyboard_mode_reset.py
+
+      - name: Every shell prompt reports, an empty Return included
+        run: python3 tests/test_shell_prompt_reports.py
+
+      # Stand-in tart and ssh only: no VM, no network, no credential.
+      - name: Sandbox image selection and guest Claude token verb
+        run: |
+          set -euo pipefail
+          python3 tests/test_sandbox_image_select.py
+          python3 tests/test_claude_env_injection.py
 
       # PR CI runs --smoke. The sweep is too slow for the 2-minute PR budget.
       - name: Socket guard canary

@@ -58,6 +58,19 @@ enum ChromeScaleSettings {
 
     static let defaultPreset: Preset = .standard
 
+    /// The smallest scale for text across the top of the window (the window
+    /// title bar, panel bar and panel title bar) at any preset of 1.00× or more:
+    /// a little above Large (1.25×) and well below Extra Large (1.55×). The
+    /// sidebar is not affected.
+    static let topBarMinimumMultiplier: CGFloat = 1.30
+
+    /// The top-bar scale for a chrome multiplier. A scale below 1.00× is an
+    /// explicit request for smaller chrome and is kept; anything else is raised
+    /// to `topBarMinimumMultiplier` if it is under it.
+    static func topBarMultiplier(for multiplier: CGFloat) -> CGFloat {
+        multiplier < 1.0 ? multiplier : max(multiplier, topBarMinimumMultiplier)
+    }
+
     static func preset(for rawValue: String?) -> Preset {
         Preset(rawValue: rawValue ?? "") ?? defaultPreset
     }
@@ -138,16 +151,28 @@ struct ChromeScaleTokens: Equatable {
     var sidebarWorkspaceLogIcon: CGFloat       {  8.0 * multiplier }
     var sidebarWorkspaceBranchDot: CGFloat     {  3.0 * multiplier }
 
+    /// Scale for text across the top of the window. Computed from
+    /// `multiplier`, so the `Equatable` reduction above still holds.
+    var topBarMultiplier: CGFloat { ChromeScaleSettings.topBarMultiplier(for: multiplier) }
+
+    // MARK: Window title bar tokens
+
+    var windowTitlebarTitle: CGFloat      { 13.0 * topBarMultiplier }
+    var windowTitlebarAccessory: CGFloat  { 11.0 * topBarMultiplier }
+
     // MARK: Surface tab strip tokens (Bonsplit Appearance values)
 
-    var surfaceTabTitle: CGFloat                  { 11.0 * multiplier }
+    /// Title, number and tab widths follow the text; the bar, icons and toolbar
+    /// follow the plain preset, so bigger text costs no terminal rows. Wider tabs
+    /// mean fewer fit before the strip scrolls and folds.
+    var surfaceTabTitle: CGFloat                  { 11.0 * topBarMultiplier }
     /// Bumped from 14 → 15 base so tab icons are easier to press at every preset.
     var surfaceTabIcon: CGFloat                   { 15.0 * multiplier }
     var surfaceTabBarHeight: CGFloat              { 30.0 * multiplier }
     var surfaceTabItemHeight: CGFloat             { 30.0 * multiplier }
     var surfaceTabHorizontalPadding: CGFloat      {  6.0 * multiplier }
-    var surfaceTabMinWidth: CGFloat               { 112.0 * multiplier }
-    var surfaceTabMaxWidth: CGFloat               { 220.0 * multiplier }
+    var surfaceTabMinWidth: CGFloat               { 112.0 * topBarMultiplier }
+    var surfaceTabMaxWidth: CGFloat               { 220.0 * topBarMultiplier }
     var surfaceTabCloseIconSize: CGFloat          {  9.0 * multiplier }
     var surfaceTabContentSpacing: CGFloat         {  6.0 * multiplier }
     var surfaceTabDirtyIndicatorSize: CGFloat     {  8.0 * multiplier }
@@ -168,8 +193,8 @@ struct ChromeScaleTokens: Equatable {
 
     // MARK: Surface title bar tokens
 
-    var surfaceTitleBarTitle: CGFloat     { 12.0 * multiplier }
-    var surfaceTitleBarAccessory: CGFloat { 10.0 * multiplier }
+    var surfaceTitleBarTitle: CGFloat     { 12.0 * topBarMultiplier }
+    var surfaceTitleBarAccessory: CGFloat { 10.0 * topBarMultiplier }
 
     static let standard = ChromeScaleTokens(multiplier: 1.0)
 

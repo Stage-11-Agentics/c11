@@ -18,6 +18,13 @@ struct MessagesPageDirectory: Equatable {
         var agent: String?
         var address: String?
         var parent: String?
+        /// C11H-260: who made the panel (`operator`, `panel`, `app`,
+        /// `external`, `unknown`) and the app reason.
+        var origin: String? = nil
+        var originDetail: String? = nil
+        /// When the lineage node first recorded the panel (ISO 8601 with offset);
+        /// nil for older nodes. Unlike `created`, never an event-log guess.
+        var lineageCreatedAt: String? = nil
         /// The panel's subtitle (`c11 set-description`) as it is now, or as
         /// it last was before the panel closed.
         var description: String? = nil
@@ -35,6 +42,9 @@ struct MessagesPageDirectory: Equatable {
             if let agent { result["agent"] = agent }
             if let address { result["address"] = address }
             if let parent { result["parent"] = parent }
+            if let origin { result["origin"] = origin }
+            if let originDetail { result["origin_detail"] = originDetail }
+            if let lineageCreatedAt { result["lineage_created_at"] = lineageCreatedAt }
             if let description { result["description"] = description }
             if !notes.isEmpty { result["notes"] = notes.map { ["at": $0.at, "text": $0.text] } }
             if let created { result["created"] = created }
@@ -68,7 +78,8 @@ struct MessagesPageDirectory: Equatable {
         [
             "panels": panels.map(\.jsonObject),
             "workspaces": workspaces.map(\.jsonObject),
-            "link_scheme": "c11",
+            // c11h: "Open panel" links use c11's own scheme, never c11's.
+            "link_scheme": PanelLinkFormat.scheme,
         ]
     }
 
@@ -135,6 +146,9 @@ struct MessagesPageDirectory: Equatable {
             addWorkspace(Workspace(id: workspaceID, title: nonEmpty(node.workspaceTitle), live: false))
             if var existing = panels[id] {
                 existing.parent = node.parentPanelId?.uuidString
+                existing.origin = node.origin.rawValue
+                existing.originDetail = node.originDetail
+                existing.lineageCreatedAt = node.createdAt.map { PanelLineageNode.localTimestamp($0) }
                 existing.agent = existing.agent ?? nonEmpty(node.agentType)
                 panels[id] = existing
             } else {
@@ -147,7 +161,10 @@ struct MessagesPageDirectory: Equatable {
                     type: nonEmpty(node.panelType),
                     agent: nonEmpty(node.agentType),
                     address: nil,
-                    parent: node.parentPanelId?.uuidString
+                    parent: node.parentPanelId?.uuidString,
+                    origin: node.origin.rawValue,
+                    originDetail: node.originDetail,
+                    lineageCreatedAt: node.createdAt.map { PanelLineageNode.localTimestamp($0) }
                 )
             }
         }
@@ -237,6 +254,10 @@ struct MessagesPageDirectory: Equatable {
             if !panel.live { panel.description = panel.description ?? entry.description }
             panel.workspace = panel.workspace ?? entry.workspace
             panel.type = panel.type ?? entry.kind
+            if panel.origin == nil {
+                panel.origin = entry.origin
+                panel.originDetail = entry.originDetail
+            }
             panel.notes = entry.notes
             panel.created = entry.created
             panel.closed = panel.live ? nil : entry.closed
@@ -248,6 +269,7 @@ struct MessagesPageDirectory: Equatable {
             merged.append(Panel(
                 id: id, title: entry.title, workspace: entry.workspace, live: false,
                 type: entry.kind, agent: nil, address: nil, parent: entry.parent,
+                origin: entry.origin, originDetail: entry.originDetail,
                 description: entry.description, notes: entry.notes,
                 created: entry.created, closed: entry.closed
             ))
@@ -297,6 +319,8 @@ struct MessagesPagePanelHistory: Equatable {
         var kind: String?
         var workspace: String?
         var parent: String?
+        var origin: String?
+        var originDetail: String?
         var created: String?
         var closed: String?
     }
@@ -366,6 +390,10 @@ struct MessagesPagePanelHistory: Equatable {
                 entry.created = entry.created ?? event.timestamp
                 entry.kind = entry.kind ?? trimmed(event.payload["kind"] as? String)
                 entry.parent = entry.parent ?? canonical(event.payload["parent_panel_id"] as? String)
+                if entry.origin == nil, let origin = trimmed(event.payload["origin"] as? String) {
+                    entry.origin = origin
+                    entry.originDetail = trimmed(event.payload["origin_detail"] as? String)
+                }
                 // The creation title is not used: after a relaunch it can be a
                 // restored OSC title (the last command run), not a chosen name.
                 entry.closed = nil

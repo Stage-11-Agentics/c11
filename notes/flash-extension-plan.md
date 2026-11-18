@@ -1,7 +1,7 @@
 # Flash Extension Plan — Tab strip + Sidebar workspace
 
 Branch: `c11-flash-tab-and-workspace` (off `origin/main`).
-Worktree: `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-flash-tab-and-workspace`.
+Worktree: `~/src/c11-worktrees/c11-flash-tab-and-workspace`.
 
 ## Confirmed setup notes
 

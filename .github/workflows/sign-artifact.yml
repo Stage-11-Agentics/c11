@@ -24,7 +24,7 @@ on:
         description: Positive increasing build number for proof apps
         type: string
       proof_feed_base:
-        description: Isolated Atlas HTTP(S) directory URL, without trailing slash
+        description: Isolated build-host HTTP(S) directory URL, without trailing slash
         type: string
 
 # Artifact upload uses the Actions runtime token. No repository write permission.

@@ -1,0 +1,13 @@
+report=62x42 pty=62x42 match=True
+report=57x42 pty=57x42 match=True
+report=39x35 pty=39x35 match=True
+report=43x35 pty=43x35 match=True
+report=39x35 pty=39x35 match=True
+report=57x42 pty=57x42 match=True
+report=62x42 pty=62x42 match=True
+report=57x42 pty=57x42 match=True
+report=39x35 pty=39x35 match=True
+report=43x35 pty=43x35 match=True
+report=39x35 pty=39x35 match=True
+report=60x42 pty=60x42 match=True
+report=65x42 pty=65x42 match=True

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run on Atlas's unlocked macOS GUI seat, against the opt-in test archive.
+# Run on the build host's unlocked macOS GUI seat, against the opt-in test archive.
 set -euo pipefail
 if [[ $# -ne 2 ]]; then
   echo "usage: $0 /absolute/path/libghostty-c11-read-test.a /absolute/output/directory" >&2

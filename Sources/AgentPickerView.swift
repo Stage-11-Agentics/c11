@@ -568,6 +568,8 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
     private var popover: NSPopover?
     private var keyMonitor: Any?
     private weak var controller: AgentPickerController?
+
+    var isShown: Bool { popover?.isShown == true }
     private var editorClosedObserver: NSObjectProtocol?
     private var returnToPicker: (() -> Void)?
 
@@ -622,6 +624,8 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
             dismiss()
             return
         }
+        // C11H-138: one picker at a time.
+        MainActor.assumeIsolated { MachinePickerPresenter.shared.dismiss() }
         if screenRect != nil, let closedAt = lastTransientCloseAt,
            Date().timeIntervalSince(closedAt) < Self.toggleGraceInterval {
             return
@@ -673,6 +677,12 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
         popover = nil
         controller = nil
         closing?.performClose(nil)
+        if closing != nil { Self.resumeTips() }
+    }
+
+    /// C11H-138: tips held while this picker was open go next.
+    private static func resumeTips() {
+        DispatchQueue.main.async { MainActor.assumeIsolated { C11TipCenter.shared.resume() } }
     }
 
     func popoverDidClose(_ notification: Notification) {
@@ -686,6 +696,7 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
         removeKeyMonitor()
         popover = nil
         controller = nil
+        Self.resumeTips()
     }
 
     private func installKeyMonitor() {

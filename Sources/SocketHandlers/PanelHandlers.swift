@@ -5,6 +5,34 @@ import Foundation
 import Bonsplit
 import WebKit
 
+private final class HCSocketSendResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: HCInputOutcome?
+    private var status = "checked"
+    private var detail: String?
+    private var expectation: SendSubmitConfirmation.Expectation?
+    private var baseline: SendSubmitConfirmation.Facts?
+    private var harness: String?
+    private var agentOwned = false
+    func setRefusalDetail(_ value: String) { lock.lock(); detail = value; lock.unlock() }
+    var refusalDetail: String? { lock.lock(); defer { lock.unlock() }; return detail }
+    func set(_ outcome: HCInputOutcome) { lock.lock(); value = outcome; lock.unlock() }
+    func setGuardStatus(_ value: String) { lock.lock(); status = value; lock.unlock() }
+    func read() -> (HCInputOutcome?, String) { lock.lock(); defer { lock.unlock() }; return (value, status) }
+    /// C11H-298: what the target looked like just before the text was typed, and what its Return must cause.
+    func setConfirmation(_ expectation: SendSubmitConfirmation.Expectation, baseline: SendSubmitConfirmation.Facts,
+                         harness: String?, agentOwned: Bool) {
+        lock.lock()
+        self.expectation = expectation; self.baseline = baseline; self.harness = harness; self.agentOwned = agentOwned
+        lock.unlock()
+    }
+    /// An agent owns the terminal: its `submitted` is only ever the agent's confirmed take.
+    var targetIsAgent: Bool { lock.lock(); defer { lock.unlock() }; return agentOwned }
+    func readConfirmation() -> (SendSubmitConfirmation.Expectation?, SendSubmitConfirmation.Facts?, String?) {
+        lock.lock(); defer { lock.unlock() }; return (expectation, baseline, harness)
+    }
+}
+
 private enum TerminalSelectionCapture {
     case success(bytes: Data, originalCount: Int, hasSelection: Bool, routing: [String: Any])
     case failure(TerminalController.V2CallResult)
@@ -29,6 +57,13 @@ extension TerminalController {
         item["cwd"] = v2OrNull(location.cwd)
         item["branch"] = v2OrNull(location.branch)
         item["worktree"] = v2OrNull(location.worktree)
+        if panel.panelType == .terminal, let foreground = workspace.hcRemoteForeground[panel.id] {
+            // hc's remote facts only: never interpret its PID on this machine.
+            item["foreground"] = [
+                "name": v2OrNull(foreground.name),
+                "pid": v2OrNull(foreground.pid),
+            ]
+        }
     }
 
     /// C11-243: set `last_seen_at` (ISO-8601 to the second, "now" while being
@@ -287,15 +322,47 @@ extension TerminalController {
         guard let selectedPanelId = v2UUID(params, "panel_id") ?? v2UUID(params, "surface_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
         }
+        let relayScope = SocketCommandContext.current?.relayReadScope
         return v2MainSync {
-            guard let family = PanelLineage.shared.family(startingAt: selectedPanelId) else {
+            guard var family = PanelLineage.shared.family(startingAt: selectedPanelId) else {
                 return .err(code: "panel_lineage_not_found", message: "Panel lineage not found", data: [
                     "panel_id": selectedPanelId.uuidString,
                     "panel_ref": v2Ref(kind: .surface, uuid: selectedPanelId)
                 ])
             }
+            // C11H-371: a relayed family keeps the caller's workspace, plus the
+            // caller's own parent wherever it is (`mailbox send --to-parent`).
+            var routingOnly: Set<UUID> = []
+            var kept: Set<UUID>? = nil
+            if let relayScope {
+                let parent = family.nodes.first { $0.id == relayScope.panel }?.parentPanelId
+                family.nodes = family.nodes.filter { $0.workspaceId == relayScope.workspace || $0.id == parent }
+                let ids = Set(family.nodes.map(\.id))
+                kept = ids
+                routingOnly = Set(family.nodes.filter { $0.workspaceId != relayScope.workspace }.map(\.id))
+                for index in family.nodes.indices where family.nodes[index].parentPanelId.map({ !ids.contains($0) }) ?? false {
+                    family.nodes[index].parentPanelId = nil
+                }
+                if !ids.contains(family.rootId) {
+                    var root = selectedPanelId
+                    var seen: Set<UUID> = [root]
+                    while let up = family.nodes.first(where: { $0.id == root })?.parentPanelId, seen.insert(up).inserted { root = up }
+                    family.rootId = root
+                }
+            }
             let iso = ISO8601DateFormatter()
             let nodes: [[String: Any]] = family.nodes.map { node in
+                if routingOnly.contains(node.id) {
+                    return [
+                        "id": node.id.uuidString,
+                        "ref": v2Ref(kind: .surface, uuid: node.id),
+                        "parent_panel_id": NSNull(),
+                        "parent_panel_ref": NSNull(),
+                        "state": node.isClosed ? "closed" : "live",
+                        "workspace_id": node.workspaceId.uuidString,
+                        "workspace_ref": v2Ref(kind: .workspace, uuid: node.workspaceId)
+                    ]
+                }
                 let attention = PanelMetadataStore.shared.attentionSnapshot(
                     workspaceId: node.workspaceId,
                     surfaceId: node.id
@@ -305,12 +372,15 @@ extension TerminalController {
                     "ref": v2Ref(kind: .surface, uuid: node.id),
                     "parent_panel_id": v2OrNull(node.parentPanelId?.uuidString),
                     "parent_panel_ref": v2Ref(kind: .surface, uuid: node.parentPanelId),
+                    "origin": node.origin.rawValue,
+                    "origin_detail": v2OrNull(node.originDetail),
+                    "created_at": v2OrNull(node.createdAt.map { PanelLineageNode.localTimestamp($0) }),
                     "title": node.lastTitle,
                     "type": node.panelType,
                     "state": node.isClosed ? "closed" : "live",
                     "agent_type": v2OrNull(node.agentType),
                     "delegated": attention.delegated,
-                    "delegated_by": v2OrNull(attention.delegatedBy?.uuidString),
+                    "delegated_by": v2OrNull(attention.delegatedBy.flatMap { kept == nil || kept?.contains($0) == true ? $0.uuidString : nil }),
                     "closed_at": v2OrNull(node.closedAt.map { iso.string(from: $0) }),
                     "workspace_id": node.workspaceId.uuidString,
                     "workspace_ref": v2Ref(kind: .workspace, uuid: node.workspaceId),
@@ -500,8 +570,16 @@ extension TerminalController {
                 result = .err(code: "pane_too_small", message: message, data: data)
 
             case .panel(let paneId, let warning):
+                // C11H-391: demoted to a panel beside a terminal whose machine's
+                // link c11 won't use, it is refused as the split would be.
+                if let refusal = ws.hcSplitRefusal(from: targetSurfaceId, explicitCwd: cwdOverride) {
+                    result = Self.v2MachineError(refusal)
+                    return
+                }
                 guard let panel = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id"), operation: {
-                    ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)
+                    // Ticket 12: demoted to a panel, it still runs on the source's machine.
+                    ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput,
+                                          machine: ws.hcSplitTarget(from: targetSurfaceId, explicitCwd: cwdOverride).map { .restored($0) } ?? .local)
                 }) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
                     return
@@ -525,7 +603,7 @@ extension TerminalController {
 
             case .split(let actualDirection, let requested, let warning):
                 if let newId = PanelLineage.shared.withCreator(self.v2UUID(params, "caller_panel_id"), operation: {
-                    workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride, initialInput: initialInput)
+                    workspaceManager.newSplit(workspaceId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride, initialInput: initialInput, machine: .inherit)
                 }) {
                     let paneUUID = ws.paneId(forPanelId: newId)?.id
                     // Seed pane title atomic with pane id becoming valid.
@@ -545,6 +623,9 @@ extension TerminalController {
                     if initialInput != nil { ok["initial_input"] = "queued" }
                     self.annotateSizeOutcome(&ok, requested: requested, applied: actualDirection, becamePanel: false, warning: warning)
                     result = .ok(ok)
+                } else if let refusal = ws.lastHCRemoteRefusal {
+                    // C11H-391 (Opus on #382): a split of a terminal whose machine's link c11 won't use.
+                    result = Self.v2MachineError(refusal)
                 } else {
                     result = .err(code: "internal_error", message: "Failed to create split", data: nil)
                 }
@@ -591,8 +672,16 @@ extension TerminalController {
         // Optional --cwd: validated off-main so a bad path errors instead of
         // landing elsewhere. Omitted (or `inherit`) takes the workspace's
         // new-surface rule: root, then the pane's terminal cwd, then home.
+        // Ticket 12: --on <machine>. A remote --cwd is a path on that machine.
+        let machineParam: V2MachineParam
+        switch v2ResolveMachineParam(params, panelType: panelType) {
+        case .failure(let error): return error
+        case .success(let value): machineParam = value
+        }
         var cwdOverride: String?
-        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
+        if machineParam.isRemote {
+            cwdOverride = machineParam.remoteCwd
+        } else if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
             return err
         }
 
@@ -665,7 +754,8 @@ extension TerminalController {
                 case .markdown:
                     return ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
                 case .terminal:
-                    return ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                    return ws.newTerminalSurface(inPane: paneId, focus: focus, workingDirectory: cwdOverride,
+                                                 initialInput: initialInput, machine: machineParam.request)?.id
                 }
             }
 
@@ -690,6 +780,7 @@ extension TerminalController {
                 ok["profile_id"] = browserProfileID.uuidString
             }
             if initialInput != nil { ok["initial_input"] = "queued" }
+            if let machine = ws.terminalPanel(for: newPanelId)?.hcRemoteTarget?.machine { ok["machine"] = machine }
             result = .ok(ok)
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
@@ -697,7 +788,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2PanelClose(params: [String: Any]) -> V2CallResult {
+    func v2PanelClose(params: [String: Any]) -> V2CallResult {
         guard let workspaceManager = v2ResolveWorkspaceManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -715,9 +806,42 @@ extension TerminalController {
                 return
             }
 
-            guard ws.panels[surfaceId] != nil else {
+            guard let panel = ws.panels[surfaceId] else {
                 result = .err(code: "not_found", message: "Panel not found", data: ["surface_id": surfaceId.uuidString])
                 return
+            }
+
+            // Capture the live title and ref before any close side effects.
+            // Callers can pair --expect-title with a saved ref to avoid closing
+            // a different panel after a stale lookup.
+            let surfaceRef = v2Ref(kind: .surface, uuid: surfaceId)
+            let panelTitle = ws.panelTitle(panelId: surfaceId) ?? panel.displayTitle
+            if let rawExpectedTitle = params["expected_title"] {
+                guard let expectedTitle = rawExpectedTitle as? String else {
+                    result = .err(
+                        code: "invalid_params",
+                        message: String(localized: "cli.close.panel.expectTitleMustBeString", defaultValue: "expected_title must be a string"),
+                        data: nil
+                    )
+                    return
+                }
+                guard expectedTitle == panelTitle else {
+                    let message = String(format: String(
+                        localized: "cli.close.panel.expectTitleMismatch",
+                        defaultValue: "Panel title mismatch for %@: expected %@, found %@. Nothing was closed."
+                    ), surfaceRef as? String ?? String(describing: surfaceRef), expectedTitle, panelTitle)
+                    result = .err(
+                        code: "title_mismatch",
+                        message: message,
+                        data: [
+                            "surface_id": surfaceId.uuidString,
+                            "surface_ref": surfaceRef,
+                            "expected_title": expectedTitle,
+                            "actual_title": panelTitle,
+                        ]
+                    )
+                    return
+                }
             }
 
             if ws.panels.count <= 1 {
@@ -725,9 +849,24 @@ extension TerminalController {
                 return
             }
 
+            // C11H-24: read before the close removes the panel. The end itself
+            // runs in the explicit-close path; `panel.end_status` reports it.
+            let endsSession = HCSessionEnd.coordinator != nil && ws.closeHoldsHCSession(panelIds: [surfaceId])
+            // C11H-104: keep using the ref captured before close. The close
+            // releases its durable number, and a ref minted afterwards is the
+            // next ordinal (it printed `OK panel:146` for `panel:145`).
             // Socket API must be non-interactive: bypass close-confirmation gating.
             ws.closePanel(surfaceId, force: true)
-            result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager))])
+            result = .ok([
+                "workspace_id": ws.id.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "surface_id": surfaceId.uuidString,
+                "surface_ref": surfaceRef,
+                "surface_title": panelTitle,
+                "window_id": v2OrNull(v2ResolveWindowId(workspaceManager: workspaceManager)?.uuidString),
+                "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(workspaceManager: workspaceManager)),
+                "session_end": endsSession ? "requested" : "none",
+            ])
         }
         return result
     }
@@ -763,6 +902,8 @@ extension TerminalController {
                 orientation: orientation,
                 insertFirst: insertFirst
             ) else {
+                // C11H-391: a move that would empty the area beside a terminal c11 can't open.
+                if let refusal = ws.lastHCRemoteRefusal { result = Self.v2MachineError(refusal); return }
                 result = .err(code: "internal_error", message: "Failed to split area", data: nil)
                 return
             }
@@ -1082,6 +1223,7 @@ extension TerminalController {
         // turn that delivered the text. For the queueing fallback (surface not yet
         // attached) the trailing `\r` is appended to the queued payload so the
         // flush on attach submits the line.
+        let commandStarted = Date()   // C11H-298: the send's whole answer stays inside the CLI's deadline.
         let submit = v2Bool(params, "submit") ?? true
         let preserveNewlines = v2Bool(params, "preserve_newlines") ?? false
         if preserveNewlines {
@@ -1100,10 +1242,14 @@ extension TerminalController {
         }
 
         let phaseASema = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var hcManaged = false
         nonisolated(unsafe) var phaseAOutcome: PanelSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
         Task { @MainActor in
             defer { phaseASema.signal() }
             phaseAOutcome = resolveSurfaceSendTargets(params: params)
+            if case .ok(let resolved) = phaseAOutcome {
+                hcManaged = resolved.terminalPanel.surface.usesPersistentHCInput
+            }
         }
         phaseASema.wait()
 
@@ -1113,6 +1259,12 @@ extension TerminalController {
             return err
         case .ok(let r):
             resolved = r
+        }
+
+        if hcManaged {
+            return v2SendHCText(text, submit: submit, preserveNewlines: preserveNewlines,
+                allowUnguarded: v2Bool(params, "allow_unguarded") ?? false, resolved: resolved,
+                started: commandStarted)
         }
 
         #if DEBUG
@@ -1262,6 +1414,237 @@ extension TerminalController {
         return .ok(envelope)
     }
 
+    @MainActor
+    private func hcSocketGuardAllows(_ receipt: HCScreenReceipt, terminal: TerminalSurface,
+                                     allowUnguarded: Bool, wantsReturn: Bool, bodyIsEmpty: Bool, localCommand: Bool,
+                                     resolved: PanelSendPhaseAResolved,
+                                     result: HCSocketSendResult) -> Bool {
+        guard terminal.hcSession?.currentDisplayRevision == receipt.revision else { return false }
+        guard SendInputGuard.targetIsCurrent(expectedWorkspace: resolved.workspace,
+                currentWorkspaces: resolved.workspaceManager.workspaces, expectedPanel: resolved.terminalPanel,
+                currentPanel: resolved.workspace.terminalPanel(for: resolved.panelId)) else { return false }
+        guard let native = terminal.surface else { return false }
+        let harness: String? = resolved.workspace.surfaceActivityTerminalKind(panelId: resolved.panelId)
+        guard let region = capturePromptInputRegion(surface: native, harness: harness) else { return false }
+        let observation = PromptInputObservation.activeScreen(region, harness: harness)
+        if case .deliver(let status) = SendInputGuard.decide(
+            state: observation.classification.state, allowUnguarded: allowUnguarded) {
+            result.setGuardStatus(status.rawValue)
+            // C11H-298: the screen just read is the baseline the Return is judged against.
+            var baseline = sendConfirmationFacts(panelID: resolved.panelId, record: terminal.hcLiveRecord)
+            baseline.prompt = observation.classification.state
+            baseline.frame = SendSubmitConfirmation.frame(of: region)
+            // Waiting needs a composer c11 can read; `agentOwned` (what JSON `submitted` means) needs only an agent.
+            let canReadComposer = PromptInputClassifier.supportsComposer(harness: harness)
+            let expectation = SendSubmitConfirmation.expectation(wantsReturn: wantsReturn, bodyIsEmpty: bodyIsEmpty,
+                screen: true, isAgent: canReadComposer, unguarded: allowUnguarded, baseline: baseline,
+                localCommand: localCommand)
+            result.setConfirmation(expectation, baseline: baseline, harness: harness,
+                agentOwned: canReadComposer
+                    || SendSubmitConfirmation.screenTargetIsAgent(harness: harness, record: terminal.hcLiveRecord))
+            return true
+        }
+        return false
+    }
+
+    /// C11H-298: hc's record and the live journal for one panel, read on main. The journal is lock-guarded.
+    @MainActor
+    private func sendConfirmationFacts(panelID: UUID, record: HCTerminalRecord?) -> SendSubmitConfirmation.Facts {
+        let journal = JournalCoordinator.shared.snapshot(panelID: panelID).flatMap { $0.isHistorical ? nil : $0 }
+        return SendSubmitConfirmation.Facts(hcStatus: record?.status, hcStatusMs: record?.statusTimestampMilliseconds,
+            hcTurn: record?.turn, journalPhase: journal?.phase, journalSinceMs: journal?.sinceMs,
+            journalTurnID: journal?.turnID)
+    }
+
+    /// C11H-298: after a send's Return, wait (bounded, on this socket worker) for the agent's own evidence that it
+    /// took the line. Each look is one short main hop: hc's record, the journal, and the prompt when the panel has
+    /// a screen.
+    nonisolated private func awaitSendSubmitConfirmation(baseline: SendSubmitConfirmation.Facts, harness: String?,
+                                                        resolved: PanelSendPhaseAResolved,
+                                                        deadline: Date) -> SendSubmitConfirmation.Verdict {
+        SendSubmitConfirmation.wait(baseline: baseline, deadline: deadline) { timeout in
+            // A busy main thread gives no answer for this look, and never holds the send past its deadline; a look
+            // it never reached in time is dropped rather than run late (C11H-305).
+            SendSubmitConfirmation.timedLook(timeout: timeout,
+                                             schedule: { work in Task { @MainActor in work() } }) {
+                MainActor.assumeIsolated {
+                    let terminal = resolved.terminalPanel.surface
+                    var now = self.sendConfirmationFacts(panelID: resolved.panelId, record: terminal.hcLiveRecord)
+                    if let native = terminal.surface,
+                       let region = self.capturePromptInputRegion(surface: native, harness: harness) {
+                        now.prompt = PromptInputObservation.activeScreen(region, harness: harness).classification.state
+                        now.frame = SendSubmitConfirmation.frame(of: region)
+                    }
+                    return now
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func hcSocketSend(delivery: SendTextDelivery, allowUnguarded: Bool,
+                              resolved: PanelSendPhaseAResolved, result: HCSocketSendResult) async {
+        guard SendInputGuard.targetIsCurrent(expectedWorkspace: resolved.workspace,
+            currentWorkspaces: resolved.workspaceManager.workspaces, expectedPanel: resolved.terminalPanel,
+            currentPanel: resolved.workspace.terminalPanel(for: resolved.panelId)) else {
+            result.set(.refused(.staleIdentity)); return
+        }
+        let terminal = resolved.terminalPanel.surface
+        if HCHeadless.sendRoute(hasSurface: terminal.surface != nil, hasHeadlessBridge: terminal.hcHeadlessBridge != nil) == .statusDecision {
+            // C11H-112: a terminal running headless has no screen, so its hc status decides (see
+            // `HCHeadless.sendDecision`): idle/done/working agents and plain shells deliver; a blocked agent or one
+            // with no current status refuses unless `--allow-unguarded`. Every refusal writes one diagnostics line.
+            let record = terminal.hcLiveRecord
+            switch HCHeadless.sendDecision(record: record, allowUnguarded: allowUnguarded,
+                                           doorbellInFlight: FeedAnswerInFlight.isActive(panelID: resolved.panelId)) {
+            case .busy:
+                result.set(.refused(.queueFull))
+            case .refuse(let status):
+                HCDiagnosticRecorder.shared.recordHeadlessSendRefused(panelID: resolved.panelId,
+                    terminal: record?.key.localAddress, status: status, callerPanelID: resolved.callerPanelId)
+                result.setRefusalDetail(status)
+                result.set(.refused(.guardRefused))
+            case .deliver:
+                result.setGuardStatus(allowUnguarded ? "unguarded_headless" : "headless_status")
+                // C11H-298: with no screen, only the agent's turn can confirm its Return.
+                let baseline = sendConfirmationFacts(panelID: resolved.panelId, record: record)
+                let isAgent = HCHeadless.sendTargetsAgent(record)
+                let expectation = SendSubmitConfirmation.expectation(wantsReturn: delivery.wantsReturn,
+                    bodyIsEmpty: delivery.body.isEmpty, screen: false, isAgent: isAgent,
+                    unguarded: allowUnguarded, baseline: baseline,
+                    localCommand: SendSubmitConfirmation.isLocalCommand(delivery.body))
+                result.setConfirmation(expectation, baseline: baseline, harness: nil, agentOwned: isAgent)
+                let outcome = await terminal.submitHCInput(delivery.body, submit: delivery.wantsReturn, source: .socket,
+                    screenGuard: nil, waitSeconds: HCInputReadyQueue.socketWaitSeconds)
+                terminal.noteHCSocketSend(body: delivery.body, wantsReturn: delivery.wantsReturn, outcome: outcome)
+                result.set(outcome)
+            }
+            return
+        }
+        let screenGuard: HCInputGuard = { [self] receipt in
+            hcSocketGuardAllows(receipt, terminal: terminal, allowUnguarded: allowUnguarded,
+                                wantsReturn: delivery.wantsReturn, bodyIsEmpty: delivery.body.isEmpty,
+                                localCommand: SendSubmitConfirmation.isLocalCommand(delivery.body),
+                                resolved: resolved, result: result)
+        }
+        let outcome: HCInputOutcome = await terminal.submitHCInput(delivery.body, submit: delivery.wantsReturn,
+            source: .socket, screenGuard: screenGuard, waitSeconds: HCInputReadyQueue.socketWaitSeconds)
+        terminal.noteHCSocketSend(body: delivery.body, wantsReturn: delivery.wantsReturn, outcome: outcome)
+        result.set(outcome)
+    }
+
+    /// Only the socket worker waits. The main-actor task suspends through
+    /// parsing/writer completion; its exact port is never retargeted on retry.
+    nonisolated private func v2SendHCText(_ text: String, submit: Bool, preserveNewlines: Bool,
+                                         allowUnguarded: Bool, resolved: PanelSendPhaseAResolved,
+                                         started: Date) -> V2CallResult {
+        let result = HCSocketSendResult()
+        let done = DispatchSemaphore(value: 0)
+        let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        let task = Task<Void, Never> { @MainActor in
+            defer { done.signal() }
+            await self.hcSocketSend(delivery: delivery, allowUnguarded: allowUnguarded,
+                                    resolved: resolved, result: result)
+        }
+        if done.wait(timeout: .now() + 5) == .timedOut {
+            task.cancel()
+            // The cancellation handler revokes the writer reservation. Wait
+            // for its actual receipt, including any body prefix already sent.
+            _ = done.wait(timeout: .now() + 2)
+        }
+        let (outcome, guardStatus) = result.read()
+        guard let outcome else {
+            return .err(code: "hc_input_unconfirmed", message: String(localized: "hc.input.interrupted",
+                defaultValue: "Input interrupted. Some input may have arrived. Previous input will not be sent again."),
+                data: ["retry_safe": false, "submitted": false, "delivered": false])
+        }
+        switch outcome {
+        case .refused(let reason):
+            var refusal: [String: Any] = ["outcome": "refused", "body_bytes_written": 0, "return_written": false,
+                                          "submitted": false, "delivered": false, "queued": false]
+            var message = HCInputNotice.refused(reason).agentMessage(panelRef: resolved.panelIdString)
+            if let detail = result.refusalDetail {
+                // C11H-112: no screen to guard, and hc's status says why this send was refused.
+                refusal["headless_status"] = detail
+                message += " " + String(format: String(localized: "hc.headless.sendRefused",
+                    defaultValue: "(terminal has no screen; hc status: %@. Use --allow-unguarded to send anyway.)"), detail)
+            }
+            return .err(code: "hc_input_" + reason.rawValue, message: message, data: refusal)
+        case .uncertain(let receipt):
+            return .err(code: "hc_input_uncertain", message: HCInputNotice.interrupted(receipt).agentMessage(panelRef: resolved.panelIdString),
+                data: ["outcome": "uncertain", "operation_id": receipt.operationID.uuidString,
+                       "body_bytes_written": receipt.bodyBytesWritten, "return_written": receipt.returnWritten,
+                       "submitted": receipt.returnWritten, "delivered": false, "queued": false, "retry_safe": false])
+        case .written(let receipt):
+            // C11H-298: a written Return is bytes, not a taken line. Wait for the agent's turn when one is due,
+            // inside the CLI's 10 s deadline (`started` is the command's own start, before target resolution).
+            let (expectation, baseline, harness) = result.readConfirmation()
+            var verdict: SendSubmitConfirmation.Verdict?
+            if receipt.returnWritten, expectation == .turnStart, let baseline {
+                let deadline = min(Date().addingTimeInterval(SendSubmitConfirmation.waitSeconds),
+                                   started.addingTimeInterval(8))
+                verdict = awaitSendSubmitConfirmation(baseline: baseline, harness: harness,
+                                                      resolved: resolved, deadline: deadline)
+            }
+            // For an agent, `submitted` is the agent's confirmed take and nothing else (a line it was not waited
+            // on, mid-turn or a slash command, is `submitted: false` with `return_written: true`). For any other
+            // program it stays "Return written".
+            let submitted = SendSubmitConfirmation.submittedField(verdict: verdict, agentOwned: result.targetIsAgent,
+                                                                  returnWritten: receipt.returnWritten)
+            EventEmitter.shared.emitPanelInputSent(workspace: resolved.workspaceId, surface: resolved.panelId,
+                callerPanelId: resolved.callerPanelId, callerTitle: resolved.callerTitle,
+                targetTitle: resolved.targetTitle, kind: "text", text: text,
+                submitted: submitted, queued: false)
+            if case .unconfirmed(let reason)? = verdict {
+                // The target's identity rides along: this is the path where the caller must go and read the panel.
+                var data = resolved.responseEnvelope
+                data.merge(["outcome": "written", "operation_id": receipt.operationID.uuidString,
+                            "body_bytes_written": receipt.bodyBytesWritten, "return_written": true,
+                            "submitted": false, "delivered": true, "queued": false, "confirmed": false,
+                            "submit_check": "unconfirmed", "unconfirmed_reason": reason,
+                            "input_guard": guardStatus, "retry_safe": false]) { _, new in new }
+                return .err(code: "send_unconfirmed",
+                    message: Self.sendUnconfirmedMessage(reason: reason, panelRef: resolved.panelIdString), data: data)
+            }
+            var envelope = resolved.responseEnvelope
+            envelope["outcome"] = "written"
+            envelope["operation_id"] = receipt.operationID.uuidString
+            envelope["body_bytes_written"] = receipt.bodyBytesWritten
+            envelope["return_written"] = receipt.returnWritten
+            envelope["submitted"] = submitted
+            envelope["delivered"] = true
+            envelope["queued"] = false
+            envelope["input_guard"] = guardStatus
+            switch verdict {
+            case .confirmed(let evidence)?:
+                envelope["confirmed"] = true
+                envelope["submit_check"] = "confirmed"
+                envelope["submit_evidence"] = evidence
+            default:
+                envelope["confirmed"] = false
+                envelope["submit_check"] = "not_applicable"
+                if case .none(let why)? = expectation { envelope["submit_check_reason"] = why }
+            }
+            return .ok(envelope)
+        }
+    }
+
+    /// C11H-298: the error for a Return that was written but not taken.
+    nonisolated static func sendUnconfirmedMessage(reason: String, panelRef: String) -> String {
+        let why: String
+        switch reason {
+        case "composer_holds_text":
+            why = String(localized: "socket.send.unconfirmed.composer", defaultValue: "the text is still in its composer")
+        case "dialog":
+            why = String(localized: "socket.send.unconfirmed.dialog", defaultValue: "a dialog or chooser is showing")
+        default:
+            why = String(localized: "socket.send.unconfirmed.no_turn", defaultValue: "its turn did not start")
+        }
+        return String(format: String(localized: "socket.send.unconfirmed",
+            defaultValue: "Not submitted: the text was typed and Return was pressed in %@, but the agent did not take it (%@). Do not send the text again. Read the panel first; if the text is still in its composer, submit it with c11 send-key --panel %@ enter."),
+            panelRef, why, panelRef)
+    }
+
     // C11-26: surface.send_key matches surface.send_text's deadlock shape
     // (v2MainSync wrap → waitForTerminalSurface → v2AwaitCallback nesting
     // CFRunLoopRun on a held main queue). Migrate it to the same Phase A /
@@ -1287,6 +1670,41 @@ extension TerminalController {
             resolved = r
         }
 
+        // C11H-112: a terminal running headless has no Ghostty surface; its keys go through hc as bytes.
+        if resolved.initialSurface == nil, let keyText = HCHeadless.keyText(forNamedKey: key) {
+            let headlessSema = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var headlessOutcome: HCInputOutcome?
+            let headlessTask = Task { @MainActor in
+                defer { headlessSema.signal() }
+                let terminal = resolved.terminalPanel.surface
+                guard terminal.surface == nil, terminal.hcHeadlessBridge != nil else { return }
+                let outcome = await terminal.submitHCInput(keyText, submit: false, source: .socket,
+                    waitSeconds: HCInputReadyQueue.socketWaitSeconds)
+                // C11H-203: as on the PTY path (`socketKeyTextIsDraft`), only a
+                // key that types text (space) leaves a draft; Escape, Ctrl and
+                // arrows do not.
+                if keyText == " " { terminal.noteHCSocketSend(body: keyText, wantsReturn: false, outcome: outcome) }
+                headlessOutcome = outcome
+            }
+            if headlessSema.wait(timeout: .now() + 5) == .timedOut { headlessTask.cancel(); _ = headlessSema.wait(timeout: .now() + 2) }
+            if let outcome = headlessOutcome {
+                switch outcome {
+                case .written:
+                    EventEmitter.shared.emitPanelInputSent(workspace: resolved.workspaceId, surface: resolved.panelId,
+                        callerPanelId: resolved.callerPanelId, callerTitle: resolved.callerTitle,
+                        targetTitle: resolved.targetTitle, kind: "key", text: key,
+                        submitted: TerminalController.namedKeySubmits(key))
+                    return .ok(resolved.responseEnvelope)
+                case .refused(let reason):
+                    return .err(code: "hc_input_" + reason.rawValue, message: HCInputNotice.refused(reason).agentMessage(panelRef: resolved.panelIdString),
+                                data: ["outcome": "refused", "delivered": false])
+                case .uncertain(let receipt):
+                    return .err(code: "hc_input_uncertain", message: HCInputNotice.interrupted(receipt).agentMessage(panelRef: resolved.panelIdString),
+                                data: ["outcome": "uncertain", "delivered": false, "retry_safe": false])
+                }
+            }
+        }
+
         let resolvedSurface: ghostty_surface_t?
         if let initialSurface = resolved.initialSurface {
             resolvedSurface = initialSurface
@@ -1301,6 +1719,7 @@ extension TerminalController {
             case ok
             case unknownKey
             case surfaceNotReady
+            case inputPaused(V2CallResult)
         }
         let phaseBSema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseBOutcome: PhaseBOutcome = .surfaceNotReady
@@ -1321,6 +1740,13 @@ extension TerminalController {
             // while another writer's paste-then-Return is in flight waits for
             // it instead of landing inside it.
             let terminalSurface = resolved.terminalPanel.surface
+            // C11H-124: a paused panel drops keys inside the input coordinator, so the
+            // key would be reported sent and do nothing. Say it is paused instead.
+            if let refusal = HCPausedInputGate.keyRefusal(policy: terminalSurface.hcSession?.disconnectedInput,
+                                                          panelRef: resolved.panelIdString) {
+                phaseBOutcome = .inputPaused(refusal)
+                return
+            }
             terminalSurface.performInputTransaction { [weak self, weak terminalSurface] finish in
                 defer { finish() }
                 guard let self, let terminalSurface, let liveSurface = terminalSurface.surface else { return }
@@ -1348,7 +1774,45 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Unknown key", data: ["key": key])
         case .surfaceNotReady:
             return .err(code: "internal_error", message: "Panel not ready", data: ["surface_id": resolved.panelIdString])
+        case .inputPaused(let refusal):
+            return refusal
         }
+    }
+
+    /// C11H-124: `c11 retry-input --panel <ref>`. Clears a panel's input pause the way
+    /// the Retry input button does, so an agent can recover a stuck panel; it never
+    /// resends the interrupted input. Waits briefly for the fresh attachment the
+    /// pause asks for.
+    nonisolated func v2PanelRetryInput(params: [String: Any]) -> V2CallResult {
+        guard let panelRef = params["surface_id"] as? String,
+              !panelRef.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .err(code: "invalid_params", message: String(localized: "socket.input_state.tab_required", defaultValue: "A panel identifier is required."), data: nil)
+        }
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "Failed to retry input", data: nil)
+        let task = Task { @MainActor in
+            defer { done.signal() }
+            v2RefreshKnownRefs()
+            if let rejection = v2RejectUnresolvedTargetRefs(params) { result = rejection; return }
+            switch resolveSurfaceSendTargets(params: params) {
+            case .err(let error):
+                result = error
+            case .ok(let resolved):
+                guard let policy = resolved.terminalPanel.surface.hcSession?.disconnectedInput else {
+                    result = .err(code: "not_supported", message: String(localized: "socket.retry_input.unsupported",
+                        defaultValue: "This panel has no held input to retry."), data: nil)
+                    return
+                }
+                let outcome = await policy.retryInputWaiting(seconds: 3)
+                result = HCPausedInputGate.retryReply(outcome, refusal: policy.retryFailure,
+                                                      envelope: resolved.responseEnvelope)
+            }
+        }
+        if done.wait(timeout: .now() + 8) == .timedOut {
+            task.cancel()
+            return .err(code: "timeout", message: String(localized: "socket.retry_input.timeout", defaultValue: "Retry input timed out."), data: nil)
+        }
+        return result
     }
 
     // C11-26: surface.clear_history doesn't have the deadlock vector (no
@@ -1394,14 +1858,18 @@ extension TerminalController {
 
             terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceClearHistory")
             let windowId = v2ResolveWindowId(workspaceManager: workspaceManager)
-            result = .ok([
+            var payload: [String: Any] = [
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                 "surface_id": surfaceId.uuidString,
                 "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId)
-            ])
+            ]
+            // C11H-24 / X.4: hc 0.1.16 has no primitive to clear its own
+            // history, so an hc terminal's clear is local and says so.
+            payload.merge(HCClearHistoryResult.fields(isHCTerminal: terminalPanel.hcEndIdentity != nil)) { _, new in new }
+            result = .ok(payload)
         }
         semaphore.wait()
         return result
@@ -1496,6 +1964,23 @@ extension TerminalController {
     /// once per command to follow a panel that moved since. `Workspace.panels`
     /// registers every panel's workspace with the journal on add and on a move,
     /// and clears it on close; that lock-guarded map is the answer, so no main hop.
+    /// C11H-24: report how explicit closes of these panels ended their hc
+    /// sessions, waiting up to `timeout_ms` (default 5000, at most 8000, under
+    /// the CLI's 10 s deadline) for the backend's evidence. Socket-worker only:
+    /// the wait never runs on main.
+    nonisolated func v2PanelEndStatus(params: [String: Any]) -> V2CallResult {
+        let raw = (params["surface_ids"] as? [Any]) ?? (params["panel_ids"] as? [Any]) ?? []
+        let panelIds = raw.compactMap { ($0 as? String).flatMap(UUID.init(uuidString:)) }
+        guard !panelIds.isEmpty, panelIds.count == raw.count else {
+            return .err(code: "invalid_params", message: "panel.end_status takes panel_ids: [panel UUID]", data: nil)
+        }
+        let timeoutMs = min(max((params["timeout_ms"] as? Int) ?? 5000, 0), 8000)
+        // Repeated ids are answered once each, in request order.
+        let uniqueIds = HCSessionEnd.uniquePanelIds(panelIds)
+        let outcomes = HCSessionEnd.waitForOutcomes(panelIds: uniqueIds, timeout: TimeInterval(timeoutMs) / 1000)
+        return .ok(["session_end": HCSessionEnd.wireOutcomes(panelIds: uniqueIds, outcomes: outcomes)])
+    }
+
     nonisolated func v2PanelLocate(params: [String: Any]) -> V2CallResult {
         guard let raw = v2String(params, "surface_id") else {
             return .err(code: "missing_ref", message: "panel.locate requires panel_id", data: nil)
@@ -1687,6 +2172,13 @@ extension TerminalController {
                 return
             }
             guard let surface = terminal.surface.surface else {
+                if terminal.surface.hcHeadlessBridge != nil {
+                    // C11H-112: the terminal runs, with no Ghostty surface to read a screen from yet.
+                    capture.complete(.failure(.err(code: "terminal_not_attached", message: String(localized: "hc.headless.readScreen",
+                        defaultValue: "Not attached yet: the terminal is running headless, and its screen is readable once a surface attaches."),
+                        data: ["headless": true, "surface_id": id.uuidString])))
+                    return
+                }
                 capture.complete(.failure(.err(code: "internal_error", message: "ERROR: Terminal surface not found", data: nil)))
                 return
             }
@@ -1967,9 +2459,11 @@ extension TerminalController {
             MetadataKey.parentPanelId,
             MetadataKey.parentPanelRef,
             MetadataKey.parentPanelTitle,
+            MetadataKey.panelOrigin,
+            MetadataKey.panelOriginDetail,
         ]
         guard lineageProjectionKeys.isDisjoint(with: metadataObj.keys) else {
-            return .err(code: "lineage_read_only", message: "parent_panel_id is a read-only lineage projection", data: nil)
+            return .err(code: "lineage_read_only", message: "parent_panel_id and panel_origin are read-only lineage projections", data: nil)
         }
 
         let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
@@ -2103,14 +2597,31 @@ extension TerminalController {
             }
         }
         let lineage = PanelLineage.shared.node(panelId: resolved.surfaceId)
-        let parentPanelId = lineage?.parentPanelId
-        let parentNode = parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0) }
+        var parentPanelId = lineage?.parentPanelId
+        var parentNode = parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0) }
+        // C11H-371: a relayed read names no parent or delegator outside the
+        // caller's workspace, whichever keys it asks for.
+        if let scope = SocketCommandContext.current?.relayReadScope {
+            if parentPanelId != nil, parentNode?.workspaceId != scope.workspace {
+                parentPanelId = nil
+                parentNode = nil
+            }
+            if let owner = fullMetadata[MetadataKey.delegatedBy], !(owner is NSNull),
+               (owner as? String).flatMap(UUID.init(uuidString:)).flatMap({ JournalCoordinator.shared.target(panelID: $0) })
+                != scope.workspace {
+                fullMetadata[MetadataKey.delegatedBy] = NSNull()
+            }
+        }
         fullMetadata[MetadataKey.parentPanelId] = v2OrNull(parentPanelId?.uuidString)
         fullMetadata[MetadataKey.parentPanelRef] = v2Ref(kind: .surface, uuid: parentPanelId)
         fullMetadata[MetadataKey.parentPanelTitle] = v2OrNull(parentNode?.lastTitle)
+        fullMetadata[MetadataKey.panelOrigin] = (lineage?.origin ?? .unknown).rawValue
+        fullMetadata[MetadataKey.panelOriginDetail] = v2OrNull(lineage?.originDetail)
         fullSources.removeValue(forKey: MetadataKey.parentPanelId)
         fullSources.removeValue(forKey: MetadataKey.parentPanelRef)
         fullSources.removeValue(forKey: MetadataKey.parentPanelTitle)
+        fullSources.removeValue(forKey: MetadataKey.panelOrigin)
+        fullSources.removeValue(forKey: MetadataKey.panelOriginDetail)
         fullMetadata["journal"] = JournalCoordinator.shared.readback(panelID: resolved.surfaceId)
         fullMetadata["supervisor"] = SupervisorMonitor.shared.readback(panel: resolved.surfaceId)
         var metadataOut: [String: Any] = fullMetadata
@@ -2151,9 +2662,11 @@ extension TerminalController {
             MetadataKey.parentPanelId,
             MetadataKey.parentPanelRef,
             MetadataKey.parentPanelTitle,
+            MetadataKey.panelOrigin,
+            MetadataKey.panelOriginDetail,
         ]
         guard keys.map({ lineageProjectionKeys.isDisjoint(with: $0) }) ?? true else {
-            return .err(code: "lineage_read_only", message: "parent_panel_id is a read-only lineage projection", data: nil)
+            return .err(code: "lineage_read_only", message: "parent_panel_id and panel_origin are read-only lineage projections", data: nil)
         }
 
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()

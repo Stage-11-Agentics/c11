@@ -1,0 +1,6 @@
+Spike 0b row 1. hc-guest.sh procs in the guest at the time of row 1 (13:47 PDT):
+ 1662     1  1662  13648   0.1 /Users/admin/c0b/bin/hc serve
+ 1955     1  1938 220304   2.7 /Users/admin/c11-sandbox/apps/c11v-hc/c11 DEV c11v-hc.app/Contents/MacOS/c11
+ 1981  1662  1981   7744   0.0 /Users/admin/c0b/bin/hc hold --socket /tmp/c0b/herdr-core/c0b.holder.dc41d40d.sock
+The shell's `ps -o pid,ppid,comm -p $$ -p $PPID` in the panel (screenshot 01): 1981 1662 /Users/admin/c0b/bin/hc ; 1982 1981 /bin/zsh
+So the shell's parent, pid 1981, is `hc hold`.

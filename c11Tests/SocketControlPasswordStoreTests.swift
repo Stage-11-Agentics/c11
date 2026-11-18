@@ -224,11 +224,6 @@ final class SocketControlPasswordStoreTests: XCTestCase {
                 return true
             }
         )
-
-        XCTAssertEqual(try SocketControlPasswordStore.loadPassword(fileURL: fileURL), "legacy-secret")
-        XCTAssertEqual(lookupCount, 1)
-        XCTAssertEqual(deleteCount, 1)
-
         SocketControlPasswordStore.migrateLegacyKeychainPasswordIfNeeded(
             defaults: defaults,
             fileURL: fileURL,
@@ -242,9 +237,10 @@ final class SocketControlPasswordStoreTests: XCTestCase {
             }
         )
 
-        XCTAssertEqual(lookupCount, 1)
-        XCTAssertEqual(deleteCount, 1)
-        XCTAssertEqual(try SocketControlPasswordStore.loadPassword(fileURL: fileURL), "legacy-secret")
+        XCTAssertEqual(lookupCount, 0)
+        XCTAssertEqual(deleteCount, 0)
+        XCTAssertNil(try SocketControlPasswordStore.loadPassword(fileURL: fileURL))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
 }
 
@@ -433,18 +429,19 @@ final class CmuxCLIPathInstallerTests: XCTestCase {
         XCTAssertTrue(installer.isInstalled())
     }
 
-    func testInstallAcceptsDanglingC11SymlinkFromMovedBundle() throws {
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
+    func testInstallRefusesDanglingC11HAppSymlink() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("c11h-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
         let bundledCLIURL = try makeBundledCLI(in: root)
         let destinationURL = makeDestination(in: root)
-        // Simulate a prior c11.app at a different location that no longer exists.
+        // Simulate a prior c11h.app at a different location that no longer exists.
         let staleTarget = root
-            .appendingPathComponent("old-location/c11.app/Contents/Resources/bin/c11", isDirectory: false)
+            .appendingPathComponent("old-location/c11h.app/Contents/Resources/bin/c11", isDirectory: false)
         try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: staleTarget)
 
         let installer = CmuxCLIPathInstaller(
@@ -452,17 +449,16 @@ final class CmuxCLIPathInstallerTests: XCTestCase {
             destinationURL: destinationURL,
             bundledCLIURLProvider: { bundledCLIURL },
             expectedBundledCLIPath: bundledCLIURL.path,
-            privilegedInstaller: { _, _ in XCTFail("should not escalate") }
+            privilegedInstaller: { _, _ in XCTFail("c11h.app must not be replaced") }
         )
 
-        let outcome = try installer.install()
-        XCTAssertFalse(outcome.usedAdministratorPrivileges)
-        XCTAssertTrue(installer.isInstalled())
+        XCTAssertThrowsError(try installer.install())
         XCTAssertEqual(
             try fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
-            bundledCLIURL.path
+            staleTarget.path
         )
     }
+    // c11-2.0:end-keep
 
     func testUninstallRefusesWhenDestinationIsUnrelatedSymlink() throws {
         let fileManager = FileManager.default
@@ -500,31 +496,35 @@ final class CmuxCLIPathInstallerTests: XCTestCase {
         )
     }
 
-    func testUninstallRemovesDanglingC11SymlinkFromMovedBundle() throws {
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
+    func testUninstallRefusesDanglingC11HAppSymlink() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("c11h-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
         let bundledCLIURL = try makeBundledCLI(in: root)
         let destinationURL = makeDestination(in: root)
         let staleTarget = root
-            .appendingPathComponent("old-location/c11.app/Contents/Resources/bin/c11", isDirectory: false)
+            .appendingPathComponent("old-location/c11h.app/Contents/Resources/bin/c11", isDirectory: false)
         try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: staleTarget)
 
         let installer = CmuxCLIPathInstaller(
             fileManager: fileManager,
             destinationURL: destinationURL,
             bundledCLIURLProvider: { bundledCLIURL },
-            expectedBundledCLIPath: bundledCLIURL.path
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedUninstaller: { _ in XCTFail("c11h.app must not be removed") }
         )
 
-        let outcome = try installer.uninstall()
-        XCTAssertFalse(outcome.usedAdministratorPrivileges)
-        XCTAssertTrue(outcome.removedExistingEntry)
-        XCTAssertFalse(fileManager.fileExists(atPath: destinationURL.path))
+        XCTAssertThrowsError(try installer.uninstall())
+        XCTAssertEqual(
+            try fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
+            staleTarget.path
+        )
     }
+    // c11-2.0:end-keep
 
     func testPrivilegedInstallIsGuardedBySafetyCheck() throws {
         let fileManager = FileManager.default
@@ -1004,7 +1004,7 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         h.defaults.set(true, forKey: AgentSkillsOnboarding.dontAskAgainKey)
         XCTAssertFalse(AgentSkillsOnboarding.shouldPresent(
             home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
-            isLocalDevBuild: false))
+            isLocalDevBuild: false, bundleIdentifier: "com.example.notc11h"))
     }
 
     func testDismissedEntryMatchingBundledHashSuppressesPresent() throws {
@@ -1014,7 +1014,7 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         h.defaults.set(["claude.foo": hash], forKey: AgentSkillsOnboarding.dismissalsKey)
         XCTAssertFalse(AgentSkillsOnboarding.shouldPresent(
             home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
-            isLocalDevBuild: false))
+            isLocalDevBuild: false, bundleIdentifier: "com.example.notc11h"))
     }
 
     func testDismissedEntryAgainstOldHashAllowsPresent() throws {
@@ -1025,7 +1025,7 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         h.defaults.set(["claude.foo": "sha256:OBSOLETE"], forKey: AgentSkillsOnboarding.dismissalsKey)
         XCTAssertTrue(AgentSkillsOnboarding.shouldPresent(
             home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
-            isLocalDevBuild: false))
+            isLocalDevBuild: false, bundleIdentifier: "com.example.notc11h"))
     }
 
     func testNoDetectedTargetsReturnsFalse() throws {
@@ -1033,7 +1033,7 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         defer { h.cleanup() }
         XCTAssertFalse(AgentSkillsOnboarding.shouldPresent(
             home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
-            isLocalDevBuild: false))
+            isLocalDevBuild: false, bundleIdentifier: "com.example.notc11h"))
     }
 
     func testMissingPackageOnDetectedTargetReturnsTrue() throws {
@@ -1042,7 +1042,43 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         // No dismissal entry → row offers → should present.
         XCTAssertTrue(AgentSkillsOnboarding.shouldPresent(
             home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
-            isLocalDevBuild: false))
+            isLocalDevBuild: false, bundleIdentifier: "com.example.notc11h"))
+    }
+}
+
+/// C11H-269: 2.0 is c11, so the first-run sheet follows c11 1.x's rule by bundle family.
+@MainActor
+final class AgentSkillsShouldPresentBundleFamilyTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        AgentSkillsOnboarding._resetDismissedThisLaunchForTests()
+    }
+
+    private func offers(_ h: SkillsHarness, bundle: String, environment: [String: String] = [:]) -> Bool {
+        AgentSkillsOnboarding.shouldPresent(
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            environment: environment, isLocalDevBuild: false, bundleIdentifier: bundle)
+    }
+
+    func testReleaseAndStagingBundlesOfferTheSheet() throws {
+        let h = try makeHarness(skills: ["c11": "v1-content"])
+        defer { h.cleanup() }
+        XCTAssertTrue(offers(h, bundle: C11Identity.releaseBundleIdentifier))
+        XCTAssertTrue(offers(h, bundle: C11Identity.stagingBundleIdentifier))
+    }
+
+    func testDebugAndTaggedDebugBundlesNeverOffer() throws {
+        let h = try makeHarness(skills: ["c11": "v1-content"])
+        defer { h.cleanup() }
+        XCTAssertFalse(offers(h, bundle: C11Identity.untaggedDebugBundleIdentifier))
+        XCTAssertFalse(offers(h, bundle: C11Identity.untaggedDebugBundleIdentifier + ".c20-docs"))
+    }
+
+    func testAQALaunchNeverOffersEvenOnRelease() throws {
+        let h = try makeHarness(skills: ["c11": "v1-content"])
+        defer { h.cleanup() }
+        XCTAssertFalse(offers(h, bundle: C11Identity.releaseBundleIdentifier,
+                              environment: [QALaunchPolicy.primaryKey: "fresh"]))
     }
 }
 
@@ -1170,7 +1206,7 @@ final class SkillInstallerLocalCopyTests: XCTestCase {
     private func shouldPresent(_ h: SkillsHarness) -> Bool {
         AgentSkillsOnboarding.shouldPresent(
             home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
-            environment: [:], isLocalDevBuild: false)
+            environment: [:], isLocalDevBuild: false, bundleIdentifier: "com.example.notc11h")
     }
 
     private func installedSkill(_ h: SkillsHarness, _ name: String) throws -> String {
@@ -1505,7 +1541,7 @@ final class SocketControlSettingsXCTestIsolationTests: XCTestCase {
             isDebugBuild: true,
             processIdentifier: 12345
         )
-        XCTAssertEqual(path, "/tmp/c11-test-12345.sock")
+        XCTAssertEqual(path, C11Identity.xctestSocketPath(processIdentifier: 12345))
     }
 
     func testUntaggedDebugHostWithoutXCTestStillUsesSharedDebugSocket() {
@@ -1515,7 +1551,7 @@ final class SocketControlSettingsXCTestIsolationTests: XCTestCase {
             isDebugBuild: true,
             processIdentifier: 12345
         )
-        XCTAssertEqual(path, "/tmp/c11-debug.sock")
+        XCTAssertEqual(path, C11Identity.debugSocketPath)
     }
 
     func testTaggedDebugHostUnderXCTestStillHonorsTaggedPath() {
@@ -1526,7 +1562,7 @@ final class SocketControlSettingsXCTestIsolationTests: XCTestCase {
             isDebugBuild: true,
             processIdentifier: 12345
         )
-        XCTAssertEqual(path, "/tmp/c11-debug-scenario.sock")
+        XCTAssertEqual(path, C11Identity.taggedDebugSocketPath(slug: "scenario"))
     }
 
     func testExplicitSocketOverrideUnderXCTestStillWins() {
@@ -1554,7 +1590,7 @@ final class SocketControlSettingsXCTestIsolationTests: XCTestCase {
             probeStableDefaultPathEntry: { _ in .missing },
             processIdentifier: 12345
         )
-        XCTAssertNotEqual(path, "/tmp/c11-test-12345.sock")
-        XCTAssertNotEqual(path, "/tmp/c11-debug.sock")
+        XCTAssertNotEqual(path, C11Identity.xctestSocketPath(processIdentifier: 12345))
+        XCTAssertNotEqual(path, C11Identity.debugSocketPath)
     }
 }

@@ -1,7 +1,7 @@
 name: Release c11 macOS app
 
-# Releases run through scripts/release-local.sh on Atlas: the build in place
-# (--host local) and signing, notarization and publishing from Atlas's release
+# Releases run through scripts/release-local.sh on the build host: the build in place
+# (--host local) and signing, notarization and publishing from the build host's release
 # keychain (C11-542, Atin's go 2026-10-31). This workflow is the manual
 # fallback when that path is down:
 #   gh workflow run release.yml --repo Stage-11-Agentics/c11 --ref vX.Y.Z
@@ -100,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           # The release toolchain pin: Xcode 26.3, as release-local.sh
-          # (RELEASE_DTXCODE 2630) and remote-build.sh on Atlas use.
+          # (RELEASE_DTXCODE 2630) and remote-build.sh on the build host use.
           XCODE_DIR="/Applications/Xcode_26.3.app/Contents/Developer"
           if [ ! -d "$XCODE_DIR" ]; then
             echo "Xcode 26.3 is not on this runner image; the release pin is DTXcode 2630" >&2

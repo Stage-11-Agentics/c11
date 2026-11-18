@@ -102,7 +102,7 @@ def main():
     parser.add_argument("document")
     parser.add_argument("output")
     parser.add_argument("--metric", choices=["footprint", "rss", "both"], default="footprint")
-    parser.add_argument("--host-context", type=json.loads, help="Atlas hostname/load metadata captured by the caller")
+    parser.add_argument("--host-context", type=json.loads, help="Build-host hostname/load metadata captured by the caller")
     parser.add_argument("--renderer-events", help="native Bonsplit DEBUG log; wait for settled renders")
     parser.add_argument("--reshow-count", type=int, default=0, help="evict/recreate one panel this many times")
     args = parser.parse_args()

@@ -122,6 +122,29 @@ final class PanelTitleBarRenderTests: XCTestCase {
         }
     }
 
+    func testChipOnlyBarMatchesADescribedTerminalAndStaysHiddenWhenTold() {
+        let placement = SessionPlacement(machineName: "Laptop", mark: .none)
+        let chipOnly = PanelTitleBarState(placement: placement)
+        let described = PanelTitleBarState(description: "Working on it.", placement: placement)
+        let notKept = PanelTitleBarState(
+            description: "Working on it.",
+            placement: SessionPlacement(machineName: "Studio", mark: .notKept)
+        )
+        let reconnecting = PanelTitleBarState(
+            description: "Working on it.",
+            placement: SessionPlacement(machineName: "A", mark: .reconnecting)
+        )
+        XCTAssertTrue(chipOnly.rendersBar)
+        let chipHeight = measure(state: chipOnly)
+        XCTAssertGreaterThan(chipHeight, 0)
+        XCTAssertEqual(chipHeight, measure(state: described), accuracy: 0.5)
+        XCTAssertEqual(chipHeight, measure(state: notKept), accuracy: 0.5)
+        XCTAssertEqual(chipHeight, measure(state: reconnecting), accuracy: 0.5)
+        let hidden = PanelTitleBarState(visible: false, placement: placement)
+        XCTAssertFalse(hidden.rendersBar)
+        XCTAssertEqual(measure(state: hidden), 0, accuracy: 0.5)
+    }
+
     func testChevronShowsOnlyWhenThereIsMoreToSee() {
         let font: CGFloat = 12
         let short = "Working on it."
@@ -162,7 +185,7 @@ final class PanelTitleBarRenderTests: XCTestCase {
     func testRenderingNeverFiresTheToggle() {
         var fireCount = 0
         let state = PanelTitleBarState(title: "t", description: "Some description", collapsed: false)
-        let host = NSHostingView(rootView: PanelTitleBarView(state: state) { fireCount += 1 })
+        let host = NSHostingView(rootView: PanelTitleBarView(state: state, onToggleCollapsed: { fireCount += 1 }))
         host.frame = NSRect(x: 0, y: 0, width: Self.testWidth, height: 200)
         host.layoutSubtreeIfNeeded()
         XCTAssertEqual(fireCount, 0, "Mounting the view must not invoke the toggle closure")

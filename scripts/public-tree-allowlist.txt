@@ -1,0 +1,103 @@
+# C11H-268, C11H-284: deliberate matches for scripts/check-public-tree.py (strict), one per line:
+# path<TAB>the whole line, stripped<TAB>reason. Each entry must match at least one line (identical lines share one).
+tests/test_check_shareable.py	("skills/c11/SKILL.md", "ssh box.tail1234.ts.net", "tailnet"),	a planted fixture the shareable test must catch
+tests/test_check_shareable.py	("skills/c11/SKILL.md", "reach 100.101.2.3 first", "tailnet"),	a planted fixture the shareable test must catch
+Sources/HC/HCShardPool.swift	static let enabledKey = "c11.shards.enabled"	a UserDefaults key name, not a secret (gitleaks generic-api-key)
+THIRD_PARTY_LICENSES.md	Copyright (c) 2015 Orson Peters <orsonpeters@gmail.com>	Sparkle's own LICENSE, verbatim: a third-party copyright notice
+c11Tests/C11IdentityTests.swift	(C11RelayAuth.requestLabel, "d07601ab6acf54f8b8a405ea718951a052d552480e5a41976adacf7b8cab607d"),	a golden HMAC test vector computed with the pre-2.0 relay label over a fixed 0..<32 key, not a secret (gitleaks generic-api-key)
+c11Tests/C11IdentityTests.swift	(C11RelayAuth.replyLabel, "54124ceb83cf05a94793cb821e773321df16a9224c9e1275213c795db08fa147"),	a golden HMAC test vector computed with the pre-2.0 relay label over a fixed 0..<32 key, not a secret (gitleaks generic-api-key)
+c11Tests/C11IdentityTests.swift	(C11RelayAuth.refusalLabel, "97944398bb179b700e510d46f3dd5d95f2ec04093411bddb561954ea1b2deb2f"),	a golden HMAC test vector computed with the pre-2.0 relay label over a fixed 0..<32 key, not a secret (gitleaks generic-api-key)
+CODE_OF_CONDUCT.md	Email `hello@stage11.ai` with `c11 conduct` in the subject. Include what happened, where, when, and any evidence you have — links, screenshots, context. We read everything, respond within a few business days, and won't share the reporter's identity with the subject of the report beyond what's strictly necessary to resolve it.	Stage 11's public reporting contact (Atin, 2026-11-15 22:44, C11H-345)
+README.md	<a href="https://videos.stage11.dev/c11-intro.mp4">	README is Atin's voice and not edited here; the public host of the demo videos
+README.md	<p align="center"><sub><i>ninety seconds inside c11. composing terminals, agents, browsers, and markdown panels into one workspace. <a href="https://videos.stage11.dev/c11-intro.mp4">click to play</a>.</i></sub></p>	README is Atin's voice and not edited here; the public host of the demo videos
+README.md	<a href="https://videos.stage11.dev/c11-reshape.mp4">	README is Atin's voice and not edited here; the public host of the demo videos
+README.md	<p align="center"><sub><i>splits, spawns, panel manifests, sidebar telemetry. the workspace reshapes around the work. <a href="https://videos.stage11.dev/c11-reshape.mp4">click to play</a>.</i></sub></p>	README is Atin's voice and not edited here; the public host of the demo videos
+Resources/Blueprints/agent-room.json	"url": "https://www.stage11.ai"	Stage 11's public site as a bundled blueprint's sample URL
+Resources/Localizable.xcstrings	"value": "Feedback is down right now. Email hello@stage11.ai instead."	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "フィードバックは現在停止中です。代わりに hello@stage11.ai へメールしてください。"	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "反馈暂时不通。请改发邮件至 hello@stage11.ai。"	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "意見回饋目前中斷。請改寄 hello@stage11.ai。"	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "Обратная связь сейчас не работает. Напишите на hello@stage11.ai."	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "Відгуки зараз не працюють. Напишіть на hello@stage11.ai."	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "Or reach us at hello@stage11.ai."	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "または hello@stage11.ai までどうぞ。"	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "或联系 hello@stage11.ai。"	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "或來信 hello@stage11.ai。"	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "Или напишите нам на hello@stage11.ai."	Stage 11's public support address, as the product shows it
+Resources/Localizable.xcstrings	"value": "Або напишіть нам на hello@stage11.ai."	Stage 11's public support address, as the product shows it
+SECURITY.md	- **Fallback — email:** `hello@stage11.ai`, subject line `c11 security`.	Stage 11's public reporting contact (Atin, 2026-11-15 22:44, C11H-345)
+Sources/ContentView.swift	static let foundersEmail = "hello@stage11.ai"	Stage 11's public support address, as the product shows it
+Sources/ContentView.swift	defaultValue: "You can also reach us at hello@stage11.ai."	Stage 11's public support address, as the product shows it
+Sources/ContentView.swift	defaultValue: "A human will read this! You can also reach us at hello@stage11.ai."	Stage 11's public support address, as the product shows it
+Sources/ContentView.swift	defaultValue: "Feedback is unavailable right now. Email hello@stage11.ai instead."	Stage 11's public support address, as the product shows it
+Sources/ContentView.swift	return "Feedback is unavailable right now. Email hello@stage11.ai instead."	Stage 11's public support address, as the product shows it
+Sources/Panels/BrowserPanel.swift	id: "atlas",	ChatGPT Atlas, a third-party browser that browser import detects; not a machine
+Sources/Panels/BrowserPanel.swift	displayName: "Atlas",	ChatGPT Atlas, a third-party browser that browser import detects; not a machine
+Sources/Panels/BrowserPanel.swift	bundleIdentifiers: ["com.atlas.browser"],	ChatGPT Atlas, a third-party browser that browser import detects; not a machine
+Sources/Panels/BrowserPanel.swift	appNames: ["Atlas.app"],	ChatGPT Atlas, a third-party browser that browser import detects; not a machine
+Sources/Panels/BrowserPanel.swift	dataRootRelativePaths: ["Library/Application Support/Atlas"],	ChatGPT Atlas, a third-party browser that browser import detects; not a machine
+THIRD_PARTY_LICENSES.md	Copyright (c) 2011 TJ Holowaychuk <tj@vision-media.ca>	a third-party copyright notice, verbatim
+THIRD_PARTY_LICENSES.md	Copyright (c) Titus Wormer <mailto:tituswormer@gmail.com>	a third-party copyright notice, verbatim
+THIRD_PARTY_LICENSES.md	Copyright (c) 2018 Nikita Skovoroda <chalkerx@gmail.com>	a third-party copyright notice, verbatim
+c11UITests/SidebarHelpMenuUITests.swift	"A human will read this! You can also reach us at hello@stage11.ai."	Stage 11's public support address, as the product shows it
+docs/c11-friend-install.md	The long number it prints must match the checksum on the page. If it doesn't match, download the zip again, and if it still doesn't match, stop and email hello@stage11.ai. If Safari already unzipped it and moved the zip to the Trash, drag the zip from the Trash back to Downloads and check it there.	Stage 11's public support address, as the install guide shows it
+docs/c11-friend-install.md	Quit c11 and email hello@stage11.ai: what you did, what you expected and what happened.	Stage 11's public support address, as the install guide shows it
+notes/BUG-main-thread-deadlock-attachSurface.md	| `renderGlyph` | `:269` `lockShared` | `:275` `lock` | presentation resolve + glyph rasterization + atlas insert |	a glyph texture atlas, not a machine
+notes/BUG-main-thread-deadlock-attachSurface.md	Render outside the lock, then take the write lock only to insert into the map/atlas.	a glyph texture atlas, not a machine
+scripts/c11-2.0-rename.py	re.compile(r"c11h-run\b"),                     # the run's operations folder (~/c11h-run)	the checker's or codemod's own pattern for that name
+scripts/c11-2.0-rename.py	re.compile(r"c11h-pf\b"),                      # private operator folders the shareable gate blocks	the checker's or codemod's own pattern for that name
+scripts/c11-pr-swift-poller-test.py	self.assertIn("/Users/example/c11-poller", rendered)	the build host's installed folder, a load-bearing path default
+scripts/c11-pr-swift-poller-test.py	self.assertFalse(poller.layout_inside_worktree("/tmp/c11-poller/bin/poller.py", "/tmp/work"))	the build host's installed folder, a load-bearing path default
+scripts/c11-pr-swift-poller.py	if scope not in ("all", "remote", "atlas"):	a hidden alias so older quarantine inventories still parse
+scripts/c11-release-timing.py	DEFAULT_LOG = "c11h-run/artifacts/c11/release-timing.jsonl"  # under $HOME	a 1.x evidence or artifact folder default, overridable by its variable
+scripts/c11-release.sh	ARTIFACT="${C11_ARTIFACT:-$HOME/c11h-run/artifacts/c11/c11-macos.zip}"	a 1.x evidence or artifact folder default, overridable by its variable
+scripts/c11-release.sh	BUILD_ROOT="${C11_BUILD_ROOT:-$HOME/c11-builds}"	the build host's installed folder, a load-bearing path default
+scripts/c11-release.sh	ATLAS_BUILD="${C11_ATLAS_BUILD:-$HOME/c11h-run/bin/atlas-build}"	a 1.x evidence or artifact folder default, overridable by its variable
+scripts/check-public-tree.py	"notes/c11h-run/": "the c11 run's notes and state (c11-ops notes/c11h-run/)",	the checker's or codemod's own pattern for that name
+scripts/check-shareable.py	Either(re.compile(r"(?<![A-Za-z])users?[/-]atin\w*|~atin\w*|\batin@"	the checker's or codemod's own pattern for that name
+scripts/check-shareable.py	# c11-builds, -release and -poller only as a path segment (~/c11-builds, $HOME/c11-poller/bin),	the checker's or codemod's own pattern for that name
+scripts/host_test_quarantine.py	SCOPE_ALIASES = {"all": "all", "remote": "remote", "atlas": "remote"}	a hidden alias so older quarantine inventories still parse
+scripts/launchd/com.stage11.c11-pr-swift-poller.plist.in	<string>@HOME@/c11-poller/bin/c11-pr-swift-poller.py</string>	the build host's installed folder, a load-bearing path default
+scripts/launchd/com.stage11.c11-pr-swift-poller.plist.in	<string>@HOME@/c11-poller</string>	the build host's installed folder, a load-bearing path default
+scripts/launchd/com.stage11.c11-pr-swift-poller.plist.in	<string>@HOME@/c11-poller/state/supervisor.log</string>	the build host's installed folder, a load-bearing path default
+tests/test_claude_mailbox_bridge.py	base = Path(os.environ.get("C11_TEST_ROOT", str(Path.home() / "c11h-run/evidence/C11H-8")))	a 1.x evidence or artifact folder default, overridable by its variable
+tests/test_hc_admission_cli.py	base = Path(os.environ.get("C11_TEST_ROOT", str(Path.home() / "c11h-run/evidence/C11H-8")))	a 1.x evidence or artifact folder default, overridable by its variable
+tests/test_mailbox_native.mjs	const base = process.env.C11_TEST_ROOT || `${process.env.HOME}/c11h-run/evidence/C11H-8`;	a 1.x evidence or artifact folder default, overridable by its variable
+tools/c11-guest/claude-env.sh	evidence="${EVIDENCE_DIR:-$HOME/c11h-run/evidence}"	a 1.x evidence or artifact folder default, overridable by its variable
+tools/c11-guest/claude-env.sh	for p in "$evidence" "$HOME/.c11-sandbox/runs/$run" "$HOME/.c11-sandbox/out/$run" "$HOME/c11h-run/logs" "$HOME/c11h-run/state"; do	a 1.x evidence or artifact folder default, overridable by its variable
+tools/c11-guest/g.sh	# `shot <name>` copies the PNG to ${EVIDENCE_DIR:-$HOME/c11h-run/evidence}/${C11_ROW:-adhoc}/<name>.png and prints that host path.	a 1.x evidence or artifact folder default, overridable by its variable
+tools/c11-guest/g.sh	state="${C11_STATE_DIR:-$HOME/c11h-run/state/ssh}"; mkdir -p "$state"; chmod 700 "$state"	a 1.x evidence or artifact folder default, overridable by its variable
+tools/c11-guest/g.sh	dest="${EVIDENCE_DIR:-$HOME/c11h-run/evidence}/${C11_ROW:-adhoc}"; mkdir -p "$dest"	a 1.x evidence or artifact folder default, overridable by its variable
+web/.env.example	# Canonical public origin (defaults to https://c11.stage11.systems)	the c11 site's public origin
+web/app/[locale]/(legal)/eula/page.tsx	<a href="mailto:founders@stage11.ai">founders@stage11.ai</a>	Stage 11's legal and contact address on the c11 site
+web/app/[locale]/(legal)/privacy-policy/page.tsx	<a href="https://c11.stage11.systems">c11.stage11.systems</a>.	the c11 site's public origin
+web/app/[locale]/(legal)/privacy-policy/page.tsx	<a href="mailto:founders@stage11.ai">founders@stage11.ai</a>.	Stage 11's legal and contact address on the c11 site
+web/app/[locale]/(legal)/terms-of-service/page.tsx	<a href="https://c11.stage11.systems">c11.stage11.systems</a> (the	the c11 site's public origin
+web/app/[locale]/(legal)/terms-of-service/page.tsx	<a href="mailto:founders@stage11.ai">founders@stage11.ai</a> within 30	Stage 11's legal and contact address on the c11 site
+web/app/[locale]/(legal)/terms-of-service/page.tsx	<a href="mailto:founders@stage11.ai">founders@stage11.ai</a>.	Stage 11's legal and contact address on the c11 site
+web/app/[locale]/components/site-footer.tsx	{ label: t("contact"), href: "mailto:founders@stage11.ai" },	Stage 11's legal and contact address on the c11 site
+web/app/site.ts	"https://c11.stage11.systems";	the c11 site's public origin
+Sources/Relaunch/RelaunchNotice.swift	static let jobsExtKey = "c11_relaunch_jobs"	a file-extension key name, not a secret (gitleaks generic-api-key)
+Sources/PostHogAnalytics.swift	private let apiKey = "phc_DfsnweKfe5uHUDK2scRVddAjpX8xGkq5NZWANmZaKo97"	PostHog's public project key, meant to ship in the app (gitleaks generic-api-key)
+c11Tests/TelemetryIdentityGateTests.swift	private let productionKey = "phc_DfsnweKfe5uHUDK2scRVddAjpX8xGkq5NZWANmZaKo97"	PostHog's public project key, meant to ship in the app (gitleaks generic-api-key)
+notes/sparkle-4005-investigation-2026-06-30.md	- `SUPublicEDKey = naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk=` ✓ (EdDSA validates — the log reaches extraction)	Sparkle's public EdDSA key, published in every appcast (gitleaks generic-api-key)
+tests_v2/test_command_palette_focus.py	token = "CMUX_PALETTE_FOCUS_PROBE_9412"	a test probe string, not a secret (gitleaks generic-api-key)
+scripts/host-test-quarantine.tsv	c11Tests/WindowCloseShortcutTests/testCmdWClosesAuxiliaryWindowInsteadOfMainTerminalPanel	atlas	The build host cannot reliably make the synthetic auxiliary NSWindow key, so the key-window Cmd+W assertion is unavailable there.	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11Tests/GhosttySurfaceOverlayTests/testSearchOverlayFocusesSearchFieldAfterDeferredAttach	atlas	The build host cannot make the synthetic NSWindow key or first responder for this focus assertion; macos-15 CI covers the test.	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11Tests/GhosttySurfaceOverlayTests/testWorkspaceSelectionReleasesExistingEditorButPreservesEditorOpenedAfterSelection	atlas	The build host cannot make the synthetic NSWindow key or first responder for this focus assertion; macos-15 CI covers the test.	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11Tests/WindowRoutingShortcutTests/testCmdNPresentsPickerAndResolvesEventWindowWhenObjectKeyLookupIsMismatched	atlas	The build host fails the browser address-bar focus assertion even at 4f81f2d1f9, alone and in the full suite; macos-15 CI passes it and keeps coverage.	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11Tests/WindowRoutingShortcutTests/testCustomCmdTNewWorkspacePresentsPickerAndSkipsOrphanedContext	atlas	Fails in every full build-host run but passes alone, so it depends on window state left by earlier tests there; macos-15 CI passes it and keeps coverage.	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11LogicTests/FullDiskAccessProbeTests/testProbeKickRunsExtraAttemptOutOfBand	atlas	timing-sensitive on the loaded build host; failed main-backstop and gate runs there on 2026-11-01, passes on CI	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11Tests/NotificationCommandEnvironmentTests/testAbsentTabOverwritesInheritedAttributionInRealCommand	atlas	3 s real-command test, load-sensitive on the build host; failed main-backstop runs there on 2026-11-01	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11LogicTests/MailboxPanelMailTests/testWarmScanOfFiveThousandEnvelopesParsesNothingAgain	atlas	5000-envelope scan hits the 60 s cap under build-host load 50+ (c11/pr-swift attempt 2 on bbc46d7, 2026-11-01); CI keeps coverage	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+scripts/host-test-quarantine.tsv	c11LogicTests/MailboxReceiptStatusTests/testFiveThousandEnvelopeQueryIsBounded	atlas	5000-envelope query hits the 60 s cap under build-host load 50+ (c11/pr-swift attempt 2 on bbc46d7, 2026-11-01); CI keeps coverage	remote's 1.x scope name, which the poller and backstop installed on the build host parse; becomes remote after both update
+THIRD_PARTY_LICENSES.md	o freetype@nongnu.org	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	o freetype-devel@nongnu.org	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	jloup@gzip.org          madler@alumni.caltech.edu	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	Copyright (c) 2002-2021  K.Kosako  <kkosako0@gmail.com>	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	Contributed by Paul Pluzhnikov <ppluzhnikov@google.com>	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	Copyright (C) 2010 Konstantin Belousov <kib@freebsd.org>	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	California, Berkeley and its contributors.	a third-party BSD license text, verbatim: the university that wrote it, not a machine or place of ours
+THIRD_PARTY_LICENSES.md	Copyright (c) 1996 - 2011, Daniel Stenberg, <daniel@haxx.se>.	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	Copyright (c) 2008-2009 Bjoern Hoehrmann <bjoern@hoehrmann.de>	a third-party license text, verbatim: its author's or project's own address (C11H-279)
+THIRD_PARTY_LICENSES.md	Copyright (c) 2021, Gabriele Lana gabriele.lana@gmail.com	a third-party license text, verbatim: its author's or project's own address (C11H-279)

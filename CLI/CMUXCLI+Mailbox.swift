@@ -93,6 +93,9 @@ extension CMUXCLI {
             return
         }
         let rest = Array(commandArgs.dropFirst())
+        if client.isRelayed, ["view", "trace", "tail", "outbox-dir", "inbox-dir"].contains(sub) {
+            try C11RelayCLI.refuseFileMailboxCommand(sub)
+        }
         switch sub {
         case "help", "-h", "--help":
             print(mailboxUsage())
@@ -135,7 +138,7 @@ extension CMUXCLI {
         c11 mailbox — inter-agent messaging
 
         Per-workspace messaging primitive for coordinating between c11 panels.
-        Full guide: docs/c11-mailbox-guide.md (agent quick-reference: skills/c11/SKILL.md).
+        Agent guide: c11 guide mailbox. Full guide: docs/c11-mailbox-guide.md.
 
           send       deliver an envelope to a panel in any workspace
           recv       drain or peek the caller's inbox
@@ -152,6 +155,7 @@ extension CMUXCLI {
         Send flags:
           --to <panel>            recipient panel name (any workspace)
           --to-parent             send to this panel's direct parent by exact UUID
+          --to-captain            send to the current workspace's (else its group's) captain
           --to-workspace <ref>    disambiguate a name shared across workspaces
           --topic <topic>         dotted topic token
           --body <text>           inline body (≤ 4096 bytes UTF-8)
@@ -166,6 +170,13 @@ extension CMUXCLI {
           --id <ulid>             pin envelope id (testing / replay)
           --ts <rfc3339>          pin timestamp (testing / replay)
           --content-type <mime>   MIME hint for body or body_ref
+
+          --to-captain is exclusive with --to, --to-parent and --to-workspace.
+          It uses the verified caller's current workspace and exactly one open
+          holder of its captain address, across every window. A workspace with
+          no captain of its own uses its workspace group's captain. Unset, unheld,
+          ambiguous or unavailable resolution fails before writing an envelope.
+          A successful submission is queued, not confirmation of delivery/read.
 
           An empty body with no --body-ref is an error. --body together with a
           trailing argument, a second trailing argument, and unknown flags are
@@ -232,7 +243,15 @@ extension CMUXCLI {
                 if isPanelRef {
                     payload = try client.sendV2(method: "panel.get_metadata", params: ["panel_id": name])
                 } else {
-                    payload = try? client.sendV2(method: "panel.get_metadata", params: ["panel_id": name])
+                    do {
+                        payload = try client.sendV2(method: "panel.get_metadata", params: ["panel_id": name])
+                    } catch where SocketAdmissionRefusal.code(of: error) != nil {
+                        // C11H-40: a refused caller must not fall back to the
+                        // name path and read or claim an inbox from disk.
+                        throw error
+                    } catch {
+                        payload = nil
+                    }
                 }
                 if let payload,
                    let panelId = ((payload["panel_id"] ?? payload["surface_id"]) as? String).flatMap(UUID.init(uuidString:)),
@@ -298,16 +317,24 @@ extension CMUXCLI {
         workspaceId: UUID,
         panelName: String,
         panelId: UUID?
-    ) -> UUID? {
+    ) throws -> UUID? {
         if let panelId { return panelId }
-        guard let payload = try? client.sendV2(
-            method: "mailbox.resolve",
-            params: [
-                "to": panelName,
-                "sender_workspace_id": workspaceId.uuidString,
-                "workspace": workspaceId.uuidString
-            ]
-        ),
+        let payload: [String: Any]?
+        do {
+            payload = try client.sendV2(
+                method: "mailbox.resolve",
+                params: [
+                    "to": panelName,
+                    "sender_workspace_id": workspaceId.uuidString,
+                    "workspace": workspaceId.uuidString
+                ]
+            )
+        } catch where SocketAdmissionRefusal.code(of: error) != nil {
+            throw error // C11H-40: refused, so no inbox is read.
+        } catch {
+            payload = nil
+        }
+        guard let payload,
             (payload["resolution"] as? String) == "unique",
             let ids = (payload["panel_ids"] ?? payload["tab_ids"] ?? payload["surface_ids"]) as? [String],
             ids.count == 1 else {
@@ -363,7 +390,7 @@ extension CMUXCLI {
             toWorkspace = parent.workspaceId.uuidString
         }
 
-        if to == nil && topic == nil {
+        if to == nil && topic == nil && !parsed.toCaptain {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.no-recipient",
@@ -377,13 +404,18 @@ extension CMUXCLI {
         // vanish — reject at the CLI boundary so the operator sees the
         // failure instead of losing the message. Tracked for Stage 3;
         // pair with --to <surface> until then.
-        if to == nil && topic != nil {
+        if to == nil && topic != nil && !parsed.toCaptain {
             throw CLIError(
                 message: String(
                     localized: "mailbox.cli.error.topics-not-implemented",
                     defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <panel-name> to send now."
                 )
             )
+        }
+
+        if client.isRelayed, bodyRef != nil {
+            throw CLIError(message: String(localized: "relay.cli.error.bodyRef",
+                defaultValue: "relay_unsupported: --body-ref names a file on this machine, which c11 cannot read. Send the text with --body (4 KB)."))
         }
 
         if Data(body.utf8).count > MailboxEnvelope.maxBodyBytes {
@@ -395,20 +427,46 @@ extension CMUXCLI {
             )
         }
 
-        let (workspaceId, panelName, callerPanelId, mailboxAddress) = try resolveMailboxCaller(
-            client: client,
-            fromOverride: fromOverride,
-            surfaceOverride: nil
-        )
-
-        guard let from = MailboxSenderFrom.value(
-            override: fromOverride,
-            title: panelName,
-            mailboxAddress: mailboxAddress,
-            panelId: callerPanelId
-        ) else {
-            throw mailboxPanelIdUnavailableError()
+        let workspaceId: UUID
+        let panelName: String
+        let callerPanelId: UUID?
+        let mailboxAddress: String?
+        let resolution: (workspaceId: UUID, verified: Bool, recipients: [[String: Any]])
+        if parsed.toCaptain {
+            guard let raw = try resolveCallingSurface(environment: ProcessInfo.processInfo.environment),
+                  let caller = UUID(uuidString: raw) else {
+                throw CLIError(message: String(localized: "mailbox.cli.error.to-captain-caller",
+                    defaultValue: "captain_caller_unverified: --to-captain requires a live calling panel; no envelope was written."))
+            }
+            do {
+                let captain = try MailboxCaptainSendTarget.resolve(callerPanelId: caller) {
+                    try client.sendV2(method: "mailbox.resolve", params: [
+                        "to_captain": true, "caller_panel_id": caller.uuidString
+                    ])
+                }
+                to = captain.recipient
+                workspaceId = captain.senderWorkspaceId
+                callerPanelId = caller
+                panelName = captain.senderTitle
+                mailboxAddress = captain.senderAddress
+                resolution = (captain.workspaceId, true, captain.recipients)
+            } catch {
+                throw CLIError(message: String(describing: error))
+            }
+        } else {
+            (workspaceId, panelName, callerPanelId, mailboxAddress) = try resolveMailboxCaller(
+                client: client, fromOverride: fromOverride, surfaceOverride: nil
+            )
+            resolution = try resolveMailboxTargetWorkspace(
+                client: client, to: to ?? "", senderWorkspaceId: workspaceId,
+                qualifier: toWorkspace, requireVerified: parsed.toParent
+            )
         }
+        guard let from = MailboxSenderFrom.value(
+            override: fromOverride, title: panelName, mailboxAddress: mailboxAddress, panelId: callerPanelId
+        ) else { throw mailboxPanelIdUnavailableError() }
+        let targetWorkspaceId = resolution.workspaceId
+
         let envelope = try MailboxEnvelope.build(
             from: from,
             to: to,
@@ -429,34 +487,40 @@ extension CMUXCLI {
             } : nil
         )
 
-        // Resolve which workspace actually hosts the recipient. The dispatcher
-        // is per-workspace, so the envelope must land in the recipient's outbox
-        // — which may be a different workspace than the sender's. Resolution
-        // also lets us fail loudly (non-zero exit) when the recipient does not
-        // exist, instead of dropping the message into an outbox where no
-        // dispatcher will ever resolve it. `to` is guaranteed non-nil here
-        // (topic-only sends were rejected above).
-        let resolution = try resolveMailboxTargetWorkspace(
-            client: client,
-            to: to ?? "",
-            senderWorkspaceId: workspaceId,
-            qualifier: toWorkspace,
-            requireVerified: parsed.toParent
-        )
-        let targetWorkspaceId = resolution.workspaceId
+        if client.isRelayed {
+            // C11H-16: the outbox is on the machine c11 runs on. c11 checks
+            // the sender claim, stamps ext.c11h and writes the envelope there.
+            guard resolution.verified else {
+                // A relay error from the resolve call was rethrown above, with
+                // its link state; this is any other resolve failure.
+                throw CLIError(message: String(localized: "relay.cli.error.sendUnresolved",
+                    defaultValue: "relay_unresolved: the recipient could not be resolved through the relay; nothing was sent"))
+            }
+            let object = try JSONSerialization.jsonObject(with: envelope.encode())
+            let result = try client.sendV2(method: C11RelayMethods.mailboxSend, params: [
+                "envelope": object, "workspace_id": targetWorkspaceId.uuidString,
+            ])
+            let id = result["id"] as? String ?? envelope.id
+            if reportJSON {
+                print(jsonString([
+                    "id": id,
+                    "workspace_id": targetWorkspaceId.uuidString,
+                    "sender_workspace_id": workspaceId.uuidString,
+                    "from": result["from"] as? String ?? envelope.from,
+                    "relay": true,
+                    "requested_recipient": to ?? "",
+                    "status": "queued",
+                ]))
+            } else {
+                print(id)
+                if parsed.toCaptain { print(String(format: String(localized: "mailbox.cli.captain-queued", defaultValue: "queued → %@"), to ?? "")) }
+            }
+            return
+        }
 
         let stateURL = try MailboxLayout.defaultStateURL()
-        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: targetWorkspaceId)
-        try FileManager.default.createDirectory(
-            at: outboxURL,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        let targetURL = outboxURL.appendingPathComponent(
-            MailboxLayout.envelopeFilename(id: envelope.id)
-        )
-        let data = try envelope.encode()
-        try MailboxIO.atomicWrite(data: data, to: targetURL)
+        let targetURL = try (resolution.verified ? MailboxSendTarget.verified(targetWorkspaceId)
+            : MailboxSendTarget.unverified(targetWorkspaceId)).writeEnvelope(envelope, stateURL: stateURL)
 
         // The recipient could not be resolved across workspaces (c11
         // unreachable). The envelope was written best-effort to the sender's
@@ -486,10 +550,12 @@ extension CMUXCLI {
                 "sender_workspace_id": workspaceId.uuidString,
                 "from": envelope.from,
                 "requested_recipient": to ?? "",
-                "recipients": resolution.recipients
+                "recipients": resolution.recipients,
+                "status": "queued"
             ]))
         } else {
             print(envelope.id)
+            if parsed.toCaptain { print(String(format: String(localized: "mailbox.cli.captain-queued", defaultValue: "queued → %@"), to ?? "")) }
             for recipient in resolution.recipients {
                 let owner = recipient["name"] as? String ?? recipient["panel_id"] as? String ?? ""
                 if let requestedID = recipient["requested_panel_id"] as? String,
@@ -560,24 +626,35 @@ extension CMUXCLI {
             params["workspace"] = qualifier
         }
 
-        let payload: [String: Any]
+        // Socket unreachable (or an older app without mailbox.resolve): we
+        // cannot resolve across workspaces. Fall back to the sender's own
+        // workspace so a same-workspace recipient still gets the message,
+        // but flag it `verified: false` so the caller warns loudly and
+        // exits non-zero — an unverified send must not look like success.
+        // C11H-40: an admission refusal is an answer, not an unreachable
+        // socket. It throws here, before any envelope exists on disk.
         do {
-            payload = try client.sendV2(method: "mailbox.resolve", params: params)
-        } catch {
-            if requireVerified {
-                throw CLIError(message: String(
-                    localized: "mailbox.cli.error.to-parent-unverified",
-                    defaultValue: "mailbox send --to-parent could not verify the exact parent panel; no envelope was written."
-                ))
-            }
-            // Socket unreachable (or an older app without mailbox.resolve): we
-            // cannot resolve across workspaces. Fall back to the sender's own
-            // workspace so a same-workspace recipient still gets the message,
-            // but flag it `verified: false` so the caller warns loudly and
-            // exits non-zero — an unverified send must not look like success.
-            return (senderWorkspaceId, false, [])
+            // C11-550: the resolved recipients ride along for the receipt rows.
+            var recipients: [[String: Any]] = []
+            let target = try MailboxSendTarget.decide(
+                senderWorkspaceId: senderWorkspaceId,
+                requireVerified: requireVerified,
+                resolve: { try client.sendV2(method: "mailbox.resolve", params: params) },
+                interpret: { payload in
+                    let id = try mailboxResolvedWorkspace(payload, to: to)
+                    recipients = payload["recipients"] as? [[String: Any]] ?? []
+                    return id
+                }
+            )
+            return (target.workspaceId, target.isVerified, recipients)
+        } catch let refusal as MailboxSendTarget.Refusal {
+            throw CLIError(message: refusal.message)
         }
+    }
 
+    /// The target workspace in a `mailbox.resolve` payload; throws for an
+    /// ambiguous or unknown recipient.
+    func mailboxResolvedWorkspace(_ payload: [String: Any], to: String) throws -> UUID {
         switch payload["resolution"] as? String {
         case "unique":
             guard
@@ -586,7 +663,7 @@ extension CMUXCLI {
             else {
                 throw CLIError(message: "mailbox.resolve returned an invalid target workspace")
             }
-            return (id, true, payload["recipients"] as? [[String: Any]] ?? [])
+            return id
         case "ambiguous":
             let candidates = (payload["candidates"] as? [[String: Any]]) ?? []
             throw CLIError(message: mailboxAmbiguityMessage(to: to, candidates: candidates))
@@ -633,6 +710,12 @@ extension CMUXCLI {
         } catch let failure as MailboxRecvArguments.Failure {
             throw CLIError(message: failure.description)
         }
+        if client.isRelayed {
+            // No harness hook drains through the relay; a hook exits quietly.
+            guard parsed.hookFormat == nil else { return }
+            try runRelayedMailboxRecv(parsed: parsed, client: client, jsonOutput: jsonOutput)
+            return
+        }
         if let rawFormat = parsed.hookFormat {
             // A hook has no terminal. It marks mail read only when the caller
             // passed --ack (or stdout really is a terminal). Missing --ack
@@ -658,7 +741,7 @@ extension CMUXCLI {
             fromOverride: nil,
             surfaceOverride: surfaceOverride
         )
-        let panelId = resolveMailboxInboxPanelId(
+        let panelId = try resolveMailboxInboxPanelId(
             client: client,
             workspaceId: workspaceId,
             panelName: panelName,
@@ -724,7 +807,8 @@ extension CMUXCLI {
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
             for url in entries {
                 let data = try Data(contentsOf: url)
-                print(MailboxFraming.displayText(data: data))
+                // C11H-359: escaped for a terminal; `--json` prints the stored bytes.
+                print(MailboxFraming.displayText(data: data, printable: !jsonOutput))
             }
             return
         }
@@ -745,7 +829,7 @@ extension CMUXCLI {
                     arguments: CommandLine.arguments
                 )
             ) { message in
-                let shown = MailboxFraming.displayText(data: Data(message.text.utf8))
+                let shown = MailboxFraming.displayText(data: Data(message.text.utf8), printable: !jsonOutput)
                 return Self.writeStdout(shown + "\n")
             }.claimed
         } catch let refusal as MailboxRecvAdmission.Refusal {
@@ -773,6 +857,46 @@ extension CMUXCLI {
                                       sharedClaimantPanelId: sharedCaller ? recipient?.id : nil,
                                       recipient: { _ in recipient?.name ?? panelName })
             }
+        }
+    }
+
+    /// C11H-16: `recv` through the relay, in two steps so a dropped link never
+    /// loses mail. c11 returns the caller's unread envelopes without claiming
+    /// them; each one written to stdout is then acknowledged, and only an
+    /// acknowledged envelope is marked read. A link that drops between the
+    /// steps leaves the mail unread, to be shown again.
+    func runRelayedMailboxRecv(parsed: MailboxRecvArguments.Parsed, client: SocketClient, jsonOutput: Bool) throws {
+        if parsed.drains, !MailboxRecvAdmission.allowsMarkRead(stdoutIsTTY: isatty(STDOUT_FILENO) != 0,
+                                                               acknowledged: parsed.ack) {
+            throw CLIError(message: MailboxRecvAdmission.Refusal(
+                retryCommand: MailboxRecvAdmission.retryCommand(arguments: CommandLine.arguments)).description)
+        }
+        var params: [String: Any] = [:]
+        let panel: String?
+        do {
+            panel = try C11Relay.canonicalPanel(parsed.panel) { ref in
+                try client.sendV2(method: "panel.get_metadata", params: ["panel_id": ref])
+            }
+        } catch let relay as C11RelayCallError { throw C11RelayCLI.cliError(relay) }
+        if let panel { params["panel"] = panel }
+        let peeked = try client.sendV2(method: C11RelayMethods.mailboxPeek, params: params)
+        let messages = peeked["messages"] as? [[String: Any]] ?? []
+        signal(SIGPIPE, SIG_IGN)
+        var shown: [String] = []
+        for message in messages {
+            guard let id = message["id"] as? String, let raw = message["envelope"] as? String else { continue }
+            guard Self.writeStdout(MailboxFraming.displayText(data: Data(raw.utf8), printable: !jsonOutput) + "\n") else { break }
+            shown.append(id)
+        }
+        guard parsed.drains, !shown.isEmpty else { return }
+        var ack = params
+        ack["ids"] = shown
+        do {
+            _ = try client.sendV2(method: C11RelayMethods.mailboxAck, params: ack)
+        } catch {
+            // C11H-89: the envelopes were printed but stay unread; say so, so
+            // a poller treats the next copy as a repeat, not new mail.
+            throw CLIError(message: C11RelayCLI.unacknowledgedMessage(printed: shown.count, error: error))
         }
     }
 
@@ -858,9 +982,18 @@ extension CMUXCLI {
             let preferredInbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: workspaceId, panelId: panelId)
             return !MailboxDrain.pendingEntries(inbox: preferredInbox).isEmpty
         } ?? false
-        let currentWorkspaceId = preferredHasPendingMail && resolveMovedPanelWorkspace
-            ? liveWorkspaceIdForMailboxPanel(panelId, client: client)
-            : nil
+        let currentWorkspaceId: UUID?
+        if preferredHasPendingMail && resolveMovedPanelWorkspace {
+            do {
+                currentWorkspaceId = try liveWorkspaceIdForMailboxPanel(panelId, client: client)
+            } catch {
+                // C11H-40: c11 refused this caller. Claim nothing; a hook
+                // stays silent and never fails the harness.
+                return nil
+            }
+        } else {
+            currentWorkspaceId = nil
+        }
         let inboxes = MailboxDrain.panelInboxURLs(
             workspacesRoot: workspacesRoot,
             preferredWorkspaceId: preferredWorkspaceId,
@@ -896,7 +1029,7 @@ extension CMUXCLI {
             return nil
         }
         guard !claimed.isEmpty else { return nil }
-        let context = MailboxHookOutput.context(framedBlocks: claimed.map(\.framed), remaining: remaining)
+        let context = MailboxHookOutput.context(messages: claimed.map(\.framing), remaining: remaining)
         let json = MailboxHookOutput.render(MailboxHookOutput.payload(context: context, format: format))
         guard !json.isEmpty else {
             claimed.forEach { MailboxDrain.unclaim($0.readURL) }
@@ -909,12 +1042,22 @@ extension CMUXCLI {
     /// the selected workspace. Stop-hook mail is already claimable from the
     /// preferred path, so this bounded read only detects a move when that old
     /// inbox also contains mail.
-    func liveWorkspaceIdForMailboxPanel(_ panelId: UUID, client: SocketClient) -> UUID? {
-        guard let payload = try? client.sendV2(
-            method: "panel.list",
-            params: ["surface_id": panelId.uuidString],
-            deadline: .custom(Self.claudeHookSocketWindowSeconds)
-        ), let rawWorkspaceId = payload["workspace_id"] as? String else {
+    /// Throws only an admission refusal (C11H-40); any other failure is an
+    /// unknown live workspace, and the preferred inbox stays the only one read.
+    func liveWorkspaceIdForMailboxPanel(_ panelId: UUID, client: SocketClient) throws -> UUID? {
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(
+                method: "panel.list",
+                params: ["surface_id": panelId.uuidString],
+                deadline: .custom(Self.claudeHookSocketWindowSeconds)
+            )
+        } catch where SocketAdmissionRefusal.code(of: error) != nil {
+            throw error
+        } catch {
+            return nil
+        }
+        guard let rawWorkspaceId = payload["workspace_id"] as? String else {
             return nil
         }
         return UUID(uuidString: rawWorkspaceId)
@@ -936,7 +1079,7 @@ extension CMUXCLI {
 
     /// One Claude hook socket window: the time its socket requests share
     /// before the hook gives up on c11 and exits neutral.
-    static let claudeHookSocketWindowSeconds: TimeInterval = 0.250
+    static var claudeHookSocketWindowSeconds: TimeInterval { JournalCommand.testTimeBudget(default: 0.250) }
 
     /// SessionStart's window. It reports the session id, the first journal
     /// event and the agent PID, so a miss costs far more than one lost
@@ -964,6 +1107,9 @@ extension CMUXCLI {
     /// Seconds since this process started, from the kernel's record of its
     /// start time (so it includes everything before `main`); nil if unknown.
     static func processElapsedSeconds() -> TimeInterval? {
+        #if !os(macOS)
+        return LinuxProc.startDate(getpid()).map { Date().timeIntervalSince($0) }
+        #else
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
@@ -971,6 +1117,7 @@ extension CMUXCLI {
         let start = info.kp_proc.p_un.__p_starttime
         let started = TimeInterval(start.tv_sec) + TimeInterval(start.tv_usec) / 1_000_000
         return Date().timeIntervalSince1970 - started
+        #endif
     }
 
     /// Writes the hook JSON to stdout. If the write fails the claimed envelopes
@@ -1211,15 +1358,20 @@ extension CMUXCLI {
 
     func eventsUsage() -> String {
         """
-        Usage: c11 events tail [--follow|-f] [--filter type=<type>|supervisor] [--since <seq|duration>] [--instance <id>]
+        Usage: c11 events tail [--follow|-f] [--filter <selector>]... [--since <seq|duration>] [--instance <id>]
 
         Stream the c11 events log (NDJSON). The file is the contract — this is
         sugar over `~/Library/Application Support/c11/events/events-<instance>.ndjson`.
         Works with no running app.
 
           --follow, -f          Keep streaming new events (rotation-aware).
-          --filter <value>     Exact type=<type>, or supervisor for lifecycle,
-                                permission, interruption and stall events.
+          --filter <value>     Repeatable; a line must pass every one.
+                                type=<type> (a known event type), supervisor
+                                (lifecycle, permission, interruption and stall
+                                events), agent (agent.blocked, agent.unblocked,
+                                agent.stalled, agent.unstalled and
+                                agent.restore_needs_operator), workspace=<uuid>,
+                                panel=<uuid>.
           --since <seq|dur>     Start at a seq number (e.g. 1200) or a duration
                                 ago (e.g. 10m, 90s, 2h), resolved against `ts`.
           --instance <id>       Target a specific instance log (default: newest).
@@ -1228,6 +1380,7 @@ extension CMUXCLI {
           c11 events tail
           c11 events tail -f --filter type=panel.closed
           c11 events tail -f --filter supervisor
+          c11 events tail -f --filter agent --filter workspace=<uuid>
           c11 events tail --since 5m
         """
     }
@@ -1240,7 +1393,11 @@ extension CMUXCLI {
         let follow = hasFlag(subArgs, name: "--follow") || hasFlag(subArgs, name: "-f")
         // C11-337: compare canonical types so a v1 spelling (`surface.created`,
         // `tab.input_sent`) and its v2 name (`panel.*`) match either line form.
-        let typeFilter = eventsTypeFilter(subArgs)
+        let filter: EventEnvelope.TailFilter
+        switch EventEnvelope.TailFilter.parse(eventsFilterValues(subArgs)) {
+        case .success(let parsed): filter = parsed
+        case .failure(let error): throw CLIError(message: "events tail: \(error.message)")
+        }
         let sinceSeq = eventsSinceSeq(subArgs)
         let sinceDate = eventsSinceDate(subArgs)
         let instance = optionValue(subArgs, name: "--instance")
@@ -1263,9 +1420,7 @@ extension CMUXCLI {
         func emit(_ line: String) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
-            if !EventEnvelope.matchesFilter(typeFilter, type: EventEnvelope.canonicalType(fromLine: trimmed)) { return }
-            if let sinceSeq, let s = EventEnvelope.seq(fromLine: trimmed), s < sinceSeq { return }
-            if let sinceDate, let ts = EventEnvelope.timestamp(fromLine: trimmed), ts < sinceDate { return }
+            guard filter.admits(line: trimmed, sinceSeq: sinceSeq, sinceDate: sinceDate) else { return }
             print(trimmed)
         }
 
@@ -1352,11 +1507,23 @@ extension CMUXCLI {
         }
     }
 
-    func eventsTypeFilter(_ args: [String]) -> String? {
-        guard let raw = optionValue(args, name: "--filter") else { return nil }
-        // Accept `--filter type=surface.closed` (or a bare `type=` value).
-        if raw.hasPrefix("type=") { return String(raw.dropFirst("type=".count)) }
-        return raw
+    /// Every `--filter` value, in order (C11H-320 PR 3: the flag repeats).
+    func eventsFilterValues(_ args: [String]) -> [String] {
+        let spellings = Self.flagSpellings("--filter")
+        #if DEBUG
+        CLIFlagReadLog.read(spellings)
+        #endif
+        var values: [String] = []
+        var index = 0
+        while index < args.count {
+            if spellings.contains(args[index]), index + 1 < args.count {
+                values.append(args[index + 1])
+                index += 2
+            } else {
+                index += 1
+            }
+        }
+        return values
     }
 
     func eventsSinceSeq(_ args: [String]) -> UInt64? {
@@ -1416,7 +1583,7 @@ extension CMUXCLI {
             fromOverride: nil,
             surfaceOverride: surfaceOverride
         )
-        guard let panelId = resolveMailboxInboxPanelId(
+        guard let panelId = try resolveMailboxInboxPanelId(
             client: client,
             workspaceId: workspaceId,
             panelName: panelName,

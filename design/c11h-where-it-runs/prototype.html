@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C11H-12 · Where it runs</title>
+<style>
+  :root {
+    --s: 1;
+    --page: #e6e2d8;
+    --ink: #1c1b19;
+    --muted: #5e584e;
+    --rule: #cfc6b6;
+    --gold: #c9a84c;
+    --recommend: #f7f1e2;
+  }
+  body.large { --s: 1.25; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: color-mix(in srgb, var(--page) 92%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--rule);
+    padding: 18px 28px 16px;
+  }
+  .kicker {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 { margin: 0 0 8px; font-size: 28px; font-weight: 680; letter-spacing: -0.02em; }
+  .lede { margin: 0; max-width: 68ch; color: var(--ink); }
+  .recommend {
+    margin: 12px 0 0;
+    max-width: 68ch;
+    padding: 8px 12px;
+    border-left: 3px solid var(--gold);
+    background: var(--recommend);
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 12px;
+  }
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+  }
+  .switch input { width: 16px; height: 16px; accent-color: #8d6b12; }
+  .hint { color: var(--muted); font-size: 13px; }
+  main { padding: 8px 28px 64px; max-width: 1220px; }
+  section { margin-top: 28px; }
+  section.pick h2 .tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 7px 2px;
+    border-radius: 4px;
+    background: var(--gold);
+    color: #1c1608;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: 3px;
+  }
+  h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -0.01em; }
+  .why { margin: 0 0 14px; max-width: 78ch; }
+  .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  .col { min-width: 0; }
+  figcaption {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stage {
+    overflow-x: auto;
+    max-width: 100%;
+    padding-bottom: 4px;
+  }
+  .area {
+    --bar: #1d1e23;
+    --bar-2: #262830;
+    --term: #101114;
+    --text: #e8e8ea;
+    --dim: #9a9ca3;
+    --faint: #74777f;
+    --sep: #2c2e34;
+    --count: #2f3138;
+    --chip-fill: #1d1f24;
+    --chip-border: #3a3c44;
+    --run: #0a84ff;
+    --idle: #30d158;
+    --orange: #ff9f0a;
+    --mark: #e8a04a;
+    --laptop: #c9a84c;
+    --atlas: #7aabff;
+    --term-ink: #c6c6c8;
+    --term-dim: #6e7078;
+    width: var(--w);
+    border: 1px solid #8a8376;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--term);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset, 0 10px 28px rgba(40, 32, 16, 0.08);
+  }
+  .area.light {
+    --bar: #f7f8fa;
+    --bar-2: #ffffff;
+    --term: #fbfbfc;
+    --text: #16171b;
+    --dim: #55585f;
+    --faint: #7d8088;
+    --sep: #dcdfe5;
+    --count: #eceef2;
+    --chip-fill: #eceef2;
+    --chip-border: #d3d6dc;
+    --run: #007aff;
+    --idle: #248a3d;
+    --orange: #c93400;
+    --mark: #9a5f00;
+    --laptop: #8a6810;
+    --atlas: #1d5fd0;
+    --term-ink: #24262b;
+    --term-dim: #8b8e96;
+    border-color: #b9b3a6;
+  }
+  .strip {
+    display: flex;
+    align-items: stretch;
+    height: calc(30px * var(--s));
+    background: var(--bar);
+    border-bottom: 1px solid var(--sep);
+    color: var(--text);
+  }
+  .count {
+    flex: 0 0 calc(64px * var(--s));
+    width: calc(64px * var(--s));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: calc(6px * var(--s));
+    background: var(--count);
+    border-left: 1px solid var(--sep);
+    border-right: 1px solid var(--sep);
+    color: var(--text);
+    font-size: calc(11px * var(--s));
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--run);
+    flex: 0 0 6px;
+  }
+  .chev {
+    width: calc(12px * var(--s));
+    height: calc(8px * var(--s));
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 1 1 calc(112px * var(--s));
+    min-width: calc(112px * var(--s));
+    max-width: calc(220px * var(--s));
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: calc(6px * var(--s));
+    padding: 0 calc(6px * var(--s)) 0 calc(4px * var(--s));
+    border: 0;
+    border-right: 1px solid transparent;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .area.v-b .tab {
+    flex-basis: calc(176px * var(--s));
+    min-width: calc(176px * var(--s));
+  }
+  .tab.sel {
+    background: var(--bar-2);
+    color: var(--text);
+    box-shadow: inset 0 -1px 0 var(--bar-2);
+  }
+  .tab:hover:not(.sel) { background: color-mix(in srgb, var(--bar-2) 55%, transparent); }
+  .mark {
+    flex: 0 0 calc(9px * var(--s));
+    width: calc(9px * var(--s));
+    height: calc(9px * var(--s));
+    margin-left: calc(4px * var(--s));
+  }
+  .mark svg { display: block; width: 100%; height: 100%; }
+  .mark.working { color: var(--run); }
+  .mark.idle { color: var(--idle); }
+  .num {
+    flex: 0 0 auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: calc(9px * var(--s));
+    font-weight: 700;
+    color: var(--faint);
+  }
+  .tab.sel .num { color: var(--gold); }
+  .title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: calc(11px * var(--s));
+    font-weight: 400;
+  }
+  .tab.sel .title { font-weight: 600; }
+  .x {
+    flex: 0 0 calc(14px * var(--s));
+    width: calc(14px * var(--s));
+    text-align: center;
+    font-size: calc(13px * var(--s));
+    line-height: 1;
+    color: var(--faint);
+    font-weight: 400;
+  }
+  .tab-host {
+    flex: 0 0 calc(78px * var(--s));
+    width: calc(78px * var(--s));
+    display: flex;
+    align-items: center;
+    gap: calc(4px * var(--s));
+    min-width: calc(78px * var(--s));
+  }
+  .tab-host-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: calc(11px * var(--s));
+    font-weight: 650;
+    color: var(--text);
+  }
+  .tab-kept {
+    flex: 0 0 calc(7px * var(--s));
+    width: calc(7px * var(--s));
+    height: calc(7px * var(--s));
+    border-radius: 1px;
+  }
+  .tab-kept.on {
+    background: var(--mark);
+    box-shadow: inset 0 0 0 1px var(--mark);
+  }
+  .tools {
+    flex: 0 0 calc(112px * var(--s));
+    width: calc(112px * var(--s));
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: calc(2px * var(--s));
+    padding-right: calc(4px * var(--s));
+    color: var(--dim);
+    border-left: 1px solid var(--sep);
+  }
+  .tool {
+    width: calc(20px * var(--s));
+    height: calc(20px * var(--s));
+    display: grid;
+    place-items: center;
+    font-size: calc(11px * var(--s));
+    font-weight: 650;
+  }
+  .tool svg { width: calc(12px * var(--s)); height: calc(12px * var(--s)); stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .sub {
+    display: flex;
+    align-items: center;
+    gap: calc(8px * var(--s));
+    min-height: calc(28px * var(--s));
+    padding: calc(6px * var(--s)) calc(6px * var(--s)) calc(6px * var(--s)) calc(12px * var(--s));
+    background: color-mix(in srgb, var(--bar) 92%, transparent);
+    border-bottom: 1px solid var(--sep);
+    color: var(--text);
+    position: relative;
+  }
+  .chip, .prefix {
+    flex: 0 0 calc(158px * var(--s));
+    width: calc(158px * var(--s));
+    min-width: calc(158px * var(--s));
+    max-width: calc(158px * var(--s));
+    height: calc(18px * var(--s));
+    display: flex;
+    align-items: center;
+    gap: calc(6px * var(--s));
+  }
+  .chip {
+    padding: 0 calc(6px * var(--s));
+    border-radius: 4px;
+    border: 1px solid var(--chip-border);
+    background: var(--chip-fill);
+  }
+  .host-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: calc(13px * var(--s));
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .host-mark {
+    flex: 0 0 calc(58px * var(--s));
+    width: calc(58px * var(--s));
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    font-size: calc(11px * var(--s));
+    font-weight: 650;
+    line-height: 1;
+    color: var(--mark);
+  }
+  .prefix .host-name { font-size: calc(12px * var(--s)); }
+  .prefix .host-mark { color: var(--mark); }
+  .prefix .slot-end {
+    flex: 0 0 auto;
+    color: var(--faint);
+    font-size: calc(12px * var(--s));
+    line-height: 1;
+  }
+  .desc {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: calc(12px * var(--s));
+    line-height: 1.2;
+  }
+  .mail {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: calc(3px * var(--s));
+    height: calc(18px * var(--s));
+    padding: 0 calc(3px * var(--s));
+    color: var(--dim);
+  }
+  .unread, .recv {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: calc(11px * var(--s));
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .unread {
+    flex: 0 0 calc(32px * var(--s));
+    width: calc(32px * var(--s));
+    text-align: right;
+    color: var(--orange);
+    font-weight: 600;
+  }
+  .recv {
+    flex: 0 0 calc(32px * var(--s));
+    width: calc(32px * var(--s));
+    text-align: left;
+  }
+  .env {
+    flex: 0 0 calc(16px * var(--s));
+    width: calc(14px * var(--s));
+    height: calc(14px * var(--s));
+    stroke: var(--orange);
+    fill: none;
+    stroke-width: 1.6;
+  }
+  .mail.quiet .env { stroke: var(--dim); }
+  .mail.quiet .unread { color: transparent; }
+  .fold {
+    flex: 0 0 calc(22px * var(--s));
+    width: calc(22px * var(--s));
+    display: grid;
+    place-items: center;
+    color: var(--dim);
+  }
+  .fold svg {
+    width: calc(8px * var(--s));
+    height: calc(8px * var(--s));
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .term {
+    position: relative;
+    height: 118px;
+    padding: 10px 14px 10px 16px;
+    background: var(--term);
+    color: var(--term-ink);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .term .dim { color: var(--term-dim); }
+  .edge {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+  }
+  .edge.solid { background: var(--edge); }
+  .edge.dashed {
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--edge) 0 4px,
+      transparent 4px 7px
+    );
+  }
+  .tab .tab-edge {
+    position: absolute;
+    left: 0;
+    top: 3px;
+    bottom: 3px;
+    width: 3px;
+    border-radius: 1px;
+  }
+  .tab .tab-edge.solid { background: var(--edge); }
+  .tab .tab-edge.dashed {
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--edge) 0 3px,
+      transparent 3px 6px
+    );
+  }
+  .sub.with-edge { padding-left: calc(16px * var(--s)); }
+  footer.note {
+    margin-top: 22px;
+    max-width: 68ch;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule);
+  }
+</style>
+</head>
+<body>
+<header>
+  <p class="kicker">C11H-12 · plan ticket 15 · prototype</p>
+  <h1>Where it runs</h1>
+  <p class="lede">Four ways to show the machine a terminal's session runs on, and to mark a session that ends on quit. Every mock is the same area: Laptop kept, Laptop not kept (the plain-shell fallback), Studio kept, and one long subtitle. Click a panel. The host slot keeps one width, so the subtitle truncates and the mailbox cell stays put.</p>
+  <p class="recommend"><strong>Recommend A.</strong> The chip sits in the subtitle bar, in words, at one width for Laptop and Studio and for a session that is not kept.</p>
+  <div class="controls">
+    <label class="switch"><input type="checkbox" id="large"> Large text</label>
+    <span class="hint">1.25×, the Large chrome preset. The area stays 1100 or 440 px wide.</span>
+  </div>
+</header>
+<main id="app"></main>
+<script>
+(function () {
+  var panels = [
+    {
+      num: "38",
+      title: "C11H-2 Contract",
+      host: "Laptop",
+      kept: true,
+      state: "working",
+      description: "Freezing the lifecycle contract; next, the inventory snapshot.",
+      unread: "",
+      received: "6",
+      quiet: true,
+      lines: ["demo@laptop c11h %", "states: new, live, ended, unresolved"]
+    },
+    {
+      num: "41",
+      title: "Shell",
+      host: "Laptop",
+      kept: false,
+      state: "idle",
+      description: "Plain shell. hc was unreachable, so this session ends on quit.",
+      unread: "1",
+      received: "3",
+      quiet: false,
+      lines: ["demo@laptop ~ %", "hc unreachable, plain shell"]
+    },
+    {
+      num: "44",
+      title: "Studio build",
+      host: "Studio",
+      kept: true,
+      state: "working",
+      description: "Watching slot 2; the poller holds slot 1.",
+      unread: "",
+      received: "22",
+      quiet: true,
+      lines: ["demo@studio poller %", "slot 2 admitted"]
+    },
+    {
+      num: "47",
+      title: "C11H-12 Where it runs",
+      host: "Laptop",
+      kept: true,
+      state: "working",
+      description: "Building the HTML prototype of where a terminal session runs, and checking that a long subtitle truncates before the host chip moves, even when the text is large and the mailbox cell is showing.",
+      unread: "2",
+      received: "14",
+      quiet: false,
+      lines: ["demo@laptop C11H-12 %", "design/c11h-where-it-runs/prototype.html"]
+    }
+  ];
+
+  var variants = [
+    {
+      id: "A",
+      pick: true,
+      name: "Chip on the subtitle bar",
+      why: "A fixed chip at the left of the bar under the panels. The machine is type, the mark sits in a reserved slot inside the chip, and the description truncates before either one moves."
+    },
+    {
+      id: "B",
+      name: "Host label in the strip tab",
+      why: "The machine is a fixed label in the strip tab, so a scan of the area shows every panel's host. The title is what gives way when the area is 440 px."
+    },
+    {
+      id: "C",
+      name: "Prefix on the subtitle",
+      why: "The machine is a fixed prefix of the subtitle, so the description starts in the same place on every panel and gives up its first words to the host."
+    },
+    {
+      id: "D",
+      name: "Colored edge",
+      why: "A colored edge: gold for Laptop, blue for Studio, dashed when the session ends on quit. The bar stays as it is today, and the name is the color."
+    }
+  ];
+
+  var params = new URLSearchParams(location.search);
+  var only = (params.get("only") || "").toUpperCase();
+  if (only) variants = variants.filter(function (v) { return v.id === only; });
+  var preset = params.get("panel");
+  var initial = preset === null ? 3 : Math.max(0, Math.min(3, Number(preset) || 0));
+  var selected = {};
+  variants.forEach(function (v) {
+    selected[v.id] = { light1100: initial, light440: initial, dark1100: initial, dark440: initial };
+  });
+  if (params.get("large") === "1") {
+    document.body.classList.add("large");
+    document.getElementById("large").checked = true;
+  }
+
+  function edgeColor(panel) {
+    return panel.host === "Studio" ? "var(--atlas)" : "var(--laptop)";
+  }
+
+  function markTitle(panel) {
+    return panel.kept
+      ? panel.host + ". The session is held and survives a restart of c11h."
+      : panel.host + ". Not kept. This session will not survive a restart. Plain-shell fallback; hc is not holding it.";
+  }
+
+  function activityMark(state) {
+    if (state === "working") {
+      var dots = "";
+      for (var r = 0; r < 3; r++) {
+        for (var c = 0; c < 3; c++) {
+          dots += '<rect x="' + (c * 3) + '" y="' + (r * 3) + '" width="2" height="2" fill="currentColor"/>';
+        }
+      }
+      return '<span class="mark working" aria-hidden="true"><svg viewBox="0 0 9 9"><rect width="9" height="9" fill="currentColor" opacity="0.22"/>' + dots + '</svg></span>';
+    }
+    return '<span class="mark idle" aria-hidden="true"><svg viewBox="0 0 9 9"><rect x="0.6" y="0.6" width="7.8" height="7.8" fill="none" stroke="currentColor" stroke-width="1"/></svg></span>';
+  }
+
+  function chevronDown() {
+    return '<svg class="chev" viewBox="0 0 12 8" aria-hidden="true"><path d="M1.5 1.5 L6 6 L10.5 1.5"/></svg>';
+  }
+  function chevronRight() {
+    return '<svg viewBox="0 0 8 12" aria-hidden="true"><path d="M1.5 1.5 L6 6 L1.5 10.5"/></svg>';
+  }
+  function envelope() {
+    return '<svg class="env" viewBox="0 0 16 14" aria-hidden="true"><rect x="1" y="2" width="14" height="10" rx="1.2"/><path d="M1.5 3 L8 8.2 L14.5 3"/></svg>';
+  }
+
+  function tools() {
+    return '<div class="tools" aria-hidden="true">'
+      + '<span class="tool">A</span>'
+      + '<span class="tool"><svg viewBox="0 0 12 12"><rect x="1.5" y="2" width="9" height="8" rx="1"/><path d="M3 8.5 h3"/></svg></span>'
+      + '<span class="tool"><svg viewBox="0 0 12 12"><path d="M6 2 v8 M2 6 h8"/></svg></span>'
+      + '<span class="tool"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9"/><path d="M6 1.5 v9"/></svg></span>'
+      + '<span class="tool">×</span>'
+      + '</div>';
+  }
+
+  function tabButton(panel, index, on, variant) {
+    var edge = "";
+    if (variant === "D") {
+      edge = '<span class="tab-edge ' + (panel.kept ? "solid" : "dashed") + '" style="--edge:' + edgeColor(panel) + '"></span>';
+    }
+    var host = "";
+    if (variant === "B") {
+      host = '<span class="tab-host" title="' + markTitle(panel) + '">'
+        + '<span class="tab-host-name">' + panel.host + '</span>'
+        + '<span class="tab-kept' + (panel.kept ? "" : " on") + '"></span>'
+        + '</span>';
+    }
+    return '<button class="tab' + (on ? " sel" : "") + '" data-i="' + index + '" type="button" aria-pressed="' + (on ? "true" : "false") + '">'
+      + edge
+      + activityMark(panel.state)
+      + '<span class="num">' + panel.num + '</span>'
+      + host
+      + '<span class="title">' + panel.title + '</span>'
+      + '<span class="x" aria-hidden="true">×</span>'
+      + '</button>';
+  }
+
+  function hostSlot(panel, kind) {
+    var mark = panel.kept ? "" : "not kept";
+    if (kind === "prefix") {
+      return '<span class="prefix" title="' + markTitle(panel) + '">'
+        + '<span class="host-name">' + panel.host + '</span>'
+        + '<span class="host-mark">' + mark + '</span>'
+        + '<span class="slot-end">·</span>'
+        + '</span>';
+    }
+    return '<span class="chip" title="' + markTitle(panel) + '">'
+      + '<span class="host-name">' + panel.host + '</span>'
+      + '<span class="host-mark">' + mark + '</span>'
+      + '</span>';
+  }
+
+  function subtitle(panel, variant) {
+    var lead = "";
+    if (variant === "A") lead = hostSlot(panel, "chip");
+    if (variant === "C") lead = hostSlot(panel, "prefix");
+    var edge = "";
+    var cls = "sub";
+    if (variant === "D") {
+      cls += " with-edge";
+      edge = '<span class="edge ' + (panel.kept ? "solid" : "dashed") + '" style="--edge:' + edgeColor(panel) + '"></span>';
+    }
+    var mailCls = panel.quiet ? "mail quiet" : "mail";
+    return '<div class="' + cls + '">'
+      + edge
+      + lead
+      + '<div class="desc">' + panel.description + '</div>'
+      + '<div class="' + mailCls + '" title="Mailbox">'
+      + '<span class="unread">' + (panel.unread || "0") + '</span>'
+      + envelope()
+      + '<span class="recv">' + panel.received + '</span>'
+      + '</div>'
+      + '<div class="fold" aria-hidden="true">' + chevronRight() + '</div>'
+      + '</div>';
+  }
+
+  function terminal(panel, variant) {
+    var edge = "";
+    if (variant === "D") {
+      edge = '<span class="edge ' + (panel.kept ? "solid" : "dashed") + '" style="--edge:' + edgeColor(panel) + '"></span>';
+    }
+    return '<div class="term">' + edge
+      + '<div>' + panel.lines[0] + '</div>'
+      + '<div class="dim">' + panel.lines[1] + '</div>'
+      + '</div>';
+  }
+
+  function area(variant, theme, width, index) {
+    var panel = panels[index];
+    var tabs = panels.map(function (p, i) { return tabButton(p, i, i === index, variant); }).join("");
+    return '<figure>'
+      + '<figcaption>' + theme + ' · ' + width + ' px</figcaption>'
+      + '<div class="stage"><div class="area ' + theme + ' v-' + variant.toLowerCase() + '" style="--w:' + width + 'px" data-v="' + variant + '" data-k="' + theme + width + '">'
+      + '<div class="strip">'
+      + '<div class="count" title="Panel list"><span class="dot"></span>' + chevronDown() + '<span>4</span></div>'
+      + '<div class="tabs">' + tabs + '</div>'
+      + tools()
+      + '</div>'
+      + subtitle(panel, variant)
+      + terminal(panel, variant)
+      + '</div></div></figure>';
+  }
+
+  function render() {
+    var html = variants.map(function (v) {
+      var s = selected[v.id];
+      return '<section' + (v.pick ? ' class="pick"' : '') + ' id="' + v.id.toLowerCase() + '">'
+        + '<h2>' + v.id + ' · ' + v.name + (v.pick ? ' <span class="tag">Recommended</span>' : '') + '</h2>'
+        + '<p class="why">' + v.why + '</p>'
+        + area(v.id, "light", 1100, s.light1100)
+        + area(v.id, "dark", 1100, s.dark1100)
+        + '<div class="row">'
+        + area(v.id, "light", 440, s.light440)
+        + area(v.id, "dark", 440, s.dark440)
+        + '</div></section>';
+    }).join("");
+    html += '<footer class="note"><strong>A is the placement to build.</strong> It is in the subtitle area, it says the machine in words, and the width stays put when the subtitle, the mailbox counts, or the selected panel changes. The sheet\'s second line and the sidebar can repeat the same short token after the pick. A workspace can mix Laptop and Studio, so the machine stays on the panel.</footer>';
+    document.getElementById("app").innerHTML = html;
+  }
+
+  document.getElementById("large").addEventListener("change", function (e) {
+    document.body.classList.toggle("large", e.target.checked);
+  });
+
+  document.getElementById("app").addEventListener("click", function (e) {
+    var btn = e.target.closest(".tab");
+    if (!btn) return;
+    var areaEl = btn.closest(".area");
+    var key = areaEl.getAttribute("data-k");
+    var id = areaEl.getAttribute("data-v");
+    selected[id][key === "light1100" ? "light1100" : key === "light440" ? "light440" : key === "dark1100" ? "dark1100" : "dark440"] = Number(btn.getAttribute("data-i"));
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -36,8 +36,16 @@ function loadedSession(context, id) {
   } catch { return undefined; }
 }
 
+// Only a socket this user owns (C11H-364): Node exposes no peer credentials.
+function socketIsOwn(socketPath) {
+  try {
+    const info = statSync(socketPath);
+    return info.isSocket() && info.uid === process.getuid?.();
+  } catch { return false; }
+}
+
 function c11(socketPath, method, params, timeout = 900) {
-  if (!socketPath) return Promise.resolve(undefined);
+  if (!socketPath || !socketIsOwn(socketPath)) return Promise.resolve(undefined);
   return new Promise(resolve => {
     const requestID = randomUUID();
     const socket = createConnection(socketPath);

@@ -104,6 +104,21 @@ protocol ConversationStrategy: Sendable {
         for ref: ConversationRef,
         filesystem: ConversationFilesystem
     ) -> Bool?
+
+    /// C11H-196: the folder a resume should `cd` into when the ref's own cwd
+    /// is missing or does not lead to its transcript. A requirement, so the
+    /// registry's existential dispatches to the strategy's own answer.
+    func recoveredCwd(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> String?
+
+    /// C11H-196: when the conversation last wrote its transcript (stat only),
+    /// so host-end resumes go most recently active first. Nil when unknown.
+    func transcriptModifiedAt(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Date?
 }
 
 extension ConversationStrategy {
@@ -121,6 +136,22 @@ extension ConversationStrategy {
         for ref: ConversationRef,
         filesystem: ConversationFilesystem
     ) -> Bool? {
+        nil
+    }
+
+    /// C11H-196: the cwd a resume should `cd` into when the ref's own cwd is
+    /// missing or does not lead to its transcript. Default: none recovered.
+    func recoveredCwd(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> String? {
+        nil
+    }
+
+    func transcriptModifiedAt(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Date? {
         nil
     }
 
@@ -153,6 +184,15 @@ extension ConversationStrategy {
 func conversationShellQuote(_ value: String) -> String {
     let escaped = value.replacingOccurrences(of: "'", with: "'\\''")
     return "'\(escaped)'"
+}
+
+/// C11H-365 (N12): a resume types its recorded folder into a shell inside a
+/// single-quoted `cd`, and a line editor still reads a control byte there
+/// as an editing key. A folder holding any C0 byte or DEL refuses the
+/// resume; nil when the folder (or its absence) can be typed.
+func conversationResumeCwdRefusal(_ cwd: String?) -> ResumeAction? {
+    guard let cwd, containsTerminalControlByte(cwd) else { return nil }
+    return .skip(reason: "cwd holds a control byte")
 }
 
 /// UUID v4 grammar shared by Claude Code and Codex strategies. Anchored

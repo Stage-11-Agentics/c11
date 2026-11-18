@@ -41,23 +41,26 @@ extension CMUXCLI {
             throw CLIError(message: String(localized: "cli.guide.missing", defaultValue: "This build has no bundled c11 skill."))
         }
         let identity = C11BuildIdentity(bundleURL: bundle)
+        let authority = CLIGuideAuthority.line(version: identity.shortVersion)
         if jsonOutput || asJSON {
             print(jsonString([
                 "cli": identity.payload, "skill": "c11", "skill_version": page.version as Any? ?? NSNull(),
-                "source": "bundle", "page": page.name, "body": page.body
+                "source": "bundle", "page": page.name, "authority": authority, "body": page.body
             ]))
         } else {
-            print(identity.summary + "\nskill: c11\nskill_version: \(page.version ?? "unknown")\nsource: bundle\n\n" + page.body, terminator: "")
+            print(identity.summary + "\n" + authority + "\nskill: c11\nskill_version: \(page.version ?? "unknown")\nsource: bundle\n\n" + page.body, terminator: "")
         }
     }
 
     func versionSummary() -> String {
         let info = resolvedVersionInfo()
         let commit = info["CMUXCommit"].flatMap { normalizedCommitHash($0) }
+        // c11's version line (C11Version, e.g. 1.7.6-h3) when the bundle has one.
+        let version = info["C11Version"] ?? info["CFBundleShortVersionString"]
         let baseSummary: String
-        if let version = info["CFBundleShortVersionString"], let build = info["CFBundleVersion"] {
+        if let version, let build = info["CFBundleVersion"] {
             baseSummary = "c11 \(version) (\(build))"
-        } else if let version = info["CFBundleShortVersionString"] {
+        } else if let version {
             baseSummary = "c11 \(version)"
         } else if let build = info["CFBundleVersion"] {
             baseSummary = "c11 build \(build)"
@@ -199,9 +202,16 @@ extension CMUXCLI {
                 info["CFBundleVersion"] = trimmed
             }
         }
-        if let commit = dictionary["CMUXCommit"] as? String,
-           let normalizedCommit = normalizedCommitHash(commit) {
-            info["CMUXCommit"] = normalizedCommit
+        if let line = C11BuildIdentity.c11VersionLine(info: dictionary) {
+            info["C11Version"] = line
+        }
+        // The build stamps C11Commit; CMUXCommit is the legacy key.
+        for key in ["C11Commit", "CMUXCommit"] {
+            if let commit = dictionary[key] as? String,
+               let normalizedCommit = normalizedCommitHash(commit) {
+                info["CMUXCommit"] = normalizedCommit
+                break
+            }
         }
         return info.isEmpty ? nil : info
     }

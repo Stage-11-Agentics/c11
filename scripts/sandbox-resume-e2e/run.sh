@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Run one phase of the crash-resume e2e driver (guest.py) inside a sandbox guest.
-# Usage, on the Tart host (Atlas) from a c11 checkout or build source:
+# Usage, on the Tart host (the build host) from a c11 checkout or build source:
 #   C11_SANDBOX_HOST=local scripts/sandbox-resume-e2e/run.sh <run-id> <phase> [key=value ...]
 # Phases and keys: see guest.py. The guest needs a c11 app from scripts/sandbox-up.sh.
 set -eu

@@ -215,13 +215,13 @@ try:
         unchanged(lambda: ui_click('#target'), '5 invalid/stale ' + href)
     shot('04-invalid-notice')
     javascript('document.querySelector("#target").href=' + json.dumps(f'c11://panel/{TERMINAL}'))
-    for script in [
-        'location.href=' + json.dumps(f'c11://panel/{TERMINAL}'),
-        'setTimeout(()=>document.querySelector("#target").click(),20)',
-        'window.open(' + json.dumps(f'c11://panel/{TERMINAL}') + ')',
-        '(()=>{const m=document.createElement("meta");m.httpEquiv="refresh";m.content="0;url=c11://panel/' + TERMINAL + '";document.head.append(m)})()',
-        '(()=>{const f=document.createElement("form");f.action="c11://panel/' + TERMINAL + '";document.body.append(f);f.submit()})()'
-    ]:
+    # c11 prints c11:// and still resolves c11://; scripts reach neither (C11H-51).
+    for script in ['setTimeout(()=>document.querySelector("#target").click(),20)'] + [s for scheme in ('c11', 'c11') for s in [
+        'location.href=' + json.dumps(f'{scheme}://panel/{TERMINAL}'),
+        'window.open(' + json.dumps(f'{scheme}://panel/{TERMINAL}') + ')',
+        '(()=>{const m=document.createElement("meta");m.httpEquiv="refresh";m.content="0;url=' + scheme + '://panel/' + TERMINAL + '";document.head.append(m)})()',
+        '(()=>{const f=document.createElement("form");f.action="' + scheme + '://panel/' + TERMINAL + '";document.body.append(f);f.submit()})()'
+    ]]:
         unchanged(lambda s=script: javascript(s), '6 script navigation refused', pause=.6)
     unchanged(lambda: (ui_click('#blank'), call('browser.click', workspace_id=A, panel_id=SOURCE, selector='#target')), '7 stale native click cannot authorize browser.click')
     assert javascript('typeof window.webkit?.messageHandlers?.c11PanelLink') == 'undefined'

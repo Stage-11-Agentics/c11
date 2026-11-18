@@ -1,0 +1,6 @@
+Spike 0b row 8 (14:11 PDT), `exit` in split panel:6 (hc terminal t13):
+app log 21:11:55.222Z event=channel_closed surface=8142EA0A... channel=6 reason=exited
+app log 21:11:55.222Z event=child_exited mode=hc surface=8142EA0A... code=0 signal=null reason=close_exited
+app log 21:11:55.222Z event=hc_finished terminal=t13 code=0 reason=exited
+c11 debug log 21:11:55.222 surface.close.childExited tab=99F24 surface=8142E panels=3
+c11 debug log 21:11:55.225 surface.panel.close.end panel=8142E inWindow=0 hasSuperview=0 hidden=1

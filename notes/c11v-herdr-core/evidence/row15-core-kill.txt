@@ -1,0 +1,9 @@
+2026-10-30T21:29:31.871Z event=attached surface=94932219-AE35-4965-9245-3A015C5BF119 terminal=t5 channel=3 history=2000 reason=reattach held_input=0 dropped_input=0 elapsed_us=503
+2026-10-30T21:29:59.384Z event=core_lost generation=1 attached=2
+2026-10-30T21:30:02.727Z event=core_reconnected attempts=14 after_ms=3342 panels=2
+2026-10-30T21:30:02.728Z event=attached surface=94932219-AE35-4965-9245-3A015C5BF119 terminal=t5 channel=1 history=0 reason=core_restart held_input=0 dropped_input=0 elapsed_us=655
+2026-10-30T21:30:02.729Z event=attached surface=64FEA6FD-CBAE-47F3-BA55-B319DB8AD3D9 terminal=t1 channel=2 history=0 reason=core_restart held_input=0 dropped_input=0 elapsed_us=361
+ 1558     1  1558   7968   0.0 /Users/admin/c0b/bin/hc hold --socket /tmp/c0b/herdr-core/c0b.holder.b0311d21.sock
+ 3376     1  3368 210080   2.7 /Users/admin/c11-sandbox/apps/c11v-hc/c11 DEV c11v-hc.app/Contents/MacOS/c11
+ 3705  1558  3705  10464   0.4 /Users/admin/c0b/bin/hc serve
+hc get t1 after the reattach: "screen":"inexact"

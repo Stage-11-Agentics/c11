@@ -207,6 +207,11 @@ if [[ -n "$c11_bin" && -n "$capture_id" ]]; then
     disown 2>/dev/null || true
 fi
 
+# C11H-35: the per-launch c11 note, by Grok's own flag (no file, no config).
+c11_bin_dir="$(cd "$(dirname "$0")" && pwd)"
+C11_NOTE_ARGS=()
+# shellcheck source=/dev/null
+[[ -r "$c11_bin_dir/c11-agent-note.sh" ]] && . "$c11_bin_dir/c11-agent-note.sh" && c11_note_args grok "$c11_bin_dir" "$@"
 # Native mail (route grok_leader). Grok's hidden `--leader` flag runs this
 # TUI's agent in a private leader on a c11-owned socket, with no Grok config.
 # The `c11 grok-mailbox` sidecar offers the fixed invitation to the bound
@@ -230,11 +235,24 @@ grok_reap_leader() {
 }
 # The leader socket lives in the per-user temp directory. A socket path is
 # limited to 104 bytes (Grok may add `.daemon` beside it), so an unusually
-# long TMPDIR falls back to /tmp.
+# long, missing or shared TMPDIR falls back to c11's per-user folder
+# ($(getconf DARWIN_USER_TEMP_DIR)c11, 0700) rather than shared /tmp, where
+# another account could take the name first (C11H-364). Shared /tmp remains
+# only where that folder does not exist (Linux).
 grok_leader_dir="${TMPDIR:-/tmp}"
 grok_leader_dir="${grok_leader_dir%/}"
-if (( ${#grok_leader_dir} > 64 )) || [[ ! -d "$grok_leader_dir" || ! -w "$grok_leader_dir" ]]; then
+if (( ${#grok_leader_dir} > 64 )) || [[ ! -d "$grok_leader_dir" || ! -w "$grok_leader_dir" ]] \
+    || [[ "$grok_leader_dir" == /tmp || "$grok_leader_dir" == /private/tmp ]]; then
+    grok_user_dir="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
     grok_leader_dir=/tmp
+    if [[ "$grok_user_dir" == /* ]]; then
+        grok_user_dir="${grok_user_dir%/}/c11"
+        (umask 077 && mkdir -p -- "$grok_user_dir") 2>/dev/null || true
+        if [[ -d "$grok_user_dir" && ! -L "$grok_user_dir" && -O "$grok_user_dir" ]] \
+            && (( ${#grok_user_dir} <= 64 )); then
+            grok_leader_dir="$grok_user_dir"
+        fi
+    fi
 fi
 # A wrapper whose watcher died with its panel leaves a leader behind. Reap
 # every c11 leader whose Grok is gone.
@@ -320,6 +338,6 @@ if [[ "$grok_native" == "1" ]]; then
 fi
 
 if [[ "$injected_id" == "1" ]]; then
-    exec "$REAL_GROK" ${leader_args[@]+"${leader_args[@]}"} --session-id "$capture_id" "$@"
+    exec "$REAL_GROK" ${leader_args[@]+"${leader_args[@]}"} --session-id "$capture_id" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"
 fi
-exec "$REAL_GROK" ${leader_args[@]+"${leader_args[@]}"} "$@"
+exec "$REAL_GROK" ${leader_args[@]+"${leader_args[@]}"} ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"

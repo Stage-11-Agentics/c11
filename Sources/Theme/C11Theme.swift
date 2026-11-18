@@ -226,19 +226,36 @@ public struct C11Theme: Codable, Equatable, Sendable {
     public var variables: [String: String]
     public var chrome: ChromeSections
     public var behavior: Behavior
+    /// Schema-2 values keyed by role path (`type.ui`, `chrome.card.fill`, …). Nil for
+    /// schema-1 themes, so their encoded form is unchanged.
+    public var styles: [String: ThemeStyleValue]?
+
+    /// The highest schema this build reads.
+    public static let maxSchema = 2
 
     public init(
         identity: Identity,
         palette: [String: String],
         variables: [String: String],
         chrome: ChromeSections,
-        behavior: Behavior = .init()
+        behavior: Behavior = .init(),
+        styles: [String: ThemeStyleValue]? = nil
     ) {
         self.identity = identity
         self.palette = palette
         self.variables = variables
         self.chrome = chrome
         self.behavior = behavior
+        self.styles = styles
+    }
+
+    public func styleValue(_ role: ThemeStyleRole) -> ThemeStyleValue? {
+        styles?[role.path]
+    }
+
+    /// The Ghostty terminal theme this theme pairs with (`[terminal] pairedTheme`), if any.
+    public var pairedTerminalTheme: String? {
+        TerminalThemePairing.normalized(styleValue(.terminalPairedTheme)?.string)
     }
 
     public static var fallbackStage11: C11Theme {
@@ -315,7 +332,7 @@ public struct C11Theme: Codable, Equatable, Sendable {
 
     public static func fromToml(_ table: TomlTable) throws -> C11Theme {
         let identity = try parseIdentity(from: table)
-        guard identity.schema == 1 else {
+        guard (1...maxSchema).contains(identity.schema) else {
             throw ThemeLoadError.schemaMismatch(identity.schema)
         }
 
@@ -336,8 +353,140 @@ public struct C11Theme: Codable, Equatable, Sendable {
             palette: palette,
             variables: variables,
             chrome: try parseChrome(chromeTable),
-            behavior: try parseBehavior(behaviorTable)
+            behavior: try parseBehavior(behaviorTable),
+            styles: try parseStyles(root: table, schema: identity.schema, name: identity.name)
         )
+    }
+
+    /// Reads every schema-2 role present in the file. In a schema-1 file the new
+    /// sections are ignored with one warning. Unknown keys inside schema-2 sections
+    /// warn and are ignored (forward compatibility); a wrong type, an unknown choice
+    /// or a malformed gradient is a load error.
+    private static func parseStyles(root: TomlTable, schema: Int, name: String) throws -> [String: ThemeStyleValue]? {
+        let unknown = unknownSchema2Keys(root: root)
+        if schema < 2 {
+            // Presence only: a schema-1 file never fails on keys it cannot use.
+            let present = ThemeStyleRoleRegistry.all.contains {
+                lookup($0.path.split(separator: ".").map(String.init), in: root) != nil
+            }
+            if present {
+                ThemeDiagnostics.loader("theme '\(name)' is schema 1; its schema-2 keys are ignored (set schema = 2 to use them)")
+            }
+            for key in unknown {
+                ThemeDiagnostics.loader("theme '\(name)': unknown key '\(key)' ignored")
+            }
+            return nil
+        }
+
+        var found: [String: ThemeStyleValue] = [:]
+        for definition in ThemeStyleRoleRegistry.all {
+            let segments = definition.path.split(separator: ".").map(String.init)
+            guard let raw = lookup(segments, in: root) else { continue }
+            if case .null = raw { continue }
+            found[definition.path] = try styleValue(raw, definition: definition)
+        }
+        for key in unknown {
+            ThemeDiagnostics.loader("theme '\(name)': unknown key '\(key)' ignored")
+        }
+        return found
+    }
+
+    private static func lookup(_ segments: [String], in root: TomlTable) -> TomlValue? {
+        var cursor: TomlValue = .table(root)
+        for segment in segments {
+            guard case let .table(table) = cursor, let next = table[segment] else { return nil }
+            cursor = next
+        }
+        return cursor
+    }
+
+    /// Leaf keys under schema-2 sections that no role claims.
+    static func unknownSchema2Keys(root: TomlTable) -> [String] {
+        var keys: [String] = []
+        func walk(_ value: TomlValue, path: String) {
+            if case let .table(table) = value {
+                for (key, child) in table { walk(child, path: "\(path).\(key)") }
+            } else if ThemeStyleRoleRegistry.byPath[path] == nil {
+                keys.append(path)
+            }
+        }
+        for top in ThemeStyleRoleRegistry.schema2Tables {
+            if let value = root[top] { walk(value, path: top) }
+        }
+        // Top-level tables nobody reads (a misspelled `[ornament]`, `[typ]`).
+        let knownTop: Set<String> = ["identity", "palette", "variables", "chrome", "behavior", "when"]
+        for key in root.keys where !knownTop.contains(key) && !ThemeStyleRoleRegistry.schema2Tables.contains(key) {
+            keys.append(key)
+        }
+        if case let .table(chrome)? = root["chrome"] {
+            for section in ThemeStyleRoleRegistry.schema2ChromeTables {
+                if let value = chrome[section] { walk(value, path: "chrome.\(section)") }
+            }
+            // New keys beside schema-1 keys in existing chrome sections.
+            for (section, value) in chrome where !ThemeStyleRoleRegistry.schema2ChromeTables.contains(section) {
+                guard case let .table(table) = value else { continue }
+                for key in table.keys {
+                    let path = "chrome.\(section).\(key)"
+                    if ThemeStyleRoleRegistry.byPath[path] == nil, ThemeRole.allCases.contains(where: { $0.definition.path == path }) == false {
+                        keys.append(path)
+                    }
+                }
+            }
+        }
+        return keys.sorted()
+    }
+
+    private static func styleValue(_ raw: TomlValue, definition: ThemeStyleRoleDefinition) throws -> ThemeStyleValue {
+        let path = definition.path
+        switch definition.kind {
+        case .number:
+            switch raw {
+            case let .double(value): return ThemeStyleValue(number: value)
+            case let .integer(value): return ThemeStyleValue(number: Double(value))
+            default: throw ThemeLoadError.invalidType(path: path, expected: "number")
+            }
+        case .boolean:
+            guard case let .boolean(value) = raw else {
+                throw ThemeLoadError.invalidType(path: path, expected: "boolean")
+            }
+            return ThemeStyleValue(bool: value)
+        case .string:
+            guard case let .string(value) = raw else {
+                throw ThemeLoadError.invalidType(path: path, expected: "string")
+            }
+            return ThemeStyleValue(string: value)
+        case .color:
+            guard case let .string(value) = raw else {
+                throw ThemeLoadError.invalidType(path: path, expected: "color expression")
+            }
+            try validateColorExpression(value, path: path)
+            return ThemeStyleValue(string: value)
+        case let .choice(choices):
+            guard case let .string(value) = raw, choices.contains(value) else {
+                throw ThemeLoadError.invalidType(path: path, expected: definition.kind.label)
+            }
+            return ThemeStyleValue(string: value)
+        case .gradient:
+            guard case let .string(value) = raw else {
+                throw ThemeLoadError.invalidType(path: path, expected: "gradient string")
+            }
+            switch ThemeGradientSyntax.parse(value) {
+            case let .failure(message):
+                throw ThemeLoadError.invalidType(path: path, expected: "gradient (\(message))")
+            case let .success(stops):
+                for stop in stops { try validateColorExpression(stop.expression, path: path) }
+            }
+            return ThemeStyleValue(string: value)
+        }
+    }
+
+    /// The same grammar check schema-1 variables get, so a typo fails the load, not the render.
+    private static func validateColorExpression(_ expression: String, path: String) throws {
+        do {
+            _ = try ThemedValueParser.parse(expression)
+        } catch {
+            throw ThemeLoadError.variableExpression(name: path, message: String(describing: error))
+        }
     }
 
     public func stringValue(for role: ThemeRole) -> String? {

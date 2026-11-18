@@ -80,6 +80,7 @@ extension CMUXCLI {
         "set-tab-icon": "set-panel-icon",
         "set-tab-color": "set-panel-color",
         "tab-action": "panel-action",
+        "skills": "skill",
     ]
 
     /// The calling panel's UUID from the environment: `C11_PANEL_ID` first, then
@@ -220,6 +221,44 @@ extension CMUXCLI {
         return (window, try number(dimensions[0]), try number(dimensions[1]))
     }
 
+    /// Ticket 12: the machine `--on` names, or nil for this Mac (`--on local`,
+    /// `--on here`, or no flag). The app validates the name; the CLI only uses
+    /// this to leave a remote `--cwd` unresolved.
+    /// Pathfinder: poll `agent.launch_status` once a second until the launch
+    /// watch decides or `seconds` pass. Each poll gets only the time left, so
+    /// the wait never overruns. An app without the method (`method_not_found`)
+    /// or with no watch for the panel (`not_found`) ends the wait at once with
+    /// `verdict: unavailable`; other socket errors are retried until time is up.
+    func waitForLaunchVerdict(client: SocketClient, surfaceId: String, seconds: Double) -> [String: Any] {
+        let deadline = Date().addingTimeInterval(seconds)
+        var last: [String: Any] = ["verdict": "pending"]
+        while true {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0.05 else { break }
+            do {
+                let status = try client.sendV2(method: "agent.launch_status", params: ["panel_id": surfaceId],
+                                               deadline: .custom(remaining))
+                last = status
+                if let verdict = status["verdict"] as? String, verdict != "pending" { return status }
+            } catch let error as CLIError where error.message.hasPrefix("method_not_found:") || error.message.hasPrefix("not_found:") {
+                return ["verdict": "unavailable", "message": error.message]
+            } catch {
+                last["last_error"] = "\(error)"
+            }
+            let pause = min(1, deadline.timeIntervalSinceNow)
+            guard pause > 0.05 else { break }
+            Thread.sleep(forTimeInterval: pause)
+        }
+        last["verdict"] = "timeout"
+        return last
+    }
+
+    func remoteMachineOption(_ args: [String]) -> String? {
+        guard let raw = optionValue(args, name: "--on")?.trimmingCharacters(in: .whitespaces), !raw.isEmpty,
+              !["local", "here"].contains(raw.lowercased()) else { return nil }
+        return raw
+    }
+
     func optionValue(_ args: [String], name: String) -> String? {
         let spellings = Self.flagSpellings(name)
         #if DEBUG
@@ -349,6 +388,12 @@ extension CMUXCLI {
            value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             _ = try validatedPanelTargetValue(value, wasProvided: true)
         }
+    }
+
+    /// C11H-319: a sound argument that names a file is made absolute against
+    /// the caller's directory (`NotificationSoundArgument`, shared with the app).
+    static func absoluteSoundArgument(_ value: String) -> String {
+        NotificationSoundArgument.resolve(value, currentDirectory: FileManager.default.currentDirectoryPath)
     }
 
     func hasFlag(_ args: [String], name: String) -> Bool {

@@ -24,8 +24,9 @@ extension CMUXCLI {
     /// `--out <path>` is honoured in the CLI process, not over the socket.
     /// The socket always writes to the default directory (B3: socket-initiated
     /// captures cannot choose their destination). After the socket returns,
-    /// the CLI — running with the user's real FS permissions — moves the
-    /// emitted file to the requested path.
+    /// the CLI — running with the user's real FS permissions — copies the
+    /// emitted file to the requested path through `PrivateFileWriter.writeCopy`
+    /// and then removes the store's file.
     ///
     /// `--all` captures every open workspace. Mutually exclusive with
     /// `--workspace` and `--out`.
@@ -99,15 +100,17 @@ extension CMUXCLI {
             let src = URL(fileURLWithPath: resolvedPath)
             let dst = URL(fileURLWithPath: resolvePath(outRaw))
             do {
-                try FileManager.default.createDirectory(
-                    at: dst.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                if FileManager.default.fileExists(atPath: dst.path) {
-                    try FileManager.default.removeItem(at: dst)
+                // The copy is 0600, missing folders 0700, and a non-empty
+                // folder at --out is refused, never deleted (C11H-364 L15).
+                // The store's file goes only once the copy is written.
+                let data = try Data(contentsOf: src)
+                try PrivateFileWriter.writeCopy(data, to: dst)
+                if dst.standardizedFileURL.path != src.standardizedFileURL.path {
+                    try? FileManager.default.removeItem(at: src)
                 }
-                try FileManager.default.moveItem(at: src, to: dst)
                 resolvedPath = dst.path
+            } catch let error as PrivateFileWriter.CopyError {
+                throw CLIError(message: error.localizedDescription + " " + String(localized: "cli.snapshot.out.snapshotKept", defaultValue: "The snapshot itself was saved to \(src.path)."))
             } catch {
                 throw CLIError(message: "snapshot: --out move failed: \(error)")
             }
@@ -312,7 +315,7 @@ extension CMUXCLI {
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let url = home
-            .appendingPathComponent(".c11-snapshots/sets")
+            .appendingPathComponent(C11Identity.snapshotDirectoryName + "/sets")
             .appendingPathComponent("\(trimmed).json")
         return FileManager.default.fileExists(atPath: url.path)
     }
@@ -371,12 +374,12 @@ extension CMUXCLI {
            dict["snapshots"] is [Any] {
             id = setId
             kind = .set
-            stagingSubdir = ".c11-snapshots/sets"
+            stagingSubdir = C11Identity.snapshotDirectoryName + "/sets"
         } else if let snapId = dict["snapshot_id"] as? String, !snapId.isEmpty,
                   dict["plan"] != nil {
             id = snapId
             kind = .single
-            stagingSubdir = ".c11-snapshots"
+            stagingSubdir = C11Identity.snapshotDirectoryName
         } else {
             throw CLIError(message: "restore: '\(pathOnDisk)' is not a recognised snapshot envelope (missing snapshot_id+plan or set_id+snapshots)")
         }
@@ -398,14 +401,17 @@ extension CMUXCLI {
             return (id, kind)
         }
         do {
-            try FileManager.default.createDirectory(
-                at: stagingDir,
-                withIntermediateDirectories: true
+            // The store and `sets/` are 0700 and the staged file 0600, whatever
+            // the source's mode (C11H-364 L15). The rename replaces an existing
+            // file; the migration's own alias for the store is followed.
+            try PrivateFileWriter.ensurePrivateDirectory(
+                at: home.appendingPathComponent(C11Identity.snapshotDirectoryName, isDirectory: true),
+                allowOwnSymlink: true
             )
-            if FileManager.default.fileExists(atPath: destURL.path) {
-                try FileManager.default.removeItem(at: destURL)
+            if kind == .set {
+                try PrivateFileWriter.ensurePrivateDirectory(at: stagingDir, allowOwnSymlink: true)
             }
-            try FileManager.default.copyItem(at: srcURL, to: destURL)
+            try PrivateFileWriter.write(data, to: destURL)
         } catch {
             throw CLIError(message: "restore: failed to stage '\(pathOnDisk)' into ~/\(stagingSubdir)/: \(error)")
         }

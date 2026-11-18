@@ -161,8 +161,8 @@ CMUX_SOCKET_PATH=/tmp/c11-debug-c11-24.sock c11 conversation list
 osascript -e 'tell application "c11 DEV c11-24" to quit'
 # Inspect the snapshot:
 python3 -c '
-import json
-d = json.load(open("/Users/atin/Library/Application Support/c11mux/session-com.stage11.c11.debug.c11.24.json"))
+import json, os
+d = json.load(open(os.path.expanduser("~/Library/Application Support/c11mux/session-com.stage11.c11.debug.c11.24.json")))
 for w in d["windows"]:
   for ws in w["tabManager"]["workspaces"]:
     for p in ws.get("panels", []):

@@ -20,16 +20,21 @@ import Foundation
 /// follow-up work. The reporting bound keeps the dispatcher live; that
 /// is what this code enforces, and what tests here verify.
 ///
-/// Framed block shape (exact, byte-for-byte, trailing newline included):
+/// Framed block shape: one envelope as its own `MailboxDelivery` with a
+/// leading line feed, byte for byte `MailboxFraming.framedBlock` for an
+/// inline body given the same boundary. The text only sizes the buffered
+/// entry; the doorbell types its one invitation line, never this block.
 ///
 ///     \n
-///     <c11-msg from="builder" id="01K..." ts="..." to="watcher">\n
+///     <c11-mail-K7Q2M9XA4TDP count="1">\n
+///     …header naming the message…\n
+///     </c11-mail-K7Q2M9XA4TDP>\n
+///     <c11-msg-K7Q2M9XA4TDP from="builder" id="01K..." ts="..." to="watcher">\n
 ///     escaped body bytes\n
-///     </c11-msg>\n
+///     </c11-msg-K7Q2M9XA4TDP>\n
 ///
-/// Attribute values and the body are XML-escaped (`<`, `>`, `&`, `"`) so a
-/// literal `</c11-msg>` in the body cannot forge a closing tag. This is a
-/// deliberate security property of the framing per design doc §prose.
+/// No body can hold the boundary, so none can start, end or add a message
+/// (C11H-375); attribute values and the body are XML-escaped as well.
 final class StdinMailboxHandler: MailboxHandler {
     static let defaultTimeout: Duration = .milliseconds(500)
 
@@ -153,57 +158,31 @@ final class StdinMailboxHandler: MailboxHandler {
         "urgent", "ttl_seconds",
     ]
 
-    static func formatFramedBlock(envelope: MailboxEnvelope) -> String {
-        var attrs: [(String, String)] = []
-        attrs.append(("from", envelope.from))
-        attrs.append(("id", envelope.id))
-        attrs.append(("ts", envelope.ts))
-        if let to = envelope.to { attrs.append(("to", to)) }
-        if let topic = envelope.topic { attrs.append(("topic", topic)) }
-        if let replyTo = envelope.replyTo { attrs.append(("reply_to", replyTo)) }
-        if let inReplyTo = envelope.inReplyTo { attrs.append(("in_reply_to", inReplyTo)) }
-        if envelope.urgent == true { attrs.append(("urgent", "true")) }
-        if let ttl = envelope.ttlSeconds { attrs.append(("ttl_seconds", String(ttl))) }
-
-        let attrString = attrs
-            .map { "\($0.0)=\"\(xmlEscapeAttribute($0.1))\"" }
-            .joined(separator: " ")
-        let openTag = "<c11-msg " + attrString + ">"
-        let body = xmlEscapeBody(envelope.body)
-
-        return "\n\(openTag)\n\(body)\n</c11-msg>\n"
+    /// `boundary` is for tests; nil mints one for this block.
+    static func formatFramedBlock(envelope: MailboxEnvelope, boundary: String? = nil) -> String {
+        var attrs: [MailboxDelivery.Attribute] = [.init("from", envelope.from)]
+        // C11H-360: the relay origin, as `MailboxFraming` frames it.
+        if let via = envelope.relayMachine { attrs.append(.init("via", via)) }
+        attrs.append(.init("id", envelope.id))
+        attrs.append(.init("ts", envelope.ts))
+        if let to = envelope.to { attrs.append(.init("to", to)) }
+        if let topic = envelope.topic { attrs.append(.init("topic", topic)) }
+        if let replyTo = envelope.replyTo { attrs.append(.init("reply_to", replyTo)) }
+        if let inReplyTo = envelope.inReplyTo { attrs.append(.init("in_reply_to", inReplyTo)) }
+        if envelope.urgent == true { attrs.append(.init("urgent", "true")) }
+        if let ttl = envelope.ttlSeconds { attrs.append(.init("ttl_seconds", String(ttl))) }
+        let message = MailboxDelivery.Message(attributes: attrs, body: xmlEscapeBody(envelope.body))
+        return "\n" + MailboxDelivery.text([message], boundary: boundary)
     }
 
-    /// XML escaping for attribute values — covers `<`, `>`, `&`, and `"`.
+    /// `MailboxFraming.xmlEscapeAttribute`: `<`, `>`, `&`, `"` and controls.
     static func xmlEscapeAttribute(_ value: String) -> String {
-        var result = ""
-        result.reserveCapacity(value.count)
-        for ch in value {
-            switch ch {
-            case "&": result.append("&amp;")
-            case "<": result.append("&lt;")
-            case ">": result.append("&gt;")
-            case "\"": result.append("&quot;")
-            default: result.append(ch)
-            }
-        }
-        return result
+        MailboxFraming.xmlEscapeAttribute(value)
     }
 
-    /// XML escaping for body text — covers `<`, `>`, `&`. Quotes are fine in
-    /// body text; only attribute values need them escaped.
+    /// `MailboxFraming.xmlEscapeBody`: `<`, `>`, `&`.
     static func xmlEscapeBody(_ value: String) -> String {
-        var result = ""
-        result.reserveCapacity(value.count)
-        for ch in value {
-            switch ch {
-            case "&": result.append("&amp;")
-            case "<": result.append("&lt;")
-            case ">": result.append("&gt;")
-            default: result.append(ch)
-            }
-        }
-        return result
+        MailboxFraming.xmlEscapeBody(value)
     }
 }
 

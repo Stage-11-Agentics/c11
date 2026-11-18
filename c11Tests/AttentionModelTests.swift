@@ -968,6 +968,8 @@ final class AttentionModelTests: XCTestCase {
         let kinds = try XCTUnwrap((listed["result"] as? [String: Any])?["kinds"] as? [[String: Any]])
         XCTAssertTrue(kinds.contains { $0["id"] as? String == "chief-of-staff" })
         XCTAssertTrue(kinds.contains { $0["id"] as? String == "merge-issue" })
+        // C11H-226: every listed kind says when it was last raised (null if never) and how often.
+        XCTAssertTrue(kinds.allSatisfy { $0.keys.contains("last_raised_at") && $0["raise_count"] is Int })
 
         let invalid = try send("flag.kind.set", params: [
             "id": id, "name": "Socket Test", "color": "blue",
@@ -1479,5 +1481,90 @@ final class AttentionModelTests: XCTestCase {
             createdAt: Date(),
             isRead: false
         )
+    }
+}
+
+/// The sidebar flag buttons' model (C11H-223, C11H-224): kinds are flat groups
+/// in a fixed order, one button each.
+final class FlagKindSummaryTests: XCTestCase {
+    private let cos = PanelFlagKind(id: "chief-of-staff", name: "Chief of Staff", color: .green, emoji: nil)
+    private let merge = PanelFlagKind(id: "merge-issue", name: "Merge Issue", color: .red, emoji: nil)
+
+    private func flag(_ kind: PanelFlagKind?, at seconds: TimeInterval) -> PanelAttentionSnapshot {
+        PanelAttentionSnapshot(workspaceId: UUID(), surfaceId: UUID(), flagReason: "r", flagKind: kind,
+                               flagRaisedAt: Date(timeIntervalSince1970: seconds), delegated: false)
+    }
+
+    func testGroupsAreGenericFirstAndTheStackPutsTheGenericButtonLast() {
+        let flags = [flag(nil, at: 5), flag(merge, at: 1), flag(cos, at: 3), flag(nil, at: 2), flag(merge, at: 4)]
+        let summary = FlagKindSummary(orderedFlags: AttentionJumpSelector.orderedFlags(flags))
+        XCTAssertEqual(summary.groups.map(\.id), ["", "chief-of-staff", "merge-issue"])
+        XCTAssertEqual(summary.groups.map(\.count), [2, 1, 2])
+        XCTAssertEqual(summary.total, 5)
+        // Top to bottom: named kinds by id, then the purple generic button.
+        XCTAssertEqual(summary.stackOrder.map(\.id), ["chief-of-staff", "merge-issue", ""])
+        // Each button jumps to its own kind's oldest flag.
+        XCTAssertEqual(summary.groups[0].oldest.panelID, flags[3].surfaceId)
+        XCTAssertEqual(summary.groups[2].oldest.panelID, flags[1].surfaceId)
+        XCTAssertEqual(FlagKindSummary(orderedFlags: []).stackOrder, [])
+    }
+
+    /// One entry this build can't read (a later build's color) skips only that
+    /// kind, and a write here keeps it stored for the build that can read it.
+    func testAnUnreadableRegistryEntrySkipsOnlyThatKind() throws {
+        let suite = "c11.flagKinds.test.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let stored: [[String: Any]] = [
+            ["id": "studio", "name": "Studio", "color": "lime"],
+            ["id": "future", "name": "Future", "color": "ultraviolet"],
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: stored), forKey: PanelFlagKindRegistry.storageKey)
+        let registry = PanelFlagKindRegistry(defaults: defaults)
+        XCTAssertEqual(registry.kind(id: "studio")?.color, .lime)
+        XCTAssertNil(registry.kind(id: "future"))
+        try registry.set(PanelFlagKind(id: "laptop", name: "Laptop", color: .cyan, emoji: nil))
+        XCTAssertEqual(registry.kind(id: "studio")?.color, .lime)
+        XCTAssertEqual(registry.kind(id: "laptop")?.color, .cyan)
+        // The unreadable entry is kept for the build that can read it.
+        let raw = try XCTUnwrap(defaults.data(forKey: PanelFlagKindRegistry.storageKey))
+        let ids = (try JSONSerialization.jsonObject(with: raw) as? [[String: Any]])?.compactMap { $0["id"] as? String }
+        XCTAssertEqual(Set(ids ?? []), ["studio", "future", "laptop"])
+    }
+
+    /// The registry remembers when each kind was last raised and how often
+    /// (C11H-226); an unregistered id records nothing, and a removed custom
+    /// kind's record is dropped on the next raise.
+    func testRecordRaiseKeepsLastTimeAndCountForRegisteredKindsOnly() throws {
+        let suite = "c11.flagKinds.usage.test.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let registry = PanelFlagKindRegistry(defaults: defaults)
+        try registry.set(PanelFlagKind(id: "deploy", name: "Deploy", color: .orange, emoji: nil))
+        XCTAssertNil(registry.usage(id: "deploy"))
+        registry.recordRaise(id: "deploy", at: Date(timeIntervalSince1970: 1_000))
+        registry.recordRaise(id: "deploy", at: Date(timeIntervalSince1970: 2_000))
+        registry.recordRaise(id: "merge-issue", at: Date(timeIntervalSince1970: 1_500))
+        registry.recordRaise(id: "nobody", at: Date(timeIntervalSince1970: 3_000))
+        XCTAssertEqual(registry.usage(id: "deploy"), .init(lastRaisedAt: Date(timeIntervalSince1970: 2_000), raiseCount: 2))
+        XCTAssertEqual(registry.usage(id: "merge-issue")?.raiseCount, 1)
+        XCTAssertNil(registry.usage(id: "nobody"))
+        try registry.remove(id: "deploy")
+        registry.recordRaise(id: "merge-issue", at: Date(timeIntervalSince1970: 4_000))
+        XCTAssertNil(registry.usage(id: "deploy"))
+        XCTAssertEqual(registry.usage(id: "merge-issue")?.raiseCount, 2)
+    }
+
+    /// Every palette token carries a 9 pt badge count in both themes.
+    func testEveryPaletteTokenHasReadableInkInBothThemes() {
+        XCTAssertEqual(PanelFlagColorToken.allCases.count, 8)
+        for token in PanelFlagColorToken.allCases {
+            for light in [true, false] {
+                let hex = token.hex(lightBackground: light)
+                XCTAssertGreaterThanOrEqual(FlagKindInk.contrastWithPreferredInk(hex: hex), 4.5, "\(token) light=\(light)")
+            }
+        }
+        XCTAssertTrue(FlagKindInk.prefersDarkInk(hex: "#FFFFFF"))
+        XCTAssertFalse(FlagKindInk.prefersDarkInk(hex: "#000000"))
     }
 }

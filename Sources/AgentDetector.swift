@@ -1,5 +1,8 @@
 import Darwin
 import Foundation
+#if DEBUG
+import Bonsplit
+#endif
 
 /// Heuristic TUI / agent detector (c11 Module 1).
 ///
@@ -32,16 +35,69 @@ final class AgentDetector: @unchecked Sendable {
     /// session file is found from the process (`KimiWireLocator`).
     private var foregroundPIDs: [PanelKey: Int32] = [:]
     private var pendingKicks: Set<PanelKey> = []
+    private var recoveringPanels: Set<PanelKey> = []
+    private var recoveryRoots: [PanelKey: HCProcessIdentity] = [:]
+    /// C11H-328: terminals on another machine, by the kind that machine's hc
+    /// reports for their foreground (`HCRemoteStatusBinding`). They have no
+    /// local TTY, so nothing scans them and no model or process lookup runs
+    /// for them; they join the fleet sweep (screen look, report retention,
+    /// edges) as local panels do.
+    private var remoteKinds: [PanelKey: String] = [:]
+    private let scan: (String) -> [String: ProcInfo]
+    private let sweepModels: ([AgentModelDetector.Target], [(workspaceId: UUID, surfaceId: UUID)]) -> Void
+
+    /// C11H-320: how long a panel whose last terminal unregistered may take
+    /// to register again (a move between workspaces) before its fleet reports
+    /// and screen look are retired.
+    private let retireGrace: TimeInterval
+    private let sweepInterval: TimeInterval
+
+    /// C11H-328: what one periodic sweep hands the fleet.
+    struct FleetSweep: Equatable {
+        /// Every panel with a known kind, local or on another machine.
+        let candidates: [FleetScreenMonitor.Candidate]
+        /// The panels whose hook reports and screen looks are kept.
+        let livePanels: Set<UUID>
+    }
+    private let fleetSweep: (FleetSweep) -> Void
+
+    init(scan: @escaping (String) -> [String: ProcInfo] = AgentDetector.runPS,
+         sweepModels: @escaping ([AgentModelDetector.Target], [(workspaceId: UUID, surfaceId: UUID)]) -> Void = {
+             AgentModelDetector.shared.sweep(agents: $0, plain: $1)
+         },
+         retireGrace: TimeInterval = 2,
+         sweepInterval: TimeInterval = 10,
+         fleetSweep: @escaping (FleetSweep) -> Void = AgentDetector.sweepFleet) {
+        self.scan = scan
+        self.sweepModels = sweepModels
+        self.retireGrace = retireGrace
+        self.sweepInterval = sweepInterval
+        self.fleetSweep = fleetSweep
+    }
+
+    /// C11H-320: forget closed panels, look at idle agents' screens, and
+    /// announce blocked and stalled edges (always on; cheap).
+    static func sweepFleet(_ sweep: FleetSweep) {
+        AgentReportStore.shared.retain(livePanels: sweep.livePanels)
+        FleetScreenMonitor.shared.retain(livePanels: sweep.livePanels)
+        FleetScreenMonitor.shared.sweep(sweep.candidates)
+        AgentEdgeMonitor.shared.evaluate(sweep.candidates)
+    }
+
     private var coalesceTimer: DispatchSourceTimer?
     private var scanInFlight = false
     private var sweepTimer: DispatchSourceTimer?
 
     // MARK: - Public API
 
-    func registerTTY(workspaceId: UUID, panelId: UUID, ttyName: String) {
+    func registerTTY(workspaceId: UUID, panelId: UUID, ttyName: String, recoverAgent: Bool = false, rootProcess: HCProcessIdentity? = nil) {
         queue.async { [self] in
             let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames[key] = ttyName
+            AgentReportStore.shared.restore(panelId: panelId)
+            FleetScreenMonitor.shared.restore(panelId: panelId)
+            if recoverAgent { recoveringPanels.insert(key) }
+            if let rootProcess { recoveryRoots[key] = rootProcess }
             pendingKicks.insert(key)
             startCoalesce(delaySeconds: 0.25)
             startSweepTimerIfNeeded()
@@ -52,10 +108,53 @@ final class AgentDetector: @unchecked Sendable {
         queue.async { [self] in
             let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
+            // C11H-328: a remote panel leaves by the same call (a move notes it again).
+            remoteKinds.removeValue(forKey: key)
             detectedTerminalTypes.removeValue(forKey: key)
             foregroundPIDs.removeValue(forKey: key)
             pendingKicks.remove(key)
+            recoveringPanels.remove(key)
+            recoveryRoots.removeValue(forKey: key)
+            retireUnlessRegistered(panelId)
         }
+    }
+
+    /// C11H-328: a terminal on another machine whose hc names its foreground
+    /// `kind`. An agent leaving it (for a shell or another agent) takes its
+    /// reports and look with it, as a local scan's does.
+    func noteRemote(workspaceId: UUID, panelId: UUID, kind: String) {
+        queue.async { [self] in
+            let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
+            let previous = remoteKinds[key]
+            remoteKinds[key] = kind
+            AgentReportStore.shared.restore(panelId: panelId)
+            FleetScreenMonitor.shared.restore(panelId: panelId)
+            if Self.endsAgentReports(from: previous, to: kind) {
+                AgentReportStore.shared.remove(panelId: panelId)
+                FleetScreenMonitor.shared.forget(panelId: panelId)
+            }
+            startSweepTimerIfNeeded()
+        }
+    }
+
+    /// C11H-320: a closed panel's report text and screen look leave memory
+    /// now, not at a sweep that may never run (its last terminal). Queue only.
+    private func retireUnlessRegistered(_ panelId: UUID) {
+        guard !isRegistered(panelId) else { return }
+        queue.asyncAfter(deadline: .now() + retireGrace) { [self] in
+            guard !isRegistered(panelId) else { return }
+            AgentReportStore.shared.retire(panelId: panelId)
+            FleetScreenMonitor.shared.retire(panelId: panelId)
+        }
+    }
+
+    /// For tests: the kind a remote panel was last noted with.
+    func remoteKindForTesting(workspaceId: UUID, panelId: UUID) -> String? {
+        queue.sync { remoteKinds[PanelKey(workspaceId: workspaceId, panelId: panelId)] }
+    }
+
+    private func isRegistered(_ panelId: UUID) -> Bool {
+        ttyNames.keys.contains { $0.panelId == panelId } || remoteKinds.keys.contains { $0.panelId == panelId }
     }
 
     /// Request a scan for a specific panel. Coalesces with others.
@@ -86,53 +185,77 @@ final class AgentDetector: @unchecked Sendable {
         coalesceTimer = nil
         guard !pendingKicks.isEmpty else { return }
         runScan(panelsToWrite: pendingKicks)
+        // Surviving agents do not emit a new prompt or launch edge. Read their
+        // existing session signals on this first scan, inside the 10 s budget.
+        if !pendingKicks.isDisjoint(with: recoveringPanels) { refreshModels() }
         pendingKicks.removeAll()
     }
 
     private func startSweepTimerIfNeeded() {
         guard sweepTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 10.0, repeating: 10.0)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            guard !self.ttyNames.isEmpty else {
-                self.sweepTimer?.cancel()
-                self.sweepTimer = nil
-                return
-            }
-            self.runScan(panelsToWrite: Set(self.ttyNames.keys))
-            // C11-162 (TEL-5) — coarse liveness recompute rides the existing
-            // 10 s sweep on this utility queue: zero new timer, zero hot-path
-            // work. Decays stale `working` surfaces to `idle` as a backstop
-            // for missed prompt reports.
-            for key in self.ttyNames.keys {
-                PanelLivenessDeriver.reconcile(
-                    surfaceId: key.panelId,
-                    workspaceId: key.workspaceId,
-                    detectedTerminalType: self.detectedTerminalTypes[key]
-                )
-            }
-            let livePanels = Set(self.ttyNames.keys.map(\.panelId))
-            PanelLivenessDeriver.retainSurfaceState(forLiveSurfaces: livePanels)
-            PromptCacheReportStore.shared.retain(livePanels: livePanels)
-            // Live model detection rides the same sweep: tail each agent's own
-            // session file off-main; surfaces with no agent in front clear any
-            // derived model left by a session that ended.
-            var modelTargets: [AgentModelDetector.Target] = []
-            var plainSurfaces: [(workspaceId: UUID, surfaceId: UUID)] = []
-            for key in self.ttyNames.keys {
-                if let kind = AgentIdentityPolicy.normalizedKind(self.detectedTerminalTypes[key]),
-                   AgentIdentityPolicy.isAgentKind(kind) {
-                    modelTargets.append(.init(workspaceId: key.workspaceId, surfaceId: key.panelId, kind: kind,
-                                              pid: kind == "kimi" ? self.foregroundPIDs[key] : nil))
-                } else if self.detectedTerminalTypes[key] != nil {
-                    plainSurfaces.append((key.workspaceId, key.panelId))
-                }
-            }
-            AgentModelDetector.shared.sweep(agents: modelTargets, plain: plainSurfaces)
-        }
+        timer.schedule(deadline: .now() + sweepInterval, repeating: sweepInterval)
+        timer.setEventHandler { [weak self] in self?.periodicSweep() }
         sweepTimer = timer
         timer.resume()
+    }
+
+    private func periodicSweep() {
+        guard !ttyNames.isEmpty || !remoteKinds.isEmpty else {
+            sweepTimer?.cancel()
+            sweepTimer = nil
+            // C11H-320 PR 3: the last agents went with their terminals.
+            AgentEdgeMonitor.shared.evaluate([])
+            return
+        }
+        runScan(panelsToWrite: Set(ttyNames.keys))
+        // C11-162 (TEL-5) — coarse liveness recompute rides the existing
+        // 10 s sweep on this utility queue: zero new timer, zero hot-path
+        // work. Decays stale `working` surfaces to `idle` as a backstop
+        // for missed prompt reports.
+        for key in ttyNames.keys {
+            PanelLivenessDeriver.reconcile(
+                surfaceId: key.panelId,
+                workspaceId: key.workspaceId,
+                detectedTerminalType: detectedTerminalTypes[key]
+            )
+        }
+        let localPanels = Set(ttyNames.keys.map(\.panelId))
+        PanelLivenessDeriver.retainSurfaceState(forLiveSurfaces: localPanels)
+        PromptCacheReportStore.shared.retain(livePanels: localPanels)
+        fleetSweep(fleetSweepInput())
+        // C11H-328: a remote panel's model is never looked up here.
+        if !ttyNames.isEmpty { refreshModels() }
+    }
+
+    /// Local panels with a scanned kind, then panels on other machines.
+    private func fleetSweepInput() -> FleetSweep {
+        var candidates = ttyNames.keys.compactMap { key in
+            detectedTerminalTypes[key].map {
+                FleetScreenMonitor.Candidate(workspaceId: key.workspaceId, panelId: key.panelId, kind: $0)
+            }
+        }
+        let local = Set(candidates.map(\.panelId))
+        for (key, kind) in remoteKinds where !local.contains(key.panelId) {
+            candidates.append(.init(workspaceId: key.workspaceId, panelId: key.panelId, kind: kind))
+        }
+        let live = Set(ttyNames.keys.map(\.panelId)).union(remoteKinds.keys.map(\.panelId))
+        return FleetSweep(candidates: candidates, livePanels: live)
+    }
+
+    private func refreshModels() {
+        var targets: [AgentModelDetector.Target] = []
+        var plain: [(workspaceId: UUID, surfaceId: UUID)] = []
+        for key in ttyNames.keys {
+            if let kind = AgentIdentityPolicy.normalizedKind(detectedTerminalTypes[key]),
+               AgentIdentityPolicy.isAgentKind(kind) {
+                targets.append(.init(workspaceId: key.workspaceId, surfaceId: key.panelId, kind: kind,
+                                     pid: kind == "kimi" ? foregroundPIDs[key] : nil))
+            } else if detectedTerminalTypes[key] != nil {
+                plain.append((key.workspaceId, key.panelId))
+            }
+        }
+        sweepModels(targets, plain)
     }
 
     // MARK: - Scan
@@ -148,10 +271,18 @@ final class AgentDetector: @unchecked Sendable {
         let snapshot = ttyNames
         let uniqueTTYs = Set(snapshot.values)
         let ttyList = uniqueTTYs.joined(separator: ",")
-        let foregroundPerTTY = Self.runPS(ttyList: ttyList)
+        let foregroundPerTTY = scan(ttyList)
 
         for key in panelsToWrite {
             guard let tty = snapshot[key] else { continue }
+            // A holder loss can release this tty before inventory catches up.
+            // Never attribute a later terminal reusing it to the restored panel.
+            if let root = recoveryRoots[key] {
+                guard let facts = HCAgentRecoveryKernel.readProcess(root.pid), facts.identity == root,
+                      facts.controllingTTYDevice == TerminalPIDResolver.ttyDevice(for: tty).map({ UInt32(bitPattern: $0) }) else {
+                    continue
+                }
+            }
             guard let info = foregroundPerTTY[tty] else {
                 // TTY exists but no foreground process — skip (no-op).
                 foregroundPIDs.removeValue(forKey: key)
@@ -170,6 +301,13 @@ final class AgentDetector: @unchecked Sendable {
                 if Self.endsPromptCacheReports(from: previousClassification, to: classification) {
                     PromptCacheReportStore.shared.remove(panelId: key.panelId)
                 }
+                // C11H-320: an agent that left takes its account, message and
+                // screen with it. A shell becoming an agent keeps them: that
+                // agent's own SessionStart can report before this scan sees it.
+                if Self.endsAgentReports(from: previousClassification, to: classification) {
+                    AgentReportStore.shared.remove(panelId: key.panelId)
+                    FleetScreenMonitor.shared.forget(panelId: key.panelId)
+                }
             }
             let changed = PanelMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
@@ -178,7 +316,23 @@ final class AgentDetector: @unchecked Sendable {
                 value: classification,
                 source: .heuristic
             )
-            if changed || detectionChanged {
+            let recoveredProcess: MailboxStdinBuffer.AgentProcess?
+            if recoveringPanels.contains(key), AgentIdentityPolicy.isAgentKind(classification),
+               let pid = Int32(exactly: info.pid),
+               let facts = MailboxAgentForeground.processTerminalInfo(pid: pid),
+               !facts.isZombie, facts.startTime > 0,
+               facts.terminalDevice == TerminalPIDResolver.ttyDevice(for: tty),
+               facts.processGroup == facts.terminalForegroundGroup {
+                recoveredProcess = .init(pid: pid, startTime: facts.startTime)
+            } else {
+                recoveredProcess = nil
+            }
+            #if DEBUG
+            if recoveringPanels.contains(key) {
+                dlog("agent.recover panel=\(key.panelId.uuidString.prefix(8)) tty=\(tty) pid=\(info.pid) kind=\(classification) relearn=\(recoveredProcess != nil)")
+            }
+            #endif
+            if changed || detectionChanged || recoveredProcess != nil {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: key.workspaceId),
@@ -192,6 +346,9 @@ final class AgentDetector: @unchecked Sendable {
                         if changed && !detectionChanged {
                             workspace.syncSurfacePanelActivityStateForPanel(key.panelId)
                         }
+                        if let recoveredProcess {
+                            workspace.relearnMailboxAgentProcess(surfaceId: key.panelId, process: recoveredProcess)
+                        }
                     }
                 }
             }
@@ -203,6 +360,16 @@ final class AgentDetector: @unchecked Sendable {
     /// not when a tool the agent opened (an editor) briefly does.
     static func endsPromptCacheReports(from previous: String?, to next: String) -> Bool {
         guard let previous, previous != next else { return false }
+        return next == "shell" || AgentIdentityPolicy.isAgentKind(next)
+    }
+
+    /// C11H-320: the agent that reported a panel's account, final message and
+    /// failure left it: it became a shell or another agent. A shell becoming
+    /// an agent keeps them (that agent's own SessionStart can report before a
+    /// scan sees it), and so does an agent whose editor or tool briefly holds
+    /// the foreground (`unknown`).
+    static func endsAgentReports(from previous: String?, to next: String) -> Bool {
+        guard let previous, previous != next, AgentIdentityPolicy.isAgentKind(previous) else { return false }
         return next == "shell" || AgentIdentityPolicy.isAgentKind(next)
     }
 
@@ -352,6 +519,22 @@ final class AgentDetector: @unchecked Sendable {
         for name in names {
             for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(name) {
                 return manifest.kind
+            }
+        }
+
+        // C11H-191: a seat in an Incus container runs as `incus exec <container> [options]
+        // -- <command>`, so the terminal's foreground is `incus`. The command is the first
+        // word after `--`, and only it names the agent: later words are its arguments
+        // (`-- tail -f /var/log/codex` is not Codex). A launcher that wraps the harness in a
+        // shell names the harness as argv[0] instead (`exec -a`), which the loop above reads.
+        if names.contains("incus") {
+            let tokens = args.split(whereSeparator: \.isWhitespace).map(String.init)
+            if tokens.count > 1, tokens[1] == "exec", let dash = tokens.firstIndex(of: "--"),
+               dash + 1 < tokens.count {
+                let base = basename(tokens[dash + 1])
+                for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(base) {
+                    return manifest.kind
+                }
             }
         }
 

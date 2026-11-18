@@ -214,11 +214,11 @@ def _wait_for_socket(socket_path: str, timeout: float = 10.0) -> bool:
 
 
 def _kill_cmux(app_path: str = None):
-    if app_path:
-        exe = os.path.join(app_path, "Contents/MacOS/cmux DEV")
-        subprocess.run(["pkill", "-f", exe], capture_output=True)
-    else:
-        subprocess.run(["pkill", "-x", "cmux DEV"], capture_output=True)
+    # Path-scoped to the bundle this test launched (cmux DEV.app). No name kill.
+    if not app_path:
+        return
+    exe = os.path.join(app_path, "Contents/MacOS/cmux DEV")
+    subprocess.run(["pkill", "-f", exe], capture_output=True)
     time.sleep(1.5)
 
 

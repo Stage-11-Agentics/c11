@@ -37,7 +37,8 @@ extension CMUXCLI {
     /// Render the floor-plan section for one workspace, or nil when there is
     /// nothing to draw (no panes, no content area, or canvas too narrow).
     func renderFloorPlan(workspace: [String: Any], canvasWidth: Int, idFormat: CLIIDFormat) -> String? {
-        let title = (workspace["title"] as? String) ?? ""
+        // C11H-359: titles can come from another machine; controls print as `\xHH`.
+        let title = HCCoreUtility.printable((workspace["title"] as? String) ?? "")
         let workspaceHandle = textHandle(workspace, idFormat: idFormat)
 
         guard canvasWidth >= 40 else {
@@ -211,14 +212,14 @@ extension CMUXCLI {
         // Surface info for selected tab title (line 5) and tab count (line 4).
         let surfaces = pane["panels"] as? [[String: Any]] ?? []
         let surfaceCount = (pane["panel_count"] as? Int) ?? surfaces.count
-        let selectedTitle: String = {
+        let selectedTitle: String = HCCoreUtility.printable({ () -> String in
             for s in surfaces {
                 if (s["selected"] as? Bool) == true || (s["focused"] as? Bool) == true {
                     return (s["title"] as? String) ?? ""
                 }
             }
             return (surfaces.first?["title"] as? String) ?? ""
-        }()
+        }())
 
         // Layout info for lines 2/3.
         let percentLine: String

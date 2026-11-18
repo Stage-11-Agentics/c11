@@ -191,7 +191,7 @@ Start the Ghostty artifact lane immediately. Cancellation must be visible before
 
 Ledger coverage: B001, B010, B015, B018, B019, B020, B021, B022, B023, B026, B028, B030, B031, B033, B034, B036, B037, B039, B041, B042, B045, B047, B052, B053, B054, B055, B057, B062, B063, B064, B065, B066, B072, B121, B139, B166, B171, B189, B204.
 
-Future gate: deterministic full-mailbox shutdown, child ignoring SIGHUP, out-of-order writes, split UTF-8 frames, repeated create/close and parser/resize boundaries. Run builds and sustained load on Atlas. Highest deadlock risk: B010/B021/B022/B031/B062/B065. Highest typing risk: B030/B033 and the input mailbox changes.
+Future gate: deterministic full-mailbox shutdown, child ignoring SIGHUP, out-of-order writes, split UTF-8 frames, repeated create/close and parser/resize boundaries. Run builds and sustained load on the build host. Highest deadlock risk: B010/B021/B022/B031/B062/B065. Highest typing risk: B030/B033 and the input mailbox changes.
 
 ## Wave 2: preserve restore state, ownership and exact input
 
@@ -209,7 +209,7 @@ Ledger coverage: B006, B014, B029, B032, B043, B049, B056, B059, B060, B067, B07
 
 Future gate: pointer/typing latency with streaming agents, scrolling while layout settles, repeated drag/drop, sidebar metadata bursts, inspector close, WebContent termination, controlled origin storage load and scoped cookie clear. Typing risk: B014/B029/B032/B043/B049/B056/B059/B060/B067/B086/B160/B180/B188. Deadlock/reentry risk: B006/B014/B032/B049/B056/B067.
 
-The wave memberships inherit the row-specific evidence and risks in section 3. Their dependency order is an inference from those mechanisms. Build placement follows the plan's Atlas requirement (`../C11-1.0.md:312-316`).
+The wave memberships inherit the row-specific evidence and risks in section 3. Their dependency order is an inference from those mechanisms. Build placement follows the plan's build-host requirement (`../C11-1.0.md:312-316`).
 
 ## Wave 4: one integrated 1.0 acceptance pass
 

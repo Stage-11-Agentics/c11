@@ -3,12 +3,9 @@
 Drop a `.toml` file in this folder to add a c11 chrome theme. The app watches
 this directory and hot-reloads themes within ~1 second of a save.
 
-Two slots exist in Settings → Theme:
-
-- **Light chrome** — theme applied when macOS is in Light appearance.
-- **Dark chrome** — theme applied when macOS is in Dark appearance.
-
-Each slot can point at any bundled or user theme independently.
+c11 shows one theme, day and night. Pick it in Settings → Appearance → Theme,
+where each theme is a live preview of your own window, or with
+`c11 themes set <name>`. Themes you add here list under "Your themes".
 
 ## Schema (v1)
 

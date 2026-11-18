@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11 2.0 Education</title>
+<meta name="description" content="C11H-335 prototype: how c11 2.0 teaches persistent terminals, linked machines and agent mail.">
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAADxklEQVR4nMWXvW4iSRDHf90DBCBjwDqdtMFJhtgSIL/Birsn2PQyp45Wfoe19g0u23Tf4KxNgBAZJIKLrJUu2AQwo7GMhIbpuoDpZrBnYG61uvtLzfTQNfXVVdXVsIWOnz8DH4C/AAPIDxom5vkhluFkqnhigF+BP4BfSIHWGmMM7Xab29tbRASlFICb39zcMJlMHG0G/gaugD8ThvM2oe0mzXrP8wSQXq8nWej1enu0KV7YJN7fAhSAn4BPCSIvS3WAMAyJoghjDFpvDbDzMAwPfapi3lFs+SegXQDeA2/ihYPCAZRSeJ6HUsopYOd2S47AKvEGeK+Bd2ytz/W1iBBF0av/oyhCRPKwIJYlwLsCcJ748yiKxSKe5+0Jsx4oFot5FbDBd65jTXJBKcV8Pmc4HO7tdxiGDIdD5vN53m2wEPvzr4bWWhaLhYv+xWIhWuvvqhGFvJZXq1UXdI1Gw81hWyPOz895fHwEtlkRBEGumFCxRZmui6KIWq3GeDymVqshImitqVare4UoCAKMMSil8H2fTqeD7/t4XnpiiQjGGApW40PWa605Ozvj5OQkk+b09NS9e57n0jItY5IoALTbber1+qtF3/cZj8eEYUgYhoiIK7svPZZcS9J3Oh1qtdor3svlkslksv223++nltbRaCT1el2azab4vi8iIsaYzFJs13zfl2azKfV6XUajUSptv9/fBeFqtcIYQxRFLseVUlxcXPDw8OD23Lo7C3atWq1yf3+PMYZKpYIxxvG0Mlar1W4LtNZorV2AWZRKJUql0sE9zFIkGRNJWBlWjk6l+g/hssAOpZRz12az4fn5+VXaHUMyLSuVCoVCwfG0MmzmaYByuexqudbapdF0OqXVatHtdgmCwDE/JBggCAK63S6tVovpdLrH08ool8s7D1xfX2em4XK5ZLPZuNPOCslKQ9gWr9lsxtPTE1dXV5lp6L49NJRS0mg0JAiCzPR7iSAIpNFoiFIq31lwrBQbY1gsFs4LeUqxTb1jpdg2BgeRdhiNRiPnWt/3uby8/K7DiGMuShs/8jiGnP2/53milJJOpyODwUDW67VTYL1ey2AwkE6nI0qprK44q1POp+nLtjx5Jtj5kbY83ZvA16Q2x2Db8uT+StyoHmnLk7Be/6qBz5AvGGHXlr+EbdVzwnbhnzXwEfjGtioe7h7YWZs2cka9vZh8Az5qYAb8zv7NJZOTbcvtMzk/0pYLu8uPimXOCrE2X4DfOHA5tdbNZjPu7u5SL6ez2WyP9gWsgfZy+oXEafy/Xc//Ab0fhosOPeraAAAAAElFTkSuQmCC">
+<style>
+/* ---------- tokens ---------- */
+:root {
+  color-scheme: light;
+  --page: #f3f2ef; --page-ink: #1b1d20; --page-ink-2: #5d6168; --page-ink-3: #8b8f96; --page-rule: #dcd9d2; --page-card: #ffffff;
+  --gold: #8a6d22; --gold-fill: #c9a84c; --gold-faint: rgba(201,168,76,.18);
+  /* macOS sheet, light */
+  --sheet: #ececec; --sheet-ctl: #ffffff; --label: rgba(0,0,0,.86); --label-2: rgba(0,0,0,.56); --label-3: rgba(0,0,0,.32);
+  --sep: rgba(0,0,0,.12); --btn: #ffffff; --btn-ink: rgba(0,0,0,.86); --btn-edge: rgba(0,0,0,.14); --accent-sys: #007aff; --field: #ffffff;
+  --sheet-shadow: 0 18px 50px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.2);
+  /* c11 chrome, light slot */
+  --c-void: #f5f4f1; --c-side: #ebe9e4; --c-surface: #ffffff; --c-fog: #d9d5cc; --c-text: #17191c; --c-dim: #6b7078; --c-gold: #a4842f;
+  --c-term: #fbfaf8; --c-term-ink: #2b2e33; --c-term-dim: #8a8e95; --c-dimmer: rgba(245,244,241,.55);
+  --m1: #2f8fbf; --m2: #4f9a5c; --m3: #8460c4; --m4: #c46f42;
+  --amber: #b07d18;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0b0c0e; --page-ink: #e6e7e9; --page-ink-2: #969ba3; --page-ink-3: #6a6f77; --page-rule: #24272c; --page-card: #121417;
+    --gold: #d4b45f; --gold-fill: #c9a84c; --gold-faint: rgba(201,168,76,.16);
+    --sheet: #2b2b2e; --sheet-ctl: #1e1e20; --label: rgba(255,255,255,.88); --label-2: rgba(255,255,255,.56); --label-3: rgba(255,255,255,.30);
+    --sep: rgba(255,255,255,.12); --btn: #48484c; --btn-ink: rgba(255,255,255,.92); --btn-edge: rgba(255,255,255,.08); --accent-sys: #0a84ff; --field: #1e1e20;
+    --sheet-shadow: 0 22px 60px rgba(0,0,0,.6), 0 0 0 .5px rgba(255,255,255,.14);
+    --c-void: #0a0c0f; --c-side: #07090b; --c-surface: #121519; --c-fog: #2a2f36; --c-text: #e9eaeb; --c-dim: #8a8f96; --c-gold: #c4a561;
+    --c-term: #0d0f12; --c-term-ink: #c9cdd2; --c-term-dim: #6c7178; --c-dimmer: rgba(5,6,8,.55);
+    --m1: #3fa7d6; --m2: #6bb378; --m3: #9b7bd4; --m4: #d98a5f;
+    --amber: #e0b35a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0b0c0e; --page-ink: #e6e7e9; --page-ink-2: #969ba3; --page-ink-3: #6a6f77; --page-rule: #24272c; --page-card: #121417;
+  --gold: #d4b45f; --gold-fill: #c9a84c; --gold-faint: rgba(201,168,76,.16);
+  --sheet: #2b2b2e; --sheet-ctl: #1e1e20; --label: rgba(255,255,255,.88); --label-2: rgba(255,255,255,.56); --label-3: rgba(255,255,255,.30);
+  --sep: rgba(255,255,255,.12); --btn: #48484c; --btn-ink: rgba(255,255,255,.92); --btn-edge: rgba(255,255,255,.08); --accent-sys: #0a84ff; --field: #1e1e20;
+  --sheet-shadow: 0 22px 60px rgba(0,0,0,.6), 0 0 0 .5px rgba(255,255,255,.14);
+  --c-void: #0a0c0f; --c-side: #07090b; --c-surface: #121519; --c-fog: #2a2f36; --c-text: #e9eaeb; --c-dim: #8a8f96; --c-gold: #c4a561;
+  --c-term: #0d0f12; --c-term-ink: #c9cdd2; --c-term-dim: #6c7178; --c-dimmer: rgba(5,6,8,.55);
+  --m1: #3fa7d6; --m2: #6bb378; --m3: #9b7bd4; --m4: #d98a5f;
+  --amber: #e0b35a;
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page); color: var(--page-ink);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+.mono, code, kbd { font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+code { font-size: .92em; }
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+.caps { font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- prototype bar ---------- */
+.bar { position: sticky; top: 0; z-index: 50; background: var(--page); border-bottom: 1px solid var(--page-rule); }
+.bar-in { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 14px; }
+.bar-id { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--page-ink-2); }
+.bar-id img { width: 18px; height: 18px; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { border: 1px solid transparent; background: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; color: var(--page-ink-2); font-size: 13px; }
+.tab kbd { font-size: 10px; color: var(--page-ink-3); margin-right: 6px; }
+.tab:hover { border-color: var(--page-rule); }
+.tab[aria-selected="true"] { color: var(--page-ink); border-color: var(--page-rule); background: var(--page-card); }
+.seg { display: inline-flex; border: 1px solid var(--page-rule); border-radius: 5px; overflow: hidden; flex: none; }
+.seg button { border: 0; background: none; padding: 4px 9px; font-size: 12px; cursor: pointer; color: var(--page-ink-2); }
+.seg button[aria-pressed="true"] { background: var(--page-card); color: var(--page-ink); box-shadow: inset 0 0 0 1px var(--page-rule); }
+
+main { max-width: 1240px; margin: 0 auto; padding: 22px 16px 80px; }
+.surface { display: none; }
+.surface.on { display: block; }
+.s-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
+.s-head h1 { font-size: 22px; font-weight: 600; margin: 2px 0 4px; letter-spacing: -.01em; }
+.s-head p { margin: 0; color: var(--page-ink-2); max-width: 680px; }
+.eyebrow { color: var(--gold); }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controls label { color: var(--page-ink-3); }
+.chip { display: inline-block; border: 1px solid var(--page-rule); border-radius: 3px; padding: 1px 6px; font-size: 10.5px; color: var(--page-ink-2); }
+.chip.gold { border-color: var(--gold-fill); color: var(--gold); }
+
+/* notes under stages */
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 22px; }
+.note { border: 1px solid var(--page-rule); border-radius: 6px; padding: 14px 16px; background: var(--page-card); }
+.note h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.note ol, .note ul { margin: 0; padding-left: 18px; color: var(--page-ink-2); }
+.note li { margin: 4px 0; }
+.note li b { color: var(--page-ink); font-weight: 600; }
+
+/* ---------- stage: c11 window mock + sheet ---------- */
+.stage { position: relative; height: 760px; border-radius: 10px; }
+.stage.short { height: 640px; }
+.win { position: absolute; inset: 0; border-radius: 10px; overflow: hidden; background: var(--c-void); border: 1px solid var(--c-fog); display: grid; grid-template-rows: 38px 1fr; grid-template-columns: 208px 1fr; color: var(--c-text); }
+.win-title { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--c-fog); }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: var(--c-fog); display: block; }
+.win-title .ws { font-weight: 600; font-size: 13px; }
+.win-title .tb { color: var(--c-dim); font-size: 13px; }
+.side { background: var(--c-side); border-right: 1px solid var(--c-fog); padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.side .newgroup { border: 1px solid var(--c-fog); border-radius: 4px; padding: 6px 9px; color: var(--c-text); }
+.wcard { border: 1px solid var(--c-fog); border-radius: 5px; padding: 9px 10px; background: var(--c-surface); }
+.wcard.sel { border-color: var(--c-text); }
+.wcard .row1 { display: flex; justify-content: space-between; align-items: baseline; }
+.wcard .name { font-weight: 600; font-size: 13.5px; }
+.wcard .wsn { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .1em; color: var(--c-dim); }
+.wcard .meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .08em; color: var(--c-dim); text-transform: uppercase; margin-top: 6px; }
+.side .waiting { margin-top: auto; border: 1px solid var(--c-gold); color: var(--c-gold); border-radius: 4px; padding: 8px 10px; display: flex; justify-content: space-between; }
+.side .waiting b { background: var(--c-gold); color: var(--c-void); padding: 0 5px; border-radius: 2px; font-weight: 600; }
+.areas { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+.panel { display: grid; grid-template-rows: 30px 26px 1fr 24px; min-height: 0; border-left: 1px solid var(--c-fog); position: relative; background: var(--c-term); }
+.panel:first-child { border-left: 0; }
+.ptabs { display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--c-fog); background: var(--c-void); font-size: 12px; color: var(--c-dim); min-width: 0; }
+.mchip { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; border-radius: 3px; padding: 1px 6px; color: #fff; flex: none; }
+.ptabs .t { color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdesc { display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--c-fog); background: var(--c-void); font-size: 11.5px; color: var(--c-dim); white-space: nowrap; overflow: hidden; }
+.pdesc .role { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; border: 1px solid var(--c-fog); padding: 0 5px; color: var(--c-text); flex: none; }
+.term { padding: 8px 10px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; line-height: 1.6; color: var(--c-term-ink); overflow: hidden; white-space: pre; }
+.term .d { color: var(--c-term-dim); }
+.term .g { color: var(--c-gold); }
+.pbar { display: flex; align-items: center; gap: 10px; padding: 0 8px; border-top: 1px solid var(--c-fog); background: var(--c-void); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; color: var(--c-dim); }
+.pbar .mail { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--c-text); }
+.dim { position: absolute; inset: 38px 0 0 0; background: var(--c-dimmer); transition: opacity .15s; }
+.win.undim .dim { opacity: 0; pointer-events: none; }
+
+/* ---------- macOS sheet ---------- */
+.sheet { position: absolute; left: 50%; top: 38px; transform: translateX(-50%); width: 600px; max-width: calc(100% - 24px);
+  background: var(--sheet); color: var(--label); border-radius: 0 0 12px 12px; box-shadow: var(--sheet-shadow); padding: 24px 28px 20px; z-index: 5; }
+.sheet.hidden { display: none; }
+.sheet .eb { display: flex; justify-content: space-between; align-items: center; height: 16px; margin-bottom: 6px; }
+.sheet .eb .brand { font-size: 11px; font-weight: 600; letter-spacing: .05em; color: var(--gold); }
+.sheet .eb .brand .new { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .12em; border: 1px solid var(--gold-fill); color: var(--gold); padding: 0 5px; border-radius: 3px; margin-left: 8px; vertical-align: 1px; }
+.sheet .eb .count { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--label-3); font-variant-numeric: tabular-nums; }
+.sheet h2 { margin: 0 0 6px; font-size: 20px; line-height: 1.25; font-weight: 600; letter-spacing: -.01em; }
+.sheet .sub { margin: 0 0 16px; font-size: 13px; line-height: 1.45; color: var(--label-2); }
+.pic { background: var(--sheet-ctl); border: 1px solid var(--sep); border-radius: 10px; height: 164px; margin-bottom: 18px; overflow: hidden; }
+.pic svg { display: block; width: 100%; height: 100%; }
+.pts { margin: 0; padding: 0; list-style: none; display: grid; gap: 11px; }
+.pts li { display: grid; grid-template-columns: 14px 1fr; gap: 12px; font-size: 13px; line-height: 1.45; color: var(--label-2); }
+.pts li .n { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; font-weight: 600; color: var(--gold); text-align: right; }
+.pts li b { color: var(--label); font-weight: 600; }
+.pts code { color: var(--label); background: var(--sep); padding: 0 4px; border-radius: 3px; font-size: 11.5px; white-space: nowrap; }
+.pages { display: grid; grid-template-columns: minmax(0, 1fr); }
+.pts li > span { min-width: 0; }
+.pages > .page { grid-area: 1 / 1; visibility: hidden; }
+.pages > .page.on { visibility: visible; }
+.tryrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; height: 30px; margin-top: 14px; font-size: 12px; color: var(--label-2); }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent-sys); cursor: pointer; font-size: 12px; white-space: nowrap; }
+.foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--sep); }
+.dots { display: flex; gap: 7px; margin-right: auto; }
+.dots button { width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0; background: var(--label-3); cursor: pointer; }
+.dots button[aria-current="true"] { background: var(--gold-fill); }
+.mbtn { min-width: 86px; height: 28px; border-radius: 6px; border: .5px solid var(--btn-edge); background: var(--btn); color: var(--btn-ink); font-size: 13px; padding: 0 14px; cursor: pointer; box-shadow: 0 .5px 1px rgba(0,0,0,.12); }
+.mbtn.def { background: var(--accent-sys); color: #fff; border-color: transparent; }
+.mbtn:disabled { opacity: .45; cursor: default; }
+.mbtn:focus-visible, .linkbtn:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent-sys); outline-offset: 2px; }
+.reopen { position: absolute; left: 50%; top: 120px; transform: translateX(-50%); z-index: 4; text-align: center; color: var(--c-dim); font-size: 13px; width: 360px; max-width: 90%; }
+.reopen.hidden { display: none; }
+.reopen p { margin: 0 0 10px; background: var(--c-surface); border: 1px solid var(--c-fog); border-radius: 6px; padding: 10px 12px; }
+
+/* picture text */
+.pic text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; fill: var(--label-2); font-size: 11px; }
+.pic text.b { fill: var(--label); font-weight: 600; font-size: 12px; }
+.pic text.m { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .1em; }
+.pic .ln { stroke: var(--label-3); fill: none; stroke-width: 1.2; }
+.pic .box { fill: var(--sheet); stroke: var(--sep); }
+.pic .glyph { fill: var(--sheet); stroke: var(--label-2); stroke-width: 1.2; }
+.pic .glyph-in { fill: var(--sep); }
+.pic .gold { fill: var(--gold-fill); }
+.pic .gold-s { stroke: var(--gold-fill); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes quitcycle { 0%,42% { opacity: 1; } 50%,92% { opacity: .22; } 100% { opacity: 1; } }
+@keyframes quitlabelA { 0%,42% { opacity: 1; } 50%,92% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes quitlabelB { 0%,42% { opacity: 0; } 50%,92% { opacity: 1; } 100% { opacity: 0; } }
+.pulse { animation: pulse 1.6s ease-in-out infinite; }
+.quit { animation: quitcycle 7s ease-in-out infinite; }
+.qa { animation: quitlabelA 7s ease-in-out infinite; }
+.qb { animation: quitlabelB 7s ease-in-out infinite; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .pulse, .quit, .qa { animation: none; }
+  .qb { animation: none; opacity: 0; }
+}
+
+/* ---------- link consent pointer ---------- */
+.ptr { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.ptr .note code { word-break: break-word; }
+.quote { border: 1px solid var(--page-rule); border-radius: 8px; padding: 14px 16px; background: var(--page-card); font-size: 15px; color: var(--page-ink); }
+
+/* ---------- docs landing ---------- */
+.browser { border: 1px solid var(--page-rule); border-radius: 10px; overflow: hidden; background: var(--c-void); }
+.bchrome { height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--c-fog); background: var(--c-side); }
+.bchrome .url { flex: 1; max-width: 420px; margin: 0 auto; height: 22px; border-radius: 5px; background: var(--c-surface); border: 1px solid var(--c-fog); font-size: 11.5px; color: var(--c-dim); display: flex; align-items: center; justify-content: center; }
+.docs { color: var(--c-text); background: var(--c-void); }
+.docs a { color: var(--c-text); }
+.dnav { display: flex; align-items: center; gap: 18px; padding: 14px 32px; border-bottom: 1px solid var(--c-fog); font-size: 13px; color: var(--c-dim); flex-wrap: wrap; }
+.dnav .logo { display: flex; align-items: center; gap: 8px; color: var(--c-text); font-weight: 600; margin-right: auto; }
+.dnav .logo img { width: 22px; height: 22px; }
+.dhero { padding: 54px 32px 40px; max-width: 900px; }
+.dhero .k { color: var(--c-gold); }
+.dhero h2 { font-size: 40px; line-height: 1.08; letter-spacing: -.02em; margin: 10px 0 14px; font-weight: 600; }
+.dhero p { font-size: 16.5px; line-height: 1.55; color: var(--c-dim); margin: 0 0 22px; max-width: 680px; }
+.dhero p b { color: var(--c-text); font-weight: 600; }
+.dcta { display: flex; flex-wrap: wrap; gap: 10px; }
+.dbtn { border: 1px solid var(--c-fog); border-radius: 5px; padding: 8px 14px; font-size: 13.5px; text-decoration: none; display: inline-block; }
+.dbtn.p { background: var(--c-gold); border-color: var(--c-gold); color: var(--c-void) !important; font-weight: 600; }
+.dsec { padding: 30px 32px; border-top: 1px solid var(--c-fog); }
+.dsec > .caps { color: var(--c-dim); margin-bottom: 14px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.step { border: 1px solid var(--c-fog); border-radius: 6px; padding: 14px; background: var(--c-surface); }
+.step .n { font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--c-gold); font-size: 12px; }
+.step p { margin: 6px 0 8px; font-size: 14px; }
+.step code { display: block; background: var(--c-term); border: 1px solid var(--c-fog); border-radius: 4px; padding: 6px 8px; font-size: 11.5px; color: var(--c-term-ink); white-space: normal; word-break: break-word; }
+.concepts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.concept { border: 1px solid var(--c-fog); border-radius: 6px; padding: 16px; background: var(--c-surface); display: flex; flex-direction: column; gap: 8px; }
+.concept h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.concept p { margin: 0; color: var(--c-dim); font-size: 13.5px; line-height: 1.5; flex: 1; }
+.concept code { font-size: 11.5px; color: var(--c-text); }
+.concept .more { font-size: 13px; color: var(--c-gold); text-decoration: none; }
+.concept svg { height: 34px; width: auto; align-self: flex-start; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.panelbox { border: 1px solid var(--c-fog); border-radius: 6px; padding: 16px; background: var(--c-surface); font-size: 13.5px; color: var(--c-dim); }
+.panelbox h3 { margin: 0 0 8px; font-size: 15px; color: var(--c-text); font-weight: 600; }
+.panelbox ul { margin: 0; padding-left: 18px; }
+.panelbox li { margin: 5px 0; }
+.panelbox b { color: var(--c-text); font-weight: 600; }
+.dfoot { padding: 20px 32px 26px; border-top: 1px solid var(--c-fog); font-size: 12px; color: var(--c-dim); }
+
+/* ---------- launch post outline ---------- */
+.doc { max-width: 780px; }
+.doc h2 { font-size: 15px; margin: 26px 0 8px; font-weight: 600; }
+.doc h2 .caps { color: var(--gold); margin-right: 8px; }
+.doc p, .doc li { color: var(--page-ink-2); }
+.doc li b, .doc p b { color: var(--page-ink); font-weight: 600; }
+.doc ul, .doc ol { padding-left: 20px; margin: 6px 0; }
+.doc li { margin: 4px 0; }
+.src { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--page-ink-3); border: 1px solid var(--page-rule); border-radius: 3px; padding: 0 4px; white-space: nowrap; }
+.heads { display: grid; gap: 8px; margin: 8px 0; }
+.headopt { border: 1px solid var(--page-rule); border-radius: 6px; padding: 10px 12px; background: var(--page-card); }
+.headopt .t { font-size: 17px; font-weight: 600; color: var(--page-ink); }
+.headopt .w { font-size: 12.5px; color: var(--page-ink-3); margin-top: 2px; }
+.headopt.rec { border-color: var(--gold-fill); }
+
+/* ---------- changelog ---------- */
+.diff { border: 1px solid var(--page-rule); border-radius: 8px; overflow: hidden; background: var(--page-card); font: 12px/1.6 "JetBrains Mono", ui-monospace, monospace; }
+.diff .h { padding: 8px 12px; border-bottom: 1px solid var(--page-rule); color: var(--page-ink-3); }
+.diff .l { padding: 2px 12px 2px 28px; position: relative; white-space: pre-wrap; word-break: break-word; color: var(--page-ink-2); }
+.diff .l::before { position: absolute; left: 12px; }
+.diff .add { background: rgba(80,160,90,.12); color: var(--page-ink); }
+.diff .add::before { content: "+"; color: var(--m2); }
+.diff .del { background: rgba(200,80,70,.10); text-decoration: line-through; text-decoration-color: rgba(200,80,70,.5); }
+.diff .del::before { content: "-"; color: #c8584a; }
+.diff .ctx::before { content: " "; }
+
+/* ---------- asks ---------- */
+.asks { display: grid; gap: 14px; max-width: 920px; }
+.ask { border: 1px solid var(--page-rule); border-radius: 8px; padding: 14px 16px; background: var(--page-card); }
+.ask h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.ask h3 .n { font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--gold); margin-right: 8px; }
+.ask .opt { display: grid; grid-template-columns: 30px 1fr; gap: 4px 8px; margin: 6px 0; color: var(--page-ink-2); font-size: 13.5px; }
+.ask .opt .k { font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--page-ink-3); }
+.ask .opt.rec .k { color: var(--gold); }
+.ask .opt b { color: var(--page-ink); }
+.ask .rec-tag { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .12em; color: var(--gold); border: 1px solid var(--gold-fill); padding: 0 5px; border-radius: 3px; margin-left: 6px; vertical-align: 1px; }
+
+/* ---------- narrow ---------- */
+@media (max-width: 860px) {
+}
+@media (max-width: 760px) {
+  .stage, .stage.short { height: auto; }
+  .win { display: none; }
+  .sheet { position: static; transform: none; width: 100%; max-width: 100%; border-radius: 12px; padding: 20px 18px 16px; }
+  .reopen { position: static; transform: none; width: 100%; max-width: 100%; margin: 20px 0; }
+  .pic { height: 150px; }
+  .pts code { white-space: normal; word-break: break-word; }
+  .tryrow { height: auto; min-height: 30px; flex-wrap: wrap; }
+  .mbtn { min-width: 72px; padding: 0 10px; }
+  .dhero { padding: 34px 18px 26px; }
+  .dhero h2 { font-size: 30px; }
+  .dsec, .dnav, .dfoot { padding-left: 18px; padding-right: 18px; }
+  .bar-id span { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="bar-id caps"><img alt="" src="data:image/png;base64,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"><span>c11 2.0 education · C11H-335</span></div>
+    <nav class="tabs" role="tablist" aria-label="Surfaces">
+      <button class="tab" role="tab" data-s="1"><kbd>1</kbd>What's New</button>
+      <button class="tab" role="tab" data-s="2"><kbd>2</kbd>Link consent</button>
+      <button class="tab" role="tab" data-s="3"><kbd>3</kbd>Docs landing</button>
+      <button class="tab" role="tab" data-s="4"><kbd>4</kbd>Launch post</button>
+      <button class="tab" role="tab" data-s="5"><kbd>5</kbd>Changelog</button>
+      <button class="tab" role="tab" data-s="6"><kbd>6</kbd>Decisions</button>
+    </nav>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme-set="auto">Auto</button><button data-theme-set="light">Light</button><button data-theme-set="dark">Dark</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- ======================= 1 WHAT'S NEW ======================= -->
+<section class="surface" id="s1" data-s="1">
+  <div class="s-head">
+    <div>
+      <div class="caps eyebrow">Surface 1 · first run</div>
+      <h1>What's New in c11 2.0</h1>
+      <p>Today's one-screen sheet (C11H-267) grows to one short page per concept, each with a picture. Page 1 is the must-know; the rest teach what 2.0 adds. Terminals start and run whether the sheet is open, closed or never seen. Arrow keys page, Return goes on, Esc closes.</p>
+    </div>
+    <div class="controls">
+      <label class="caps" for="aud">Who opens c11</label>
+      <div class="seg" role="group" aria-label="Audience" id="aud">
+        <button data-aud="upgrade">From c11 1.x</button><button data-aud="fresh">Fresh install</button><button data-aud="adopt">From c11h</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage" id="wn-stage">
+    <div class="win" id="wn-win"></div>
+    <div class="reopen hidden" id="wn-reopen">
+      <p>Sheet closed. The terminals behind it ran the whole time; nothing waited on it.</p>
+      <button class="mbtn" id="wn-reopen-btn">Help ▸ What's New in c11 2.0</button>
+    </div>
+    <div class="sheet" id="wn-sheet" role="dialog" aria-modal="true" aria-labelledby="wn-title">
+      <div class="pages" id="wn-pages"></div>
+      <div class="foot">
+        <div class="dots" id="wn-dots" aria-label="Pages"></div>
+        <button class="mbtn" id="wn-back">Close</button>
+        <button class="mbtn def" id="wn-next">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>Why it looks like this</h3>
+      <ol>
+        <li><b>One concept per page</b> (Atin, decision 1). Three concepts do not fit the 600 pt sheet as one screen without becoming a wall of text. Each page keeps four numbered points, the house pattern from C11H-127.</li>
+        <li><b>The must-know comes first.</b> Page 1 is the behavior change that can lose work (closing a panel ends its jobs). Close is always one click away; nothing later is required reading.</li>
+        <li><b>Nothing jumps.</b> Every page in an audience shares the tallest page's height; buttons keep their places; the counter uses tabular figures.</li>
+        <li><b>The window behind teaches too.</b> The mock shows a machine label (STUDIO), one agent mailing another, and a mailbox cell: the things the pages name.</li>
+      </ol>
+    </div>
+    <div class="note">
+      <h3>Build notes (phase 2, approved)</h3>
+      <ul>
+        <li>Lives in <code>Sources/WhatsDifferentView.swift</code>; the audience enum already exists (<code>.standard</code>, <code>.upgradeFrom1x</code>); add <code>.adoptedFromC11h</code>.</li>
+        <li>Pictures are drawn in SwiftUI from live data where it exists (the machine roster already feeds today's picture).</li>
+        <li>Every string in English plus ja, uk, ko, zh-Hans, zh-Hant and ru; the "try" links reuse existing menu actions.</li>
+        <li>Page 2 shows the linked machines the Mac really has; with none, the picture shows "this Mac" and the Add Machine link.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 2 LINK CONSENT ======================= -->
+<section class="surface" id="s2" data-s="2">
+  <div class="s-head">
+    <div>
+      <div class="caps eyebrow">Surface 2 · Add Machine</div>
+      <h1>The link consent screen belongs to C11H-332</h1>
+      <p>C11H-332 designs and builds it, and its words and the trust page live there. This prototype points at them rather than restating them, so the two never drift.</p>
+    </div>
+  </div>
+  <div class="quote">Atin's ruling, carried by both tickets: linking gives c11 a shell on this machine as you.</div>
+  <div class="ptr" style="margin-top:16px">
+    <div class="note">
+      <h3>Where it lives (branch <code>c11h/C11H-332-security-bar</code>)</h3>
+      <ul>
+        <li><b>The screen:</b> its own page after Add, titled "Link &lt;host&gt; to c11?". Prototype: <code>design/c11-link-consent/prototype.html</code>.</li>
+        <li><b>The copy:</b> <code>consentBullets</code> in <code>Sources/MachineSetupSheets.swift</code>.</li>
+        <li><b>The trust page:</b> "How c11 trusts a linked machine", <code>c11 guide trust</code> (<code>skills/c11/references/trust.md</code>).</li>
+        <li><b>The CLI:</b> <code>c11 machine link</code> stays the operator's own action; it asks in a terminal and needs <code>--yes</code> elsewhere.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>Where the education surfaces meet it</h3>
+      <ul>
+        <li><b>What's New, page 2:</b> one line, "Link only machines you trust: linking gives c11 a shell there as you.", and an Add Machine link that opens C11H-332's flow.</li>
+        <li><b>Docs landing, Trust and privacy:</b> the same line, linking to the trust page.</li>
+        <li><b>Launch post, section 3:</b> the trust line stated plainly, with a link to the trust page.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 3 DOCS LANDING ======================= -->
+<section class="surface" id="s3" data-s="3">
+  <div class="s-head">
+    <div>
+      <div class="caps eyebrow">Surface 3 · docs front door</div>
+      <h1>Docs landing page</h1>
+      <p>The page the What's New "learn more" links and the launch post point at. Same three concepts, the external register (standard case, "you"), c11's own chrome colors. It ships as a static page beside the download page (Atin, decision 3).</p>
+    </div>
+  </div>
+  <div class="browser">
+    <div class="bchrome"><div class="lights"><i></i><i></i><i></i></div><div class="url">c11 docs</div></div>
+    <div class="docs">
+      <div class="dnav">
+        <span class="logo"><img alt="" src="data:image/png;base64,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">c11</span>
+        <a href="#3">Docs</a><a href="#3">Agent guide</a><a href="#5">Changelog</a><a href="#3">Source</a>
+      </div>
+      <div class="dhero">
+        <div class="caps k">c11 2.0</div>
+        <h2>Your terminals keep running.<br>Wherever they run.</h2>
+        <p>c11 is a macOS terminal multiplexer for running many agents at once. In 2.0, herdr-core keeps your <b>terminals running past the app</b>, terminals on a <b>server or another Mac you link</b> work the same as local ones, and your agents <b>mail each other</b>. All of it in one window.</p>
+        <div class="dcta"><a class="dbtn p" href="#3">Install c11</a><a class="dbtn" href="#3">Updating from c11 1.x</a></div>
+      </div>
+      <div class="dsec">
+        <div class="caps">Start in a minute</div>
+        <div class="steps">
+          <div class="step"><span class="n">1</span><p>Install with Homebrew, or download the app.</p><code>brew tap stage-11-agentics/c11 &amp;&amp; brew install --cask c11</code></div>
+          <div class="step"><span class="n">2</span><p>Open c11. The welcome terminal starts Claude Code with its normal permission prompts.</p><code>claude</code></div>
+          <div class="step"><span class="n">3</span><p>Ask your agent to load the c11 skill. From then on it names its panel, reports status and launches helpers itself.</p><code>c11 guide</code></div>
+        </div>
+      </div>
+      <div class="dsec">
+        <div class="caps">What's new in 2.0</div>
+        <div class="concepts">
+          <div class="concept">
+            <svg viewBox="0 0 60 34" aria-hidden="true"><rect x="1" y="5" width="26" height="20" rx="3" fill="none" stroke="var(--c-dim)" stroke-dasharray="3 2"/><path d="M28 15 H36" stroke="var(--c-dim)"/><rect x="37" y="3" width="22" height="24" rx="3" fill="none" stroke="var(--c-gold)"/><circle cx="43" cy="10" r="2" fill="var(--c-gold)"/><circle cx="43" cy="16" r="2" fill="var(--c-gold)"/><circle cx="43" cy="22" r="2" fill="var(--c-gold)"/></svg>
+            <h3>Terminals that outlive the app</h3>
+            <p>A helper called hc holds every terminal, so shells and agents keep running when c11 quits, updates or crashes. Closing a panel ends what it started. After a reboot, each saved agent conversation resumes once.</p>
+            <a class="more" href="#3">Persistent terminals →</a>
+          </div>
+          <div class="concept">
+            <svg viewBox="0 0 60 34" aria-hidden="true"><rect x="1" y="7" width="22" height="18" rx="3" fill="none" stroke="var(--c-dim)"/><path d="M23 16 C32 16 32 6 40 6 M23 16 H40 M23 16 C32 16 32 27 40 27" fill="none" stroke="var(--c-dim)"/><circle cx="44" cy="6" r="3" fill="var(--c-gold)"/><circle cx="44" cy="16" r="3" fill="var(--m1)"/><circle cx="44" cy="27" r="3" fill="var(--m2)"/></svg>
+            <h3>Linked machines</h3>
+            <p>Link a Mac or an x86-64 Linux machine you reach over SSH, and its terminals sit in this window. Launches ask where to run; each title bar names the machine. Link only machines you trust.</p>
+            <a class="more" href="#3">Other machines →</a>
+          </div>
+          <div class="concept">
+            <svg viewBox="0 0 60 34" aria-hidden="true"><rect x="1" y="8" width="18" height="18" rx="2" fill="none" stroke="var(--c-dim)"/><rect x="41" y="8" width="18" height="18" rx="2" fill="none" stroke="var(--c-dim)"/><rect x="24" y="12" width="12" height="9" rx="1" fill="none" stroke="var(--c-gold)"/><path d="M24 12 L30 17 L36 12" fill="none" stroke="var(--c-gold)"/></svg>
+            <h3>Agent mail</h3>
+            <p>Every panel has a mailbox. Agents hand off work and report back with <code>c11 mailbox send</code>; mail arrives when the agent is idle, never mid-turn, and survives a relaunch.</p>
+            <a class="more" href="#3">Mail →</a>
+          </div>
+        </div>
+      </div>
+      <div class="dsec">
+        <div class="two">
+          <div class="panelbox">
+            <h3>Updating from c11 1.x</h3>
+            <ul>
+              <li><b>Quitting no longer ends your terminals.</b> Settings ▸ General ▸ Keep Terminals After Quit turns that off.</li>
+              <li><b>Closing a panel ends everything it started</b>, background jobs too. The close button says End Session.</li>
+              <li><b>Your workspaces, panels and settings carry over.</b> The first launch explains the rest once.</li>
+            </ul>
+          </div>
+          <div class="panelbox">
+            <h3>Trust and privacy</h3>
+            <ul>
+              <li><b>c11 sends no crash reports or analytics</b>, whatever the setting says. c11 1.8.1 sent them by default; 2.0 does not.</li>
+              <li><b>Linking a machine gives c11 a shell there as you.</b> What that means, and what it does not protect: <a href="#2">How c11 trusts a linked machine</a>.</li>
+              <li><b>Agents learn c11 from its skill.</b> <code>c11 guide</code> prints the card for the build you run.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="dfoot">c11 is open source (AGPL-3.0-or-later), built on cmux, Ghostty and Bonsplit. hc is herdr-core (Apache-2.0), bundled unmodified.</div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note">
+      <h3>What it links to</h3>
+      <ul>
+        <li>Each concept card opens one page that holds the matching <code>c11 guide</code> content in human form: <code>persistence</code>, <code>remote</code>, <code>mailbox</code>.</li>
+        <li>"Updating from c11 1.x" opens the What's New text and the changelog's Before you update.</li>
+        <li>The trust link opens C11H-332's trust page, the same text as <code>c11 guide trust</code>.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>Copy rules</h3>
+      <ul>
+        <li>External register: standard case, "you", never "user".</li>
+        <li>Every claim traces to the 2.0.0 changelog entry.</li>
+        <li>No machine, host or path names from Stage 11's own setup.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 4 LAUNCH POST ======================= -->
+<section class="surface" id="s4" data-s="4">
+  <div class="s-head">
+    <div>
+      <div class="caps eyebrow">Surface 4 · outline only</div>
+      <h1>Launch post outline</h1>
+      <p>For c11 1.x users who will get 2.0 as an update, and for people running many coding agents. Nothing here is sent or published without Atin's named go.</p>
+    </div>
+  </div>
+  <div class="doc">
+    <h2><span class="caps">Headline</span>Atin's pick (decision 4), in his framing</h2>
+    <div class="quote">Atin: "we leverage herder core to keep terminals running, effortlessly use terminals on servers or local, all the same, all orchestrated. That's c11."</div>
+    <div class="heads">
+      <div class="headopt rec"><div class="t">c11 2.0: your terminals keep running, here or on your servers</div><div class="w">Proposed. The change every updater meets first, then the reach: local and remote terminals as one.</div></div>
+    </div>
+    <p><b>First lines (proposed):</b> c11 2.0 runs every terminal on herdr-core, so your shells and agents keep running when the app quits, updates or crashes. Link a server or another Mac, and its terminals sit in the same window and work the same way as the ones on this Mac. Every one of them has a handle your agents can drive, so one window orchestrates them all. That's c11.</p>
+    <p><b>Dek:</b> c11 2.0 keeps every terminal running when the app quits, crashes or updates, puts terminals from other Macs and Linux machines in the same window, and gives agents mail. It sends no crash reports or analytics.</p>
+
+    <h2><span class="caps">1</span>The window was the terminal</h2>
+    <ul><li>In c11 1.x, quitting, crashing or updating ended every shell and agent in it. With thirty agents at work, an update was a decision.</li></ul>
+
+    <h2><span class="caps">2</span>Terminals that outlive the app</h2>
+    <ul>
+      <li>hc (herdr-core, open source, Apache-2.0) holds every terminal, bundled inside the app. <span class="src">C11H-3</span></li>
+      <li>Quit, crash or update: everything keeps running and c11 reattaches. A reboot still ends them; each saved agent conversation then resumes once. <span class="src">C11H-38</span> <span class="src">C11H-39</span></li>
+      <li>What it costs: closing a panel now ends what it started. Keep Terminals After Quit brings 1.x's behavior back. <span class="src">C11H-267</span></li>
+      <li>Media: an 8-second clip, quit c11 with three agents working, reopen, they are still mid-task.</li>
+    </ul>
+
+    <h2><span class="caps">3</span>Other machines, same window</h2>
+    <ul>
+      <li>Link a Mac or an x86-64 Linux machine over SSH; launches ask where to run; the title bar names the machine. <span class="src">C11H-12</span> <span class="src">C11H-138</span> <span class="src">C11H-392</span></li>
+      <li>Agents there set status, raise flags and send mail like local ones. <span class="src">C11H-16</span> <span class="src">C11H-176</span></li>
+      <li>The trust line, stated plainly, with a link to the trust page: linking gives c11 a shell there as you. <span class="src">C11H-332</span></li>
+      <li>Media: a still of two title bars, one local, one on a linked machine in its color.</li>
+    </ul>
+
+    <h2><span class="caps">4</span>Many agents, one window</h2>
+    <ul>
+      <li>Mail that waits for an idle turn and survives a relaunch. <span class="src">C11H-184</span></li>
+      <li>Flags that break through every notification level; a Done button for finished turns; a compact sidebar for many workspaces. <span class="src">C11H-223</span> <span class="src">C11H-261</span> <span class="src">C11H-221</span></li>
+      <li>Media: the sidebar at 20 workspaces, compact.</li>
+    </ul>
+
+    <h2><span class="caps">5</span>Agents show you what they made</h2>
+    <ul><li><code>c11 show</code> opens a viewer beside the agent, from any machine; Option-click an element to mail the agent about it. <span class="src">C11H-228</span> <span class="src">C11H-247</span></li></ul>
+
+    <h2><span class="caps">6</span>Privacy</h2>
+    <ul><li>2.0 sends no crash reports or analytics, whatever the setting says. c11 1.8.1 sent them from release builds unless you turned them off. <span class="src">C11H-183</span></li></ul>
+
+    <h2><span class="caps">7</span>Before you update</h2>
+    <ul><li>The changelog's Before you update lines, word for word, and a pointer to the What's New sheet.</li></ul>
+
+    <h2><span class="caps">8</span>Lineage and thanks</h2>
+    <ul><li>tmux, then cmux (manaflow-ai), then c11; Ghostty renders; Bonsplit draws the splits; herdr-core holds the terminals.</li></ul>
+
+    <h2><span class="caps">9</span>Get it</h2>
+    <ul><li>Existing installs update in place; <code>brew upgrade</code>; a link to the docs landing page and the full changelog.</li></ul>
+
+    <h2><span class="caps">Rules</span>For whoever writes it</h2>
+    <ul>
+      <li>Short sentences, no em-dashes, every fact traceable to the 2.0.0 changelog.</li>
+      <li>No Stage 11 host, machine or path names; mock names only in media.</li>
+      <li>Ships after Stage 11 signing (C11H-179) and Atin's go on the release; never before the update it announces.</li>
+      <li>Venues: GitHub release notes and the Stage 11 site (decision 4). Anything more waits for Atin's word.</li>
+      <li>Captains and the fleet are Flagship's, a separate, optional expansion of c11 (Atin, decision 2); the post does not present them.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ======================= 5 CHANGELOG ======================= -->
+<section class="surface" id="s5" data-s="5">
+  <div class="s-head">
+    <div>
+      <div class="caps eyebrow">Surface 5 · CHANGELOG.md</div>
+      <h1>The 2.0.0 entry: telemetry and the captain key</h1>
+      <p>Made in this branch. The telemetry line moves from Changed to Before you update, because it reverses what 1.8.1 did by default. The workspace captain key was missing from Added; it is described as a plain c11 primitive, since Captains and the fleet belong to Flagship, a separate optional expansion (Atin, decision 2).</p>
+    </div>
+  </div>
+  <div class="diff">
+    <div class="h">CHANGELOG.md · ## [2.0.0] · ### Before you update</div>
+    <div class="l ctx">- **The first launch after updating explains this once**, in a "What's New in c11 2.0" sheet: …</div>
+    <div class="l add">- **c11 2.0 sends no crash reports or analytics.** c11 1.8.1 sent them from release builds unless you turned them off in Settings. 2.0 starts neither, whatever the setting says, and Settings ▸ Data &amp; Privacy says so. (`3304c468`, C11H-183)</div>
+    <div class="h" style="border-top:1px solid var(--page-rule)">### Added</div>
+    <div class="l ctx">- **Agents on a linked machine work as local ones.** …</div>
+    <div class="l add">- **A workspace can name the agent that answers for it.** `c11 set-workspace-metadata captain &lt;address&gt;`, or a Captain line in the project's `C11.md`, names it, and a workspace group can name one for all its workspaces. The panel holding that address carries an outline, the sidebar card shows the name (hollow when no open panel holds it), and `c11 mailbox send --to-captain` reaches that panel from any panel in the workspace or group, or fails when none is named or no panel holds it. `tree --json` reports it. (C11H-289, C11H-299)</div>
+    <div class="h" style="border-top:1px solid var(--page-rule)">### Changed</div>
+    <div class="l del">- **c11 sends no crash reports or analytics**, whatever the setting says. (`3304c468`, C11H-183)</div>
+  </div>
+</section>
+
+<!-- ======================= 6 DECISIONS ======================= -->
+<section class="surface" id="s6" data-s="6">
+  <div class="s-head">
+    <div>
+      <div class="caps eyebrow">Ruled by Atin, Nov 18, 13:45</div>
+      <h1>Decisions</h1>
+      <p>Atin ruled on all five through the C11 Captain. This prototype now follows them, and phase 2 builds from it.</p>
+    </div>
+  </div>
+  <div class="asks">
+    <div class="ask"><h3><span class="n">1</span>Shape of the What's New sheet</h3>
+      <div class="opt rec"><span class="k">a</span><div><b>One page per concept</b><span class="rec-tag">RULED</span><br>Three pages: terminals that outlive the app, linked machines, agent mail. Page 1 holds what can lose work; Close works from any page.</div></div>
+    </div>
+    <div class="ask"><h3><span class="n">2</span>Captains</h3>
+      <div class="opt rec"><span class="k">&rarr;</span><div><b>Captains and the fleet belong to Flagship, not to c11</b><span class="rec-tag">RULED</span><br>Flagship is an optional, opinionated expansion of c11, a separate thing that may get its own private, invite-only repo. What's New has no Captains page; the changelog keeps the workspace captain key only as a plain c11 primitive.</div></div>
+    </div>
+    <div class="ask"><h3><span class="n">3</span>Where the docs landing page lives</h3>
+      <div class="opt rec"><span class="k">a</span><div><b>A static page beside the download page (C11H-177), built from this prototype</b><span class="rec-tag">RULED</span></div></div>
+    </div>
+    <div class="ask"><h3><span class="n">4</span>Launch post headline and venue</h3>
+      <div class="opt rec"><span class="k">a</span><div><b>Lead with terminals that keep running</b>, on GitHub release notes and the Stage 11 site<span class="rec-tag">RULED</span><br>In Atin's framing: herdr-core keeps terminals running; local or on servers, all the same, all orchestrated. That's c11. The proposed headline and first lines are in Surface 4.</div></div>
+    </div>
+    <div class="ask"><h3><span class="n">5</span>Phase 2</h3>
+      <div class="opt rec"><span class="k">a</span><div><b>This ticket builds the sheet in Swift</b><span class="rec-tag">RULED</span><br>English plus ja, uk, ko, zh-Hans, zh-Hant and ru, translated by a low-cost agent with every token checked. Its own PR, with the full gate and a guest check of the sheet.</div></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- c11 window mock, cloned into each stage -->
+<template id="win-tpl">
+  <div class="win-title">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <span class="tb">▢</span><span class="tb">+</span>
+    <span class="ws">api</span>
+  </div>
+  <aside class="side">
+    <div class="newgroup caps">New group</div>
+    <div class="wcard sel">
+      <div class="row1"><span class="name">api</span><span class="wsn">WS 1</span></div>
+      <div class="meta">3 agents · 4 terminals</div>
+    </div>
+    <div class="wcard">
+      <div class="row1"><span class="name">web</span><span class="wsn">WS 2</span></div>
+      <div class="meta">2 agents · 2 terminals</div>
+    </div>
+    <div class="wcard">
+      <div class="row1"><span class="name">infra</span><span class="wsn">WS 3</span></div>
+      <div class="meta">Terminals only</div>
+    </div>
+    <div class="waiting caps"><span>Waiting agent <b>1</b></span><span>→</span></div>
+  </aside>
+  <div class="areas">
+    <div class="panel">
+      <div class="ptabs"><span class="mchip" style="background:var(--c-gold);color:var(--c-void)">this mac</span><span class="t">planner</span></div>
+      <div class="pdesc"><span class="role">planner</span>Planning api: reviewing the builder's PR next.</div>
+<div class="term"><span class="d">$</span> claude
+<span class="g">▌</span> mail from builder: tests green at 4f1c2a
+<span class="g">▌</span> reading the diff before review
+<span class="d">  …</span></div>
+      <div class="pbar"><span>claude · opus</span><span class="mail">✉ 1</span></div>
+    </div>
+    <div class="panel">
+      <div class="ptabs"><span class="mchip" style="background:var(--m1)">studio</span><span class="t">builder</span></div>
+      <div class="pdesc"><span class="role">builder</span>Running the suite on studio; mailing the planner when green.</div>
+<div class="term"><span class="d">$</span> codex
+<span class="d">▌</span> c11 mailbox send --to planner
+<span class="d">    "tests green at 4f1c2a"</span>
+<span class="d">▌</span> done.</div>
+      <div class="pbar"><span>codex</span><span class="mail">✉ 0</span></div>
+    </div>
+  </div>
+  <div class="dim"></div>
+</template>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  /* ---- theme ---- */
+  function setTheme(t) {
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    else document.documentElement.removeAttribute("data-theme");
+    $$("[data-theme-set]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-theme-set") === (t || "auto"))); });
+    store("c11edu.theme", t || "auto");
+  }
+  $$("[data-theme-set]").forEach(function (b) { b.addEventListener("click", function () { setTheme(b.getAttribute("data-theme-set")); }); });
+  setTheme(store("c11edu.theme") || "auto");
+
+  /* ---- surfaces ---- */
+  function show(n) {
+    n = String(n);
+    if (!$("#s" + n)) n = "1";
+    $$(".surface").forEach(function (s) { s.classList.toggle("on", s.getAttribute("data-s") === n); });
+    $$(".tab").forEach(function (t) { t.setAttribute("aria-selected", String(t.getAttribute("data-s") === n)); });
+    if (location.hash !== "#" + n) history.replaceState(null, "", "#" + n);
+  }
+  $$(".tab").forEach(function (t) { t.addEventListener("click", function () { show(t.getAttribute("data-s")); }); });
+  window.addEventListener("hashchange", function () { show(location.hash.slice(1)); });
+  show(location.hash.slice(1) || "1");
+
+  /* ---- window mocks ---- */
+  var tpl = $("#win-tpl");
+  ["#wn-win"].forEach(function (id) { $(id).appendChild(tpl.content.cloneNode(true)); });
+
+  /* ---- pictures ---- */
+  function winGlyph(x, y, w, h, cls) {
+    return '<g class="' + (cls || "") + '"><rect class="glyph" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="7"/>' +
+      '<line x1="' + x + '" y1="' + (y + 16) + '" x2="' + (x + w) + '" y2="' + (y + 16) + '" stroke="var(--sep)"/>' +
+      '<circle cx="' + (x + 10) + '" cy="' + (y + 8) + '" r="2.4" fill="var(--label-3)"/><circle cx="' + (x + 18) + '" cy="' + (y + 8) + '" r="2.4" fill="var(--label-3)"/><circle cx="' + (x + 26) + '" cy="' + (y + 8) + '" r="2.4" fill="var(--label-3)"/>' +
+      '<rect class="glyph-in" x="' + (x + 8) + '" y="' + (y + 24) + '" width="' + (w / 2 - 12) + '" height="' + (h - 32) + '" rx="3"/>' +
+      '<rect class="glyph-in" x="' + (x + w / 2 + 4) + '" y="' + (y + 24) + '" width="' + (w / 2 - 12) + '" height="' + (h - 32) + '" rx="3"/></g>';
+  }
+  var PICS = {
+    outlive:
+      '<svg viewBox="0 0 544 164" role="img" aria-label="c11 quits; hc on this Mac keeps four terminals running">' +
+      winGlyph(26, 28, 140, 92, "quit") +
+      '<text x="96" y="144" text-anchor="middle" class="qa">c11 open</text><text x="96" y="144" text-anchor="middle" class="qb">c11 quit</text>' +
+      '<path class="ln" d="M168 74 H238"/>' +
+      '<rect class="box" x="240" y="16" width="282" height="132" rx="8"/>' +
+      '<text x="256" y="36" class="m">HC · THIS MAC</text><text x="506" y="36" class="m" text-anchor="end" fill="var(--gold-fill)" style="fill:var(--gold)">STILL RUNNING</text>' +
+      [["claude", "planner", "working"], ["codex", "builder", "working"], ["npm run dev", "web", "running"], ["zsh", "infra", "idle"]].map(function (r, i) {
+        var y = 58 + i * 24;
+        return '<circle class="' + (i < 3 ? "gold pulse" : "") + '" cx="262" cy="' + (y - 4) + '" r="4" ' + (i < 3 ? "" : 'fill="var(--label-3)"') + '/>' +
+          '<text x="276" y="' + y + '" class="b">' + r[0] + '</text><text x="370" y="' + y + '">' + r[1] + '</text><text x="506" y="' + y + '" text-anchor="end">' + r[2] + '</text>';
+      }).join("") +
+      '</svg>',
+    machines:
+      '<svg viewBox="0 0 544 164" role="img" aria-label="This window with lines to this Mac, studio and build-box">' +
+      winGlyph(26, 26, 140, 92) +
+      '<text x="96" y="140" text-anchor="middle">This window</text>' +
+      [["This Mac", "6 terminals", "var(--gold-fill)", false], ["studio", "4 terminals", "var(--m1)", false], ["build-box", "2 terminals · Reconnecting", "var(--m2)", true]].map(function (r, i) {
+        var y = 34 + i * 46;
+        return '<path class="ln" d="M168 72 C 220 72, 220 ' + (y) + ', 268 ' + y + '"' + (r[3] ? ' stroke-dasharray="4 4"' : "") + ' style="stroke:' + r[2] + '"/>' +
+          '<circle cx="276" cy="' + y + '" r="6" fill="' + r[2] + '"/>' +
+          '<text x="292" y="' + (y - 3) + '" class="b">' + r[0] + '</text><text x="292" y="' + (y + 12) + '">' + r[1] + '</text>';
+      }).join("") +
+      '<rect x="420" y="30" width="104" height="34" rx="5" class="box"/><rect x="428" y="40" width="46" height="14" rx="3" fill="var(--m1)"/><text x="451" y="50" text-anchor="middle" class="m" style="fill:#fff;font-size:8.5px">STUDIO</text><text x="480" y="51" class="b" style="font-size:11px">builder</text>' +
+      '<text x="472" y="22" text-anchor="middle" style="font-size:10px">a title bar on studio</text>' +
+      '</svg>',
+    mail:
+      '<svg viewBox="0 0 544 164" role="img" aria-label="Three panels mail each other; a held message waits for an idle agent">' +
+      '<defs><marker id="arr2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--label-3)"/></marker></defs>' +
+      [["planner", 24, "1"], ["builder", 210, "0"], ["reviewer", 396, "2"]].map(function (p) {
+        var x = p[1];
+        return '<rect class="box" x="' + x + '" y="34" width="124" height="96" rx="5"/><text x="' + (x + 12) + '" y="56" class="b">' + p[0] + '</text>' +
+          '<line x1="' + x + '" y1="110" x2="' + (x + 124) + '" y2="110" stroke="var(--sep)"/>' +
+          '<text x="' + (x + 112) + '" y="124" text-anchor="end" class="m" style="letter-spacing:0">✉ ' + p[2] + '</text><text x="' + (x + 12) + '" y="124" class="m" style="letter-spacing:.06em;font-size:8.5px">MAILBOX</text>';
+      }).join("") +
+      '<path class="ln" d="M150 70 C 175 52, 185 52, 208 70" marker-end="url(#arr2)"/>' +
+      '<g class="pulse"><rect x="171" y="40" width="16" height="11" rx="1.5" fill="var(--sheet)" stroke="var(--gold-fill)"/><path d="M171 40 L179 46 L187 40" fill="none" stroke="var(--gold-fill)"/></g>' +
+      '<path class="ln" d="M336 70 C 361 52, 371 52, 394 70" marker-end="url(#arr2)"/>' +
+      '<g><rect x="357" y="40" width="16" height="11" rx="1.5" fill="var(--sheet)" stroke="var(--gold-fill)"/><path d="M357 40 L365 46 L373 40" fill="none" stroke="var(--gold-fill)"/></g>' +
+      '<text x="408" y="80">busy: held until</text><text x="408" y="94">its turn ends</text>' +
+      '<text x="48" y="150" class="m" style="letter-spacing:0">--to builder</text><text x="226" y="150" class="m" style="letter-spacing:0">--to reviewer</text><text x="412" y="150" class="m" style="letter-spacing:0">--to-parent</text>' +
+      '</svg>',
+    renamed:
+      '<svg viewBox="0 0 544 164" role="img" aria-label="c11h becomes c11 2.0; the same terminals stay attached">' +
+      '<rect class="box" x="40" y="44" width="140" height="70" rx="8"/><text x="110" y="76" text-anchor="middle" class="b" style="font-size:16px">c11h</text><text x="110" y="96" text-anchor="middle" class="m">1.8.1-H16</text>' +
+      '<path class="ln" d="M184 79 H262" marker-end="url(#arr3)"/><defs><marker id="arr3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--label-3)"/></marker></defs>' +
+      '<rect x="268" y="44" width="140" height="70" rx="8" fill="var(--sheet)" stroke="var(--gold-fill)" stroke-width="1.5"/><text x="338" y="76" text-anchor="middle" class="b" style="font-size:16px">c11 2.0</text><text x="338" y="96" text-anchor="middle" class="m" style="fill:var(--gold)">SAME SESSIONS</text>' +
+      '<circle cx="432" cy="60" r="4" class="gold pulse"/><circle cx="432" cy="79" r="4" class="gold pulse"/><circle cx="432" cy="98" r="4" class="gold pulse"/><text x="446" y="83">still attached</text>' +
+      '</svg>'
+  };
+
+  /* ---- What's New pages by audience ---- */
+  var C = function (s) { return "<code>" + esc(s) + "</code>"; };
+  var P_OUTLIVE_UP = {
+    pic: "outlive",
+    title: "Quitting c11 no longer ends your terminals.",
+    sub: "A background helper called hc now holds them. Your shells, agents and jobs keep running when c11 quits, updates or crashes, and they are there when you open it again.",
+    pts: [
+      ["They keep running.", "Quit c11, or let it update or crash, and every terminal carries on. A reboot still ends them; each saved agent conversation then resumes once."],
+      ["Closing a panel ends it.", "End Session stops that terminal and everything it started, nohup and background jobs too. In c11 1.x they outlived the panel."],
+      ["hc runs in the background.", "It holds your terminals while c11 is closed. To see it and every terminal it holds, choose Window ▸ hc Core."],
+      ["To stop it all,", "choose End All Sessions… in the c11 menu. To have Quit end your terminals as c11 1.x did, turn off Keep Terminals After Quit in Settings ▸ General."]
+    ],
+    tryLabel: "Window ▸ hc Core"
+  };
+  var P_OUTLIVE_FRESH = {
+    pic: "outlive",
+    title: "Your terminals don't live in this window.",
+    sub: "The window shows them. A helper called hc holds them, so they keep running when c11 quits, updates or crashes.",
+    pts: [
+      ["They keep running.", "Quit c11, or let it crash or update, and your terminals and agents carry on. A reboot still ends them; each saved agent conversation then resumes once."],
+      ["Closing a panel ends it.", "End Session stops that terminal and everything it started, background jobs too."],
+      ["hc runs in the background.", "It holds your terminals while c11 is closed. To see it and every terminal it holds, choose Window ▸ hc Core."],
+      ["To stop it all,", "choose End All Sessions… in the c11 menu. To have Quit end your terminals too, turn off Keep Terminals After Quit in Settings ▸ General."]
+    ],
+    tryLabel: "Window ▸ hc Core"
+  };
+  var P_MACHINES = {
+    pic: "machines", isNew: true,
+    title: "Your terminals can run on other machines.",
+    sub: "Link a Mac or an x86-64 Linux machine you reach over SSH, and its terminals sit in this window beside the ones on this Mac.",
+    pts: [
+      ["Link one.", "Settings ▸ Herder Topography ▸ Add Machine…, or " + C("c11 machine link --host <ssh-target>") + ". c11 installs its own hc there."],
+      ["Choose where.", "New Terminal and agent launches ask where to run. From the command line, add " + C("--on <machine>") + "."],
+      ["The label says where.", "Each terminal's title bar names its machine, in a color you choose. Reconnecting means the link is down; the session itself is fine."],
+      ["Agents there work as local ones.", "They set their status, raise flags and send mail. Link only machines you trust: linking gives c11 a shell there as you."]
+    ],
+    tryLabel: "Add Machine…"
+  };
+  var P_MAIL = {
+    pic: "mail",
+    title: "Agents send each other mail.",
+    sub: "Every panel has a mailbox. Agents hand off work, report back and ask questions without typing into each other's terminals.",
+    pts: [
+      ["Every panel has one.", "The mailbox cell under each terminal opens its thread."],
+      ["Address an agent.", C("c11 mailbox send --to <address>") + ", or " + C("--to-parent") + " for the agent that launched it. Agents on linked machines send the same way."],
+      ["Mail waits for a free moment.", "It arrives when the agent is idle, never mid-turn, and survives a relaunch. " + C("c11 mailbox status <id>") + " says where a message is and why."],
+      ["See who talks to whom.", C("c11 messages view") + " draws every conversation as a web."]
+    ],
+    tryLabel: "Open the conversation web"
+  };
+  var P_ADOPT = {
+    pic: "renamed",
+    title: "c11h is now c11 2.0.",
+    sub: "c11 quit c11h and took over its terminals on this Mac. Your workspaces and settings came across, and the terminals kept running.",
+    pts: [
+      ["Same sessions.", "Terminals on this Mac kept running, and c11 attached to them. Keep c11h.app installed for now: they still use its helper."],
+      ["Link each machine again.", "Settings ▸ Herder Topography ▸ Link Again… puts a machine c11h linked on c11's own link beside c11h's, so new terminals and mail work there at once. Terminals c11h opened there keep running."],
+      ["One name.", "The app, the " + C("c11") + " command and the C11_ variables use c11's names, and updates come from c11's feed. The c11h names still work."]
+    ],
+    tryLabel: ""
+  };
+  var AUD = {
+    upgrade: [P_OUTLIVE_UP, P_MACHINES, P_MAIL],
+    fresh: [P_OUTLIVE_FRESH, P_MACHINES, P_MAIL],
+    adopt: [P_ADOPT]
+  };
+  var aud = store("c11edu.aud") || "upgrade";
+  if (!AUD[aud]) aud = "upgrade";
+  var page = 0;
+
+  function renderWN() {
+    var pages = AUD[aud];
+    var showNew = aud !== "fresh";
+    $("#wn-pages").innerHTML = pages.map(function (p, i) {
+      return '<div class="page" data-i="' + i + '">' +
+        '<div class="eb"><span class="brand">c11 2.0' + (p.isNew && showNew ? '<span class="new">NEW</span>' : "") + '</span><span class="count">' + (i + 1) + " / " + pages.length + "</span></div>" +
+        '<h2' + (i === 0 ? ' id="wn-title"' : "") + ">" + esc(p.title) + "</h2>" +
+        '<p class="sub">' + esc(p.sub) + "</p>" +
+        '<div class="pic">' + PICS[p.pic] + "</div>" +
+        '<ol class="pts">' + p.pts.map(function (pt, k) { return '<li><span class="n">' + (k + 1) + "</span><span><b>" + esc(pt[0]) + "</b> " + pt[1] + "</span></li>"; }).join("") + "</ol>" +
+        '<div class="tryrow"><span>' + (p.tryLabel ? '<button class="linkbtn" tabindex="-1">' + esc(p.tryLabel) + "</button>" : "") + "</span><span>Help ▸ What's New in c11 2.0 reopens this.</span></div>" +
+        "</div>";
+    }).join("");
+    $("#wn-dots").innerHTML = pages.map(function (_, i) { return '<button aria-label="Page ' + (i + 1) + '" data-i="' + i + '"></button>'; }).join("");
+    $$("#wn-dots button").forEach(function (b) { b.addEventListener("click", function () { go(+b.getAttribute("data-i")); }); });
+    $$("[data-aud]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-aud") === aud)); });
+    go(Math.min(page, pages.length - 1));
+  }
+  function go(i) {
+    var n = AUD[aud].length;
+    page = Math.max(0, Math.min(n - 1, i));
+    $$("#wn-pages .page").forEach(function (p) { p.classList.toggle("on", +p.getAttribute("data-i") === page); });
+    $$("#wn-dots button").forEach(function (b) { b.setAttribute("aria-current", String(+b.getAttribute("data-i") === page)); });
+    $("#wn-back").textContent = page === 0 ? "Close" : "Back";
+    $("#wn-next").textContent = page === n - 1 ? "Got It" : "Next";
+  }
+  function closeWN() {
+    $("#wn-sheet").classList.add("hidden");
+    $("#wn-win").classList.add("undim");
+    $("#wn-reopen").classList.remove("hidden");
+  }
+  function openWN() {
+    page = 0; renderWN();
+    $("#wn-sheet").classList.remove("hidden");
+    $("#wn-win").classList.remove("undim");
+    $("#wn-reopen").classList.add("hidden");
+  }
+  $("#wn-back").addEventListener("click", function () { if (page === 0) closeWN(); else go(page - 1); });
+  $("#wn-next").addEventListener("click", function () { if (page === AUD[aud].length - 1) closeWN(); else go(page + 1); });
+  $("#wn-reopen-btn").addEventListener("click", openWN);
+  $$("[data-aud]").forEach(function (b) { b.addEventListener("click", function () { aud = b.getAttribute("data-aud"); store("c11edu.aud", aud); page = 0; openWN(); }); });
+  renderWN();
+
+  /* ---- keys ---- */
+  document.addEventListener("keydown", function (e) {
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^[1-6]$/.test(e.key)) { show(e.key); return; }
+    if (!$("#s1").classList.contains("on") || $("#wn-sheet").classList.contains("hidden")) return;
+    if (e.key === "ArrowRight") { go(page + 1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { go(page - 1); e.preventDefault(); }
+    else if (e.key === "Enter") { $("#wn-next").click(); e.preventDefault(); }
+    else if (e.key === "Escape") { closeWN(); }
+  });
+})();
+</script>
+</body>
+</html>

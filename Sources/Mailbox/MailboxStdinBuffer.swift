@@ -141,11 +141,20 @@ struct MailboxStdinBuffer {
     ///
     /// `journalTurnOpen` is the journal's live working or blocked phase. It
     /// is what holds a long tool call that prints nothing.
+    ///
+    /// C11H-237: `remoteCoreWorking` is a terminal on another machine whose
+    /// core says its agent is working or blocked. There the doorbell rings
+    /// only on a recorded at-prompt edge, never on an unknown turn: a relayed
+    /// hook carries no PID, so a headless run nested in a running turn can
+    /// send it, and the core's word is the second witness. The at-prompt
+    /// check stays first, so a remote Codex's own turn end still opens the
+    /// gate over a stale `working` (C11H-123).
     func promptGate(
         surfaceId: UUID,
         isAgentKind: Bool,
         agentOwnsTerminal: Bool,
         journalTurnOpen: Bool,
+        remoteCoreWorking: Bool = false,
         now: Date
     ) -> PromptGate {
         guard agentOwnsTerminal, isAgent(surfaceId: surfaceId, isAgentKind: isAgentKind) else {
@@ -154,6 +163,7 @@ struct MailboxStdinBuffer {
         if let turn = turns[surfaceId], turn.atPrompt { return .open }
         if journalTurnOpen { return .closed }
         if let deadline = workingDecayDeadline(surfaceId: surfaceId), now < deadline { return .closed }
+        if remoteCoreWorking { return .closed }
         return .unknown
     }
 
@@ -187,6 +197,21 @@ struct MailboxStdinBuffer {
         if atPrompt, let lastSubmit = lastSubmitAt[surfaceId], now < lastSubmit { return }
         if let current = turns[surfaceId], current.atPrompt == atPrompt { return }
         turns[surfaceId] = AgentTurn(atPrompt: atPrompt, since: now)
+    }
+
+    /// C11H-117: hc's status for a local terminal as a turn edge. A relaunch
+    /// restores the panel with no turn state, and an agent idle through it
+    /// reports nothing new, so hc's current status seeds the clock. hc's
+    /// status can trail the agent's hooks, so it never overrides a newer edge:
+    /// one stamped before the current turn edge, the latest submit, or the
+    /// agent's attach is stale and ignored. True when the turn changed.
+    @discardableResult
+    mutating func noteHCStatusEdge(surfaceId: UUID, atPrompt: Bool, at stamp: Date) -> Bool {
+        if let turn = turns[surfaceId], turn.atPrompt == atPrompt || stamp < turn.since { return false }
+        if let attached = attachedAt[surfaceId], stamp < attached { return false }
+        if let submit = lastSubmitAt[surfaceId], stamp < submit { return false }
+        noteAgentTurn(surfaceId: surfaceId, atPrompt: atPrompt, at: stamp)
+        return turns[surfaceId]?.atPrompt == atPrompt
     }
 
     /// A submit Return reached the panel (operator, text box, `c11 send`, or
@@ -290,6 +315,20 @@ struct MailboxStdinBuffer {
 
     func agentProcess(surfaceId: UUID) -> AgentProcess? {
         agentPids[surfaceId]
+    }
+
+    /// Inventory recovery discovers the already-running process, not a new
+    /// SessionStart. Keep that process's newer turn edges; a repeated scan
+    /// must never make a working agent appear idle. Birth also distinguishes
+    /// a new process which happens to reuse the old numeric PID.
+    @discardableResult
+    mutating func relearnAgentProcess(surfaceId: UUID, process: AgentProcess) -> Bool {
+        guard let startTime = process.startTime, startTime > 0,
+              agentPids[surfaceId] != process else { return false }
+        agentPids[surfaceId] = process
+        noteAgentAttached(surfaceId: surfaceId,
+            at: Date(timeIntervalSince1970: Double(startTime) / 1_000_000))
+        return true
     }
 
     func agentPid(surfaceId: UUID) -> pid_t? {
@@ -403,6 +442,29 @@ enum MailboxStdinDelivery {
         })
     }
 
+    /// How a submitted ring's Return reached the terminal.
+    enum RingReturn: Equatable {
+        /// A key event (`sendKeyNow`). It reports its own submit edge.
+        case keyEvent
+        /// Written through hc's input path. No key event reports it.
+        case hcInput
+    }
+
+    /// A ring was submitted: it covers every envelope unread now, and its
+    /// Return starts the agent's turn. A Return hc wrote is no key event, so
+    /// it is recorded here as the submit. Without it a harness that reports
+    /// only turn ends (Codex) stays in the idle period it was rung in, and
+    /// its next turn end opens no new one (C11H-163).
+    static func recordRingSubmitted(state: MailboxStdinBufferStore, surfaceId: UUID, unread: Set<String>,
+                                    via route: RingReturn, at now: Date) {
+        state.doorbell.update(surfaceId: surfaceId) { ledger in
+            MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: unread)
+        }
+        if route == .hcInput {
+            state.buffer.noteSubmit(surfaceId: surfaceId, at: now)
+        }
+    }
+
     /// Where each entry's envelope sits, for a native route that carries text.
     static func inlineSources(_ entries: [MailboxStdinBuffer.Entry], stateURL: URL,
                               workspaceId: UUID, panelId: UUID) -> [MailboxInlineBatch.Source] {
@@ -418,12 +480,21 @@ enum MailboxStdinDelivery {
         var nativeCanQueue: Bool = false
         var isAgentKind: Bool = true
         var ownsTerminal: Bool = false
+        /// C11H-184: hc reports an agent in front of this terminal that c11
+        /// has not confirmed yet (after a relaunch until recovery relearns it,
+        /// or a remote terminal while its link reconnects). Mail waits; it is
+        /// not a panel c11 cannot ring.
+        var ownershipPending: Bool = false
         var lastOperatorKeyAt: Date? = nil
         var inputTransactionActive: Bool = false
         var inputTransactionEpoch: UInt64 = 0
         var surfaceAttached: Bool = true
         /// The journal is live and its phase is working or blocked.
         var journalTurnOpen: Bool = false
+        /// C11H-237: a terminal on another machine whose core says its agent
+        /// is working or blocked, and since when it has said so.
+        var remoteCoreWorking: Bool = false
+        var remoteCoreWorkingSince: Date? = nil
         var now: Date = Date()
     }
 
@@ -491,6 +562,7 @@ enum MailboxStdinDelivery {
             isAgentKind: gate.isAgentKind,
             agentOwnsTerminal: gate.ownsTerminal,
             journalTurnOpen: gate.journalTurnOpen,
+            remoteCoreWorking: gate.remoteCoreWorking,
             now: gate.now
         )
         if promptGate == .closed, let deadline = heldUntil(state: state, surfaceId: surfaceId, gate: gate) {
@@ -556,10 +628,35 @@ enum MailboxStdinDelivery {
         return deadline
     }
 
+    /// C11H-237: why a closed gate holds an agent's mail, for the dispatch
+    /// row, `mailbox status` and `fleet`. `journal_turn`: the journal shows a
+    /// turn in progress since `since`. `working_edge`: a working edge or
+    /// submit with no journal turn behind it, still inside its decay window.
+    struct GateHold: Equatable {
+        let code: String
+        let since: Date?
+
+        /// The causes a closed gate names.
+        static let codes: Set<String> = ["journal_turn", "working_edge", "core_working"]
+    }
+
+    static func gateHold(state: MailboxStdinBufferStore, surfaceId: UUID, gate: Gate,
+                         journalSince: Date?) -> GateHold? {
+        guard closedGateReason(state: state, surfaceId: surfaceId, gate: gate) == "gate_closed",
+              state.buffer.agentTurn(surfaceId: surfaceId)?.atPrompt != true else { return nil }
+        if gate.journalTurnOpen { return GateHold(code: "journal_turn", since: journalSince) }
+        if let deadline = state.buffer.workingDecayDeadline(surfaceId: surfaceId), gate.now < deadline {
+            return GateHold(code: "working_edge",
+                            since: deadline.addingTimeInterval(-MailboxStdinBuffer.unsupportedWorkingDecay))
+        }
+        if gate.remoteCoreWorking { return GateHold(code: "core_working", since: gate.remoteCoreWorkingSince) }
+        return nil
+    }
+
     static func closedGateReason(state: MailboxStdinBufferStore, surfaceId: UUID, gate: Gate) -> String {
         guard gate.panelPresent else { return "target_gone" }
         guard state.buffer.isAgent(surfaceId: surfaceId, isAgentKind: gate.isAgentKind) else { return "not_agent" }
-        guard gate.ownsTerminal else { return "agent_not_foreground" }
+        guard gate.ownsTerminal else { return gate.ownershipPending ? "agent_unconfirmed" : "agent_not_foreground" }
         return "gate_closed"
     }
 
@@ -572,7 +669,7 @@ enum MailboxStdinDelivery {
         guard !gate.inputTransactionActive else { return .skip(reason: "input_transaction") }
         guard state.buffer.promptGate(surfaceId: surfaceId, isAgentKind: gate.isAgentKind,
                 agentOwnsTerminal: gate.ownsTerminal, journalTurnOpen: gate.journalTurnOpen,
-                now: gate.now) != .closed else {
+                remoteCoreWorking: gate.remoteCoreWorking, now: gate.now) != .closed else {
             return .skip(reason: closedGateReason(state: state, surfaceId: surfaceId, gate: gate))
         }
         var current = input
@@ -660,14 +757,32 @@ enum MailboxAgentForeground {
         )
     }
 
+    /// The kernel reads the ownership check makes. Production reads the live
+    /// kernel; a logic test supplies fixed facts, because a host test never
+    /// owns a real terminal.
+    struct Kernel {
+        var processInfo: (pid_t) -> ProcessTerminalInfo?
+        var ttyDevice: (String) -> dev_t?
+        var isCanonical: (String) -> Bool?
+
+        static var live: Kernel {
+            Kernel(
+                processInfo: { MailboxAgentForeground.processTerminalInfo(pid: $0) },
+                ttyDevice: { TerminalPIDResolver.ttyDevice(for: $0) },
+                isCanonical: { MailboxAgentForeground.terminalIsCanonical(path: $0) }
+            )
+        }
+    }
+
     /// Live check for a registered agent process against the tab's tty name. A tab
     /// whose tty c11 has not been told (no shell-integration `report_tty`)
     /// cannot be verified and never receives a push.
-    static func agentOwnsTerminal(process: MailboxStdinBuffer.AgentProcess?, panelTTYName: String?) -> Bool {
+    static func agentOwnsTerminal(process: MailboxStdinBuffer.AgentProcess?, panelTTYName: String?,
+                                  kernel: Kernel = .live) -> Bool {
         guard let process, let panelTTYName else { return false }
         let path = panelTTYName.hasPrefix("/") ? panelTTYName : "/dev/\(panelTTYName)"
-        guard let panelDevice = TerminalPIDResolver.ttyDevice(for: path) else { return false }
-        let info = processTerminalInfo(pid: process.pid)
+        guard let panelDevice = kernel.ttyDevice(path) else { return false }
+        let info = kernel.processInfo(process.pid)
         // The process checks first: the termios read opens the device.
         guard agentOwnsTerminal(
             info, expectedStartTime: process.startTime,
@@ -675,8 +790,159 @@ enum MailboxAgentForeground {
         ) else { return false }
         return agentOwnsTerminal(
             info, expectedStartTime: process.startTime,
-            panelTerminalDevice: panelDevice, terminalIsCanonical: terminalIsCanonical(path: path)
+            panelTerminalDevice: panelDevice, terminalIsCanonical: kernel.isCanonical(path)
         )
+    }
+}
+
+/// C11H-238: what one ownership probe for a local hc agent answers for.
+/// The probe (`HCLocalOwnershipVerdict.probe`) is repeated only when one of
+/// these changed: hc's foreground pid, the tty, or the agent process the
+/// doorbell holds (pid and start time).
+struct HCLocalOwnershipKey: Equatable {
+    let foregroundPID: Int32?
+    /// The tty the panel's shell or agent recovery reported (ownership is
+    /// checked against it).
+    let knownTTY: String?
+    /// The tty a relearn would use: the known one, else hc's record.
+    let relearnTTY: String?
+    let process: MailboxStdinBuffer.AgentProcess?
+
+    init(foregroundPID: Int32?, knownTTY: String?, relearnTTY: String?, process: MailboxStdinBuffer.AgentProcess?) {
+        self.foregroundPID = foregroundPID; self.knownTTY = knownTTY; self.relearnTTY = relearnTTY; self.process = process
+    }
+
+    init(record: HCTerminalRecord, knownTTY: String?, process: MailboxStdinBuffer.AgentProcess?) {
+        let known = knownTTY.flatMap { $0.isEmpty ? nil : $0 }
+        self.init(foregroundPID: record.foreground?.pid, knownTTY: known,
+                  relearnTTY: known ?? record.tty.flatMap { $0.isEmpty ? nil : $0 }, process: process)
+    }
+}
+
+/// The kernel's answer for one key. Computed off main.
+struct HCLocalOwnershipVerdict: Equatable {
+    /// The agent process the doorbell already holds owns the terminal.
+    let ownsCurrent: Bool
+    /// hc's foreground process, when the kernel agrees it is the foreground
+    /// of that tty (the relearn candidate).
+    let candidate: MailboxStdinBuffer.AgentProcess?
+    /// The candidate passes the full ownership check on the relearn tty.
+    let candidateOwns: Bool
+
+    /// The probes themselves (`sysctl`, `stat`, `open` plus `tcgetattr`), pure
+    /// over `kernel` and safe on any thread.
+    static func probe(_ key: HCLocalOwnershipKey, kernel: MailboxAgentForeground.Kernel) -> HCLocalOwnershipVerdict {
+        if MailboxAgentForeground.agentOwnsTerminal(process: key.process, panelTTYName: key.knownTTY, kernel: kernel) {
+            return HCLocalOwnershipVerdict(ownsCurrent: true, candidate: nil, candidateOwns: false)
+        }
+        guard let pid = key.foregroundPID, pid > 0, let tty = key.relearnTTY,
+              let candidate = Workspace.hcLocalAgentProcess(pid: pid, info: kernel.processInfo(pid),
+                                                            ttyDevice: kernel.ttyDevice(tty)) else {
+            return HCLocalOwnershipVerdict(ownsCurrent: false, candidate: nil, candidateOwns: false)
+        }
+        return HCLocalOwnershipVerdict(ownsCurrent: false, candidate: candidate,
+            candidateOwns: MailboxAgentForeground.agentOwnsTerminal(process: candidate, panelTTYName: tty, kernel: kernel))
+    }
+}
+
+/// C11H-238: when a local hc agent panel's ownership is probed, and which
+/// answer counts. A probe that found an owner is not repeated while its key
+/// holds; one that found none is repeated on a changed record at most every
+/// `minimumInterval`, and on its own after each of `retryDelays`. Only the
+/// newest probe's answer is applied, and only while its key is still current.
+/// The doorbell's ring checks the live kernel itself, so nothing here ever
+/// authorizes typing.
+struct HCLocalOwnershipTracker {
+    struct Probe {
+        var key: HCLocalOwnershipKey
+        /// The newest hc record noted for the panel.
+        var record: HCTerminalRecord
+        var generation: UInt64
+        var owned: Bool?
+        var inFlight: Bool
+        var probedAt: Date
+        var retries: Int
+        /// The last applied answer for this key (survives a new probe of it).
+        var confirmed = false
+    }
+
+    enum Acceptance: Equatable {
+        /// An older probe's answer, or the panel is gone: ignore it.
+        case dropped
+        /// The newest probe, but what it answered for changed meanwhile:
+        /// probe the current state instead.
+        case stale(HCTerminalRecord)
+        /// Apply it.
+        case current(HCLocalOwnershipKey, HCTerminalRecord)
+    }
+
+    static let retryDelays: [TimeInterval] = [1, 2, 4, 8, 16, 32]
+    static let minimumInterval: TimeInterval = 2
+
+    private(set) var probes: [UUID: Probe] = [:]
+    private var generation: UInt64 = 0
+
+    /// A probe generation to start now, or nil when the last probe answers.
+    mutating func observe(panel: UUID, key: HCLocalOwnershipKey, record: HCTerminalRecord,
+                          now: Date, force: Bool) -> UInt64? {
+        if !force, var last = probes[panel], last.key == key {
+            last.record = record
+            probes[panel] = last
+            if last.inFlight || last.owned == true { return nil }
+            if now.timeIntervalSince(last.probedAt) < Self.minimumInterval { return nil }
+        }
+        generation &+= 1
+        let same = probes[panel].map { $0.key == key } ?? false
+        probes[panel] = Probe(key: key, record: record, generation: generation, owned: nil, inFlight: true,
+                              probedAt: now, retries: same ? probes[panel]!.retries : 0,
+                              confirmed: same ? probes[panel]!.confirmed : false)
+        return generation
+    }
+
+    mutating func accept(panel: UUID, generation: UInt64,
+                         currentKey: (HCTerminalRecord) -> HCLocalOwnershipKey) -> Acceptance {
+        guard var probe = probes[panel], probe.generation == generation else { return .dropped }
+        guard currentKey(probe.record) == probe.key else {
+            probe.inFlight = false
+            probes[panel] = probe
+            return .stale(probe.record)
+        }
+        return .current(probe.key, probe.record)
+    }
+
+    /// True when the last applied answer for the panel's current key was an owner.
+    func isConfirmed(panel: UUID) -> Bool { probes[panel]?.confirmed ?? false }
+
+    /// Records the applied answer under the key it leaves behind (a relearn
+    /// changes the held process). Returns a delay to probe again after, while
+    /// no owner was found.
+    mutating func settle(panel: UUID, key: HCLocalOwnershipKey, owned: Bool) -> TimeInterval? {
+        guard var probe = probes[panel] else { return nil }
+        probe.key = key
+        probe.owned = owned
+        probe.confirmed = owned
+        probe.inFlight = false
+        var delay: TimeInterval?
+        if owned {
+            probe.retries = 0
+        } else if probe.retries < Self.retryDelays.count {
+            delay = Self.retryDelays[probe.retries]
+            probe.retries += 1
+        }
+        probes[panel] = probe
+        return delay
+    }
+
+    /// The record to probe again for, if a scheduled retry still applies.
+    func retryRecord(panel: UUID, key: HCLocalOwnershipKey) -> HCTerminalRecord? {
+        guard let probe = probes[panel], probe.key == key, probe.owned == false, !probe.inFlight else { return nil }
+        return probe.record
+    }
+
+    mutating func forget(panel: UUID) { probes.removeValue(forKey: panel) }
+
+    mutating func prune(keeping panels: Set<UUID>) {
+        probes = probes.filter { panels.contains($0.key) }
     }
 }
 
@@ -715,8 +981,10 @@ enum MailboxNoOpReturn {
         operatorInputAtDispatch: Date?,
         operatorInputAtReturn: Date?,
         dispatchState: PromptInputState?,
-        freshState: PromptInputState?
+        freshState: PromptInputState?,
+        generationIsCurrent: Bool = true
     ) -> Bool {
+        guard generationIsCurrent else { return false }
         guard operatorInputAtDispatch == operatorInputAtReturn else { return false }
         let dispatchAdmittedReturn = dispatchState.map { admits($0) } ?? false
         return !(dispatchAdmittedReturn && freshState == .draft)

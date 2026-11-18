@@ -1,0 +1,23 @@
+# c11 Nocturne: paired with the Nocturne chrome theme (design/themes/gen-terminal-themes.py)
+palette = 0=#2c2e30
+palette = 1=#ff6b6b
+palette = 2=#8fd1a8
+palette = 3=#e0c27a
+palette = 4=#7fb0ff
+palette = 5=#e38aa6
+palette = 6=#87c0d3
+palette = 7=#bdc1c7
+palette = 8=#5b606a
+palette = 9=#fe9692
+palette = 10=#a5e8be
+palette = 11=#f7d990
+palette = 12=#a4c7ff
+palette = 13=#b4a0e8
+palette = 14=#9dd7ea
+palette = 15=#e6e9ee
+background = #07080a
+foreground = #d6d9de
+cursor-color = #c9d6ea
+cursor-text = #07080a
+selection-background = #393a3d
+selection-foreground = #d6d9de

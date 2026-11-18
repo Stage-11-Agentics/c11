@@ -287,9 +287,10 @@ def _read_lines(path: Path) -> list[str]:
 
 
 def _report_line(number: int) -> str:
+    branch = "feature/old" if number == 111 else "feature/issue-1138"
     return (
         f"report_pr {number} https://github.com/manaflow-ai/cmux/pull/{number} "
-        "--state=open --tab=00000000-0000-0000-0000-000000000001 "
+        f'--state=open --branch="{branch}" --tab=00000000-0000-0000-0000-000000000001 '
         "--panel=00000000-0000-0000-0000-000000000002"
     )
 

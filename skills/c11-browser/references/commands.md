@@ -59,6 +59,9 @@ Profile selection is one-shot and does not update the later unscoped browser
 preference. `list` returns `id`, `name`, `built_in`, and `in_use`. Names
 are case-insensitive when unique; UUIDs are accepted. `clear` and `delete`
 require `--yes`, never prompt, and refuse the built-in or an in-use profile.
+Past their 8 s deadline they answer `operation_pending` when cleanup started
+and is still running (the profile stays busy until it ends), or
+`main_thread_timeout` when c11 never started it (nothing changed; retry).
 
 ### Snapshot and Inspection
 

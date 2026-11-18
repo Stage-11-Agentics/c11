@@ -241,7 +241,8 @@ if os.environ.get('C11_TEST_SCHEME') == 'c11-logic':
     def cycle_fixture(self):
         slots = self.root / "slots"
         env = m.poller.build_env()
-        env.update(C11_ATLAS_SLOTS_DIR=str(slots), C11_ATLAS_LOAD_LIMIT="9999", C11_ATLAS_SLOT_POLL_SECONDS="0.1")
+        env.update(C11_ATLAS_SLOTS_DIR=str(slots), C11_ATLAS_LOAD_LIMIT="9999", C11_ATLAS_SLOT_POLL_SECONDS="0.1",
+                   C11_ATLAS_ADMISSION_LOG=str(self.root / "admission.jsonl"))
         self.fixture_env = env
         driver = self.root / "child.py"
         driver.write_text('''import importlib.util, pathlib, sys, time

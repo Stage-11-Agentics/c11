@@ -1,6 +1,6 @@
 | Backlog id | Ticket id | Title | Tier | Size | Deps (backlog ids) | Created or updated |
 |---|---|---|---|---|---|---|
-| F1 | C11-216 | Move c11 tagged builds, tests and release builds onto Atlas | P0 | M | — | updated |
+| F1 | C11-216 | Move c11 tagged builds, tests and release builds onto the build host | P0 | M | — | updated |
 | F2 | C11-270 | Gate c11 1.0 with a measured 40-agent fleet soak | P0 | M | F1 | created |
 | F3 | C11-271 | Capture real lifecycle sequences as the journal and Feed fixture oracle | P0 | S | F1 | created |
 | J1 | C11-272 | Specify the SQLite lifecycle journal and obtain cross-family plan review | P1 | M | F3 | created |

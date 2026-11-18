@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -1502,6 +1503,104 @@ final class MailboxNativeDoorbellTests: XCTestCase {
             unreadIDs: ["mail-b"]), "an attempt with no still-unread envelope is no longer reusable")
     }
 
+    /// C11H-184: an agent hc reports but c11 has not confirmed is a wait,
+    /// not a panel c11 cannot ring.
+    func testUnconfirmedOwnershipIsItsOwnClosedGateReason() {
+        let panel = UUID(), state = MailboxStdinBufferStore()
+        state.buffer.noteAgentAttached(surfaceId: panel, at: Date())
+        XCTAssertEqual(MailboxStdinDelivery.closedGateReason(state: state, surfaceId: panel,
+            gate: .init(ownsTerminal: false)), "agent_not_foreground")
+        XCTAssertEqual(MailboxStdinDelivery.closedGateReason(state: state, surfaceId: panel,
+            gate: .init(ownsTerminal: false, ownershipPending: true)), "agent_unconfirmed")
+    }
+
+    private func inlineRegistration() -> MailboxNativeDoorbell.Registration {
+        .init(id: UUID(), panelID: UUID(), agentPID: 123, processStart: 456, sessionID: UUID().uuidString,
+              route: .claudeInbox, canQueue: false, supportsInlineMail: true)
+    }
+
+    private func frame(_ object: [String: Any]) -> Data {
+        try! JSONSerialization.data(withJSONObject: object)
+    }
+
+    /// A Claude bridge that outlived a relaunch reports the envelopes of a
+    /// delivery this process never sent; they go to Workspace to claim.
+    func testCarriedAcceptanceForAnUnknownDeliveryNamesItsEnvelopes() {
+        let broker = MailboxNativeDoorbell(), reg = inlineRegistration()
+        var carried: [[String]] = []
+        broker.carriedAcceptance = { registration, ids in
+            XCTAssertEqual(registration.id, reg.id)
+            carried.append(ids)
+        }
+        broker.register(reg, write: { _ in true }, close: {})
+        defer { broker.disconnect(reg) }
+        let ids = ["01M6HZ7FRRAB13BQZTPFRJXV76", "01M6HZ7MQW60S6SNAMV5S3HXN7"]
+        broker.consume(frame(["type": "accepted", "delivery_id": UUID().uuidString, "carried": true, "ids": ids]),
+                       registration: reg)
+        XCTAssertEqual(carried, [ids])
+        broker.consume(frame(["type": "accepted", "delivery_id": UUID().uuidString, "carried": true,
+                              "ids": ["../escape"]]), registration: reg)
+        broker.consume(frame(["type": "accepted", "delivery_id": UUID().uuidString, "ids": ids]), registration: reg)
+        XCTAssertEqual(carried, [ids], "a malformed id names nothing, and an uncarried acceptance is ordinary")
+    }
+
+    /// A reconnected bridge's hold reaches Workspace; a non-inline route's does not.
+    func testHoldingFrameNamesTheEnvelopesABridgeStillHolds() {
+        let broker = MailboxNativeDoorbell(), reg = inlineRegistration(), plain = registration(route: .claudeInbox)
+        var held: [[String]] = []
+        broker.carriedHold = { _, ids in held.append(ids) }
+        broker.register(reg, write: { _ in true }, close: {})
+        defer { broker.disconnect(reg) }
+        let ids = ["01M6HZ7FRRAB13BQZTPFRJXV76"]
+        broker.consume(frame(["type": "holding", "delivery_id": UUID().uuidString, "ids": ids]), registration: reg)
+        broker.consume(frame(["type": "holding", "delivery_id": UUID().uuidString, "ids": ids]), registration: plain)
+        XCTAssertEqual(held, [ids])
+    }
+
+    /// Carried ids the buffer does not know are found in any of the panel's
+    /// inboxes: a moved panel's mail stays where it arrived.
+    func testCarriedSourcesFindAMovedPanelsMailInItsFirstInbox() throws {
+        let state = FileManager.default.temporaryDirectory.appendingPathComponent("c11-carried-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: state) }
+        let panel = UUID(), here = UUID(), arrived = UUID()
+        let old = MailboxLayout.inboxURL(state: state, workspaceId: arrived, panelId: panel)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: old.appendingPathComponent(MailboxLayout.envelopeFilename(id: "01M6HZ7FRRAB13BQZTPFRJXV76")))
+        let sources = Workspace.carriedInlineSources(ids: ["01M6HZ7FRRAB13BQZTPFRJXV76", "01M6HZ7MQW60S6SNAMV5S3HXN7"],
+                                                     stateURL: state, panelId: panel, preferredWorkspace: here)
+        XCTAssertEqual(sources, [MailboxInlineBatch.Source(id: "01M6HZ7FRRAB13BQZTPFRJXV76", inbox: old)],
+                       "found where it arrived; an id in no inbox names nothing")
+    }
+
+    /// A route that never asked for inline mail cannot claim by id.
+    func testCarriedAcceptanceNeedsAnInlineClaudeRoute() {
+        let broker = MailboxNativeDoorbell(), reg = registration(route: .claudeInbox)
+        var carried = 0
+        broker.carriedAcceptance = { _, _ in carried += 1 }
+        broker.register(reg, write: { _ in true }, close: {})
+        defer { broker.disconnect(reg) }
+        broker.consume(frame(["type": "accepted", "delivery_id": UUID().uuidString, "carried": true,
+                              "ids": ["01M6HZ7FRRAB13BQZTPFRJXV76"]]), registration: reg)
+        XCTAssertEqual(carried, 0)
+    }
+
+    /// Inline frames name their envelopes so a surviving bridge can report them.
+    func testInlineDeliveryFrameNamesItsEnvelopes() {
+        let broker = MailboxNativeDoorbell(), reg = inlineRegistration()
+        let sent = expectation(description: "inline frame")
+        broker.register(reg, write: { frame in
+            if frame["type"] as? String == "deliver" {
+                XCTAssertEqual(frame["inline"] as? Bool, true)
+                XCTAssertEqual(frame["ids"] as? [String], ["01M6HZ7FRRAB13BQZTPFRJXV76"])
+                sent.fulfill()
+            }
+            return true
+        }, close: {})
+        defer { broker.disconnect(reg) }
+        broker.deliver(reg, timeout: 30, inlineText: "<c11-msg/>", inlineIDs: ["01M6HZ7FRRAB13BQZTPFRJXV76"]) { _, _ in }
+        wait(for: [sent], timeout: 1)
+    }
+
     func testAcceptedDeliverySettlesOnlyAfterWorkspaceCallback() {
         let broker = MailboxNativeDoorbell(), reg = registration()
         let sent = expectation(description: "native invitation")
@@ -1573,10 +1672,10 @@ final class MailboxNativeDoorbellTests: XCTestCase {
     func testQueuedMailStaysUndeliveredUntilItsLateAcceptance() throws {
         let broker = MailboxNativeDoorbell(), reg = inlineRegistration()
         let sent = expectation(description: "inline frame sent")
-        let queued = expectation(description: "queued")
-        let accepted = expectation(description: "accepted late")
         let lock = NSLock()
         var results: [MailboxNativeDoorbell.Result] = []
+        var fireDeadline: (() -> Void)?
+        broker.armDeadline = { _, fire in fireDeadline = fire }
         broker.register(reg, write: { frame in
             if frame["type"] as? String == "deliver" {
                 XCTAssertEqual(frame["text"] as? String, "the mail")
@@ -1588,17 +1687,11 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         defer { broker.disconnect(reg) }
         let request = broker.deliver(reg, timeout: 0.1, inlineText: "the mail") { result, _ in
             lock.lock(); results.append(result); lock.unlock()
-            if result == .queued { queued.fulfill() }
-            if result == .accepted(late: true) { accepted.fulfill() }
         }
         wait(for: [sent], timeout: 1)
-        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "queued", "delivery_id": request.uuidString]),
-                       registration: reg)
-        wait(for: [queued], timeout: 1)
-        Thread.sleep(forTimeInterval: 0.2)
-        broker.consume(try JSONSerialization.data(withJSONObject: ["type": "accepted", "delivery_id": request.uuidString]),
-                       registration: reg)
-        wait(for: [accepted], timeout: 1)
+        broker.consume(self.frame(["type": "queued", "delivery_id": request.uuidString]), registration: reg)
+        try XCTUnwrap(fireDeadline)()
+        broker.consume(self.frame(["type": "accepted", "delivery_id": request.uuidString]), registration: reg)
         lock.lock(); defer { lock.unlock() }
         XCTAssertEqual(results, [.queued, .accepted(late: true)], "The deadline must not fail a queued offer")
     }
@@ -1630,6 +1723,96 @@ final class MailboxNativeDoorbellTests: XCTestCase {
         wait(for: [retired], timeout: 1)
         XCTAssertEqual(broker.registration(panelID: old.panelID), next)
         broker.disconnect(next)
+    }
+
+    func testRejectedOlderClaudeBridgeWritesReplacedBeforeEOFWhenWriterQueueIsBusy() throws {
+        let broker = MailboxNativeDoorbell(), panel = UUID()
+        let current = claudeRegistration(panel: panel, birth: 300)
+        let older = claudeRegistration(panel: panel, birth: 200)
+        let writerBusy = expectation(description: "unrelated delivery occupies serial writer")
+        let releaseWriter = DispatchSemaphore(value: 0)
+        XCTAssertTrue(broker.register(current, write: { _ in
+            writerBusy.fulfill()
+            _ = releaseWriter.wait(timeout: .now() + 3)
+            return true
+        }, close: {}))
+        defer { releaseWriter.signal(); broker.disconnect(current) }
+        broker.deliver(current, timeout: 3) { _ in }
+        wait(for: [writerBusy], timeout: 1)
+
+        var sockets: [Int32] = [-1, -1]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets), 0)
+        guard sockets.allSatisfy({ $0 >= 0 }) else { return }
+        defer { sockets.forEach { _ = Darwin.close($0) } }
+        var timeout = timeval(tv_sec: 1, tv_usec: 0)
+        _ = setsockopt(sockets[1], SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var noSignal: Int32 = 1
+        _ = setsockopt(sockets[0], SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+        let writer = MailboxNativeSocketWriter(sockets[0])
+        XCTAssertFalse(broker.register(older, write: { frame in
+            guard let data = try? JSONSerialization.data(withJSONObject: frame),
+                  let line = String(data: data, encoding: .utf8) else { return false }
+            return writer.write(line)
+        }, close: { writer.shutdown() }))
+        // The socket worker exits immediately after rejected registration.
+        // An async retirement write queued behind the delivery loses this race.
+        _ = Darwin.shutdown(sockets[0], SHUT_RDWR)
+        var received = Data(), bytes = [UInt8](repeating: 0, count: 256)
+        while true {
+            let count = Darwin.read(sockets[1], &bytes, bytes.count)
+            if count <= 0 { XCTAssertEqual(count, 0, "expected EOF after retirement frame"); break }
+            received.append(contentsOf: bytes.prefix(count))
+        }
+        let frame = try XCTUnwrap(try JSONSerialization.jsonObject(with: received) as? [String: String])
+        XCTAssertEqual(frame["type"], "replaced")
+        XCTAssertEqual(broker.registration(panelID: panel), current)
+    }
+
+    func testNewestVerifiedClaudeBridgeKeepsItsConversationWhenOlderReconnects() async throws {
+        let broker = MailboxNativeDoorbell(), store = ConversationStore(), panel = UUID()
+        let current = claudeRegistration(panel: panel, birth: 300)
+        let older = claudeRegistration(panel: panel, birth: 200)
+        let processes: [pid_t: MailboxAgentForeground.ProcessTerminalInfo] = [
+            10: nativeProcess(1, start: 100, tty: 7),
+            20: nativeProcess(10, start: 200),
+            30: nativeProcess(10, start: 300)
+        ]
+        for (pid, registration): (pid_t, MailboxNativeDoorbell.Registration) in [(30, current), (20, older)] {
+            let verified = MailboxNativeDoorbell.verifiedAgent(
+                peer: .init(pid: pid, startTime: registration.bridgeProcessStart), agentPID: 10,
+                readProcess: { processes[$0] })
+            XCTAssertEqual(verified?.startTime, registration.processStart)
+            let admitted = broker.register(registration, write: { _ in true }, close: {})
+            XCTAssertEqual(admitted, registration.id == current.id)
+            if admitted {
+                _ = await store.captureClaudeBridgeSession(surfaceId: panel.uuidString,
+                    sessionID: try XCTUnwrap(registration.claudeSessionID),
+                    isCurrent: { broker.registration(panelID: panel)?.id == registration.id })
+            }
+        }
+        defer { broker.disconnect(current) }
+        let owner = await store.active(for: panel.uuidString)
+        XCTAssertEqual(owner?.id, current.claudeSessionID)
+        XCTAssertEqual(owner?.isEligibleCausalOwner, true)
+        XCTAssertEqual(broker.registration(panelID: panel), current)
+    }
+
+    func testOriginalClaudeBridgeCanReconnectWithSameKernelBirth() {
+        let broker = MailboxNativeDoorbell(), panel = UUID()
+        let original = claudeRegistration(panel: panel, birth: 200)
+        XCTAssertTrue(broker.register(original, write: { _ in true }, close: {}))
+        // Reconnect can reach the server before the old socket worker's defer.
+        let reconnect = claudeRegistration(panel: panel, birth: 200, session: original.claudeSessionID!)
+        XCTAssertTrue(broker.register(reconnect, write: { _ in true }, close: {}))
+        broker.disconnect(original)
+        XCTAssertEqual(broker.registration(panelID: panel), reconnect)
+        broker.disconnect(reconnect)
+    }
+
+    private func claudeRegistration(panel: UUID, birth: UInt64, session: String = UUID().uuidString) -> MailboxNativeDoorbell.Registration {
+        .init(id: UUID(), panelID: panel, agentPID: 10, processStart: 100,
+              sessionID: UUID().uuidString, route: .claudeInbox, canQueue: false,
+              claudeSessionID: session, bridgeProcessStart: birth)
     }
 
     func testAcceptanceCoversOriginalIDsWhenListenerClosesBeforeMainHop() {
@@ -2219,6 +2402,48 @@ final class MailboxNativeDoorbellTests: XCTestCase {
     }
 }
 
+/// Exact SessionStart bridge captures run in the host-free logic target.
+final class ClaudeBridgeConversationTests: XCTestCase {
+    func testClaudeBridgeCapturesExactOfflineSessionWithoutCwdAndPreservesIdentityOnReconnect() async throws {
+        let store = ConversationStore(), panel = UUID().uuidString, session = UUID().uuidString
+        let first = await store.captureClaudeBridgeSession(surfaceId: panel, sessionID: session, isCurrent: { true })
+        XCTAssertEqual(first?.id, session)
+        XCTAssertEqual(first?.kind, "claude-code")
+        XCTAssertEqual(first?.capturedVia, .hook)
+        XCTAssertEqual(first?.isEligibleCausalOwner, true)
+        XCTAssertNil(first?.cwd)
+        let again = await store.captureClaudeBridgeSession(surfaceId: panel, sessionID: session, isCurrent: { true })
+        XCTAssertEqual(again?.capturedAt, first?.capturedAt, "reconnect does not manufacture a lifecycle clock")
+        let snapshot = await store.conversations(for: panel)
+        XCTAssertTrue(snapshot.history.isEmpty)
+    }
+
+    func testClaudeBridgeRejectsDelayedOrMalformedCaptureAndAllowsRealClear() async {
+        let store = ConversationStore(), panel = UUID().uuidString
+        let firstSession = UUID().uuidString, nextSession = UUID().uuidString
+        _ = await store.captureClaudeBridgeSession(surfaceId: panel, sessionID: firstSession, isCurrent: { true })
+        _ = await store.captureClaudeBridgeSession(surfaceId: panel, sessionID: nextSession, isCurrent: { true })
+        let delayed = await store.captureClaudeBridgeSession(surfaceId: panel, sessionID: firstSession, isCurrent: { false })
+        XCTAssertNil(delayed)
+        let malformed = await store.captureClaudeBridgeSession(surfaceId: panel, sessionID: "invalid", isCurrent: { true })
+        XCTAssertNil(malformed)
+        let malformedPanel = await store.captureClaudeBridgeSession(surfaceId: "invalid", sessionID: firstSession, isCurrent: { true })
+        XCTAssertNil(malformedPanel)
+        let owner = await store.active(for: panel)
+        XCTAssertEqual(owner?.id, nextSession, "a delayed SessionStart cannot restore the pre-/clear owner")
+    }
+
+    func testClaudeBridgeConflictingCausalOwnersStayQuarantined() async {
+        let store = ConversationStore(), firstPanel = UUID().uuidString, secondPanel = UUID().uuidString
+        let session = UUID().uuidString
+        _ = await store.captureClaudeBridgeSession(surfaceId: firstPanel, sessionID: session, isCurrent: { true })
+        _ = await store.captureClaudeBridgeSession(surfaceId: secondPanel, sessionID: session, isCurrent: { true })
+        let first = await store.active(for: firstPanel), second = await store.active(for: secondPanel)
+        XCTAssertEqual(first?.quarantineReason, .conflictingCausalIdentity)
+        XCTAssertEqual(second?.quarantineReason, .conflictingCausalIdentity)
+    }
+}
+
 /// C11-555: a harness that never reports a turn edge keeps one idle period
 /// for its whole session. Once-per-idle holds there only for
 /// `turnlessReringInterval` after the last ring; then mail no ring covered
@@ -2254,11 +2479,7 @@ final class TurnlessReringTests: XCTestCase {
     ) -> MailboxDoorbell.Input {
         let epoch = state.buffer.ringEpoch(surfaceId: surface)
         let ledger = state.doorbell.ledger(for: surface)
-        let reringAt = MailboxDoorbellSequence.turnlessReringAt(
-            ledger: ledger,
-            epoch: epoch,
-            hasTurnEdge: state.buffer.agentTurn(surfaceId: surface) != nil
-        )
+        let reringAt = MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: epoch)
         var input = MailboxDoorbell.Input()
         input.rungThisEpoch = ledger.rung(in: epoch)
         input.turnlessReringDue = MailboxDoorbellSequence.turnlessReringDue(at: reringAt, now: now)
@@ -2286,11 +2507,7 @@ final class TurnlessReringTests: XCTestCase {
             epoch: input.epoch,
             unreadIds: input.unreadIds,
             coveredIds: ledger.coveredIds,
-            turnlessReringAt: MailboxDoorbellSequence.turnlessReringAt(
-                ledger: ledger,
-                epoch: input.epoch,
-                hasTurnEdge: state.buffer.agentTurn(surfaceId: surface) != nil
-            )
+            turnlessReringAt: MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: input.epoch)
         )
     }
 
@@ -2371,7 +2588,10 @@ final class TurnlessReringTests: XCTestCase {
         XCTAssertEqual(plan(next, state: state, surface: surface).rearm, .after(interval - 60))
     }
 
-    func testPanelWithTurnEdgesKeepsOncePerIdle() {
+    /// C11H-163: a panel with turn edges whose idle period no edge closed
+    /// after its ring (a Codex whose ring Return nothing recorded) gets the
+    /// same re-ring as a panel with none.
+    func testPanelWithNoEdgeSinceItsRingReRingsAfterTheInterval() {
         let state = MailboxStdinBufferStore()
         let surface = UUID()
         state.buffer.noteAgentProcess(surfaceId: surface, process: .init(pid: 4242, startTime: 7))
@@ -2382,15 +2602,30 @@ final class TurnlessReringTests: XCTestCase {
             ledger.endAttempt()
             MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: ["a"])
         }
+        // Codex's turn end while the clock already reads the prompt.
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: true, at: at(40))
+        XCTAssertEqual(state.buffer.ringEpoch(surfaceId: surface), epoch)
+
+        let early = input(state: state, surface: surface, now: at(100))
+        XCTAssertEqual(MailboxDoorbell.decide(early), .skip(reason: "once_per_idle"))
+        let held = plan(early, state: state, surface: surface)
+        XCTAssertEqual(held.rearm, .after(20 + interval - 100), "looks again when the hold lifts")
+        XCTAssertEqual(held.relook, "turnless_idle")
+
+        let due = input(state: state, surface: surface, now: at(20 + interval))
+        XCTAssertEqual(MailboxDoorbell.decide(due), .ring)
+        let covered = input(state: state, surface: surface, now: at(20 + interval), unread: ["a"])
+        XCTAssertEqual(MailboxDoorbell.decide(covered), .skip(reason: "already_covered"))
+    }
+
+    func testAnEdgeSinceTheRingEndsTheTurnlessWait() {
+        let (state, surface, epoch) = turnlessPanelRungOnce()
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: false, at: at(30))
+        XCTAssertNotEqual(state.buffer.ringEpoch(surfaceId: surface), epoch)
         XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(
             ledger: state.doorbell.ledger(for: surface),
-            epoch: epoch,
-            hasTurnEdge: true
-        ))
-        let muchLater = input(state: state, surface: surface, now: at(20 + interval * 10))
-        XCTAssertFalse(muchLater.turnlessReringDue)
-        XCTAssertEqual(MailboxDoorbell.decide(muchLater), .skip(reason: "once_per_idle"))
-        XCTAssertEqual(plan(muchLater, state: state, surface: surface).rearm, .none)
+            epoch: state.buffer.ringEpoch(surfaceId: surface)
+        ), "a new period is not the rung one: nothing holds it once-per-idle")
     }
 
     func testTurnlessRecheckRowNamesTheMailItWaitsFor() {
@@ -2413,10 +2648,100 @@ final class TurnlessReringTests: XCTestCase {
         var ledger = MailboxDoorbell.Ledger()
         ledger.recordStrandedReturn(at: at(50), epoch: "10000|attach")
         XCTAssertEqual(
-            MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "10000|attach", hasTurnEdge: false),
+            MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "10000|attach"),
             at(50 + interval)
         )
-        XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "other|attach", hasTurnEdge: false))
+        XCTAssertNil(MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: "other|attach"))
+    }
+}
+
+/// C11H-163: a local Codex rung through hc's input path. Codex reports only
+/// turn ends, so the ring's Return is what starts the turn its turn end
+/// closes; without it every later envelope held once-per-idle.
+final class CodexRingIdlePeriodTests: XCTestCase {
+    private func at(_ seconds: TimeInterval) -> Date { Date(timeIntervalSince1970: seconds) }
+
+    /// Attach, Codex's turn end at 10, one ring at 20 covering "a", its
+    /// Return recorded by `route` at 21.
+    private func codexRung(via route: MailboxStdinDelivery.RingReturn) -> (MailboxStdinBufferStore, UUID, String) {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        state.buffer.noteAgentProcess(surfaceId: surface, process: .init(pid: 4242, startTime: 7))
+        state.buffer.noteAgentAttached(surfaceId: surface, at: at(1))
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: true, at: at(10))
+        let epoch = state.buffer.ringEpoch(surfaceId: surface)
+        state.doorbell.update(surfaceId: surface) { ledger in
+            ledger.beginAttempt(at: self.at(20), epoch: epoch)
+            ledger.endAttempt()
+        }
+        MailboxStdinDelivery.recordRingSubmitted(state: state, surfaceId: surface, unread: ["a"],
+                                                 via: route, at: at(21))
+        return (state, surface, epoch)
+    }
+
+    private func decide(_ state: MailboxStdinBufferStore, _ surface: UUID, unread: Set<String>,
+                        now: Date) -> MailboxDoorbell.Decision {
+        let epoch = state.buffer.ringEpoch(surfaceId: surface)
+        let ledger = state.doorbell.ledger(for: surface)
+        var input = MailboxDoorbell.Input()
+        input.rungThisEpoch = ledger.rung(in: epoch)
+        input.turnlessReringDue = MailboxDoorbellSequence.turnlessReringDue(
+            at: MailboxDoorbellSequence.turnlessReringAt(ledger: ledger, epoch: epoch), now: now)
+        input.recentAttempts = ledger.rings(at: now)
+        input.unreadIds = unread
+        input.coveredIds = ledger.coveredIds
+        input.epoch = epoch
+        input.now = now
+        return MailboxDoorbell.decide(input)
+    }
+
+    private func gate(_ state: MailboxStdinBufferStore, _ surface: UUID, now: Date) -> MailboxStdinBuffer.PromptGate {
+        state.buffer.promptGate(surfaceId: surface, isAgentKind: true, agentOwnsTerminal: true,
+                                journalTurnOpen: false, now: now)
+    }
+
+    /// C11H-237: on another machine whose core says working, an unknown turn
+    /// is closed; a recorded at-prompt edge still opens; the pre-paste
+    /// re-read skips as gate_closed.
+    func testARemoteCoreSayingWorkingClosesAnUnknownTurnOnly() {
+        let state = MailboxStdinBufferStore()
+        let surface = UUID()
+        XCTAssertEqual(state.buffer.promptGate(surfaceId: surface, isAgentKind: true, agentOwnsTerminal: true,
+                                               journalTurnOpen: false, remoteCoreWorking: true, now: at(10)), .closed)
+        XCTAssertEqual(state.buffer.promptGate(surfaceId: surface, isAgentKind: true, agentOwnsTerminal: true,
+                                               journalTurnOpen: false, remoteCoreWorking: false, now: at(10)), .unknown)
+        let gate = MailboxStdinDelivery.Gate(ownsTerminal: true, remoteCoreWorking: true, now: at(10))
+        XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: surface, gate: gate,
+                                                          input: MailboxDoorbell.Input()),
+                       .skip(reason: "gate_closed"))
+        XCTAssertEqual(MailboxStdinDelivery.gateHold(state: state, surfaceId: surface, gate: gate, journalSince: nil)?.code,
+                       "core_working")
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: true, at: at(5))
+        XCTAssertEqual(state.buffer.promptGate(surfaceId: surface, isAgentKind: true, agentOwnsTerminal: true,
+                                               journalTurnOpen: false, remoteCoreWorking: true, now: at(10)), .open,
+                       "a recorded at-prompt edge wins over the core's working (C11H-123)")
+    }
+
+    /// The ticket's sequence: ring, Codex's turn end, new mail a minute
+    /// later. It rings at once, well inside the turnless interval.
+    func testNewMailAfterTheRungTurnEndsRingsAgain() {
+        let (state, surface, ringEpoch) = codexRung(via: .hcInput)
+        XCTAssertEqual(gate(state, surface, now: at(30)), .closed, "the ring's Return started Codex's turn")
+        state.buffer.noteAgentTurn(surfaceId: surface, atPrompt: true, at: at(40))
+        XCTAssertEqual(gate(state, surface, now: at(100)), .open)
+        XCTAssertNotEqual(state.buffer.ringEpoch(surfaceId: surface), ringEpoch, "the turn end opened a new idle period")
+        XCTAssertEqual(decide(state, surface, unread: ["a", "b"], now: at(100)), .ring)
+        XCTAssertEqual(decide(state, surface, unread: ["a"], now: at(100)), .skip(reason: "already_covered"),
+                       "mail the ring covered is not rung again")
+    }
+
+    /// A key event's Return reported its own submit edge; recording the
+    /// ring does not add a second one.
+    func testKeyEventRingRecordsNoSecondSubmit() {
+        let (state, surface, ringEpoch) = codexRung(via: .keyEvent)
+        XCTAssertEqual(state.buffer.ringEpoch(surfaceId: surface), ringEpoch)
+        XCTAssertNil(state.buffer.workingDecayDeadline(surfaceId: surface))
+        XCTAssertEqual(state.doorbell.ledger(for: surface).coveredIds, ["a"])
     }
 }
 
@@ -2592,5 +2917,99 @@ final class OpenCodeHeldAttemptTests: XCTestCase {
             }
             XCTAssertTrue(fallback.blocksNative(registrationID: reg.id, unreadIDs: ["mail-a"], coveredIDs: []))
         }
+    }
+}
+
+/// C11H-304, C11H-306: mail to a panel with no screen. hc's status says whether the agent is at its prompt; at its
+/// prompt a read of hc's paint says what the composer holds, and only a composer read as empty or a dim suggestion
+/// is rung. Holds have names that say why and look again on the held series.
+final class MailboxHeadlessHoldTests: XCTestCase {
+    private typealias Read = MailboxHeadlessPrompt.Read
+
+    private func composer(_ state: PromptInputState, _ text: String? = nil, why: String? = nil) -> HCComposerObservation {
+        HCComposerObservation(state: state, why: why, composer: text)
+    }
+
+    func testHCStatusThenTheComposerReadDecide() {
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .blocked, composer: nil), Read(prompt: .dialog))
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .waiting, composer: composer(.empty)),
+                       Read(prompt: nil, hold: "headless_status"), "hc does not report it idle: held, whatever was read")
+        XCTAssertNil(MailboxHeadlessPrompt.read(readiness: .ready, composer: nil), "idle and not read yet: read first")
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .ready, composer: composer(.empty)), Read(prompt: .empty))
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .ready, composer: composer(.suggestion)), Read(prompt: .suggestion))
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .ready, composer: composer(.draft, "half typed")),
+                       Read(prompt: .draft, composer: "half typed"))
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .ready, composer: composer(.dialog)), Read(prompt: .dialog))
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .ready, composer: composer(.unknown, why: "paint_autowrap")),
+                       Read(prompt: nil, hold: "composer_unread", why: "paint_autowrap"))
+        XCTAssertEqual(MailboxHeadlessPrompt.read(readiness: .ready, composer: composer(.unavailable, why: "busy")),
+                       Read(prompt: nil, hold: "composer_unread", why: "busy"))
+    }
+
+    func testAHoldOutranksAnyPromptAndLooksAgain() {
+        var input = MailboxDoorbell.Input(prompt: nil, headlessHold: "composer_unread")
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "composer_unread"))
+        input.prompt = .empty
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "composer_unread"), "a hold outranks any prompt")
+        for reason in ["composer_unread", "headless_status", "stranded"] {
+            let plan = MailboxDoorbellSequence.plan(decision: .skip(reason: reason), attempts: [], now: Date(),
+                                                    busyExhausted: false, strandedDoorbell: false)
+            XCTAssertNotEqual(plan.rearm, .none, "\(reason): looks again")
+            XCTAssertEqual(plan.relook, reason)
+        }
+    }
+
+    /// The checks a headless ring asks of fresh reads: before the text an empty composer or a dim suggestion;
+    /// before the Return exactly the doorbell line.
+    func testTheRingsReadsAdmitOnlyAnEmptyComposerThenExactlyTheLine() {
+        XCTAssertTrue(MailboxHeadlessPrompt.admitsText(composer(.empty)))
+        XCTAssertTrue(MailboxHeadlessPrompt.admitsText(composer(.suggestion)))
+        for state in [PromptInputState.draft, .dialog, .unknown, .unavailable] {
+            XCTAssertFalse(MailboxHeadlessPrompt.admitsText(composer(state, "x")), "\(state)")
+        }
+        XCTAssertTrue(MailboxHeadlessPrompt.admitsReturn(composer(.draft, MailboxDoorbell.text)))
+        for read in [composer(.draft, MailboxDoorbell.text + " x"), composer(.draft, "x " + MailboxDoorbell.text),
+                     composer(.draft, String(MailboxDoorbell.text.dropLast(4))), composer(.empty), composer(.dialog),
+                     composer(.unknown)] {
+            XCTAssertFalse(MailboxHeadlessPrompt.admitsReturn(read), "\(read)")
+        }
+    }
+
+    func testAStrandedLineInAPanelWithNoScreenIsNeverTypedOver() {
+        var input = MailboxDoorbell.Input(prompt: .empty, headless: true, headlessStranded: true)
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "stranded"))
+        input.rungThisEpoch = true
+        input.turnlessReringDue = true
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "stranded"), "the turnless re-ring does not retype it")
+        input.unreadIds = ["A"]
+        input.coveredIds = ["A"]
+        XCTAssertEqual(MailboxDoorbell.decide(input), .skip(reason: "already_covered"))
+        var cleared = MailboxDoorbell.Input(prompt: .empty, headless: true, headlessStranded: false)
+        XCTAssertEqual(MailboxDoorbell.decide(cleared), .ring, "a read without the line, or a new idle period, ends it")
+        cleared.headless = false
+        cleared.headlessStranded = true
+        XCTAssertEqual(MailboxDoorbell.decide(cleared), .ring, "with a screen, the screen's stranded look decides")
+    }
+
+    func testDeliveredOnlyOnTheAgentsEvidence() {
+        func receipt(_ body: Int, _ ret: Bool) -> HCWriteReceipt {
+            HCWriteReceipt(operationID: UUID(), attachmentGeneration: 1, bodyBytesWritten: body, returnWritten: ret)
+        }
+        let line = HCInputOutcome.written(receipt(44, false))
+        let enter = HCInputOutcome.written(receipt(0, true))
+        func result(_ text: HCInputOutcome, read: Bool = true, ret: HCInputOutcome? = enter,
+                    verdict: SendSubmitConfirmation.Verdict? = nil) -> MailboxHeadlessPrompt.Result {
+            MailboxHeadlessPrompt.result(text: text, lineRead: read, returnOutcome: ret, verdict: verdict)
+        }
+        XCTAssertEqual(result(line, verdict: .confirmed("hc_status")), .delivered)
+        XCTAssertEqual(result(line, verdict: .unconfirmed("no_turn_start")), .stranded(why: "no_turn_start"))
+        XCTAssertEqual(result(line), .stranded(why: "no_turn_start"), "no verdict is never delivered")
+        XCTAssertEqual(result(line, read: false, ret: nil, verdict: .confirmed("hc_status")), .stranded(why: "return_cut"),
+                       "the line not read back: no Return, held")
+        XCTAssertEqual(result(line, ret: .refused(.guardRefused), verdict: .confirmed("hc_status")), .stranded(why: "return_cut"))
+        XCTAssertEqual(result(line, ret: .uncertain(receipt(0, false))), .stranded(why: "return_cut"))
+        XCTAssertEqual(result(.uncertain(receipt(12, false)), ret: nil), .stranded(why: "return_cut"))
+        XCTAssertEqual(result(.uncertain(receipt(0, false)), ret: nil), .failed(reason: "hc_input_uncertain"))
+        XCTAssertEqual(result(.refused(.guardRefused), ret: nil), .failed(reason: "hc_input_guardRefused"))
     }
 }

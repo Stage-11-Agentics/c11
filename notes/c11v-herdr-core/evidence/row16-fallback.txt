@@ -1,0 +1,4 @@
+2026-10-30T21:29:59.384Z event=core_lost generation=1 attached=2
+2026-10-30T21:30:48.772Z event=core_lost generation=2 attached=2
+2026-10-30T21:30:49.685Z event=fallback_exec surface=685A4AF3-8469-4BD6-AB54-C34BCF5AD67C reason=core_unreachable path=/tmp/c0b/herdr-core/c0b.sock
+FALLBACK term=none parent=/usr/bin/login (new panel:6 shell is an exec child of login, not hc)

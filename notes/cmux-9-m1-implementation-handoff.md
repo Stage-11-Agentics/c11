@@ -3,7 +3,7 @@
 **Bundled**: M1a (engine + parser + default theme, no call-sites) + M1b (surface-by-surface adoption, snapshot-gated) from `docs/c11mux-theming-plan.md` v2.1 §10.
 **Parent Lattice**: CMUX-9 (`task_01KPHCQNQH2BKT128552QP46RE`).
 **This ticket**: CMUX-21 (`subtask_of` CMUX-9).
-**Worktree**: `/Users/atin/Projects/Stage11/code/cmux-worktrees/cmux-9-m1` on branch `cmux-9-m1-theme-foundation`.
+**Worktree**: `~/src/cmux-worktrees/cmux-9-m1` on branch `cmux-9-m1-theme-foundation`.
 **Scope**: one complete-story PR covering M1a + M1b; **not** M2+.
 **Author of this brief**: Opus, in dialogue with the operator (Atin), 2026-04-19.
 **Implementation agent**: you (Clear Codex — headless, full-auto).
@@ -12,7 +12,7 @@
 
 ## 0. First thing you do when you start
 
-1. `cd` into the worktree: `/Users/atin/Projects/Stage11/code/cmux-worktrees/cmux-9-m1`. All commands below assume this CWD.
+1. `cd` into the worktree: `~/src/cmux-worktrees/cmux-9-m1`. All commands below assume this CWD.
 2. Register a Lattice session: `lattice session start --name "codex-cmux9-m1" --model "gpt-5-codex" --framework "codex-cli" --agent-type "advance" --prompt "CMUX-9 M1 implementation" --parent "agent:claude-opus-4-7" --quiet` → capture the disambiguated session name and pass it as `--name <session>` to every subsequent `lattice` command.
 3. `lattice update CMUX-21 --status in_progress --name <session> --reason "Codex kickoff"`.
 4. `./scripts/setup.sh` — initializes submodules (already done for you) and warms the GhosttyKit cache. Should finish in <30s because the cache is hot from the main checkout.
@@ -459,7 +459,7 @@ lattice update CMUX-21 --status review --name <your-session> --reason "M1 PR ope
 
 - `docs/c11mux-theming-plan.md` (v2.1) — your spec.
 - `CLAUDE.md` at repo root — project-level conventions.
-- `/Users/atin/.claude/CLAUDE.md` — global conventions (you don't have access, but the project CLAUDE.md references the rules that matter to you).
+- `~/.claude/CLAUDE.md` — global conventions (you don't have access, but the project CLAUDE.md references the rules that matter to you).
 - `skills/cmux-debug-windows/SKILL.md` — Debug-menu plumbing patterns.
 - `skills/lattice/SKILL.md` — Lattice CLI patterns.
 

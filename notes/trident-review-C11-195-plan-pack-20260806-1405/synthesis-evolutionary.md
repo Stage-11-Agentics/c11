@@ -67,7 +67,7 @@ Codex reaches the same conclusion from the other end: "These are not three isola
 The plan's non-goal says it will not change "project-config precedence." All three note that the *walk bound* is not precedence, and it is being changed implicitly by moving the start point.
 
 - Gemini frames it as leakage: "Walking blindly all the way to `/` or `~` risks leaking configurations from generic parent directories into isolated workspaces."
-- Claude names the concrete artifact: under `~/Projects/Stage11/code/c11/…` the walk passes `~/Projects/Stage11/code/`, `~/Projects/Stage11/`, and `~/`. `~/.c11/agents.json` exists on this machine and is the file the decoder at `DefaultAgentConfig.swift:305` was written to reject.
+- Claude names the concrete artifact: under `~/src/c11/…` the walk passes `~/src/`, `~/src/`, and `~/`. `~/.c11/agents.json` exists on this machine and is the file the decoder at `DefaultAgentConfig.swift:305` was written to reject.
 - Codex frames it as trust: retain the config's origin now so a trust policy is possible later.
 
 Claude's framing of the decision is the one to adopt: either "walk semantics unchanged, ancestor reachability shift accepted" with a test pinning it, or "walk clamps at workspace root when one exists." **Silent is the one unacceptable answer.**

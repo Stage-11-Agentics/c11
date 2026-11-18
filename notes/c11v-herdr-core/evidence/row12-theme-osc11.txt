@@ -1,0 +1,10 @@
+Row 12: after `c11 terminal-theme set --light '3024 Day' --dark '3024 Night'` (old background #282c34). Order alternates hc panel:1, exec panel:6.
+hc, before appearance flip: Q OSC11 ms=405 reply=b'\x1b]11;rgb:0909/0303/0000\x07'
+exec, before: Q OSC11 ms=405 reply=b'\x1b]11;rgb:0909/0303/0000\x07'
+hc, after flip to light: Q OSC11 ms=402 reply=b'\x1b]11;rgb:0909/0303/0000\x07'
+exec, after flip to light: Q OSC11 ms=406 reply=b'\x1b]11;rgb:0909/0303/0000\x07'
+hc, after flip to dark: Q OSC11 ms=405 reply=b'\x1b]11;rgb:0909/0303/0000\x07'
+exec, after flip to dark: Q OSC11 ms=405 reply=b'\x1b]11;rgb:0909/0303/0000\x07'
+2026-10-30T21:52:11.502Z event=facts_broadcast reason=ghosttyDefaultBackgroundDidChange panels=2 bg=#090300 fg=#4a4543
+2026-10-30T21:52:22.305Z event=facts_broadcast reason=ghosttyConfigDidReload panels=2 bg=#090300 fg=#4a4543
+2026-10-30T21:52:34.079Z event=facts_broadcast reason=ghosttyConfigDidReload panels=2 bg=#090300 fg=#4a4543

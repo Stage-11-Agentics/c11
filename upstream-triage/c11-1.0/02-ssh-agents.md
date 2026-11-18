@@ -8,16 +8,16 @@ Research by SSH Agents Research, 2026-10-01. Sources: c11 `main` at d63b937f6, c
    - **(a) Fix now, outside 1.0 (my recommendation).** Port cmux's deny-by-default `RemoteRelayCommandPolicy` (`67d4dbde6e`, `b455514205`, `c4b0205843`) as a point release. Handle it privately: no public ticket that describes the mechanism until it ships.
    - **(b) Disable the relay now** and rebuild it in 1.0. Smaller change, but `c11 <cmd>` inside `c11 ssh` stops working, and I would guess almost nobody uses it.
    - **(c) Leave it for 1.0.** The hole stays open in shipped builds until then.
-2. **Does a remote agent live in a tab or in a workspace?** `c11 ssh` and cmux both make a whole workspace remote. You described "a c11 tab whose agent runs on Atlas", which means local and remote tabs side by side in one workspace.
+2. **Does a remote agent live in a tab or in a workspace?** `c11 ssh` and cmux both make a whole workspace remote. You described "a c11 tab whose agent runs on the build host", which means local and remote tabs side by side in one workspace.
    - **Per-tab host:** matches your description and lets an orchestrator keep a remote delegator in its own workspace. It changes the model, roughly one size bigger (L instead of M for that piece).
    - **Per-workspace host:** reuses today's code paths. A remote agent then always sits in its own workspace.
    - **My lean:** per-tab host, with one transport shared per host.
-3. **What holds the agent on Atlas when Hyperion's lid closes?** A `c11 ssh` tab today is a local `ssh -tt`, so the remote agent dies on SIGHUP.
+3. **What holds the agent on the build host when the laptop's lid closes?** A `c11 ssh` tab today is a local `ssh -tt`, so the remote agent dies on SIGHUP.
    - **c11d-remote owns the PTYs:** harvest cmux's Go persistent-PTY daemon, which fits c11's existing Go daemon. Bigger build, but native scrollback and no tmux artifacts. My lean.
    - **tmux on a c11-owned socket:** fastest path. You inherit tmux's scrollback, mouse and escape-passthrough problems, and the Overwatch seat-attach work already hit them.
-4. **Should 1.0 include the federated end state?** That means Atlas's own c11.app owns the agent and Hyperion attaches to Atlas's tabs.
+4. **Should 1.0 include the federated end state?** That means the build host's own c11.app owns the agent and the laptop attaches to the build host's tabs.
    - **Yes:** 1.0 grows by the c11d host-runtime work (XL), and every agent, Overwatch's included, ends up in one place.
-   - **No (my lean):** 1.0 ships Hyperion-hosted remote tabs, built so the federated model can follow. The cost: until then, Atlas's c11 cannot see agents launched from Hyperion.
+   - **No (my lean):** 1.0 ships laptop-hosted remote tabs, built so the federated model can follow. The cost: until then, the build host's c11 cannot see agents launched from the laptop.
 
 Everything else below is our assumption unless you overrule it.
 
@@ -112,7 +112,7 @@ How it works [R: PR body and diff]:
 | Host identity | The OSC 7 hostname is discarded. The tab sheet's "host" is a browser URL host | `Sources/TabManager.swift:2602-2611` |
 | Mailbox | Files in the local App Support directory with FSEvents. Delivery to a recipient is PTY injection, so it reaches a remote agent; sending from one does not | `Sources/Mailbox/MailboxLayout.swift:24-36` |
 | Pure c11-side verbs | `read-screen`, `send`, `send-key`, and `set-metadata`/`set-status`/flags called from outside all work on an ssh tab today, because the PTY is local | §6 of the c11 inventory, [R] |
-| Tmux line (C11-36) | `Resources/bin/c11-spawn-agent` (C11-37, done) runs Claude in `tmux -L agents` on Atlas. C11-38 and C11-39 are in the backlog | `notes/c11-37-atlas-validation.md` |
+| Tmux line (C11-36) | `Resources/bin/c11-spawn-agent` (C11-37, done) runs Claude in `tmux -L agents` on the build host. C11-38 and C11-39 are in the backlog | `notes/c11-37-atlas-validation.md` |
 | Design doc | `docs/c11v-design.md`: a `c11d` on every host owns the terminals, and c11 attaches to local and remote hosts alike (steps 0 to 6). Not built | file |
 | Doc drift | The skill says "c11 is a local multiplexer… install tmux on the remote" | `skills/c11/references/api.md:431` |
 
@@ -120,11 +120,11 @@ A side finding, inferred from #14974's Linux test and not checked in c11: `Resou
 
 ## The gap
 
-Against the target (a Hyperion tab whose agent runs on Atlas, with full citizenship):
+Against the target (a laptop tab whose agent runs on the build host, with full citizenship):
 
 | Citizenship item | Works today? | What is missing |
 |---|---|---|
-| Survives Hyperion's lid | No | A session holder on the remote host |
+| Survives the laptop's lid | No | A session holder on the remote host |
 | Sidebar status, waiting, idle | No | Remote hook path, tab identity on the remote, no pid eviction |
 | `set-agent`, metadata, description, flags from the agent | Only via raw `rpc` and unscoped | Remote CLI verbs, bound to the calling tab |
 | `read-screen`, `send` | Yes | Nothing (local PTY) |
@@ -145,22 +145,22 @@ The doctrine gap is narrower than it looks. cmux's two remote-status paths split
 
 1. **A remote agent is a tab with a host.** Every c11 verb works on it the way it works on a local tab.
 2. **Nothing is written into tenant config on any machine.** Hooks reach an agent only through c11's PATH wrapper and per-launch `--settings`.
-3. **The Mac initiates every connection.** No host ever dials Hyperion, and no port forwarding is required.
+3. **The Mac initiates every connection.** No host ever dials the laptop, and no port forwarding is required.
 4. **A remote host gets only the verbs its own tab needs**, deny by default.
-5. **It works the same on Atlas, a Linux box, or a Prime sandbox.**
+5. **It works the same on the build host, a Linux box, or a Prime sandbox.**
 
 ### Architecture options
 
-| | A. Evolve `c11 ssh` (recommended) | B. Federate with Atlas's c11.app | C. Adopt cmux-tui |
+| | A. Evolve `c11 ssh` (recommended) | B. Federate with the build host's c11.app | C. Adopt cmux-tui |
 |---|---|---|---|
-| What | `c11d-remote` gains durable PTYs and a scoped command channel over its existing stdio link. The Mac renders the tab | Hyperion's c11 attaches to tabs that Atlas's c11 owns | Import the Rust daemon, its protocol and the manual-IO renderer |
-| Citizenship | Full, through the relay | Full, natively on Atlas | Status via the journal; CLI verbs not designed |
+| What | `c11d-remote` gains durable PTYs and a scoped command channel over its existing stdio link. The Mac renders the tab | the laptop's c11 attaches to tabs that the build host's c11 owns | Import the Rust daemon, its protocol and the manual-IO renderer |
+| Citizenship | Full, through the relay | Full, natively on the build host | Status via the journal; CLI verbs not designed |
 | Doctrine | Needs one small amendment (below) | Clean | #14902 hook install is forbidden; would need a rewrite |
 | Effort | L in total, built in independent slices | XL: c11 PTYs must become daemon-owned (C11-186) plus cross-instance auth | XL, plus Rust, npm bootstrap and a 77 MB binary |
 | Risk | Inherited code, unexercised since the fork | Inverts state of record (design doc §3) | Tracks a moving upstream with 100 PRs a day |
 | Converges to | B, if c11d-remote later becomes the PTY owner for local tabs too | (already there) | A fork of cmux's platform |
 
-**Recommendation: A for 1.0, built so B follows.** The PTY holder in A is the same component C11-186 and `c11v-design.md` step 1 needs. Once Atlas's own c11.app runs its tabs through that holder, Hyperion attaching to Atlas tabs is the federation step, not a rewrite.
+**Recommendation: A for 1.0, built so B follows.** The PTY holder in A is the same component C11-186 and `c11v-design.md` step 1 needs. Once the build host's own c11.app runs its tabs through that holder, the laptop attaching to the build host's tabs is the federation step, not a rewrite.
 
 ### A in detail
 
@@ -203,7 +203,7 @@ The doctrine gap is narrower than it looks. cmux's two remote-status paths split
 
 **7. Tab or workspace (Needs you 2).**
 - Move remote configuration from `Workspace` to the tab, with one daemon link per host shared by all its tabs.
-- Then `c11 new-split --host atlas` and `launch-agent --host atlas` fall out, which is exactly what an orchestrator on Hyperion needs to place a delegator on Atlas.
+- Then `c11 new-split --host <build-host>` and `launch-agent --host <build-host>` fall out, which is exactly what an orchestrator on the laptop needs to place a delegator on the build host.
 
 ### Doctrine amendment this needs
 
@@ -215,8 +215,8 @@ Proposed verb: `c11 move <tab> --to <host|local>`. It moves the agent in a tab, 
 
 1. **Refuse if the agent is live on either side.** Use the conversation store's state plus cmux's pid and `pgrep` checks, and hold a lock in the store for the length of the move. A later `--stop` can wait for idle and exit the agent first.
 2. **Use per-host agent homes, not `~/.claude`.**
-   - Hyperion runs Claude from `~/.claude-profiles/<call-sign>`.
-   - Atlas's user is `atinwoodard`, not `atin` [R: `overwatch/CLAUDE.md` "Atlas's user is `atinwoodard`"], so home paths differ.
+   - The laptop runs Claude from `~/.claude-profiles/<call-sign>`.
+   - The build host's user differs from the laptop's [R: `overwatch/CLAUDE.md`], so home paths differ.
    - Each host entry records `CLAUDE_CONFIG_DIR` and `CODEX_HOME` and a path map. cmux ignores all of this, which would break here.
 3. **Code: reuse cmux's technique.** Snapshot commit through a temp index, push or fetch into `refs/c11-move/<id>`, apply with `read-tree -u --reset`, refuse on a dirty or diverged destination.
    - Order: refuse checks, then code, then data.
@@ -226,15 +226,15 @@ Proposed verb: `c11 move <tab> --to <host|local>`. It moves the agent in a tab, 
    - Codex: the `~/.codex/sessions/**/rollout-*.jsonl` for that id. That is an S on top; Codex resume is by id.
    - Keep the byte-prefix divergence check.
 5. **Resume in the same tab, now bound to the new host**, by typing the resume command. Leave a tombstone on the source ref so a stale resume there is refused.
-6. **Stale absolute paths inside the transcript stay.** Two options: put a symlink `/Users/atin` on Atlas so paths resolve (needs one sudo step), or accept the drift as cmux does.
+6. **Stale absolute paths inside the transcript stay.** Two options: put a symlink for the laptop's home directory on the build host so paths resolve (needs one sudo step), or accept the drift as cmux does.
 
 ### Overwatch
 
 - **Today.**
-  - Box seats show up view-only through `seat-attach` in Atlas's c11.
+  - Box seats show up view-only through `seat-attach` in the build host's c11.
   - They talk back through `[seat]` PR comments and a `needs-human` label that the orchestrator's poller turns into a c11 flag.
   - `c11` and the mailbox do not exist on a box because "Prime's gateway forwards no ports" [R: `overwatch/SEAT-MODEL.md` §5].
-- **What A changes.** A's stdio channel needs no port forward. Atlas would open `prime sandbox ssh <id> -- c11d-remote serve --stdio`, outbound only, the way the launcher already runs `prime sandbox ssh "$id" -- "$@"` [R: `launcher/seat.sh:144`]. The box gets a channel to exactly one surface on Atlas's c11 and no route to anything else, so **the box never joins the tailnet** and the hard rule holds.
+- **What A changes.** A's stdio channel needs no port forward. The build host would open `prime sandbox ssh <id> -- c11d-remote serve --stdio`, outbound only, the way the launcher already runs `prime sandbox ssh "$id" -- "$@"` [R: `launcher/seat.sh:144`]. The box gets a channel to exactly one surface on the build host's c11 and no route to anything else, so **the box never joins the tailnet** and the hard rule holds.
 - **Missing piece.** `c11 ssh` needs a transport-command override, such as `--transport-command 'prime sandbox ssh {id} --'`.
 - **Unverified.** Whether Prime's ssh carries a long-lived, binary-clean stdio stream [I].
 - **What a box should be allowed: report verbs only.** That covers `set-agent`, `set-status`, `set-description` and `raise-flag` on its own tab.
@@ -248,7 +248,7 @@ Proposed verb: `c11 move <tab> --to <host|local>`. It moves the agent in a tab, 
 | Slice | Size | Main risks |
 |---|---|---|
 | 0. Relay allowlist (Needs you 1) | S-M | Shipping to live users; must not break the few relay verbs people use |
-| 0b. Smoke-test today's `c11 ssh` against Atlas | S | It may already be broken; nothing exercised it since the fork, beyond the Go unit tests in `ci.yml` `remote-daemon-tests` |
+| 0b. Smoke-test today's `c11 ssh` against the build host | S | It may already be broken; nothing exercised it since the fork, beyond the Go unit tests in `ci.yml` `remote-daemon-tests` |
 | 1. Persistent PTY holder in `c11d-remote` | M-L | Replay mid-escape artifacts (cmux's own doc warns), resize races, orphaned slots; cmux needed about 15 follow-up fixes |
 | 2. Stdio-multiplexed command channel | M | Head-of-line blocking behind proxy traffic; needs lane priority like cmux-tui's interactive and control lanes |
 | 3. Scoped dispatch on the Mac | M | Every new socket method must be classified; add a guard like cmux's `b455514205` so new methods default to denied |
@@ -262,15 +262,15 @@ Proposed verb: `c11 move <tab> --to <host|local>`. It moves the agent in a tab, 
 
 1.0 in total is about L to XL depending on Needs you 2 and 3. Slices 0, 0b, 2+3+4 and 8 can run in parallel. Slice 1 gates the lid-close guarantee and slice 6 gates restart.
 
-Validation needs Atlas. The heavy parts (daemon stress, e2e) run there under the Hyperion no-heavy-work rule. The docker ssh suites in `tests_v2/test_ssh_remote_*` are a starting harness.
+Validation needs the build host. The heavy parts (daemon stress, e2e) run there under the laptop no-heavy-work rule. The docker ssh suites in `tests_v2/test_ssh_remote_*` are a starting harness.
 
 ## Open questions
 
 1. Needs you 1 to 4 above.
-2. Does Atlas's sshd allow TCP forwarding today? This decides whether the relay fallback is usable at all. A quick `ssh atlas` check settles it.
-3. Should a remote tab's agent chip show the host, for example `Opus · atlas`, in the tab sheet and sidebar?
-4. Which Anthropic account does a remote Claude bill: Atlas's own login, or the profile Hyperion would have used? `c11 move` across profiles hangs on this.
+2. Does the build host's sshd allow TCP forwarding today? This decides whether the relay fallback is usable at all. A quick `ssh <build-host>` check settles it.
+3. Should a remote tab's agent chip show the host, for example `Opus · <host>`, in the tab sheet and sidebar?
+4. Which Anthropic account does a remote Claude bill: The build host's own login, or the profile the laptop would have used? `c11 move` across profiles hangs on this.
 5. Should `c11 move` also offer `--stop` (wait for idle, exit the agent, move, resume) in 1.0, or stay stopped-only as cmux does?
-6. Should Linux hosts be in 1.0 scope, or only macOS hosts (Atlas)? The Go daemon covers both; the wrappers are bash and need checking on Linux.
+6. Should Linux hosts be in 1.0 scope, or only macOS hosts (the build host)? The Go daemon covers both; the wrappers are bash and need checking on Linux.
 7. Should the skill teach `c11 ssh` now? The current text contradicts what ships (`skills/c11/references/api.md:431`). This is independent of 1.0.
 8. Is `c11-spawn-agent` and the C11-36 tmux line retired once slice 1 lands, or kept as the headless path for agents nobody watches?
